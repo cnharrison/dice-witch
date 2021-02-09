@@ -1,5 +1,6 @@
+<img src="https://i.imgur.com/nkNAuhd.png" width="300">  
+
 # Dice Witch
-![Female anime DM holding d20 and book](https://i.imgur.com/nkNAuhd.png)
 
 Dice Witch is a simple bot that rolls dice on Discord. It displays the dice visually, and aims to simulate the visual and sensual user experience of rolling real dice.
 
