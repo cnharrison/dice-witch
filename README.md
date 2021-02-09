@@ -27,4 +27,4 @@ If you find a bug, please open a Github Issue. You can also join the support Dis
 - Exploding Dice
 - Drop and keep dice
 - True random numbers
-- A variety of different sets of dice
+- A variety of different sets of illustrated and photographed dice
