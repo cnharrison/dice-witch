@@ -2,7 +2,7 @@
 
 # Dice Witch
 
-Dice Witch is a simple bot that rolls dice on Discord. It displays the dice visually, and aims to simulate the visual and sensual user experience of rolling real dice.
+Dice Witch is a simple bot that rolls dice on Discord. It displays the dice visually, and aims to simulate the sensory user experience of rolling real dice.
 
 ![Image of Dice Witch in action](https://i.imgur.com/IME5AH7.gif)
 
