@@ -31,16 +31,16 @@ module.exports = function () {
       discord.commands.get(command).execute(message, args, Discord);
       console.log(
         message.guild?.id
-          ? `recieved ${command}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
-          : `recieved ${command}: ${args} from [ ${message.author.username} ] in [ DM ]`
+          ? `received ${command}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
+          : `received ${command}: ${args} from [ ${message.author.username} ] in [ DM ]`
       );
 
       const embed = new Discord.MessageEmbed()
         .setColor("#99999")
         .setDescription(
           message.guild?.id
-            ? `recieved ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
-            : `recieved ${command}: ${args} from **${message.author.username}** in **DM**`
+            ? `received ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
+            : `received ${command}: ${args} from **${message.author.username}** in **DM**`
         );
       logOutputChannel.send(embed);
     } catch (error) {
