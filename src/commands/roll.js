@@ -7,6 +7,7 @@ const roll = new Roll();
 const maxDice = 100;
 const maxRowLength = 10;
 const defaultImageDimension = 75;
+const availableDice = [20, 12, 10, 8, 6, 4];
 
 const getRandomNumber = (range) => Math.floor(Math.random() * range) + 1;
 
@@ -41,15 +42,7 @@ const rollDice = async (message, args) => {
     if (valid) {
       parsedRoll = roll.parse(arg);
     }
-    if (
-      valid &&
-      (parsedRoll.sides === 20 ||
-        parsedRoll.sides === 12 ||
-        parsedRoll.sides === 10 ||
-        parsedRoll.sides === 8 ||
-        parsedRoll.sides === 6 ||
-        parsedRoll.sides === 4)
-    ) {
+    if (valid && availableDice.includes(parsedRoll.sides)) {
       const rolls = roll.roll(arg);
       resultMap.push({ arg, result: rolls.result });
       for (i = 0; i < parsedRoll.quantity; i++) {
@@ -139,7 +132,8 @@ const rollDice = async (message, args) => {
 
 module.exports = {
   name: "roll",
-  description: "roll dice",
+  description: "Throw some dice",
+  usage: "[dice notation], e.g. 1d12+3 5d4 1d10/2",
   execute(message, args) {
     rollDice(message, args);
   }

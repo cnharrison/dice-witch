@@ -9,7 +9,7 @@ module.exports = function () {
   process.chdir(path.dirname(config.botPath));
   const commandFiles = fs
     .readdirSync(`${config.botPath}src/commands`)
-    .filter((file) => file.endsWith(".js"));
+    .filter((file) => file.endsWith(".js") && !file.startsWith("index"));
 
   for (const file of commandFiles) {
     const command = require(`./${file}`);
@@ -34,7 +34,7 @@ module.exports = function () {
       console.error(error);
       const embed = new Discord.MessageEmbed()
         .setColor("#FF0000")
-        .setDescription(`There's a problem🤪`);
+        .setDescription(`There's a problem 🤪`);
       message.reply(embed);
     }
   });
