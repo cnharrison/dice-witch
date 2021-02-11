@@ -5,6 +5,8 @@ const Discord = require("discord.js");
 const discord = new Discord.Client();
 discord.commands = new Discord.Collection();
 
+let logOutputChannel;
+
 module.exports = function () {
   process.chdir(path.dirname(config.botPath));
   const commandFiles = fs
@@ -28,19 +30,47 @@ module.exports = function () {
     try {
       discord.commands.get(command).execute(message, args, Discord);
       console.log(
-        `recieved ${command}: ${args} from ${message.author.username} in ${message.channel.name} on ${message.guild}`
+        message.guildID
+          ? `recieved ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
+          : `recieved ${command}: ${args} from **${message.author.username}** in **DM**`
       );
+
+      const embed = new Discord.MessageEmbed()
+        .setColor("#99999")
+        .setDescription(
+          message.guildID
+            ? `recieved ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
+            : `recieved ${command}: ${args} from **${message.author.username}** in **DM**`
+        );
+      logOutputChannel.send(embed);
     } catch (error) {
       console.error(error);
-      const embed = new Discord.MessageEmbed()
+      const sendReactions = async () => {
+        await message.react("🤪");
+        await message.react("📞");
+        await message.react("🏡");
+      };
+      sendReactions();
+      const logEmbed = new Discord.MessageEmbed()
         .setColor("#FF0000")
-        .setDescription(`There's a problem 🤪`);
-      message.reply(embed);
+        .setDescription(
+          message.guildID
+            ? `ERROR encountered: ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
+            : `ERROR encountered: ${command}: ${args} from **${message.author.username}** in **DM**`
+        );
+      logOutputChannel.send(logEmbed);
     }
   });
 
   discord.login(config.discordToken);
   discord.on("ready", () => {
     console.log(`[Discord] Logged in as ${discord.user.tag}!`);
+    discord.channels
+      .fetch(config.logOutputChannel)
+      .then((channel) => {
+        logOutputChannel = channel;
+        console.log("[Discord] Found log output channel " + channel.name);
+      })
+      .catch(console.error);
   });
 };
