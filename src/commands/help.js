@@ -13,9 +13,7 @@ module.exports = {
 
     if (!args.length) {
       data.push(commands.map((command) => command.name).join("\r"));
-      data.push(
-        `\nYou can send \`${prefix}help [command name]\` to get info on a specific command!`
-      );
+      data.push(`\n\More: \n\`${prefix}help [command name]\``);
 
       const embed = new Discord.MessageEmbed()
         .setColor("#0000ff")
