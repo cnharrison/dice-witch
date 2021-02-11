@@ -30,15 +30,15 @@ module.exports = function () {
     try {
       discord.commands.get(command).execute(message, args, Discord);
       console.log(
-        message.guildID
-          ? `recieved ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
-          : `recieved ${command}: ${args} from **${message.author.username}** in **DM**`
+        message.guild?.id
+          ? `recieved ${command}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
+          : `recieved ${command}: ${args} from [ ${message.author.username} ] in [ DM ]`
       );
 
       const embed = new Discord.MessageEmbed()
         .setColor("#99999")
         .setDescription(
-          message.guildID
+          message.guild?.id
             ? `recieved ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
             : `recieved ${command}: ${args} from **${message.author.username}** in **DM**`
         );
@@ -54,9 +54,9 @@ module.exports = function () {
       const logEmbed = new Discord.MessageEmbed()
         .setColor("#FF0000")
         .setDescription(
-          message.guildID
-            ? `ERROR encountered: ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
-            : `ERROR encountered: ${command}: ${args} from **${message.author.username}** in **DM**`
+          message.guild?.id
+            ? `ERROR encountered: ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}** <@${config.adminID}>`
+            : `ERROR encountered: ${command}: ${args} from **${message.author.username}** in **DM** ${adminID}`
         );
       logOutputChannel.send(logEmbed);
     }
