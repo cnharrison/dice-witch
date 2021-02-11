@@ -1,4 +1,4 @@
-<img src="https://i.imgur.com/nkNAuhd.png" width="300">  
+<img src="https://i.imgur.com/v1Dog6h.jpeg" width="300">  
 
 # Dice Witch
 
