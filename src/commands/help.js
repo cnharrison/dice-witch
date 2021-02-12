@@ -17,7 +17,7 @@ module.exports = {
 
       const embed = new Discord.MessageEmbed()
         .setColor("#0000ff")
-        .setTitle("Commands:")
+        .setTitle("Commands")
         .setDescription(data, { split: true });
 
       return message.channel.send(embed);
