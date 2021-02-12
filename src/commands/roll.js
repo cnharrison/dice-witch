@@ -5,7 +5,7 @@ const Roll = require("roll");
 const roll = new Roll();
 
 const maxDice = 100;
-const maxRowLength = 10;
+const maxRowLength = 7;
 const defaultImageDimension = 75;
 const availableDice = [20, 12, 10, 8, 6, 4];
 
