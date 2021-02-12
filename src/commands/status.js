@@ -11,7 +11,7 @@ module.exports = {
       .setDescription(
         `**Latency**: ${Date.now() - message.createdTimestamp}ms\n I'm in **${
           discord.guilds.cache.size
-        }** discord servers😈`
+        }** discord servers 😈`
       );
 
     return message.channel.send(embed);
