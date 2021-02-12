@@ -2,12 +2,9 @@ const config = require("../../config.json");
 const fs = require("fs");
 const path = require("path");
 const Discord = require("discord.js");
-const discord = new Discord.Client();
-discord.commands = new Discord.Collection();
 
-let logOutputChannel;
-
-module.exports = function () {
+module.exports = function (discord, logOutputChannel) {
+  discord.commands = new Discord.Collection();
   process.chdir(path.dirname(config.botPath));
   const commandFiles = fs
     .readdirSync(`${config.botPath}src/commands`)
@@ -28,19 +25,19 @@ module.exports = function () {
     if (!discord.commands.has(command)) return;
 
     try {
-      discord.commands.get(command).execute(message, args, Discord);
+      discord.commands.get(command).execute(message, args, discord);
       console.log(
         message.guild?.id
-          ? `received ${command}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
-          : `received ${command}: ${args} from [ ${message.author.username} ] in [ DM ]`
+          ? `received command ${command}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
+          : `received command ${command}: ${args} from [ ${message.author.username} ] in [ DM ]`
       );
 
       const embed = new Discord.MessageEmbed()
         .setColor("#99999")
         .setDescription(
           message.guild?.id
-            ? `received ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
-            : `received ${command}: ${args} from **${message.author.username}** in **DM**`
+            ? `received command **${command}**: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
+            : `received command **${command}**: ${args} from **${message.author.username}** in **DM**`
         );
       logOutputChannel.send(embed);
     } catch (error) {
@@ -55,22 +52,10 @@ module.exports = function () {
         .setColor("#FF0000")
         .setDescription(
           message.guild?.id
-            ? `ERROR encountered: ${command}: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}** <@${config.adminID}>`
-            : `ERROR encountered: ${command}: ${args} from **${message.author.username}** in **DM** ${adminID}`
+            ? `ERROR encountered: **${command}**: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}** <@${config.adminID}>`
+            : `ERROR encountered: **${command}**: ${args} from **${message.author.username}** in **DM** ${config.adminID}`
         );
       logOutputChannel.send(logEmbed);
     }
-  });
-
-  discord.login(config.discordToken);
-  discord.on("ready", () => {
-    console.log(`[Discord] Logged in as ${discord.user.tag}!`);
-    discord.channels
-      .fetch(config.logOutputChannel)
-      .then((channel) => {
-        logOutputChannel = channel;
-        console.log("[Discord] Found log output channel " + channel.name);
-      })
-      .catch(console.error);
   });
 };
