@@ -2,17 +2,16 @@ const config = require("../../config.json");
 const Discord = require("discord.js");
 const Canvas = require("canvas");
 const Roll = require("roll");
-const roll = new Roll();
 
 const maxDice = 100;
 const maxRowLength = 7;
-const defaultImageDimension = 75;
+const defaultImageDimension = 90;
 const availableDice = [20, 12, 10, 8, 6, 4];
 
 const getRandomNumber = (range) => Math.floor(Math.random() * range) + 1;
 
 const getRandomColor = () => {
-  switch (getRandomNumber(6)) {
+  switch (getRandomNumber(5)) {
     case 1:
       return "red";
     case 2:
@@ -24,11 +23,9 @@ const getRandomColor = () => {
     case 4:
       return "blue";
     case 5:
-      return "indigo";
-    case 6:
       return "purple";
     default:
-      return "green";
+      return "red";
   }
 };
 
@@ -37,6 +34,7 @@ const rollDice = async (message, args) => {
   let resultMap = [];
 
   for (arg of args) {
+    roll = new Roll();
     let parsedRoll;
     const valid = roll.validate(arg);
     if (valid) {
@@ -60,6 +58,19 @@ const rollDice = async (message, args) => {
         diceArray.length === 1 ? "clatters" : "clatter"
       } across the table..._`
     );
+  } else if (diceArray.length === 0) {
+    const embed = new Discord.MessageEmbed()
+      .setColor("#0000ff")
+      .setTitle(`Need help? 😅`)
+      .setDescription(
+        `You need to provide some arguments after the **!roll** command. These arguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm). Here are some examples:\n\n **!roll 1d20**: roll one twenty sided die\n**!roll 1d20 1d12 1d8**: roll one twenty-sided die, one twelve-sided die, and one eight sided die\n **!roll 1d12+3 5d4** : roll one twelve-sided die, adding three to the total, and five four sided dice\n\nYou can also subtract(-), multiply(*), and divide(/) rolls. You can roll up to ${maxDice} dice at once 😈`
+      )
+      .addField(
+        "\u200B",
+        `_Sent to ${message.author.username}_ | [Invite me](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot) | [Support server](https://discord.gg/7FT6VT5x)`
+      );
+
+    return message.channel.send(embed);
   } else {
     return;
   }
@@ -105,7 +116,7 @@ const rollDice = async (message, args) => {
   }
 
   const attachment = new Discord.MessageAttachment(
-    canvas.toBuffer(),
+    canvas.toBuffer("image/png", { compressionLevel: 0 }),
     "currentDice.png"
   );
 
@@ -129,11 +140,10 @@ const rollDice = async (message, args) => {
 
   return;
 };
-
 module.exports = {
   name: "roll",
   description: "Throw some dice",
-  usage: "[dice notation], e.g. 1d12+3 5d4 1d10/2",
+  usage: "[dice notation], e.g. 1d20 2d12",
   execute(message, args) {
     rollDice(message, args);
   }

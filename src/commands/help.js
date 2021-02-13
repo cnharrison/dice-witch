@@ -18,7 +18,11 @@ module.exports = {
       const embed = new Discord.MessageEmbed()
         .setColor("#0000ff")
         .setTitle("Commands")
-        .setDescription(data, { split: true });
+        .setDescription(data, { split: true })
+        .addField(
+          "\u200B",
+          "[Invite me](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot) | [Support server](https://discord.gg/7FT6VT5x)"
+        );
 
       return message.channel.send(embed);
     }
@@ -28,7 +32,7 @@ module.exports = {
       commands.find((c) => c.aliases && c.aliases.includes(name));
 
     if (!command) {
-      return message.reply("that's not a valid command!");
+      return message.reply("No commands by that name 🤷‍♀️");
     }
 
     data.push(`**Name:** ${command.name}`);
@@ -45,7 +49,11 @@ module.exports = {
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
       .setTitle(`👩‍🏫 ${command.name}`)
-      .setDescription(data, { split: true });
+      .setDescription(data, { split: true })
+      .addField(
+        "\u200B",
+        "[Invite me](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot) | [Support server](https://discord.gg/7FT6VT5x)"
+      );
 
     return message.channel.send(embed);
   }

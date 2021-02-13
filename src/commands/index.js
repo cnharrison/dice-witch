@@ -20,24 +20,30 @@ module.exports = function (discord, logOutputChannel) {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
 
     const args = message.content.slice(prefix.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
+    const commandName = args.shift().toLowerCase();
 
-    if (!discord.commands.has(command)) return;
+    const command =
+      discord.commands.get(commandName) ||
+      discord.commands.find(
+        (cmd) => cmd.aliases && cmd.aliases.includes(commandName)
+      );
+
+    if (!command) return;
 
     try {
-      discord.commands.get(command).execute(message, args, discord);
+      command.execute(message, args, discord);
       console.log(
         message.guild?.id
-          ? `received command ${command}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
-          : `received command ${command}: ${args} from [ ${message.author.username} ] in [ DM ]`
+          ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
+          : `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
       );
 
       const embed = new Discord.MessageEmbed()
         .setColor("#99999")
         .setDescription(
           message.guild?.id
-            ? `received command **${command}**: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
-            : `received command **${command}**: ${args} from **${message.author.username}** in **DM**`
+            ? `received command **${command.name}**: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
+            : `received command **${command.name}**: ${args} from **${message.author.username}** in **DM**`
         );
       logOutputChannel.send(embed);
     } catch (error) {
@@ -52,8 +58,8 @@ module.exports = function (discord, logOutputChannel) {
         .setColor("#FF0000")
         .setDescription(
           message.guild?.id
-            ? `ERROR encountered: **${command}**: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}** <@${config.adminID}>`
-            : `ERROR encountered: **${command}**: ${args} from **${message.author.username}** in **DM** ${config.adminID}`
+            ? `ERROR encountered: **${command.name}**: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}** <@${config.adminID}>`
+            : `ERROR encountered: **${command.name}**: ${args} from **${message.author.username}** in **DM** ${config.adminID}`
         );
       logOutputChannel.send(logEmbed);
     }
