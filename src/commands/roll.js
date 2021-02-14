@@ -2,36 +2,17 @@ const config = require("../../config.json");
 const Discord = require("discord.js");
 const Canvas = require("canvas");
 const Roll = require("roll");
+const { getRandomColor, getRandomNumber } = require("../helpers");
 
 const maxDice = 100;
 const maxRowLength = 7;
-const defaultImageDimension = 90;
+const defaultDiceDimension = 90;
+const defaultIconDimension = 30;
 const availableDice = [20, 12, 10, 8, 6, 4];
-
-const getRandomNumber = (range) => Math.floor(Math.random() * range) + 1;
-
-const getRandomColor = () => {
-  switch (getRandomNumber(5)) {
-    case 1:
-      return "red";
-    case 2:
-      return "orange";
-    case 2:
-      return "yellow";
-    case 3:
-      return "green";
-    case 4:
-      return "blue";
-    case 5:
-      return "purple";
-    default:
-      return "red";
-  }
-};
 
 const rollDice = async (message, args, flags) => {
   let diceArray = [];
-  let resultMap = [];
+  let resultArray = [];
 
   for ([index, value] of args.entries()) {
     roll = new Roll();
@@ -42,7 +23,7 @@ const rollDice = async (message, args, flags) => {
     }
     if (valid && availableDice.includes(parsedRoll.sides)) {
       const rolls = roll.roll(value);
-      resultMap.push({ value, result: rolls.result });
+      resultArray.push({ value, result: rolls.result });
       for (i = 0; i < parsedRoll.quantity; i++) {
         diceArray.push({ sides: parsedRoll.sides, rolled: rolls.rolled[i] });
       }
@@ -98,13 +79,15 @@ const rollDice = async (message, args, flags) => {
 
   const canvasWidth =
     diceArray.length <= maxRowLength
-      ? defaultImageDimension * diceArray.length
-      : defaultImageDimension * maxRowLength;
+      ? defaultDiceDimension * diceArray.length
+      : defaultDiceDimension * maxRowLength;
 
   const canvas = Canvas.createCanvas(
     canvasWidth,
-    defaultImageDimension * outerDiceArray.length
+    defaultDiceDimension * outerDiceArray.length +
+      defaultIconDimension * outerDiceArray.length
   );
+  4;
 
   const ctx = canvas.getContext("2d");
   const outerPromiseArray = outerDiceArray.map((array, outerIndex) => {
@@ -114,12 +97,24 @@ const rollDice = async (message, args, flags) => {
           dice.sides
         }-${getRandomColor()}-${dice.rolled}.svg`
       );
+      const icon = await Canvas.loadImage(
+        `${config.botPath}assets/greencheck.svg`
+      );
       ctx.drawImage(
         image,
-        defaultImageDimension * index,
-        outerIndex * defaultImageDimension,
-        defaultImageDimension,
-        defaultImageDimension
+        defaultDiceDimension * index,
+        outerIndex * defaultDiceDimension + outerIndex * defaultIconDimension,
+        defaultDiceDimension,
+        defaultDiceDimension
+      );
+      ctx.drawImage(
+        icon,
+        defaultDiceDimension * index + defaultDiceDimension * 0.4,
+        outerIndex * defaultDiceDimension +
+          defaultDiceDimension +
+          outerIndex * defaultIconDimension,
+        defaultIconDimension,
+        defaultIconDimension
       );
     });
   });
@@ -142,7 +137,7 @@ const rollDice = async (message, args, flags) => {
         .setTitle(flags?.t)
         .setImage("attachment://currentDice.png")
         .setFooter(
-          `${message.author.username} | ${resultMap
+          `${message.author.username} | ${resultArray
             .map((roll) => `${roll.value}: ${roll.result}`)
             .join(" / ")}`
         )
@@ -151,7 +146,7 @@ const rollDice = async (message, args, flags) => {
         .attachFiles(attachment)
         .setImage("attachment://currentDice.png")
         .setFooter(
-          `${message.author.username} | ${resultMap
+          `${message.author.username} | ${resultArray
             .map((roll) => `${roll.value}: ${roll.result}`)
             .join(" / ")}`
         );
