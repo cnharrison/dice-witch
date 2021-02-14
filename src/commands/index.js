@@ -20,7 +20,7 @@ module.exports = function (discord, logOutputChannel) {
     const prefix = config.prefix;
     if (!message.content.startsWith(prefix) || message.author.bot) return;
 
-    const flags = yargs(message.content.slice(prefix.length)).argv;
+    const flags = yargs(message.content.slice(prefix.length)).help(false).argv;
     const args = message.content.slice(prefix.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
 
