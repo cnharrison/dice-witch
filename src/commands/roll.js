@@ -75,6 +75,12 @@ const rollDice = async (message, args, flags) => {
         },
         { name: "\u200B", value: "\u200B" },
         {
+          name: "Drop/keep dice AKA advantage rolls",
+          value:
+            "`!roll 3d20b2`: roll three twenty-sided dice and keep the best two\n`!roll 5d8w1`: roll five eight-sided dice and keep the worst one"
+        },
+        { name: "\u200B", value: "\u200B" },
+        {
           name: "Title a roll",
           value:
             "You can add a title to a roll by inserting a `-t '<your title here>'` flag anywhere within the roll command:\n\n`!roll 1d20 -t 'to flirt with the bartender'`: roll one twenty-sided die and title it 'to flirt with the bartender'"
