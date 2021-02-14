@@ -1,4 +1,4 @@
-<img src="https://i.imgur.com/v1Dog6h.jpeg" width="300">  
+<img src="https://i.imgur.com/v1Dog6h.jpeg" width="300">
 
 # Dice Witch
 
@@ -12,8 +12,11 @@ You can install Dice Witch on your Discord server by clicking [here](https://dis
 
 # Usage
 
-`!roll 1d4 3d6 1d20` : Roll one four-sided die, three six-sided dice, and one twenty-sided die.  
-`!roll 1d12+3 5d4` : Roll one twelve-sided die, adding three to the total, and five four sided dice. You can also subtract `-`, multiply `*`, and divide `/` rolls.
+- Basic rolls
+  - `!roll 1d4 3d6 1d20`: Roll one four-sided die, three six-sided dice, and one twenty-sided die.
+  - `!roll 1d12+3 5d4`: Roll one twelve-sided die, adding three to the total, and five four sided dice. You can also subtract `-`, multiply `*`, and divide `/` rolls.
+- Titled rolls
+  - `!roll 1d20 -t 'to flirt with the bartender'`: Roll one twenty-sided die and title it "to flirt with the bartender". You can add a title to any roll by placing a `-t 'quote'` flag anywhere within the command. 
 
 # Contributing
 
