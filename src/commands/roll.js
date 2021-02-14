@@ -29,20 +29,20 @@ const getRandomColor = () => {
   }
 };
 
-const rollDice = async (message, args) => {
+const rollDice = async (message, args, flags) => {
   let diceArray = [];
   let resultMap = [];
 
-  for (arg of args) {
+  for ([index, value] of args.entries()) {
     roll = new Roll();
     let parsedRoll;
-    const valid = roll.validate(arg);
+    const valid = roll.validate(value);
     if (valid) {
-      parsedRoll = roll.parse(arg);
+      parsedRoll = roll.parse(value);
     }
     if (valid && availableDice.includes(parsedRoll.sides)) {
-      const rolls = roll.roll(arg);
-      resultMap.push({ arg, result: rolls.result });
+      const rolls = roll.roll(value);
+      resultMap.push({ value, result: rolls.result });
       for (i = 0; i < parsedRoll.quantity; i++) {
         diceArray.push({ sides: parsedRoll.sides, rolled: rolls.rolled[i] });
       }
@@ -63,7 +63,7 @@ const rollDice = async (message, args) => {
       .setColor("#0000ff")
       .setTitle(`Need help? 😅`)
       .setDescription(
-        `You need to provide some arguments after the **!roll** command. These arguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm). Here are some examples:\n\n **!roll 1d20**: roll one twenty sided die\n**!roll 1d20 1d12 1d8**: roll one twenty-sided die, one twelve-sided die, and one eight sided die\n **!roll 1d12+3 5d4** : roll one twelve-sided die, adding three to the total, and five four sided dice\n\nYou can also subtract(-), multiply(*), and divide(/) rolls. You can roll up to ${maxDice} dice at once 😈`
+        `You need to provide some arguments after the **!roll** command. These arguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm). Here are some examples:\n\n**!roll 1d20**: roll one twenty sided die\n**!roll 1d20 1d12 1d8**: roll one twenty-sided die, one twelve-sided die, and one eight sided die\n**!roll 1d12+3 5d4** : roll one twelve-sided die, adding three to the total, and five four sided dice\n\nYou can also subtract(-), multiply(*), and divide(/) rolls. You can roll up to ${maxDice} dice at once 😈`
       )
       .addField(
         "\u200B",
@@ -120,15 +120,26 @@ const rollDice = async (message, args) => {
     "currentDice.png"
   );
 
-  const embed = new Discord.MessageEmbed()
-    .setColor("#966F33")
-    .attachFiles(attachment)
-    .setImage("attachment://currentDice.png")
-    .setFooter(
-      `${message.author.username} | ${resultMap
-        .map((roll) => `${roll.arg}: ${roll.result}`)
-        .join(" / ")}`
-    );
+  const embed = flags?.t
+    ? new Discord.MessageEmbed()
+        .setColor("#966F33")
+        .attachFiles(attachment)
+        .setTitle(flags?.t)
+        .setImage("attachment://currentDice.png")
+        .setFooter(
+          `${message.author.username} | ${resultMap
+            .map((roll) => `${roll.value}: ${roll.result}`)
+            .join(" / ")}`
+        )
+    : new Discord.MessageEmbed()
+        .setColor("#966F33")
+        .attachFiles(attachment)
+        .setImage("attachment://currentDice.png")
+        .setFooter(
+          `${message.author.username} | ${resultMap
+            .map((roll) => `${roll.value}: ${roll.result}`)
+            .join(" / ")}`
+        );
 
   const sendMessageAndStopTyping = () => {
     message.channel.send(embed);
@@ -140,11 +151,12 @@ const rollDice = async (message, args) => {
 
   return;
 };
+
 module.exports = {
   name: "roll",
   description: "Throw some dice",
   usage: "[dice notation], e.g. 1d20 2d12",
-  execute(message, args) {
-    rollDice(message, args);
+  execute(message, args, _, flags) {
+    rollDice(message, args, flags);
   }
 };
