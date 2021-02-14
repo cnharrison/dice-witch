@@ -30,18 +30,15 @@ const roll = async (message, args, flags) => {
             .map((dice) => `d${dice}`)
             .join(", ")}**.`
         },
-        { name: "\u200B", value: "\u200B" },
         {
           name: "Basic rolls",
-          value: `\`!roll 1d20\`: roll one twenty sided die\n\`!roll 1d20 1d12 1d8\`: roll one twenty-sided die, one twelve-sided die, and one eight-sided die\n\`!roll 1d12+3 5d4\`: roll one twelve-sided die, adding three to the total, and five four-sided dice\n\nYou can also subtract\`-\`, multiply\`*\`, and divide\`/\` rolls.\nYou can roll up to **${maxDice}** dice at once 😈`
+          value: `\`!roll 1d20\`: roll one twenty sided die\n\`!roll 1d20 1d12 1d8\`: roll one twenty-sided die, one twelve-sided die, and one eight-sided die\n\`!roll 1d12+3 5d4\`: roll one twelve-sided die, adding three to the total, and five four-sided dice\n\nYou can also subtract\`-\`, multiply\`*\`, and divide\`/\` rolls.\nYou can roll up to **${maxDice}** dice at once 😈\n\n`
         },
-        { name: "\u200B", value: "\u200B" },
         {
           name: "Drop/keep dice AKA advantage rolls",
           value:
             "`!roll 3d20b2`: roll three twenty-sided dice and keep the best two\n`!roll 5d8w1`: roll five eight-sided dice and keep the worst one"
         },
-        { name: "\u200B", value: "\u200B" },
         {
           name: "Title a roll",
           value:
