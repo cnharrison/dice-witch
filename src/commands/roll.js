@@ -61,9 +61,24 @@ const rollDice = async (message, args, flags) => {
   } else if (diceArray.length === 0) {
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
-      .setTitle(`Need help? 😅`)
-      .setDescription(
-        `You need to provide some arguments after the **!roll** command. These arguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm). Here are some examples:\n\n**!roll 1d20**: roll one twenty sided die\n**!roll 1d20 1d12 1d8**: roll one twenty-sided die, one twelve-sided die, and one eight sided die\n**!roll 1d12+3 5d4** : roll one twelve-sided die, adding three to the total, and five four sided dice\n\nYou can also subtract(-), multiply(*), and divide(/) rolls. You can roll up to ${maxDice} dice at once 😈`
+      .addFields(
+        {
+          name: `Need help? 😅`,
+          value: `You need to put least one valid argument after the **!roll** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any of these dice: **${availableDice
+            .map((dice) => `d${dice}`)
+            .join(", ")}**.`
+        },
+        { name: "\u200B", value: "\u200B" },
+        {
+          name: "Basic rolls",
+          value: `\`!roll 1d20\`: roll one twenty sided die\n\`!roll 1d20 1d12 1d8\`: roll one twenty-sided die, one twelve-sided die, and one eight-sided die\n\`!roll 1d12+3 5d4\`: roll one twelve-sided die, adding three to the total, and five four-sided dice\n\nYou can also subtract\`-\`, multiply\`*\`, and divide\`/\` rolls.\nYou can roll up to **${maxDice}** dice at once 😈`
+        },
+        { name: "\u200B", value: "\u200B" },
+        {
+          name: "Title a roll",
+          value:
+            "You can add a title to a roll by inserting a `-t '<your title here>'` flag anywhere within the roll command:\n\n`!roll 1d20 -t 'to flirt with the bartender'`: roll one twenty-sided die and title it 'to flirt with the bartender'"
+        }
       )
       .addField(
         "\u200B",
@@ -155,7 +170,8 @@ const rollDice = async (message, args, flags) => {
 module.exports = {
   name: "roll",
   description: "Throw some dice",
-  usage: "[dice notation], e.g. 1d20 2d12",
+  usage:
+    "[dice notation], e.g. 1d20 2d12. Type `!roll` with no arguments for a detailed explanation",
   execute(message, args, _, flags) {
     rollDice(message, args, flags);
   }
