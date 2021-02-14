@@ -56,26 +56,27 @@ const roll = async (message, args, flags) => {
 
   const attachment = await generateDiceAttachment(diceArray, shouldHaveIcon);
 
-  const embed = flags?.t
-    ? new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .attachFiles(attachment)
-        .setTitle(flags?.t)
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${message.author.username} | ${resultArray
-            .map((roll) => `${roll.value}: ${roll.result}`)
-            .join(" / ")}`
-        )
-    : new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .attachFiles(attachment)
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${message.author.username} | ${resultArray
-            .map((roll) => `${roll.value}: ${roll.result}`)
-            .join(" / ")}`
-        );
+  const embed =
+    typeof flags?.t === "string"
+      ? new Discord.MessageEmbed()
+          .setColor("#966F33")
+          .attachFiles(attachment)
+          .setTitle(flags?.t)
+          .setImage("attachment://currentDice.png")
+          .setFooter(
+            `${message.author.username} | ${resultArray
+              .map((roll) => `${roll.value}: ${roll.result}`)
+              .join(" / ")}`
+          )
+      : new Discord.MessageEmbed()
+          .setColor("#966F33")
+          .attachFiles(attachment)
+          .setImage("attachment://currentDice.png")
+          .setFooter(
+            `${message.author.username} | ${resultArray
+              .map((roll) => `${roll.value}: ${roll.result}`)
+              .join(" / ")}`
+          );
 
   const sendMessageAndStopTyping = () => {
     message.channel.send(embed);

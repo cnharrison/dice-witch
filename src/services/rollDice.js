@@ -18,7 +18,6 @@ const rollDice = (args, availableDice) => {
       const bestOrWorstOf = rolls.input?.transformations[0][0][1];
       shouldHaveIcon = ["best-of", "worst-of"].includes(type);
       resultArray.push({ value, result: rolls.result });
-      console.log(rolls.rolled);
       for (i = 0; i < parsedRoll.quantity; i++) {
         diceArray.push({
           sides: parsedRoll.sides,
