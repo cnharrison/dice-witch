@@ -1,53 +1,15 @@
-const config = require("../../config.json");
 const Discord = require("discord.js");
-const Canvas = require("canvas");
-const Roll = require("roll");
+const { getRandomNumber } = require("../helpers");
+const { rollDice } = require("../services/rollDice");
+const {
+  generateDiceAttachment
+} = require("../services/generateDiceAttachment");
 
 const maxDice = 100;
-const maxRowLength = 7;
-const defaultImageDimension = 90;
 const availableDice = [20, 12, 10, 8, 6, 4];
 
-const getRandomNumber = (range) => Math.floor(Math.random() * range) + 1;
-
-const getRandomColor = () => {
-  switch (getRandomNumber(5)) {
-    case 1:
-      return "red";
-    case 2:
-      return "orange";
-    case 2:
-      return "yellow";
-    case 3:
-      return "green";
-    case 4:
-      return "blue";
-    case 5:
-      return "purple";
-    default:
-      return "red";
-  }
-};
-
-const rollDice = async (message, args, flags) => {
-  let diceArray = [];
-  let resultMap = [];
-
-  for ([index, value] of args.entries()) {
-    roll = new Roll();
-    let parsedRoll;
-    const valid = roll.validate(value);
-    if (valid) {
-      parsedRoll = roll.parse(value);
-    }
-    if (valid && availableDice.includes(parsedRoll.sides)) {
-      const rolls = roll.roll(value);
-      resultMap.push({ value, result: rolls.result });
-      for (i = 0; i < parsedRoll.quantity; i++) {
-        diceArray.push({ sides: parsedRoll.sides, rolled: rolls.rolled[i] });
-      }
-    }
-  }
+const roll = async (message, args, flags) => {
+  const { diceArray, resultArray } = rollDice(args, availableDice);
 
   if (diceArray.length > maxDice) {
     message.channel.send(`${maxDice} dice max, sorry 😅`);
@@ -90,71 +52,31 @@ const rollDice = async (message, args, flags) => {
     return;
   }
 
-  let outerDiceArray = [];
+  shouldHaveIcon = diceArray.some((dice) => !!dice.icon);
 
-  for (let i = 0; i < diceArray.length; i += maxRowLength) {
-    outerDiceArray.push(diceArray.slice(i, i + maxRowLength));
-  }
+  const attachment = await generateDiceAttachment(diceArray, shouldHaveIcon);
 
-  const canvasWidth =
-    diceArray.length <= maxRowLength
-      ? defaultImageDimension * diceArray.length
-      : defaultImageDimension * maxRowLength;
-
-  const canvas = Canvas.createCanvas(
-    canvasWidth,
-    defaultImageDimension * outerDiceArray.length
-  );
-
-  const ctx = canvas.getContext("2d");
-  const outerPromiseArray = outerDiceArray.map((array, outerIndex) => {
-    return array.map(async (dice, index) => {
-      const image = await Canvas.loadImage(
-        `${config.botPath}assets/d${dice.sides}/d${
-          dice.sides
-        }-${getRandomColor()}-${dice.rolled}.svg`
-      );
-      ctx.drawImage(
-        image,
-        defaultImageDimension * index,
-        outerIndex * defaultImageDimension,
-        defaultImageDimension,
-        defaultImageDimension
-      );
-    });
-  });
-
-  try {
-    await Promise.all(outerPromiseArray.map(Promise.all, Promise));
-  } catch (err) {
-    console.log(err);
-  }
-
-  const attachment = new Discord.MessageAttachment(
-    canvas.toBuffer("image/png", { compressionLevel: 0 }),
-    "currentDice.png"
-  );
-
-  const embed = flags?.t
-    ? new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .attachFiles(attachment)
-        .setTitle(flags?.t)
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${message.author.username} | ${resultMap
-            .map((roll) => `${roll.value}: ${roll.result}`)
-            .join(" / ")}`
-        )
-    : new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .attachFiles(attachment)
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${message.author.username} | ${resultMap
-            .map((roll) => `${roll.value}: ${roll.result}`)
-            .join(" / ")}`
-        );
+  const embed =
+    typeof flags?.t === "string"
+      ? new Discord.MessageEmbed()
+          .setColor("#966F33")
+          .attachFiles(attachment)
+          .setTitle(flags?.t)
+          .setImage("attachment://currentDice.png")
+          .setFooter(
+            `${message.author.username} | ${resultArray
+              .map((roll) => `${roll.value}: ${roll.result}`)
+              .join(" / ")}`
+          )
+      : new Discord.MessageEmbed()
+          .setColor("#966F33")
+          .attachFiles(attachment)
+          .setImage("attachment://currentDice.png")
+          .setFooter(
+            `${message.author.username} | ${resultArray
+              .map((roll) => `${roll.value}: ${roll.result}`)
+              .join(" / ")}`
+          );
 
   const sendMessageAndStopTyping = () => {
     message.channel.send(embed);
@@ -173,6 +95,6 @@ module.exports = {
   usage:
     "[dice notation], e.g. 1d20 2d12. Type `!roll` with no arguments for a detailed explanation",
   execute(message, args, _, flags) {
-    rollDice(message, args, flags);
+    roll(message, args, flags);
   }
 };
