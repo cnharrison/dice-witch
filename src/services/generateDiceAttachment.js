@@ -7,7 +7,10 @@ const maxRowLength = 7;
 const defaultDiceDimension = 90;
 const defaultIconDimension = 30;
 
-const generateDiceAttachment = async (diceArray, shouldHaveIcon) => {
+const generateDiceAttachment = async (diceArray) => {
+  if (!diceArray) return;
+  const shouldHaveIcon = diceArray.some((dice) => !!dice.icon);
+
   let outerDiceArray = [];
   for (let i = 0; i < diceArray.length; i += maxRowLength) {
     outerDiceArray.push(diceArray.slice(i, i + maxRowLength));
@@ -78,4 +81,4 @@ const generateDiceAttachment = async (diceArray, shouldHaveIcon) => {
   );
 };
 
-module.exports = { generateDiceAttachment };
+module.exports = generateDiceAttachment;

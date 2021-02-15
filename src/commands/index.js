@@ -2,7 +2,6 @@ const config = require("../../config.json");
 const fs = require("fs");
 const path = require("path");
 const Discord = require("discord.js");
-const yargs = require("yargs");
 
 module.exports = function (discord, logOutputChannel) {
   discord.commands = new Discord.Collection();
@@ -20,9 +19,6 @@ module.exports = function (discord, logOutputChannel) {
     const prefix = config.prefix;
     if (!message.content.startsWith(prefix) || message.author.bot) return;
 
-    const flags = yargs(message.content.slice(prefix.length))
-      .help(false)
-      .version(false).argv;
     const args = message.content.slice(prefix.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
 
@@ -35,7 +31,7 @@ module.exports = function (discord, logOutputChannel) {
     if (!command) return;
 
     try {
-      command.execute(message, args, discord, flags);
+      command.execute(message, args, discord);
       console.log(
         message.guild?.id
           ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`

@@ -30,4 +30,4 @@ const rollDice = (args, availableDice) => {
   return { diceArray, resultArray };
 };
 
-module.exports = { rollDice };
+module.exports = rollDice;
