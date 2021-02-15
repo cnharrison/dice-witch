@@ -31,7 +31,7 @@ module.exports = function (discord, logOutputChannel) {
     if (!command) return;
 
     try {
-      command.execute(message, args, discord);
+      command.execute(message, args, discord, logOutputChannel);
       console.log(
         message.guild?.id
           ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`

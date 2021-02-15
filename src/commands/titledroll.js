@@ -6,12 +6,12 @@ const { getRollTitle, sendHelperMessage } = require("../controllers");
 module.exports = {
   name: "titledroll",
   aliases: ["tr"],
-  description: "Throw some dice with a title",
+  description: "Throw some dice with a displayed title",
   usage:
     "Works exactly like roll, but you'll be prompted for a title before performing the roll",
-  async execute(message, args) {
+  async execute(message, args, _, logOutputChannel) {
     if (!args.length) return sendHelperMessage(message, module.exports.name);
-    const title = await getRollTitle(message);
+    const title = await getRollTitle(message, logOutputChannel);
     if (title) {
       const { diceArray, resultArray } = rollDice(args, availableDice);
       const attachment = await generateDiceAttachment(diceArray);

@@ -17,7 +17,7 @@ const sendHelperMessage = (message, name) => {
       },
       {
         name: "Drop/keep dice AKA advantage rolls",
-        value: `\`!${name} 3d20b2\`: roll three twenty-sided dice and keep the best two\n\`!roll 5d8w1\`: roll five eight-sided dice and keep the worst one`
+        value: `\`!${name} 3d20b2\`: roll three twenty-sided dice and keep the best two\n\`!${name} 5d8w1\`: roll five eight-sided dice and keep the worst one`
       }
     )
     .addField(
