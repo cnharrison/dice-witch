@@ -43,7 +43,7 @@ const getRollTitle = async (message, logOutputChannel) => {
   } catch (err) {
     console.error(err);
     message.channel.send(
-      `didn't get a reaponse from ${message.author} -- roll cancelled`
+      `didn't get a reaponse from ${message.author} -- roll cancelled 😢`
     );
     const embed = new Discord.MessageEmbed()
       .setColor("#FF0000")
