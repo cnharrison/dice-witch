@@ -1,4 +1,4 @@
-const getRollTitle = require("./getRolltitle");
+const getRollTitle = require("./getRollTitle");
 const sendDiceMessage = require("./sendDiceMessage");
 const sendHelperMessage = require("./sendHelperMessage");
 
