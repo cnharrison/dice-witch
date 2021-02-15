@@ -14,7 +14,13 @@ const getRollTitle = async (message) => {
       time: 30000
     });
     if (!collected) return;
-    title = collected.first().content;
+    if (collected.first().content.length > 256) {
+      message.channel.send(
+        `that title's too long, ${message.author} -- roll cancelled`
+      );
+      return;
+    }
+    title = collected.first().cleanContent;
     collected.first().react("✅");
   } catch (err) {
     console.error(err);
