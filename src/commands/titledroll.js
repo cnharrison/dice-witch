@@ -1,7 +1,10 @@
 const { availableDice } = require("../constants");
-const { sendDiceMessage } = require("../controllers");
 const { rollDice, generateDiceAttachment } = require("../services");
-const { getRollTitle, sendHelperMessage } = require("../controllers");
+const {
+  getRollTitle,
+  sendHelperMessage,
+  sendDiceMessage
+} = require("../controllers");
 
 module.exports = {
   name: "titledroll",
