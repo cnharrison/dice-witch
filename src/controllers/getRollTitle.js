@@ -31,7 +31,7 @@ const getRollTitle = async (message, logOutputChannel) => {
       return;
     }
     title = collected.first().cleanContent;
-    collected.first().react("✅");
+    collected.first().react("👀");
     const embed = new Discord.MessageEmbed()
       .setColor("#99999")
       .setDescription(
