@@ -19,7 +19,7 @@ You can install Dice Witch on your Discord server by clicking [here](https://dis
   - `!roll 3d20b2`: Roll three twenty-sided dice and keep the best two
   - `!roll 5d8w1`: Roll five eight-sided dice and keep the worst one
 - Titled rolls
-  - `!titledroll 1d20`: Roll one twenty-sided die with at title. You'll be prompted for the title after typing the command, and the roll will only be perfomed once you've given it. Any `!roll` can also be a `!titledroll`. You have 30 seconds to answer the prompt.
+  - `!titledroll 1d20`: Roll one twenty-sided die with a title. You'll be prompted for the title after typing the command, and the roll will only be perfomed once you've given it. Any `!roll` can also be a `!titledroll`. You have 30 seconds to answer the prompt.
 
 # Contributing
 
