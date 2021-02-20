@@ -39,6 +39,12 @@ const generateDiceAttachment = async (diceArray) => {
           dice.sides
         }-${getRandomColor()}-${dice.rolled}.svg`
       );
+      try {
+        image = await Canvas.loadImage(toImport);
+      } catch (err) {
+        console.error(err);
+      }
+
       if (shouldHaveIcon) {
         check = await Canvas.loadImage(
           `${config.botPath}assets/greencheck.svg`
