@@ -20,8 +20,7 @@ module.exports = {
     if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name);
     } else if (diceArray.length > maxDice) {
-      sendDiceOverMaxMessage(message);
-      return;
+      return sendDiceOverMaxMessage(message);
     }
     const title = await getRollTitle(message, logOutputChannel);
     if (title) {

@@ -19,8 +19,7 @@ module.exports = {
     if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name);
     } else if (diceArray.length > maxDice) {
-      sendDiceOverMaxMessage(message);
-      return;
+      return sendDiceOverMaxMessage(message);
     }
     sendDiceRolledMessage(message, diceArray);
     const attachment = await generateDiceAttachment(diceArray);
