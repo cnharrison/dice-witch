@@ -1,5 +1,10 @@
-const { availableDice } = require("../constants");
-const { sendDiceMessage, sendHelperMessage } = require("../controllers");
+const { availableDice, maxDice } = require("../constants");
+const {
+  sendDiceResultMessage,
+  sendHelperMessage,
+  sendDiceRolledMessage,
+  sendDiceOverMaxMessage
+} = require("../controllers");
 const { rollDice, generateDiceAttachment } = require("../services");
 
 module.exports = {
@@ -11,9 +16,14 @@ module.exports = {
   async execute(message, args) {
     if (!args.length) return sendHelperMessage(message, module.exports.name);
     const { diceArray, resultArray } = rollDice(args, availableDice);
-    if (!diceArray.length)
+    if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name);
+    } else if (diceArray.length > maxDice) {
+      sendDiceOverMaxMessage(message);
+      return;
+    }
+    sendDiceRolledMessage(message, diceArray);
     const attachment = await generateDiceAttachment(diceArray);
-    sendDiceMessage(diceArray, resultArray, message, attachment);
+    sendDiceResultMessage(resultArray, message, attachment);
   }
 };

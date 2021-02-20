@@ -1,5 +1,13 @@
 const getRollTitle = require("./getRollTitle");
-const sendDiceMessage = require("./sendDiceMessage");
+const sendDiceResultMessage = require("./sendDiceResultMessage");
 const sendHelperMessage = require("./sendHelperMessage");
+const sendDiceRolledMessage = require("./sendDiceRolledMessage");
+const sendDiceOverMaxMessage = require("./sendDiceOverMaxMessage");
 
-module.exports = { getRollTitle, sendDiceMessage, sendHelperMessage };
+module.exports = {
+  getRollTitle,
+  sendDiceResultMessage,
+  sendHelperMessage,
+  sendDiceRolledMessage,
+  sendDiceOverMaxMessage
+};

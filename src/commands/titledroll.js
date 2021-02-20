@@ -1,10 +1,12 @@
-const { availableDice } = require("../constants");
-const { rollDice, generateDiceAttachment } = require("../services");
+const { availableDice, maxDice } = require("../constants");
 const {
-  getRollTitle,
+  sendDiceResultMessage,
   sendHelperMessage,
-  sendDiceMessage
+  sendDiceRolledMessage,
+  sendDiceOverMaxMessage,
+  getRollTitle
 } = require("../controllers");
+const { rollDice, generateDiceAttachment } = require("../services");
 
 module.exports = {
   name: "titledroll",
@@ -15,12 +17,17 @@ module.exports = {
   async execute(message, args, _, logOutputChannel) {
     if (!args.length) return sendHelperMessage(message, module.exports.name);
     const { diceArray, resultArray } = rollDice(args, availableDice);
-    if (!diceArray.length)
+    if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name);
+    } else if (diceArray.length > maxDice) {
+      sendDiceOverMaxMessage(message);
+      return;
+    }
     const title = await getRollTitle(message, logOutputChannel);
     if (title) {
+      sendDiceRolledMessage(message, diceArray);
       const attachment = await generateDiceAttachment(diceArray);
-      sendDiceMessage(diceArray, resultArray, message, attachment, title);
+      sendDiceResultMessage(resultArray, message, attachment, title);
     }
   }
 };
