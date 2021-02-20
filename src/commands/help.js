@@ -21,7 +21,7 @@ module.exports = {
         .setDescription(data, { split: true })
         .addField(
           "\u200B",
-          "[Invite me](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot) | [Support server](https://discord.gg/7FT6VT5x)"
+          "[Invite me](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot) | [Support server](https://discord.gg/BdyQG7hZZn)"
         );
 
       return message.channel.send(embed);
@@ -52,7 +52,7 @@ module.exports = {
       .setDescription(data, { split: true })
       .addField(
         "\u200B",
-        "[Invite me](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot) | [Support server](https://discord.gg/7FT6VT5x)"
+        "[Invite me](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot) | [Support server](https://discord.gg/BdyQG7hZZn)"
       );
 
     return message.channel.send(embed);

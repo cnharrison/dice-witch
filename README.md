@@ -27,7 +27,7 @@ PRs are welcome! 🙂
 
 # Support
 
-If you find a bug, please open a Github Issue. You can also join the support Discord [here](https://discord.gg/7FT6VT5x).
+If you find a bug, please open a Github Issue. You can also join the support Discord [here](https://discord.gg/BdyQG7hZZn).
 
 # Roadmap
 
