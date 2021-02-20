@@ -1,10 +1,12 @@
 const config = require("../../config.json");
 const { getRandomColor } = require("../helpers");
+const randomColor = require("randomcolor");
 const Canvas = require("canvas");
 const Discord = require("discord.js");
+const generateDie = require("./generateDie/generateDie");
 
 const maxRowLength = 7;
-const defaultDiceDimension = 90;
+const defaultDiceDimension = 100;
 const defaultIconDimension = 30;
 
 const generateDiceAttachment = async (diceArray) => {
@@ -34,17 +36,17 @@ const generateDiceAttachment = async (diceArray) => {
     return array.map(async (dice, index) => {
       let check;
       let x;
-      const image = await Canvas.loadImage(
-        `${config.botPath}assets/d${dice.sides}/d${
-          dice.sides
-        }-${getRandomColor()}-${dice.rolled}.svg`
+      const toImport = await generateDie(
+        dice.sides,
+        dice.rolled,
+        randomColor({ luminosity: "bright" }),
+        "#000000"
       );
       try {
         image = await Canvas.loadImage(toImport);
       } catch (err) {
         console.error(err);
       }
-
       if (shouldHaveIcon) {
         check = await Canvas.loadImage(
           `${config.botPath}assets/greencheck.svg`
