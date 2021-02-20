@@ -9,8 +9,10 @@ module.exports = {
   usage:
     "[dice notation], e.g. 1d20 2d12. Type `!roll` with no arguments for a detailed explanation",
   async execute(message, args) {
-    if (!args.length) sendHelperMessage(message, module.exports.name);
+    if (!args.length) return sendHelperMessage(message, module.exports.name);
     const { diceArray, resultArray } = rollDice(args, availableDice);
+    if (!diceArray.length)
+      return sendHelperMessage(message, module.exports.name);
     const attachment = await generateDiceAttachment(diceArray);
     sendDiceMessage(diceArray, resultArray, message, attachment);
   }
