@@ -1,8 +1,7 @@
-const config = require("../../config.json");
-const { getRandomColor } = require("../helpers");
 const randomColor = require("randomcolor");
 const Canvas = require("canvas");
 const Discord = require("discord.js");
+const generateIcon = require("./generateIcon");
 const generateDie = require("./generateDie/generateDie");
 
 const maxRowLength = 7;
@@ -36,19 +35,19 @@ const generateDiceAttachment = async (diceArray) => {
       return array.map(async (dice, index) => {
         let check;
         let x;
-        const toImport = await generateDie(
+        let image;
+        const toLoad = await generateDie(
           dice.sides,
           dice.rolled,
-          randomColor({ luminosity: "bright" }),
+          randomColor({ luminosity: "light" }),
           "#000000"
         );
-
-        image = await Canvas.loadImage(toImport);
+        image = await Canvas.loadImage(toLoad);
         if (shouldHaveIcon) {
-          check = await Canvas.loadImage(
-            `${config.botPath}assets/greencheck.svg`
-          );
-          x = await Canvas.loadImage(`${config.botPath}assets/redx.svg`);
+          const checkToLoad = await generateIcon("check");
+          const xToLoad = await generateIcon("x");
+          check = await Canvas.loadImage(checkToLoad);
+          x = await Canvas.loadImage(xToLoad);
         }
 
         ctx.drawImage(
