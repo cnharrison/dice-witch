@@ -13,7 +13,7 @@ module.exports = {
   aliases: ["tr"],
   description: "Throw some dice with a displayed title",
   usage:
-    "Works exactly like roll, but you'll be prompted for a title before performing the roll",
+    "-- Works exactly like roll, but you'll be prompted for a title before performing the roll",
   async execute(message, args, _, logOutputChannel) {
     if (!args.length) return sendHelperMessage(message, module.exports.name);
     const { diceArray, resultArray } = rollDice(args, availableDice);

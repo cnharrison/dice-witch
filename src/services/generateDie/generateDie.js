@@ -73,192 +73,72 @@ const {
 } = require("./dice/d4");
 
 const generateDie = async (sides, number, fill, outline, width, height) => {
+  const dice = {
+    201: generateD201(fill, outline, width, height),
+    202: generateD202(fill, outline, width, height),
+    203: generateD203(fill, outline, width, height),
+    204: generateD204(fill, outline, width, height),
+    205: generateD205(fill, outline, width, height),
+    206: generateD206(fill, outline, width, height),
+    207: generateD207(fill, outline, width, height),
+    208: generateD208(fill, outline, width, height),
+    209: generateD209(fill, outline, width, height),
+    2010: generateD2010(fill, outline, width, height),
+    2011: generateD2011(fill, outline, width, height),
+    2012: generateD2012(fill, outline, width, height),
+    2013: generateD2013(fill, outline, width, height),
+    2014: generateD2014(fill, outline, width, height),
+    2015: generateD2015(fill, outline, width, height),
+    2016: generateD2016(fill, outline, width, height),
+    2017: generateD2017(fill, outline, width, height),
+    2018: generateD2018(fill, outline, width, height),
+    2019: generateD2019(fill, outline, width, height),
+    2020: generateD2020(fill, outline, width, height),
+    121: generateD121(fill, outline, width, height),
+    122: generateD122(fill, outline, width, height),
+    123: generateD123(fill, outline, width, height),
+    124: generateD124(fill, outline, width, height),
+    125: generateD125(fill, outline, width, height),
+    126: generateD126(fill, outline, width, height),
+    127: generateD127(fill, outline, width, height),
+    128: generateD128(fill, outline, width, height),
+    129: generateD129(fill, outline, width, height),
+    1210: generateD1210(fill, outline, width, height),
+    1211: generateD1211(fill, outline, width, height),
+    1212: generateD1212(fill, outline, width, height),
+    101: generateD101(fill, outline, width, height),
+    102: generateD102(fill, outline, width, height),
+    103: generateD103(fill, outline, width, height),
+    104: generateD104(fill, outline, width, height),
+    105: generateD105(fill, outline, width, height),
+    106: generateD106(fill, outline, width, height),
+    107: generateD107(fill, outline, width, height),
+    108: generateD108(fill, outline, width, height),
+    109: generateD109(fill, outline, width, height),
+    1010: generateD1010(fill, outline, width, height),
+    81: generateD81(fill, outline, width, height),
+    82: generateD82(fill, outline, width, height),
+    83: generateD83(fill, outline, width, height),
+    84: generateD84(fill, outline, width, height),
+    85: generateD85(fill, outline, width, height),
+    86: generateD86(fill, outline, width, height),
+    87: generateD87(fill, outline, width, height),
+    88: generateD88(fill, outline, width, height),
+    61: generateD61(fill, outline, width, height),
+    62: generateD62(fill, outline, width, height),
+    63: generateD63(fill, outline, width, height),
+    64: generateD64(fill, outline, width, height),
+    65: generateD65(fill, outline, width, height),
+    66: generateD66(fill, outline, width, height),
+    41: generateD41(fill, outline, width, height),
+    42: generateD42(fill, outline, width, height),
+    43: generateD43(fill, outline, width, height),
+    44: generateD44(fill, outline, width, height)
+  };
+
+  const image = dice[`${sides}${number}`];
+
   try {
-    let image;
-    switch (true) {
-      case sides === 20 && number === 1:
-        image = generateD201(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 2:
-        image = generateD202(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 3:
-        image = generateD203(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 4:
-        image = generateD204(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 5:
-        image = generateD205(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 6:
-        image = generateD206(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 7:
-        image = generateD207(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 8:
-        image = generateD208(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 9:
-        image = generateD209(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 10:
-        image = generateD2010(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 11:
-        image = generateD2011(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 12:
-        image = generateD2012(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 13:
-        image = generateD2013(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 14:
-        image = generateD2014(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 15:
-        image = generateD2015(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 16:
-        image = generateD2016(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 17:
-        image = generateD2017(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 18:
-        image = generateD2018(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 19:
-        image = generateD2019(fill, outline, width, height);
-        break;
-      case sides === 20 && number === 20:
-        image = generateD2020(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 1:
-        image = generateD121(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 2:
-        image = generateD122(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 3:
-        image = generateD123(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 4:
-        image = generateD124(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 5:
-        image = generateD125(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 6:
-        image = generateD126(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 7:
-        image = generateD127(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 8:
-        image = generateD128(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 9:
-        image = generateD129(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 10:
-        image = generateD1210(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 11:
-        image = generateD1211(fill, outline, width, height);
-        break;
-      case sides === 12 && number === 12:
-        image = generateD1212(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 1:
-        image = generateD101(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 2:
-        image = generateD102(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 3:
-        image = generateD103(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 4:
-        image = generateD104(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 5:
-        image = generateD105(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 6:
-        image = generateD106(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 7:
-        image = generateD107(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 8:
-        image = generateD108(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 9:
-        image = generateD109(fill, outline, width, height);
-        break;
-      case sides === 10 && number === 10:
-        image = generateD1010(fill, outline, width, height);
-        break;
-      case sides === 8 && number === 1:
-        image = generateD81(fill, outline, width, height);
-        break;
-      case sides === 8 && number === 2:
-        image = generateD82(fill, outline, width, height);
-        break;
-      case sides === 8 && number === 3:
-        image = generateD83(fill, outline, width, height);
-        break;
-      case sides === 8 && number === 4:
-        image = generateD84(fill, outline, width, height);
-        break;
-      case sides === 8 && number === 5:
-        image = generateD85(fill, outline, width, height);
-        break;
-      case sides === 8 && number === 6:
-        image = generateD86(fill, outline, width, height);
-        break;
-      case sides === 8 && number === 7:
-        image = generateD87(fill, outline, width, height);
-        break;
-      case sides === 8 && number === 8:
-        image = generateD88(fill, outline, width, height);
-        break;
-      case sides === 6 && number === 1:
-        image = generateD61(fill, outline, width, height);
-        break;
-      case sides === 6 && number === 2:
-        image = generateD62(fill, outline, width, height);
-        break;
-      case sides === 6 && number === 3:
-        image = generateD63(fill, outline, width, height);
-        break;
-      case sides === 6 && number === 4:
-        image = generateD64(fill, outline, width, height);
-        break;
-      case sides === 6 && number === 5:
-        image = generateD65(fill, outline, width, height);
-        break;
-      case sides === 6 && number === 6:
-        image = generateD66(fill, outline, width, height);
-        break;
-      case sides === 4 && number === 1:
-        image = generateD41(fill, outline, width, height);
-        break;
-      case sides === 4 && number === 2:
-        image = generateD42(fill, outline, width, height);
-        break;
-      case sides === 4 && number === 3:
-        image = generateD43(fill, outline, width, height);
-        break;
-      case sides === 4 && number === 4:
-        image = generateD44(fill, outline, width, height);
-        break;
-      default:
-        return null;
-    }
     return await svg2png({
       input: image,
       encoding: "buffer",
