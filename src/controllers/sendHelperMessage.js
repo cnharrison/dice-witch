@@ -1,5 +1,6 @@
 const { availableDice, maxDice } = require("../constants");
 const Discord = require("discord.js");
+const { inviteLink, supportServerLink } = require("../../config.json");
 
 const sendHelperMessage = (message, name) => {
   try {
@@ -23,7 +24,7 @@ const sendHelperMessage = (message, name) => {
       )
       .addField(
         "\u200B",
-        `_Sent to ${message.author.username}_ | [Invite me](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot) | [Support server](https://discord.gg/BdyQG7hZZn)`
+        `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
 
     return message.channel.send(embed);

@@ -4,9 +4,14 @@ const {
   sendHelperMessage,
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
-  getRollTitle
+  getRollTitle,
+  sendNeedPermissionMessage
 } = require("../controllers");
-const { rollDice, generateDiceAttachment } = require("../services");
+const {
+  rollDice,
+  generateDiceAttachment,
+  checkForAttachPermission
+} = require("../services");
 
 module.exports = {
   name: "titledroll",
@@ -16,6 +21,9 @@ module.exports = {
     "-- Works exactly like roll, but you'll be prompted for a title before performing the roll",
   async execute(message, args, _, logOutputChannel) {
     if (!args.length) return sendHelperMessage(message, module.exports.name);
+    if (!checkForAttachPermission(message)) {
+      return sendNeedPermissionMessage(message, logOutputChannel);
+    }
     const { diceArray, resultArray } = rollDice(args, availableDice);
     if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name);

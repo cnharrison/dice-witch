@@ -3,9 +3,14 @@ const {
   sendDiceResultMessage,
   sendHelperMessage,
   sendDiceRolledMessage,
-  sendDiceOverMaxMessage
+  sendDiceOverMaxMessage,
+  sendNeedPermissionMessage
 } = require("../controllers");
-const { rollDice, generateDiceAttachment } = require("../services");
+const {
+  rollDice,
+  generateDiceAttachment,
+  checkForAttachPermission
+} = require("../services");
 
 module.exports = {
   name: "roll",
@@ -13,8 +18,11 @@ module.exports = {
   description: "Throw some dice",
   usage:
     "[dice notation], e.g. 1d20 2d12. Type `!roll` with no arguments for a detailed explanation",
-  async execute(message, args) {
+  async execute(message, args, _, logOutputChannel) {
     if (!args.length) return sendHelperMessage(message, module.exports.name);
+    if (!checkForAttachPermission(message)) {
+      return sendNeedPermissionMessage(message, logOutputChannel);
+    }
     const { diceArray, resultArray } = rollDice(args, availableDice);
     if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name);

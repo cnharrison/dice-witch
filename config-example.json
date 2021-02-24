@@ -3,5 +3,7 @@
   "discordToken": "",
   "logOutputChannel": "",
   "adminID": "",
-  "prefix": "!"
+  "prefix": "!",
+  "supportServerLink": "",
+  "inviteLink": ""
 }
