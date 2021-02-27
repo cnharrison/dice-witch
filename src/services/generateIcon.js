@@ -19,6 +19,12 @@ const greenCheck = `
 </svg>
 `;
 
+const grayCircle = `
+<svg height="100" width="100">
+  <circle cx="50" cy="50" r="40" stroke="#70808a" stroke-width="3" fill="#70808a" />
+</svg>
+`;
+
 const generateIcon = async (iconType) => {
   try {
     let image;
@@ -29,8 +35,11 @@ const generateIcon = async (iconType) => {
       case "x":
         image = redX;
         break;
+      case "circle":
+        image = grayCircle;
+        break;
       default:
-        image = redX;
+        image = grayCircle;
         break;
     }
     return await svg2png({

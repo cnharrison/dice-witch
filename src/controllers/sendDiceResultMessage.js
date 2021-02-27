@@ -13,7 +13,7 @@ const generateEmbed = (resultArray, attachment, message, title) => {
           .attachFiles(attachment)
           .setImage("attachment://currentDice.png")
           .setFooter(
-            `${message.author.username} | ${resultArray
+            `sent to ${message.author.username} \n ${resultArray
               .map((roll) => `${roll.value}: ${roll.result}`)
               .join(" / ")}`
           )
@@ -22,11 +22,11 @@ const generateEmbed = (resultArray, attachment, message, title) => {
           .attachFiles(attachment)
           .setImage("attachment://currentDice.png")
           .setFooter(
-            `${message.author.username} | ${resultArray
+            `${resultArray
               .map((roll) => `${roll.value}: ${roll.result}`)
-              .join(" / ")} ${
-              resultArray.length > 1 ? `/ grand total: ${grandTotal}` : ""
-            }`
+              .join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total: ${grandTotal}` : ""
+            }\nsent to ${message.author.username}`
           );
   } catch (err) {
     console.log(err);
