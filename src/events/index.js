@@ -1,19 +1,29 @@
-const Discord = require("discord.js");
+const { logEvent } = require("../services");
 
 module.exports = function (discord, logOutputChannel) {
   try {
     discord.on("guildCreate", (guild) => {
-      const embed = new Discord.MessageEmbed()
-        .setColor("#00FF00")
-        .setDescription(`**added** to server: **${guild.name}**`);
-      logOutputChannel.send(embed).catch((err) => console.error(err));
+      logEvent(
+        "guildAdd",
+        logOutputChannel,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        guild
+      );
     });
 
     discord.on("guildDelete", (guild) => {
-      const embed = new Discord.MessageEmbed()
-        .setColor("#FF0000")
-        .setDescription(`**removed** from server: **${guild.name}**`);
-      logOutputChannel.send(embed).catch((err) => console.error(err));
+      logEvent(
+        "guildRemove",
+        logOutputChannel,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        guild
+      );
     });
   } catch (err) {
     console.error(err);

@@ -34,7 +34,14 @@ module.exports = {
     if (title) {
       sendDiceRolledMessage(message, diceArray);
       const attachment = await generateDiceAttachment(diceArray);
-      sendDiceResultMessage(resultArray, message, attachment, title);
+      sendDiceResultMessage(
+        resultArray,
+        message,
+        attachment,
+        title,
+        undefined,
+        logOutputChannel
+      );
     }
   }
 };

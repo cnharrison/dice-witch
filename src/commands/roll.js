@@ -19,7 +19,13 @@ module.exports = {
   usage:
     "[dice notation], e.g. 1d20 2d12. Type `!roll` with no arguments for a detailed explanation",
   async execute(message, args, _, logOutputChannel) {
-    if (!args.length) return sendHelperMessage(message, module.exports.name);
+    if (!args.length)
+      return sendHelperMessage(
+        message,
+        module.exports.name,
+        logOutputChannel,
+        args
+      );
     if (!checkForAttachPermission(message)) {
       return sendNeedPermissionMessage(message, logOutputChannel);
     }
@@ -31,6 +37,13 @@ module.exports = {
     }
     sendDiceRolledMessage(message, diceArray);
     const attachment = await generateDiceAttachment(diceArray);
-    sendDiceResultMessage(resultArray, message, attachment);
+    sendDiceResultMessage(
+      resultArray,
+      message,
+      attachment,
+      undefined,
+      undefined,
+      logOutputChannel
+    );
   }
 };

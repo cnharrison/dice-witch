@@ -1,4 +1,4 @@
-const Discord = require("discord.js");
+const { logEvent } = require("../services");
 
 const sendNeedPermissionMessage = (message, logOutputChannel) => {
   message.channel.send(

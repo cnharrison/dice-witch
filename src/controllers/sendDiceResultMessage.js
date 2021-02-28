@@ -1,5 +1,6 @@
 const Discord = require("discord.js");
 const { getRandomNumber } = require("../helpers");
+const { logEvent } = require("../services");
 
 const generateEmbed = (resultArray, attachment, message, title) => {
   const grandTotal = resultArray.reduce((prev, cur) => {
@@ -13,7 +14,7 @@ const generateEmbed = (resultArray, attachment, message, title) => {
           .attachFiles(attachment)
           .setImage("attachment://currentDice.png")
           .setFooter(
-            `${message.author.username} | ${resultArray
+            `sent to ${message.author.username} \n ${resultArray
               .map((roll) => `${roll.value}: ${roll.result}`)
               .join(" / ")}`
           )
@@ -22,11 +23,11 @@ const generateEmbed = (resultArray, attachment, message, title) => {
           .attachFiles(attachment)
           .setImage("attachment://currentDice.png")
           .setFooter(
-            `${message.author.username} | ${resultArray
+            `${resultArray
               .map((roll) => `${roll.value}: ${roll.result}`)
-              .join(" / ")} ${
-              resultArray.length > 1 ? `/ grand total: ${grandTotal}` : ""
-            }`
+              .join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total: ${grandTotal}` : ""
+            }\nsent to ${message.author.username}`
           );
   } catch (err) {
     console.log(err);
@@ -38,7 +39,8 @@ const sendDiceResultMessage = async (
   message,
   attachment,
   title,
-  discord
+  _,
+  logOutputChannel
 ) => {
   try {
     const embed = generateEmbed(resultArray, attachment, message, title);
@@ -46,6 +48,16 @@ const sendDiceResultMessage = async (
     const sendMessageAndStopTyping = async () => {
       try {
         await message.channel.send(embed);
+        logEvent(
+          "sentRollResultMessage",
+          logOutputChannel,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          embed
+        );
         message.channel.stopTyping();
       } catch (err) {
         message.channel.stopTyping();

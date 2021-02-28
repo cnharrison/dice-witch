@@ -1,11 +1,23 @@
 const Roll = require("roll");
 
+const getIcon = (i, shouldHaveIcon, bestOrWorstOf) => {
+  if (shouldHaveIcon) {
+    if (i < bestOrWorstOf) {
+      return "check";
+    } else {
+      return "x";
+    }
+  }
+  return null;
+};
+
 const rollDice = (args, availableDice) => {
   try {
     let diceArray = [];
     let resultArray = [];
 
     for ([index, value] of args.entries()) {
+      let groupArray = [];
       roll = new Roll();
 
       let parsedRoll;
@@ -20,12 +32,13 @@ const rollDice = (args, availableDice) => {
         shouldHaveIcon = ["best-of", "worst-of"].includes(type);
         resultArray.push({ value, result: rolls.result });
         for (i = 0; i < parsedRoll.quantity; i++) {
-          diceArray.push({
+          groupArray.push({
             sides: parsedRoll.sides,
             rolled: rolls.rolled[i],
-            icon: shouldHaveIcon && i < bestOrWorstOf ? "check" : null
+            icon: getIcon(i, shouldHaveIcon, bestOrWorstOf)
           });
         }
+        diceArray.push(groupArray);
       }
     }
     return { diceArray, resultArray };

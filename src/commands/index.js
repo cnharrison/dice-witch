@@ -1,12 +1,8 @@
-const {
-  prefix,
-  botPath,
-  supportServerLink,
-  adminID
-} = require("../../config.json");
+const Discord = require("discord.js");
+const { prefix, botPath, supportServerLink } = require("../../config.json");
+const { logEvent } = require("../services");
 const fs = require("fs");
 const path = require("path");
-const Discord = require("discord.js");
 
 module.exports = function (discord, logOutputChannel) {
   discord.commands = new Discord.Collection();
@@ -36,37 +32,15 @@ module.exports = function (discord, logOutputChannel) {
 
     try {
       command.execute(message, args, discord, logOutputChannel);
-      console.log(
-        message.guild?.id
-          ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
-          : `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
-      );
-
-      const embed = new Discord.MessageEmbed()
-        .setColor("#99999")
-        .setDescription(
-          message.guild?.id
-            ? `received command **${command.name}**: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}**`
-            : `received command **${command.name}**: ${args} from **${message.author.username}** in **DM**`
-        );
-      logOutputChannel.send(embed);
+      logEvent("receivedCommand", logOutputChannel, message, command, args);
     } catch (error) {
-      console.error(error);
-      const embed = new Discord.MessageEmbed()
-        .setColor("#FF0000")
+      embed = new Discord.MessageEmbed()
+        .setColor(errorColor)
         .setDescription(
           `error 😥 please join my [support server](${supportServerLink}) and report this`
         );
       message.channel.send(embed);
-      sendReactions();
-      const logEmbed = new Discord.MessageEmbed()
-        .setColor("#FF0000")
-        .setDescription(
-          message.guild?.id
-            ? `ERROR encountered: **${command.name}**: ${args} from **${message.author.username}** in channel **${message.channel.name}** on **${message.guild}** <@${adminID}>`
-            : `ERROR encountered: **${command.name}**: ${args} from **${message.author.username}** in **DM** ${adminID}`
-        );
-      logOutputChannel.send(logEmbed);
+      logEvent("criticalError", logOutputChannel, message, command, args);
     }
   });
 };
