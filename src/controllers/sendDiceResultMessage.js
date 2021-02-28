@@ -1,9 +1,8 @@
 const Discord = require("discord.js");
-const { getRandomNumber, getAuthorDisplayName } = require("../helpers");
+const { getRandomNumber } = require("../helpers");
 const { logEvent } = require("../services");
 
 const generateEmbed = async (resultArray, attachment, message, title) => {
-  const displayName = await getAuthorDisplayName(message);
   const grandTotal = resultArray.reduce((prev, cur) => {
     return prev + cur.result;
   }, 0);
@@ -15,9 +14,11 @@ const generateEmbed = async (resultArray, attachment, message, title) => {
           .attachFiles(attachment)
           .setImage("attachment://currentDice.png")
           .setFooter(
-            `sent to ${displayName} \n ${resultArray
+            `${resultArray
               .map((roll) => `${roll.value}: ${roll.result}`)
-              .join(" / ")}`
+              .join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total: ${grandTotal}` : ""
+            }\nsent to ${message.author.username}`
           )
       : new Discord.MessageEmbed()
           .setColor("#966F33")
@@ -28,7 +29,7 @@ const generateEmbed = async (resultArray, attachment, message, title) => {
               .map((roll) => `${roll.value}: ${roll.result}`)
               .join("\n")} ${
               resultArray.length > 1 ? `\ngrand total: ${grandTotal}` : ""
-            }\nsent to ${displayName}`
+            }\nsent to ${message.author.username}`
           );
   } catch (err) {
     console.log(err);

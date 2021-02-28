@@ -1,13 +1,11 @@
 const Discord = require("discord.js");
 const { inviteLink, supportServerLink } = require("../../config.json");
-const { getAuthorDisplayName } = require("../helpers");
 
 module.exports = {
   name: "status",
   description: "Get ping and server info",
   aliases: ["ping"],
   async execute(message, _, discord) {
-    const displayName = await getAuthorDisplayName(message);
     const embed = new Discord.MessageEmbed()
       .setColor("#99999")
       .setTitle("Status")
@@ -18,7 +16,7 @@ module.exports = {
       )
       .addField(
         "\u200B",
-        `_Sent to ${displayName}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
+        `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
 
     return message.channel.send(embed);
