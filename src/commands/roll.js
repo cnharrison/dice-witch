@@ -20,12 +20,7 @@ module.exports = {
     "[dice notation], e.g. 1d20 2d12. Type `!roll` with no arguments for a detailed explanation",
   async execute(message, args, _, logOutputChannel) {
     if (!args.length)
-      return sendHelperMessage(
-        message,
-        module.exports.name,
-        logOutputChannel,
-        args
-      );
+      return sendHelperMessage(message, module.exports.name, logOutputChannel);
     if (!checkForAttachPermission(message))
       return sendNeedPermissionMessage(message, logOutputChannel);
 
