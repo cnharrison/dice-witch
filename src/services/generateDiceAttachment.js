@@ -62,8 +62,16 @@ const paginateDiceArray = (diceArray) => {
 
 const generateDiceAttachment = async (diceArray) => {
   try {
-    const shouldHaveIcon = diceArray.some((dice) => !!dice.icon);
+    const shouldHaveIcon = diceArray
+      .map((diceGroup) => diceGroup.some((dice) => !!dice.icon))
+      .some((bool) => bool === true);
+
     const paginatedArray = paginateDiceArray(diceArray);
+
+    const numberOfGroupsWithIcons = paginatedArray
+      .map((diceGroup) => diceGroup.some((dice) => !!dice.icon))
+      .filter((bool) => bool === true).length;
+    console.log(numberOfGroupsWithIcons);
 
     const canvasWidth = getCanvasWidth(paginatedArray);
 
@@ -101,7 +109,7 @@ const generateDiceAttachment = async (diceArray) => {
             check = await Canvas.loadImage(checkToLoad);
             break;
           default:
-            const circleToLoad = await generateIcon("circle");
+            const circleToLoad = await generateIcon("blank");
             circle = await Canvas.loadImage(circleToLoad);
             break;
         }

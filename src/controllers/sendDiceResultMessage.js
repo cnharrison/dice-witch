@@ -1,5 +1,6 @@
 const Discord = require("discord.js");
 const { getRandomNumber } = require("../helpers");
+const { logEvent } = require("../services");
 
 const generateEmbed = (resultArray, attachment, message, title) => {
   const grandTotal = resultArray.reduce((prev, cur) => {
@@ -38,7 +39,8 @@ const sendDiceResultMessage = async (
   message,
   attachment,
   title,
-  discord
+  _,
+  logOutputChannel
 ) => {
   try {
     const embed = generateEmbed(resultArray, attachment, message, title);
@@ -46,6 +48,16 @@ const sendDiceResultMessage = async (
     const sendMessageAndStopTyping = async () => {
       try {
         await message.channel.send(embed);
+        logEvent(
+          "sentRollResultMessage",
+          logOutputChannel,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          embed
+        );
         message.channel.stopTyping();
       } catch (err) {
         message.channel.stopTyping();
