@@ -18,13 +18,15 @@ const logEvent = async (
   embedParam
 ) => {
   let embed;
-  const displayName = await getAuthorDisplayName(message);
+  let displayName;
+  if (message) displayName = await getAuthorDisplayName(message);
+
   switch (eventType) {
     case "receivedCommand":
       console.log(
         message.guild?.id
           ? `received command ${command.name}: ${args} from [ ${displayName} ] in channel [ ${message.channel.name} ] on [ ${message.guild} ]`
-          : `received command ${command.name}: ${args} from [ ${displayName} ] in [ DM ]`
+          : `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
       );
       embed = new Discord.MessageEmbed()
         .setColor(eventColor)
