@@ -19,6 +19,11 @@ const greenCheck = `
 </svg>
 `;
 
+const blank = `
+<svg height="100" width="100">
+</svg>
+`;
+
 const generateIcon = async (iconType) => {
   try {
     let image;
@@ -29,8 +34,11 @@ const generateIcon = async (iconType) => {
       case "x":
         image = redX;
         break;
+      case "blank":
+        image = blank;
+        break;
       default:
-        image = redX;
+        image = blank;
         break;
     }
     return await svg2png({

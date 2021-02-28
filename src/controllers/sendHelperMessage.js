@@ -1,8 +1,9 @@
-const { availableDice, maxDice } = require("../constants");
-const Discord = require("discord.js");
 const { inviteLink, supportServerLink } = require("../../config.json");
+const Discord = require("discord.js");
+const { availableDice, maxDice } = require("../constants");
+const { logEvent } = require("../services");
 
-const sendHelperMessage = (message, name) => {
+const sendHelperMessage = (message, name, logOutputChannel, args) => {
   try {
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
@@ -26,7 +27,7 @@ const sendHelperMessage = (message, name) => {
         "\u200B",
         `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
-
+    logEvent("sentHelperMessage", logOutputChannel, message, undefined, args);
     return message.channel.send(embed);
   } catch (err) {
     console.error(err);
