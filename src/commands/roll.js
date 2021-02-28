@@ -26,15 +26,17 @@ module.exports = {
         logOutputChannel,
         args
       );
-    if (!checkForAttachPermission(message)) {
+    if (!checkForAttachPermission(message))
       return sendNeedPermissionMessage(message, logOutputChannel);
-    }
+
     const { diceArray, resultArray } = rollDice(args, availableDice);
+
     if (!diceArray.length) {
-      return sendHelperMessage(message, module.exports.name);
+      return sendHelperMessage(message, module.exports.name, logOutputChannel);
     } else if (diceArray.length > maxDice) {
       return sendDiceOverMaxMessage(message);
     }
+
     sendDiceRolledMessage(message, diceArray);
     const attachment = await generateDiceAttachment(diceArray);
     sendDiceResultMessage(

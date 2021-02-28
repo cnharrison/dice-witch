@@ -67,12 +67,6 @@ const generateDiceAttachment = async (diceArray) => {
       .some((bool) => bool === true);
 
     const paginatedArray = paginateDiceArray(diceArray);
-
-    const numberOfGroupsWithIcons = paginatedArray
-      .map((diceGroup) => diceGroup.some((dice) => !!dice.icon))
-      .filter((bool) => bool === true).length;
-    console.log(numberOfGroupsWithIcons);
-
     const canvasWidth = getCanvasWidth(paginatedArray);
 
     const canvas = Canvas.createCanvas(
