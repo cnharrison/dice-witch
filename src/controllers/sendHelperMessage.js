@@ -3,7 +3,7 @@ const Discord = require("discord.js");
 const { availableDice, maxDice } = require("../constants");
 const { logEvent } = require("../services");
 
-const sendHelperMessage = (message, name, logOutputChannel, args) => {
+const sendHelperMessage = async (message, name, logOutputChannel, args) => {
   try {
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
@@ -27,8 +27,14 @@ const sendHelperMessage = (message, name, logOutputChannel, args) => {
         "\u200B",
         `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
-    logEvent("sentHelperMessage", logOutputChannel, message, undefined, args);
-    return message.channel.send(embed);
+    await message.channel.send(embed);
+    return logEvent(
+      "sentHelperMessage",
+      logOutputChannel,
+      message,
+      undefined,
+      args
+    );
   } catch (err) {
     console.error(err);
   }
