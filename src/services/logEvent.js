@@ -107,9 +107,8 @@ const logEvent = (
     case "sentNeedPermissionsMessage":
       embed = new Discord.MessageEmbed()
         .setColor(errorColor)
-        .setDescription(
-          `**sent permissions request to ${message.channel} on ${message.guild}**`
-        );
+        .setTitle("sentNeedPermissionMessage")
+        .setDescription(`**${message.channel}** on **${message.guild}**`);
       logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
     default:
