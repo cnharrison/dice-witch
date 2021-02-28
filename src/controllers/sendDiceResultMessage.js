@@ -1,8 +1,9 @@
 const Discord = require("discord.js");
-const { getRandomNumber } = require("../helpers");
+const { getRandomNumber, getAuthorDisplayName } = require("../helpers");
 const { logEvent } = require("../services");
 
-const generateEmbed = (resultArray, attachment, message, title) => {
+const generateEmbed = async (resultArray, attachment, message, title) => {
+  const displayName = await getAuthorDisplayName(message);
   const grandTotal = resultArray.reduce((prev, cur) => {
     return prev + cur.result;
   }, 0);
@@ -14,7 +15,7 @@ const generateEmbed = (resultArray, attachment, message, title) => {
           .attachFiles(attachment)
           .setImage("attachment://currentDice.png")
           .setFooter(
-            `sent to ${message.author.username} \n ${resultArray
+            `sent to ${displayName} \n ${resultArray
               .map((roll) => `${roll.value}: ${roll.result}`)
               .join(" / ")}`
           )
@@ -27,7 +28,7 @@ const generateEmbed = (resultArray, attachment, message, title) => {
               .map((roll) => `${roll.value}: ${roll.result}`)
               .join("\n")} ${
               resultArray.length > 1 ? `\ngrand total: ${grandTotal}` : ""
-            }\nsent to ${message.author.username}`
+            }\nsent to ${displayName}`
           );
   } catch (err) {
     console.log(err);
@@ -43,7 +44,7 @@ const sendDiceResultMessage = async (
   logOutputChannel
 ) => {
   try {
-    const embed = generateEmbed(resultArray, attachment, message, title);
+    const embed = await generateEmbed(resultArray, attachment, message, title);
 
     const sendMessageAndStopTyping = async () => {
       try {
@@ -51,7 +52,7 @@ const sendDiceResultMessage = async (
         logEvent(
           "sentRollResultMessage",
           logOutputChannel,
-          undefined,
+          message,
           undefined,
           undefined,
           undefined,

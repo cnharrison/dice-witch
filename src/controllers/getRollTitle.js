@@ -1,5 +1,4 @@
 const { logEvent } = require("../services");
-
 const getRollTitle = async (message, logOutputChannel) => {
   let title;
   const originalMessage = message;
