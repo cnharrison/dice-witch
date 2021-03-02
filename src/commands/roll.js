@@ -11,6 +11,7 @@ const {
   generateDiceAttachment,
   checkForAttachPermission
 } = require("../services");
+const { getTotalDiceRolled } = require("../helpers");
 
 module.exports = {
   name: "roll",
@@ -25,10 +26,9 @@ module.exports = {
       return sendNeedPermissionMessage(message, logOutputChannel);
 
     const { diceArray, resultArray } = rollDice(args, availableDice);
-
     if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name, logOutputChannel);
-    } else if (diceArray.length > maxDice) {
+    } else if (getTotalDiceRolled(diceArray) > maxDice) {
       return sendDiceOverMaxMessage(message);
     }
 

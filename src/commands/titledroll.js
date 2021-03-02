@@ -13,6 +13,8 @@ const {
   checkForAttachPermission
 } = require("../services");
 
+const { getTotalDiceRolled } = require("../helpers");
+
 module.exports = {
   name: "titledroll",
   aliases: ["tr"],
@@ -29,7 +31,7 @@ module.exports = {
 
     if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name, logOutputChannel);
-    } else if (diceArray.length > maxDice) {
+    } else if (getTotalDiceRolled(diceArray) > maxDice) {
       return sendDiceOverMaxMessage(message);
     }
 
