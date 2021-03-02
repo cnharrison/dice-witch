@@ -1,8 +1,12 @@
 const sendDiceRolledMessage = (message, diceArray) => {
+  const diceArrayLengths = diceArray.map((array) => array.length);
+  const isSingleDie =
+    diceArrayLengths.length === 1 && diceArray[0].length === 1;
+
   try {
     message.channel.send(
-      `_...the ${diceArray.length === 1 ? "die" : "dice"} ${
-        diceArray.length === 1 ? "clatters" : "clatter"
+      `_...the ${isSingleDie ? "die" : "dice"} ${
+        isSingleDie ? "clatters" : "clatter"
       } across the table..._`
     );
   } catch (err) {
