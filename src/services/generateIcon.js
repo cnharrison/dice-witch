@@ -1,4 +1,4 @@
-const { svg2png } = require("svg-png-converter");
+const sharp = require("sharp");
 const redX = `
   <svg width="218" height="270" xmlns="http://www.w3.org/2000/svg">
     <path
@@ -41,11 +41,8 @@ const generateIcon = async (iconType) => {
         image = blank;
         break;
     }
-    return await svg2png({
-      input: image,
-      encoding: "buffer",
-      format: "png"
-    });
+    const attachment = await sharp(new Buffer.from(image)).png().toBuffer();
+    return attachment;
   } catch (err) {
     console.error(err);
   }

@@ -1,4 +1,4 @@
-const { svg2png } = require("svg-png-converter");
+const sharp = require("sharp");
 const {
   generateD201,
   generateD202,
@@ -139,11 +139,7 @@ async function generateDie(sides, number, fill, outline, width, height) {
   const image = dice[`${sides}${number}`];
 
   try {
-    const attachment = await svg2png({
-      input: image,
-      encoding: "buffer",
-      format: "png"
-    });
+    const attachment = await sharp(new Buffer.from(image)).png().toBuffer();
     return attachment;
   } catch (err) {
     console.error(err);
