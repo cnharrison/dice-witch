@@ -101,14 +101,16 @@ const logEvent = async (
       embed = new Discord.MessageEmbed()
         .setColor(infoColor)
         .setTitle(eventType)
-        .setDescription(`${message.author.username} in ${message.channel}`);
+        .setDescription(
+          `${message.author.username} in ${message.channel.name}`
+        );
       logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
     case "sentNeedPermissionsMessage":
       embed = new Discord.MessageEmbed()
         .setColor(errorColor)
         .setTitle(eventType)
-        .setDescription(`**${message.channel}** on **${message.guild}**`);
+        .setDescription(`**${message.channel.name}** on **${message.guild}**`);
       logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
     default:

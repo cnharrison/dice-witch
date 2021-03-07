@@ -72,14 +72,7 @@ const {
   generateD44
 } = require("./dice/d4");
 
-const generateDie = async function (
-  sides,
-  number,
-  fill,
-  outline,
-  width,
-  height
-) {
+async function generateDie(sides, number, fill, outline, width, height) {
   const dice = {
     201: generateD201(fill, outline, width, height),
     202: generateD202(fill, outline, width, height),
@@ -155,6 +148,6 @@ const generateDie = async function (
   } catch (err) {
     console.error(err);
   }
-};
+}
 
 module.exports = generateDie;

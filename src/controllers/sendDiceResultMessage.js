@@ -2,7 +2,7 @@ const Discord = require("discord.js");
 const { getRandomNumber } = require("../helpers");
 const { logEvent } = require("../services");
 
-const generateEmbed = async function (resultArray, attachment, message, title) {
+async function generateEmbed(resultArray, attachment, message, title) {
   const grandTotal = resultArray.reduce((prev, cur) => {
     return prev + cur.result;
   }, 0);
@@ -35,7 +35,7 @@ const generateEmbed = async function (resultArray, attachment, message, title) {
   } catch (err) {
     console.log(err);
   }
-};
+}
 
 const sendDiceResultMessage = async (
   resultArray,

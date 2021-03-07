@@ -60,7 +60,7 @@ const paginateDiceArray = function (diceArray) {
   return newArray;
 };
 
-const generateDiceAttachment = async function (diceArray) {
+async function generateDiceAttachment(diceArray) {
   try {
     const shouldHaveIcon = diceArray
       .map((diceGroup) => diceGroup.some((dice) => !!dice.icon))
@@ -69,7 +69,7 @@ const generateDiceAttachment = async function (diceArray) {
     const paginatedArray = paginateDiceArray(diceArray);
     const canvasWidth = getCanvasWidth(paginatedArray);
 
-    let canvas = Canvas.createCanvas(
+    const canvas = Canvas.createCanvas(
       canvasWidth,
       shouldHaveIcon
         ? defaultDiceDimension * paginatedArray.length +
@@ -142,6 +142,6 @@ const generateDiceAttachment = async function (diceArray) {
   } catch (err) {
     console.error(err);
   }
-};
+}
 
 module.exports = generateDiceAttachment;
