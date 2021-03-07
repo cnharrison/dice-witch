@@ -8,18 +8,18 @@ const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 30;
 
-const getIcon = (icon, check, x, circle) => {
+const getIcon = function (icon, check, x, blank) {
   switch (icon) {
     case "x":
       return x;
     case "check":
       return check;
     default:
-      return circle;
+      return blank;
   }
 };
 
-const getCanvasWidth = (diceArray) => {
+const getCanvasWidth = function (diceArray) {
   const isSingleGroup = diceArray.length === 1;
   const onlyGroupLength = diceArray[0].length;
   const isFirstShorterOrEqualToMax = onlyGroupLength <= maxRowLength;
@@ -44,7 +44,7 @@ const getCanvasWidth = (diceArray) => {
   }
 };
 
-const paginateDiceArray = (diceArray) => {
+const paginateDiceArray = function (diceArray) {
   const paginateDiceGroup = (diceArray) =>
     Array(Math.ceil(diceArray.length / maxRowLength))
       .fill()
@@ -60,7 +60,7 @@ const paginateDiceArray = (diceArray) => {
   return newArray;
 };
 
-const generateDiceAttachment = async (diceArray) => {
+const generateDiceAttachment = async function (diceArray) {
   try {
     const shouldHaveIcon = diceArray
       .map((diceGroup) => diceGroup.some((dice) => !!dice.icon))
@@ -69,7 +69,7 @@ const generateDiceAttachment = async (diceArray) => {
     const paginatedArray = paginateDiceArray(diceArray);
     const canvasWidth = getCanvasWidth(paginatedArray);
 
-    const canvas = Canvas.createCanvas(
+    let canvas = Canvas.createCanvas(
       canvasWidth,
       shouldHaveIcon
         ? defaultDiceDimension * paginatedArray.length +
@@ -83,9 +83,9 @@ const generateDiceAttachment = async (diceArray) => {
         const { icon } = dice;
         let check;
         let x;
-        let circle;
+        let blank;
         let image;
-        const toLoad = await generateDie(
+        let toLoad = await generateDie(
           dice.sides,
           dice.rolled,
           randomColor({ luminosity: "light" }),
@@ -103,8 +103,8 @@ const generateDiceAttachment = async (diceArray) => {
             check = await Canvas.loadImage(checkToLoad);
             break;
           default:
-            const circleToLoad = await generateIcon("blank");
-            circle = await Canvas.loadImage(circleToLoad);
+            const blankToLoad = await generateIcon("blank");
+            blank = await Canvas.loadImage(blankToLoad);
             break;
         }
 
@@ -120,7 +120,7 @@ const generateDiceAttachment = async (diceArray) => {
         );
         if (shouldHaveIcon) {
           ctx.drawImage(
-            getIcon(icon, check, x, circle),
+            getIcon(icon, check, x, blank),
             defaultDiceDimension * index + defaultDiceDimension * 0.35,
             outerIndex * defaultDiceDimension +
               defaultDiceDimension +
@@ -134,10 +134,11 @@ const generateDiceAttachment = async (diceArray) => {
 
     await Promise.all(outerPromiseArray.map(Promise.all, Promise));
 
-    return new Discord.MessageAttachment(
+    const attachment = new Discord.MessageAttachment(
       canvas.toBuffer("image/png", { compressionLevel: 0 }),
       "currentDice.png"
     );
+    return attachment;
   } catch (err) {
     console.error(err);
   }

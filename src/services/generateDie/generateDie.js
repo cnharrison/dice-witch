@@ -72,7 +72,14 @@ const {
   generateD44
 } = require("./dice/d4");
 
-const generateDie = async (sides, number, fill, outline, width, height) => {
+const generateDie = async function (
+  sides,
+  number,
+  fill,
+  outline,
+  width,
+  height
+) {
   const dice = {
     201: generateD201(fill, outline, width, height),
     202: generateD202(fill, outline, width, height),
@@ -139,11 +146,12 @@ const generateDie = async (sides, number, fill, outline, width, height) => {
   const image = dice[`${sides}${number}`];
 
   try {
-    return await svg2png({
+    const attachment = await svg2png({
       input: image,
       encoding: "buffer",
       format: "png"
     });
+    return attachment;
   } catch (err) {
     console.error(err);
   }

@@ -2,12 +2,12 @@ const Discord = require("discord.js");
 const { getRandomNumber } = require("../helpers");
 const { logEvent } = require("../services");
 
-const generateEmbed = async (resultArray, attachment, message, title) => {
+const generateEmbed = async function (resultArray, attachment, message, title) {
   const grandTotal = resultArray.reduce((prev, cur) => {
     return prev + cur.result;
   }, 0);
   try {
-    return title
+    const embed = title
       ? new Discord.MessageEmbed()
           .setColor("#966F33")
           .setTitle(title)
@@ -31,6 +31,7 @@ const generateEmbed = async (resultArray, attachment, message, title) => {
               resultArray.length > 1 ? `\ngrand total: ${grandTotal}` : ""
             }\nsent to ${message.author.username}`
           );
+    return embed;
   } catch (err) {
     console.log(err);
   }

@@ -16,6 +16,7 @@ const logEvent = async (
   guild,
   embedParam
 ) => {
+  let embed;
   switch (eventType) {
     case "receivedCommand":
       console.log(
