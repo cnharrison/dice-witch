@@ -1,4 +1,5 @@
 const Roll = require("roll");
+const { checkIfMultiDimensional } = require("../helpers");
 
 const getIcon = (i, shouldHaveIcon, bestOrWorstOf) => {
   if (shouldHaveIcon) {
@@ -15,18 +16,24 @@ const rollDice = (args, availableDice) => {
   try {
     let diceArray = [];
     let resultArray = [];
-
+    let isMultiDimensional = false;
     for ([index, value] of args.entries()) {
       let groupArray = [];
-      roll = new Roll();
+      let rolls;
+      const roll = new Roll();
+      const valid = roll.validate(value);
 
       let parsedRoll;
-      const valid = roll.validate(value);
       if (valid) {
+        rolls = roll.roll(value);
         parsedRoll = roll.parse(value);
+        isMultiDimensional = checkIfMultiDimensional(rolls.rolled);
       }
-      if (valid && availableDice.includes(parsedRoll.sides)) {
-        const rolls = roll.roll(value);
+      if (
+        valid &&
+        availableDice.includes(parsedRoll.sides) &&
+        !isMultiDimensional
+      ) {
         const type = rolls.input?.transformations[0][0][0];
         const bestOrWorstOf = rolls.input?.transformations[0][0][1];
         shouldHaveIcon = ["best-of", "worst-of"].includes(type);
