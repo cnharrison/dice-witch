@@ -5,6 +5,5 @@ const getTotalDiceRolled = (diceArray) =>
 
 module.exports = {
   getRandomNumber,
-  getTotalDiceRolled,
-  checkIfMultiDimensional,
-};
+  getTotalDiceRolled
+}
