@@ -1,49 +1,28 @@
-const Roll = require("roll");
-const { checkIfMultiDimensional } = require("../helpers");
-
-const getIcon = (i, shouldHaveIcon, bestOrWorstOf) => {
-  if (shouldHaveIcon) {
-    if (i < bestOrWorstOf) {
-      return "check";
-    } else {
-      return "x";
-    }
-  }
-  return null;
-};
+const { DiceRoll, Parser } = require('rpg-dice-roller');
 
 const rollDice = (args, availableDice) => {
   try {
+    let parsedRoll;
+    let roll;
     let diceArray = [];
     let resultArray = [];
-    let isMultiDimensional = false;
-    for ([index, value] of args.entries()) {
-      let groupArray = [];
-      let rolls;
-      const roll = new Roll();
-      const valid = roll.validate(value);
 
-      let parsedRoll;
-      if (valid) {
-        rolls = roll.roll(value);
-        parsedRoll = roll.parse(value);
-        isMultiDimensional = checkIfMultiDimensional(rolls.rolled);
+    for (const value of args) {
+      let groupArray = [];
+      try {
+        parsedRoll = Parser.parse(value);
+      } catch (err) {
+        console.error(err);
       }
-      if (
-        valid &&
-        availableDice.includes(parsedRoll.sides) &&
-        !isMultiDimensional
-      ) {
-        const type = rolls.input?.transformations[0][0][0];
-        const bestOrWorstOf = rolls.input?.transformations[0][0][1];
-        shouldHaveIcon = ["best-of", "worst-of"].includes(type);
-        resultArray.push({ value, result: rolls.result });
-        for (i = 0; i < parsedRoll.quantity; i++) {
+
+      if (parsedRoll && availableDice.includes(parsedRoll[0].sides)) {
+        roll = new DiceRoll(value);
+        resultArray.push({ value: parsedRoll[0].notation, result: roll.rolls[0].value });
+        for (i = 0; i < parsedRoll[0].qty; i++) {
           groupArray.push({
-            sides: parsedRoll.sides,
-            rolled: rolls.rolled[i],
-            icon: getIcon(i, shouldHaveIcon, bestOrWorstOf)
-          });
+            sides: parsedRoll[0].sides,
+            rolled: roll.rolls[0].rolls[i],
+          })
         }
         diceArray.push(groupArray);
       }
@@ -52,6 +31,7 @@ const rollDice = (args, availableDice) => {
   } catch (err) {
     console.error(err);
   }
-};
+
+}
 
 module.exports = rollDice;
