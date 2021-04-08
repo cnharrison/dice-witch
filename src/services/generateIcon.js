@@ -66,6 +66,7 @@ const generateIcon = async (iconType) => {
         break;
       case "refresh":
         image = refresh
+        break;
       case "greenPlus":
         image = greenPlus
         break;
