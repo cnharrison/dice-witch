@@ -8,12 +8,14 @@ const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 30;
 
-const getIcon = function (icon, check, x, blank) {
+const getIcon = function (icon, explosion, refresh, x, blank) {
   switch (icon) {
     case "x":
       return x;
     case "explosion":
       return explosion;
+    case "refresh":
+      return refresh;
     default:
       return blank;
   }
@@ -81,10 +83,11 @@ async function generateDiceAttachment(diceArray) {
     const outerPromiseArray = paginatedArray.map((array, outerIndex) => {
       return array.map(async (dice, index) => {
         const { icon } = dice;
-        let check;
         let x;
         let blank;
         let image;
+        let explosion;
+        let refresh;
         let toLoad = await generateDie(
           dice.sides,
           dice.rolled,
@@ -101,6 +104,9 @@ async function generateDiceAttachment(diceArray) {
           case "explosion":
             const explosionToLoad = await generateIcon("explosion");
             explosion = await Canvas.loadImage(explosionToLoad);
+          case "refresh":
+            const refreshToLoad = await generateIcon("refresh");
+            refresh = await Canvas.loadImage(refreshToLoad);
           default:
             const blankToLoad = await generateIcon("blank");
             blank = await Canvas.loadImage(blankToLoad);
@@ -119,7 +125,7 @@ async function generateDiceAttachment(diceArray) {
         );
         if (shouldHaveIcon) {
           ctx.drawImage(
-            getIcon(icon, check, x, blank),
+            getIcon(icon, explosion, refresh, x, blank),
             defaultDiceDimension * index + defaultDiceDimension * 0.35,
             outerIndex * defaultDiceDimension +
             defaultDiceDimension +

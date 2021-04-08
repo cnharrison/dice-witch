@@ -7,6 +7,8 @@ const getIcon = (modifierSet) => {
         return "x";
       case modifierSet.has("explode"):
         return "explosion";
+      case modifierSet.has("re-roll"):
+        return "refresh"
     }
   }
   return null;

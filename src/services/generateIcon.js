@@ -20,6 +20,21 @@ const explosion = `
 </svg>
 `
 
+const refresh = `
+<svg version="1.1" x="0" y="0" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve">
+    <style>
+        .st0,.st1{fill:none;stroke:green;stroke-width:6;stroke-linecap:round;stroke-miterlimit:10}.st1{fill:green;stroke-width:2;stroke-linejoin:round}
+    </style>
+    <switch>
+        <g>
+            <path class="st0" d="M88 49.8c0-21-17-38-38-38M22.6 23.5C16 30.3 12 39.6 12 49.8"/>
+            <path class="st1" d="m13.1 21.7 18-4.8-4.9 18z"/>
+            <path class="st0" d="M12 49.8c0 21 17 38 38 38M77.4 76.2C84 69.3 88 60 88 49.8"/>
+            <path class="st1" d="m86.9 77.9-18 4.8 4.9-18z"/>
+        </g>
+    </switch>
+</svg>`
+
 const blank = `
 <svg height="100" width="100">
 </svg>
@@ -34,6 +49,9 @@ const generateIcon = async (iconType) => {
         break;
       case "explosion":
         image = explosion
+        break;
+      case "refresh":
+        image = refresh
         break;
       default:
         image = blank;
