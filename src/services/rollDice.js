@@ -9,6 +9,10 @@ const getIcon = (modifierSet) => {
         return "explosion";
       case modifierSet.has("re-roll"):
         return "refresh"
+      case modifierSet.has("max"):
+        return "greenPlus";
+      case modifierSet.has("min"):
+        return "redMinus";
     }
   }
   return null;

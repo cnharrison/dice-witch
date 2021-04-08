@@ -8,7 +8,7 @@ const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 30;
 
-const getIcon = function (icon, explosion, refresh, x, blank) {
+const getIcon = function (icon, explosion, refresh, x, greenPlus, redMinus, blank) {
   switch (icon) {
     case "x":
       return x;
@@ -16,6 +16,10 @@ const getIcon = function (icon, explosion, refresh, x, blank) {
       return explosion;
     case "refresh":
       return refresh;
+    case "greenPlus":
+      return greenPlus;
+    case "redMinus":
+      return redMinus;
     default:
       return blank;
   }
@@ -88,6 +92,8 @@ async function generateDiceAttachment(diceArray) {
         let image;
         let explosion;
         let refresh;
+        let greenPlus;
+        let redMinus;
         let toLoad = await generateDie(
           dice.sides,
           dice.rolled,
@@ -107,6 +113,12 @@ async function generateDiceAttachment(diceArray) {
           case "refresh":
             const refreshToLoad = await generateIcon("refresh");
             refresh = await Canvas.loadImage(refreshToLoad);
+          case "greenPlus":
+            const greenPlusToLoad = await generateIcon("greenPlus");
+            greenPlus = await Canvas.loadImage(greenPlusToLoad);
+          case "redMinus":
+            const redMinusToLoad = await generateIcon("redMinus");
+            redMinus = await Canvas.loadImage(redMinusToLoad);
           default:
             const blankToLoad = await generateIcon("blank");
             blank = await Canvas.loadImage(blankToLoad);
@@ -125,7 +137,7 @@ async function generateDiceAttachment(diceArray) {
         );
         if (shouldHaveIcon) {
           ctx.drawImage(
-            getIcon(icon, explosion, refresh, x, blank),
+            getIcon(icon, explosion, refresh, x, greenPlus, redMinus, blank),
             defaultDiceDimension * index + defaultDiceDimension * 0.35,
             outerIndex * defaultDiceDimension +
             defaultDiceDimension +

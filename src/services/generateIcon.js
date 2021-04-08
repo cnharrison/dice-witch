@@ -35,6 +35,20 @@ const refresh = `
     </switch>
 </svg>`
 
+const greenPlus = `
+<svg viewBox="0 0 60 60" version="1.0">
+    <path style="stroke-linejoin:round;stroke:#fff;stroke-linecap:round;stroke-width:5;fill:none" d="M23.78 23.78V9.781c0-1.959.536-3.55 1.607-4.774 1.071-1.255 2.601-1.882 4.59-1.882s3.519.627 4.59 1.882C35.669 6.23 36.22 7.822 36.22 9.78V23.78h13.816c2.019 0 3.611.55 4.773 1.653 1.194 1.07 1.791 2.586 1.791 4.544 0 1.989-.597 3.534-1.791 4.636-1.162 1.102-2.754 1.652-4.773 1.652H36.22v13.954c0 1.989-.551 3.596-1.653 4.82-1.101 1.224-2.632 1.836-4.59 1.836s-3.488-.612-4.59-1.836c-1.071-1.224-1.607-2.831-1.607-4.82V36.265H9.964c-1.958 0-3.55-.596-4.774-1.79-1.193-1.224-1.79-2.723-1.79-4.498 0-1.958.582-3.473 1.745-4.544 1.193-1.102 2.8-1.653 4.82-1.653H23.78z"/>
+    <path style="fill:#62b01e" d="M23.78 23.78V9.781c0-1.959.536-3.55 1.607-4.774 1.071-1.255 2.601-1.882 4.59-1.882s3.519.627 4.59 1.882C35.669 6.23 36.22 7.822 36.22 9.78V23.78h13.816c2.019 0 3.611.55 4.773 1.653 1.194 1.07 1.791 2.586 1.791 4.544 0 1.989-.597 3.534-1.791 4.636-1.162 1.102-2.754 1.652-4.773 1.652H36.22v13.954c0 1.989-.551 3.596-1.653 4.82-1.101 1.224-2.632 1.836-4.59 1.836s-3.488-.612-4.59-1.836c-1.071-1.224-1.607-2.831-1.607-4.82V36.265H9.964c-1.958 0-3.55-.596-4.774-1.79-1.193-1.224-1.79-2.723-1.79-4.498 0-1.958.582-3.473 1.745-4.544 1.193-1.102 2.8-1.653 4.82-1.653H23.78z"/>
+</svg>
+`
+
+const redMinus = `
+<svg xml:space="preserve" viewBox="0 0 100 100" width="200" height="200" style="width:100%;height:100%;background-size:initial;background-repeat-y:initial;background-repeat-x:initial;background-position-y:initial;background-position-x:initial;background-origin:initial;background-image:initial;background-color:#fff;background-clip:initial;background-attachment:initial;animation-play-state:paused">
+    <g style="transform-origin:50% 50%;transform:rotate(0deg) scale(.8,.8);animation-play-state:paused">
+        <path fill="#e15b64" d="M82.259 39.759H17.741C12.094 39.759 7.5 44.353 7.5 50c0 5.647 4.594 10.241 10.241 10.241h64.518C87.906 60.241 92.5 55.647 92.5 50c0-5.647-4.594-10.241-10.241-10.241z" style="fill:#e15b64;animation-play-state:paused" class="ldl-scale"/>
+    </g>
+</svg>`
+
 const blank = `
 <svg height="100" width="100">
 </svg>
@@ -52,6 +66,11 @@ const generateIcon = async (iconType) => {
         break;
       case "refresh":
         image = refresh
+      case "greenPlus":
+        image = greenPlus
+        break;
+      case "redMinus":
+        image = redMinus
         break;
       default:
         image = blank;
