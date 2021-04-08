@@ -1,7 +1,6 @@
 const { DiceRoll, Parser } = require('rpg-dice-roller');
 
 const getIcon = (modifierSet) => {
-  console.log(modifierSet.size)
   if (modifierSet.size > 0) {
     switch (true) {
       case modifierSet.has("drop"):
