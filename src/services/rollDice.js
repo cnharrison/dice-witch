@@ -30,6 +30,7 @@ const rollDice = (args, availableDice) => {
 
       if (parsedRoll && availableDice.includes(parsedRoll[0].sides)) {
         roll = new DiceRoll(value);
+        resultArray.push({ output: roll.output, results: roll.total });
         for (i = 0; i < roll.rolls[0].length; i++) {
           groupArray.push({
             sides: parsedRoll[0].sides,
