@@ -12,8 +12,8 @@ const getIcon = function (icon, check, x, blank) {
   switch (icon) {
     case "x":
       return x;
-    case "check":
-      return check;
+    case "explosion":
+      return explosion;
     default:
       return blank;
   }
@@ -73,7 +73,7 @@ async function generateDiceAttachment(diceArray) {
       canvasWidth,
       shouldHaveIcon
         ? defaultDiceDimension * paginatedArray.length +
-            defaultIconDimension * paginatedArray.length
+        defaultIconDimension * paginatedArray.length
         : defaultDiceDimension * paginatedArray.length
     );
 
@@ -98,10 +98,9 @@ async function generateDiceAttachment(diceArray) {
             const xToLoad = await generateIcon("x");
             x = await Canvas.loadImage(xToLoad);
             break;
-          case "check":
-            const checkToLoad = await generateIcon("check");
-            check = await Canvas.loadImage(checkToLoad);
-            break;
+          case "explosion":
+            const explosionToLoad = await generateIcon("explosion");
+            explosion = await Canvas.loadImage(explosionToLoad);
           default:
             const blankToLoad = await generateIcon("blank");
             blank = await Canvas.loadImage(blankToLoad);
@@ -113,7 +112,7 @@ async function generateDiceAttachment(diceArray) {
           defaultDiceDimension * index,
           shouldHaveIcon
             ? outerIndex * defaultDiceDimension +
-                outerIndex * defaultIconDimension
+            outerIndex * defaultIconDimension
             : outerIndex * defaultDiceDimension,
           defaultDiceDimension,
           defaultDiceDimension
@@ -123,8 +122,8 @@ async function generateDiceAttachment(diceArray) {
             getIcon(icon, check, x, blank),
             defaultDiceDimension * index + defaultDiceDimension * 0.35,
             outerIndex * defaultDiceDimension +
-              defaultDiceDimension +
-              outerIndex * defaultIconDimension,
+            defaultDiceDimension +
+            outerIndex * defaultIconDimension,
             defaultIconDimension,
             defaultIconDimension
           );
