@@ -6,9 +6,18 @@ const generateDie = require("./generateDie/generateDie");
 
 const maxRowLength = 10;
 const defaultDiceDimension = 100;
-const defaultIconDimension = 30;
+const defaultIconDimension = 25;
 
 const drawIcon = async function (iconArray, ctx, Canvas, diceIndex, diceOuterIndex) {
+
+  const getIconSpacing = iconArray => {
+    switch (iconArray.length) {
+      case 1:
+        return 0.37;
+      case 2:
+        return 0.25
+    }
+  }
   if (iconArray) {
     let iconImage;
     const promiseArray = iconArray.map(async (icon, index) => {
@@ -23,7 +32,7 @@ const drawIcon = async function (iconArray, ctx, Canvas, diceIndex, diceOuterInd
 
       ctx.drawImage(
         iconImage,
-        defaultDiceDimension * diceIndex + defaultDiceDimension * (0.35 * (index + 1)),
+        defaultDiceDimension * diceIndex + defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
         diceOuterIndex * defaultDiceDimension +
         defaultDiceDimension +
         diceOuterIndex * defaultIconDimension,
