@@ -8,7 +8,7 @@ function generateIconArray(modifierSet) {
             return "trashcan";
           case "explode":
             return "explosion";
-          case "Re-roll":
+          case "re-roll":
             return "recycle";
           case "max":
             return "plus";
