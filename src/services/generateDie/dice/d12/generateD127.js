@@ -1,5 +1,4 @@
-const generateD127 = (fill, outline, viewBoxW = "500", viewBoxH = "500") => {
-  return `
+const generateD127 = (fill, outline, viewBoxW = "500", viewBoxH = "500") => `
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxW} ${viewBoxH}">
   <g>
 
@@ -26,7 +25,6 @@ const generateD127 = (fill, outline, viewBoxW = "500", viewBoxH = "500") => {
       <path d="M277.9 382.5h-51c-1.7 0-3.1-1.4-3.1-3.1v-1.8c0-1.7 1.4-3.1 3.1-3.1h51c1.7 0 3.1 1.4 3.1 3.1v1.8c0 1.7-1.4 3.1-3.1 3.1z"/>
   </g>
 </svg>
-                  `;
-};
+`;
 
 module.exports = generateD127;

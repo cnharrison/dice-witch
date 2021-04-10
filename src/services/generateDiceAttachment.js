@@ -8,15 +8,9 @@ const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 25;
 
-const drawIcon = async function (
-  iconArray,
-  ctx,
-  Canvas,
-  diceIndex,
-  diceOuterIndex
-) {
-  const getIconSpacing = (iconArray) => {
-    switch (iconArray.length) {
+const drawIcon = async (iconArray, ctx, diceIndex, diceOuterIndex) => {
+  const getIconSpacing = (iarr) => {
+    switch (iarr.length) {
       case 1:
         return 0.37;
       case 2:
@@ -45,7 +39,7 @@ const drawIcon = async function (
   }
 };
 
-const getCanvasWidth = function (diceArray) {
+const getCanvasWidth = (diceArray) => {
   const isSingleGroup = diceArray.length === 1;
   const onlyGroupLength = diceArray[0].length;
   const isFirstShorterOrEqualToMax = onlyGroupLength <= maxRowLength;
@@ -70,8 +64,8 @@ const getCanvasWidth = function (diceArray) {
   }
 };
 
-const paginateDiceArray = function (diceArray) {
-  const paginateDiceGroup = (diceArray) =>
+const paginateDiceArray = (diceArray) => {
+  const paginateDiceGroup = () =>
     Array(Math.ceil(diceArray.length / maxRowLength))
       .fill()
       .map((_, index) => index * maxRowLength)
@@ -109,14 +103,13 @@ async function generateDiceAttachment(diceArray) {
     const outerPromiseArray = paginatedArray.map((array, outerIndex) =>
       array.map(async (dice, index) => {
         const { icon: iconArray } = dice;
-        let image;
         const toLoad = await generateDie(
           dice.sides,
           dice.rolled,
           randomColor({ luminosity: "light" }),
           "#000000"
         );
-        image = await Canvas.loadImage(toLoad);
+        const image = await Canvas.loadImage(toLoad);
 
         ctx.drawImage(
           image,
@@ -129,7 +122,7 @@ async function generateDiceAttachment(diceArray) {
           defaultDiceDimension
         );
         if (shouldHaveIcon) {
-          await drawIcon(iconArray, ctx, Canvas, index, outerIndex);
+          await drawIcon(iconArray, ctx, index, outerIndex);
         }
       })
     );

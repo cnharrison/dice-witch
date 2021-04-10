@@ -98,6 +98,7 @@ const generateIcon = async (iconType) => {
     return attachment;
   } catch (err) {
     console.error(err);
+    return null;
   }
 };
 

@@ -7,5 +7,5 @@ module.exports = {
   generateD41,
   generateD42,
   generateD43,
-  generateD44
+  generateD44,
 };

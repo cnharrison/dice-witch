@@ -17,11 +17,12 @@
   "prettier"
 ],
 "rules": {
-  "disable-next-lin": "off",
+  "no-useless-escape": "off",
   "max-len": "off",
   "indent": "off",
   "prettier/prettier": "error",
-  "new-cap": "off"
+  "new-cap": "off",
+  "global-require": "off"
 }
 
 }

@@ -1,10 +1,15 @@
+/* eslint-disable import/no-dynamic-require */
+/* eslint-disable security/detect-non-literal-require */
+/* eslint-disable no-restricted-syntax */
 const Discord = require("discord.js");
-const { prefix, botPath, supportServerLink } = require("../../config.json");
-const { logEvent } = require("../services");
 const fs = require("fs");
 const path = require("path");
+const { prefix, botPath, supportServerLink } = require("../../config.json");
+const { logEvent } = require("../services");
+const { errorColor } = require("../constants");
 
 module.exports = function (discord, logOutputChannel) {
+  // eslint-disable-next-line no-param-reassign
   discord.commands = new Discord.Collection();
   process.chdir(path.dirname(botPath));
   const commandFiles = fs
@@ -34,7 +39,7 @@ module.exports = function (discord, logOutputChannel) {
       command.execute(message, args, discord, logOutputChannel);
       logEvent("receivedCommand", logOutputChannel, message, command, args);
     } catch (error) {
-      embed = new Discord.MessageEmbed()
+      const embed = new Discord.MessageEmbed()
         .setColor(errorColor)
         .setDescription(
           `error 😥 please join my [support server](${supportServerLink}) and report this`

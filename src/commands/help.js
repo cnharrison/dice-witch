@@ -1,5 +1,5 @@
-const { prefix, inviteLink, supportServerLink } = require("../../config.json");
 const Discord = require("discord.js");
+const { prefix, inviteLink, supportServerLink } = require("../../config.json");
 
 module.exports = {
   name: "help",
@@ -53,5 +53,5 @@ module.exports = {
       );
 
     return message.channel.send(embed);
-  }
+  },
 };

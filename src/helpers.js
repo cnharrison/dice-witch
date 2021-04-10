@@ -5,5 +5,5 @@ const getTotalDiceRolled = (diceArray) =>
 
 module.exports = {
   getRandomNumber,
-  getTotalDiceRolled
-}
+  getTotalDiceRolled,
+};
