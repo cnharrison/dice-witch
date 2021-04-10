@@ -4,12 +4,12 @@ const {
   sendHelperMessage,
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
-  sendNeedPermissionMessage
+  sendNeedPermissionMessage,
 } = require("../controllers");
 const {
   rollDice,
   generateDiceAttachment,
-  checkForAttachPermission
+  checkForAttachPermission,
 } = require("../services");
 const { getTotalDiceRolled } = require("../helpers");
 
@@ -28,13 +28,14 @@ module.exports = {
     const { diceArray, resultArray } = rollDice(args, availableDice);
     if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name, logOutputChannel);
-    } else if (getTotalDiceRolled(diceArray) > maxDice) {
+    }
+    if (getTotalDiceRolled(diceArray) > maxDice) {
       return sendDiceOverMaxMessage(message);
     }
 
     sendDiceRolledMessage(message, diceArray);
     const attachment = await generateDiceAttachment(diceArray);
-    sendDiceResultMessage(
+    return sendDiceResultMessage(
       resultArray,
       message,
       attachment,
@@ -42,5 +43,5 @@ module.exports = {
       undefined,
       logOutputChannel
     );
-  }
+  },
 };

@@ -19,7 +19,7 @@ const {
   generateD2017,
   generateD2018,
   generateD2019,
-  generateD2020
+  generateD2020,
 } = require("./dice/d20");
 const {
   generateD121,
@@ -33,7 +33,7 @@ const {
   generateD129,
   generateD1210,
   generateD1211,
-  generateD1212
+  generateD1212,
 } = require("./dice/d12");
 const {
   generateD101,
@@ -45,7 +45,7 @@ const {
   generateD107,
   generateD108,
   generateD109,
-  generateD1010
+  generateD1010,
 } = require("./dice/d10");
 const {
   generateD81,
@@ -55,7 +55,7 @@ const {
   generateD85,
   generateD86,
   generateD87,
-  generateD88
+  generateD88,
 } = require("./dice/d8");
 const {
   generateD61,
@@ -63,15 +63,16 @@ const {
   generateD63,
   generateD64,
   generateD65,
-  generateD66
+  generateD66,
 } = require("./dice/d6");
 const {
   generateD41,
   generateD42,
   generateD43,
-  generateD44
+  generateD44,
 } = require("./dice/d4");
 
+// eslint-disable-next-line consistent-return
 async function generateDie(sides, number, fill, outline, width, height) {
   const dice = {
     201: generateD201(fill, outline, width, height),
@@ -133,7 +134,7 @@ async function generateDie(sides, number, fill, outline, width, height) {
     41: generateD41(fill, outline, width, height),
     42: generateD42(fill, outline, width, height),
     43: generateD43(fill, outline, width, height),
-    44: generateD44(fill, outline, width, height)
+    44: generateD44(fill, outline, width, height),
   };
 
   const image = dice[`${sides}${number}`];
@@ -143,6 +144,7 @@ async function generateDie(sides, number, fill, outline, width, height) {
     return attachment;
   } catch (err) {
     console.error(err);
+    return null;
   }
 }
 

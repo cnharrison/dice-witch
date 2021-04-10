@@ -1,0 +1,27 @@
+{
+  "extends": [
+    "airbnb-base",
+    "eslint:recommended",
+    "prettier",
+    "plugin:security/recommended"
+  ],
+  "parserOptions": {
+    "sourceType": "module",
+    "ecmaVersion": 2020
+},
+"env": {
+  "es6": true,
+  "node": true
+},
+"plugins": [
+  "prettier"
+],
+"rules": {
+  "disable-next-lin": "off",
+  "max-len": "off",
+  "indent": "off",
+  "prettier/prettier": "error",
+  "new-cap": "off"
+}
+
+}

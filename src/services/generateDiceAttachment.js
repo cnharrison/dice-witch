@@ -8,41 +8,42 @@ const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 25;
 
-const drawIcon = async function (iconArray, ctx, Canvas, diceIndex, diceOuterIndex) {
-
-  const getIconSpacing = iconArray => {
+const drawIcon = async function (
+  iconArray,
+  ctx,
+  Canvas,
+  diceIndex,
+  diceOuterIndex
+) {
+  const getIconSpacing = (iconArray) => {
     switch (iconArray.length) {
       case 1:
         return 0.37;
       case 2:
-        return 0.25
+        return 0.25;
+      default:
+        return 0.25;
     }
-  }
+  };
   if (iconArray) {
     let iconImage;
     const promiseArray = iconArray.map(async (icon, index) => {
       const iconToLoad = await generateIcon(icon);
       iconImage = await Canvas.loadImage(iconToLoad);
-      console.log(diceIndex);
-      console.log(`drawing an ${icon}, width: ${defaultDiceDimension * diceIndex + defaultDiceDimension * (0.35 * (index + 1))} height: ${diceOuterIndex * defaultDiceDimension +
-        defaultDiceDimension +
-        diceOuterIndex * defaultIconDimension,
-        defaultIconDimension,
-        defaultIconDimension}`)
-
       ctx.drawImage(
         iconImage,
-        defaultDiceDimension * diceIndex + defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
+        defaultDiceDimension * diceIndex +
+          defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
         diceOuterIndex * defaultDiceDimension +
-        defaultDiceDimension +
-        diceOuterIndex * defaultIconDimension,
+          defaultDiceDimension +
+          diceOuterIndex * defaultIconDimension,
         defaultIconDimension,
         defaultIconDimension
-      )
-    })
-    await Promise.all(promiseArray)
+      );
+    });
+    await Promise.all(promiseArray);
   }
-}
+};
 
 const getCanvasWidth = function (diceArray) {
   const isSingleGroup = diceArray.length === 1;
@@ -76,11 +77,13 @@ const paginateDiceArray = function (diceArray) {
       .map((_, index) => index * maxRowLength)
       .map((begin) => diceArray.slice(begin, begin + maxRowLength));
 
-  const newArray = diceArray.reduce((acc, cur) => {
-    return cur.length > maxRowLength
-      ? acc.concat(paginateDiceGroup(cur))
-      : acc.concat([cur]);
-  }, []);
+  const newArray = diceArray.reduce(
+    (acc, cur) =>
+      cur.length > maxRowLength
+        ? acc.concat(paginateDiceGroup(cur))
+        : acc.concat([cur]),
+    []
+  );
 
   return newArray;
 };
@@ -98,16 +101,16 @@ async function generateDiceAttachment(diceArray) {
       canvasWidth,
       shouldHaveIcon
         ? defaultDiceDimension * paginatedArray.length +
-        defaultIconDimension * paginatedArray.length
+            defaultIconDimension * paginatedArray.length
         : defaultDiceDimension * paginatedArray.length
     );
 
     const ctx = canvas.getContext("2d");
-    const outerPromiseArray = paginatedArray.map((array, outerIndex) => {
-      return array.map(async (dice, index) => {
+    const outerPromiseArray = paginatedArray.map((array, outerIndex) =>
+      array.map(async (dice, index) => {
         const { icon: iconArray } = dice;
         let image;
-        let toLoad = await generateDie(
+        const toLoad = await generateDie(
           dice.sides,
           dice.rolled,
           randomColor({ luminosity: "light" }),
@@ -120,7 +123,7 @@ async function generateDiceAttachment(diceArray) {
           defaultDiceDimension * index,
           shouldHaveIcon
             ? outerIndex * defaultDiceDimension +
-            outerIndex * defaultIconDimension
+                outerIndex * defaultIconDimension
             : outerIndex * defaultDiceDimension,
           defaultDiceDimension,
           defaultDiceDimension
@@ -128,8 +131,8 @@ async function generateDiceAttachment(diceArray) {
         if (shouldHaveIcon) {
           await drawIcon(iconArray, ctx, Canvas, index, outerIndex);
         }
-      });
-    });
+      })
+    );
 
     await Promise.all(outerPromiseArray.map(Promise.all, Promise));
 
@@ -140,6 +143,7 @@ async function generateDiceAttachment(diceArray) {
     return attachment;
   } catch (err) {
     console.error(err);
+    return null;
   }
 }
 
