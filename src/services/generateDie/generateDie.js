@@ -72,7 +72,6 @@ const {
   generateD44,
 } = require("./dice/d4");
 
-// eslint-disable-next-line consistent-return
 async function generateDie(sides, number, fill, outline, width, height) {
   const dice = {
     201: generateD201(fill, outline, width, height),

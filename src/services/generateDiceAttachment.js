@@ -78,7 +78,6 @@ const paginateDiceArray = (diceArray) => {
         : acc.concat([cur]),
     []
   );
-
   return newArray;
 };
 

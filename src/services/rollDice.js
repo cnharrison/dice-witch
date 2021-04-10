@@ -42,8 +42,16 @@ const rollDice = (args, availableDice) => {
         console.error(err);
       }
 
-      if (parsedRoll && availableDice.includes(parsedRoll[0].sides)) {
+      const sidesArray = parsedRoll
+        .filter((rollGroup) => typeof rollGroup !== "string")
+        .map((roll) => roll.sides);
+
+      if (
+        parsedRoll &&
+        sidesArray.every((sides) => availableDice.includes(sides))
+      ) {
         const roll = new DiceRoll(value);
+        // console.log(JSON.stringify(roll, null, 2));
         result = {
           output: roll.output,
           results: roll.total,
@@ -52,7 +60,7 @@ const rollDice = (args, availableDice) => {
           .filter((rollGroup) => typeof rollGroup !== "string")
           .map((rollGroup, outerIndex) =>
             rollGroup.rolls.map((currentRoll) => ({
-              sides: parsedRoll[outerIndex].sides,
+              sides: sidesArray[outerIndex],
               rolled: currentRoll.initialValue,
               icon: generateIconArray(currentRoll.modifiers),
             }))
