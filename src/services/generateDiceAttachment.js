@@ -65,19 +65,19 @@ const getCanvasWidth = (diceArray) => {
 };
 
 const paginateDiceArray = (diceArray) => {
-  const paginateDiceGroup = () =>
+  const paginateDiceGroup = (diceArray) =>
     Array(Math.ceil(diceArray.length / maxRowLength))
       .fill()
       .map((_, index) => index * maxRowLength)
       .map((begin) => diceArray.slice(begin, begin + maxRowLength));
 
-  const newArray = diceArray.reduce(
-    (acc, cur) =>
-      cur.length > maxRowLength
-        ? acc.concat(paginateDiceGroup(cur))
-        : acc.concat([cur]),
-    []
-  );
+      const newArray = diceArray.reduce(
+        (acc, cur) =>
+          cur.length > maxRowLength
+            ? acc.concat(paginateDiceGroup(cur))
+            : acc.concat([cur]),
+        []
+      );
   return newArray;
 };
 

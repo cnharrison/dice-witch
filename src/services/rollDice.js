@@ -51,7 +51,6 @@ const rollDice = (args, availableDice) => {
         sidesArray.every((sides) => availableDice.includes(sides))
       ) {
         const roll = new DiceRoll(value);
-        // console.log(JSON.stringify(roll, null, 2));
         result = {
           output: roll.output,
           results: roll.total,
