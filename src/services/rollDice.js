@@ -1,27 +1,27 @@
 const { DiceRoll, Parser } = require('rpg-dice-roller');
 
-const getIcon = (modifierSet) => {
-  if (modifierSet.size > 0) {
-    switch (true) {
-      case modifierSet.has("drop"):
+const generateIconArray = (modifierSet) => {
+  return modifierSet.size > 0 ? [...modifierSet].map(item => {
+    switch (item) {
+      case "drop":
         return "trashcan";
-      case modifierSet.has("explode"):
+      case "explode":
         return "explosion";
-      case modifierSet.has("re-roll"):
+      case "Re-roll":
         return "recycle"
-      case modifierSet.has("max"):
+      case "max":
         return "plus";
-      case modifierSet.has("min"):
+      case "min":
         return "minus";
-      case modifierSet.has("target-success"):
+      case "target-success":
         return "bullseye";
-      case modifierSet.has("critical-success"):
+      case "critical-success":
         return "star";
-      case modifierSet.has("critical-failure"):
+      case "critical-failure":
         return "dizzyFace";
     }
-  }
-  return null;
+  }) : null;
+
 };
 
 const rollDice = (args, availableDice) => {
@@ -45,7 +45,7 @@ const rollDice = (args, availableDice) => {
           groupArray.push({
             sides: parsedRoll[0].sides,
             rolled: roll.rolls[0].rolls[i].initialValue,
-            icon: getIcon(roll.rolls[0].rolls[i].modifiers)
+            icon: generateIconArray(roll.rolls[0].rolls[i].modifiers)
           })
         }
         diceArray.push(groupArray);

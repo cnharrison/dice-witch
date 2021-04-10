@@ -8,28 +8,32 @@ const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 30;
 
-const getIcon = function (icon, explosion, recycle, x, plus, minus, bullseye, star, dizzyFace, blank) {
-  switch (icon) {
-    case "trashcan":
-      return x;
-    case "explosion":
-      return explosion;
-    case "recycle":
-      return recycle;
-    case "plus":
-      return plus;
-    case "minus":
-      return minus;
-    case "bullseye":
-      return bullseye;
-    case "star":
-      return star;
-    case "dizzyFace":
-      return dizzyFace;
-    default:
-      return blank;
+const drawIcon = async function (iconArray, ctx, Canvas, diceIndex, diceOuterIndex) {
+  if (iconArray) {
+    let iconImage;
+    const promiseArray = iconArray.map(async (icon, index) => {
+      const iconToLoad = await generateIcon(icon);
+      iconImage = await Canvas.loadImage(iconToLoad);
+      console.log(diceIndex);
+      console.log(`drawing an ${icon}, width: ${defaultDiceDimension * diceIndex + defaultDiceDimension * (0.35 * (index + 1))} height: ${diceOuterIndex * defaultDiceDimension +
+        defaultDiceDimension +
+        diceOuterIndex * defaultIconDimension,
+        defaultIconDimension,
+        defaultIconDimension}`)
+
+      ctx.drawImage(
+        iconImage,
+        defaultDiceDimension * diceIndex + defaultDiceDimension * (0.35 * (index + 1)),
+        diceOuterIndex * defaultDiceDimension +
+        defaultDiceDimension +
+        diceOuterIndex * defaultIconDimension,
+        defaultIconDimension,
+        defaultIconDimension
+      )
+    })
+    await Promise.all(promiseArray)
   }
-};
+}
 
 const getCanvasWidth = function (diceArray) {
   const isSingleGroup = diceArray.length === 1;
@@ -75,7 +79,7 @@ const paginateDiceArray = function (diceArray) {
 async function generateDiceAttachment(diceArray) {
   try {
     const shouldHaveIcon = diceArray
-      .map((diceGroup) => diceGroup.some((dice) => !!dice.icon))
+      .map((diceGroup) => diceGroup.some((dice) => !!dice.icon?.length))
       .some((bool) => bool === true);
 
     const paginatedArray = paginateDiceArray(diceArray);
@@ -92,17 +96,8 @@ async function generateDiceAttachment(diceArray) {
     const ctx = canvas.getContext("2d");
     const outerPromiseArray = paginatedArray.map((array, outerIndex) => {
       return array.map(async (dice, index) => {
-        const { icon } = dice;
-        let x;
-        let blank;
+        const { icon: iconArray } = dice;
         let image;
-        let explosion;
-        let recycle;
-        let plus;
-        let minus;
-        let bullseye;
-        let star;
-        let dizzyFace;
         let toLoad = await generateDie(
           dice.sides,
           dice.rolled,
@@ -110,45 +105,6 @@ async function generateDiceAttachment(diceArray) {
           "#000000"
         );
         image = await Canvas.loadImage(toLoad);
-
-        switch (icon) {
-          case "trashcan":
-            const xToLoad = await generateIcon("trashcan");
-            x = await Canvas.loadImage(xToLoad);
-            break;
-          case "explosion":
-            const explosionToLoad = await generateIcon("explosion");
-            explosion = await Canvas.loadImage(explosionToLoad);
-            break;
-          case "recycle":
-            const recycleToLoad = await generateIcon("recycle");
-            recycle = await Canvas.loadImage(recycleToLoad);
-            break;
-          case "plus":
-            const plusToLoad = await generateIcon("plus");
-            plus = await Canvas.loadImage(plusToLoad);
-            break;
-          case "minus":
-            const minusToLoad = await generateIcon("minus");
-            minus = await Canvas.loadImage(minusToLoad);
-            break;
-          case "bullseye":
-            const bullseyeToLoad = await generateIcon("bullseye");
-            bullseye = await Canvas.loadImage(bullseyeToLoad);
-            break;
-          case "star":
-            const starToLoad = await generateIcon("star");
-            star = await Canvas.loadImage(starToLoad);
-            break;
-          case "dizzyFace":
-            const dizzyFaceToLoad = await generateIcon("dizzyFace");
-            dizzyFace = await Canvas.loadImage(dizzyFaceToLoad);
-            break;
-          default:
-            const blankToLoad = await generateIcon("blank");
-            blank = await Canvas.loadImage(blankToLoad);
-            break;
-        }
 
         ctx.drawImage(
           image,
@@ -161,15 +117,7 @@ async function generateDiceAttachment(diceArray) {
           defaultDiceDimension
         );
         if (shouldHaveIcon) {
-          ctx.drawImage(
-            getIcon(icon, explosion, recycle, x, plus, minus, bullseye, star, dizzyFace, blank),
-            defaultDiceDimension * index + defaultDiceDimension * 0.35,
-            outerIndex * defaultDiceDimension +
-            defaultDiceDimension +
-            outerIndex * defaultIconDimension,
-            defaultIconDimension,
-            defaultIconDimension
-          );
+          await drawIcon(iconArray, ctx, Canvas, index, outerIndex);
         }
       });
     });
