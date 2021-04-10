@@ -4,15 +4,21 @@ const getIcon = (modifierSet) => {
   if (modifierSet.size > 0) {
     switch (true) {
       case modifierSet.has("drop"):
-        return "x";
+        return "trashcan";
       case modifierSet.has("explode"):
         return "explosion";
       case modifierSet.has("re-roll"):
-        return "refresh"
+        return "recycle"
       case modifierSet.has("max"):
-        return "greenPlus";
+        return "plus";
       case modifierSet.has("min"):
-        return "redMinus";
+        return "minus";
+      case modifierSet.has("target-success"):
+        return "bullseye";
+      case modifierSet.has("critical-success"):
+        return "star";
+      case modifierSet.has("critical-failure"):
+        return "dizzyFace";
     }
   }
   return null;
@@ -21,7 +27,6 @@ const getIcon = (modifierSet) => {
 const rollDice = (args, availableDice) => {
   try {
     let parsedRoll;
-    let roll;
     let diceArray = [];
     let resultArray = [];
 
@@ -34,7 +39,7 @@ const rollDice = (args, availableDice) => {
       }
 
       if (parsedRoll && availableDice.includes(parsedRoll[0].sides)) {
-        roll = new DiceRoll(value);
+        const roll = new DiceRoll(value);
         resultArray.push({ output: roll.output, results: roll.total });
         for (i = 0; i < roll.rolls[0].length; i++) {
           groupArray.push({

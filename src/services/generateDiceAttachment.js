@@ -8,18 +8,24 @@ const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 30;
 
-const getIcon = function (icon, explosion, refresh, x, greenPlus, redMinus, blank) {
+const getIcon = function (icon, explosion, recycle, x, plus, minus, bullseye, star, dizzyFace, blank) {
   switch (icon) {
-    case "x":
+    case "trashcan":
       return x;
     case "explosion":
       return explosion;
-    case "refresh":
-      return refresh;
-    case "greenPlus":
-      return greenPlus;
-    case "redMinus":
-      return redMinus;
+    case "recycle":
+      return recycle;
+    case "plus":
+      return plus;
+    case "minus":
+      return minus;
+    case "bullseye":
+      return bullseye;
+    case "star":
+      return star;
+    case "dizzyFace":
+      return dizzyFace;
     default:
       return blank;
   }
@@ -91,9 +97,12 @@ async function generateDiceAttachment(diceArray) {
         let blank;
         let image;
         let explosion;
-        let refresh;
-        let greenPlus;
-        let redMinus;
+        let recycle;
+        let plus;
+        let minus;
+        let bullseye;
+        let star;
+        let dizzyFace;
         let toLoad = await generateDie(
           dice.sides,
           dice.rolled,
@@ -103,22 +112,38 @@ async function generateDiceAttachment(diceArray) {
         image = await Canvas.loadImage(toLoad);
 
         switch (icon) {
-          case "x":
-            const xToLoad = await generateIcon("x");
+          case "trashcan":
+            const xToLoad = await generateIcon("trashcan");
             x = await Canvas.loadImage(xToLoad);
             break;
           case "explosion":
             const explosionToLoad = await generateIcon("explosion");
             explosion = await Canvas.loadImage(explosionToLoad);
-          case "refresh":
-            const refreshToLoad = await generateIcon("refresh");
-            refresh = await Canvas.loadImage(refreshToLoad);
-          case "greenPlus":
-            const greenPlusToLoad = await generateIcon("greenPlus");
-            greenPlus = await Canvas.loadImage(greenPlusToLoad);
-          case "redMinus":
-            const redMinusToLoad = await generateIcon("redMinus");
-            redMinus = await Canvas.loadImage(redMinusToLoad);
+            break;
+          case "recycle":
+            const recycleToLoad = await generateIcon("recycle");
+            recycle = await Canvas.loadImage(recycleToLoad);
+            break;
+          case "plus":
+            const plusToLoad = await generateIcon("plus");
+            plus = await Canvas.loadImage(plusToLoad);
+            break;
+          case "minus":
+            const minusToLoad = await generateIcon("minus");
+            minus = await Canvas.loadImage(minusToLoad);
+            break;
+          case "bullseye":
+            const bullseyeToLoad = await generateIcon("bullseye");
+            bullseye = await Canvas.loadImage(bullseyeToLoad);
+            break;
+          case "star":
+            const starToLoad = await generateIcon("star");
+            star = await Canvas.loadImage(starToLoad);
+            break;
+          case "dizzyFace":
+            const dizzyFaceToLoad = await generateIcon("dizzyFace");
+            dizzyFace = await Canvas.loadImage(dizzyFaceToLoad);
+            break;
           default:
             const blankToLoad = await generateIcon("blank");
             blank = await Canvas.loadImage(blankToLoad);
@@ -137,7 +162,7 @@ async function generateDiceAttachment(diceArray) {
         );
         if (shouldHaveIcon) {
           ctx.drawImage(
-            getIcon(icon, explosion, refresh, x, greenPlus, redMinus, blank),
+            getIcon(icon, explosion, recycle, x, plus, minus, bullseye, star, dizzyFace, blank),
             defaultDiceDimension * index + defaultDiceDimension * 0.35,
             outerIndex * defaultDiceDimension +
             defaultDiceDimension +
