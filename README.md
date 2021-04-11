@@ -6,11 +6,35 @@ Dice Witch is a highly advanced bot that rolls dice on Discord. It displays the 
 
 ![Image of Dice Witch in action](https://i.imgur.com/8cEkaek.gif)
 
+# Table of contents 
+- [Dice Witch](#dice-witch)
+- [Install](#install)
+- [Usage](#usage)
+  * [Basic rolls](#basic-rolls)
+  * [Advanced rolls](#advanced-rolls)
+    + [Min/Max](#min-max)
+    + [Exploding](#exploding)
+      - [Compounding](#compounding)
+      - [Penetrating](#penetrating)
+    + [Re-roll](#re-roll)
+    + [Keep/Drop AKA Advantage](#keep-drop-aka-advantage)
+    + [Target success/failure AKA Dice pool](#target-success-failure-aka-dice-pool)
+    + [Critical success/failure](#critical-success-failure)
+    + [Sorting](#sorting)
+  * [Math](#math)
+  * [Extras](#extras)
+    + [Titled rolls](#titled-rolls)
+- [Contributing](#contributing)
+- [Support](#support)
+- [Credits](#credits)
+- [Roadmap](#roadmap)
+
 # Install
 
 You can install Dice Witch on your Discord server by clicking [here](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot).
 
 # Usage
+
 
 ## Basic rolls
 You can roll any of the traditional dice that exist IRL with Dice Witch--four, six, eight, ten, twelve, or twenty-sided dice.The reason for this restriction is that dice are displayed as images in Discord. 
