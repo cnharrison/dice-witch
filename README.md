@@ -17,8 +17,8 @@ You can roll any of the traditional dice that exist IRL with Dice Witch--four, s
 
   - `!roll 1d4 3d6 1d20`: Roll one four-sided die, three six-sided dice, and one twenty-sided die.
   - `!roll 1d12+3 5d4`: Roll one twelve-sided die, adding three to the total, and five four sided dice. 
-  - `!roll 3d6+3d6`: Roll two sets of three six-sided die and add the total. 
-  You can also subtract `-`, multiply `*`, and divide `/` rolls.
+  - `!roll 3d6+3d6`: Roll two sets of three six-sided dice and add the total. 
+
 
 ## Advanced rolls
 You can use (almost) any of these modifiers in conjunction with any other modifiers. 
