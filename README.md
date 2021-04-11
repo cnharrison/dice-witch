@@ -66,7 +66,7 @@ A type of exploding dice most comonly used in the Hackmaster system.
 >Should you roll the maximum value on this particular die, you may re-roll and add the result of the extra die, less one point, to the total (penetration can actually result in simply the maximum die value if a 1 is subsequently rolled, since any fool knows that 1-1=0). This process continues indefinitely as long as the die in question continues to come up maximum (but there’s always only a –1 subtracted from the extra die, even if it’s, say, the third die of penetration)
 
 You can mark exploding dice to penetrate by using `!p` instead of `!`. 
-- `!roll 2d6!p!=5`: Roll two d6 and explode and penetrate on any roll equal to five.
+- `!roll 2d6!p=5`: Roll two d6 and explode and penetrate on any roll equal to five.
 
 
 ### Re-roll
@@ -81,38 +81,38 @@ Disregard or keep all dice above or below a certain threshold.
 - `!roll 4d10k2l`: Roll 4d10 and keep the lowest two rolls.  
 
 - `!roll 4d10d1`: Roll 4d10 and disregard the lowest roll.
-- `!Roll 4d10d1h`: Roll 4d10 and disregard the highest roll
+- `!roll 4d10d1h`: Roll 4d10 and disregard the highest roll.
 
 ### Target success/failure AKA Dice pool
-Counts the number of dice that meet a criterion
+Counts the number of dice that meet a criterion.
 - `!roll 2d6=6`: Roll 2d6 and count the number of dice that equal six
 - `!roll 6d10<=4`: Roll 6d10 and count the number of dice that are less than or equal to four
 
 ### Critical success/failure 
 This is an aesthetic feature that makes it super clear when a die has rolled the highest or lowest possible value. It makes no difference to the roll or its value.
 
-- `!roll 1d20cs`: Roll 1d20 and highlight if result is 20 
-- `!roll 5d20cs>=16`: Roll 5d20 and highlight if result is greater than 16
-- `!roll 1d20cf`: Roll 1d20 and highlight result is 1
+- `!roll 1d20cs`: Roll 1d20 and highlight if result is 20.
+- `!roll 5d20cs>=16`: Roll 5d20 and highlight if result is greater than 16.
+- `!roll 1d20cf`: Roll 1d20 and highlight result is 1.
 
 ### Sorting
 
 Sorts the results of any of your rolls in ascending or descending numerical order. 
 
-- `!roll 4d6`: Roll 4d6 and do not sort
-- `!roll 4d6s`: Roll 4d6 and sort results in asending order
-- `!roll 4d6sa`: Same as above
-- `!roll 4d6sd`: Roll 4d6 and sort results in descending order
+- `!roll 4d6`: Roll 4d6 and do not sort.
+- `!roll 4d6s`: Roll 4d6 and sort results in asending order.
+- `!roll 4d6sa`: Same as above.
+- `!roll 4d6sd`: Roll 4d6 and sort results in descending order.
 
 ## Math 
 
 You can use add, subtract, multiply, divide, reduce, and use parenthesis as you please. You can also reduce, and use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`
 
-- `!roll d6*5`: Roll a d6 and multiply the reslt by 5 
-- `!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals
-- `!roll 3d20^4 `: Roll 3d20 and raise the result to the power of 4
-- `!roll (4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times 
-- `!roll sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root
+- `!roll d6*5`: Roll a d6 and multiply the result by 5 
+- `!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.
+- `!roll 3d20^4`: Roll 3d20 and raise the result to the power of 4.
+- `!roll (4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times .
+- `!roll sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root.
 
 ## Extras 
 
