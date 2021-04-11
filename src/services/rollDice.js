@@ -49,10 +49,11 @@ const rollDice = (args, availableDice) => {
             .map((roll) => roll.sides)
         : [];
 
-      if (
+      const isValid =
         parsedRoll &&
-        sidesArray.every((sides) => availableDice.includes(sides))
-      ) {
+        sidesArray.every((sides) => availableDice.includes(sides));
+
+      if (isValid) {
         const roll = new DiceRoll(value);
         result = {
           output: roll.output,
@@ -69,8 +70,10 @@ const rollDice = (args, availableDice) => {
             }))
           );
       }
-      diceArray = [...diceArray, ...groupArray];
-      resultArray = [...resultArray, result];
+      if (isValid) {
+        diceArray = [...diceArray, ...groupArray];
+        resultArray = [...resultArray, result];
+      }
     });
     return { diceArray, resultArray };
   } catch (err) {
