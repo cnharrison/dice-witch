@@ -39,5 +39,5 @@ module.exports = {
   generateD2017,
   generateD2018,
   generateD2019,
-  generateD2020
+  generateD2020,
 };

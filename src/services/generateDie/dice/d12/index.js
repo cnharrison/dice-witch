@@ -23,5 +23,5 @@ module.exports = {
   generateD129,
   generateD1210,
   generateD1211,
-  generateD1212
+  generateD1212,
 };

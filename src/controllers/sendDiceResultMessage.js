@@ -3,9 +3,7 @@ const { getRandomNumber } = require("../helpers");
 const { logEvent } = require("../services");
 
 async function generateEmbed(resultArray, attachment, message, title) {
-  const grandTotal = resultArray.reduce((prev, cur) => {
-    return prev + cur.result;
-  }, 0);
+  const grandTotal = resultArray.reduce((prev, cur) => prev + cur.results, 0);
   try {
     const embed = title
       ? new Discord.MessageEmbed()
@@ -14,10 +12,8 @@ async function generateEmbed(resultArray, attachment, message, title) {
           .attachFiles(attachment)
           .setImage("attachment://currentDice.png")
           .setFooter(
-            `${resultArray
-              .map((roll) => `${roll.value}: ${roll.result}`)
-              .join("\n")} ${
-              resultArray.length > 1 ? `\ngrand total: ${grandTotal}` : ""
+            `${resultArray.map((roll) => roll.output).join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
             }\nsent to ${message.author.username}`
           )
       : new Discord.MessageEmbed()
@@ -25,15 +21,14 @@ async function generateEmbed(resultArray, attachment, message, title) {
           .attachFiles(attachment)
           .setImage("attachment://currentDice.png")
           .setFooter(
-            `${resultArray
-              .map((roll) => `${roll.value}: ${roll.result}`)
-              .join("\n")} ${
-              resultArray.length > 1 ? `\ngrand total: ${grandTotal}` : ""
+            `${resultArray.map((roll) => roll.output).join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
             }\nsent to ${message.author.username}`
           );
     return embed;
   } catch (err) {
     console.log(err);
+    return null;
   }
 }
 

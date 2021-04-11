@@ -11,5 +11,5 @@ module.exports = {
   sendHelperMessage,
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
-  sendNeedPermissionMessage
+  sendNeedPermissionMessage,
 };

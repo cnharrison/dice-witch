@@ -1,5 +1,4 @@
-const generateD128 = (fill, outline, viewBoxW = "500", viewBoxH = "500") => {
-  return `
+const generateD128 = (fill, outline, viewBoxW = "500", viewBoxH = "500") => `
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxW} ${viewBoxH}">
   <g>
 
@@ -27,6 +26,5 @@ const generateD128 = (fill, outline, viewBoxW = "500", viewBoxH = "500") => {
   </g>
 </svg>
 `;
-};
 
 module.exports = generateD128;

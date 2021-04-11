@@ -6,20 +6,42 @@ const generateDie = require("./generateDie/generateDie");
 
 const maxRowLength = 10;
 const defaultDiceDimension = 100;
-const defaultIconDimension = 30;
+const defaultIconDimension = 25;
 
-const getIcon = function (icon, check, x, blank) {
-  switch (icon) {
-    case "x":
-      return x;
-    case "check":
-      return check;
-    default:
-      return blank;
+const drawIcon = async (iconArray, ctx, diceIndex, diceOuterIndex) => {
+  const getIconSpacing = (iarr) => {
+    switch (iarr.length) {
+      case 1:
+        return 0.375;
+      case 2:
+        return 0.26;
+      case 3:
+        return 0.19;
+      default:
+        return 0.25;
+    }
+  };
+  if (iconArray) {
+    let iconImage;
+    const promiseArray = iconArray.map(async (icon, index) => {
+      const iconToLoad = await generateIcon(icon);
+      iconImage = await Canvas.loadImage(iconToLoad);
+      ctx.drawImage(
+        iconImage,
+        defaultDiceDimension * diceIndex +
+          defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
+        diceOuterIndex * defaultDiceDimension +
+          defaultDiceDimension +
+          diceOuterIndex * defaultIconDimension,
+        defaultIconDimension,
+        defaultIconDimension
+      );
+    });
+    await Promise.all(promiseArray);
   }
 };
 
-const getCanvasWidth = function (diceArray) {
+const getCanvasWidth = (diceArray) => {
   const isSingleGroup = diceArray.length === 1;
   const onlyGroupLength = diceArray[0].length;
   const isFirstShorterOrEqualToMax = onlyGroupLength <= maxRowLength;
@@ -44,26 +66,27 @@ const getCanvasWidth = function (diceArray) {
   }
 };
 
-const paginateDiceArray = function (diceArray) {
+const paginateDiceArray = (diceArray) => {
   const paginateDiceGroup = (diceArray) =>
     Array(Math.ceil(diceArray.length / maxRowLength))
       .fill()
       .map((_, index) => index * maxRowLength)
       .map((begin) => diceArray.slice(begin, begin + maxRowLength));
 
-  const newArray = diceArray.reduce((acc, cur) => {
-    return cur.length > maxRowLength
-      ? acc.concat(paginateDiceGroup(cur))
-      : acc.concat([cur]);
-  }, []);
-
+  const newArray = diceArray.reduce(
+    (acc, cur) =>
+      cur.length > maxRowLength
+        ? acc.concat(paginateDiceGroup(cur))
+        : acc.concat([cur]),
+    []
+  );
   return newArray;
 };
 
 async function generateDiceAttachment(diceArray) {
   try {
     const shouldHaveIcon = diceArray
-      .map((diceGroup) => diceGroup.some((dice) => !!dice.icon))
+      .map((diceGroup) => diceGroup.some((dice) => !!dice.icon?.length))
       .some((bool) => bool === true);
 
     const paginatedArray = paginateDiceArray(diceArray);
@@ -78,35 +101,16 @@ async function generateDiceAttachment(diceArray) {
     );
 
     const ctx = canvas.getContext("2d");
-    const outerPromiseArray = paginatedArray.map((array, outerIndex) => {
-      return array.map(async (dice, index) => {
-        const { icon } = dice;
-        let check;
-        let x;
-        let blank;
-        let image;
-        let toLoad = await generateDie(
+    const outerPromiseArray = paginatedArray.map((array, outerIndex) =>
+      array.map(async (dice, index) => {
+        const { icon: iconArray } = dice;
+        const toLoad = await generateDie(
           dice.sides,
           dice.rolled,
           randomColor({ luminosity: "light" }),
           "#000000"
         );
-        image = await Canvas.loadImage(toLoad);
-
-        switch (icon) {
-          case "x":
-            const xToLoad = await generateIcon("x");
-            x = await Canvas.loadImage(xToLoad);
-            break;
-          case "check":
-            const checkToLoad = await generateIcon("check");
-            check = await Canvas.loadImage(checkToLoad);
-            break;
-          default:
-            const blankToLoad = await generateIcon("blank");
-            blank = await Canvas.loadImage(blankToLoad);
-            break;
-        }
+        const image = await Canvas.loadImage(toLoad);
 
         ctx.drawImage(
           image,
@@ -119,18 +123,10 @@ async function generateDiceAttachment(diceArray) {
           defaultDiceDimension
         );
         if (shouldHaveIcon) {
-          ctx.drawImage(
-            getIcon(icon, check, x, blank),
-            defaultDiceDimension * index + defaultDiceDimension * 0.35,
-            outerIndex * defaultDiceDimension +
-              defaultDiceDimension +
-              outerIndex * defaultIconDimension,
-            defaultIconDimension,
-            defaultIconDimension
-          );
+          await drawIcon(iconArray, ctx, index, outerIndex);
         }
-      });
-    });
+      })
+    );
 
     await Promise.all(outerPromiseArray.map(Promise.all, Promise));
 
@@ -141,6 +137,7 @@ async function generateDiceAttachment(diceArray) {
     return attachment;
   } catch (err) {
     console.error(err);
+    return null;
   }
 }
 

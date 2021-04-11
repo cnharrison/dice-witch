@@ -1,5 +1,4 @@
-const generateD86 = (fill, outline, viewBoxW = "400", viewBoxH = "400") => {
-  return `
+const generateD86 = (fill, outline, viewBoxW = "400", viewBoxH = "400") => `
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxW} ${viewBoxH}">
   <g>
       <path fill="${fill}" d="M53.7 276.7l142-246c2-3.5 7-3.5 9 0l142 246c2 3.5-.5 7.8-4.5 7.8H58.3c-4.1 0-6.6-4.3-4.6-7.8zm296.4-167.4L208.8 27.8c-2.3-1.3-4.9 1.3-3.6 3.6l141.3 244.8c1.3 2.3 4.9 1.4 4.9-1.3V111.6c0-.9-.5-1.8-1.3-2.3zm-299.9 0l141.3-81.6c2.3-1.3 4.9 1.3 3.6 3.6L53.8 276.1c-1.3 2.3-4.9 1.4-4.9-1.3V111.6c0-.9.5-1.8 1.3-2.3zm3.5 177.9l142 84.5c2 1.2 7 1.2 9 0l142-84.5c2-1.2-.5-2.7-4.5-2.7H58.3c-4.1 0-6.6 1.5-4.6 2.7z"/>
@@ -15,7 +14,6 @@ const generateD86 = (fill, outline, viewBoxW = "400", viewBoxH = "400") => {
       <path d="M237.9 264.1h-71.5c-3.1 0-5.7-2.5-5.7-5.7v-2.2c0-3.1 2.5-5.7 5.7-5.7h71.5c3.1 0 5.7 2.5 5.7 5.7v2.2c0 3.2-2.5 5.7-5.7 5.7z"/>
   </g>
 </svg>
-    `;
-};
+`;
 
 module.exports = generateD86;

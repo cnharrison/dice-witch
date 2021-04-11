@@ -11,5 +11,5 @@ module.exports = {
   rollDice,
   generateDie,
   generateIcon,
-  logEvent
+  logEvent,
 };

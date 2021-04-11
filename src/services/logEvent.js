@@ -1,10 +1,11 @@
 const Discord = require("discord.js");
 const { adminID } = require("../../config.json");
-
-const eventColor = "#99999";
-const errorColor = "#FF0000";
-const goodColor = "#00FF00";
-const infoColor = "#1E90FF";
+const {
+  eventColor,
+  errorColor,
+  goodColor,
+  infoColor,
+} = require("../constants");
 
 const logEvent = async (
   eventType,
@@ -35,7 +36,6 @@ const logEvent = async (
       logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
     case "criticalError":
-      console.error(error);
       embed = new Discord.MessageEmbed()
         .setColor("#FF0000")
         .setTitle(`${eventType}: ${command.name}`)
@@ -116,6 +116,7 @@ const logEvent = async (
     default:
       return null;
   }
+  return null;
 };
 
 module.exports = logEvent;

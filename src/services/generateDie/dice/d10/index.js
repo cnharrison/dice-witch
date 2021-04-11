@@ -19,5 +19,5 @@ module.exports = {
   generateD107,
   generateD108,
   generateD109,
-  generateD1010
+  generateD1010,
 };
