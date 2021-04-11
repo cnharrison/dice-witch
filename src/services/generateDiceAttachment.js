@@ -12,7 +12,7 @@ const drawIcon = async (iconArray, ctx, diceIndex, diceOuterIndex) => {
   const getIconSpacing = (iarr) => {
     switch (iarr.length) {
       case 1:
-        return 0.4;
+        return 0.375;
       case 2:
         return 0.26;
       case 3:
