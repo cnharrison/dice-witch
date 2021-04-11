@@ -90,13 +90,6 @@ You can use add, subtract, multiply, divide, reduce, and use parenthesis as you 
 - `!roll (4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times 
 - `!roll sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root
 
-
-## Group rolls 
-
-You can perform rolls groups using comma separated sub-roll expressions. The sub-roll results will be summed together and modifiers can be run on entire expressions, rather than individual die rolls.
-- `!roll {4d6, 2d10, d4}`
-- `!roll {3d8*2, 20/2d10, 2d10-d4}`: 
-
 ## Extras 
 
 ### Titled rolls
