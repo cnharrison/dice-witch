@@ -61,8 +61,9 @@ Allows one or more dice to be re-rolled (Usually when it rolls the highest possi
 #### Compounding
 Just like exploding, but exploded dice will be combined together in a single roll instead of being re-rolled. You can mark exploding dice to compound by using  `!!` instead of `!`
   - `!roll 2d6!!=5`: Roll two d6 and explode and compound on any roll equal to five.
+
 #### Penetrating
-A type of exploding dice most comonly used in the Hackmaster system. 
+A type of exploding dice most commonly used in the Hackmaster system. 
 >Should you roll the maximum value on this particular die, you may re-roll and add the result of the extra die, less one point, to the total (penetration can actually result in simply the maximum die value if a 1 is subsequently rolled, since any fool knows that 1-1=0). This process continues indefinitely as long as the die in question continues to come up maximum (but there’s always only a –1 subtracted from the extra die, even if it’s, say, the third die of penetration)
 
 You can mark exploding dice to penetrate by using `!p` instead of `!`. 
@@ -70,7 +71,7 @@ You can mark exploding dice to penetrate by using `!p` instead of `!`.
 
 
 ### Re-roll
-Rerolls a die that rolls the lowest posible number on that die, until a number greater than the minimum is rolled. 
+Rerolls a die that rolls the lowest possible number on that die, until a number greater than the minimum is rolled. 
 
 - `!roll 1d10r`: Roll 1d10 and reroll on one. 
 - `!roll 4d10r<=3`: Roll 4d10 and reroll on any result less than or equal to three. 
@@ -100,13 +101,13 @@ This is an aesthetic feature that makes it super clear when a die has rolled the
 Sorts the results of any of your rolls in ascending or descending numerical order. 
 
 - `!roll 4d6`: Roll 4d6 and do not sort.
-- `!roll 4d6s`: Roll 4d6 and sort results in asending order.
+- `!roll 4d6s`: Roll 4d6 and sort results in ascending order.
 - `!roll 4d6sa`: Same as above.
 - `!roll 4d6sd`: Roll 4d6 and sort results in descending order.
 
 ## Math 
 
-You can use add, subtract, multiply, divide, reduce, and use parenthesis as you please. You can also reduce, and use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`
+You can use add, subtract, multiply, divide, reduce, and use parentheses as you please. You can also reduce, and use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`
 
 - `!roll d6*5`: Roll a d6 and multiply the result by 5 
 - `!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.
@@ -118,7 +119,7 @@ You can use add, subtract, multiply, divide, reduce, and use parenthesis as you 
 
 ### Titled rolls
 
-  - `!titledroll 1d20`: Roll one twenty-sided die with a title. You'll be prompted for the title after typing the command, and the roll will only be perfomed once you've given it. Any `!roll` can also be a `!titledroll`. You have 30 seconds to answer the prompt.
+  - `!titledroll 1d20`: Roll one twenty-sided die with a title. You'll be prompted for the title after typing the command, and the roll will only be performed once you've given it. Any `!roll` can also be a `!titledroll`. You have 30 seconds to answer the prompt.
 
 # Contributing
 
@@ -139,3 +140,5 @@ Dice Witch uses the superb [RPG Dice Roller](https://github.com/GreenImp/rpg-dic
 
 - [ ] True random numbers based on stochastic atmospheric data
 - [ ] A variety of different sets of illustrated and photographed dice
+
+
