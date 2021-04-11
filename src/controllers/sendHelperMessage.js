@@ -27,7 +27,7 @@ const sendHelperMessage = async (message, name, logOutputChannel, args) => {
       )
       .addField(
         "\u200B",
-        `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
+        `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
       );
     await message.channel.send(embed);
     return logEvent(
