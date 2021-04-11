@@ -12,9 +12,11 @@ const drawIcon = async (iconArray, ctx, diceIndex, diceOuterIndex) => {
   const getIconSpacing = (iarr) => {
     switch (iarr.length) {
       case 1:
-        return 0.37;
+        return 0.4;
       case 2:
-        return 0.25;
+        return 0.26;
+      case 3:
+        return 0.19;
       default:
         return 0.25;
     }
@@ -71,13 +73,13 @@ const paginateDiceArray = (diceArray) => {
       .map((_, index) => index * maxRowLength)
       .map((begin) => diceArray.slice(begin, begin + maxRowLength));
 
-      const newArray = diceArray.reduce(
-        (acc, cur) =>
-          cur.length > maxRowLength
-            ? acc.concat(paginateDiceGroup(cur))
-            : acc.concat([cur]),
-        []
-      );
+  const newArray = diceArray.reduce(
+    (acc, cur) =>
+      cur.length > maxRowLength
+        ? acc.concat(paginateDiceGroup(cur))
+        : acc.concat([cur]),
+    []
+  );
   return newArray;
 };
 

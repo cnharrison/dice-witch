@@ -11,13 +11,13 @@ function generateIconArray(modifierSet) {
           case "re-roll":
             return "recycle";
           case "max":
-            return "plus";
+            return "chevronUp";
           case "min":
-            return "minus";
+            return "chevronDown";
           case "target-success":
             return "bullseye";
           case "critical-success":
-            return "star";
+            return "crit";
           case "critical-failure":
             return "dizzyFace";
           default:
@@ -43,8 +43,11 @@ const rollDice = (args, availableDice) => {
       }
 
       const sidesArray = parsedRoll
-        .filter((rollGroup) => typeof rollGroup !== "string")
-        .map((roll) => roll.sides);
+        ? parsedRoll
+            .filter((rollGroup) => typeof rollGroup !== "string")
+            .filter((rollGroup) => typeof rollGroup !== "number")
+            .map((roll) => roll.sides)
+        : [];
 
       if (
         parsedRoll &&
@@ -57,6 +60,7 @@ const rollDice = (args, availableDice) => {
         };
         groupArray = roll.rolls
           .filter((rollGroup) => typeof rollGroup !== "string")
+          .filter((rollGroup) => typeof rollGroup !== "number")
           .map((rollGroup, outerIndex) =>
             rollGroup.rolls.map((currentRoll) => ({
               sides: sidesArray[outerIndex],
