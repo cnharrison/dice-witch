@@ -65,7 +65,7 @@ Counts the number of dice that meet a criterion
 - `!roll 6d10<=4`: Roll 6d10 and count the number of dice that are less than or equal to four
 
 ### Critical success/failure 
-This is an aesthetic feature that makes it super clear when a die has rolled the highest or lowest possible value. It makes no differnce to the roll or its value.
+This is an aesthetic feature that makes it super clear when a die has rolled the highest or lowest possible value. It makes no difference to the roll or its value.
 
 - `!roll 1d20cs`: Roll 1d20 and highlight if result is 20 
 - `!roll 5d20cs>=16`: Roll 5d20 and highlight if result is greater than 16
@@ -73,7 +73,7 @@ This is an aesthetic feature that makes it super clear when a die has rolled the
 
 ### Sorting
 
-You can append an `s` flag to any of your rolls to sort the in aseending or descending numerical order. 
+Sorts the results of any of your rolls in ascending or descending numerical order. 
 
 - `!roll 4d6`: Roll 4d6 and do not sort
 - `!roll 4d6s`: Roll 4d6 and sort results in asending order
@@ -82,7 +82,7 @@ You can append an `s` flag to any of your rolls to sort the in aseending or desc
 
 ## Math 
 
-You can use add, subtract, multiply, divide, and use parenthesis as you please. You can also reduce and use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`
+You can use add, subtract, multiply, divide, reduce, and use parenthesis as you please. You can also reduce, and use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`
 
 - `!roll d6*5`: Roll a d6 and multiply the reslt by 5 
 - `!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals
