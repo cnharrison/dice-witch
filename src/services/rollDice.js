@@ -20,8 +20,10 @@ function generateIconArray(modifierSet) {
             return "crit";
           case "critical-failure":
             return "dizzyFace";
+          case "penetrate":
+            return "arrowThrough";
           default:
-            return "";
+            return "blank";
         }
       })
     : null;
@@ -75,6 +77,7 @@ const rollDice = (args, availableDice) => {
         resultArray = [...resultArray, result];
       }
     });
+
     return { diceArray, resultArray };
   } catch (err) {
     console.error(err);
