@@ -18,7 +18,7 @@ const drawIcon = async (iconArray, ctx, diceIndex, diceOuterIndex) => {
       case 3:
         return 0.19;
       default:
-        return 0.25;
+        return 0.19;
     }
   };
   if (iconArray) {
