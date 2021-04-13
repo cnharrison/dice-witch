@@ -30,14 +30,13 @@ function generateIconArray(modifierSet) {
 }
 
 const rollDice = (args, availableDice) => {
+  let diceArray = [];
+  let groupArray = [];
+  let result = {};
+  let resultArray = [];
   try {
-    let parsedRoll;
-    let diceArray = [];
-    let groupArray = [];
-    let result = {};
-    let resultArray = [];
-
     args.forEach((value) => {
+      let parsedRoll;
       try {
         parsedRoll = Parser.parse(value);
       } catch (err) {
@@ -71,13 +70,10 @@ const rollDice = (args, availableDice) => {
               icon: generateIconArray(currentRoll.modifiers),
             }))
           );
-      }
-      if (isValid) {
         diceArray = [...diceArray, ...groupArray];
         resultArray = [...resultArray, result];
       }
     });
-
     return { diceArray, resultArray };
   } catch (err) {
     console.error(err);
