@@ -7,8 +7,6 @@ Dice Witch is a highly advanced bot that rolls dice on Discord. It displays the 
 ![Image of Dice Witch in action](https://i.imgur.com/8cEkaek.gif)
 
 # Table of contents 
-   * [Dice Witch](#dice-witch)
-   * [Table of contents](#table-of-contents)
    * [Install](#install)
    * [Usage](#usage)
       * [Basic rolls](#basic-rolls)
