@@ -119,8 +119,8 @@ You can use add, subtract, multiply, divide, reduce, and use parentheses as you 
 
 ### Repeating rolls
 
-You can repeat any roll by inserting a `<times to repeat>` notation anywhere in your string.
-  - `!roll <6> 1d20+5`: Roll 1d20+5 6 times.
+You can repeat any roll by inserting a `<times to repeat>` string anywhere in your notation.
+  - `!roll <6> 1d20+5`: Roll 1d20+5 six times.
   - `!roll 3d20+3d6 <10>`: Roll 3d20 and 3d6 and add the results. Repeat ten times.",
 
 ### Titled rolls

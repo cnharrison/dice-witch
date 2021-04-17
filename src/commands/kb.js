@@ -64,7 +64,7 @@ module.exports = {
       repeating: {
         name: "Repating rolls",
         value:
-          "You can repeat any roll by inserting a `<times to repeat>` notation anywhere in your string.\n\n`!roll <6> 1d20+5`: Roll 1d20+5 6 times.\n\n `!roll 3d20+3d6 <10>`: Roll 3d20 and 3d6 and add the results. Repeat ten times.",
+          "You can repeat any roll by inserting a `<times to repeat>` string anywhere in your notation.\n\n`!roll <6> 1d20+5`: Roll 1d20+5 6 times.\n\n `!roll 3d20+3d6 <10>`: Roll 3d20 and 3d6 and add the results. Repeat ten times.",
       },
     };
     const generateAndSendEmbed = async (
