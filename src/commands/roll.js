@@ -5,7 +5,7 @@ const {
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
   sendNeedPermissionMessage,
-} = require("../controllers");
+} = require("../messages");
 const {
   rollDice,
   generateDiceAttachment,
