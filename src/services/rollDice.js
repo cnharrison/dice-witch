@@ -1,5 +1,4 @@
 const { DiceRoll, Parser } = require("rpg-dice-roller");
-const { removeElement } = require("../helpers");
 
 function generateIconArray(modifierSet) {
   return modifierSet.size > 0
