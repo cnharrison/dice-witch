@@ -4,9 +4,9 @@ const {
   sendHelperMessage,
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
-  getRollTitle,
+  sendGetRollTitleMessage,
   sendNeedPermissionMessage,
-} = require("../controllers");
+} = require("../messages");
 const {
   rollDice,
   generateDiceAttachment,
@@ -36,7 +36,7 @@ module.exports = {
       return sendDiceOverMaxMessage(message);
     }
 
-    const title = await getRollTitle(message, logOutputChannel);
+    const title = await sendGetRollTitleMessage(message, logOutputChannel);
 
     if (title) {
       sendDiceRolledMessage(message, diceArray);

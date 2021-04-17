@@ -10,7 +10,7 @@ module.exports = {
       .setColor("#99999")
       .setTitle("Status")
       .setDescription(
-        `**Latency**: ${Date.now() - message.createdTimestamp}ms\n I'm in **${
+        `Latency: **${Date.now() - message.createdTimestamp}ms**\n I'm in **${
           discord.guilds.cache.size
         }** discord servers 😈`
       )

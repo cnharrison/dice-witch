@@ -1,6 +1,6 @@
 const { logEvent } = require("../services");
 
-const getRollTitle = async (message, logOutputChannel) => {
+const sendGetRollTitleMessage = async (message, logOutputChannel) => {
   let title;
   const originalMessage = message;
 
@@ -50,4 +50,4 @@ const getRollTitle = async (message, logOutputChannel) => {
   return title;
 };
 
-module.exports = getRollTitle;
+module.exports = sendGetRollTitleMessage;
