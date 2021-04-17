@@ -1,7 +1,6 @@
 const Discord = require("discord.js");
 const { prefix, inviteLink, supportServerLink } = require("../../config.json");
 const { infoColor } = require("../constants");
-const { generateIcon } = require("../services");
 
 module.exports = {
   name: "knowledgebase",
@@ -9,10 +8,6 @@ module.exports = {
   aliases: ["kb"],
   usage: "[topic]",
   async execute(message, args) {
-    const trashcan = new Discord.MessageAttachment(
-      generateIcon("trashcan"),
-      "trashcan.png"
-    );
     const kb = {
       minmax: {
         name: "Min/Max",
@@ -65,6 +60,11 @@ module.exports = {
         name: "Math",
         value:
           "You can use add, subtract, multiply, divide, reduce, and parenthesis in most places inside dice notation. You can also use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`\n\n`!roll d6*5`: Roll a d6 and multiply the result by 5.\n`!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.\n`!roll 3d20^4`: Roll 3d20 and raise the result to the power of 4.\n`!roll (4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times.\n`!roll sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root",
+      },
+      repeating: {
+        name: "Repating rolls",
+        value:
+          "You can repeat any roll by inserting a `<times to repeat>` notation anywhere in your string.\n\n`!roll <6> 1d20+5`: Roll 1d20+5 6 times.\n\n `!roll 3d20+3d6 <10>`: Roll 3d20 and 3d6 and add the results. Repeat ten times.",
       },
     };
     const generateAndSendEmbed = async (

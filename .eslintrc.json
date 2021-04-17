@@ -22,7 +22,9 @@
   "indent": "off",
   "prettier/prettier": "error",
   "new-cap": "off",
-  "global-require": "off"
+  "global-require": "off",
+  "no-plusplus": "off",
+  "no-shadow": "off"
 }
 
 }

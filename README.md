@@ -117,6 +117,12 @@ You can use add, subtract, multiply, divide, reduce, and use parentheses as you 
 
 ## Extras 
 
+### Repeating rolls
+
+You can repeat any roll by inserting a `<times to repeat>` notation anywhere in your string.
+  - `!roll <6> 1d20+5`: Roll 1d20+5 6 times.
+  - `!roll 3d20+3d6 <10>`: Roll 3d20 and 3d6 and add the results. Repeat ten times.",
+
 ### Titled rolls
 
   - `!titledroll 1d20`: Roll one twenty-sided die with a title. You'll be prompted for the title after typing the command, and the roll will only be performed once you've given it. Any `!roll` can also be a `!titledroll`. You have 30 seconds to answer the prompt.

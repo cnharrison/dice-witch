@@ -1,4 +1,5 @@
 const { DiceRoll, Parser } = require("rpg-dice-roller");
+const { removeElement } = require("../helpers");
 
 function generateIconArray(modifierSet) {
   return modifierSet.size > 0
@@ -34,9 +35,21 @@ const rollDice = (args, availableDice) => {
   let groupArray = [];
   let result = {};
   let resultArray = [];
+  let argsToMutate = args;
+
   try {
-    args.forEach((value) => {
+    argsToMutate.forEach((value, outerIndex) => {
+      const isMultiRollToken = value.match(/^.*?(\<[^\d]*(\d+)[^\d]*\>).*/);
+      if (isMultiRollToken) {
+        const number = Number(isMultiRollToken[2]);
+        argsToMutate = argsToMutate.filter((_, index) => index !== outerIndex);
+        argsToMutate = new Array(number).fill(argsToMutate).flat();
+      }
+    });
+
+    argsToMutate.forEach((value) => {
       let parsedRoll;
+
       try {
         parsedRoll = Parser.parse(value);
       } catch (err) {
