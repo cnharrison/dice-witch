@@ -28,13 +28,13 @@ module.exports = {
         {
           name: "Penetrating",
           value:
-            "A type of exploding dice most comonly used in the Hackmaster system. From the rules:\n`Should you roll the maximum value on this particular die, you may re-roll and add the result of the extra die, less one point, to the total (penetration can actually result in simply the maximum die value if a 1 is subsequently rolled, since any fool knows that 1-1=0). This process continues indefinitely as long as the die in question continues to come up maximum (but there’s always only a –1 subtracted from the extra die, even if it’s, say, the third die of penetration)`\n\nYou can mark exploding dice to penetrate by using `!p` instead of `!`.\n\n`!roll 2d6!p=5`: Roll two d6 and explode and penetrate on any roll equal to five.",
+            "A type of exploding dice most commonly used in the Hackmaster system. From the rules:\n`Should you roll the maximum value on this particular die, you may re-roll and add the result of the extra die, less one point, to the total (penetration can actually result in simply the maximum die value if a 1 is subsequently rolled, since any fool knows that 1-1=0). This process continues indefinitely as long as the die in question continues to come up maximum (but there’s always only a –1 subtracted from the extra die, even if it’s, say, the third die of penetration)`\n\nYou can mark exploding dice to penetrate by using `!p` instead of `!`.\n\n`!roll 2d6!p=5`: Roll two d6 and explode and penetrate on any roll equal to five.",
         },
       ],
       reroll: {
         name: "Re-roll",
         value:
-          "Rerolls a die that rolls the lowest posible number on that die, until a number greater than the minimum is rolled.\n\n`!roll 1d10r`: Roll 1d10 and reroll on one.\n`!roll 4d10r<=3`: Roll 4d10 and reroll on any result less than or equal to three.",
+          "Rerolls a die that rolls the lowest possible number on that die, until a number greater than the minimum is rolled.\n\n`!roll 1d10r`: Roll 1d10 and reroll on one.\n`!roll 4d10r<=3`: Roll 4d10 and reroll on any result less than or equal to three.",
       },
       keepdrop: {
         name: "Keep/Drop AKA Advantage",
@@ -54,7 +54,7 @@ module.exports = {
       sort: {
         name: "Sorting",
         value:
-          "Sorts the results of any of your rolls in ascending or descending numerical order.\n\n`!roll 4d6`: Roll 4d6 and do not sort.\n`!roll 4d6s`: Roll 4d6 and sort results in asending order.\n`!roll 4d6sa`: Same as above.\n`!roll 4d6sd`: Roll 4d6 and sort results in descending order.",
+          "Sorts the results of any of your rolls in ascending or descending numerical order.\n\n`!roll 4d6`: Roll 4d6 and do not sort.\n`!roll 4d6s`: Roll 4d6 and sort results in ascending order.\n`!roll 4d6sa`: Same as above.\n`!roll 4d6sd`: Roll 4d6 and sort results in descending order.",
       },
       math: {
         name: "Math",
@@ -62,7 +62,7 @@ module.exports = {
           "You can use add, subtract, multiply, divide, reduce, and parenthesis in most places inside dice notation. You can also use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`\n\n`!roll d6*5`: Roll a d6 and multiply the result by 5.\n`!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.\n`!roll 3d20^4`: Roll 3d20 and raise the result to the power of 4.\n`!roll (4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times.\n`!roll sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root",
       },
       repeating: {
-        name: "Repating rolls",
+        name: "Repeating rolls",
         value:
           "You can repeat any roll by inserting a `<times to repeat>` string anywhere in your notation.\n\n`!roll <6> 1d20+5`: Roll 1d20+5 6 times.\n\n `!roll 3d20+3d6 <10>`: Roll 3d20 and 3d6 and add the results. Repeat ten times.",
       },
