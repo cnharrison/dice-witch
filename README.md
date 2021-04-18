@@ -92,9 +92,9 @@ Counts the number of dice that meet a criterion.
 ### Critical success/failure 
 This is an aesthetic feature that makes it super clear when a die has rolled the highest or lowest possible value. It makes no difference to the roll or its value.
 
-- `!roll 1d20cs`: Roll 1d20 and highlight if result is 20.
+- `!roll 1d20cs=20`: Roll 1d20 and highlight if result is 20.
 - `!roll 5d20cs>=16`: Roll 5d20 and highlight if result is greater than 16.
-- `!roll 1d20cf`: Roll 1d20 and highlight result is 1.
+- `!roll 1d20cf=1`: Roll 1d20 and highlight result is 1.
 
 ### Sorting
 
@@ -107,7 +107,7 @@ Sorts the results of any of your rolls in ascending or descending numerical orde
 
 ## Math 
 
-You can use add, subtract, multiply, divide, reduce, and use parentheses as you please. You can also reduce, and use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`
+You can use add, subtract, multiply, divide, reduce, and use parentheses as you please. You can also use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`
 
 - `!roll d6*5`: Roll a d6 and multiply the result by 5 
 - `!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.
