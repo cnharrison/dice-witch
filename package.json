@@ -5,6 +5,7 @@
   "main": "index.js",
   "dependencies": {
     "canvas": "^2.7.0",
+    "dbots": "^9.0.0",
     "discord.js": "^12.5.1",
     "randomcolor": "^0.6.2",
     "rpg-dice-roller": "^4.5.2",
