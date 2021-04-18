@@ -1,11 +1,31 @@
 const Discord = require("discord.js");
 const dbotsPkg = require("dbots");
-const { discordToken, logOutputChannel, listTokens } = require("./config.json");
+const {
+  discordToken,
+  logOutputChannel,
+  listTokens,
+  clientID,
+} = require("./config.json");
 
 const startServer = () => {
   const discord = new Discord.Client();
 
   discord.on("ready", async () => {
+    const { discordbotlist, topgg, dbots } = listTokens;
+    try {
+      const poster = new dbotsPkg.Poster({
+        clientID,
+        apiKeys: {
+          discordbotlist,
+          topgg,
+          dbots,
+        },
+        serverCount: async () => discord.guilds.cache.size,
+      });
+      poster.startInterval();
+    } catch (err) {
+      console.error(err);
+    }
     let logOutputChannelTemp;
     discord.user.setActivity("!roll [dice notation]");
     try {
@@ -16,25 +36,10 @@ const startServer = () => {
       console.error(err);
     }
 
-    try {
-      const { discordbotlist, topgg, dbots } = listTokens;
-      const poster = new dbotsPkg.Poster({
-        discord,
-        apiKeys: {
-          discordbotlist,
-          topgg,
-          dbots,
-        },
-        clientLibrary: "discord.js",
-      });
-
-      poster.startInterval();
-    } catch (err) {
-      console.error(err);
-    }
     require("./src/commands/index")(discord, logOutputChannelTemp);
     require("./src/events/index")(discord, logOutputChannelTemp);
   });
+
   discord.login(discordToken);
 };
 startServer();
