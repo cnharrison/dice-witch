@@ -39,7 +39,7 @@ module.exports = {
       keepdrop: {
         name: "Keep/Drop AKA Advantage",
         value:
-          "Disregard or keep all dice above or below a certain threshold.\n\n`!roll 4d10k2`: Roll 4d10 and keep the highest two rolls\n`!roll 4d10k2l`: Roll 4d10 and keep the lowest two rolls.\n`!roll 4d10d1`: Roll 4d10 and disregard the lowest roll.\n`!roll 4d10d1h`: Roll 4d10 and disregard the highest roll",
+          "Disregard or keep all dice above or below a certain threshold.\n\n`!roll 4d10k2`: Roll 4d10 and keep the highest two rolls\n`!roll 4d10kl2`: Roll 4d10 and keep the lowest two rolls.\n`!roll 4d10d1`: Roll 4d10 and disregard the lowest roll.\n`!roll 4d10dh1`: Roll 4d10 and disregard the highest roll",
       },
       target: {
         name: "Target success/failure AKA Dice pool",

@@ -79,10 +79,10 @@ Rerolls a die that rolls the lowest possible number on that die, until a number 
 ### Keep/Drop AKA Advantage
 Disregard or keep all dice above or below a certain threshold. 
 - `!roll 4d10k2`: Roll 4d10 and keep the highest two rolls
-- `!roll 4d10k2l`: Roll 4d10 and keep the lowest two rolls.  
+- `!roll 4d10kl2`: Roll 4d10 and keep the lowest two rolls.  
 
 - `!roll 4d10d1`: Roll 4d10 and disregard the lowest roll.
-- `!roll 4d10d1h`: Roll 4d10 and disregard the highest roll.
+- `!roll 4d10dh1`: Roll 4d10 and disregard the highest roll.
 
 ### Target success/failure AKA Dice pool
 Counts the number of dice that meet a criterion.
