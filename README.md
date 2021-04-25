@@ -51,6 +51,8 @@ You can use (almost) any of these modifiers in conjunction with any other modifi
 Cause any rolls above/below the value to be treated as equal to the minimum/maximum value.
   - `!roll 4d6min3`: Roll four d6 where values less than three are treated as equal to three.
   - `!roll 4d10max5`: Roll four d10 where values greater than five are treated as equal to five.
+  - `!roll 10d20max15min5`: Roll ten d20 where values greater than fifteen are treated as equal to fifteen, and values less than five are treated as equal to five.
+​
 
 ### Exploding
 Allows one or more dice to be re-rolled (Usually when it rolls the highest possible number on the die), with each successive roll being added to the total.

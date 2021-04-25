@@ -12,7 +12,7 @@ module.exports = {
       minmax: {
         name: "Min/Max",
         value:
-          "Cause any rolls above/below the value to be treated as equal to the minimum/maximum value.\n\n`!roll 4d6min3`: Roll four d6 where values less than three are treated as equal to three.\n`!roll 4d10max5`: Roll four d10 where values greater than five are treated as equal to five.",
+          "Cause any rolls above/below the value to be treated as equal to the minimum/maximum value.\n\n`!roll 4d6min3`: Roll four d6 where values less than three are treated as equal to three.\n`!roll 4d10max5`: Roll four d10 where values greater than five are treated as equal to five.\n`!roll 10d20max15min5`: Roll ten d20 where values greater than fifteen are treated as equal to fifteen, and values less than five are treated as equal to five.",
       },
       exploding: [
         {
