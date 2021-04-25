@@ -11,9 +11,9 @@ function generateIconArray(modifierSet) {
           case "re-roll":
             return "recycle";
           case "max":
-            return "chevronUp";
-          case "min":
             return "chevronDown";
+          case "min":
+            return "chevronUp";
           case "target-success":
             return "bullseye";
           case "critical-success":
