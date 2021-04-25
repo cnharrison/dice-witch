@@ -29,6 +29,10 @@ function generateIconArray(modifierSet) {
     : null;
 }
 
+const getDPercentRolled = (rolled) =>
+  rolled === 100 ? 0 : Math.floor(rolled / 10) * 10;
+const getD10PercentRolled = (rolled) => (rolled % 10 === 0 ? 10 : rolled % 10);
+
 const rollDice = (args, availableDice) => {
   let diceArray = [];
   let groupArray = [];
@@ -76,11 +80,27 @@ const rollDice = (args, availableDice) => {
           .filter((rollGroup) => typeof rollGroup !== "string")
           .filter((rollGroup) => typeof rollGroup !== "number")
           .map((rollGroup, outerIndex) =>
-            rollGroup.rolls.map((currentRoll) => ({
-              sides: sidesArray[outerIndex],
-              rolled: currentRoll.initialValue,
-              icon: generateIconArray(currentRoll.modifiers),
-            }))
+            sidesArray[outerIndex] === 100
+              ? rollGroup.rolls.reduce((acc, cur) => {
+                  acc.push(
+                    {
+                      sides: "%",
+                      rolled: getDPercentRolled(cur.initialValue),
+                      icon: generateIconArray(cur.modifiers),
+                    },
+                    {
+                      sides: 10,
+                      rolled: getD10PercentRolled(cur.initialValue),
+                      icon: generateIconArray(cur.modifiers),
+                    }
+                  );
+                  return acc;
+                }, [])
+              : rollGroup.rolls.map((currentRoll) => ({
+                  sides: sidesArray[outerIndex],
+                  rolled: currentRoll.initialValue,
+                  icon: generateIconArray(currentRoll.modifiers),
+                }))
           );
         diceArray = [...diceArray, ...groupArray];
         resultArray = [...resultArray, result];
