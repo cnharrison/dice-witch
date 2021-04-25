@@ -71,6 +71,18 @@ const {
   generateD43,
   generateD44,
 } = require("./dice/d4");
+const {
+  generateDPercent0,
+  generateDPercent10,
+  generateDPercent20,
+  generateDPercent30,
+  generateDPercent40,
+  generateDPercent50,
+  generateDPercent60,
+  generateDPercent70,
+  generateDPercent80,
+  generateDPercent90,
+} = require("./dice/d%");
 
 async function generateDie(sides, number, fill, outline, width, height) {
   const dice = {
@@ -134,6 +146,16 @@ async function generateDie(sides, number, fill, outline, width, height) {
     42: generateD42(fill, outline, width, height),
     43: generateD43(fill, outline, width, height),
     44: generateD44(fill, outline, width, height),
+    "%0": generateDPercent0(fill, outline, width, height),
+    "%10": generateDPercent10(fill, outline, width, height),
+    "%20": generateDPercent20(fill, outline, width, height),
+    "%30": generateDPercent30(fill, outline, width, height),
+    "%40": generateDPercent40(fill, outline, width, height),
+    "%50": generateDPercent50(fill, outline, width, height),
+    "%60": generateDPercent60(fill, outline, width, height),
+    "%70": generateDPercent70(fill, outline, width, height),
+    "%80": generateDPercent80(fill, outline, width, height),
+    "%90": generateDPercent90(fill, outline, width, height),
   };
 
   const image = dice[`${sides}${number}`];
