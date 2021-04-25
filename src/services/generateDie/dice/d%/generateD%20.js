@@ -20,7 +20,7 @@ const generateDPercent20 = (
     <text transform="matrix(.59 .3 -.31 .79 56.63 169.1)" style="font-size:67.49px;font-family:Poppins-Bold,Poppins;font-weight:700">00</text>
     <text transform="matrix(.72 -.34 .51 .86 347.72 194.62)" style="font-size:59.74px;font-family:Poppins-Bold,Poppins;font-weight:700">80</text>
     <text transform="matrix(-.97 0 .26 -.97 357.49 287.06)" style="font-size:76.51px;font-family:Poppins-Bold,Poppins;font-weight:700">70</text>
-    <text transform="matrix(-.96 0 -.3 -.96 177.4 287.03)" style="font-size:77.36px;font-family:Poppins-Bold,Poppins;font-weight:700">10</text>
+    <text transform="matrix(-.96 0 -.3 -.96 190.4 287.03)" style="font-size:77.36px;font-family:Poppins-Bold,Poppins;font-weight:700">10</text>
 </g>
 </svg>
   `;

@@ -16,8 +16,8 @@ const generateDPercent0 = (
         <path class="cls-1" d="M246.37 471.92 26.73 291a2.72 2.72 0 0 1 .86-4.67l109.22-37a2.7 2.7 0 0 1 2.22.21l110.41 62.89a2.71 2.71 0 0 1 1.37 2.36v155.03a2.71 2.71 0 0 1-4.44 2.1zm9.26 0L475.27 291a2.72 2.72 0 0 0-.86-4.67l-109.22-37a2.7 2.7 0 0 0-2.22.21l-110.41 62.83a2.71 2.71 0 0 0-1.37 2.36v155.09a2.71 2.71 0 0 0 4.44 2.1z" transform="translate(-19.74 -29.93)"/>
     </g>
     <g id="face_10" data-name="face 10">
-        <text transform="translate(187.31 210.62)" style="font-family:Poppins-Bold,Poppins;font-weight:700;font-size:96.29px">10</text>
-        <text transform="matrix(.59 .3 -.61 .79 60.63 169.1)" style="font-size:67.49px;font-family:Poppins-Bold,Poppins;font-weight:700">70</text>
+        <text transform="translate(170.31 210.62)" style="font-family:Poppins-Bold,Poppins;font-weight:700;font-size:96.29px">10</text>
+        <text transform="matrix(.59 .3 -.31 .79 60.63 169.1)" style="font-size:67.49px;font-family:Poppins-Bold,Poppins;font-weight:700">70</text>
         <text transform="matrix(.72 -.34 .51 .86 347.72 194.62)" style="font-size:59.74px;font-family:Poppins-Bold,Poppins;font-weight:700">50</text>
         <text transform="matrix(-.97 0 .26 -.97 363.49 287.06)" style="font-size:76.51px;font-family:Poppins-Bold,Poppins;font-weight:700">00</text>
         <text transform="matrix(-.96 0 -.3 -.96 189.4 287.03)" style="font-size:77.36px;font-family:Poppins-Bold,Poppins;font-weight:700">20</text>

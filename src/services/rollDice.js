@@ -30,7 +30,7 @@ function generateIconArray(modifierSet) {
 }
 
 const getDPercentRolled = (rolled) =>
-  rolled === 100 ? 90 : Math.floor(rolled / 10) * 10;
+  rolled === 100 ? 0 : Math.floor(rolled / 10) * 10;
 const getD10PercentRolled = (rolled) => (rolled % 10 === 0 ? 10 : rolled % 10);
 
 const rollDice = (args, availableDice) => {
