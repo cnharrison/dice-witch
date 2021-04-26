@@ -1,4 +1,4 @@
-const generateDPercent0 = (
+const generateDPercent10 = (
   fill,
   outline,
   viewBoxW = "462.52",
@@ -25,4 +25,4 @@ const generateDPercent0 = (
 </svg>
   `;
 
-module.exports = generateDPercent0;
+module.exports = generateDPercent10;
