@@ -65,7 +65,7 @@ const sendDiceRolledMessage = (message, diceArray) => {
   const number = getRandomNumber(messages.length);
 
   const getText = () =>
-    getRandomNumber(10) === 1 ? messages[number - 1] : messages[0];
+    getRandomNumber(20) === 1 ? messages[number - 1] : messages[0];
 
   try {
     message.channel.send(getText());
