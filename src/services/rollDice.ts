@@ -1,35 +1,35 @@
 import { StandardDice } from "rpg-dice-roller/types/dice";
 import { RollResult, RollResults } from "rpg-dice-roller/types/results";
-import { icon, result, die } from "../types";
+import { Icon, Result, Die } from "../types";
 
 const { DiceRoll, Parser } = require("rpg-dice-roller");
 
-function generateIconArray(modifierSet: any): icon[] | null {
+function generateIconArray(modifierSet: Set<string>): Icon[] | null {
   return modifierSet.size > 0
     ? [...modifierSet].map((item) => {
-        switch (item) {
-          case "drop":
-            return "trashcan";
-          case "explode":
-            return "explosion";
-          case "re-roll":
-            return "recycle";
-          case "max":
-            return "chevronDown";
-          case "min":
-            return "chevronUp";
-          case "target-success":
-            return "bullseye";
-          case "critical-success":
-            return "crit";
-          case "critical-failure":
-            return "dizzyFace";
-          case "penetrate":
-            return "arrowThrough";
-          default:
-            return "blank";
-        }
-      })
+      switch (item) {
+        case "drop":
+          return "trashcan";
+        case "explode":
+          return "explosion";
+        case "re-roll":
+          return "recycle";
+        case "max":
+          return "chevronDown";
+        case "min":
+          return "chevronUp";
+        case "target-success":
+          return "bullseye";
+        case "critical-success":
+          return "crit";
+        case "critical-failure":
+          return "dizzyFace";
+        case "penetrate":
+          return "arrowThrough";
+        default:
+          return "blank";
+      }
+    })
     : null;
 }
 
@@ -39,10 +39,10 @@ const getD10PercentRolled = (rolled: number): number =>
   rolled % 10 === 0 ? 10 : rolled % 10;
 
 const rollDice = (args: string[], availableDice: number[]) => {
-  let diceArray: (die | die[])[] = [];
-  let groupArray: die[] = [];
-  let result: result = {};
-  let resultArray: result[] = [];
+  let diceArray: (Die | Die[])[] = [];
+  let groupArray: Die[] = [];
+  let result: Result = {};
+  let resultArray: Result[] = [];
   let argsToMutate = args;
 
   try {
@@ -66,9 +66,9 @@ const rollDice = (args: string[], availableDice: number[]) => {
 
       const sidesArray = parsedRoll
         ? parsedRoll
-            .filter((rollGroup: StandardDice) => typeof rollGroup !== "string")
-            .filter((rollGroup: StandardDice) => typeof rollGroup !== "number")
-            .map((roll: StandardDice) => roll.sides)
+          .filter((rollGroup: StandardDice) => typeof rollGroup !== "string")
+          .filter((rollGroup: StandardDice) => typeof rollGroup !== "number")
+          .map((roll: StandardDice) => roll.sides)
         : [];
 
       const isValid =
@@ -86,26 +86,26 @@ const rollDice = (args: string[], availableDice: number[]) => {
           .filter((rollGroup: RollResults) => typeof rollGroup !== "number")
           .map((rollGroup: RollResults, outerIndex: number) =>
             sidesArray[outerIndex] === 100
-              ? rollGroup.rolls.reduce((acc: die[], cur: RollResult) => {
-                  acc.push(
-                    {
-                      sides: "%",
-                      rolled: getDPercentRolled(cur.initialValue),
-                      icon: generateIconArray(cur.modifiers),
-                    },
-                    {
-                      sides: 10,
-                      rolled: getD10PercentRolled(cur.initialValue),
-                      icon: generateIconArray(cur.modifiers),
-                    }
-                  );
-                  return acc;
-                }, [])
+              ? rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
+                acc.push(
+                  {
+                    sides: "%",
+                    rolled: getDPercentRolled(cur.initialValue),
+                    icon: generateIconArray(cur.modifiers),
+                  },
+                  {
+                    sides: 10,
+                    rolled: getD10PercentRolled(cur.initialValue),
+                    icon: generateIconArray(cur.modifiers),
+                  }
+                );
+                return acc;
+              }, [])
               : rollGroup.rolls.map((currentRoll: RollResult) => ({
-                  sides: sidesArray[outerIndex],
-                  rolled: currentRoll.initialValue,
-                  icon: generateIconArray(currentRoll.modifiers),
-                }))
+                sides: sidesArray[outerIndex],
+                rolled: currentRoll.initialValue,
+                icon: generateIconArray(currentRoll.modifiers),
+              }))
           );
         diceArray = [...diceArray, ...groupArray];
         resultArray = [...resultArray, result];
