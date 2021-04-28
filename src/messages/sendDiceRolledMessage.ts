@@ -1,11 +1,13 @@
 const { getRandomNumber } = require("../helpers");
+import { Message } from "discord.js"
+import { Die } from '../types';
 
-const sendDiceRolledMessage = (message, diceArray) => {
+const sendDiceRolledMessage = (message: Message, diceArray: Die[][]) => {
   const diceArrayLengths = diceArray.map((array) => array.length);
   const isSingleDie =
     diceArrayLengths.length === 1 && diceArray[0].length === 1;
 
-  const pluralPick = (isSingleDie, singular, plural) =>
+  const pluralPick = (isSingleDie: boolean, singular: string, plural: string) =>
     isSingleDie ? singular : plural;
 
   const messages = [
@@ -19,9 +21,10 @@ const sendDiceRolledMessage = (message, diceArray) => {
       "tumbles",
       "tumble"
     )}, ${pluralPick(
+      isSingleDie,
       "it",
       "one"
-    )} spins on its axis for a few seconds after the others, as if possessed by an unknown force..._`,
+    )} continues to spin on its axis for a few seconds, as if possessed by an unknown force..._`,
     `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(
       isSingleDie,
       "bangs",
@@ -36,7 +39,7 @@ const sendDiceRolledMessage = (message, diceArray) => {
       isSingleDie,
       "rolls",
       "roll"
-    )} across the wood, you're almost sure you can spot a faint light from within ${pluralPick(
+    )} across the wood, you think you can spot a faint light from deep within ${pluralPick(
       isSingleDie,
       "it..._",
       "one of them..._"
@@ -65,7 +68,7 @@ const sendDiceRolledMessage = (message, diceArray) => {
   const number = getRandomNumber(messages.length);
 
   const getText = () =>
-    getRandomNumber(20) === 1 ? messages[number - 1] : messages[0];
+    getRandomNumber(30) === 1 ? messages[number - 1] : messages[0];
 
   try {
     message.channel.send(getText());

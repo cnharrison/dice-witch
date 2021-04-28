@@ -1,3 +1,5 @@
+import { Client, EmbedFieldData, Message, TextChannel } from "discord.js";
+
 export type Icon =
   | "trashcan"
   | "explosion"
@@ -67,20 +69,28 @@ export type DiceFaceData = {
   };
 };
 export interface Result {
-  output?: string;
-  results?: number;
+  output: string;
+  results: number;
 }
 
 export interface Command {
   name: string;
-  alises: string[];
+  aliases: string[];
   description: string;
   usage: string;
-  execute: () => void;
+  execute: (message: Message, args: string[], discord: Client, logOutputChannel: TextChannel) => void;
 }
+
 
 export interface Die {
   sides: DiceTypes;
   rolled: DiceFaces;
   icon: Icon[] | null;
 }
+
+export type ArticleTypes = 'minmax' | 'exploding' | 'reroll' | 'keepdrop' | 'target' | 'crit' | 'sort' | 'math' | 'repeating'
+
+
+export type KnowledgeBase = {
+  [key: string]: EmbedFieldData | EmbedFieldData[]
+};

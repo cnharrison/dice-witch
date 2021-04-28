@@ -1,8 +1,10 @@
+import { Client, TextChannel, Guild } from "discord.js";
+
 const { logEvent } = require("../services");
 
-module.exports = function (discord, logOutputChannel) {
+module.exports = function (discord: Client, logOutputChannel: TextChannel) {
   try {
-    discord.on("guildCreate", (guild) => {
+    discord.on("guildCreate", (guild: Guild) => {
       logEvent(
         "guildAdd",
         logOutputChannel,
@@ -14,7 +16,7 @@ module.exports = function (discord, logOutputChannel) {
       );
     });
 
-    discord.on("guildDelete", (guild) => {
+    discord.on("guildDelete", (guild: Guild) => {
       logEvent(
         "guildRemove",
         logOutputChannel,

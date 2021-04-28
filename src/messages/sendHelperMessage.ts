@@ -2,16 +2,17 @@ const Discord = require("discord.js");
 const { prefix, inviteLink, supportServerLink } = require("../../config.json");
 const { availableDice, maxDice } = require("../constants");
 const { logEvent } = require("../services");
+import { Message, TextChannel, MessageOptions, APIMessage } from "discord.js"
 
-const sendHelperMessage = async (message, name, logOutputChannel, args) => {
+const sendHelperMessage = async (message: Message, name: string, logOutputChannel: TextChannel, args: string[]) => {
   try {
-    const embed = new Discord.MessageEmbed()
+    const embed: MessageOptions | APIMessage = new Discord.MessageEmbed()
       .setColor("#0000ff")
       .addFields(
         {
           name: `Need help? 😅`,
           value: `You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any of these dice: **${availableDice
-            .map((dice) => `d${dice}`)
+            .map((dice: number | string) => `d${dice}`)
             .join(
               ", "
             )}**.\nYou can roll up to **${maxDice}** dice at once 😈\n\n`,

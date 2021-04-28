@@ -1,3 +1,6 @@
+import { EmbedFieldData, Message } from "discord.js";
+import { KnowledgeBase } from "../types";
+
 const Discord = require("discord.js");
 const { prefix, inviteLink, supportServerLink } = require("../../config.json");
 const { infoColor } = require("../constants");
@@ -7,8 +10,8 @@ module.exports = {
   description: "Browse the knowledge base",
   aliases: ["kb"],
   usage: "[topic]",
-  async execute(message, args) {
-    const kb = {
+  async execute(message: Message, args: string[]) {
+    const kb: KnowledgeBase = {
       minmax: {
         name: "Min/Max",
         value:
@@ -68,10 +71,10 @@ module.exports = {
       },
     };
     const generateAndSendEmbed = async (
-      content,
-      messageParam,
-      color,
-      title
+      content: EmbedFieldData | EmbedFieldData[],
+      message: Message,
+      color: string,
+      title: string
     ) => {
       const newEmbed = new Discord.MessageEmbed()
         .setColor(color)
@@ -79,7 +82,7 @@ module.exports = {
       newEmbed.addFields(content);
       newEmbed.addField(
         "\u200B",
-        `_Sent to ${messageParam.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
+        `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
       );
       await message.channel.send(newEmbed);
     };
@@ -88,7 +91,7 @@ module.exports = {
       return generateAndSendEmbed(
         {
           name: "Available topics",
-          value: `Type \`${prefix}${module.exports.aliases.reduce((a, b) =>
+          value: `Type \`${prefix}${module.exports.aliases.reduce((a: string, b: string) =>
             a.length <= b.length ? a : b
           )} <topic>\` to learn more\n\n\`${Object.keys(kb).join("\n")}\``,
         },
@@ -97,8 +100,9 @@ module.exports = {
         "👩‍🎓 Knowledge base"
       );
     }
+    const article = kb[args[0]]
     return generateAndSendEmbed(
-      kb[args[0]],
+      article,
       message,
       infoColor,
       "👩‍🎓 Knowledge base"

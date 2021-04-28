@@ -1,6 +1,7 @@
 const { logEvent } = require("../services");
+import { Message, TextChannel, Collection } from "discord.js"
 
-const sendGetRollTitleMessage = async (message, logOutputChannel) => {
+const sendGetRollTitleMessage = async (message: Message, logOutputChannel: TextChannel) => {
   let title;
   const originalMessage = message;
 
@@ -12,9 +13,11 @@ const sendGetRollTitleMessage = async (message, logOutputChannel) => {
     const collected = await originalMessage.channel.awaitMessages(filter, {
       max: 1,
       time: 30000,
-    });
+    }) as Collection<string, Message>
     if (!collected) return;
-    if (collected.first().content.length > 256) {
+    const firstCollected = collected.first();
+    const content = firstCollected?.content;
+    if (content && content.length > 256) {
       message.channel.send(
         `that title's too long, ${message.author} -- roll cancelled`
       );
@@ -28,8 +31,8 @@ const sendGetRollTitleMessage = async (message, logOutputChannel) => {
       );
       return;
     }
-    title = collected.first().cleanContent;
-    collected.first().react("👀");
+    title = firstCollected?.cleanContent;
+    firstCollected?.react("👀");
     logEvent(
       "rollTitleAccepted",
       logOutputChannel,

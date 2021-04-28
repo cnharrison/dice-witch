@@ -1,3 +1,5 @@
+import { Client, Message } from "discord.js";
+
 const Discord = require("discord.js");
 const { inviteLink, supportServerLink } = require("../../config.json");
 
@@ -5,13 +7,12 @@ module.exports = {
   name: "status",
   description: "Get ping and server info",
   aliases: ["ping"],
-  async execute(message, _, discord) {
+  async execute(message: Message, _: string[], discord: Client) {
     const embed = new Discord.MessageEmbed()
       .setColor("#99999")
       .setTitle("Status")
       .setDescription(
-        `Latency: **${Date.now() - message.createdTimestamp}ms**\n I'm in **${
-          discord.guilds.cache.size
+        `Latency: **${Date.now() - message.createdTimestamp}ms**\n I'm in **${discord.guilds.cache.size
         }** discord servers 😈`
       )
       .addField(
