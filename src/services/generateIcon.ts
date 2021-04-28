@@ -1,4 +1,4 @@
-import { Icon } from '../types'
+import { Icon } from "../types";
 const sharp = require("sharp");
 
 const trashcan = `
@@ -96,7 +96,7 @@ const blank = `
 </svg>
 `;
 
-const generateIcon = async (iconType: Icon) => {
+const generateIcon = async (iconType: Icon | null) => {
   try {
     let image: string | undefined;
     switch (iconType) {
@@ -131,7 +131,9 @@ const generateIcon = async (iconType: Icon) => {
         image = blank;
         break;
     }
-    const attachment = await sharp(new (Buffer as any).from(image)).png().toBuffer();
+    const attachment = await sharp(new (Buffer as any).from(image))
+      .png()
+      .toBuffer();
     return attachment;
   } catch (err) {
     console.error(err);

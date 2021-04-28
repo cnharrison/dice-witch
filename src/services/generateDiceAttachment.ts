@@ -2,15 +2,20 @@ const randomColor = require("randomcolor");
 const Canvas = require("canvas");
 const Discord = require("discord.js");
 const generateIcon = require("./generateIcon");
-const generateDie = require("./generateDie/generateDie");
+const generateDie = require("./generateDie");
 import { MessageAttachment } from "discord.js";
-import { Icon, Die } from "../types"
+import { Icon, Die } from "../types";
 
 const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 25;
 
-const drawIcon = async (iconArray: Icon[] | null | undefined, ctx: CanvasDrawImage, diceIndex: number, diceOuterIndex: number) => {
+const drawIcon = async (
+  iconArray: Icon[] | null | undefined,
+  ctx: CanvasDrawImage,
+  diceIndex: number,
+  diceOuterIndex: number
+) => {
   const getIconSpacing = (iarr: Icon[]) => {
     switch (iarr.length) {
       case 1:
@@ -31,10 +36,10 @@ const drawIcon = async (iconArray: Icon[] | null | undefined, ctx: CanvasDrawIma
       ctx.drawImage(
         iconImage,
         defaultDiceDimension * diceIndex +
-        defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
+          defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
         diceOuterIndex * defaultDiceDimension +
-        defaultDiceDimension +
-        diceOuterIndex * defaultIconDimension,
+          defaultDiceDimension +
+          diceOuterIndex * defaultIconDimension,
         defaultIconDimension,
         defaultIconDimension
       );
@@ -98,7 +103,7 @@ async function generateDiceAttachment(diceArray: Die[][]) {
       canvasWidth,
       shouldHaveIcon
         ? defaultDiceDimension * paginatedArray.length +
-        defaultIconDimension * paginatedArray.length
+            defaultIconDimension * paginatedArray.length
         : defaultDiceDimension * paginatedArray.length
     );
 
@@ -119,7 +124,7 @@ async function generateDiceAttachment(diceArray: Die[][]) {
           defaultDiceDimension * index,
           shouldHaveIcon
             ? outerIndex * defaultDiceDimension +
-            outerIndex * defaultIconDimension
+                outerIndex * defaultIconDimension
             : outerIndex * defaultDiceDimension,
           defaultDiceDimension,
           defaultDiceDimension

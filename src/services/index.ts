@@ -1,9 +1,9 @@
 const generateDiceAttachment = require("./generateDiceAttachment");
 const rollDice = require("./rollDice");
-const generateDie = require("./generateDie/generateDie");
 const generateIcon = require("./generateIcon");
 const checkForAttachPermission = require("./checkForAttachPermission");
 const logEvent = require("./logEvent");
+const generateDie = require("./generateDie");
 
 module.exports = {
   generateDiceAttachment,
@@ -11,5 +11,5 @@ module.exports = {
   rollDice,
   generateDie,
   generateIcon,
-  logEvent,
+  logEvent
 };
