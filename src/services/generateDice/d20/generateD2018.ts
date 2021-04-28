@@ -1,4 +1,4 @@
-const generateD2018 = (fill, outline, viewBoxW = "600", viewBoxH = "600") => `
+const generateD2018 = (fill: string, outline: string, viewBoxW = "600", viewBoxH = "600") => `
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxW} ${viewBoxH}">
   <g>
       <g fill="${fill}">
@@ -30,4 +30,4 @@ const generateD2018 = (fill, outline, viewBoxW = "600", viewBoxH = "600") => `
   </g>
 </svg>`;
 
-module.exports = generateD2018;
+export default generateD2018;

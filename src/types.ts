@@ -1,4 +1,4 @@
-import { Client, EmbedFieldData, Message, TextChannel } from "discord.js";
+import { Client, Collection, EmbedFieldData, Message, TextChannel } from "discord.js";
 
 export type Icon =
   | "trashcan"
@@ -78,7 +78,7 @@ export interface Command {
   aliases: string[];
   description: string;
   usage: string;
-  execute: (message: Message, args: string[], discord: Client, logOutputChannel: TextChannel) => void;
+  execute: (message: Message, args: string[], discord: Client, logOutputChannel: TextChannel, commands?: Collection<string, Command>) => void;
 }
 
 

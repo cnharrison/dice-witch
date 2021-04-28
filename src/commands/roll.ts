@@ -43,7 +43,6 @@ module.exports = {
       message,
       attachment,
       undefined,
-      undefined,
       logOutputChannel
     );
   },

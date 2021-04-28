@@ -1,3 +1,6 @@
+import { Client, Collection, Message, TextChannel } from "discord.js";
+import { Command } from "../types";
+
 const Discord = require("discord.js");
 const { prefix, inviteLink, supportServerLink } = require("../../config.json");
 
@@ -6,9 +9,8 @@ module.exports = {
   description: "List commands",
   aliases: ["commands"],
   usage: "[command name]",
-  async execute(message, args) {
+  async execute(message: Message, args: string[], _: Client, __: TextChannel, commands: Collection<string, Command>) {
     const data = [];
-    const { commands } = message.client;
 
     if (!args.length) {
       data.push(commands.map((command) => command.name).join("\r"));
@@ -28,7 +30,7 @@ module.exports = {
     const name = args[0].toLowerCase();
     const command =
       commands.get(name) ||
-      commands.find((c) => c.aliases && c.aliases.includes(name));
+      commands.find((c) => c.aliases && c.aliases.includes(name)) as Command;
 
     if (!command) {
       await message.react("❓");

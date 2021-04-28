@@ -14,7 +14,7 @@ module.exports = function (discord: Client, logOutputChannel: TextChannel) {
   process.chdir(path.dirname(botPath));
   const commandFiles: string[] = fs
     .readdirSync(`${botPath}src/commands`)
-    .filter((file: string) => file.endsWith(".js") && !file.startsWith("index"));
+    .filter((file: string) => file.endsWith(".ts") && !file.startsWith("index"));
 
   for (const file of commandFiles) {
     const command = require(`./${file}`);
@@ -37,7 +37,7 @@ module.exports = function (discord: Client, logOutputChannel: TextChannel) {
     if (!command) return;
 
     try {
-      command.execute(message, args, discord, logOutputChannel);
+      command.execute(message, args, discord, logOutputChannel, commands);
       logEvent("receivedCommand", logOutputChannel, message, command, args);
     } catch (error) {
       const embed = new Discord.MessageEmbed()
