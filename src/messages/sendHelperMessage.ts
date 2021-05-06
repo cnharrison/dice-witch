@@ -1,12 +1,17 @@
-const Discord = require("discord.js");
-const { prefix, inviteLink, supportServerLink } = require("../../config.json");
-const { availableDice, maxDice } = require("../constants");
-const { logEvent } = require("../services");
-import { Message, TextChannel, MessageOptions, APIMessage } from "discord.js"
+import Discord from "discord.js";
+import { prefix, inviteLink, supportServerLink } from "../../config.json";
+import { availableDice, maxDice } from "../constants";
+import { logEvent } from "../services";
+import { Message, TextChannel, MessageOptions, APIMessage } from "discord.js";
 
-const sendHelperMessage = async (message: Message, name: string, logOutputChannel: TextChannel, args: string[]) => {
+const sendHelperMessage = async (
+  message: Message,
+  name: string,
+  logOutputChannel: TextChannel,
+  args: string[]
+) => {
   try {
-    const embed: MessageOptions | APIMessage = new Discord.MessageEmbed()
+    const embed: MessageOptions | APIMessage | undefined = new Discord.MessageEmbed()
       .setColor("#0000ff")
       .addFields(
         {
@@ -44,4 +49,4 @@ const sendHelperMessage = async (message: Message, name: string, logOutputChanne
   }
 };
 
-module.exports = sendHelperMessage;
+export default sendHelperMessage;

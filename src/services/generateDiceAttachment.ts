@@ -1,8 +1,8 @@
-const randomColor = require("randomcolor");
-const Canvas = require("canvas");
-const Discord = require("discord.js");
-const generateIcon = require("./generateIcon");
-const generateDie = require("./generateDie");
+import randomColor from "randomcolor";
+import Canvas, { Image } from "canvas";
+import Discord from "discord.js";
+import generateIcon from "./generateIcon";
+import generateDie from "./generateDie";
 import { MessageAttachment } from "discord.js";
 import { Icon, Die } from "../types";
 
@@ -32,14 +32,14 @@ const drawIcon = async (
     let iconImage;
     const promiseArray = iconArray.map(async (icon: Icon, index: number) => {
       const iconToLoad = await generateIcon(icon);
-      iconImage = await Canvas.loadImage(iconToLoad);
+      iconImage = await Canvas.loadImage(iconToLoad as Buffer);
       ctx.drawImage(
         iconImage,
         defaultDiceDimension * diceIndex +
-          defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
+        defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
         diceOuterIndex * defaultDiceDimension +
-          defaultDiceDimension +
-          diceOuterIndex * defaultIconDimension,
+        defaultDiceDimension +
+        diceOuterIndex * defaultIconDimension,
         defaultIconDimension,
         defaultIconDimension
       );
@@ -69,7 +69,7 @@ const getCanvasWidth = (diceArray: Die[][]) => {
     case !isSingleGroup && !isLongestShorterOrEqualToMax:
       return defaultDiceDimension * maxRowLength;
     default:
-      return null;
+      return defaultDiceDimension * onlyGroupLength;
   }
 };
 
@@ -97,13 +97,13 @@ async function generateDiceAttachment(diceArray: Die[][]) {
       .some((bool) => bool === true);
 
     const paginatedArray = paginateDiceArray(diceArray);
-    const canvasWidth = getCanvasWidth(paginatedArray as Die[][]);
+    const canvasWidth: number = getCanvasWidth(paginatedArray as Die[][]);
 
     const canvas = Canvas.createCanvas(
       canvasWidth,
       shouldHaveIcon
         ? defaultDiceDimension * paginatedArray.length +
-            defaultIconDimension * paginatedArray.length
+        defaultIconDimension * paginatedArray.length
         : defaultDiceDimension * paginatedArray.length
     );
 
@@ -111,20 +111,20 @@ async function generateDiceAttachment(diceArray: Die[][]) {
     const outerPromiseArray = paginatedArray.map((array, outerIndex) =>
       array.map(async (die: Die, index: number) => {
         const { icon: iconArray } = die;
-        const toLoad: Promise<string> = await generateDie(
+        const toLoad: Buffer | null = await generateDie(
           die.sides,
           die.rolled,
           randomColor({ luminosity: "light" }),
           "#000000"
         );
-        const image = await Canvas.loadImage(toLoad);
+        const image = await Canvas.loadImage(toLoad as Buffer);
 
         ctx.drawImage(
           image,
           defaultDiceDimension * index,
           shouldHaveIcon
             ? outerIndex * defaultDiceDimension +
-                outerIndex * defaultIconDimension
+            outerIndex * defaultIconDimension
             : outerIndex * defaultDiceDimension,
           defaultDiceDimension,
           defaultDiceDimension

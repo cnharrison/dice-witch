@@ -1,7 +1,10 @@
-const { logEvent } = require("../services");
-import { Message, TextChannel, Collection } from "discord.js"
+import { logEvent } from "../services";
+import { Message, TextChannel, Collection } from "discord.js";
 
-const sendGetRollTitleMessage = async (message: Message, logOutputChannel: TextChannel) => {
+const sendGetRollTitleMessage = async (
+  message: Message,
+  logOutputChannel: TextChannel
+) => {
   let title;
   const originalMessage = message;
 
@@ -10,10 +13,10 @@ const sendGetRollTitleMessage = async (message: Message, logOutputChannel: TextC
   await message.channel.send(`${message.author} what's this roll for?`);
 
   try {
-    const collected = await originalMessage.channel.awaitMessages(filter, {
+    const collected = (await originalMessage.channel.awaitMessages(filter, {
       max: 1,
       time: 30000,
-    }) as Collection<string, Message>
+    })) as Collection<string, Message>;
     if (!collected) return;
     const firstCollected = collected.first();
     const content = firstCollected?.content;
@@ -49,8 +52,7 @@ const sendGetRollTitleMessage = async (message: Message, logOutputChannel: TextC
     logEvent("rollTitleTimeout", logOutputChannel, message);
     return;
   }
-  // eslint-disable-next-line consistent-return
   return title;
 };
 
-module.exports = sendGetRollTitleMessage;
+export default sendGetRollTitleMessage;

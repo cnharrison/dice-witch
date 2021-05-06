@@ -1,11 +1,25 @@
-const Discord = require("discord.js");
-const { getRandomNumber } = require("../helpers");
-const { logEvent } = require("../services");
-import { MessageAttachment, Message, TextChannel, MessageOptions, APIMessage } from 'discord.js';
-import { Result } from '../types';
+import Discord, { FileOptions } from "discord.js";
+import { getRandomNumber } from "../helpers";
+import { logEvent } from "../services/index";
+import {
+  MessageAttachment,
+  Message,
+  TextChannel,
+  MessageOptions,
+  APIMessage,
+} from "discord.js";
+import { Result } from "../types";
 
-async function generateEmbed(resultArray: Result[], attachment: MessageAttachment, message: Message, title: string): Promise<MessageOptions | APIMessage> {
-  const grandTotal = resultArray.reduce((prev: number, cur: Result) => prev + cur.results, 0);
+async function generateEmbed(
+  resultArray: Result[],
+  attachment: (string | MessageAttachment | FileOptions)[],
+  message: Message,
+  title: string
+): Promise<MessageOptions | APIMessage | undefined> {
+  const grandTotal = resultArray.reduce(
+    (prev: number, cur: Result) => prev + cur.results,
+    0
+  );
   try {
     const embed = title
       ? new Discord.MessageEmbed()
@@ -35,16 +49,21 @@ async function generateEmbed(resultArray: Result[], attachment: MessageAttachmen
 const sendDiceResultMessage = async (
   resultArray: Result[],
   message: Message,
-  attachment: MessageAttachment,
+  attachment: (string | MessageAttachment | FileOptions)[],
   title: string,
-  logOutputChannel: TextChannel,
+  logOutputChannel: TextChannel
 ) => {
   try {
-    const embed: MessageOptions | APIMessage | undefined = await generateEmbed(resultArray, attachment, message, title);
+    const embed: MessageOptions | APIMessage | undefined = await generateEmbed(
+      resultArray,
+      attachment,
+      message,
+      title
+    );
 
     const sendMessageAndStopTyping = async () => {
       try {
-        await message.channel.send(embed);
+        embed && await message.channel.send(embed);
         logEvent(
           "sentRollResultMessage",
           logOutputChannel,

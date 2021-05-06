@@ -1,4 +1,4 @@
-const { logEvent } = require("../services");
+import { logEvent } from "../services";
 import { Message, TextChannel } from "discord.js"
 
 const sendNeedPermissionMessage = (message: Message, logOutputChannel: TextChannel) => {
@@ -8,4 +8,4 @@ const sendNeedPermissionMessage = (message: Message, logOutputChannel: TextChann
   logEvent("sentNeedPermissionsMessage", logOutputChannel, message);
 };
 
-module.exports = sendNeedPermissionMessage;
+export default sendNeedPermissionMessage;

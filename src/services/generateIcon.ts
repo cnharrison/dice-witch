@@ -1,5 +1,5 @@
 import { Icon } from "../types";
-const sharp = require("sharp");
+import sharp from "sharp";
 
 const trashcan = `
 <svg style="enable-background:new 0 0 65 65" version="1.1" xml:space="preserve">
@@ -141,4 +141,4 @@ const generateIcon = async (iconType: Icon | null) => {
   }
 };
 
-module.exports = generateIcon;
+export default generateIcon;

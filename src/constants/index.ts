@@ -7,7 +7,7 @@ const errorColor: string = "#FF0000";
 const goodColor: string = "#00FF00";
 const infoColor: string = "#1E90FF";
 
-module.exports = {
+export {
   availableDice,
   maxDice,
   eventColor,

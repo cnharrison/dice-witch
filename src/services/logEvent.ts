@@ -1,73 +1,88 @@
-const Discord = require("discord.js");
-import { Guild, Message, MessageEmbed, TextChannel, DMChannel, NewsChannel, MessageOptions, APIMessage } from "discord.js";
+import Discord from "discord.js";
+import {
+  Guild,
+  Message,
+  MessageEmbed,
+  TextChannel,
+  DMChannel,
+  NewsChannel,
+  MessageOptions,
+  APIMessage,
+} from "discord.js";
 import { Command, EventType } from "../types";
-const { adminID } = require("../../config.json");
-const {
-  eventColor,
-  errorColor,
-  goodColor,
-  infoColor,
-} = require("../constants");
+import { adminID } from "../../config.json";
+import { eventColor, errorColor, goodColor, infoColor } from "../constants";
 
 const logEvent = async (
   eventType: EventType,
   logOutputChannel: TextChannel,
-  message: Message,
-  command: Command,
-  args: string[],
-  title: string,
-  guild: Guild,
-  embedParam: MessageEmbed
+  message?: Message,
+  command?: Command,
+  args?: string[],
+  title?: string,
+  guild?: Guild,
+  embedParam?: MessageOptions | APIMessage
 ) => {
-  let embed: MessageOptions | APIMessage;
-  const channel: TextChannel | DMChannel | NewsChannel = message.channel as TextChannel;
+  let embed: MessageOptions | APIMessage | undefined;
+  const channel:
+    | TextChannel
+    | DMChannel
+    | NewsChannel = message?.channel as TextChannel;
   switch (eventType) {
     case "receivedCommand":
-      console.log(
-        message.guild?.id
-          ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${channel.name} ] on [ ${message.guild} ]`
-          : `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
-      );
-      embed = new Discord.MessageEmbed()
-        .setColor(eventColor)
-        .setTitle(`${eventType}: ${command.name}`)
-        .setDescription(
-          message.guild?.id
-            ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
-            : `${args} from **${message.author.username}** in **DM**`
+      command &&
+        console.log(
+          message?.guild?.id
+            ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${channel.name} ] on [ ${message.guild} ]`
+            : message &&
+            `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
         );
-      logOutputChannel.send(embed).catch((err) => console.error(err));
+      embed =
+        command &&
+        new Discord.MessageEmbed()
+          .setColor(eventColor)
+          .setTitle(`${eventType}: ${command.name}`)
+          .setDescription(
+            message?.guild?.id
+              ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
+              : message &&
+              `${args} from **${message.author.username}** in **DM**`
+          );
+      embed && logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
     case "criticalError":
-      embed = new Discord.MessageEmbed()
-        .setColor("#FF0000")
-        .setTitle(`${eventType}: ${command.name}`)
-        .setDescription(
-          message.guild?.id
-            ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}** <@${adminID}>`
-            : `${args} from **${message.author.username}** in **DM** ${adminID}`
-        );
-      logOutputChannel.send(embed).catch((err) => console.error(err));
+      embed =
+        command &&
+        new Discord.MessageEmbed()
+          .setColor("#FF0000")
+          .setTitle(`${eventType}: ${command.name}`)
+          .setDescription(
+            message?.guild?.id
+              ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}** <@${adminID}>`
+              : message &&
+              `${args} from **${message.author.username}** in **DM** ${adminID}`
+          );
+      embed && logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
     case "rollTitleRejected":
       embed = new Discord.MessageEmbed()
         .setColor(errorColor)
         .setTitle(eventType)
         .setDescription(
-          message.guild?.id
+          message?.guild?.id
             ? `**${message.author.username}** in **${channel.name}** on **${message.guild}**`
-            : `**${message.author.username}** in **DM**`
+            : message && `**${message.author.username}** in **DM**`
         );
-      logOutputChannel.send(embed).catch((err) => console.error(err));
+      embed && logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
     case "rollTitleAccepted":
       embed = new Discord.MessageEmbed()
         .setColor(eventColor)
         .setTitle(`${eventType}: ${title}`)
         .setDescription(
-          message.guild?.id
+          message?.guild?.id
             ? ` **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
-            : `**${message.author.username}** in **DM**`
+            : message && `**${message.author.username}** in **DM**`
         );
       logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
@@ -76,45 +91,56 @@ const logEvent = async (
         .setColor(errorColor)
         .setTitle(eventType)
         .setDescription(
-          message.guild?.id
+          message?.guild?.id
             ? `**${message.author.username}** in **${channel.name}** on **${message.guild}**`
-            : `**${message.author.username}** in **DM**`
+            : message && `**${message.author.username}** in **DM**`
         );
       logOutputChannel.send(embed).catch((err: Error) => console.error(err));
       break;
     case "guildAdd":
-      embed = new Discord.MessageEmbed()
-        .setColor(goodColor)
-        .setTitle(eventType)
-        .setDescription(`${guild.name}`);
-      logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+      embed =
+        guild &&
+        new Discord.MessageEmbed()
+          .setColor(goodColor)
+          .setTitle(eventType)
+          .setDescription(`${guild.name}`);
+      embed &&
+        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
       break;
     case "guildRemove":
-      embed = new Discord.MessageEmbed()
-        .setColor(errorColor)
-        .setTitle(eventType)
-        .setDescription(`${guild.name}`);
-      logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+      embed =
+        guild &&
+        new Discord.MessageEmbed()
+          .setColor(errorColor)
+          .setTitle(eventType)
+          .setDescription(`${guild.name}`);
+      embed &&
+        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
       break;
     case "sentRollResultMessage":
       embed = embedParam;
-      logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+      embed &&
+        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
       break;
     case "sentHelperMessage":
-      embed = new Discord.MessageEmbed()
-        .setColor(infoColor)
-        .setTitle(eventType)
-        .setDescription(
-          `${message.author.username} in ${channel.name}`
-        );
-      logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+      embed =
+        message &&
+        new Discord.MessageEmbed()
+          .setColor(infoColor)
+          .setTitle(eventType)
+          .setDescription(`${message.author.username} in ${channel.name}`);
+      embed &&
+        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
       break;
     case "sentNeedPermissionsMessage":
-      embed = new Discord.MessageEmbed()
-        .setColor(errorColor)
-        .setTitle(eventType)
-        .setDescription(`**${channel.name}** on **${message.guild}**`);
-      logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+      embed =
+        message &&
+        new Discord.MessageEmbed()
+          .setColor(errorColor)
+          .setTitle(eventType)
+          .setDescription(`**${channel.name}** on **${message.guild}**`);
+      embed &&
+        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
       break;
     default:
       return null;
@@ -122,4 +148,4 @@ const logEvent = async (
   return null;
 };
 
-module.exports = logEvent;
+export default logEvent;

@@ -1,12 +1,11 @@
+import Discord from "discord.js";
 import { Client, Collection, Message, TextChannel } from "discord.js";
 import { Command } from "../types";
-
-const Discord = require("discord.js");
-const fs = require("fs");
-const path = require("path");
-const { prefix, botPath, supportServerLink } = require("../../config.json");
-const { logEvent } = require("../services");
-const { errorColor } = require("../constants/index.ts");
+import fs from "fs";
+import path from "path";
+import { prefix, botPath, supportServerLink } from "../../config.json";
+import { logEvent } from "../services";
+import { errorColor } from "../constants/";
 
 module.exports = function (discord: Client, logOutputChannel: TextChannel) {
   let commands: Collection<string, Command>;
@@ -14,7 +13,9 @@ module.exports = function (discord: Client, logOutputChannel: TextChannel) {
   process.chdir(path.dirname(botPath));
   const commandFiles: string[] = fs
     .readdirSync(`${botPath}src/commands`)
-    .filter((file: string) => file.endsWith(".ts") && !file.startsWith("index"));
+    .filter(
+      (file: string) => file.endsWith(".ts") && !file.startsWith("index")
+    );
 
   for (const file of commandFiles) {
     const command = require(`./${file}`);
@@ -30,9 +31,7 @@ module.exports = function (discord: Client, logOutputChannel: TextChannel) {
 
     const command =
       commands.get(commandName) ||
-      commands.find(
-        (cmd) => cmd.aliases && cmd.aliases.includes(commandName)
-      );
+      commands.find((cmd) => cmd.aliases && cmd.aliases.includes(commandName));
 
     if (!command) return;
 

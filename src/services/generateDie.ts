@@ -1,6 +1,6 @@
 import { DiceFaceData, DiceTypes, DiceFaces } from "../types";
-const sharp = require("sharp");
-const {
+import sharp from "sharp";
+import {
   generateD201,
   generateD202,
   generateD203,
@@ -21,8 +21,8 @@ const {
   generateD2018,
   generateD2019,
   generateD2020
-} = require("./generateDice/d20");
-const {
+} from './generateDice/d20';
+import {
   generateD121,
   generateD122,
   generateD123,
@@ -35,7 +35,7 @@ const {
   generateD1210,
   generateD1211,
   generateD1212
-} = require("./generateDice/d12");
+} from './generateDice/d12';
 const {
   generateD101,
   generateD102,
@@ -90,8 +90,8 @@ async function generateDie(
   number: DiceFaces,
   fill: string,
   outline: string,
-  width: number,
-  height: number
+  width?: string,
+  height?: string
 ) {
   const dice: DiceFaceData = {
     20: {
@@ -193,4 +193,4 @@ async function generateDie(
   }
 }
 
-module.exports = generateDie;
+export default generateDie;

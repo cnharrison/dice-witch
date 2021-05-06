@@ -1,4 +1,4 @@
-const generateD121 = (fill, outline, viewBoxW = "500", viewBoxH = "500") => `
+const generateD121 = (fill: string, outline: string, viewBoxW: string = "500", viewBoxH: string = "500") => `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxW} ${viewBoxH}">
     <g>
         <g fill="${fill}">
@@ -26,4 +26,4 @@ const generateD121 = (fill, outline, viewBoxW = "500", viewBoxH = "500") => `
 </svg>
 `;
 
-module.exports = generateD121;
+export default generateD121;

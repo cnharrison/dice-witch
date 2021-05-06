@@ -21,7 +21,7 @@ import generateD2020 from "./generateD2020";
 
 
 
-module.exports = {
+export {
   generateD201,
   generateD202,
   generateD203,

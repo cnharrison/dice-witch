@@ -39,7 +39,7 @@ const sendDiceRolledMessage = (message: Message, diceArray: Die[][]) => {
       isSingleDie,
       "rolls",
       "roll"
-    )} across the wood, you think you can spot a faint light from deep within ${pluralPick(
+    )} across the wood, you think you can spot a faint light emanating from deep within ${pluralPick(
       isSingleDie,
       "it..._",
       "one of them..._"
