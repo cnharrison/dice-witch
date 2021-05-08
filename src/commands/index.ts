@@ -24,7 +24,6 @@ export default function (discord: Client, logOutputChannel: TextChannel) {
     commands?.set(command.name, command);
   }
 
-
   discord.on("message", (message: Message) => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
 
