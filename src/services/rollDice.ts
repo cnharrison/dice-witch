@@ -53,7 +53,7 @@ const rollDice = (
     | Die[]
     | { sides: number; rolled: number; icon: Icon[] | null }[]
   )[];
-  let result: Result | {} = {};
+  let result: Result;
   let resultArray: Result[] | [] = [];
   let argsToMutate = args;
 
@@ -122,7 +122,7 @@ const rollDice = (
                 }))
           );
         diceArray = [...diceArray, ...groupArray];
-        resultArray = [...resultArray, result as Result];
+        resultArray = [...resultArray, result];
       }
     });
     return { diceArray, resultArray };

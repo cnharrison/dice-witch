@@ -23,27 +23,25 @@ const generateEmbed = async (
   try {
     const embed = title
       ? new Discord.MessageEmbed()
-          .setColor("#966F33")
-          .setTitle(title)
-          .attachFiles(attachment)
-          .setImage("attachment://currentDice.png")
-          .setFooter(
-            `${resultArray.map((result) => result.output).join("\n")} ${
-              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-            }\nsent to ${message.author.username}`
-          )
+        .setColor("#966F33")
+        .setTitle(title)
+        .attachFiles(attachment)
+        .setImage("attachment://currentDice.png")
+        .setFooter(
+          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+          }\nsent to ${message.author.username}`
+        )
       : new Discord.MessageEmbed()
-          .setColor("#966F33")
-          .attachFiles(attachment)
-          .setImage("attachment://currentDice.png")
-          .setFooter(
-            `${resultArray.map((result) => result.output).join("\n")} ${
-              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-            }\nsent to ${message.author.username}`
-          );
+        .setColor("#966F33")
+        .attachFiles(attachment)
+        .setImage("attachment://currentDice.png")
+        .setFooter(
+          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+          }\nsent to ${message.author.username}`
+        );
     return embed;
   } catch (err) {
-    console.log(err);
+    console.error(err);
     throw new Error(err);
   }
 };
@@ -88,7 +86,7 @@ const sendDiceResultMessage = async (
 
     return;
   } catch (err) {
-    console.log(err);
+    console.error(err);
     throw new Error(err);
   }
 };
