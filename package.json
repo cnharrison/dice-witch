@@ -32,7 +32,9 @@
     "typescript-eslint": "0.0.1-alpha.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "npx tsc",
+    "start": "node build/src/index.js"
   },
   "author": "Christopher Harrison",
   "license": "ISC"
