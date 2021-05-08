@@ -17,15 +17,19 @@ export default function (discord: Client, logOutputChannel: TextChannel) {
       (file: string) => file.endsWith(".ts") && !file.startsWith("index")
     );
 
+  console.log(commandFiles);
+
   for (const file of commandFiles) {
     const command = require(`./${file}`);
     commands?.set(command.name, command);
   }
 
+
   discord.on("message", (message: Message) => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
 
     const args = message.content.slice(prefix.length).trim().split(/ +/);
+    console.log(args);
     const shiftedArgs = args.shift() as string;
     const commandName = shiftedArgs.toLowerCase();
 

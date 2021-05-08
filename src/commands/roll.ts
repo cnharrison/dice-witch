@@ -15,7 +15,7 @@ import {
 } from "../services";
 import { getTotalDiceRolled } from "../helpers";
 
-export default {
+module.exports = {
   name: "roll",
   aliases: ["r"],
   description: "Throw some dice",

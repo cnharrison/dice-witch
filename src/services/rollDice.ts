@@ -7,7 +7,7 @@ import {
   DiceArray,
 } from "../types";
 import { StandardDice } from "rpg-dice-roller/types/dice";
-import { ResultGroup, RollResult, RollResults } from "rpg-dice-roller/types/results";
+import { RollResult } from "rpg-dice-roller/types/results";
 import { DiceRoll, Parser } from "rpg-dice-roller";
 
 const generateIconArray = (modifierSet: Set<string>): Icon[] | null => {
@@ -48,7 +48,7 @@ const rollDice = (
   args: string[],
   availableDice: DiceTypesToDisplay[]
 ): { diceArray: DiceArray; resultArray: Result[] } => {
-  let diceArray: DiceArray;
+  let diceArray: DiceArray = [];
   let groupArray: (Die[] | { sides: number; rolled: number; icon: Icon[] | null; }[])[]
   let result: Result | {} = {};
   let resultArray: Result[] | [] = [];

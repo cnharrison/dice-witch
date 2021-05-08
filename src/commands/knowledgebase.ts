@@ -3,7 +3,7 @@ import { KnowledgeBase } from "../types";
 import { prefix, inviteLink, supportServerLink } from "../../config.json";
 import { infoColor } from "../constants";
 
-export default {
+module.exports = {
   name: "knowledgebase",
   description: "Browse the knowledge base",
   aliases: ["kb"],
