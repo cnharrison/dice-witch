@@ -7,7 +7,7 @@ import { prefix, botPath, supportServerLink } from "../../config.json";
 import { logEvent } from "../services";
 import { errorColor } from "../constants/";
 
-module.exports = function (discord: Client, logOutputChannel: TextChannel) {
+export default function (discord: Client, logOutputChannel: TextChannel) {
   let commands: Collection<string, Command>;
   commands = new Discord.Collection();
   process.chdir(path.dirname(botPath));
@@ -48,4 +48,4 @@ module.exports = function (discord: Client, logOutputChannel: TextChannel) {
       logEvent("criticalError", logOutputChannel, message, command, args);
     }
   });
-};
+}

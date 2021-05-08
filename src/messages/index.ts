@@ -1,11 +1,11 @@
-const sendGetRollTitleMessage = require("./sendGetRollTitleMessage");
-const sendDiceResultMessage = require("./sendDiceResultMessage");
-const sendHelperMessage = require("./sendHelperMessage");
-const sendDiceRolledMessage = require("./sendDiceRolledMessage");
-const sendDiceOverMaxMessage = require("./sendDiceOverMaxMessage");
-const sendNeedPermissionMessage = require("./sendNeedPermissionMessage");
+import sendGetRollTitleMessage from "./sendGetRollTitleMessage";
+import sendDiceResultMessage from "./sendDiceResultMessage";
+import sendHelperMessage from "./sendHelperMessage";
+import sendDiceRolledMessage from "./sendDiceRolledMessage";
+import sendDiceOverMaxMessage from "./sendDiceOverMaxMessage";
+import sendNeedPermissionMessage from "./sendNeedPermissionMessage";
 
-module.exports = {
+export {
   sendGetRollTitleMessage,
   sendDiceResultMessage,
   sendHelperMessage,

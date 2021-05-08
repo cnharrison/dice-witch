@@ -1,7 +1,7 @@
-const { maxDice } = require("../constants/index.ts");
+import { maxDice } from "../constants/index";
 import { Message } from "discord.js";
 
 const sendDiceOverMaxMessage = (message: Message) =>
   message.channel.send(`${maxDice} dice max, sorry 😅`);
 
-module.exports = sendDiceOverMaxMessage;
+export default sendDiceOverMaxMessage;

@@ -20,8 +20,8 @@ import {
   generateD2017,
   generateD2018,
   generateD2019,
-  generateD2020
-} from './generateDice/d20';
+  generateD2020,
+} from "./generateDice/d20";
 import {
   generateD121,
   generateD122,
@@ -34,9 +34,9 @@ import {
   generateD129,
   generateD1210,
   generateD1211,
-  generateD1212
-} from './generateDice/d12';
-const {
+  generateD1212,
+} from "./generateDice/d12";
+import {
   generateD101,
   generateD102,
   generateD103,
@@ -46,9 +46,9 @@ const {
   generateD107,
   generateD108,
   generateD109,
-  generateD1010
-} = require("./generateDice/d10");
-const {
+  generateD1010,
+} from "./generateDice/d10";
+import {
   generateD81,
   generateD82,
   generateD83,
@@ -56,23 +56,23 @@ const {
   generateD85,
   generateD86,
   generateD87,
-  generateD88
-} = require("./generateDice/d8");
-const {
+  generateD88,
+} from "./generateDice/d8";
+import {
   generateD61,
   generateD62,
   generateD63,
   generateD64,
   generateD65,
-  generateD66
-} = require("./generateDice/d6");
-const {
+  generateD66,
+} from "./generateDice/d6";
+import {
   generateD41,
   generateD42,
   generateD43,
-  generateD44
-} = require("./generateDice/d4");
-const {
+  generateD44,
+} from "./generateDice/d4";
+import {
   generateDPercent0,
   generateDPercent10,
   generateDPercent20,
@@ -82,8 +82,8 @@ const {
   generateDPercent60,
   generateDPercent70,
   generateDPercent80,
-  generateDPercent90
-} = require("./generateDice/d%");
+  generateDPercent90,
+} from "./generateDice/d%";
 
 async function generateDie(
   sides: DiceTypes,
@@ -114,7 +114,7 @@ async function generateDie(
       17: generateD2017(fill, outline, width, height),
       18: generateD2018(fill, outline, width, height),
       19: generateD2019(fill, outline, width, height),
-      20: generateD2020(fill, outline, width, height)
+      20: generateD2020(fill, outline, width, height),
     },
     12: {
       1: generateD121(fill, outline, width, height),
@@ -128,7 +128,7 @@ async function generateDie(
       9: generateD129(fill, outline, width, height),
       10: generateD1210(fill, outline, width, height),
       11: generateD1211(fill, outline, width, height),
-      12: generateD1212(fill, outline, width, height)
+      12: generateD1212(fill, outline, width, height),
     },
     10: {
       1: generateD101(fill, outline, width, height),
@@ -140,7 +140,7 @@ async function generateDie(
       7: generateD107(fill, outline, width, height),
       8: generateD108(fill, outline, width, height),
       9: generateD109(fill, outline, width, height),
-      10: generateD1010(fill, outline, width, height)
+      10: generateD1010(fill, outline, width, height),
     },
     8: {
       1: generateD81(fill, outline, width, height),
@@ -150,7 +150,7 @@ async function generateDie(
       5: generateD85(fill, outline, width, height),
       6: generateD86(fill, outline, width, height),
       7: generateD87(fill, outline, width, height),
-      8: generateD88(fill, outline, width, height)
+      8: generateD88(fill, outline, width, height),
     },
     6: {
       1: generateD61(fill, outline, width, height),
@@ -158,13 +158,13 @@ async function generateDie(
       3: generateD63(fill, outline, width, height),
       4: generateD64(fill, outline, width, height),
       5: generateD65(fill, outline, width, height),
-      6: generateD66(fill, outline, width, height)
+      6: generateD66(fill, outline, width, height),
     },
     4: {
       1: generateD41(fill, outline, width, height),
       2: generateD42(fill, outline, width, height),
       3: generateD43(fill, outline, width, height),
-      4: generateD44(fill, outline, width, height)
+      4: generateD44(fill, outline, width, height),
     },
     "%": {
       0: generateDPercent0(fill, outline, width, height),
@@ -176,8 +176,8 @@ async function generateDie(
       60: generateDPercent60(fill, outline, width, height),
       70: generateDPercent70(fill, outline, width, height),
       80: generateDPercent80(fill, outline, width, height),
-      90: generateDPercent90(fill, outline, width, height)
-    }
+      90: generateDPercent90(fill, outline, width, height),
+    },
   };
 
   const image = dice[sides][number];

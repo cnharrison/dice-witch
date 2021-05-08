@@ -8,10 +8,13 @@ const sendHelperMessage = async (
   message: Message,
   name: string,
   logOutputChannel: TextChannel,
-  args: string[]
+  args?: string[]
 ) => {
   try {
-    const embed: MessageOptions | APIMessage | undefined = new Discord.MessageEmbed()
+    const embed:
+      | MessageOptions
+      | APIMessage
+      | undefined = new Discord.MessageEmbed()
       .setColor("#0000ff")
       .addFields(
         {

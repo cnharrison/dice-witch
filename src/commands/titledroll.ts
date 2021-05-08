@@ -1,38 +1,45 @@
 import { Message, TextChannel } from "discord.js";
-import { Command, Die, Result } from "../types";
-
-const { availableDice, maxDice } = require("../constants");
-const {
+import { Command, DiceArray, Result } from "../types";
+import { availableDice, maxDice } from "../constants";
+import {
   sendDiceResultMessage,
   sendHelperMessage,
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
   sendGetRollTitleMessage,
   sendNeedPermissionMessage,
-} = require("../messages");
-const {
+} from "../messages";
+import {
   rollDice,
   generateDiceAttachment,
   checkForAttachPermission,
-} = require("../services");
+} from "../services";
+import { getTotalDiceRolled } from "../helpers";
 
-
-
-const { getTotalDiceRolled } = require("../helpers");
-
-module.exports = {
+export default {
   name: "titledroll",
   aliases: ["tr"],
   description: "Throw some dice with a displayed title",
   usage:
     "-- Works exactly like roll, but you'll be prompted for a title before performing the roll",
-  async execute(message: Message, args: string[], _: Command, logOutputChannel: TextChannel) {
+  async execute(
+    message: Message,
+    args: string[],
+    _: Command,
+    logOutputChannel: TextChannel
+  ) {
     if (!args.length)
       return sendHelperMessage(message, module.exports.name, logOutputChannel);
     if (!checkForAttachPermission(message))
       return sendNeedPermissionMessage(message, logOutputChannel);
 
-    const { diceArray, resultArray }: { diceArray: Die[][], resultArray: Result[] } = rollDice(args, availableDice);
+    const {
+      diceArray,
+      resultArray,
+    }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
+      args,
+      availableDice
+    );
 
     if (!diceArray.length) {
       return sendHelperMessage(message, module.exports.name, logOutputChannel);
@@ -51,10 +58,8 @@ module.exports = {
         message,
         attachment,
         title,
-        undefined,
         logOutputChannel
       );
     }
-    return null;
   },
 };

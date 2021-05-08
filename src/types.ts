@@ -1,4 +1,10 @@
-import { Client, Collection, EmbedFieldData, Message, TextChannel } from "discord.js";
+import {
+  Client,
+  Collection,
+  EmbedFieldData,
+  Message,
+  TextChannel,
+} from "discord.js";
 
 export type Icon =
   | "trashcan"
@@ -24,8 +30,9 @@ export type EventType =
   | "sentRollResultMessage"
   | "sentHelperMessage"
   | "sentNeedPermissionsMessage";
-
+export type DiceArray = any;
 export type DiceTypes = 20 | 12 | 10 | 8 | 6 | 4 | "%";
+export type DiceTypesToDisplay = DiceTypes | 100;
 export type DiceFaces =
   | 90
   | 80
@@ -65,7 +72,7 @@ export type DieGenerator = (
 
 export type DiceFaceData = {
   [K in DiceTypes]: {
-    [K in DiceFaces]?: DieGenerator;
+    [K in DiceFaces]?: string;
   };
 };
 export interface Result {
@@ -78,9 +85,14 @@ export interface Command {
   aliases: string[];
   description: string;
   usage: string;
-  execute: (message: Message, args: string[], discord: Client, logOutputChannel: TextChannel, commands?: Collection<string, Command>) => void;
+  execute: (
+    message: Message,
+    args: string[],
+    discord: Client,
+    logOutputChannel: TextChannel,
+    commands?: Collection<string, Command>
+  ) => void;
 }
-
 
 export interface Die {
   sides: DiceTypes;
@@ -88,9 +100,17 @@ export interface Die {
   icon: Icon[] | null;
 }
 
-export type ArticleTypes = 'minmax' | 'exploding' | 'reroll' | 'keepdrop' | 'target' | 'crit' | 'sort' | 'math' | 'repeating'
-
+export type ArticleTypes =
+  | "minmax"
+  | "exploding"
+  | "reroll"
+  | "keepdrop"
+  | "target"
+  | "crit"
+  | "sort"
+  | "math"
+  | "repeating";
 
 export type KnowledgeBase = {
-  [key: string]: EmbedFieldData | EmbedFieldData[]
+  [key: string]: EmbedFieldData[];
 };

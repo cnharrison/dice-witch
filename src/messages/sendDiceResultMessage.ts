@@ -10,12 +10,12 @@ import {
 } from "discord.js";
 import { Result } from "../types";
 
-async function generateEmbed(
+const generateEmbed = async (
   resultArray: Result[],
   attachment: (string | MessageAttachment | FileOptions)[],
   message: Message,
-  title: string
-): Promise<MessageOptions | APIMessage | undefined> {
+  title?: string
+): Promise<MessageOptions | APIMessage | undefined> => {
   const grandTotal = resultArray.reduce(
     (prev: number, cur: Result) => prev + cur.results,
     0
@@ -23,34 +23,36 @@ async function generateEmbed(
   try {
     const embed = title
       ? new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .setTitle(title)
-        .attachFiles(attachment)
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\nsent to ${message.author.username}`
-        )
+          .setColor("#966F33")
+          .setTitle(title)
+          .attachFiles(attachment)
+          .setImage("attachment://currentDice.png")
+          .setFooter(
+            `${resultArray.map((result) => result.output).join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+            }\nsent to ${message.author.username}`
+          )
       : new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .attachFiles(attachment)
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\nsent to ${message.author.username}`
-        );
+          .setColor("#966F33")
+          .attachFiles(attachment)
+          .setImage("attachment://currentDice.png")
+          .setFooter(
+            `${resultArray.map((result) => result.output).join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+            }\nsent to ${message.author.username}`
+          );
     return embed;
   } catch (err) {
     console.log(err);
     throw new Error(err);
   }
-}
+};
 
 const sendDiceResultMessage = async (
   resultArray: Result[],
   message: Message,
   attachment: (string | MessageAttachment | FileOptions)[],
-  title: string,
+  title: string | undefined,
   logOutputChannel: TextChannel
 ) => {
   try {
@@ -63,7 +65,7 @@ const sendDiceResultMessage = async (
 
     const sendMessageAndStopTyping = async () => {
       try {
-        embed && await message.channel.send(embed);
+        embed && (await message.channel.send(embed));
         logEvent(
           "sentRollResultMessage",
           logOutputChannel,
@@ -91,4 +93,4 @@ const sendDiceResultMessage = async (
   }
 };
 
-module.exports = sendDiceResultMessage;
+export default sendDiceResultMessage;

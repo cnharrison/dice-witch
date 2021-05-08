@@ -1,15 +1,19 @@
-import { Client, Collection, Message, TextChannel } from "discord.js";
+import Discord, { Client, Collection, Message, TextChannel } from "discord.js";
 import { Command } from "../types";
-
-const Discord = require("discord.js");
-const { prefix, inviteLink, supportServerLink } = require("../../config.json");
+import { prefix, inviteLink, supportServerLink } from "../../config.json";
 
 module.exports = {
   name: "help",
   description: "List commands",
   aliases: ["commands"],
   usage: "[command name]",
-  async execute(message: Message, args: string[], _: Client, __: TextChannel, commands: Collection<string, Command>) {
+  async execute(
+    message: Message,
+    args: string[],
+    _: Client,
+    __: TextChannel,
+    commands: Collection<string, Command>
+  ) {
     const data = [];
 
     if (!args.length) {
@@ -19,7 +23,7 @@ module.exports = {
       const embed = new Discord.MessageEmbed()
         .setColor("#0000ff")
         .setTitle("Commands")
-        .setDescription(data, { split: true })
+        .setDescription(data)
         .addField(
           "\u200B",
           `[Invite me](${inviteLink}) | [Support server](${supportServerLink})`
@@ -30,7 +34,7 @@ module.exports = {
     const name = args[0].toLowerCase();
     const command =
       commands.get(name) ||
-      commands.find((c) => c.aliases && c.aliases.includes(name)) as Command;
+      (commands.find((c) => c.aliases && c.aliases.includes(name)) as Command);
 
     if (!command) {
       await message.react("❓");
@@ -48,7 +52,7 @@ module.exports = {
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
       .setTitle(`👩‍🏫 ${command.name}`)
-      .setDescription(data, { split: true })
+      .setDescription(data)
       .addField(
         "\u200B",
         `[Invite me](${inviteLink}) | [Support server](${supportServerLink})`

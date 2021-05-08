@@ -1,9 +1,11 @@
-const { getRandomNumber } = require("../helpers");
-import { Message } from "discord.js"
-import { Die } from '../types';
+import { getRandomNumber } from "../helpers";
+import { Message } from "discord.js";
+import { Die, DiceArray } from "../types";
 
-const sendDiceRolledMessage = (message: Message, diceArray: Die[][]) => {
-  const diceArrayLengths = diceArray.map((array) => array.length);
+const sendDiceRolledMessage = (message: Message, diceArray: any) => {
+  const diceArrayLengths = diceArray.map(
+    (array: (Die | Die[])[]) => array.length
+  );
   const isSingleDie =
     diceArrayLengths.length === 1 && diceArray[0].length === 1;
 
@@ -77,4 +79,4 @@ const sendDiceRolledMessage = (message: Message, diceArray: Die[][]) => {
   }
 };
 
-module.exports = sendDiceRolledMessage;
+export default sendDiceRolledMessage;

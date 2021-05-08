@@ -1,8 +1,6 @@
-import Discord from "discord.js";
-import {
+import Discord, {
   Guild,
   Message,
-  MessageEmbed,
   TextChannel,
   DMChannel,
   NewsChannel,
@@ -35,7 +33,7 @@ const logEvent = async (
           message?.guild?.id
             ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${channel.name} ] on [ ${message.guild} ]`
             : message &&
-            `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
+                `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
         );
       embed =
         command &&
@@ -46,7 +44,7 @@ const logEvent = async (
             message?.guild?.id
               ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
               : message &&
-              `${args} from **${message.author.username}** in **DM**`
+                  `${args} from **${message.author.username}** in **DM**`
           );
       embed && logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
@@ -60,7 +58,7 @@ const logEvent = async (
             message?.guild?.id
               ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}** <@${adminID}>`
               : message &&
-              `${args} from **${message.author.username}** in **DM** ${adminID}`
+                  `${args} from **${message.author.username}** in **DM** ${adminID}`
           );
       embed && logOutputChannel.send(embed).catch((err) => console.error(err));
       break;

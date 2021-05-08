@@ -1,4 +1,9 @@
-const generateD1210 = (fill: string, outline: string, viewBoxW: string = "500", viewBoxH: string = "500") => `
+const generateD1210 = (
+  fill: string,
+  outline: string,
+  viewBoxW: string = "500",
+  viewBoxH: string = "500"
+): string => `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxW} ${viewBoxH}">
     <g>
         <g fill="${fill}">

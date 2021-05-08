@@ -1,7 +1,5 @@
-import { Client, Message } from "discord.js";
-
-const Discord = require("discord.js");
-const { inviteLink, supportServerLink } = require("../../config.json");
+import Discord, { Client, Message } from "discord.js";
+import { inviteLink, supportServerLink } from "../../config.json";
 
 module.exports = {
   name: "status",

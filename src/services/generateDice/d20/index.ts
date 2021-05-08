@@ -19,8 +19,6 @@ import generateD2018 from "./generateD2018";
 import generateD2019 from "./generateD2019";
 import generateD2020 from "./generateD2020";
 
-
-
 export {
   generateD201,
   generateD202,

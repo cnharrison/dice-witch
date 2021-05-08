@@ -1,8 +1,14 @@
+import {
+  Icon,
+  Result,
+  Die,
+  DiceTypesToDisplay,
+  DiceFaces,
+  DiceArray,
+} from "../types";
 import { StandardDice } from "rpg-dice-roller/types/dice";
-import { RollResult, RollResults } from "rpg-dice-roller/types/results";
-import { Icon, Result, Die, DiceTypes, DiceFaces } from "../types";
-
-const { DiceRoll, Parser } = require("rpg-dice-roller");
+import { ResultGroup, RollResult, RollResults } from "rpg-dice-roller/types/results";
+import { DiceRoll, Parser } from "rpg-dice-roller";
 
 const generateIconArray = (modifierSet: Set<string>): Icon[] | null => {
   return modifierSet.size > 0
@@ -31,16 +37,19 @@ const generateIconArray = (modifierSet: Set<string>): Icon[] | null => {
       }
     })
     : null;
-}
+};
 
 const getDPercentRolled = (rolled: number): number =>
   rolled === 100 ? 0 : Math.floor(rolled / 10) * 10;
 const getD10PercentRolled = (rolled: number): number =>
   rolled % 10 === 0 ? 10 : rolled % 10;
 
-const rollDice = (args: string[], availableDice: DiceTypes[]) => {
-  let diceArray: (Die | Die[])[] | [] = [];
-  let groupArray: Die[] | [] = [];
+const rollDice = (
+  args: string[],
+  availableDice: DiceTypesToDisplay[]
+): { diceArray: DiceArray; resultArray: Result[] } => {
+  let diceArray: DiceArray;
+  let groupArray: (Die[] | { sides: number; rolled: number; icon: Icon[] | null; }[])[]
   let result: Result | {} = {};
   let resultArray: Result[] | [] = [];
   let argsToMutate = args;
@@ -73,32 +82,34 @@ const rollDice = (args: string[], availableDice: DiceTypes[]) => {
 
       const isValid =
         parsedRoll &&
-        sidesArray.every((sides: DiceTypes) => availableDice.includes(sides));
+        sidesArray.every((sides: any) =>
+          availableDice.includes(sides)
+        );
 
       if (isValid) {
         const roll = new DiceRoll(value);
         result = {
           output: roll.output,
-          results: roll.total
+          results: roll.total,
         };
         groupArray = roll.rolls
-          .filter((rollGroup: RollResults) => typeof rollGroup !== "string")
-          .filter((rollGroup: RollResults) => typeof rollGroup !== "number")
-          .map((rollGroup: RollResults, outerIndex: number) =>
+          .filter((rollGroup: any) => typeof rollGroup !== "string")
+          .filter((rollGroup: any) => typeof rollGroup !== "number")
+          .map((rollGroup: any, outerIndex: number) =>
             sidesArray[outerIndex] === 100
               ? rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
                 acc.push(
                   {
                     sides: "%",
                     rolled: getDPercentRolled(cur.initialValue) as DiceFaces,
-                    icon: generateIconArray(cur.modifiers)
+                    icon: generateIconArray(cur.modifiers),
                   },
                   {
                     sides: 10,
                     rolled: getD10PercentRolled(
                       cur.initialValue
                     ) as DiceFaces,
-                    icon: generateIconArray(cur.modifiers)
+                    icon: generateIconArray(cur.modifiers),
                   }
                 );
                 return acc;
@@ -106,7 +117,7 @@ const rollDice = (args: string[], availableDice: DiceTypes[]) => {
               : rollGroup.rolls.map((currentRoll: RollResult) => ({
                 sides: sidesArray[outerIndex],
                 rolled: currentRoll.initialValue,
-                icon: generateIconArray(currentRoll.modifiers)
+                icon: generateIconArray(currentRoll.modifiers),
               }))
           );
         diceArray = [...diceArray, ...groupArray];
@@ -116,8 +127,8 @@ const rollDice = (args: string[], availableDice: DiceTypes[]) => {
     return { diceArray, resultArray };
   } catch (err) {
     console.error(err);
-    return null;
+    return { diceArray: [], resultArray: [] };
   }
 };
 
-module.exports = rollDice;
+export default rollDice;
