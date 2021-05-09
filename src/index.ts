@@ -1,34 +1,28 @@
 import Discord from "discord.js";
-import dbotsPkg from "dbots";
+import axios from "axios";
+import Cron from "cron";
 import commands from "./commands";
 import events from "./events";
 import {
   discordToken,
   logOutputChannel,
-  listTokens,
+  botListAuthKeys,
   clientID,
 } from "../config.json";
+const { discordbotlist, topgg, dbots } = botListAuthKeys;
+
+const getHeaders = (key: string) => {
+  return {
+    headers: {
+      Authorization: key,
+    },
+  }
+};
 
 const startServer = () => {
   const discord = new Discord.Client();
 
   discord.on("ready", async () => {
-    const { discordbotlist, topgg, dbots } = listTokens;
-    try {
-      const poster = new dbotsPkg.Poster({
-        clientID,
-        apiKeys: {
-          discordbotlist,
-          topgg,
-          dbots,
-        },
-        clientLibrary: "discord.js",
-        serverCount: async () => discord.guilds.cache.size,
-      });
-      poster.startInterval();
-    } catch (err) {
-      console.error(err);
-    }
     let logOutputChannelTemp;
     discord.user ? discord.user.setActivity("!roll [dice notation]") : {};
     try {
@@ -40,6 +34,41 @@ const startServer = () => {
     }
     commands(discord, logOutputChannelTemp);
     events(discord, logOutputChannelTemp);
+
+    const job = new Cron.CronJob(
+      "22 * * * *",
+      function () {
+        try {
+          axios.post(
+            `https://top.gg/api/bots/${clientID}/stats`,
+            {
+              server_count: discord.guilds.cache.size,
+            },
+            getHeaders(topgg)
+          );
+          axios.post(
+            `https://discordbotlist.com/api/v1/bots/${clientID}}/stats`,
+            {
+              guilds: discord.guilds.cache.size,
+            },
+            getHeaders(discordbotlist)
+          );
+          axios.post(
+            `https://dbots.co/api/v1/bots/${clientID}/stats`,
+            {
+              guildCount: discord.guilds.cache.size,
+            },
+            getHeaders(dbots)
+          );
+        } catch (err) {
+          console.error(err);
+        }
+      },
+      null,
+      true,
+      "America/New_York"
+    );
+    job.start();
   });
 
   discord.login(discordToken);
