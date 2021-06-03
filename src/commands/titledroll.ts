@@ -45,7 +45,7 @@ module.exports = {
       return sendHelperMessage(message, module.exports.name, logOutputChannel);
     }
     if (getTotalDiceRolled(diceArray) > maxDice) {
-      return sendDiceOverMaxMessage(message);
+      return sendDiceOverMaxMessage(message, logOutputChannel, args);
     }
 
     const title = await sendGetRollTitleMessage(message, logOutputChannel);

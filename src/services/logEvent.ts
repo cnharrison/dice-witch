@@ -33,7 +33,7 @@ const logEvent = async (
           message?.guild?.id
             ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${channel.name} ] on [ ${message.guild} ]`
             : message &&
-                `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
+            `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
         );
       embed =
         command &&
@@ -44,7 +44,7 @@ const logEvent = async (
             message?.guild?.id
               ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
               : message &&
-                  `${args} from **${message.author.username}** in **DM**`
+              `${args} from **${message.author.username}** in **DM**`
           );
       embed && logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
@@ -58,7 +58,7 @@ const logEvent = async (
             message?.guild?.id
               ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}** <@${adminID}>`
               : message &&
-                  `${args} from **${message.author.username}** in **DM** ${adminID}`
+              `${args} from **${message.author.username}** in **DM** ${adminID}`
           );
       embed && logOutputChannel.send(embed).catch((err) => console.error(err));
       break;
@@ -121,6 +121,16 @@ const logEvent = async (
         logOutputChannel.send(embed).catch((err: Error) => console.error(err));
       break;
     case "sentHelperMessage":
+      embed =
+        message &&
+        new Discord.MessageEmbed()
+          .setColor(infoColor)
+          .setTitle(eventType)
+          .setDescription(`${message.author.username} in ${channel.name}`);
+      embed &&
+        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+      break;
+    case "sentDiceOverMaxMessage":
       embed =
         message &&
         new Discord.MessageEmbed()

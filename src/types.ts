@@ -29,7 +29,8 @@ export type EventType =
   | "guildRemove"
   | "sentRollResultMessage"
   | "sentHelperMessage"
-  | "sentNeedPermissionsMessage";
+  | "sentNeedPermissionsMessage"
+  | "sentDiceOverMaxMessage";
 export type DiceArray = any;
 export type DiceTypes = 20 | 12 | 10 | 8 | 6 | 4 | "%";
 export type DiceTypesToDisplay = DiceTypes | 100;
