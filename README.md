@@ -1,10 +1,17 @@
-<img src="https://i.imgur.com/v1Dog6h.jpeg" width="300">
+
 
 # Dice Witch
+<div>
+<img src="https://i.imgur.com/v1Dog6h.jpeg" width="300">
+  <img src="https://i.imgur.com/8cEkaek.gif" width="300"  height="385">
+  <a href="https://top.gg/bot/808161585876697108">
+    <img src="https://top.gg/api/widget/808161585876697108.svg" alt="Dice Witch" />
+</a>
 
-Dice Witch is a highly advanced bot that rolls dice on Discord. It displays the dice visually, and aims to simulate the sensory user experience of rolling real dice. 
+</div>
+Dice Witch is a highly advanced bot that rolls TRPG dice on Discord. It displays the dice visually, and aims to simulate the experience of rolling real dice.
 
-![Image of Dice Witch in action](https://i.imgur.com/8cEkaek.gif)
+
 
 # Table of contents 
    * [Install](#install)
@@ -142,11 +149,8 @@ Dice Witch uses the superb [RPG Dice Roller](https://github.com/GreenImp/rpg-dic
 
 
 # Roadmap
-
+- [ ] Slash commands and buttons support
 - [ ] User and guild registration
-  - [ ] Per user and per guild settings (e.g. prefix change)
-
+  - [ ] Per user and per guild settings
 - [ ] True random numbers based on stochastic atmospheric data
 - [ ] A variety of different sets of illustrated and photographed dice
-
-
