@@ -31,7 +31,7 @@ Dice Witch is a highly advanced bot that rolls dice on Discord. It displays the 
 
 # Install
 
-You can install Dice Witch on your Discord server by clicking [here](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot).
+You can install Dice Witch on your Discord server by clicking [here](https://discord.com/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot).
 
 # Usage
 
