@@ -4,8 +4,8 @@ import Discord, {
   TextChannel,
   DMChannel,
   NewsChannel,
-  MessageOptions,
-  APIMessage,
+  MessageEmbed,
+
 } from "discord.js";
 import { Command, EventType } from "../types";
 import { adminID } from "../../config.json";
@@ -19,9 +19,9 @@ const logEvent = async (
   args?: string[],
   title?: string,
   guild?: Guild,
-  embedParam?: MessageOptions | APIMessage
+  embedParam?: MessageEmbed
 ) => {
-  let embed: MessageOptions | APIMessage | undefined;
+  let embed: any
   const channel:
     | TextChannel
     | DMChannel
@@ -43,10 +43,10 @@ const logEvent = async (
           .setDescription(
             message?.guild?.id
               ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
-              : message &&
-              `${args} from **${message.author.username}** in **DM**`
+              :
+              `${args} from **${message?.author.username}** in **DM**`
           );
-      embed && logOutputChannel.send(embed).catch((err) => console.error(err));
+      embed && logOutputChannel.send({ embeds: [embed] }).catch((err) => console.error(err));
       break;
     case "criticalError":
       embed =
@@ -57,10 +57,10 @@ const logEvent = async (
           .setDescription(
             message?.guild?.id
               ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}** <@${adminID}>`
-              : message &&
-              `${args} from **${message.author.username}** in **DM** ${adminID}`
+              :
+              `${args} from **${message?.author.username}** in **DM** ${adminID}`
           );
-      embed && logOutputChannel.send(embed).catch((err) => console.error(err));
+      embed && logOutputChannel.send({ embeds: [embed] }).catch((err) => console.error(err));
       break;
     case "rollTitleRejected":
       embed = new Discord.MessageEmbed()
@@ -69,9 +69,9 @@ const logEvent = async (
         .setDescription(
           message?.guild?.id
             ? `**${message.author.username}** in **${channel.name}** on **${message.guild}**`
-            : message && `**${message.author.username}** in **DM**`
+            : `**${message?.author.username}** in **DM**`
         );
-      embed && logOutputChannel.send(embed).catch((err) => console.error(err));
+      embed && logOutputChannel.send({ embeds: [embed] }).catch((err) => console.error(err));
       break;
     case "rollTitleAccepted":
       embed = new Discord.MessageEmbed()
@@ -80,9 +80,9 @@ const logEvent = async (
         .setDescription(
           message?.guild?.id
             ? ` **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
-            : message && `**${message.author.username}** in **DM**`
+            : `**${message?.author.username}** in **DM**`
         );
-      logOutputChannel.send(embed).catch((err) => console.error(err));
+      logOutputChannel.send({ embeds: [embed] }).catch((err) => console.error(err));
       break;
     case "rollTitleTimeout":
       embed = new Discord.MessageEmbed()
@@ -91,9 +91,9 @@ const logEvent = async (
         .setDescription(
           message?.guild?.id
             ? `**${message.author.username}** in **${channel.name}** on **${message.guild}**`
-            : message && `**${message.author.username}** in **DM**`
+            : `**${message?.author.username}** in **DM**`
         );
-      logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+      logOutputChannel.send({ embeds: [embed] }).catch((err: Error) => console.error(err));
       break;
     case "guildAdd":
       embed =
@@ -103,7 +103,7 @@ const logEvent = async (
           .setTitle(eventType)
           .setDescription(`${guild.name}`);
       embed &&
-        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+        logOutputChannel.send({ embeds: [embed] }).catch((err: Error) => console.error(err));
       break;
     case "guildRemove":
       embed =
@@ -113,12 +113,12 @@ const logEvent = async (
           .setTitle(eventType)
           .setDescription(`${guild.name}`);
       embed &&
-        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+        logOutputChannel.send({ embeds: [embed] }).catch((err: Error) => console.error(err));
       break;
     case "sentRollResultMessage":
       embed = embedParam;
       embed &&
-        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+        logOutputChannel.send({ embeds: [embed] }).catch((err: Error) => console.error(err));
       break;
     case "sentHelperMessage":
       embed =
@@ -128,7 +128,7 @@ const logEvent = async (
           .setTitle(eventType)
           .setDescription(`${message.author.username} in ${channel.name}`);
       embed &&
-        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+        logOutputChannel.send({ embeds: [embed] }).catch((err: Error) => console.error(err));
       break;
     case "sentDiceOverMaxMessage":
       embed =
@@ -138,7 +138,7 @@ const logEvent = async (
           .setTitle(eventType)
           .setDescription(`${message.author.username} in ${channel.name}`);
       embed &&
-        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+        logOutputChannel.send({ embeds: [embed] }).catch((err: Error) => console.error(err));
       break;
     case "sentNeedPermissionsMessage":
       embed =
@@ -148,12 +148,11 @@ const logEvent = async (
           .setTitle(eventType)
           .setDescription(`**${channel.name}** on **${message.guild}**`);
       embed &&
-        logOutputChannel.send(embed).catch((err: Error) => console.error(err));
+        logOutputChannel.send({ embeds: [embed] }).catch((err: Error) => console.error(err));
       break;
     default:
       return null;
   }
-  return null;
 };
 
 export default logEvent;
