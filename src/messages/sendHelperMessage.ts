@@ -37,13 +37,14 @@ const sendHelperMessage = async (
           `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
         );
     await message.channel.send({ embeds: [embed] });
-    return logEvent(
+    logEvent(
       "sentHelperMessage",
       logOutputChannel,
       message,
       undefined,
       args
     );
+    return;
   } catch (err) {
     console.error(err);
     return null;

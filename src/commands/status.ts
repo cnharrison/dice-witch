@@ -18,6 +18,7 @@ module.exports = {
         `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
 
-    return message.channel.send({ embeds: [embed] });
+    message.channel.send({ embeds: [embed] });
+    return;
   },
 };

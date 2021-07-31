@@ -27,10 +27,14 @@ module.exports = {
     _: Command,
     logOutputChannel: TextChannel
   ) {
-    if (!args.length)
-      return sendHelperMessage(message, module.exports.name, logOutputChannel);
-    if (!checkForAttachPermission(message))
-      return sendNeedPermissionMessage(message, logOutputChannel);
+    if (!args.length) {
+      sendHelperMessage(message, module.exports.name, logOutputChannel);
+      return;
+    }
+    if (!checkForAttachPermission(message)) {
+      sendNeedPermissionMessage(message, logOutputChannel);
+      return;
+    }
 
     const {
       diceArray,
@@ -40,20 +44,23 @@ module.exports = {
       availableDice
     );
     if (!diceArray.length) {
-      return sendHelperMessage(message, module.exports.name, logOutputChannel);
+      sendHelperMessage(message, module.exports.name, logOutputChannel);
+      return
     }
     if (getTotalDiceRolled(diceArray) > maxDice) {
-      return sendDiceOverMaxMessage(message, logOutputChannel, args);
+      sendDiceOverMaxMessage(message, logOutputChannel, args);
+      return;
     }
 
     sendDiceRolledMessage(message, diceArray);
     const attachment = await generateDiceAttachment(diceArray);
-    return sendDiceResultMessage(
+    sendDiceResultMessage(
       resultArray,
       message,
       attachment,
       undefined,
       logOutputChannel
     );
+    return;
   },
 };

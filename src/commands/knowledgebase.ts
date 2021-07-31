@@ -102,7 +102,7 @@ module.exports = {
     };
 
     if (!args.length || !Object.keys(kb).includes(args[0])) {
-      return generateAndSendEmbed(
+      generateAndSendEmbed(
         [
           {
             name: "Available topics",
@@ -115,13 +115,15 @@ module.exports = {
         infoColor,
         "👩‍🎓 Knowledge base"
       );
+      return;
     }
     const article = kb[args[0]];
-    return generateAndSendEmbed(
+    generateAndSendEmbed(
       article,
       message,
       infoColor,
       "👩‍🎓 Knowledge base"
     );
+    return;
   },
 };

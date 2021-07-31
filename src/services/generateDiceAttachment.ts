@@ -35,10 +35,10 @@ const drawIcon = async (
       ctx.drawImage(
         iconImage,
         defaultDiceDimension * diceIndex +
-          defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
+        defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1)),
         diceOuterIndex * defaultDiceDimension +
-          defaultDiceDimension +
-          diceOuterIndex * defaultIconDimension,
+        defaultDiceDimension +
+        diceOuterIndex * defaultIconDimension,
         defaultIconDimension,
         defaultIconDimension
       );
@@ -105,7 +105,7 @@ async function generateDiceAttachment(diceArray: DiceArray): Promise<any> {
       canvasWidth,
       shouldHaveIcon
         ? defaultDiceDimension * paginatedArray.length +
-            defaultIconDimension * paginatedArray.length
+        defaultIconDimension * paginatedArray.length
         : defaultDiceDimension * paginatedArray.length
     );
 
@@ -127,7 +127,7 @@ async function generateDiceAttachment(diceArray: DiceArray): Promise<any> {
             defaultDiceDimension * index,
             shouldHaveIcon
               ? outerIndex * defaultDiceDimension +
-                  outerIndex * defaultIconDimension
+              outerIndex * defaultIconDimension
               : outerIndex * defaultDiceDimension,
             defaultDiceDimension,
             defaultDiceDimension

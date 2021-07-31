@@ -29,7 +29,8 @@ module.exports = {
           `[Invite me](${inviteLink}) | [Support server](${supportServerLink})`
         );
 
-      return message.channel.send({ embeds: [embed] });
+      message.channel.send({ embeds: [embed] });
+      return;
     }
     const name = args[0].toLowerCase();
     const command =
@@ -58,6 +59,7 @@ module.exports = {
         `[Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
 
-    return message.channel.send({ embeds: [embed] });
+    message.channel.send({ embeds: [embed] });
+    return;
   },
 };

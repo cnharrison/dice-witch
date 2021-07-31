@@ -151,7 +151,6 @@ const logEvent = async (
         logOutputChannel.send({ embeds: [embed] }).catch((err: Error) => console.error(err));
       break;
     default:
-      return null;
   }
 };
 
