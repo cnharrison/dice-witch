@@ -1,4 +1,4 @@
-import Discord, { Client, Collection, Message, TextChannel } from "discord.js";
+import Discord, { Client, Collection, Message, MessageEmbed, TextChannel } from "discord.js";
 import fs from "fs";
 import path from "path";
 import { prefix, botPath, supportServerLink } from "../../config.json";
@@ -38,7 +38,7 @@ export default function (discord: Client, logOutputChannel: TextChannel) {
       command.execute(message, args, discord, logOutputChannel, commands);
       logEvent("receivedCommand", logOutputChannel, message, command, args);
     } catch (error) {
-      const embed: any = new Discord.MessageEmbed()
+      const embed: MessageEmbed = new Discord.MessageEmbed()
         .setColor(errorColor)
         .setDescription(
           `error 😥 please join my [support server](${supportServerLink}) and report this`
