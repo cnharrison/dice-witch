@@ -23,7 +23,7 @@ const checkForAttachPermission = (message: Message) => {
     | User
     | Role = guild.me as GuildMember;
   const doesHavePermission: BitField<PermissionString> | null =
-    guild && (channel.permissionsFor(me) as BitField<PermissionString> | null);
+    guild && (channel.permissionsFor(me) as any);
   const permissionArray:
     | PermissionString[]
     | undefined = doesHavePermission?.toArray();

@@ -10,8 +10,7 @@ module.exports = {
       .setColor("#99999")
       .setTitle("Status")
       .setDescription(
-        `Latency: **${Date.now() - message.createdTimestamp}ms**\n I'm in **${
-          discord.guilds.cache.size
+        `Latency: **${Date.now() - message.createdTimestamp}ms**\n I'm in **${discord.guilds.cache.size
         }** discord servers 😈`
       )
       .addField(
@@ -19,6 +18,6 @@ module.exports = {
         `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
 
-    return message.channel.send(embed);
+    return message.channel.send({ embeds: [embed] });
   },
 };

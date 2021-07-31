@@ -13,7 +13,8 @@ const sendGetRollTitleMessage = async (
   await message.channel.send(`${message.author} what's this roll for?`);
 
   try {
-    const collected = (await originalMessage.channel.awaitMessages(filter, {
+    const collected = (await originalMessage.channel.awaitMessages({
+      filter,
       max: 1,
       time: 30000,
     })) as Collection<string, Message>;

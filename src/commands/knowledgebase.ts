@@ -1,4 +1,4 @@
-import Discord, { EmbedFieldData, EmbedField, Message } from "discord.js";
+import Discord, { ColorResolvable, Message } from "discord.js";
 import { KnowledgeBase } from "../types";
 import { prefix, inviteLink, supportServerLink } from "../../config.json";
 import { infoColor } from "../constants";
@@ -87,7 +87,7 @@ module.exports = {
     const generateAndSendEmbed = async (
       content: KnowledgeBase[keyof KnowledgeBase],
       message: Message,
-      color: string,
+      color: ColorResolvable,
       title: string
     ) => {
       const newEmbed = new Discord.MessageEmbed()
@@ -98,7 +98,7 @@ module.exports = {
         "\u200B",
         `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
       );
-      await message.channel.send(newEmbed);
+      await message.channel.send({ embeds: [newEmbed] });
     };
 
     if (!args.length || !Object.keys(kb).includes(args[0])) {

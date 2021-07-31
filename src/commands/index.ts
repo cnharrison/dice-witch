@@ -1,9 +1,8 @@
-import Discord from "discord.js";
-import { Client, Collection, Message, TextChannel } from "discord.js";
-import { Command } from "../types";
+import Discord, { Client, Collection, Message, TextChannel } from "discord.js";
 import fs from "fs";
 import path from "path";
 import { prefix, botPath, supportServerLink } from "../../config.json";
+import { Command } from "../types";
 import { logEvent } from "../services";
 import { errorColor } from "../constants/";
 
@@ -39,12 +38,12 @@ export default function (discord: Client, logOutputChannel: TextChannel) {
       command.execute(message, args, discord, logOutputChannel, commands);
       logEvent("receivedCommand", logOutputChannel, message, command, args);
     } catch (error) {
-      const embed = new Discord.MessageEmbed()
+      const embed: any = new Discord.MessageEmbed()
         .setColor(errorColor)
         .setDescription(
           `error 😥 please join my [support server](${supportServerLink}) and report this`
         );
-      message.channel.send(embed);
+      message.channel.send({ embeds: [embed] });
       logEvent("criticalError", logOutputChannel, message, command, args);
     }
   });

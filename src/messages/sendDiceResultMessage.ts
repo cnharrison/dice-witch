@@ -1,4 +1,4 @@
-import Discord, { FileOptions } from "discord.js";
+import Discord, { FileOptions, MessageEmbed, MessagePayload } from "discord.js";
 import { getRandomNumber } from "../helpers";
 import { logEvent } from "../services/index";
 import {
@@ -6,16 +6,15 @@ import {
   Message,
   TextChannel,
   MessageOptions,
-  APIMessage,
 } from "discord.js";
 import { Result } from "../types";
 
-const generateEmbed = async (
+const generateEmbedMessage = async (
   resultArray: Result[],
-  attachment: (string | MessageAttachment | FileOptions)[],
+  attachment: MessageAttachment,
   message: Message,
   title?: string
-): Promise<MessageOptions | APIMessage | undefined> => {
+): Promise<{ embeds: MessageEmbed[]; files: MessageAttachment[]; }> => {
   const grandTotal = resultArray.reduce(
     (prev: number, cur: Result) => prev + cur.results,
     0
@@ -23,25 +22,21 @@ const generateEmbed = async (
   try {
     const embed = title
       ? new Discord.MessageEmbed()
-          .setColor("#966F33")
-          .setTitle(title)
-          .attachFiles(attachment)
-          .setImage("attachment://currentDice.png")
-          .setFooter(
-            `${resultArray.map((result) => result.output).join("\n")} ${
-              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-            }\nsent to ${message.author.username}`
-          )
+        .setColor("#966F33")
+        .setTitle(title)
+        .setImage("attachment://currentDice.png")
+        .setFooter(
+          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+          }\nsent to ${message.author.username}`
+        )
       : new Discord.MessageEmbed()
-          .setColor("#966F33")
-          .attachFiles(attachment)
-          .setImage("attachment://currentDice.png")
-          .setFooter(
-            `${resultArray.map((result) => result.output).join("\n")} ${
-              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-            }\nsent to ${message.author.username}`
-          );
-    return embed;
+        .setColor("#966F33")
+        .setImage("attachment://currentDice.png")
+        .setFooter(
+          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+          }\nsent to ${message.author.username}`
+        );
+    return ({ embeds: [embed], files: [attachment] })
   } catch (err) {
     console.error(err);
     throw new Error(err);
@@ -51,12 +46,12 @@ const generateEmbed = async (
 const sendDiceResultMessage = async (
   resultArray: Result[],
   message: Message,
-  attachment: (string | MessageAttachment | FileOptions)[],
+  attachment: MessageAttachment,
   title: string | undefined,
   logOutputChannel: TextChannel
 ) => {
   try {
-    const embed: MessageOptions | APIMessage | undefined = await generateEmbed(
+    const embedMessage: { embeds: MessageEmbed[]; files: MessageAttachment[]; } = await generateEmbedMessage(
       resultArray,
       attachment,
       message,
@@ -65,7 +60,7 @@ const sendDiceResultMessage = async (
 
     const sendMessageAndStopTyping = async () => {
       try {
-        embed && (await message.channel.send(embed));
+        embedMessage && (await message.channel.send(embedMessage));
         logEvent(
           "sentRollResultMessage",
           logOutputChannel,
@@ -74,15 +69,13 @@ const sendDiceResultMessage = async (
           undefined,
           undefined,
           undefined,
-          embed
+          embedMessage.embeds[0]
         );
-        message.channel.stopTyping();
       } catch (err) {
-        message.channel.stopTyping();
       }
     };
 
-    message.channel.startTyping();
+    message.channel.sendTyping();
 
     setTimeout(sendMessageAndStopTyping, getRandomNumber(5000));
 

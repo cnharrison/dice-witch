@@ -1,4 +1,4 @@
-import Discord from "discord.js";
+import { Client, Intents } from "discord.js";
 import axios from "axios";
 import Cron from "cron";
 import commands from "./commands";
@@ -20,8 +20,7 @@ const getHeaders = (key: string) => {
 };
 
 const startServer = () => {
-  const discord = new Discord.Client();
-
+  const discord = new Client({ intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES] })
   discord.on("ready", async () => {
     let logOutputChannelTemp;
     discord.user ? discord.user.setActivity("!roll [dice notation]") : {};
