@@ -2,7 +2,7 @@ import { getRandomNumber } from "../helpers";
 import { Message } from "discord.js";
 import { Die, DiceArray } from "../types";
 
-const sendDiceRolledMessage = (message: Message, diceArray: any) => {
+const sendDiceRolledMessage = async (message: Message, diceArray: any) => {
   const diceArrayLengths = diceArray.map(
     (array: (Die | Die[])[]) => array.length
   );
@@ -73,7 +73,8 @@ const sendDiceRolledMessage = (message: Message, diceArray: any) => {
     getRandomNumber(30) === 1 ? messages[number - 1] : messages[0];
 
   try {
-    message.channel.send(getText());
+    await message.channel.send(getText());
+    await message.channel.sendTyping();
   } catch (err) {
     console.error(err);
   }

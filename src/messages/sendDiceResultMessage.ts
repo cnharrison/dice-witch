@@ -58,9 +58,9 @@ const sendDiceResultMessage = async (
       title
     );
 
-    const sendMessageAndStopTyping = async () => {
+    const sendMessage = async () => {
       try {
-        embedMessage && (await message.channel.send(embedMessage));
+        await message.channel.send(embedMessage);
         logEvent(
           "sentRollResultMessage",
           logOutputChannel,
@@ -75,9 +75,7 @@ const sendDiceResultMessage = async (
       }
     };
 
-    message.channel.sendTyping();
-
-    setTimeout(sendMessageAndStopTyping, getRandomNumber(5000));
+    setTimeout(sendMessage, getRandomNumber(5000));
 
     return;
   } catch (err) {
