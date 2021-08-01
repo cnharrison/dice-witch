@@ -29,7 +29,6 @@ module.exports = {
     __: any,
     interaction?: CommandInteraction
   ) {
-    console.log(logOutputChannel);
     if (!args.length) {
       sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
       return;
