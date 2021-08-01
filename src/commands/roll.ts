@@ -28,7 +28,8 @@ module.exports = {
     logOutputChannel: TextChannel,
     __: any,
     interaction?: CommandInteraction,
-    title?: string
+    title?: string,
+    timesToRepeat?: number,
   ) {
     if (!args.length) {
       sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
@@ -42,9 +43,10 @@ module.exports = {
     const {
       diceArray,
       resultArray,
-    }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
+    }: { diceArray: DiceArray; resultArray: Result[], } = rollDice(
       args,
-      availableDice
+      availableDice,
+      timesToRepeat
     );
     if (!diceArray.length) {
       sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);

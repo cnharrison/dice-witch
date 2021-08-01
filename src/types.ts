@@ -94,7 +94,8 @@ export interface Command {
     logOutputChannel: TextChannel,
     commands?: Collection<string, Command>,
     interaction?: CommandInteraction,
-    title?: string
+    title?: string,
+    timesToRepeat?: number,
   ) => void;
 }
 

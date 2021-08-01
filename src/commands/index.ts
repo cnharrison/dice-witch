@@ -49,21 +49,22 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
   });
 
   discord.on('interactionCreate', async interaction => {
-    console.log('interactionCreate');
     if (!interaction.isCommand()) return;
     await interaction.defer();
     const message = await interaction.fetchReply();
 
     const { value: diceNotation } = interaction.options.get('notation') || {};
     const { value: title } = interaction.options.get('title') || {}
+    const { value: timesToRepeat } = interaction.options.get('timestorepeat') || {}
 
     const args = diceNotation?.toString().trim().split(/ +/) || [];
     const titleAsString = title?.toString();
+    const timesToRepeatAsNumber = Number(timesToRepeat);
 
     const command =
       commands.get(interaction.commandName) ||
       commands.find((cmd) => cmd.aliases && cmd.aliases.includes(interaction.commandName));
-    if (command) command.execute(message as Message, args, discord, logOutputChannel, commands, interaction, titleAsString);
+    if (command) command.execute(message as Message, args, discord, logOutputChannel, commands, interaction, titleAsString, timesToRepeatAsNumber);
 
   })
 }

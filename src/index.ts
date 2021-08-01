@@ -32,6 +32,11 @@ const globalSlashCommands: any = {
       name: 'title',
       description: "what is this roll for? e.g. attack with sword",
       type: 'STRING'
+    },
+    {
+      name: 'timestorepeat',
+      description: "how many times to repeat this notation",
+      type: 'STRING'
     }
   ]
 };
@@ -46,6 +51,7 @@ const startServer = () => {
       logOutputChannelTemp = channel;
       console.log(`[Discord] Found log output channel ${channel.name}`);
       console.log(`[Discord] Registering global slash commands...`);
+      // await discord.guilds.cache.get('778373871061434408')?.commands.create(globalSlashCommands);
       await discord.application?.commands.create(globalSlashCommands);
       console.log(`[Discord] Registered.`);
     } catch (err) {
