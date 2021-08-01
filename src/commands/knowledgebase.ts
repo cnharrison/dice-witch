@@ -19,7 +19,7 @@ module.exports = {
     _: any,
     __: any,
     ___: any,
-    interaction: CommandInteraction,
+    interaction: CommandInteraction | ButtonInteraction,
     _____: any,
     _______: any,
     wasFromSlash?: boolean
@@ -174,6 +174,7 @@ module.exports = {
         }
       ]
     };
+
     const generateAndSendEmbed = async (
       content: KnowledgeBase[keyof KnowledgeBase],
       message: Message,
@@ -190,7 +191,7 @@ module.exports = {
         `_sent to ${interaction ? interaction.user.username : message.author.username
         }_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
       );
-      (await interaction)
+      interaction
         ? interaction.followUp({ embeds: [newEmbed] })
         : message.channel.send({ embeds: [newEmbed] });
     };

@@ -94,14 +94,15 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
   discord.on("interactionCreate", async (interaction) => {
     if (!interaction.isButton()) return;
+    await interaction.defer();
     const unformattedArgs = interaction.customId.trim().split("-");
     const args = unformattedArgs[1] ? [unformattedArgs[1]] : []
 
     const command =
-      commands.get(args[0]) ||
-      commands.find((cmd) => cmd.aliases && cmd.aliases.includes(args[0]));
+      commands.get(unformattedArgs[0]) ||
+      commands.find((cmd) => cmd.aliases && cmd.aliases.includes(unformattedArgs[0]));
 
-    const wasFromSlash = !!args.length && args[2] === "slash";
+    const wasFromSlash = !!unformattedArgs.length && unformattedArgs[2] === "slash";
 
     if (command)
       command.execute(
