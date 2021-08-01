@@ -73,7 +73,6 @@ const sendDiceRolledMessage = async (message: Message, diceArray: any, interacti
     getRandomNumber(20) === 1 ? messages[number - 1] : messages[0];
 
   try {
-    console.log(!!interaction);
     interaction ? await interaction.followUp(getText()) : await message.channel.send(getText());
     await message.channel.sendTyping();
   } catch (err) {
