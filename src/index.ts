@@ -28,6 +28,11 @@ const globalSlashCommands: any = {
       description: "dice notation string",
       type: 'STRING',
     },
+    {
+      name: 'title',
+      description: "what is this roll for? e.g. attack with sword",
+      type: 'STRING'
+    }
   ]
 };
 
@@ -51,7 +56,7 @@ const startServer = () => {
 
     const job = new Cron.CronJob(
       "22 * * * *",
-      function () {
+      () => {
         try {
           axios.post(
             `https://top.gg/api/bots/${clientID}/stats`,

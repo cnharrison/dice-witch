@@ -27,7 +27,8 @@ module.exports = {
     _: any,
     logOutputChannel: TextChannel,
     __: any,
-    interaction?: CommandInteraction
+    interaction?: CommandInteraction,
+    title?: string
   ) {
     if (!args.length) {
       sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
@@ -54,15 +55,15 @@ module.exports = {
       return;
     }
 
-    sendDiceRolledMessage(message, diceArray, interaction);
+    await sendDiceRolledMessage(message, diceArray, interaction);
     const attachment = await generateDiceAttachment(diceArray);
-    sendDiceResultMessage(
+    await sendDiceResultMessage(
       resultArray,
       message,
       attachment,
-      undefined,
       logOutputChannel,
-      interaction
+      interaction,
+      title,
     );
     return;
   },

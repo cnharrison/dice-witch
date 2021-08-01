@@ -65,8 +65,9 @@ module.exports = {
         resultArray,
         message,
         attachment,
-        title,
-        logOutputChannel
+        logOutputChannel,
+        undefined,
+        title
       );
       return;
     }

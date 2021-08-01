@@ -93,7 +93,8 @@ export interface Command {
     discord: Client,
     logOutputChannel: TextChannel,
     commands?: Collection<string, Command>,
-    interaction?: CommandInteraction
+    interaction?: CommandInteraction,
+    title?: string
   ) => void;
 }
 

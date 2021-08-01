@@ -90,7 +90,7 @@ const paginateDiceArray = (diceArray: DiceArray): DiceArray => {
   return newArray;
 };
 
-async function generateDiceAttachment(diceArray: DiceArray): Promise<any> {
+const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
   try {
     const shouldHaveIcon = diceArray
       .map((diceGroup: Die[]) =>

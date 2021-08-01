@@ -1,7 +1,7 @@
 import { Client, TextChannel, Guild } from "discord.js";
 import { logEvent } from "../services";
 
-export default function (discord: Client, logOutputChannel: TextChannel) {
+export default (discord: Client, logOutputChannel: TextChannel) => {
   try {
     discord.on("guildCreate", (guild: Guild) => {
       logEvent(

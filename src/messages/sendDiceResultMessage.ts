@@ -47,9 +47,9 @@ const sendDiceResultMessage = async (
   resultArray: Result[],
   message: Message,
   attachment: MessageAttachment,
-  title: string | undefined,
   logOutputChannel: TextChannel,
-  interaction?: CommandInteraction
+  interaction?: CommandInteraction,
+  title?: string,
 ) => {
   try {
     const embedMessage: { embeds: MessageEmbed[]; files: MessageAttachment[]; } = await generateEmbedMessage(

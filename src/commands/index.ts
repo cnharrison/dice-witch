@@ -6,7 +6,7 @@ import { Command } from "../types";
 import { logEvent } from "../services";
 import { errorColor } from "../constants/";
 
-export default function (discord: Client, logOutputChannel: TextChannel) {
+export default (discord: Client, logOutputChannel: TextChannel) => {
   let commands: Collection<string, Command>;
   commands = new Discord.Collection();
   process.chdir(path.dirname(botPath));
@@ -49,18 +49,21 @@ export default function (discord: Client, logOutputChannel: TextChannel) {
   });
 
   discord.on('interactionCreate', async interaction => {
+    console.log('interactionCreate');
     if (!interaction.isCommand()) return;
     await interaction.defer();
     const message = await interaction.fetchReply();
 
     const { value: diceNotation } = interaction.options.get('notation') || {};
+    const { value: title } = interaction.options.get('title') || {}
 
     const args = diceNotation?.toString().trim().split(/ +/) || [];
+    const titleAsString = title?.toString();
 
     const command =
       commands.get(interaction.commandName) ||
       commands.find((cmd) => cmd.aliases && cmd.aliases.includes(interaction.commandName));
-    if (command) command.execute(message as Message, args, discord, logOutputChannel, commands, interaction);
+    if (command) command.execute(message as Message, args, discord, logOutputChannel, commands, interaction, titleAsString);
 
   })
 }

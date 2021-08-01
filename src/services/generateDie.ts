@@ -85,14 +85,14 @@ import {
   generateDPercent90,
 } from "./generateDice/d%";
 
-async function generateDie(
+const generateDie = async (
   sides: DiceTypes,
   number: DiceFaces,
   fill: string,
   outline: string,
   width?: string,
   height?: string
-) {
+) => {
   const dice: DiceFaceData = {
     20: {
       1: generateD201(fill, outline, width, height),
