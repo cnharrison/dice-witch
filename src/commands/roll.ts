@@ -43,7 +43,7 @@ module.exports = {
     const {
       diceArray,
       resultArray,
-    }: { diceArray: DiceArray; resultArray: Result[], } = rollDice(
+    }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
       args,
       availableDice,
       timesToRepeat
