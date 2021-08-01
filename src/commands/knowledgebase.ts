@@ -1,4 +1,4 @@
-import Discord, { ColorResolvable, Message } from "discord.js";
+import Discord, { ColorResolvable, CommandInteraction, Message } from "discord.js";
 import { KnowledgeBase } from "../types";
 import { prefix, inviteLink, supportServerLink } from "../../config.json";
 import { infoColor } from "../constants";
@@ -8,7 +8,7 @@ module.exports = {
   description: "Browse the knowledge base",
   aliases: ["kb"],
   usage: "[topic]",
-  async execute(message: Message, args: string[]) {
+  async execute(message: Message, args: string[], _: any, __: any, ___: any, interaction: CommandInteraction) {
     const kb: KnowledgeBase = {
       minmax: [
         {
@@ -96,7 +96,7 @@ module.exports = {
       newEmbed.addFields(content);
       newEmbed.addField(
         "\u200B",
-        `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
+        `_Sent to ${interaction ? interaction.user.username : message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
       );
       await message.channel.send({ embeds: [newEmbed] });
     };

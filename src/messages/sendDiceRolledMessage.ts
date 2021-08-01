@@ -41,7 +41,7 @@ const sendDiceRolledMessage = async (message: Message, diceArray: any, interacti
       isSingleDie,
       "rolls",
       "roll"
-    )} across the wood, you think you can spot a faint light emanating from deep within ${pluralPick(
+    )} across the gnarly surface, you think you can spot a faint light emanating from deep within ${pluralPick(
       isSingleDie,
       "it..._",
       "one of them..._"

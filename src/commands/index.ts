@@ -53,7 +53,7 @@ export default function (discord: Client, logOutputChannel: TextChannel) {
     await interaction.defer();
     const message = await interaction.fetchReply();
 
-    const { value: diceNotation } = interaction.options.get('dicenotation') || {};
+    const { value: diceNotation } = interaction.options.get('notation') || {};
 
     const args = diceNotation?.toString().trim().split(/ +/) || [];
 

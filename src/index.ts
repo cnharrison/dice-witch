@@ -24,7 +24,7 @@ const globalSlashCommands: any = {
   description: "/roll [dice notation], e.g. 1d6+1 2d4. /roll for help",
   options: [
     {
-      name: 'dicenotation',
+      name: 'notation',
       description: "dice notation string",
       type: 'STRING',
     },

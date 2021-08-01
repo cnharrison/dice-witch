@@ -35,7 +35,7 @@ const sendHelperMessage = async (
         )
         .addField(
           "\u200B",
-          `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
+          `_sent to ${interaction ? interaction.user.username : message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
         );
     interaction ? await interaction.followUp({ embeds: [embed] }) : await message.channel.send({ embeds: [embed] });
     logEvent(
