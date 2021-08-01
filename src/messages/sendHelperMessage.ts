@@ -1,4 +1,4 @@
-import Discord, { Message, TextChannel, MessageEmbed, MessageOptions, Interaction, CommandInteraction } from "discord.js";
+import Discord, { Message, TextChannel, MessageEmbed, CommandInteraction } from "discord.js";
 import { prefix, inviteLink, supportServerLink } from "../../config.json";
 import { availableDice, maxDice } from "../constants";
 import { logEvent } from "../services";

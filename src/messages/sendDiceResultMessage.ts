@@ -1,4 +1,4 @@
-import Discord, { CommandInteraction, FileOptions, MessageEmbed, MessagePayload } from "discord.js";
+import Discord, { CommandInteraction, MessageEmbed } from "discord.js";
 import { getRandomNumber } from "../helpers";
 import { logEvent } from "../services/index";
 import {
