@@ -96,7 +96,7 @@ module.exports = {
       newEmbed.addFields(content);
       newEmbed.addField(
         "\u200B",
-        `_Sent to ${interaction ? interaction.user.username : message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
+        `_sent to ${interaction ? interaction.user.username : message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
       );
       await message.channel.send({ embeds: [newEmbed] });
     };
