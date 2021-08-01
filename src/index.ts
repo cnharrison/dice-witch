@@ -45,13 +45,12 @@ const startServer = () => {
   const discord = new Client({ intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES] })
   discord.on("ready", async () => {
     let logOutputChannelTemp;
-    discord.user ? discord.user.setActivity("!roll [dice notation]") : {};
+    discord.user ? discord.user.setActivity("/roll") : {};
     try {
       const channel: any = await discord.channels.fetch(logOutputChannel);
       logOutputChannelTemp = channel;
       console.log(`[Discord] Found log output channel ${channel.name}`);
       console.log(`[Discord] Registering global slash commands...`);
-      // await discord.guilds.cache.get('778373871061434408')?.commands.create(globalSlashCommands);
       await discord.application?.commands.create(globalSlashCommands);
       console.log(`[Discord] Registered.`);
     } catch (err) {
