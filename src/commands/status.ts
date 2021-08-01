@@ -5,7 +5,15 @@ module.exports = {
   name: "status",
   description: "Get ping and server info",
   aliases: ["ping"],
-  async execute(message: Message, _: string[], discord: Client, __: any, ___: any, ____: any, interaction: CommandInteraction) {
+  async execute(
+    message: Message,
+    _: string[],
+    discord: Client,
+    __: any,
+    ___: any,
+    ____: any,
+    interaction: CommandInteraction
+  ) {
     const embed = new Discord.MessageEmbed()
       .setColor("#99999")
       .setTitle("Status")
@@ -15,10 +23,11 @@ module.exports = {
       )
       .addField(
         "\u200B",
-        `_sent to ${interaction ? interaction.user.username : message.author.username}_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
+        `_sent to ${interaction ? interaction.user.username : message.author.username
+        }_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
 
     message.channel.send({ embeds: [embed] });
     return;
-  },
+  }
 };

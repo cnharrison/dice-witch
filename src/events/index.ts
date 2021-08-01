@@ -29,4 +29,4 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
   } catch (err) {
     console.error(err);
   }
-}
+};

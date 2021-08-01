@@ -4,7 +4,7 @@ import {
   Die,
   DiceTypesToDisplay,
   DiceFaces,
-  DiceArray,
+  DiceArray
 } from "../types";
 import { StandardDice } from "rpg-dice-roller/types/dice";
 import { RollResult } from "rpg-dice-roller/types/results";
@@ -66,8 +66,10 @@ const rollDice = (
       argsToMutate.forEach((value: string, outerIndex: number) => {
         const isMultiRollToken = value.match(/^.*?(\<[^\d]*(\d+)[^\d]*\>).*/);
         if (isMultiRollToken && !timesToRepeat) {
-          const number = Number(isMultiRollToken[2])
-          argsToMutate = argsToMutate.filter((_, index) => index !== outerIndex);
+          const number = Number(isMultiRollToken[2]);
+          argsToMutate = argsToMutate.filter(
+            (_, index) => index !== outerIndex
+          );
           argsToMutate = new Array(number).fill(argsToMutate).flat();
         }
       });
@@ -97,7 +99,7 @@ const rollDice = (
         const roll = new DiceRoll(value);
         result = {
           output: roll.output,
-          results: roll.total,
+          results: roll.total
         };
         groupArray = roll.rolls
           .filter((rollGroup: any) => typeof rollGroup !== "string")
@@ -109,14 +111,14 @@ const rollDice = (
                   {
                     sides: "%",
                     rolled: getDPercentRolled(cur.initialValue) as DiceFaces,
-                    icon: generateIconArray(cur.modifiers),
+                    icon: generateIconArray(cur.modifiers)
                   },
                   {
                     sides: 10,
                     rolled: getD10PercentRolled(
                       cur.initialValue
                     ) as DiceFaces,
-                    icon: generateIconArray(cur.modifiers),
+                    icon: generateIconArray(cur.modifiers)
                   }
                 );
                 return acc;
@@ -124,7 +126,7 @@ const rollDice = (
               : rollGroup.rolls.map((currentRoll: RollResult) => ({
                 sides: sidesArray[outerIndex],
                 rolled: currentRoll.initialValue,
-                icon: generateIconArray(currentRoll.modifiers),
+                icon: generateIconArray(currentRoll.modifiers)
               }))
           );
         diceArray = [...diceArray, ...groupArray];

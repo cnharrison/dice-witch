@@ -1,11 +1,7 @@
 import Discord, { CommandInteraction, MessageEmbed } from "discord.js";
 import { getRandomNumber } from "../helpers";
 import { logEvent } from "../services/index";
-import {
-  MessageAttachment,
-  Message,
-  TextChannel,
-} from "discord.js";
+import { MessageAttachment, Message, TextChannel } from "discord.js";
 import { Result } from "../types";
 
 const generateEmbedMessage = async (
@@ -14,7 +10,7 @@ const generateEmbedMessage = async (
   message: Message,
   title?: string,
   interaction?: CommandInteraction
-): Promise<{ embeds: MessageEmbed[]; files: MessageAttachment[]; }> => {
+): Promise<{ embeds: MessageEmbed[]; files: MessageAttachment[] }> => {
   const grandTotal = resultArray.reduce(
     (prev: number, cur: Result) => prev + cur.results,
     0
@@ -27,16 +23,18 @@ const generateEmbedMessage = async (
         .setImage("attachment://currentDice.png")
         .setFooter(
           `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\nsent to ${interaction ? interaction.user.username : message.author.username}`
+          }\nsent to ${interaction ? interaction.user.username : message.author.username
+          }`
         )
       : new Discord.MessageEmbed()
         .setColor("#966F33")
         .setImage("attachment://currentDice.png")
         .setFooter(
           `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\nsent to ${interaction ? interaction.user.username : message.author.username}`
+          }\nsent to ${interaction ? interaction.user.username : message.author.username
+          }`
         );
-    return ({ embeds: [embed], files: [attachment] })
+    return { embeds: [embed], files: [attachment] };
   } catch (err) {
     console.error(err);
     throw new Error(err);
@@ -49,10 +47,13 @@ const sendDiceResultMessage = async (
   attachment: MessageAttachment,
   logOutputChannel: TextChannel,
   interaction?: CommandInteraction,
-  title?: string,
+  title?: string
 ) => {
   try {
-    const embedMessage: { embeds: MessageEmbed[]; files: MessageAttachment[]; } = await generateEmbedMessage(
+    const embedMessage: {
+      embeds: MessageEmbed[];
+      files: MessageAttachment[];
+    } = await generateEmbedMessage(
       resultArray,
       attachment,
       message,
@@ -73,8 +74,7 @@ const sendDiceResultMessage = async (
           undefined,
           embedMessage.embeds[0]
         );
-      } catch (err) {
-      }
+      } catch (err) { }
     };
 
     setTimeout(sendMessage, getRandomNumber(5000));

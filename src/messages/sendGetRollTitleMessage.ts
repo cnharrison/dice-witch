@@ -16,7 +16,7 @@ const sendGetRollTitleMessage = async (
     const collected = (await originalMessage.channel.awaitMessages({
       filter,
       max: 1,
-      time: 30000,
+      time: 30000
     })) as Collection<string, Message>;
     if (!collected) return;
     const firstCollected = collected.first();

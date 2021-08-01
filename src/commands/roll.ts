@@ -6,12 +6,12 @@ import {
   sendHelperMessage,
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
-  sendNeedPermissionMessage,
+  sendNeedPermissionMessage
 } from "../messages";
 import {
   rollDice,
   generateDiceAttachment,
-  checkForAttachPermission,
+  checkForAttachPermission
 } from "../services";
 import { getTotalDiceRolled } from "../helpers";
 
@@ -29,10 +29,16 @@ module.exports = {
     __: any,
     interaction?: CommandInteraction,
     title?: string,
-    timesToRepeat?: number,
+    timesToRepeat?: number
   ) {
     if (!args.length) {
-      sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
+      sendHelperMessage(
+        message,
+        module.exports.name,
+        logOutputChannel,
+        undefined,
+        interaction
+      );
       return;
     }
     if (!checkForAttachPermission(message)) {
@@ -42,15 +48,21 @@ module.exports = {
 
     const {
       diceArray,
-      resultArray,
+      resultArray
     }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
       args,
       availableDice,
       timesToRepeat
     );
     if (!diceArray.length) {
-      sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
-      return
+      sendHelperMessage(
+        message,
+        module.exports.name,
+        logOutputChannel,
+        undefined,
+        interaction
+      );
+      return;
     }
     if (getTotalDiceRolled(diceArray) > maxDice) {
       sendDiceOverMaxMessage(message, logOutputChannel, args, interaction);
@@ -65,8 +77,8 @@ module.exports = {
       attachment,
       logOutputChannel,
       interaction,
-      title,
+      title
     );
     return;
-  },
+  }
 };

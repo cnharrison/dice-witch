@@ -149,6 +149,6 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
     console.error(err);
     return null;
   }
-}
+};
 
 export default generateDiceAttachment;

@@ -1,4 +1,10 @@
-import Discord, { Client, Collection, Message, MessageEmbed, TextChannel } from "discord.js";
+import Discord, {
+  Client,
+  Collection,
+  Message,
+  MessageEmbed,
+  TextChannel
+} from "discord.js";
 import fs from "fs";
 import path from "path";
 import { prefix, botPath, supportServerLink } from "../../config.json";
@@ -48,14 +54,15 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
     }
   });
 
-  discord.on('interactionCreate', async interaction => {
+  discord.on("interactionCreate", async (interaction) => {
     if (!interaction.isCommand()) return;
     await interaction.defer();
     const message = await interaction.fetchReply();
 
-    const { value: diceNotation } = interaction.options.get('notation') || {};
-    const { value: title } = interaction.options.get('title') || {}
-    const { value: timesToRepeat } = interaction.options.get('timestorepeat') || {}
+    const { value: diceNotation } = interaction.options.get("notation") || {};
+    const { value: title } = interaction.options.get("title") || {};
+    const { value: timesToRepeat } =
+      interaction.options.get("timestorepeat") || {};
 
     const args = diceNotation?.toString().trim().split(/ +/) || [];
     const titleAsString = title?.toString();
@@ -63,8 +70,43 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
     const command =
       commands.get(interaction.commandName) ||
-      commands.find((cmd) => cmd.aliases && cmd.aliases.includes(interaction.commandName));
-    if (command) command.execute(message as Message, args, discord, logOutputChannel, commands, interaction, titleAsString, timesToRepeatAsNumber);
+      commands.find(
+        (cmd) => cmd.aliases && cmd.aliases.includes(interaction.commandName)
+      );
+    if (command)
+      command.execute(
+        message as Message,
+        args,
+        discord,
+        logOutputChannel,
+        commands,
+        interaction,
+        titleAsString,
+        timesToRepeatAsNumber
+      );
+  });
 
-  })
-}
+  discord.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    const args = interaction.customId.trim().split('-');
+
+    const command =
+      commands.get(args[0]) ||
+      commands.find(
+        (cmd) => cmd.aliases && cmd.aliases.includes(args[0])
+      );
+    if (command)
+      command.execute(
+        undefined,
+        args[1] ? [args[1]] : [],
+        discord,
+        logOutputChannel,
+        commands,
+        interaction,
+        undefined,
+        undefined,
+      );
+
+  });
+
+};

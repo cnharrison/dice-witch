@@ -7,12 +7,12 @@ import {
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
   sendGetRollTitleMessage,
-  sendNeedPermissionMessage,
+  sendNeedPermissionMessage
 } from "../messages";
 import {
   rollDice,
   generateDiceAttachment,
-  checkForAttachPermission,
+  checkForAttachPermission
 } from "../services";
 import { getTotalDiceRolled } from "../helpers";
 
@@ -31,7 +31,13 @@ module.exports = {
     interaction?: CommandInteraction
   ) {
     if (!args.length) {
-      sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
+      sendHelperMessage(
+        message,
+        module.exports.name,
+        logOutputChannel,
+        undefined,
+        interaction
+      );
       return;
     }
     if (!checkForAttachPermission(message)) {
@@ -41,7 +47,7 @@ module.exports = {
 
     const {
       diceArray,
-      resultArray,
+      resultArray
     }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
       args,
       availableDice
@@ -71,5 +77,5 @@ module.exports = {
       );
       return;
     }
-  },
+  }
 };

@@ -61,5 +61,5 @@ module.exports = {
 
     message.channel.send({ embeds: [embed] });
     return;
-  },
+  }
 };

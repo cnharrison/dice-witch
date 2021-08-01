@@ -8,7 +8,7 @@ import {
   NewsChannel,
   Guild,
   GuildMember,
-  User,
+  User
 } from "discord.js";
 const checkForAttachPermission = (message: Message) => {
   const channel:

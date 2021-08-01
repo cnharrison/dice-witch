@@ -7,16 +7,16 @@ import {
   discordToken,
   logOutputChannel,
   botListAuthKeys,
-  clientID,
+  clientID
 } from "../config.json";
 const { discordbotlist, topgg, dbots } = botListAuthKeys;
 
 const getHeaders = (key: string) => {
   return {
     headers: {
-      Authorization: key,
-    },
-  }
+      Authorization: key
+    }
+  };
 };
 
 const globalSlashCommands: any = {
@@ -24,25 +24,27 @@ const globalSlashCommands: any = {
   description: "/roll [dice notation], e.g. 1d6+1 2d4. /roll for help",
   options: [
     {
-      name: 'notation',
+      name: "notation",
       description: "dice notation string",
-      type: 'STRING',
+      type: "STRING"
     },
     {
-      name: 'title',
+      name: "title",
       description: "what is this roll for? e.g. attack with sword",
-      type: 'STRING'
+      type: "STRING"
     },
     {
-      name: 'timestorepeat',
+      name: "timestorepeat",
       description: "how many times to repeat this notation",
-      type: 'STRING'
+      type: "STRING"
     }
   ]
 };
 
 const startServer = () => {
-  const discord = new Client({ intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES] })
+  const discord = new Client({
+    intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES]
+  });
   discord.on("ready", async () => {
     let logOutputChannelTemp;
     discord.user ? discord.user.setActivity("/roll") : {};
@@ -66,21 +68,21 @@ const startServer = () => {
           axios.post(
             `https://top.gg/api/bots/${clientID}/stats`,
             {
-              server_count: discord.guilds.cache.size,
+              server_count: discord.guilds.cache.size
             },
             getHeaders(topgg)
           );
           axios.post(
             `https://discordbotlist.com/api/v1/bots/${clientID}}/stats`,
             {
-              guilds: discord.guilds.cache.size,
+              guilds: discord.guilds.cache.size
             },
             getHeaders(discordbotlist)
           );
           axios.post(
             `https://dbots.co/api/v1/bots/${clientID}/stats`,
             {
-              guildCount: discord.guilds.cache.size,
+              guildCount: discord.guilds.cache.size
             },
             getHeaders(dbots)
           );
