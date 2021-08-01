@@ -1,5 +1,5 @@
-import { Message, TextChannel } from "discord.js";
-import { Command, Result, DiceArray } from "../types";
+import { CommandInteraction, Message, TextChannel } from "discord.js";
+import { Result, DiceArray } from "../types";
 import { availableDice, maxDice } from "../constants/";
 import {
   sendDiceResultMessage,
@@ -24,15 +24,18 @@ module.exports = {
   async execute(
     message: Message,
     args: string[],
-    _: Command,
-    logOutputChannel: TextChannel
+    _: any,
+    logOutputChannel: TextChannel,
+    __: any,
+    interaction?: CommandInteraction
   ) {
+    console.log(logOutputChannel);
     if (!args.length) {
-      sendHelperMessage(message, module.exports.name, logOutputChannel);
+      sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
       return;
     }
     if (!checkForAttachPermission(message)) {
-      sendNeedPermissionMessage(message, logOutputChannel);
+      sendNeedPermissionMessage(message, logOutputChannel, interaction);
       return;
     }
 
@@ -44,15 +47,15 @@ module.exports = {
       availableDice
     );
     if (!diceArray.length) {
-      sendHelperMessage(message, module.exports.name, logOutputChannel);
+      sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
       return
     }
     if (getTotalDiceRolled(diceArray) > maxDice) {
-      sendDiceOverMaxMessage(message, logOutputChannel, args);
+      sendDiceOverMaxMessage(message, logOutputChannel, args, interaction);
       return;
     }
 
-    sendDiceRolledMessage(message, diceArray);
+    sendDiceRolledMessage(message, diceArray, interaction);
     const attachment = await generateDiceAttachment(diceArray);
     sendDiceResultMessage(
       resultArray,

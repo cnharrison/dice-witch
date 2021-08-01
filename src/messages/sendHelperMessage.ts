@@ -1,4 +1,4 @@
-import Discord, { Message, TextChannel, MessageEmbed, MessageOptions } from "discord.js";
+import Discord, { Message, TextChannel, MessageEmbed, MessageOptions, Interaction, CommandInteraction } from "discord.js";
 import { prefix, inviteLink, supportServerLink } from "../../config.json";
 import { availableDice, maxDice } from "../constants";
 import { logEvent } from "../services";
@@ -8,7 +8,8 @@ const sendHelperMessage = async (
   message: Message,
   name: string,
   logOutputChannel: TextChannel,
-  args?: string[]
+  args?: string[],
+  interaction?: CommandInteraction
 ) => {
   try {
     const embed:
@@ -36,7 +37,7 @@ const sendHelperMessage = async (
           "\u200B",
           `_Sent to ${message.author.username}_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
         );
-    await message.channel.send({ embeds: [embed] });
+    interaction ? await interaction.followUp({ embeds: [embed] }) : await message.channel.send({ embeds: [embed] });
     logEvent(
       "sentHelperMessage",
       logOutputChannel,

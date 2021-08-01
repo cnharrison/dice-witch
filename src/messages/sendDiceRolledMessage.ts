@@ -1,8 +1,8 @@
 import { getRandomNumber } from "../helpers";
-import { Message } from "discord.js";
-import { Die, DiceArray } from "../types";
+import { CommandInteraction, Message } from "discord.js";
+import { Die } from "../types";
 
-const sendDiceRolledMessage = async (message: Message, diceArray: any) => {
+const sendDiceRolledMessage = async (message: Message, diceArray: any, interaction?: CommandInteraction) => {
   const diceArrayLengths = diceArray.map(
     (array: (Die | Die[])[]) => array.length
   );
@@ -62,7 +62,7 @@ const sendDiceRolledMessage = async (message: Message, diceArray: any) => {
       "dance"
     )} and ${pluralPick(
       isSingleDie,
-      "piroettes",
+      "pirouettes",
       "piroutte"
     )} across the table's ancient cracks..._`,
   ];
@@ -70,10 +70,11 @@ const sendDiceRolledMessage = async (message: Message, diceArray: any) => {
   const number = getRandomNumber(messages.length);
 
   const getText = () =>
-    getRandomNumber(30) === 1 ? messages[number - 1] : messages[0];
+    getRandomNumber(20) === 1 ? messages[number - 1] : messages[0];
 
   try {
-    await message.channel.send(getText());
+    console.log(!!interaction);
+    interaction ? await interaction.followUp(getText()) : await message.channel.send(getText());
     await message.channel.sendTyping();
   } catch (err) {
     console.error(err);

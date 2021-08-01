@@ -21,7 +21,7 @@ export default function (discord: Client, logOutputChannel: TextChannel) {
     commands?.set(command.name, command);
   }
 
-  discord.on("message", (message: Message) => {
+  discord.on("messageCreate", (message: Message) => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
 
     const args = message.content.slice(prefix.length).trim().split(/ +/);
@@ -47,4 +47,20 @@ export default function (discord: Client, logOutputChannel: TextChannel) {
       logEvent("criticalError", logOutputChannel, message, command, args);
     }
   });
+
+  discord.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+    await interaction.defer();
+    const message = await interaction.fetchReply();
+
+    const { value: diceNotation } = interaction.options.get('dicenotation') || {};
+
+    const args = diceNotation?.toString().trim().split(/ +/) || [];
+
+    const command =
+      commands.get(interaction.commandName) ||
+      commands.find((cmd) => cmd.aliases && cmd.aliases.includes(interaction.commandName));
+    if (command) command.execute(message as Message, args, discord, logOutputChannel, commands, interaction);
+
+  })
 }

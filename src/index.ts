@@ -19,6 +19,18 @@ const getHeaders = (key: string) => {
   }
 };
 
+const globalSlashCommands: any = {
+  name: "roll",
+  description: "/roll [dice notation], e.g. 1d6+1 2d4. /roll for help",
+  options: [
+    {
+      name: 'dicenotation',
+      description: "dice notation string",
+      type: 'STRING',
+    },
+  ]
+};
+
 const startServer = () => {
   const discord = new Client({ intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES] })
   discord.on("ready", async () => {
@@ -28,6 +40,9 @@ const startServer = () => {
       const channel: any = await discord.channels.fetch(logOutputChannel);
       logOutputChannelTemp = channel;
       console.log(`[Discord] Found log output channel ${channel.name}`);
+      console.log(`[Discord] Registering global slash commands...`);
+      await discord.application?.commands.create(globalSlashCommands);
+      console.log(`[Discord] Registered.`);
     } catch (err) {
       console.error(err);
     }

@@ -1,6 +1,7 @@
 import {
   Client,
   Collection,
+  CommandInteraction,
   EmbedFieldData,
   Message,
   TextChannel,
@@ -91,7 +92,8 @@ export interface Command {
     args: string[],
     discord: Client,
     logOutputChannel: TextChannel,
-    commands?: Collection<string, Command>
+    commands?: Collection<string, Command>,
+    interaction?: CommandInteraction
   ) => void;
 }
 

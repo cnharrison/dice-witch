@@ -1,4 +1,4 @@
-import { Message, TextChannel } from "discord.js";
+import { CommandInteraction, Message, TextChannel } from "discord.js";
 import { Command, DiceArray, Result } from "../types";
 import { availableDice, maxDice } from "../constants";
 import {
@@ -26,10 +26,12 @@ module.exports = {
     message: Message,
     args: string[],
     _: Command,
-    logOutputChannel: TextChannel
+    logOutputChannel: TextChannel,
+    __: any,
+    interaction?: CommandInteraction
   ) {
     if (!args.length) {
-      sendHelperMessage(message, module.exports.name, logOutputChannel);
+      sendHelperMessage(message, module.exports.name, logOutputChannel, undefined, interaction);
       return;
     }
     if (!checkForAttachPermission(message)) {
