@@ -61,10 +61,15 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
     const { value: diceNotation } = interaction.options.get("notation") || {};
     const { value: title } = interaction.options.get("title") || {};
+    const { value: topic } = interaction.options.get("topic") || {};
     const { value: timesToRepeat } =
       interaction.options.get("timestorepeat") || {};
 
-    const args = diceNotation?.toString().trim().split(/ +/) || [];
+    const unformattedArgs = topic?.toString().trim().split("-") || [];
+    const wasFromSlash = !!unformattedArgs.length && unformattedArgs[2] === "slash";
+    const args = diceNotation
+      ? diceNotation?.toString().trim().split(/ +/)
+      : unformattedArgs[1] ? [unformattedArgs[1]] : []
     const titleAsString = title?.toString();
     const timesToRepeatAsNumber = Number(timesToRepeat);
 
@@ -82,26 +87,26 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         commands,
         interaction,
         titleAsString,
-        timesToRepeatAsNumber
+        timesToRepeatAsNumber,
+        wasFromSlash
       );
   });
 
-  discord.on('interactionCreate', async (interaction) => {
+  discord.on("interactionCreate", async (interaction) => {
     if (!interaction.isButton()) return;
-    const args = interaction.customId.trim().split('-');
-    console.log(args);
+    const unformattedArgs = interaction.customId.trim().split("-");
+    const args = unformattedArgs[1] ? [unformattedArgs[1]] : []
+
     const command =
       commands.get(args[0]) ||
-      commands.find(
-        (cmd) => cmd.aliases && cmd.aliases.includes(args[0])
-      );
+      commands.find((cmd) => cmd.aliases && cmd.aliases.includes(args[0]));
 
-    const wasFromSlash = !!args.length && args[2] === 'slash'
+    const wasFromSlash = !!args.length && args[2] === "slash";
 
     if (command)
       command.execute(
         undefined,
-        args[1] ? [args[1]] : [],
+        args,
         discord,
         logOutputChannel,
         commands,
@@ -110,7 +115,5 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         undefined,
         wasFromSlash
       );
-
   });
-
 };

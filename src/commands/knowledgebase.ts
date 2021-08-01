@@ -174,7 +174,6 @@ module.exports = {
         }
       ]
     };
-    console.log(wasFromSlash);
     const generateAndSendEmbed = async (
       content: KnowledgeBase[keyof KnowledgeBase],
       message: Message,
@@ -192,7 +191,7 @@ module.exports = {
         }_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
       );
       (await interaction)
-        ? interaction.reply({ embeds: [newEmbed] })
+        ? interaction.followUp({ embeds: [newEmbed] })
         : message.channel.send({ embeds: [newEmbed] });
     };
 

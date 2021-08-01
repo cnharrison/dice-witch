@@ -19,27 +19,75 @@ const getHeaders = (key: string) => {
   };
 };
 
-const globalSlashCommands: any = {
-  name: "roll",
-  description: "/roll [dice notation], e.g. 1d6+1 2d4. /roll for help",
-  options: [
-    {
-      name: "notation",
-      description: "dice notation string",
-      type: "STRING"
-    },
-    {
-      name: "title",
-      description: "what is this roll for? e.g. attack with sword",
-      type: "STRING"
-    },
-    {
-      name: "timestorepeat",
-      description: "how many times to repeat this notation",
-      type: "STRING"
-    }
-  ]
-};
+const globalSlashCommands: any = [
+  {
+    name: "roll",
+    description: "/roll [dice notation], e.g. 1d6+1 2d4. /roll for help",
+    options: [
+      {
+        name: "notation",
+        description: "dice notation string",
+        type: "STRING"
+      },
+      {
+        name: "title",
+        description: "what is this roll for? e.g. attack with sword",
+        type: "STRING"
+      },
+      {
+        name: "timestorepeat",
+        description: "how many times to repeat this notation",
+        type: "STRING"
+      }
+    ]
+  },
+  {
+    name: "knowledgebase",
+    description: "show the knowledgebase",
+    options: [
+      {
+        name: "topic",
+        required: true,
+        description: "what you want to know about",
+        type: "STRING",
+        choices: [
+          {
+            name: "Exploding dice",
+            value: "kb-exploding-slash"
+          },
+          {
+            name: "Auto-reroll",
+            value: "kb-reroll-slash"
+          },
+          {
+            name: "Keep/drop AKA advantage",
+            value: "kb-keepdrop-slash"
+          },
+          {
+            name: "Target success/failure AKA Dice pool",
+            value: "kb-target-slash"
+          },
+          {
+            name: "Critical success/failure",
+            value: "kb-crit-slash"
+          },
+          {
+            name: "Sorting",
+            value: "kb-sort-slash"
+          },
+          {
+            name: "Math",
+            value: "kb-math-slash"
+          },
+          {
+            name: "Repeating",
+            value: "kb-repeating-slash"
+          }
+        ]
+      }
+    ]
+  }
+];
 
 const startServer = () => {
   const discord = new Client({
@@ -53,7 +101,7 @@ const startServer = () => {
       logOutputChannelTemp = channel;
       console.log(`[Discord] Found log output channel ${channel.name}`);
       console.log(`[Discord] Registering global slash commands...`);
-      await discord.application?.commands.create(globalSlashCommands);
+      await discord.application?.commands.set(globalSlashCommands);
       console.log(`[Discord] Registered.`);
     } catch (err) {
       console.error(err);
