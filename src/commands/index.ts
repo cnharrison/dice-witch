@@ -89,12 +89,15 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
   discord.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
     const args = interaction.customId.trim().split('-');
-
+    console.log(args);
     const command =
       commands.get(args[0]) ||
       commands.find(
         (cmd) => cmd.aliases && cmd.aliases.includes(args[0])
       );
+
+    const wasFromSlash = !!args.length && args[2] === 'slash'
+
     if (command)
       command.execute(
         undefined,
@@ -105,6 +108,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         interaction,
         undefined,
         undefined,
+        wasFromSlash
       );
 
   });

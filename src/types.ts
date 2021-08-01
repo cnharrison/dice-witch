@@ -96,7 +96,8 @@ export interface Command {
     commands?: Collection<string, Command>,
     interaction?: CommandInteraction | ButtonInteraction,
     title?: string,
-    timesToRepeat?: number
+    timesToRepeat?: number,
+    wasFromSlash?: boolean,
   ) => void;
 }
 
