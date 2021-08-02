@@ -43,9 +43,9 @@ You can install Dice Witch on your Discord server by clicking [here](https://dis
 
 
 ## Basic rolls
-You can roll any of the traditional dice that exist IRL with Dice Witch--four, six, eight, ten, twelve, or twenty-sided dice.The reason for this restriction is that dice are displayed as images in Discord. The recommended way to interfact with Dice Witch is to use Discord's new [slash commands](https://blog.discord.com/slash-commands-are-here-8db0a385d9e6). To get started, just start typing `/roll`. 
+You can roll any of the traditional dice that exist IRL with Dice Witch--four, six, eight, ten, twelve, or twenty-sided dice.The reason for this restriction is that dice are displayed as images in Discord. The recommended way to interact with Dice Witch is to use Discord's new [slash commands](https://blog.discord.com/slash-commands-are-here-8db0a385d9e6). To get started, just start typing `/roll`. 
 
-If you want to keep using non-slash commands, you can also use the traditional command `!roll`. 
+If you want to keep using non-slash commands, you can also use the legacy command `!roll`. 
 
   - `/roll notation:1d4 3d6 1d20`: Roll one four-sided die, three six-sided dice, and one twenty-sided die.
   - `/roll notation:1d12+3 5d4`: Roll one twelve-sided die, adding three to the total, and five four sided dice. 
