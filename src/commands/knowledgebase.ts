@@ -121,7 +121,7 @@ module.exports = {
         {
           name: "Penetrating",
           value:
-            "A type of exploding dice most commonly used in the Hackmaster system. From the rules:\n`Should you roll the maximum value on this particular die, you may re-roll and add the result of the extra die, less one point, to the total (penetration can actually result in simply the maximum die value if a 1 is subsequently rolled, since any fool knows that 1-1=0). This process continues indefinitely as long as the die in question continues to come up maximum (but there’s always only a –1 subtracted from the extra die, even if it’s, say, the third die of penetration)`\n\nYou can mark exploding dice to penetrate by using `!p` instead of `!`.\n\n`!roll 2d6!p=5`: Roll two d6 and explode and penetrate on any roll equal to five."
+            "A type of exploding dice most commonly used in the Hackmaster system. From the rules:\n`Should you roll the maximum value on this particular die, you may re-roll and add the result of the extra die, less one point, to the total (penetration can actually result in simply the maximum die value if a 1 is subsequently rolled, since any fool knows that 1-1=0). This process continues indefinitely as long as the die in question continues to come up maximum (but there’s always only a –1 subtracted from the extra die, even if it’s, say, the third die of penetration)`\n\nYou can mark exploding dice to penetrate by using `!p` instead of `!`.\n\n`/roll notation:2d6!p=5`: Roll two d6 and explode and penetrate on any roll equal to five."
         }
       ],
       reroll: [
