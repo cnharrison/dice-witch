@@ -24,7 +24,6 @@ const logEvent = async (
   embedParam?: { embeds: MessageEmbed[]; files: MessageAttachment[] },
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
-  console.log(interaction?.inGuild());
   let embed: any;
   const channel:
     | TextChannel
@@ -167,7 +166,7 @@ const logEvent = async (
           .setTitle(eventType)
           .setDescription(
             `${interaction ? interaction.user.username : message?.author.username
-            } in ${channel.name}`
+            } in ${channel ? channel.name : 'DM'}`
           );
       embed &&
         logOutputChannel
@@ -192,7 +191,10 @@ const logEvent = async (
         new Discord.MessageEmbed()
           .setColor(errorColor)
           .setTitle(eventType)
-          .setDescription(`**${channel.name}** on **${message.guild}**`);
+          .setDescription(
+            `**${interaction ? interaction.channel : channel?.name}** on **${interaction ? interaction?.guild?.name : message?.guild
+            }**`
+          );
       embed &&
         logOutputChannel
           .send({ embeds: [embed] })

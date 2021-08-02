@@ -63,7 +63,9 @@ const sendDiceResultMessage = async (
 
     const sendMessage = async () => {
       try {
-        await message.channel.send(embedMessage);
+        interaction
+          ? await interaction?.followUp(embedMessage)
+          : await message.channel.send(embedMessage);
         logEvent(
           "sentRollResultMessage",
           logOutputChannel,

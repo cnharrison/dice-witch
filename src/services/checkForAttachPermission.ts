@@ -8,25 +8,44 @@ import {
   NewsChannel,
   Guild,
   GuildMember,
-  User
+  User,
+  ButtonInteraction,
+  CommandInteraction,
+  PartialDMChannel,
+  ThreadChannel
 } from "discord.js";
-const checkForAttachPermission = (message: Message) => {
+const checkForAttachPermission = (
+  message: Message,
+  interaction?: ButtonInteraction | CommandInteraction
+) => {
   const channel:
     | TextChannel
     | DMChannel
-    | NewsChannel = message.channel as TextChannel;
-  const guild: Guild = message.guild as Guild;
+    | NewsChannel
+    | PartialDMChannel
+    | ThreadChannel =
+    interaction && interaction.channel
+      ? interaction.channel
+      : (message.channel as TextChannel);
+  const guild: Guild =
+    interaction && interaction.guild
+      ? interaction.guild
+      : (message.guild as Guild);
   const me:
     | string
     | Message
     | GuildMember
     | User
-    | Role = guild.me as GuildMember;
+    | Role = guild?.me as GuildMember;
   const doesHavePermission: BitField<PermissionString> | null =
-    guild && (channel.permissionsFor(me) as any);
+    guild &&
+    channel?.type === "GUILD_TEXT" &&
+    (channel.permissionsFor(me) as any);
   const permissionArray:
     | PermissionString[]
     | undefined = doesHavePermission?.toArray();
-  return !!permissionArray?.includes("ATTACH_FILES");
+  return channel?.type !== "GUILD_TEXT"
+    ? true
+    : !!permissionArray?.includes("ATTACH_FILES");
 };
 export default checkForAttachPermission;

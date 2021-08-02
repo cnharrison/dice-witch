@@ -75,12 +75,14 @@ const sendDiceRolledMessage = async (
 
   const getText = () =>
     getRandomNumber(20) === 1 ? messages[number - 1] : messages[0];
-
   try {
     interaction
       ? await interaction.followUp(getText())
       : await message.channel.send(getText());
-    await message.channel.sendTyping();
+    if (message.channel) {
+      message.channel.sendTyping();
+    }
+
   } catch (err) {
     console.error(err);
   }

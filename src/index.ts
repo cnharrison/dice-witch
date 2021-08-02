@@ -91,7 +91,13 @@ const globalSlashCommands: any = [
 
 const startServer = () => {
   const discord = new Client({
-    intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES]
+    intents: [
+      Intents.FLAGS.GUILDS,
+      Intents.FLAGS.GUILD_MESSAGES,
+      Intents.FLAGS.DIRECT_MESSAGES,
+      Intents.FLAGS.DIRECT_MESSAGE_TYPING
+    ],
+    partials: ["MESSAGE", "CHANNEL", "REACTION"]
   });
   discord.on("ready", async () => {
     let logOutputChannelTemp;
