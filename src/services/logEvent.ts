@@ -60,7 +60,8 @@ const logEvent = async (
               ? `${args} from ** ${interaction
                 ? interaction.user.username
                 : message?.author.username
-              }** in channel **${channel.name}** on **${interaction ? interaction?.guild?.name : message?.guild
+              }** in channel **${interaction ? interaction.channel : channel.name
+              }** on **${interaction ? interaction?.guild?.name : message?.guild
               }**`
               : `${args} from ** ${interaction
                 ? interaction.user.username
@@ -166,7 +167,7 @@ const logEvent = async (
           .setTitle(eventType)
           .setDescription(
             `${interaction ? interaction.user.username : message?.author.username
-            } in ${channel ? channel.name : 'DM'}`
+            } in ${channel ? channel.name : "DM"}`
           );
       embed &&
         logOutputChannel
