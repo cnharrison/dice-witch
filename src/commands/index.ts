@@ -90,6 +90,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         timesToRepeatAsNumber,
         wasFromSlash
       );
+    logEvent("receivedCommand", logOutputChannel, message as Message, command, args, undefined, undefined, undefined, interaction)
   });
 
   discord.on("interactionCreate", async (interaction) => {
@@ -116,5 +117,6 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         undefined,
         wasFromSlash
       );
+    logEvent("receivedCommand", logOutputChannel, undefined, command, args, undefined, undefined, undefined, interaction)
   });
 };

@@ -72,7 +72,7 @@ const sendDiceResultMessage = async (
           undefined,
           undefined,
           undefined,
-          embedMessage.embeds[0]
+          embedMessage
         );
       } catch (err) { }
     };

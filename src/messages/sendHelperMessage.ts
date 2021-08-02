@@ -21,31 +21,31 @@ const sendHelperMessage = async (
   const kbButtonRow = new MessageActionRow()
     .addComponents(
       new MessageButton()
-        .setCustomId(`kb-exploding${interaction ? '-slash' : ''}`)
+        .setCustomId(`kb-exploding${interaction ? "-slash" : ""}`)
         .setLabel("Exploding 💥")
         .setStyle("PRIMARY")
     )
     .addComponents(
       new MessageButton()
-        .setCustomId(`kb-reroll${interaction ? '-slash' : ''}`)
+        .setCustomId(`kb-reroll${interaction ? "-slash" : ""}`)
         .setLabel("Re-roll ♻")
         .setStyle("PRIMARY")
     )
     .addComponents(
       new MessageButton()
-        .setCustomId(`kb-keepdrop${interaction ? '-slash' : ''}`)
+        .setCustomId(`kb-keepdrop${interaction ? "-slash" : ""}`)
         .setLabel("Keep/drop 🚮")
         .setStyle("PRIMARY")
     )
     .addComponents(
       new MessageButton()
-        .setCustomId(`kb-target${interaction ? '-slash' : ''}`)
+        .setCustomId(`kb-target${interaction ? "-slash" : ""}`)
         .setLabel("Targets 🎯")
         .setStyle("PRIMARY")
     )
     .addComponents(
       new MessageButton()
-        .setCustomId(`kb-crit${interaction ? '-slash' : ''}`)
+        .setCustomId(`kb-crit${interaction ? "-slash" : ""}`)
         .setLabel("Criticals ⚔")
         .setStyle("PRIMARY")
     );
@@ -53,19 +53,19 @@ const sendHelperMessage = async (
   const kbButtonRow2 = new MessageActionRow()
     .addComponents(
       new MessageButton()
-        .setCustomId(`kb-math${interaction ? '-slash' : ''}`)
+        .setCustomId(`kb-math${interaction ? "-slash" : ""}`)
         .setLabel("Math 🧮")
         .setStyle("PRIMARY")
     )
     .addComponents(
       new MessageButton()
-        .setCustomId(`kb-sort${interaction ? '-slash' : ''}`)
+        .setCustomId(`kb-sort${interaction ? "-slash" : ""}`)
         .setLabel("Sorting ↕")
         .setStyle("PRIMARY")
     )
     .addComponents(
       new MessageButton()
-        .setCustomId(`kb-repeating${interaction ? '-slash' : ''}`)
+        .setCustomId(`kb-repeating${interaction ? "-slash" : ""}`)
         .setLabel("Repeating 👯‍♀️")
         .setStyle("PRIMARY")
     );
@@ -83,7 +83,6 @@ const sendHelperMessage = async (
         .setStyle("LINK")
         .setURL(supportServerLink)
     );
-
 
   const commandEmbed: MessageEmbed = new Discord.MessageEmbed()
     .setColor("#0000ff")
@@ -174,13 +173,19 @@ const sendHelperMessage = async (
         await i.update({ components: [footerButtonRow] });
       }
     });
-
-    collector.on("end", (collected) =>
-      console.log(`Collected ${collected.size} items`)
-    );
   }
 
-  logEvent("sentHelperMessage", logOutputChannel, message, undefined, args);
+  logEvent(
+    "sentHelperMessage",
+    logOutputChannel,
+    message,
+    undefined,
+    args,
+    undefined,
+    undefined,
+    undefined,
+    interaction
+  );
   return;
 };
 

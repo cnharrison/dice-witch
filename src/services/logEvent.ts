@@ -4,10 +4,13 @@ import Discord, {
   TextChannel,
   DMChannel,
   NewsChannel,
-  MessageEmbed
+  MessageEmbed,
+  MessageAttachment,
+  CommandInteraction,
+  ButtonInteraction
 } from "discord.js";
 import { Command, EventType } from "../types";
-import { adminID } from "../../config.json";
+import { adminID, prefix } from "../../config.json";
 import { eventColor, errorColor, goodColor, infoColor } from "../constants";
 
 const logEvent = async (
@@ -18,8 +21,10 @@ const logEvent = async (
   args?: string[],
   title?: string,
   guild?: Guild,
-  embedParam?: MessageEmbed
+  embedParam?: { embeds: MessageEmbed[]; files: MessageAttachment[] },
+  interaction?: CommandInteraction | ButtonInteraction
 ) => {
+  console.log(interaction?.inGuild());
   let embed: any;
   const channel:
     | TextChannel
@@ -29,20 +34,39 @@ const logEvent = async (
     case "receivedCommand":
       command &&
         console.log(
-          message?.guild?.id
-            ? `received command ${command.name}: ${args} from [ ${message.author.username} ] in channel [ ${channel.name} ] on [ ${message.guild} ]`
+          message?.guild?.id || interaction?.inGuild()
+            ? `received command ${interaction ? "/" : prefix}${command.name
+            }: ${args} from [ ${interaction
+              ? interaction.user.username
+              : message?.author.username
+            } ] in channel [ ${interaction ? interaction.channel : channel.name
+            } ] on [ ${interaction ? interaction?.guild?.name : message?.guild
+            } ]`
             : message &&
-            `received command ${command.name}: ${args} from [ ${message.author.username} ] in [ DM ]`
+            `received ${interaction ? "/" : ""}command ${command.name
+            }: ${args} from [ ${interaction
+              ? interaction.user.username
+              : message.author.username
+            } ] in [ DM ]`
         );
       embed =
         command &&
         new Discord.MessageEmbed()
           .setColor(eventColor)
-          .setTitle(`${eventType}: ${command.name}`)
+          .setTitle(
+            `${eventType}: ${interaction ? "/" : prefix}${command.name}`
+          )
           .setDescription(
-            message?.guild?.id
-              ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
-              : `${args} from **${message?.author.username}** in **DM**`
+            message?.guild?.id || interaction?.inGuild()
+              ? `${args} from ** ${interaction
+                ? interaction.user.username
+                : message?.author.username
+              }** in channel **${channel.name}** on **${interaction ? interaction?.guild?.name : message?.guild
+              }**`
+              : `${args} from ** ${interaction
+                ? interaction.user.username
+                : message?.author.username
+              }** in **DM**`
           );
       embed &&
         logOutputChannel
@@ -130,10 +154,9 @@ const logEvent = async (
           .catch((err: Error) => console.error(err));
       break;
     case "sentRollResultMessage":
-      embed = embedParam;
-      embed &&
+      embedParam &&
         logOutputChannel
-          .send({ embeds: [embed] })
+          .send(embedParam)
           .catch((err: Error) => console.error(err));
       break;
     case "sentHelperMessage":
@@ -142,7 +165,10 @@ const logEvent = async (
         new Discord.MessageEmbed()
           .setColor(infoColor)
           .setTitle(eventType)
-          .setDescription(`${message.author.username} in ${channel.name}`);
+          .setDescription(
+            `${interaction ? interaction.user.username : message?.author.username
+            } in ${channel.name}`
+          );
       embed &&
         logOutputChannel
           .send({ embeds: [embed] })
