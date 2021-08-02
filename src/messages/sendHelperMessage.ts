@@ -101,7 +101,7 @@ const sendHelperMessage = async (
       },
       {
         name: "Advanced rolls and modifiers",
-        value: "Click one of the buttons below for more info 👇"
+        value: "Click the buttons below for info on each topic 👇"
       }
     )
     .addField(
@@ -127,7 +127,7 @@ const sendHelperMessage = async (
       },
       {
         name: "Advanced rolls and modifiers",
-        value: "Click one of the buttons below for more info 👇"
+        value: "Click the buttons below for info on each topic 👇"
       }
     )
     .addField(
