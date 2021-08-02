@@ -1,8 +1,12 @@
 import { getRandomNumber } from "../helpers";
-import { Message } from "discord.js";
-import { Die, DiceArray } from "../types";
+import { CommandInteraction, Message } from "discord.js";
+import { Die } from "../types";
 
-const sendDiceRolledMessage = (message: Message, diceArray: any) => {
+const sendDiceRolledMessage = async (
+  message: Message,
+  diceArray: any,
+  interaction?: CommandInteraction
+) => {
   const diceArrayLengths = diceArray.map(
     (array: (Die | Die[])[]) => array.length
   );
@@ -41,7 +45,7 @@ const sendDiceRolledMessage = (message: Message, diceArray: any) => {
       isSingleDie,
       "rolls",
       "roll"
-    )} across the wood, you think you can spot a faint light emanating from deep within ${pluralPick(
+    )} across the gnarly surface, you think you can spot a faint light emanating from deep within ${pluralPick(
       isSingleDie,
       "it..._",
       "one of them..._"
@@ -62,18 +66,23 @@ const sendDiceRolledMessage = (message: Message, diceArray: any) => {
       "dance"
     )} and ${pluralPick(
       isSingleDie,
-      "piroettes",
+      "pirouettes",
       "piroutte"
-    )} across the table's ancient cracks..._`,
+    )} across the table's ancient cracks..._`
   ];
 
   const number = getRandomNumber(messages.length);
 
   const getText = () =>
-    getRandomNumber(30) === 1 ? messages[number - 1] : messages[0];
-
+    getRandomNumber(20) === 1 ? messages[number - 1] : messages[0];
   try {
-    message.channel.send(getText());
+    interaction
+      ? await interaction.followUp(getText())
+      : await message.channel.send(getText());
+    if (message.channel) {
+      message.channel.sendTyping();
+    }
+
   } catch (err) {
     console.error(err);
   }

@@ -23,13 +23,14 @@ module.exports = {
       const embed = new Discord.MessageEmbed()
         .setColor("#0000ff")
         .setTitle("Commands")
-        .setDescription(data)
+        .setDescription(data.join("\r"))
         .addField(
           "\u200B",
           `[Invite me](${inviteLink}) | [Support server](${supportServerLink})`
         );
 
-      return message.channel.send(embed);
+      message.channel.send({ embeds: [embed] });
+      return;
     }
     const name = args[0].toLowerCase();
     const command =
@@ -52,12 +53,13 @@ module.exports = {
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
       .setTitle(`👩‍🏫 ${command.name}`)
-      .setDescription(data)
+      .setDescription(data.join("\r"))
       .addField(
         "\u200B",
         `[Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
 
-    return message.channel.send(embed);
-  },
+    message.channel.send({ embeds: [embed] });
+    return;
+  }
 };

@@ -1,4 +1,4 @@
-import { Message, TextChannel } from "discord.js";
+import { CommandInteraction, Message, TextChannel } from "discord.js";
 import { Command, DiceArray, Result } from "../types";
 import { availableDice, maxDice } from "../constants";
 import {
@@ -7,12 +7,12 @@ import {
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
   sendGetRollTitleMessage,
-  sendNeedPermissionMessage,
+  sendNeedPermissionMessage
 } from "../messages";
 import {
   rollDice,
   generateDiceAttachment,
-  checkForAttachPermission,
+  checkForAttachPermission
 } from "../services";
 import { getTotalDiceRolled } from "../helpers";
 
@@ -26,26 +26,40 @@ module.exports = {
     message: Message,
     args: string[],
     _: Command,
-    logOutputChannel: TextChannel
+    logOutputChannel: TextChannel,
+    __: any,
+    interaction?: CommandInteraction
   ) {
-    if (!args.length)
-      return sendHelperMessage(message, module.exports.name, logOutputChannel);
-    if (!checkForAttachPermission(message))
-      return sendNeedPermissionMessage(message, logOutputChannel);
+    if (!args.length) {
+      sendHelperMessage(
+        message,
+        module.exports.name,
+        logOutputChannel,
+        undefined,
+        interaction
+      );
+      return;
+    }
+    if (!checkForAttachPermission(message)) {
+      sendNeedPermissionMessage(message, logOutputChannel);
+      return;
+    }
 
     const {
       diceArray,
-      resultArray,
+      resultArray
     }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
       args,
       availableDice
     );
 
     if (!diceArray.length) {
-      return sendHelperMessage(message, module.exports.name, logOutputChannel);
+      sendHelperMessage(message, module.exports.name, logOutputChannel);
+      return;
     }
     if (getTotalDiceRolled(diceArray) > maxDice) {
-      return sendDiceOverMaxMessage(message, logOutputChannel, args);
+      sendDiceOverMaxMessage(message, logOutputChannel, args);
+      return;
     }
 
     const title = await sendGetRollTitleMessage(message, logOutputChannel);
@@ -53,13 +67,15 @@ module.exports = {
     if (title) {
       sendDiceRolledMessage(message, diceArray);
       const attachment = await generateDiceAttachment(diceArray);
-      return sendDiceResultMessage(
+      sendDiceResultMessage(
         resultArray,
         message,
         attachment,
-        title,
-        logOutputChannel
+        logOutputChannel,
+        undefined,
+        title
       );
+      return;
     }
-  },
+  }
 };

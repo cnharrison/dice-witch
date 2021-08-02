@@ -11,5 +11,5 @@ export {
   rollDice,
   generateDie,
   generateIcon,
-  logEvent,
+  logEvent
 };

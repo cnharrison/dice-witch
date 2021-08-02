@@ -1,9 +1,11 @@
 import {
+  ButtonInteraction,
   Client,
   Collection,
+  CommandInteraction,
   EmbedFieldData,
   Message,
-  TextChannel,
+  TextChannel
 } from "discord.js";
 
 export type Icon =
@@ -87,11 +89,15 @@ export interface Command {
   description: string;
   usage: string;
   execute: (
-    message: Message,
+    message: Message | undefined,
     args: string[],
     discord: Client,
     logOutputChannel: TextChannel,
-    commands?: Collection<string, Command>
+    commands?: Collection<string, Command>,
+    interaction?: CommandInteraction | ButtonInteraction,
+    title?: string,
+    timesToRepeat?: number,
+    wasFromSlash?: boolean,
   ) => void;
 }
 

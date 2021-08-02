@@ -7,36 +7,37 @@
     "axios": "^0.21.1",
     "canvas": "^2.7.0",
     "cron": "^1.8.2",
-    "discord.js": "^12.5.1",
+    "discord.js": "^13.0.0-dev.t1627689836.ee3cdc8",
     "randomcolor": "^0.6.2",
     "rpg-dice-roller": "^4.5.2",
     "sharp": "^0.27.2"
   },
   "devDependencies": {
     "@types/cron": "^1.7.2",
-    "@types/node": "^15.0.0",
+    "@types/node": "^15.14.4",
     "@types/randomcolor": "^0.5.5",
     "@types/sharp": "^0.28.0",
     "@types/ws": "^7.4.2",
     "@typescript-eslint/eslint-plugin": "^4.22.0",
     "@typescript-eslint/parser": "^4.22.0",
     "eslint": "^7.24.0",
-    "eslint-config-airbnb": "^18.2.1",
     "eslint-config-prettier": "^8.1.0",
     "eslint-plugin-import": "^2.22.1",
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-prettier": "^3.3.1",
     "eslint-plugin-security": "^1.4.0",
-    "nodemon": "^2.0.7",
+    "nodemon": "^2.0.12",
     "prettier": "^2.2.1",
     "ts-node": "^9.1.1",
-    "typescript": "^4.2.4",
+    "typescript": "^4.3.5",
     "typescript-eslint": "0.0.1-alpha.0"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "npx tsc",
-    "start": "node build/src/index.js"
+    "start": "node build/src/index.js",
+    "dev": "nodemon --config nodemon.json src/index.ts",
+    "dev:debug": "nodemon --config nodemon.json --inspect-brk src/index.ts"
   },
   "author": "Christopher Harrison",
   "license": "ISC"

@@ -1,17 +1,17 @@
-import { Message, TextChannel } from "discord.js";
-import { Command, Result, DiceArray } from "../types";
+import { CommandInteraction, Message, TextChannel } from "discord.js";
+import { Result, DiceArray } from "../types";
 import { availableDice, maxDice } from "../constants/";
 import {
   sendDiceResultMessage,
   sendHelperMessage,
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
-  sendNeedPermissionMessage,
+  sendNeedPermissionMessage
 } from "../messages";
 import {
   rollDice,
   generateDiceAttachment,
-  checkForAttachPermission,
+  checkForAttachPermission
 } from "../services";
 import { getTotalDiceRolled } from "../helpers";
 
@@ -24,36 +24,61 @@ module.exports = {
   async execute(
     message: Message,
     args: string[],
-    _: Command,
-    logOutputChannel: TextChannel
+    _: any,
+    logOutputChannel: TextChannel,
+    __: any,
+    interaction?: CommandInteraction,
+    title?: string,
+    timesToRepeat?: number
   ) {
-    if (!args.length)
-      return sendHelperMessage(message, module.exports.name, logOutputChannel);
-    if (!checkForAttachPermission(message))
-      return sendNeedPermissionMessage(message, logOutputChannel);
+    if (!args.length) {
+      sendHelperMessage(
+        message,
+        module.exports.name,
+        logOutputChannel,
+        undefined,
+        interaction
+      );
+      return;
+    }
+    if (!checkForAttachPermission(message)) {
+      sendNeedPermissionMessage(message, logOutputChannel, interaction);
+      return;
+    }
 
     const {
       diceArray,
-      resultArray,
+      resultArray
     }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
       args,
-      availableDice
+      availableDice,
+      timesToRepeat
     );
     if (!diceArray.length) {
-      return sendHelperMessage(message, module.exports.name, logOutputChannel);
+      sendHelperMessage(
+        message,
+        module.exports.name,
+        logOutputChannel,
+        undefined,
+        interaction
+      );
+      return;
     }
     if (getTotalDiceRolled(diceArray) > maxDice) {
-      return sendDiceOverMaxMessage(message, logOutputChannel, args);
+      sendDiceOverMaxMessage(message, logOutputChannel, args, interaction);
+      return;
     }
 
-    sendDiceRolledMessage(message, diceArray);
+    await sendDiceRolledMessage(message, diceArray, interaction);
     const attachment = await generateDiceAttachment(diceArray);
-    return sendDiceResultMessage(
+    await sendDiceResultMessage(
       resultArray,
       message,
       attachment,
-      undefined,
-      logOutputChannel
+      logOutputChannel,
+      interaction,
+      title
     );
-  },
+    return;
+  }
 };
