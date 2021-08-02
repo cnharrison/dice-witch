@@ -26,6 +26,7 @@ const globalSlashCommands: any = [
     options: [
       {
         name: "notation",
+        required: true,
         description: "dice notation string",
         type: "STRING"
       },
