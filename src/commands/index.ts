@@ -66,10 +66,13 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       interaction.options.get("timestorepeat") || {};
 
     const unformattedArgs = topic?.toString().trim().split("-") || [];
-    const wasFromSlash = !!unformattedArgs.length && unformattedArgs[2] === "slash";
+    const wasFromSlash =
+      !!unformattedArgs.length && unformattedArgs[2] === "slash";
     const args = diceNotation
       ? diceNotation?.toString().trim().split(/ +/)
-      : unformattedArgs[1] ? [unformattedArgs[1]] : []
+      : unformattedArgs[1]
+        ? [unformattedArgs[1]]
+        : [];
     const titleAsString = title?.toString();
     const timesToRepeatAsNumber = Number(timesToRepeat);
 
@@ -90,20 +93,33 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         timesToRepeatAsNumber,
         wasFromSlash
       );
-    logEvent("receivedCommand", logOutputChannel, message as Message, command, args, undefined, undefined, undefined, interaction)
+    logEvent(
+      "receivedCommand",
+      logOutputChannel,
+      message as Message,
+      command,
+      args,
+      undefined,
+      undefined,
+      undefined,
+      interaction
+    );
   });
 
   discord.on("interactionCreate", async (interaction) => {
     if (!interaction.isButton()) return;
     await interaction.defer();
     const unformattedArgs = interaction.customId.trim().split("-");
-    const args = unformattedArgs[1] ? [unformattedArgs[1]] : []
+    const args = unformattedArgs[1] ? [unformattedArgs[1]] : [];
 
     const command =
       commands.get(unformattedArgs[0]) ||
-      commands.find((cmd) => cmd.aliases && cmd.aliases.includes(unformattedArgs[0]));
+      commands.find(
+        (cmd) => cmd.aliases && cmd.aliases.includes(unformattedArgs[0])
+      );
 
-    const wasFromSlash = !!unformattedArgs.length && unformattedArgs[2] === "slash";
+    const wasFromSlash =
+      !!unformattedArgs.length && unformattedArgs[2] === "slash";
 
     if (command)
       command.execute(
@@ -117,6 +133,16 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         undefined,
         wasFromSlash
       );
-    logEvent("receivedCommand", logOutputChannel, undefined, command, args, undefined, undefined, undefined, interaction)
+    logEvent(
+      "receivedCommand",
+      logOutputChannel,
+      undefined,
+      command,
+      args,
+      undefined,
+      undefined,
+      undefined,
+      interaction
+    );
   });
 };
