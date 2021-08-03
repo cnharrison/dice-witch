@@ -49,7 +49,7 @@ const globalSlashCommands: any = [
   },
   {
     name: "knowledgebase",
-    description: "show the knowledgebase",
+    description: "Show the Dice Witch knowledgebase",
     options: [
       {
         name: "topic",

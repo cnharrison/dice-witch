@@ -60,14 +60,14 @@ module.exports = {
         {
           name: "Keep/Drop AKA Advantage",
           value:
-            "Disregard or keep all dice above or below a certain threshold.\n\n`!roll 4d10k2`: Roll 4d10 and keep the highest two rolls\n`!roll 4d10kl2`: Roll 4d10 and keep the lowest two rolls.\n`!roll 4d10d1`: Roll 4d10 and disregard the lowest roll.\n`!roll 4d10dh1`: Roll 4d10 and disregard the highest roll"
+            "Disregard or keep all dice above or below a certain threshold.\n\n`!roll 4d10k2`: Roll 4d10 and keep the highest two rolls.\n`!roll 4d10kl2`: Roll 4d10 and keep the lowest two rolls.\n`!roll 4d10d1`: Roll 4d10 and disregard the lowest roll.\n`!roll 4d10dh1`: Roll 4d10 and disregard the highest roll."
         }
       ],
       target: [
         {
           name: "Target success/failure AKA Dice pool",
           value:
-            "Counts the number of dice that meet a criterion.\n\n`!roll 2d6=6`: Roll 2d6 and count the number of dice that equal six.\n`!roll 6d10<=4`: Roll 6d10 and count the number of dice that are less than or equal to four"
+            "Counts the number of dice that meet a criterion.\n\n`!roll 2d6=6`: Roll 2d6 and count the number of dice that equal six.\n`!roll 6d10<=4`: Roll 6d10 and count the number of dice that are less than or equal to four."
         }
       ],
       crit: [
@@ -88,7 +88,7 @@ module.exports = {
         {
           name: "Math",
           value:
-            "You can use add, subtract, multiply, divide, reduce, and parenthesis in most places inside dice notation. You can also use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`\n\n`!roll d6*5`: Roll a d6 and multiply the result by 5.\n`!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.\n`!roll 3d20^4`: Roll 3d20 and raise the result to the power of 4.\n`!roll (4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times.\n`!roll sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root"
+            "You can use add, subtract, multiply, divide, reduce, and parenthesis in most places inside dice notation. You can also use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`\n\n`!roll d6*5`: Roll a d6 and multiply the result by 5.\n`!roll 2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.\n`!roll 3d20^4`: Roll 3d20 and raise the result to the power of 4.\n`!roll (4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times.\n`!roll sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root."
         }
       ],
       repeating: [
@@ -135,14 +135,14 @@ module.exports = {
         {
           name: "Keep/Drop AKA Advantage",
           value:
-            "Disregard or keep all dice above or below a certain threshold.\n\n`/roll notation:4d10k2`: Roll 4d10 and keep the highest two rolls\n`/roll notation:4d10kl2`: Roll 4d10 and keep the lowest two rolls.\n`/roll notation:4d10d1`: Roll 4d10 and disregard the lowest roll.\n`/roll notation:4d10dh1`: Roll 4d10 and disregard the highest roll"
+            "Disregard or keep all dice above or below a certain threshold.\n\n`/roll notation:4d10k2`: Roll 4d10 and keep the highest two rolls.\n`/roll notation:4d10kl2`: Roll 4d10 and keep the lowest two rolls.\n`/roll notation:4d10d1`: Roll 4d10 and disregard the lowest roll.\n`/roll notation:4d10dh1`: Roll 4d10 and disregard the highest roll."
         }
       ],
       target: [
         {
           name: "Target success/failure AKA Dice pool",
           value:
-            "Counts the number of dice that meet a criterion.\n\n`/roll notation:2d6=6`: Roll 2d6 and count the number of dice that equal six.\n`/roll notation:6d10<=4`: Roll 6d10 and count the number of dice that are less than or equal to four"
+            "Counts the number of dice that meet a criterion.\n\n`/roll notation:2d6=6`: Roll 2d6 and count the number of dice that equal six.\n`/roll notation:6d10<=4`: Roll 6d10 and count the number of dice that are less than or equal to four."
         }
       ],
       crit: [
@@ -163,7 +163,7 @@ module.exports = {
         {
           name: "Math",
           value:
-            "You can use add, subtract, multiply, divide, reduce, and parenthesis in most places inside dice notation. You can also use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`\n\n`/roll notation:d6*5`: Roll a d6 and multiply the result by 5.\n`/roll notation:2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.\n`/roll notation:3d20^4`: Roll 3d20 and raise the result to the power of 4.\n`/roll notation:(4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times.\n`/roll notation:sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root"
+            "You can use add, subtract, multiply, divide, reduce, and parenthesis in most places inside dice notation. You can also use the following JS math functions: `abs, ceil, cos, exp, floor, log, max, min, pow, round, sign, sin, sqrt, tan`\n\n`/roll notation:d6*5`: Roll a d6 and multiply the result by 5.\n`/roll notation:2d10/d20`: Roll 2d20 and add the result together, then roll a d20 and divide the two totals.\n`/roll notation:3d20^4`: Roll 3d20 and raise the result to the power of 4.\n`/roll notation:(4-2)d10`: Subtract 2 from 4 and then roll a d10 that many times.\n`/roll notation:sqrt(4d10/3)`: Roll 4d10, divide by three and calculate the square root."
         }
       ],
       repeating: [
