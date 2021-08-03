@@ -5,8 +5,8 @@ import Discord, {
   Message
 } from "discord.js";
 import { KnowledgeBase } from "../types";
-import { prefix, inviteLink, supportServerLink } from "../../config.json";
-import { infoColor } from "../constants";
+import { prefix } from "../../config.json";
+import { footerButtonRow, infoColor } from "../constants";
 
 module.exports = {
   name: "knowledgebase",
@@ -186,14 +186,15 @@ module.exports = {
         .setColor(color)
         .setTitle(title);
       newEmbed.addFields(content);
-      newEmbed.addField(
-        "\u200B",
-        `_sent to ${interaction ? interaction.user.username : message.author.username
-        }_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
-      );
       interaction
-        ? await interaction.followUp({ embeds: [newEmbed], ephemeral: true })
-        : await message.channel.send({ embeds: [newEmbed] });
+        ? await interaction.followUp({
+          embeds: [newEmbed],
+          components: [footerButtonRow]
+        })
+        : await message.channel.send({
+          embeds: [newEmbed],
+          components: [footerButtonRow]
+        });
     };
 
     if (

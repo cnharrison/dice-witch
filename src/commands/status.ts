@@ -1,5 +1,6 @@
 import Discord, { Client, CommandInteraction, Message } from "discord.js";
 import { inviteLink, supportServerLink } from "../../config.json";
+import { footerButtonRow } from "../constants";
 
 module.exports = {
   name: "status",
@@ -18,18 +19,26 @@ module.exports = {
       .setColor("#99999")
       .setTitle("Status")
       .setDescription(
-        `Latency: **${interaction ? now - interaction.createdTimestamp : now - message.createdTimestamp}ms**\n I'm in **${discord.guilds.cache.size
-        }** discord servers 😈`
+        `Latency: **${interaction
+          ? now - interaction.createdTimestamp
+          : now - message.createdTimestamp
+        }ms**\n I'm in **${discord.guilds.cache.size}** discord servers 😈`
       )
       .addField(
         "\u200B",
         `_sent to ${interaction ? interaction.user.username : message.author.username
-        }_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
+        }`
       );
 
     interaction
-      ? await interaction.reply({ embeds: [embed] })
-      : await message.channel.send({ embeds: [embed] });
+      ? await interaction.reply({
+        embeds: [embed],
+        components: [footerButtonRow]
+      })
+      : await message.channel.send({
+        embeds: [embed],
+        components: [footerButtonRow]
+      });
     return;
   }
 };

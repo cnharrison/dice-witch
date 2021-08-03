@@ -7,8 +7,13 @@ import Discord, {
   MessageButton,
   MessageComponentInteraction
 } from "discord.js";
-import { prefix, inviteLink, supportServerLink } from "../../config.json";
-import { availableDice, maxDice } from "../constants";
+import { prefix } from "../../config.json";
+import {
+  availableDice,
+  deprecationWarning,
+  footerButtonRow,
+  maxDice
+} from "../constants";
 import { logEvent } from "../services";
 
 const sendHelperMessage = async (
@@ -70,26 +75,12 @@ const sendHelperMessage = async (
         .setStyle("PRIMARY")
     );
 
-  const footerButtonRow = new MessageActionRow()
-    .addComponents(
-      new MessageButton()
-        .setLabel("Invite me")
-        .setStyle("LINK")
-        .setURL(inviteLink)
-    )
-    .addComponents(
-      new MessageButton()
-        .setLabel("Questions? Join the support server")
-        .setStyle("LINK")
-        .setURL(supportServerLink)
-    );
-
   const commandEmbed: MessageEmbed = new Discord.MessageEmbed()
     .setColor("#0000ff")
     .addFields(
       {
         name: `Need help ?😅`,
-        value: `⚠** BEGIN SCARY WARNING **⚠\n\n The \`!roll\` and \`!titledroll\` commands are being deprecated. You should start using \`/roll\` instead (It's much better 😈). For help with it, type \`/roll\ help\`. If you invited Dice Witch on or before **August 1, 2021**, you will need to grant her permissions to create slash commands on your server before you will see the \`/roll\` command. You can do this by clicking [here](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot%20applications.commands).\n\n⚠ **END SCARY WARNING** ⚠\n\n You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any of these dice: **${availableDice
+        value: `${deprecationWarning}\n\n You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any of these dice: **${availableDice
           .map((dice: number | string) => `d${dice}`)
           .join(
             ", "

@@ -1,6 +1,7 @@
 import Discord, { Client, Collection, Message, TextChannel } from "discord.js";
 import { Command } from "../types";
-import { prefix, inviteLink, supportServerLink } from "../../config.json";
+import { prefix } from "../../config.json";
+import { deprecationWarning, footerButtonRow } from "../constants";
 
 module.exports = {
   name: "help",
@@ -23,13 +24,13 @@ module.exports = {
       const embed = new Discord.MessageEmbed()
         .setColor("#0000ff")
         .setTitle("Commands")
-        .setDescription(data.join("\r"))
-        .addField(
-          "\u200B",
-          `[Invite me](${inviteLink}) | [Support server](${supportServerLink})`
-        );
+        .setDescription(`${deprecationWarning}\n\n${data.join("\r")}`)
+        .addField("\u200B", `_sent to ${message.author.username}`);
 
-      await message.channel.send({ embeds: [embed] });
+      await message.channel.send({
+        embeds: [embed],
+        components: [footerButtonRow]
+      });
       return;
     }
     const name = args[0].toLowerCase();
@@ -53,13 +54,12 @@ module.exports = {
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
       .setTitle(`👩‍🏫 ${command.name}`)
-      .setDescription(data.join("\r"))
-      .addField(
-        "\u200B",
-        `[Invite me](${inviteLink}) | [Support server](${supportServerLink})`
-      );
+      .setDescription(`data.join("\r")`);
 
-    await message.channel.send({ embeds: [embed] });
+    await message.channel.send({
+      embeds: [embed],
+      components: [footerButtonRow]
+    });
     return;
   }
 };
