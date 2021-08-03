@@ -167,7 +167,7 @@ const logEvent = async (
           .setTitle(eventType)
           .setDescription(
             `${interaction ? interaction.user.username : message?.author.username
-            } in ${channel ? channel.name : "DM"}`
+            } in ${channel.type === "GUILD_TEXT" ? channel.name : "DM"}`
           );
       embed &&
         logOutputChannel
