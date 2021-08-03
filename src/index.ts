@@ -22,7 +22,7 @@ const getHeaders = (key: string) => {
 const globalSlashCommands: any = [
   {
     name: "roll",
-    description: "Throw some dice",
+    description: "Throws some dice",
     options: [
       {
         name: "notation",
@@ -45,11 +45,11 @@ const globalSlashCommands: any = [
   },
   {
     name: "status",
-    description: "Ping the bot"
+    description: "Pings Dice Witch"
   },
   {
     name: "knowledgebase",
-    description: "Show the Dice Witch knowledgebase",
+    description: "Shows the Dice Witch knowledgebase",
     options: [
       {
         name: "topic",
