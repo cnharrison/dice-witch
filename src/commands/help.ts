@@ -25,7 +25,7 @@ module.exports = {
         .setColor("#0000ff")
         .setTitle("Commands")
         .setDescription(`${deprecationWarning}\n\n${data.join("\r")}`)
-        .addField("\u200B", `_sent to ${message.author.username}`);
+        .addField("\u200B", `_sent to ${message.author.username}_`);
 
       await message.channel.send({
         embeds: [embed],

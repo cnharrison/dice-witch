@@ -27,7 +27,7 @@ module.exports = {
       .addField(
         "\u200B",
         `_sent to ${interaction ? interaction.user.username : message.author.username
-        }`
+        }_`
       );
 
     interaction
