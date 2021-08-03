@@ -22,25 +22,30 @@ const getHeaders = (key: string) => {
 const globalSlashCommands: any = [
   {
     name: "roll",
-    description: "/roll [dice notation], e.g. 1d6+1 2d4. /roll for help",
+    description: "Throw some dice",
     options: [
       {
         name: "notation",
         required: true,
-        description: "dice notation string",
+        description: "Dice notation, e.g. 1d6+2",
         type: "STRING"
       },
       {
         name: "title",
-        description: "what is this roll for? e.g. attack with sword",
+        description: "What is this roll for? e.g. attack with enchanted sword",
         type: "STRING"
       },
       {
         name: "timestorepeat",
-        description: "how many times to repeat this notation",
+        description:
+          "If you would like to repeat this roll, enter the number of times here.",
         type: "STRING"
       }
     ]
+  },
+  {
+    name: "status",
+    description: "Ping the bot"
   },
   {
     name: "knowledgebase",

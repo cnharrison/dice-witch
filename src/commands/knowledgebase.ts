@@ -192,8 +192,8 @@ module.exports = {
         }_ | [Invite me](${inviteLink}) | Questions? join the [Support server](${supportServerLink})`
       );
       interaction
-        ? interaction.followUp({ embeds: [newEmbed] })
-        : message.channel.send({ embeds: [newEmbed] });
+        ? await interaction.followUp({ embeds: [newEmbed], ephemeral: true })
+        : await message.channel.send({ embeds: [newEmbed] });
     };
 
     if (

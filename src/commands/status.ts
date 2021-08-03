@@ -11,14 +11,14 @@ module.exports = {
     discord: Client,
     __: any,
     ___: any,
-    ____: any,
     interaction: CommandInteraction
   ) {
+    const now = Date.now();
     const embed = new Discord.MessageEmbed()
       .setColor("#99999")
       .setTitle("Status")
       .setDescription(
-        `Latency: **${Date.now() - message.createdTimestamp}ms**\n I'm in **${discord.guilds.cache.size
+        `Latency: **${interaction ? now - interaction.createdTimestamp : now - message.createdTimestamp}ms**\n I'm in **${discord.guilds.cache.size
         }** discord servers 😈`
       )
       .addField(
@@ -27,7 +27,9 @@ module.exports = {
         }_ | [Invite me](${inviteLink}) | [Support server](${supportServerLink})`
       );
 
-    message.channel.send({ embeds: [embed] });
+    interaction
+      ? await interaction.reply({ embeds: [embed] })
+      : await message.channel.send({ embeds: [embed] });
     return;
   }
 };

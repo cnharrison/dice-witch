@@ -9,7 +9,7 @@ const sendDiceOverMaxMessage = async (
   interaction?: CommandInteraction
 ) => {
   const msg = `${maxDice} dice max, sorry 😅`;
-  interaction ? await interaction.followUp(msg) : message.channel.send(msg);
+  interaction ? await interaction.followUp(msg) : await message.channel.send(msg);
   logEvent(
     "sentDiceOverMaxMessage",
     logOutputChannel,

@@ -27,7 +27,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
     commands?.set(command.name, command);
   }
 
-  discord.on("messageCreate", (message: Message) => {
+  discord.on("messageCreate", async (message: Message) => {
     if (!message.content.startsWith(prefix) || message.author.bot) return;
 
     const args = message.content.slice(prefix.length).trim().split(/ +/);
@@ -49,14 +49,17 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         .setDescription(
           `error 😥 please join my [support server](${supportServerLink}) and report this`
         );
-      message.channel.send({ embeds: [embed] });
+      await message.channel.send({ embeds: [embed] });
       logEvent("criticalError", logOutputChannel, message, command, args);
     }
   });
 
   discord.on("interactionCreate", async (interaction) => {
-    if (!interaction.isCommand()) return;
+    if (!interaction.isCommand() || interaction.commandName === "status")
+      return;
+
     await interaction.defer();
+
     const message = await interaction.fetchReply();
 
     const { value: diceNotation } = interaction.options.get("notation") || {};
@@ -139,6 +142,39 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       undefined,
       command,
       args,
+      undefined,
+      undefined,
+      undefined,
+      interaction
+    );
+  });
+  discord.on("interactionCreate", async (interaction) => {
+    if (!interaction.isCommand() || interaction.commandName !== "status")
+      return;
+    const command =
+      commands.get(interaction.commandName) ||
+      commands.find(
+        (cmd) => cmd.aliases && cmd.aliases.includes(interaction.commandName)
+      );
+
+    if (command)
+      command.execute(
+        undefined,
+        [],
+        discord,
+        logOutputChannel,
+        commands,
+        interaction,
+        undefined,
+        undefined,
+        undefined
+      );
+    logEvent(
+      "receivedCommand",
+      logOutputChannel,
+      undefined,
+      command,
+      [],
       undefined,
       undefined,
       undefined,
