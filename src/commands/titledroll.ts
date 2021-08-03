@@ -40,7 +40,7 @@ module.exports = {
       );
       return;
     }
-    if (!checkForAttachPermission(message)) {
+    if (!checkForAttachPermission(message, interaction)) {
       sendNeedPermissionMessage(message, logOutputChannel);
       return;
     }
@@ -65,7 +65,7 @@ module.exports = {
     const title = await sendGetRollTitleMessage(message, logOutputChannel);
 
     if (title) {
-      sendDiceRolledMessage(message, diceArray);
+      sendDiceRolledMessage(message, diceArray, interaction);
       const attachment = await generateDiceAttachment(diceArray);
       sendDiceResultMessage(
         resultArray,

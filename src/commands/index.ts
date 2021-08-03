@@ -55,12 +55,11 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
   });
 
   discord.on("interactionCreate", async (interaction) => {
-    if (!interaction.isCommand() || interaction.commandName === "status")
-      return;
+    if (!interaction.isCommand()) return;
 
-    await interaction.defer();
-
-    const message = await interaction.fetchReply();
+    if (interaction.commandName !== "status") {
+      await interaction.defer();
+    }
 
     const { value: diceNotation } = interaction.options.get("notation") || {};
     const { value: title } = interaction.options.get("title") || {};
@@ -86,7 +85,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       );
     if (command)
       command.execute(
-        message as Message,
+        undefined,
         args,
         discord,
         logOutputChannel,
@@ -99,7 +98,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
     logEvent(
       "receivedCommand",
       logOutputChannel,
-      message as Message,
+      undefined,
       command,
       args,
       undefined,
@@ -142,39 +141,6 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       undefined,
       command,
       args,
-      undefined,
-      undefined,
-      undefined,
-      interaction
-    );
-  });
-  discord.on("interactionCreate", async (interaction) => {
-    if (!interaction.isCommand() || interaction.commandName !== "status")
-      return;
-    const command =
-      commands.get(interaction.commandName) ||
-      commands.find(
-        (cmd) => cmd.aliases && cmd.aliases.includes(interaction.commandName)
-      );
-
-    if (command)
-      command.execute(
-        undefined,
-        [],
-        discord,
-        logOutputChannel,
-        commands,
-        interaction,
-        undefined,
-        undefined,
-        undefined
-      );
-    logEvent(
-      "receivedCommand",
-      logOutputChannel,
-      undefined,
-      command,
-      [],
       undefined,
       undefined,
       undefined,

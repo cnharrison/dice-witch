@@ -79,7 +79,7 @@ const sendDiceRolledMessage = async (
     interaction
       ? await interaction.followUp(getText())
       : await message.channel.send(getText());
-    if (message.channel) {
+    if (message?.channel) {
       message.channel.sendTyping();
     }
 

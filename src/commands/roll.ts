@@ -41,7 +41,7 @@ module.exports = {
       );
       return;
     }
-    if (!checkForAttachPermission(message)) {
+    if (!checkForAttachPermission(message, interaction)) {
       sendNeedPermissionMessage(message, logOutputChannel, interaction);
       return;
     }
