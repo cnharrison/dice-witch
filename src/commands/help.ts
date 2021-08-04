@@ -20,7 +20,7 @@ module.exports = {
 
     if (!args.length) {
       data.push(commands.map((command) => command.name).join("\r"));
-      data.push(`\n\More: \n\`${prefix}help [command name]\``);
+      data.push(`\n\n\More: \n\`${prefix}help [command name]\``);
 
       const embed = new Discord.MessageEmbed()
         .setColor("#0000ff")
