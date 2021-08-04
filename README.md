@@ -3,7 +3,7 @@
 # Dice Witch
 <div>
 <img src="https://i.imgur.com/v1Dog6h.jpeg" width="300">
-  <img src="https://i.imgur.com/8cEkaek.gif" width="300"  height="385">
+  <img src="https://i.imgur.com/MECPN7o.gif" width="300"  height="385">
   <a href="https://top.gg/bot/808161585876697108">
     <img src="https://top.gg/api/widget/808161585876697108.svg" alt="Dice Witch" />
 </a>
