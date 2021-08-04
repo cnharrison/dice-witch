@@ -16,6 +16,7 @@ module.exports = {
     commands: Collection<string, Command>
   ) {
     const data = [];
+    console.log(args);
 
     if (!args.length) {
       data.push(commands.map((command) => command.name).join("\r"));
@@ -54,7 +55,7 @@ module.exports = {
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
       .setTitle(`👩‍🏫 ${command.name}`)
-      .setDescription(`data.join("\r")`);
+      .setDescription(data.join("\r"));
 
     await message.channel.send({
       embeds: [embed],
