@@ -5,7 +5,8 @@ import Discord, {
   CommandInteraction,
   MessageActionRow,
   MessageButton,
-  MessageComponentInteraction
+  MessageComponentInteraction,
+  ButtonInteraction
 } from "discord.js";
 import { prefix } from "../../config.json";
 import {
@@ -21,7 +22,7 @@ const sendHelperMessage = async (
   name: string,
   logOutputChannel: TextChannel,
   args?: string[],
-  interaction?: CommandInteraction
+  interaction?: CommandInteraction | ButtonInteraction
 ) => {
   const kbButtonRow = new MessageActionRow()
     .addComponents(

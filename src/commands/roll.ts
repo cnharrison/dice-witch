@@ -1,5 +1,5 @@
 import { CommandInteraction, Message, TextChannel } from "discord.js";
-import { Result, DiceArray } from "../types";
+import { Result, DiceArray, RollProps } from "../types";
 import { availableDice, maxDice } from "../constants/";
 import {
   sendDiceResultMessage,
@@ -21,16 +21,14 @@ module.exports = {
   description: "Throw some dice",
   usage:
     "[dice notation], e.g. 1d20 2d12. Type `!roll` with no arguments for a detailed explanation",
-  async execute(
-    message: Message,
-    args: string[],
-    _: any,
-    logOutputChannel: TextChannel,
-    __: any,
-    interaction?: CommandInteraction,
-    title?: string,
-    timesToRepeat?: number
-  ) {
+  async execute({
+    message,
+    args,
+    logOutputChannel,
+    interaction,
+    title,
+    timesToRepeat
+  }: RollProps) {
     if (!args.length) {
       sendHelperMessage(
         message,

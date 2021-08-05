@@ -1,5 +1,5 @@
 import Discord, { Client, Collection, Message, TextChannel } from "discord.js";
-import { Command } from "../types";
+import { Command, HelpProps } from "../types";
 import { prefix } from "../../config.json";
 import { deprecationWarning, footerButtonRow } from "../constants";
 
@@ -8,16 +8,8 @@ module.exports = {
   description: "List commands",
   aliases: ["commands"],
   usage: "[command name]",
-  async execute(
-    message: Message,
-    args: string[],
-    _: Client,
-    __: TextChannel,
-    commands: Collection<string, Command>
-  ) {
+  async execute({ message, args, commands }: HelpProps) {
     const data = [];
-    console.log(args);
-
     if (!args.length) {
       data.push(commands.map((command) => command.name).join("\r"));
       data.push(`\n\n\More: \n\`${prefix}help [command name]\``);

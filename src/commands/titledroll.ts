@@ -1,5 +1,5 @@
 import { CommandInteraction, Message, TextChannel } from "discord.js";
-import { Command, DiceArray, Result } from "../types";
+import { Command, DiceArray, Result, TitledRollProps } from "../types";
 import { availableDice, maxDice } from "../constants";
 import {
   sendDiceResultMessage,
@@ -22,14 +22,12 @@ module.exports = {
   description: "Throw some dice with a displayed title",
   usage:
     "-- Works exactly like roll, but you'll be prompted for a title before performing the roll",
-  async execute(
-    message: Message,
-    args: string[],
-    _: Command,
-    logOutputChannel: TextChannel,
-    __: any,
-    interaction?: CommandInteraction
-  ) {
+  async execute({
+    message,
+    args,
+    logOutputChannel,
+    interaction
+  }: TitledRollProps) {
     if (!args.length) {
       sendHelperMessage(
         message,

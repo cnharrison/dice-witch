@@ -1,4 +1,8 @@
-import Discord, { CommandInteraction, MessageEmbed } from "discord.js";
+import Discord, {
+  ButtonInteraction,
+  CommandInteraction,
+  MessageEmbed
+} from "discord.js";
 import { getRandomNumber } from "../helpers";
 import { logEvent } from "../services/index";
 import { MessageAttachment, Message, TextChannel } from "discord.js";
@@ -9,7 +13,7 @@ const generateEmbedMessage = async (
   attachment: MessageAttachment,
   message: Message,
   title?: string,
-  interaction?: CommandInteraction
+  interaction?: CommandInteraction | ButtonInteraction
 ): Promise<{ embeds: MessageEmbed[]; files: MessageAttachment[] }> => {
   const grandTotal = resultArray.reduce(
     (prev: number, cur: Result) => prev + cur.results,
@@ -46,7 +50,7 @@ const sendDiceResultMessage = async (
   message: Message,
   attachment: MessageAttachment,
   logOutputChannel: TextChannel,
-  interaction?: CommandInteraction,
+  interaction?: CommandInteraction | ButtonInteraction,
   title?: string
 ) => {
   try {
