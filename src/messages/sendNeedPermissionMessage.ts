@@ -18,7 +18,8 @@ const sendNeedPermissionMessage = async (
   logEvent({
     eventType: "sentNeedPermissionsMessage",
     logOutputChannel,
-    message
+    message,
+    interaction
   });
 };
 
