@@ -25,32 +25,20 @@ const sendGetRollTitleMessage = async (
       await message.channel.send(
         `that title's too long, ${message.author} -- roll cancelled`
       );
-      logEvent(
-        "rollTitleRejected",
+      logEvent({
+        eventType: "rollTitleRejected",
         logOutputChannel,
         message,
-        undefined,
-        undefined,
         title
-      );
+      });
       return;
     }
-    title = firstCollected?.cleanContent;
-    firstCollected?.react("👀");
-    logEvent(
-      "rollTitleAccepted",
-      logOutputChannel,
-      message,
-      undefined,
-      undefined,
-      title
-    );
   } catch (err) {
     console.error(err);
     await message.channel.send(
       `didn't get a reaponse from ${message.author} -- roll cancelled 😢`
     );
-    logEvent("rollTitleTimeout", logOutputChannel, message);
+    logEvent({ eventType: "rollTitleTimeout", logOutputChannel, message });
     return;
   }
   return title;

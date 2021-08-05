@@ -20,9 +20,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
     process.chdir(path.dirname(botPath));
     const commandFiles: string[] = fs
       .readdirSync(`${botPath}/src/commands`)
-      .filter(
-        (file: string) => file.endsWith(".ts")
-      );
+      .filter((file: string) => file.endsWith(".ts"));
 
     for (const file of commandFiles) {
       const command = require(`${botPath}/src/commands/${file}`);
@@ -46,7 +44,13 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
       try {
         command.execute({ message, args, discord, logOutputChannel, commands });
-        logEvent("receivedCommand", logOutputChannel, message, command, args);
+        logEvent({
+          eventType: "receivedCommand",
+          logOutputChannel,
+          message,
+          command,
+          args
+        });
       } catch (error) {
         const embed: MessageEmbed = new Discord.MessageEmbed()
           .setColor(errorColor)
@@ -54,7 +58,13 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
             `error 😥 please join my [support server](${supportServerLink}) and report this`
           );
         await message.channel.send({ embeds: [embed] });
-        logEvent("criticalError", logOutputChannel, message, command, args);
+        logEvent({
+          eventType: "criticalError",
+          logOutputChannel,
+          message,
+          command,
+          args
+        });
       }
     });
 
@@ -99,17 +109,13 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           timesToRepeat: timesToRepeatAsNumber,
           wasFromSlash
         });
-      logEvent(
-        "receivedCommand",
+      logEvent({
+        eventType: "receivedCommand",
         logOutputChannel,
-        undefined,
         command,
         args,
-        undefined,
-        undefined,
-        undefined,
         interaction
-      );
+      });
     });
 
     discord.on("interactionCreate", async (interaction) => {
@@ -129,51 +135,36 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
       if (command)
         command.execute({
-          message: undefined,
           args,
           discord,
           logOutputChannel,
           commands,
           interaction,
-          title: undefined,
-          timesToRepeat: undefined,
           wasFromSlash
         });
-      logEvent(
-        "receivedCommand",
+      logEvent({
+        eventType: "receivedCommand",
         logOutputChannel,
-        undefined,
         command,
         args,
-        undefined,
-        undefined,
-        undefined,
         interaction
-      );
+      });
     });
 
     discord.on("guildCreate", (guild: Guild) => {
-      logEvent(
-        "guildAdd",
+      logEvent({
+        eventType: "guildAdd",
         logOutputChannel,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
         guild
-      );
+      });
     });
 
     discord.on("guildDelete", (guild: Guild) => {
-      logEvent(
-        "guildRemove",
+      logEvent({
+        eventType: "guildRemove",
         logOutputChannel,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
         guild
-      );
+      });
     });
   } catch (err) {
     console.error(err);

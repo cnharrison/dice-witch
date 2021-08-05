@@ -4,7 +4,10 @@ import {
   Collection,
   CommandInteraction,
   EmbedFieldData,
+  Guild,
   Message,
+  MessageAttachment,
+  MessageEmbed,
   TextChannel
 } from "discord.js";
 
@@ -121,6 +124,20 @@ export type RollProps = Pick<
 export type HelpProps = Pick<CommandProps, "message" | "args" | "commands">;
 export type StatusProps = Pick<CommandProps, "message" | "discord" | "interaction">;
 export type TitledRollProps = Pick<CommandProps, "message" | "args" | "logOutputChannel" | "interaction">
+
+export type EmbedObject = { embeds: MessageEmbed[]; files: MessageAttachment[] };
+
+export interface LogEventProps {
+  eventType: EventType,
+  logOutputChannel: TextChannel,
+  message?: Message,
+  command?: Command,
+  args?: string[],
+  title?: string,
+  guild?: Guild,
+  embedParam?: EmbedObject,
+  interaction?: CommandInteraction | ButtonInteraction
+}
 
 export interface Die {
   sides: DiceTypes;

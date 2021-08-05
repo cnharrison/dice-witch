@@ -6,7 +6,7 @@ import Discord, {
 import { getRandomNumber } from "../helpers";
 import { logEvent } from "../services/index";
 import { MessageAttachment, Message, TextChannel } from "discord.js";
-import { Result } from "../types";
+import { EmbedObject, Result } from "../types";
 
 const generateEmbedMessage = async (
   resultArray: Result[],
@@ -54,10 +54,7 @@ const sendDiceResultMessage = async (
   title?: string
 ) => {
   try {
-    const embedMessage: {
-      embeds: MessageEmbed[];
-      files: MessageAttachment[];
-    } = await generateEmbedMessage(
+    const embedMessage: EmbedObject = await generateEmbedMessage(
       resultArray,
       attachment,
       message,
@@ -70,16 +67,12 @@ const sendDiceResultMessage = async (
         interaction
           ? await interaction?.followUp(embedMessage)
           : await message.channel.send(embedMessage);
-        logEvent(
-          "sentRollResultMessage",
+        logEvent({
+          eventType: "sentRollResultMessage",
           logOutputChannel,
           message,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          embedMessage
-        );
+          embedParam: embedMessage
+        });
       } catch (err) { }
     };
 

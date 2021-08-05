@@ -17,13 +17,12 @@ const sendDiceOverMaxMessage = async (
   interaction
     ? await interaction.followUp(msg)
     : await message.channel.send(msg);
-  logEvent(
-    "sentDiceOverMaxMessage",
+  logEvent({
+    eventType: "sentDiceOverMaxMessage",
     logOutputChannel,
     message,
-    undefined,
     args
-  );
+  });
   return;
 };
 

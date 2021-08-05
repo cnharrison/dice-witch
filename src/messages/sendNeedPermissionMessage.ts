@@ -15,7 +15,11 @@ const sendNeedPermissionMessage = async (
   interaction
     ? await interaction.followUp(msg)
     : await message.channel.send(msg);
-  logEvent("sentNeedPermissionsMessage", logOutputChannel, message);
+  logEvent({
+    eventType: "sentNeedPermissionsMessage",
+    logOutputChannel,
+    message
+  });
 };
 
 export default sendNeedPermissionMessage;
