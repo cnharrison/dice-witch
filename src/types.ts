@@ -135,7 +135,7 @@ export interface LogEventProps {
   args?: string[],
   title?: string,
   guild?: Guild,
-  embedParam?: EmbedObject,
+  embedParam: EmbedObject,
   interaction?: CommandInteraction | ButtonInteraction
 }
 

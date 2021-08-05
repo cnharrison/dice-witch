@@ -1,17 +1,11 @@
 import Discord, {
-  Guild,
-  Message,
   TextChannel,
   DMChannel,
   NewsChannel,
-  MessageEmbed,
-  MessageAttachment,
-  CommandInteraction,
-  ButtonInteraction,
   PartialDMChannel,
   ThreadChannel
 } from "discord.js";
-import { Command, EmbedObject, EventType, LogEventProps } from "../types";
+import { EmbedObject, LogEventProps } from "../types";
 import { adminID, prefix } from "../../config.json";
 import { eventColor, errorColor, goodColor, infoColor } from "../constants";
 
@@ -36,7 +30,7 @@ const logEvent = async ({
     | null = interaction
       ? (interaction.channel as TextChannel)
       : (message?.channel as TextChannel);
-  const { name: channelName } = channel;
+  const { name: channelName } = channel || {};
   const username = interaction
     ? interaction.user.username
     : message?.author.username;
