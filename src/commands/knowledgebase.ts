@@ -180,7 +180,13 @@ module.exports = {
       const newEmbed = new Discord.MessageEmbed()
         .setColor(color)
         .setTitle(title);
-      newEmbed.addFields(content);
+      newEmbed
+        .addFields(content)
+        .addField(
+          "\u200B",
+          `_sent to ${interaction ? interaction.user.username : message.author.username
+          }_`
+        );
       interaction
         ? await interaction.followUp({
           embeds: [newEmbed],
