@@ -5,7 +5,8 @@ import Discord, {
   CommandInteraction,
   MessageActionRow,
   MessageButton,
-  MessageComponentInteraction
+  MessageComponentInteraction,
+  ButtonInteraction
 } from "discord.js";
 import { prefix } from "../../config.json";
 import {
@@ -21,7 +22,7 @@ const sendHelperMessage = async (
   name: string,
   logOutputChannel: TextChannel,
   args?: string[],
-  interaction?: CommandInteraction
+  interaction?: CommandInteraction | ButtonInteraction
 ) => {
   const kbButtonRow = new MessageActionRow()
     .addComponents(
@@ -88,7 +89,7 @@ const sendHelperMessage = async (
       },
       {
         name: "Basic rolls",
-        value: `\`${prefix}${name} 1d20\`: roll one twenty sided die\n\`${prefix}${name} 1d20 1d12 1d8\`: Roll one twenty-sided die, one twelve-sided die, and one eight-sided die.\n\`${prefix}${name} 1d12+3 5d4\`: Roll one twelve-sided die, adding three to the total, and five four-sided dice.\n\`!roll 3d6+3d6\`: Roll two sets of three six-sided dice and add the total.\n\n`
+        value: `\`${prefix}${name} 1d20\`: Roll one twenty-sided die.\n\`${prefix}${name} 1d20 1d12 1d8\`: Roll one twenty-sided die, one twelve-sided die, and one eight-sided die.\n\`${prefix}${name} 1d12+3 5d4\`: Roll one twelve-sided die, adding three to the total, and five four-sided dice.\n\`!roll 3d6+3d6\`: Roll two sets of three six-sided dice and add the total.\n\n`
       },
       {
         name: "Advanced rolls and modifiers",
@@ -166,17 +167,13 @@ const sendHelperMessage = async (
     });
   }
 
-  logEvent(
-    "sentHelperMessage",
+  logEvent({
+    eventType: "sentHelperMessage",
     logOutputChannel,
     message,
-    undefined,
     args,
-    undefined,
-    undefined,
-    undefined,
     interaction
-  );
+  });
   return;
 };
 

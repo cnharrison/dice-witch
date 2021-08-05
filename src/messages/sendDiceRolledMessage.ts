@@ -1,11 +1,11 @@
 import { getRandomNumber } from "../helpers";
-import { CommandInteraction, Message } from "discord.js";
+import { ButtonInteraction, CommandInteraction, Message } from "discord.js";
 import { Die } from "../types";
 
 const sendDiceRolledMessage = async (
   message: Message,
   diceArray: any,
-  interaction?: CommandInteraction
+  interaction?: CommandInteraction | ButtonInteraction
 ) => {
   const diceArrayLengths = diceArray.map(
     (array: (Die | Die[])[]) => array.length
@@ -82,7 +82,6 @@ const sendDiceRolledMessage = async (
     if (message?.channel) {
       message.channel.sendTyping();
     }
-
   } catch (err) {
     console.error(err);
   }

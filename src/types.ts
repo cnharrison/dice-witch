@@ -4,7 +4,10 @@ import {
   Collection,
   CommandInteraction,
   EmbedFieldData,
+  Guild,
   Message,
+  MessageAttachment,
+  MessageEmbed,
   TextChannel
 } from "discord.js";
 
@@ -88,17 +91,52 @@ export interface Command {
   aliases: string[];
   description: string;
   usage: string;
-  execute: (
-    message: Message | undefined,
-    args: string[],
-    discord: Client,
-    logOutputChannel: TextChannel,
-    commands?: Collection<string, Command>,
-    interaction?: CommandInteraction | ButtonInteraction,
-    title?: string,
-    timesToRepeat?: number,
-    wasFromSlash?: boolean,
-  ) => void;
+  execute: (props: Partial<CommandProps>) => void;
+}
+
+export interface CommandProps {
+  message: Message;
+  args: string[];
+  discord: Client;
+  logOutputChannel: TextChannel;
+  commands: Collection<string, Command>;
+  interaction?: CommandInteraction | ButtonInteraction;
+  title?: string;
+  timesToRepeat?: number;
+  wasFromSlash: boolean;
+}
+
+export type KnowledgeBaseProps = Pick<
+  CommandProps,
+  "message" | "args" | "interaction" | "wasFromSlash"
+>;
+
+export type RollProps = Pick<
+  CommandProps,
+  | "message"
+  | "args"
+  | "logOutputChannel"
+  | "interaction"
+  | "title"
+  | "timesToRepeat"
+>;
+
+export type HelpProps = Pick<CommandProps, "message" | "args" | "commands">;
+export type StatusProps = Pick<CommandProps, "message" | "discord" | "interaction">;
+export type TitledRollProps = Pick<CommandProps, "message" | "args" | "logOutputChannel" | "interaction">
+
+export type EmbedObject = { embeds: MessageEmbed[]; files: MessageAttachment[] };
+
+export interface LogEventProps {
+  eventType: EventType,
+  logOutputChannel: TextChannel,
+  message?: Message,
+  command?: Command,
+  args?: string[],
+  title?: string,
+  guild?: Guild,
+  embedParam?: EmbedObject,
+  interaction?: CommandInteraction | ButtonInteraction
 }
 
 export interface Die {

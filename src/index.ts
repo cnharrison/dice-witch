@@ -1,7 +1,6 @@
 import { Client, Intents } from "discord.js";
 import axios from "axios";
 import Cron from "cron";
-import commands from "./commands";
 import events from "./events";
 import {
   discordToken,
@@ -118,7 +117,6 @@ const startServer = () => {
     } catch (err) {
       console.error(err);
     }
-    commands(discord, logOutputChannelTemp);
     events(discord, logOutputChannelTemp);
 
     const job = new Cron.CronJob(

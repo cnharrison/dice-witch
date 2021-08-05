@@ -7,202 +7,176 @@ import Discord, {
   MessageEmbed,
   MessageAttachment,
   CommandInteraction,
-  ButtonInteraction
+  ButtonInteraction,
+  PartialDMChannel,
+  ThreadChannel
 } from "discord.js";
-import { Command, EventType } from "../types";
+import { Command, EmbedObject, EventType, LogEventProps } from "../types";
 import { adminID, prefix } from "../../config.json";
 import { eventColor, errorColor, goodColor, infoColor } from "../constants";
 
-const logEvent = async (
-  eventType: EventType,
-  logOutputChannel: TextChannel,
-  message?: Message,
-  command?: Command,
-  args?: string[],
-  title?: string,
-  guild?: Guild,
-  embedParam?: { embeds: MessageEmbed[]; files: MessageAttachment[] },
-  interaction?: CommandInteraction | ButtonInteraction
-) => {
+const logEvent = async ({
+  eventType,
+  logOutputChannel,
+  message,
+  command,
+  args,
+  title,
+  guild,
+  embedParam,
+  interaction
+}: Partial<LogEventProps>) => {
   let embed: any;
   const channel:
     | TextChannel
     | DMChannel
-    | NewsChannel = message?.channel as TextChannel;
-  switch (eventType) {
-    case "receivedCommand":
-      command &&
+    | NewsChannel
+    | PartialDMChannel
+    | ThreadChannel
+    | null = interaction
+      ? (interaction.channel as TextChannel)
+      : (message?.channel as TextChannel);
+  const { name: channelName } = channel;
+  const username = interaction
+    ? interaction.user.username
+    : message?.author.username;
+  const guildName = guild
+    ? guild.name
+    : interaction
+      ? interaction?.guild?.name
+      : message?.guild;
+  const commandName = command?.name;
+  const prefixName = interaction ? "/" : prefix;
+  const isGuildChannel = channel && channel.type === "GUILD_TEXT";
+  const isInGuild = message?.guild?.id || interaction?.inGuild();
+
+  if (logOutputChannel) {
+    switch (eventType) {
+      case "receivedCommand":
         console.log(
           message?.guild?.id || interaction?.inGuild()
-            ? `received command ${interaction ? "/" : prefix}${command.name
-            }: ${args} from [ ${interaction
-              ? interaction.user.username
-              : message?.author.username
-            } ] in channel [ ${interaction ? interaction.channel : channel.name
-            } ] on [ ${interaction ? interaction?.guild?.name : message?.guild
-            } ]`
-            : message &&
-            `received ${interaction ? "/" : ""}command ${command.name
-            }: ${args} from [ ${interaction
-              ? interaction.user.username
-              : message.author.username
-            } ] in [ DM ]`
+            ? `received command ${prefixName}${commandName}: ${args} from [ ${username} ] in channel [ ${channelName} ] on [ ${guildName} ]`
+            : `received ${prefixName}command ${commandName}: ${args} from [ ${username} ] in [ DM ]`
         );
-      embed =
-        command &&
-        new Discord.MessageEmbed()
+        embed = new Discord.MessageEmbed()
           .setColor(eventColor)
-          .setTitle(
-            `${eventType}: ${interaction ? "/" : prefix}${command.name}`
-          )
+          .setTitle(`${eventType}: ${prefixName}${commandName}`)
           .setDescription(
-            message?.guild?.id || interaction?.inGuild()
-              ? `${args} from ** ${interaction
-                ? interaction.user.username
-                : message?.author.username
-              }** in channel **${interaction ? interaction.channel : channel.name
-              }** on **${interaction ? interaction?.guild?.name : message?.guild
-              }**`
-              : `${args} from ** ${interaction
-                ? interaction.user.username
-                : message?.author.username
-              }** in **DM**`
+            isInGuild
+              ? `${args} from ** ${username}** in channel **${channelName}** on **${guildName}**`
+              : `${args} from ** ${username}** in **DM**`
           );
-      embed &&
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err) => console.error(err));
-      break;
-    case "criticalError":
-      embed =
-        command &&
-        new Discord.MessageEmbed()
+        break;
+      case "criticalError":
+        embed = new Discord.MessageEmbed()
           .setColor("#FF0000")
-          .setTitle(`${eventType}: ${command.name}`)
+          .setTitle(`${eventType}: ${commandName}`)
           .setDescription(
-            message?.guild?.id
-              ? `${args} from **${message.author.username}** in channel **${channel.name}** on **${message.guild}** <@${adminID}>`
-              : `${args} from **${message?.author.username}** in **DM** ${adminID}`
+            isInGuild
+              ? `${args} from **${username}** in channel **${channelName}** on **${guildName}** <@${adminID}>`
+              : `${args} from **${username}** in **DM** ${adminID}`
           );
-      embed &&
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err) => console.error(err));
-      break;
-    case "rollTitleRejected":
-      embed = new Discord.MessageEmbed()
-        .setColor(errorColor)
-        .setTitle(eventType)
-        .setDescription(
-          message?.guild?.id
-            ? `**${message.author.username}** in **${channel.name}** on **${message.guild}**`
-            : `**${message?.author.username}** in **DM**`
-        );
-      embed &&
+        break;
+      case "rollTitleRejected":
+        embed = new Discord.MessageEmbed()
+          .setColor(errorColor)
+          .setTitle(eventType)
+          .setDescription(
+            isInGuild
+              ? `**${username}** in **${channelName}** on **${guildName}**`
+              : `**${username}** in **DM**`
+          );
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err) => console.error(err));
-      break;
-    case "rollTitleAccepted":
-      embed = new Discord.MessageEmbed()
-        .setColor(eventColor)
-        .setTitle(`${eventType}: ${title}`)
-        .setDescription(
-          message?.guild?.id
-            ? ` **${message.author.username}** in channel **${channel.name}** on **${message.guild}**`
-            : `**${message?.author.username}** in **DM**`
-        );
-      logOutputChannel
-        .send({ embeds: [embed] })
-        .catch((err) => console.error(err));
-      break;
-    case "rollTitleTimeout":
-      embed = new Discord.MessageEmbed()
-        .setColor(errorColor)
-        .setTitle(eventType)
-        .setDescription(
-          message?.guild?.id
-            ? `**${message.author.username}** in **${channel.name}** on **${message.guild}**`
-            : `**${message?.author.username}** in **DM**`
-        );
-      logOutputChannel
-        .send({ embeds: [embed] })
-        .catch((err: Error) => console.error(err));
-      break;
-    case "guildAdd":
-      embed =
-        guild &&
-        new Discord.MessageEmbed()
+        break;
+      case "rollTitleAccepted":
+        embed = new Discord.MessageEmbed()
+          .setColor(eventColor)
+          .setTitle(`${eventType}: ${title}`)
+          .setDescription(
+            isInGuild
+              ? ` **${username}** in channel **${channelName}** on **${guildName}**`
+              : `**${username}** in **DM**`
+          );
+        logOutputChannel
+          .send({ embeds: [embed] })
+          .catch((err) => console.error(err));
+        break;
+      case "rollTitleTimeout":
+        embed = new Discord.MessageEmbed()
+          .setColor(errorColor)
+          .setTitle(eventType)
+          .setDescription(
+            isInGuild
+              ? `**${username}** in **${channelName}** on **${guildName}**`
+              : `**${username}** in **DM**`
+          );
+        logOutputChannel
+          .send({ embeds: [embed] })
+          .catch((err: Error) => console.error(err));
+        break;
+      case "guildAdd":
+        embed = new Discord.MessageEmbed()
           .setColor(goodColor)
           .setTitle(eventType)
-          .setDescription(`${guild.name}`);
-      embed &&
+          .setDescription(`${guildName}`);
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
-      break;
-    case "guildRemove":
-      embed =
-        guild &&
-        new Discord.MessageEmbed()
+        break;
+      case "guildRemove":
+        embed = new Discord.MessageEmbed()
           .setColor(errorColor)
           .setTitle(eventType)
-          .setDescription(`${guild.name}`);
-      embed &&
+          .setDescription(`${guildName}`);
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
-      break;
-    case "sentRollResultMessage":
-      embedParam &&
+        break;
+      case "sentRollResultMessage":
         logOutputChannel
-          .send(embedParam)
+          .send(embedParam as EmbedObject)
           .catch((err: Error) => console.error(err));
-      break;
-    case "sentHelperMessage":
-      embed =
-        message &&
-        new Discord.MessageEmbed()
+        break;
+      case "sentHelperMessage":
+        embed = new Discord.MessageEmbed()
           .setColor(infoColor)
           .setTitle(eventType)
           .setDescription(
-            `${interaction ? interaction.user.username : message?.author.username
-            } in ${channel.type === "GUILD_TEXT" ? channel.name : "DM"}`
+            `${username} in ${isGuildChannel ? channelName : "DM"}`
           );
-      embed &&
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
-      break;
-    case "sentDiceOverMaxMessage":
-      embed =
-        message &&
-        new Discord.MessageEmbed()
+        break;
+      case "sentDiceOverMaxMessage":
+        embed = new Discord.MessageEmbed()
           .setColor(infoColor)
           .setTitle(eventType)
-          .setDescription(`${message.author.username} in ${channel.name}`);
-      embed &&
+          .setDescription(`${username} in ${channelName}`);
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
-      break;
-    case "sentNeedPermissionsMessage":
-      embed =
-        message &&
-        new Discord.MessageEmbed()
+        break;
+      case "sentNeedPermissionsMessage":
+        embed = new Discord.MessageEmbed()
           .setColor(errorColor)
           .setTitle(eventType)
-          .setDescription(
-            `**${interaction ? interaction.channel : channel?.name}** on **${interaction ? interaction?.guild?.name : message?.guild
-            }**`
-          );
-      embed &&
+          .setDescription(`**${channelName}** on **${guildName}**`);
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
-      break;
-    default:
-      return null;
+        break;
+      default:
+        return null;
+    }
   }
 };
 

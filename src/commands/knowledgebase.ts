@@ -4,7 +4,7 @@ import Discord, {
   CommandInteraction,
   Message
 } from "discord.js";
-import { KnowledgeBase } from "../types";
+import { KnowledgeBase, KnowledgeBaseProps } from "../types";
 import { prefix } from "../../config.json";
 import { footerButtonRow, infoColor } from "../constants";
 
@@ -13,17 +13,12 @@ module.exports = {
   description: "Browse the knowledge base",
   aliases: ["kb"],
   usage: "[topic]",
-  async execute(
-    message: Message,
-    args: string[],
-    _: any,
-    __: any,
-    ___: any,
-    interaction: CommandInteraction | ButtonInteraction,
-    _____: any,
-    _______: any,
-    wasFromSlash?: boolean
-  ) {
+  async execute({
+    message,
+    args,
+    interaction,
+    wasFromSlash
+  }: KnowledgeBaseProps) {
     const commandKb: KnowledgeBase = {
       minmax: [
         {
@@ -180,12 +175,18 @@ module.exports = {
       message: Message,
       color: ColorResolvable,
       title: string,
-      interaction: CommandInteraction | ButtonInteraction
+      interaction?: CommandInteraction | ButtonInteraction
     ) => {
       const newEmbed = new Discord.MessageEmbed()
         .setColor(color)
         .setTitle(title);
-      newEmbed.addFields(content);
+      newEmbed
+        .addFields(content)
+        .addField(
+          "\u200B",
+          `_sent to ${interaction ? interaction.user.username : message.author.username
+          }_`
+        );
       interaction
         ? await interaction.followUp({
           embeds: [newEmbed],

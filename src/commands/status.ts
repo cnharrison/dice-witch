@@ -1,19 +1,12 @@
-import Discord, { Client, CommandInteraction, Message } from "discord.js";
-import { inviteLink, supportServerLink } from "../../config.json";
+import Discord from "discord.js";
 import { footerButtonRow } from "../constants";
+import { StatusProps } from "../types";
 
 module.exports = {
   name: "status",
   description: "Get ping and server info",
   aliases: ["ping"],
-  async execute(
-    message: Message,
-    _: string[],
-    discord: Client,
-    __: any,
-    ___: any,
-    interaction: CommandInteraction
-  ) {
+  async execute({ message, discord, interaction }: StatusProps) {
     const now = Date.now();
     const embed = new Discord.MessageEmbed()
       .setColor("#99999")
