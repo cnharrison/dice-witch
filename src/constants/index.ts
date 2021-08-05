@@ -11,7 +11,7 @@ const errorColor: ColorResolvable = "#FF0000";
 const goodColor: ColorResolvable = "#00FF00";
 const infoColor: ColorResolvable = "#1E90FF";
 
-const deprecationWarning = `⚠** BEGIN SCARY WARNING **⚠\n\n The \`!roll\` and \`!titledroll\` commands are being deprecated. You should start using \`/roll\` instead (It's much better 😈). For help with it, just start typing \`/roll\`. If you invited Dice Witch on or before **August 1, 2021**, you will need to grant her permissions to create slash commands on your server before you will see the \`/roll\` command. You can do this by clicking [here](https://discord.com/api/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot%20applications.commands).\n\n⚠ **END SCARY WARNING** ⚠`;
+const deprecationWarning = `⚠** BEGIN SCARY WARNING **⚠\n\n The \`!roll\` and \`!titledroll\` commands are being deprecated. You should start using \`/roll\` instead (It's much better 😈). For help with it, just start typing \`/roll\`. If you invited Dice Witch on or before **August 1, 2021**, you will need to grant her permissions to create slash commands on your server before you will see the \`/roll\` command. You can do this by clicking [here](${inviteLink}).\n\n⚠ **END SCARY WARNING** ⚠`;
 
 const footerButtonRow = new MessageActionRow()
     .addComponents(
