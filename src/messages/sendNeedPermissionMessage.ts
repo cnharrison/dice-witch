@@ -11,7 +11,7 @@ const sendNeedPermissionMessage = async (
   logOutputChannel: TextChannel,
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
-  const msg = `doesn't look like i have permission to **attach files** in this channel. i need them to show you the dice 😅`;
+  const msg = `looks like i don't have permission to either **attach files** or **embed links** in this channel. i need both of them to show you the dice 😅`;
   interaction
     ? await interaction.followUp(msg)
     : await message.channel.send(msg);

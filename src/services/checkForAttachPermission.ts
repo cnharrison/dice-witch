@@ -46,6 +46,7 @@ const checkForAttachPermission = (
     | undefined = doesHavePermission?.toArray();
   return channel?.type !== "GUILD_TEXT"
     ? true
-    : !!permissionArray?.includes("ATTACH_FILES");
+    : !!permissionArray?.includes("ATTACH_FILES") &&
+    !!permissionArray?.includes("EMBED_LINKS");
 };
 export default checkForAttachPermission;
