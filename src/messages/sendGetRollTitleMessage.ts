@@ -33,6 +33,14 @@ const sendGetRollTitleMessage = async (
       });
       return;
     }
+    title = firstCollected?.cleanContent;
+    firstCollected?.react("👀");
+    logEvent({
+      eventType: "rollTitleAccepted",
+      logOutputChannel,
+      message,
+      title
+    });
   } catch (err) {
     console.error(err);
     await message.channel.send(
