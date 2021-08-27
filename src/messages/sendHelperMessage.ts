@@ -127,12 +127,19 @@ const sendHelperMessage = async (
       `_sent to ${interaction ? interaction.user.username : message.author.username
       }_`
     );
+
+  const publicHelperMessage = ` 🎲 Invalid dice notation! DMing you some help 😉`;
+
   interaction
-    ? await interaction.followUp({
+    ? await interaction.followUp(publicHelperMessage)
+    : await message.reply(publicHelperMessage);
+
+  interaction
+    ? await interaction.user.send({
       embeds: [slashEmbed],
       components: [kbButtonRow, kbButtonRow2, footerButtonRow]
     })
-    : await message.channel.send({
+    : await message.author.send({
       embeds: [commandEmbed],
       components: [kbButtonRow, kbButtonRow2, footerButtonRow]
     });
