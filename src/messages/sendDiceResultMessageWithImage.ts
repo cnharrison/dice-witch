@@ -26,7 +26,7 @@ const generateEmbedMessage = async (
         .setImage("attachment://currentDice.png")
         .setFooter(
           `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\n${interaction ? `sent to ` + interaction.user.username : ``}
+          }\n\n${interaction ? `sent to ` + interaction.user.username : ``}
           `
         )
       : new Discord.MessageEmbed()
@@ -34,7 +34,7 @@ const generateEmbedMessage = async (
         .setImage("attachment://currentDice.png")
         .setFooter(
           `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\n${interaction ? `sent to ` + interaction.user.username : ``}
+          }\n\n${interaction ? `sent to ` + interaction.user.username : ``}
           `
         );
     return { embeds: [embed], files: [attachment] };
