@@ -29,8 +29,8 @@ const sendLogEventMessage = async ({
     | PartialDMChannel
     | ThreadChannel
     | null = interaction
-      ? (interaction.channel as TextChannel)
-      : (message?.channel as TextChannel);
+      ? (interaction.channel as TextChannel | ThreadChannel)
+      : (message?.channel as TextChannel | ThreadChannel);
   const { name: channelName } = channel || {};
   const username = interaction
     ? interaction.user.username
@@ -44,13 +44,15 @@ const sendLogEventMessage = async ({
   const prefixName = interaction ? "/" : prefix;
   const isGuildChannel = channel && channel.type === "GUILD_TEXT";
   const isInGuild = message?.guild?.id || interaction?.inGuild();
+  const isThread = channel && channel.type === "GUILD_PUBLIC_THREAD";
 
   if (logOutputChannel) {
     switch (eventType) {
       case EventType.RECEIVED_COMMAND:
         console.log(
           message?.guild?.id || interaction?.inGuild()
-            ? `received command ${prefixName}${commandName}: ${args} from [ ${username} ] in channel [ ${channelName} ] on [ ${guildName} ]`
+            ? `received command ${prefixName}${commandName}: ${args} from [ ${username} ] in ${isThread ? "thread" : "channel"
+            } [ ${channelName} ] on [ ${guildName} ]`
             : `received ${prefixName}command ${commandName}: ${args} from [ ${username} ] in [ DM ]`
         );
         embed = new Discord.MessageEmbed()
@@ -58,7 +60,8 @@ const sendLogEventMessage = async ({
           .setTitle(`${eventType}: ${prefixName}${commandName}`)
           .setDescription(
             isInGuild
-              ? `${args} from ** ${username}** in channel **${channelName}** on **${guildName}**`
+              ? `${args} from ** ${username}** in ${isThread ? "thread" : "channel"
+              } **${channelName}** on **${guildName}**`
               : `${args} from ** ${username}** in **DM**`
           );
         logOutputChannel
@@ -71,7 +74,8 @@ const sendLogEventMessage = async ({
           .setTitle(`${eventType}: ${commandName}`)
           .setDescription(
             isInGuild
-              ? `${args} from **${username}** in channel **${channelName}** on **${guildName}** <@${adminID}>`
+              ? `${args} from **${username}** in ${isThread ? "thread" : "channel"
+              } **${channelName}** on **${guildName}** <@${adminID}>`
               : `${args} from **${username}** in **DM** ${adminID}`
           );
         logOutputChannel
@@ -84,7 +88,8 @@ const sendLogEventMessage = async ({
           .setTitle(eventType)
           .setDescription(
             isInGuild
-              ? `**${username}** in **${channelName}** on **${guildName}**`
+              ? `**${username}** in ${isThread ? "thread" : "channel"
+              } **${channelName}** on **${guildName}**`
               : `**${username}** in **DM**`
           );
         logOutputChannel
@@ -97,7 +102,8 @@ const sendLogEventMessage = async ({
           .setTitle(`${eventType}: ${title}`)
           .setDescription(
             isInGuild
-              ? ` **${username}** in channel **${channelName}** on **${guildName}**`
+              ? ` **${username}** in ${isThread ? "thread" : "channel"
+              } **${channelName}** on **${guildName}**`
               : `**${username}** in **DM**`
           );
         logOutputChannel
@@ -110,7 +116,8 @@ const sendLogEventMessage = async ({
           .setTitle(eventType)
           .setDescription(
             isInGuild
-              ? `**${username}** in **${channelName}** on **${guildName}**`
+              ? `**${username}** in ${isThread ? "thread" : "channel"
+              } **${channelName}** on **${guildName}**`
               : `**${username}** in **DM**`
           );
         logOutputChannel
@@ -143,7 +150,7 @@ const sendLogEventMessage = async ({
       case EventType.SENT_ROLL_RESULT_MESSAGE:
         embed = new Discord.MessageEmbed()
           .setColor(goodColor)
-          .setTitle(`${eventType}: ${title ? title : ''}`)
+          .setTitle(`${eventType}: ${title ? title : ""}`)
           .setDescription(`${resultMessage}`);
         logOutputChannel
           .send({ embeds: [embed] })
