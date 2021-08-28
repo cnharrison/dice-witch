@@ -82,7 +82,7 @@ const sendHelperMessage = async (
     .addFields(
       {
         name: `Need help ?😅`,
-        value: `${deprecationWarning}\n\n You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any of these dice: **${availableDice
+        value: `${deprecationWarning}\n\n You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any dice, but you will only get images of these dice: **${availableDice
           .map((dice: number | string) => `d${dice}`)
           .join(
             ", "
