@@ -1,4 +1,4 @@
-import { getRandomNumber } from "../helpers";
+import { getRandomNumber, pluralPick } from "../helpers";
 import { ButtonInteraction, CommandInteraction, Message } from "discord.js";
 import { Die } from "../types";
 
@@ -12,9 +12,6 @@ const sendDiceRolledMessage = async (
   );
   const isSingleDie =
     diceArrayLengths.length === 1 && diceArray[0].length === 1;
-
-  const pluralPick = (isSingleDie: boolean, singular: string, plural: string) =>
-    isSingleDie ? singular : plural;
 
   const messages = [
     `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(

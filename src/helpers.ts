@@ -1,3 +1,4 @@
+import { Guild } from "discord.js";
 import { DiceArray, Die } from "../src/types";
 
 const getRandomNumber = (range: number) =>
@@ -6,4 +7,19 @@ const getRandomNumber = (range: number) =>
 const getTotalDiceRolled = (diceArray: DiceArray) =>
   diceArray.reduce((acc: number, element: Die[]) => acc + element.length, 0);
 
-export { getRandomNumber, getTotalDiceRolled };
+const makeBold = (string?: string | null | Guild) =>
+  string ? `**${string}**` : undefined;
+
+const makeItalic = (string?: string | null | Guild) =>
+  string ? `_${string}_` : undefined;
+
+const pluralPick = (isSingleDie: boolean, singular: string, plural: string) =>
+  isSingleDie ? singular : plural;
+
+export {
+  getRandomNumber,
+  getTotalDiceRolled,
+  makeBold,
+  makeItalic,
+  pluralPick
+};

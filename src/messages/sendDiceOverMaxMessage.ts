@@ -8,13 +8,14 @@ import {
 import { sendLogEventMessage } from "../messages";
 import { EventType } from "../types";
 
+const msg = `${maxDice} dice max, sorry 😅`;
+
 const sendDiceOverMaxMessage = async (
   message: Message,
   logOutputChannel: TextChannel,
   args?: string[],
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
-  const msg = `${maxDice} dice max, sorry 😅`;
   interaction
     ? await interaction.followUp(msg)
     : await message.reply(msg);
@@ -22,6 +23,7 @@ const sendDiceOverMaxMessage = async (
     eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
     logOutputChannel,
     message,
+    interaction,
     args
   });
   return;

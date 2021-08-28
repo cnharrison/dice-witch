@@ -8,6 +8,9 @@ import Discord, {
 import { EmbedObject, EventType, LogEventProps } from "../types";
 import { adminID, prefix } from "../../config.json";
 import { eventColor, errorColor, goodColor, infoColor } from "../constants";
+import { makeBold } from "../helpers";
+
+const getNameString = (isThread: boolean): string => isThread ? "thread" : "channel";
 
 const sendLogEventMessage = async ({
   eventType,
@@ -51,8 +54,9 @@ const sendLogEventMessage = async ({
       case EventType.RECEIVED_COMMAND:
         console.log(
           message?.guild?.id || interaction?.inGuild()
-            ? `received command ${prefixName}${commandName}: ${args} from [ ${username} ] in ${isThread ? "thread" : "channel"
-            } [ ${channelName} ] on [ ${guildName} ]`
+            ? `received command ${prefixName}${commandName}: ${args} from [ ${username} ] in ${getNameString(
+              isThread
+            )} [ ${channelName} ] on [ ${guildName} ]`
             : `received ${prefixName}command ${commandName}: ${args} from [ ${username} ] in [ DM ]`
         );
         embed = new Discord.MessageEmbed()
@@ -60,8 +64,9 @@ const sendLogEventMessage = async ({
           .setTitle(`${eventType}: ${prefixName}${commandName}`)
           .setDescription(
             isInGuild
-              ? `${args} from ** ${username}** in ${isThread ? "thread" : "channel"
-              } **${channelName}** on **${guildName}**`
+              ? `${args} from ** ${username}** in ${getNameString(
+                isThread
+              )} ${makeBold(channelName)} on ${makeBold(guildName)}`
               : `${args} from ** ${username}** in **DM**`
           );
         logOutputChannel
@@ -74,9 +79,12 @@ const sendLogEventMessage = async ({
           .setTitle(`${eventType}: ${commandName}`)
           .setDescription(
             isInGuild
-              ? `${args} from **${username}** in ${isThread ? "thread" : "channel"
-              } **${channelName}** on **${guildName}** <@${adminID}>`
-              : `${args} from **${username}** in **DM** ${adminID}`
+              ? `${args} from ${makeBold(username)} in ${getNameString(
+                isThread
+              )} ${makeBold(channelName)} on ${makeBold(
+                guildName
+              )} <@${adminID}>`
+              : `${args} from ${makeBold(username)} in **DM** ${adminID}`
           );
         logOutputChannel
           .send({ embeds: [embed] })
@@ -88,9 +96,10 @@ const sendLogEventMessage = async ({
           .setTitle(eventType)
           .setDescription(
             isInGuild
-              ? `**${username}** in ${isThread ? "thread" : "channel"
-              } **${channelName}** on **${guildName}**`
-              : `**${username}** in **DM**`
+              ? `${makeBold(username)} in ${getNameString(isThread)} ${makeBold(
+                channelName
+              )} on ${makeBold(guildName)}`
+              : `${makeBold(username)} in **DM**`
           );
         logOutputChannel
           .send({ embeds: [embed] })
@@ -102,9 +111,10 @@ const sendLogEventMessage = async ({
           .setTitle(`${eventType}: ${title}`)
           .setDescription(
             isInGuild
-              ? ` **${username}** in ${isThread ? "thread" : "channel"
-              } **${channelName}** on **${guildName}**`
-              : `**${username}** in **DM**`
+              ? ` ${makeBold(username)} in ${getNameString(
+                isThread
+              )} ${makeBold(channelName)} on ${makeBold(guildName)}`
+              : `${makeBold(username)} in **DM**`
           );
         logOutputChannel
           .send({ embeds: [embed] })
@@ -116,9 +126,10 @@ const sendLogEventMessage = async ({
           .setTitle(eventType)
           .setDescription(
             isInGuild
-              ? `**${username}** in ${isThread ? "thread" : "channel"
-              } **${channelName}** on **${guildName}**`
-              : `**${username}** in **DM**`
+              ? `${makeBold(username)} in ${getNameString(isThread)} ${makeBold(
+                channelName
+              )} on ${makeBold(guildName)}`
+              : `${makeBold(username)} in **DM**`
           );
         logOutputChannel
           .send({ embeds: [embed] })
@@ -180,7 +191,7 @@ const sendLogEventMessage = async ({
         embed = new Discord.MessageEmbed()
           .setColor(errorColor)
           .setTitle(eventType)
-          .setDescription(`**${channelName}** on **${guildName}**`);
+          .setDescription(`${makeBold(channelName)} on ${makeBold(guildName)}`);
         logOutputChannel
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));

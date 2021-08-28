@@ -24,7 +24,7 @@ const sendGetRollTitleMessage = async (
     const content = firstCollected?.content;
     if (content && content.length > 256) {
       await message.reply(
-        `that title's too long, ${message.author} -- roll cancelled`
+        `That title's too long, ${message.author} -- roll cancelled 😢`
       );
       sendLogEventMessage({
         eventType: EventType.ROLL_TITLE_REJECTED,
