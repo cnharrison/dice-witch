@@ -1,88 +1,43 @@
-import Discord, {
-  ButtonInteraction,
-  CommandInteraction,
-  MessageEmbed
+import {
+    Message,
+    TextChannel,
+    CommandInteraction,
+    ButtonInteraction
 } from "discord.js";
-import { getRandomNumber } from "../helpers";
-import { logEvent } from "../services/index";
-import { MessageAttachment, Message, TextChannel } from "discord.js";
-import { EmbedObject, Result } from "../types";
-
-const generateEmbedMessage = async (
-  resultArray: Result[],
-  attachment: MessageAttachment,
-  message: Message,
-  title?: string,
-  interaction?: CommandInteraction | ButtonInteraction
-): Promise<{ embeds: MessageEmbed[]; files: MessageAttachment[] }> => {
-  const grandTotal = resultArray.reduce(
-    (prev: number, cur: Result) => prev + cur.results,
-    0
-  );
-  try {
-    const embed = title
-      ? new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .setTitle(title)
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\nsent to ${interaction ? interaction.user.username : message.author.username
-          }`
-        )
-      : new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\nsent to ${interaction ? interaction.user.username : message.author.username
-          }`
-        );
-    return { embeds: [embed], files: [attachment] };
-  } catch (err) {
-    console.error(err);
-    throw new Error(err);
-  }
-};
+import { EventType, Result } from "../types";
+import sendLogEventMessage from "./sendLogEventMessage";
 
 const sendDiceResultMessage = async (
-  resultArray: Result[],
-  message: Message,
-  attachment: MessageAttachment,
-  logOutputChannel: TextChannel,
-  interaction?: CommandInteraction | ButtonInteraction,
-  title?: string
+    resultArray: Result[],
+    message: Message,
+    logOutputChannel: TextChannel,
+    interaction?: CommandInteraction | ButtonInteraction,
+    title?: string
 ) => {
-  try {
-    const embedMessage: EmbedObject = await generateEmbedMessage(
-      resultArray,
-      attachment,
-      message,
-      title,
-      interaction
+    const grandTotal = resultArray.reduce(
+        (prev: number, cur: Result) => prev + cur.results,
+        0
     );
+    const makeBold = (title: string) => `**${title}**`;
+    const reply = `<@${interaction ? interaction.user.id : message.author.id
+        }> 🎲 ${title ? makeBold(title) : ""}\n${resultArray
+            .map((result) => result.output)
+            .join("\n")} ${resultArray.length > 1 ? `\ngrand total = \`${grandTotal}\`` : ""
+        }`;
 
-    const sendMessage = async () => {
-      try {
+    try {
         interaction
-          ? await interaction?.followUp(embedMessage)
-          : await message.channel.send(embedMessage);
-        logEvent({
-          eventType: "sentRollResultMessage",
-          logOutputChannel,
-          message,
-          embedParam: embedMessage
+            ? await interaction.followUp(reply)
+            : await message.reply(reply);
+        sendLogEventMessage({
+            eventType: EventType.SENT_ROLL_RESULT_MESSAGE,
+            logOutputChannel,
+            message
         });
-      } catch (err) { }
-    };
-
-    setTimeout(sendMessage, getRandomNumber(5000));
-
-    return;
-  } catch (err) {
-    console.error(err);
-    throw new Error(err);
-  }
+    } catch (err) {
+        console.error(err);
+        throw new Error(err);
+    }
 };
 
 export default sendDiceResultMessage;

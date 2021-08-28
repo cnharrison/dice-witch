@@ -5,7 +5,8 @@ import {
   Message,
   TextChannel
 } from "discord.js";
-import { logEvent } from "../services";
+import { sendLogEventMessage } from "../messages";
+import { EventType } from "../types";
 
 const sendDiceOverMaxMessage = async (
   message: Message,
@@ -17,8 +18,8 @@ const sendDiceOverMaxMessage = async (
   interaction
     ? await interaction.followUp(msg)
     : await message.channel.send(msg);
-  logEvent({
-    eventType: "sentDiceOverMaxMessage",
+  sendLogEventMessage({
+    eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
     logOutputChannel,
     message,
     args

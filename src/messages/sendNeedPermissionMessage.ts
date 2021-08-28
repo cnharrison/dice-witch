@@ -1,10 +1,11 @@
-import { logEvent } from "../services";
+import { sendLogEventMessage } from "../messages";
 import {
   ButtonInteraction,
   CommandInteraction,
   Message,
   TextChannel
 } from "discord.js";
+import { EventType } from "../types";
 
 const sendNeedPermissionMessage = async (
   message: Message,
@@ -15,8 +16,8 @@ const sendNeedPermissionMessage = async (
   interaction
     ? await interaction.followUp(msg)
     : await message.channel.send(msg);
-  logEvent({
-    eventType: "sentNeedPermissionsMessage",
+  sendLogEventMessage({
+    eventType: EventType.SENT_NEED_PERMISSION_MESSAGE,
     logOutputChannel,
     message,
     interaction

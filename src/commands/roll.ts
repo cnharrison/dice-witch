@@ -1,12 +1,12 @@
-import { CommandInteraction, Message, TextChannel } from "discord.js";
 import { Result, DiceArray, RollProps } from "../types";
-import { availableDice, maxDice } from "../constants/";
+import { availableDice, maxDice } from "../constants";
 import {
-  sendDiceResultMessage,
+  sendDiceResultMessageWithImage,
   sendHelperMessage,
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
-  sendNeedPermissionMessage
+  sendNeedPermissionMessage,
+  sendDiceResultMessage
 } from "../messages";
 import {
   rollDice,
@@ -29,6 +29,7 @@ module.exports = {
     title,
     timesToRepeat
   }: RollProps) {
+    let attachment;
     if (!args.length) {
       sendHelperMessage(
         message,
@@ -46,12 +47,13 @@ module.exports = {
 
     const {
       diceArray,
-      resultArray
-    }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
-      args,
-      availableDice,
-      timesToRepeat
-    );
+      resultArray,
+      shouldHaveImage
+    }: {
+      diceArray: DiceArray;
+      resultArray: Result[];
+      shouldHaveImage?: boolean;
+    } = rollDice(args, availableDice, timesToRepeat);
     if (!diceArray.length) {
       sendHelperMessage(
         message,
@@ -67,16 +69,27 @@ module.exports = {
       return;
     }
 
-    await sendDiceRolledMessage(message, diceArray, interaction);
-    const attachment = await generateDiceAttachment(diceArray);
-    await sendDiceResultMessage(
-      resultArray,
-      message,
-      attachment,
-      logOutputChannel,
-      interaction,
-      title
-    );
-    return;
+    if (shouldHaveImage) {
+      await sendDiceRolledMessage(message, diceArray, interaction);
+      attachment = await generateDiceAttachment(diceArray);
+      await sendDiceResultMessageWithImage(
+        resultArray,
+        message,
+        attachment,
+        logOutputChannel,
+        interaction,
+        title
+      );
+      return;
+    } else {
+      sendDiceResultMessage(
+        resultArray,
+        message,
+        logOutputChannel,
+        interaction,
+        title
+      );
+      return;
+    }
   }
 };

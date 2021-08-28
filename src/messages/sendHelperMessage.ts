@@ -15,7 +15,8 @@ import {
   footerButtonRow,
   maxDice
 } from "../constants";
-import { logEvent } from "../services";
+import { sendLogEventMessage } from "../messages";
+import { EventType } from "../types";
 
 const sendHelperMessage = async (
   message: Message,
@@ -174,8 +175,8 @@ const sendHelperMessage = async (
     });
   }
 
-  logEvent({
-    eventType: "sentHelperMessage",
+  sendLogEventMessage({
+    eventType: EventType.SENT_HELER_MESSAGE,
     logOutputChannel,
     message,
     args,
