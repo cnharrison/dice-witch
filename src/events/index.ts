@@ -9,8 +9,8 @@ import Discord, {
 import fs from "fs";
 import path from "path";
 import { prefix, botPath, supportServerLink } from "../../config.json";
-import { Command } from "../types";
-import { logEvent } from "../services";
+import { Command, EventType } from "../types";
+import { sendLogEventMessage } from "../messages";
 import { errorColor } from "../constants/";
 
 export default (discord: Client, logOutputChannel: TextChannel) => {
@@ -44,8 +44,8 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
       try {
         command.execute({ message, args, discord, logOutputChannel, commands });
-        logEvent({
-          eventType: "receivedCommand",
+        sendLogEventMessage({
+          eventType: EventType.RECEIVED_COMMAND,
           logOutputChannel,
           message,
           command,
@@ -57,9 +57,9 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           .setDescription(
             `error 😥 please join my [support server](${supportServerLink}) and report this`
           );
-        await message.channel.send({ embeds: [embed] });
-        logEvent({
-          eventType: "criticalError",
+        await message.reply({ embeds: [embed] });
+        sendLogEventMessage({
+          eventType: EventType.CRITICAL_ERROR,
           logOutputChannel,
           message,
           command,
@@ -109,8 +109,8 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           timesToRepeat: timesToRepeatAsNumber,
           wasFromSlash
         });
-      logEvent({
-        eventType: "receivedCommand",
+      sendLogEventMessage({
+        eventType: EventType.RECEIVED_COMMAND,
         logOutputChannel,
         command,
         args,
@@ -142,8 +142,8 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           interaction,
           wasFromSlash
         });
-      logEvent({
-        eventType: "receivedCommand",
+      sendLogEventMessage({
+        eventType: EventType.RECEIVED_COMMAND,
         logOutputChannel,
         command,
         args,
@@ -152,16 +152,16 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
     });
 
     discord.on("guildCreate", (guild: Guild) => {
-      logEvent({
-        eventType: "guildAdd",
+      sendLogEventMessage({
+        eventType: EventType.GUILD_ADD,
         logOutputChannel,
         guild
       });
     });
 
     discord.on("guildDelete", (guild: Guild) => {
-      logEvent({
-        eventType: "guildRemove",
+      sendLogEventMessage({
+        eventType: EventType.GUILD_REMOVE,
         logOutputChannel,
         guild
       });

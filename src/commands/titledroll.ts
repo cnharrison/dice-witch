@@ -1,7 +1,7 @@
-import { CommandInteraction, Message, TextChannel } from "discord.js";
-import { Command, DiceArray, Result, TitledRollProps } from "../types";
+import { DiceArray, Result, TitledRollProps } from "../types";
 import { availableDice, maxDice } from "../constants";
 import {
+  sendDiceResultMessageWithImage,
   sendDiceResultMessage,
   sendHelperMessage,
   sendDiceRolledMessage,
@@ -28,6 +28,7 @@ module.exports = {
     logOutputChannel,
     interaction
   }: TitledRollProps) {
+    let attachment;
     if (!args.length) {
       sendHelperMessage(
         message,
@@ -45,11 +46,13 @@ module.exports = {
 
     const {
       diceArray,
-      resultArray
-    }: { diceArray: DiceArray; resultArray: Result[] } = rollDice(
-      args,
-      availableDice
-    );
+      resultArray,
+      shouldHaveImage
+    }: {
+      diceArray: DiceArray;
+      resultArray: Result[];
+      shouldHaveImage?: boolean;
+    } = rollDice(args, availableDice);
 
     if (!diceArray.length) {
       sendHelperMessage(message, module.exports.name, logOutputChannel);
@@ -63,17 +66,28 @@ module.exports = {
     const title = await sendGetRollTitleMessage(message, logOutputChannel);
 
     if (title) {
-      sendDiceRolledMessage(message, diceArray, interaction);
-      const attachment = await generateDiceAttachment(diceArray);
-      sendDiceResultMessage(
-        resultArray,
-        message,
-        attachment,
-        logOutputChannel,
-        undefined,
-        title
-      );
-      return;
+      if (shouldHaveImage) {
+        await sendDiceRolledMessage(message, diceArray, interaction);
+        attachment = await generateDiceAttachment(diceArray);
+        await sendDiceResultMessageWithImage(
+          resultArray,
+          message,
+          attachment,
+          logOutputChannel,
+          interaction,
+          title
+        );
+        return;
+      } else {
+        sendDiceResultMessage(
+          resultArray,
+          message,
+          logOutputChannel,
+          interaction,
+          title
+        );
+        return;
+      }
     }
   }
 };

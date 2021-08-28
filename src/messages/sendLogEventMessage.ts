@@ -5,17 +5,18 @@ import Discord, {
   PartialDMChannel,
   ThreadChannel
 } from "discord.js";
-import { EmbedObject, LogEventProps } from "../types";
+import { EmbedObject, EventType, LogEventProps } from "../types";
 import { adminID, prefix } from "../../config.json";
 import { eventColor, errorColor, goodColor, infoColor } from "../constants";
 
-const logEvent = async ({
+const sendLogEventMessage = async ({
   eventType,
   logOutputChannel,
   message,
   command,
   args,
   title,
+  resultMessage,
   guild,
   embedParam,
   interaction
@@ -46,7 +47,7 @@ const logEvent = async ({
 
   if (logOutputChannel) {
     switch (eventType) {
-      case "receivedCommand":
+      case EventType.RECEIVED_COMMAND:
         console.log(
           message?.guild?.id || interaction?.inGuild()
             ? `received command ${prefixName}${commandName}: ${args} from [ ${username} ] in channel [ ${channelName} ] on [ ${guildName} ]`
@@ -64,7 +65,7 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err) => console.error(err));
         break;
-      case "criticalError":
+      case EventType.CRITICAL_ERROR:
         embed = new Discord.MessageEmbed()
           .setColor("#FF0000")
           .setTitle(`${eventType}: ${commandName}`)
@@ -77,7 +78,7 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err) => console.error(err));
         break;
-      case "rollTitleRejected":
+      case EventType.ROLL_TITLE_REJECTED:
         embed = new Discord.MessageEmbed()
           .setColor(errorColor)
           .setTitle(eventType)
@@ -90,7 +91,7 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err) => console.error(err));
         break;
-      case "rollTitleAccepted":
+      case EventType.ROLL_TITLE_ACCEPTED:
         embed = new Discord.MessageEmbed()
           .setColor(eventColor)
           .setTitle(`${eventType}: ${title}`)
@@ -103,7 +104,7 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err) => console.error(err));
         break;
-      case "rollTitleTimeout":
+      case EventType.ROLL_TITLE_TIMEOUT:
         embed = new Discord.MessageEmbed()
           .setColor(errorColor)
           .setTitle(eventType)
@@ -116,7 +117,7 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
         break;
-      case "guildAdd":
+      case EventType.GUILD_ADD:
         embed = new Discord.MessageEmbed()
           .setColor(goodColor)
           .setTitle(eventType)
@@ -125,7 +126,7 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
         break;
-      case "guildRemove":
+      case EventType.GUILD_REMOVE:
         embed = new Discord.MessageEmbed()
           .setColor(errorColor)
           .setTitle(eventType)
@@ -134,12 +135,21 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
         break;
-      case "sentRollResultMessage":
+      case EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE:
         logOutputChannel
           .send(embedParam as EmbedObject)
           .catch((err: Error) => console.error(err));
         break;
-      case "sentHelperMessage":
+      case EventType.SENT_ROLL_RESULT_MESSAGE:
+        embed = new Discord.MessageEmbed()
+          .setColor(goodColor)
+          .setTitle(`${eventType}: ${title ? title : ''}`)
+          .setDescription(`${resultMessage}`);
+        logOutputChannel
+          .send({ embeds: [embed] })
+          .catch((err: Error) => console.error(err));
+        break;
+      case EventType.SENT_HELER_MESSAGE:
         embed = new Discord.MessageEmbed()
           .setColor(infoColor)
           .setTitle(eventType)
@@ -150,7 +160,7 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
         break;
-      case "sentDiceOverMaxMessage":
+      case EventType.SENT_DICE_OVER_MAX_MESSAGE:
         embed = new Discord.MessageEmbed()
           .setColor(infoColor)
           .setTitle(eventType)
@@ -159,7 +169,7 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
         break;
-      case "sentNeedPermissionsMessage":
+      case EventType.SENT_NEED_PERMISSION_MESSAGE:
         embed = new Discord.MessageEmbed()
           .setColor(errorColor)
           .setTitle(eventType)
@@ -168,10 +178,11 @@ const logEvent = async ({
           .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
         break;
+
       default:
         return null;
     }
   }
 };
 
-export default logEvent;
+export default sendLogEventMessage;

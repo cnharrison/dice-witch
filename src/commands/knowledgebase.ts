@@ -182,17 +182,12 @@ module.exports = {
         .setTitle(title);
       newEmbed
         .addFields(content)
-        .addField(
-          "\u200B",
-          `_sent to ${interaction ? interaction.user.username : message.author.username
-          }_`
-        );
       interaction
         ? await interaction.followUp({
           embeds: [newEmbed],
           components: [footerButtonRow]
         })
-        : await message.channel.send({
+        : await message.reply({
           embeds: [newEmbed],
           components: [footerButtonRow]
         });

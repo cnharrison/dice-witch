@@ -15,7 +15,8 @@ import {
   footerButtonRow,
   maxDice
 } from "../constants";
-import { logEvent } from "../services";
+import { sendLogEventMessage } from "../messages";
+import { EventType } from "../types";
 
 const sendHelperMessage = async (
   message: Message,
@@ -81,7 +82,7 @@ const sendHelperMessage = async (
     .addFields(
       {
         name: `Need help ?😅`,
-        value: `${deprecationWarning}\n\n You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any of these dice: **${availableDice
+        value: `${deprecationWarning}\n\n You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any dice, but you will only get images of these dice: **${availableDice
           .map((dice: number | string) => `d${dice}`)
           .join(
             ", "
@@ -96,11 +97,7 @@ const sendHelperMessage = async (
         value: "Click the buttons below for info on each topic 👇"
       }
     )
-    .addField(
-      "\u200B",
-      `_sent to ${interaction ? interaction.user.username : message.author.username
-      }_`
-    );
+
 
   const slashEmbed: MessageEmbed = new Discord.MessageEmbed()
     .setColor("#0000ff")
@@ -122,17 +119,20 @@ const sendHelperMessage = async (
         value: "Click the buttons below for info on each topic 👇"
       }
     )
-    .addField(
-      "\u200B",
-      `_sent to ${interaction ? interaction.user.username : message.author.username
-      }_`
-    );
+
+
+  const publicHelperMessage = ` 🚫🎲 Invalid dice notation! DMing you some help 😉`;
+
   interaction
-    ? await interaction.followUp({
+    ? await interaction.followUp(publicHelperMessage)
+    : await message.reply(publicHelperMessage);
+
+  interaction
+    ? await interaction.user.send({
       embeds: [slashEmbed],
       components: [kbButtonRow, kbButtonRow2, footerButtonRow]
     })
-    : await message.channel.send({
+    : await message.author.send({
       embeds: [commandEmbed],
       components: [kbButtonRow, kbButtonRow2, footerButtonRow]
     });
@@ -167,8 +167,8 @@ const sendHelperMessage = async (
     });
   }
 
-  logEvent({
-    eventType: "sentHelperMessage",
+  sendLogEventMessage({
+    eventType: EventType.SENT_HELER_MESSAGE,
     logOutputChannel,
     message,
     args,

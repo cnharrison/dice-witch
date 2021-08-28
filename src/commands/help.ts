@@ -1,4 +1,4 @@
-import Discord, { Client, Collection, Message, TextChannel } from "discord.js";
+import Discord from "discord.js";
 import { Command, HelpProps } from "../types";
 import { prefix } from "../../config.json";
 import { deprecationWarning, footerButtonRow } from "../constants";
@@ -18,9 +18,8 @@ module.exports = {
         .setColor("#0000ff")
         .setTitle("Commands")
         .setDescription(`${deprecationWarning}\n\n${data.join("\r")}`)
-        .addField("\u200B", `_sent to ${message.author.username}_`);
 
-      await message.channel.send({
+      await message.reply({
         embeds: [embed],
         components: [footerButtonRow]
       });

@@ -17,18 +17,13 @@ module.exports = {
           : now - message.createdTimestamp
         }ms**\n I'm in **${discord.guilds.cache.size}** discord servers 😈`
       )
-      .addField(
-        "\u200B",
-        `_sent to ${interaction ? interaction.user.username : message.author.username
-        }_`
-      );
 
     interaction
       ? await interaction.reply({
         embeds: [embed],
         components: [footerButtonRow]
       })
-      : await message.channel.send({
+      : await message.reply({
         embeds: [embed],
         components: [footerButtonRow]
       });

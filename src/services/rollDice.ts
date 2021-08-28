@@ -48,15 +48,21 @@ const rollDice = (
   args: string[],
   availableDice: DiceTypesToDisplay[],
   timesToRepeat?: number
-): { diceArray: DiceArray; resultArray: Result[] } => {
+): {
+  diceArray: DiceArray;
+  resultArray: Result[];
+  shouldHaveImage?: boolean;
+} => {
   let diceArray: DiceArray = [];
+  let shouldHaveImageArray: boolean[] = [];
   let groupArray: (
     | Die[]
     | { sides: number; rolled: number; icon: Icon[] | null }[]
   )[];
   let result: Result;
   let resultArray: Result[] | [] = [];
-  let argsToMutate = args;
+  const lowerCaseArgs = args.map(args => args.toLowerCase());
+  let argsToMutate = lowerCaseArgs;
 
   try {
     if (timesToRepeat) {
@@ -91,11 +97,11 @@ const rollDice = (
           .map((roll: StandardDice) => roll.sides)
         : [];
 
-      const isValid =
-        parsedRoll &&
-        sidesArray.every((sides: any) => availableDice.includes(sides));
+      const shouldHaveImage = !!sidesArray.every((sides: any) =>
+        availableDice.includes(sides)
+      );
 
-      if (isValid) {
+      if (parsedRoll) {
         const roll = new DiceRoll(value);
         result = {
           output: roll.output,
@@ -131,9 +137,17 @@ const rollDice = (
           );
         diceArray = [...diceArray, ...groupArray];
         resultArray = [...resultArray, result];
+        shouldHaveImageArray = [...shouldHaveImageArray, shouldHaveImage];
       }
     });
-    return { diceArray, resultArray };
+    const shouldHaveImage = !!shouldHaveImageArray.every(
+      (value: boolean) => value
+    );
+    return {
+      diceArray,
+      resultArray,
+      shouldHaveImage
+    };
   } catch (err) {
     console.error(err);
     return { diceArray: [], resultArray: [] };

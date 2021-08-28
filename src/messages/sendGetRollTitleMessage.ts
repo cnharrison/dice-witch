@@ -1,5 +1,6 @@
-import { logEvent } from "../services";
+import { sendLogEventMessage } from "../messages";
 import { Message, TextChannel, Collection } from "discord.js";
+import { EventType } from "../types";
 
 const sendGetRollTitleMessage = async (
   message: Message,
@@ -22,11 +23,11 @@ const sendGetRollTitleMessage = async (
     const firstCollected = collected.first();
     const content = firstCollected?.content;
     if (content && content.length > 256) {
-      await message.channel.send(
+      await message.reply(
         `that title's too long, ${message.author} -- roll cancelled`
       );
-      logEvent({
-        eventType: "rollTitleRejected",
+      sendLogEventMessage({
+        eventType: EventType.ROLL_TITLE_REJECTED,
         logOutputChannel,
         message,
         title
@@ -35,18 +36,22 @@ const sendGetRollTitleMessage = async (
     }
     title = firstCollected?.cleanContent;
     firstCollected?.react("👀");
-    logEvent({
-      eventType: "rollTitleAccepted",
+    sendLogEventMessage({
+      eventType: EventType.ROLL_TITLE_ACCEPTED,
       logOutputChannel,
       message,
       title
     });
   } catch (err) {
     console.error(err);
-    await message.channel.send(
+    await message.reply(
       `didn't get a reaponse from ${message.author} -- roll cancelled 😢`
     );
-    logEvent({ eventType: "rollTitleTimeout", logOutputChannel, message });
+    sendLogEventMessage({
+      eventType: EventType.ROLL_TITLE_TIMEOUT,
+      logOutputChannel,
+      message
+    });
     return;
   }
   return title;
