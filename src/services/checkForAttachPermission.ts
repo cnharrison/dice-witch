@@ -43,7 +43,8 @@ const checkForAttachPermission = (
     (channel.permissionsFor(me) as any);
   const permissionArray:
     | PermissionString[]
-    | undefined = doesHavePermission?.toArray();
+    | undefined
+    | null = doesHavePermission && doesHavePermission?.toArray();
   return channel?.type !== "GUILD_TEXT"
     ? true
     : !!permissionArray?.includes("ATTACH_FILES") &&
