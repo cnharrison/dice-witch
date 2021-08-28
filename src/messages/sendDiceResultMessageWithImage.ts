@@ -11,7 +11,6 @@ import { EmbedObject, EventType, Result } from "../types";
 const generateEmbedMessage = async (
   resultArray: Result[],
   attachment: MessageAttachment,
-  message: Message,
   title?: string,
   interaction?: CommandInteraction | ButtonInteraction
 ): Promise<{ embeds: MessageEmbed[]; files: MessageAttachment[] }> => {
@@ -27,16 +26,16 @@ const generateEmbedMessage = async (
         .setImage("attachment://currentDice.png")
         .setFooter(
           `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\nsent to ${interaction ? interaction.user.username : message.author.username
-          }`
+          }\n${interaction ? `sent to ` + interaction.user.username : ``}
+          `
         )
       : new Discord.MessageEmbed()
         .setColor("#966F33")
         .setImage("attachment://currentDice.png")
         .setFooter(
           `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\nsent to ${interaction ? interaction.user.username : message.author.username
-          }`
+          }\n${interaction ? `sent to ` + interaction.user.username : ``}
+          `
         );
     return { embeds: [embed], files: [attachment] };
   } catch (err) {
@@ -57,7 +56,6 @@ const sendDiceResultMessageWithImage = async (
     const embedMessage: EmbedObject = await generateEmbedMessage(
       resultArray,
       attachment,
-      message,
       title,
       interaction
     );
@@ -66,14 +64,16 @@ const sendDiceResultMessageWithImage = async (
       try {
         interaction
           ? await interaction?.followUp(embedMessage)
-          : await message.channel.send(embedMessage);
+          : await message.reply(embedMessage);
         sendLogEventMessage({
           eventType: EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE,
           logOutputChannel,
           message,
           embedParam: embedMessage
         });
-      } catch (err) { }
+      } catch (err) {
+        console.error(err);
+      }
     };
 
     setTimeout(sendMessage, getRandomNumber(5000));

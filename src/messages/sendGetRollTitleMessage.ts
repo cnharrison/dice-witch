@@ -23,7 +23,7 @@ const sendGetRollTitleMessage = async (
     const firstCollected = collected.first();
     const content = firstCollected?.content;
     if (content && content.length > 256) {
-      await message.channel.send(
+      await message.reply(
         `that title's too long, ${message.author} -- roll cancelled`
       );
       sendLogEventMessage({
@@ -44,7 +44,7 @@ const sendGetRollTitleMessage = async (
     });
   } catch (err) {
     console.error(err);
-    await message.channel.send(
+    await message.reply(
       `didn't get a reaponse from ${message.author} -- roll cancelled 😢`
     );
     sendLogEventMessage({

@@ -17,7 +17,7 @@ const sendDiceOverMaxMessage = async (
   const msg = `${maxDice} dice max, sorry 😅`;
   interaction
     ? await interaction.followUp(msg)
-    : await message.channel.send(msg);
+    : await message.reply(msg);
   sendLogEventMessage({
     eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
     logOutputChannel,

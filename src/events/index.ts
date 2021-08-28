@@ -57,7 +57,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           .setDescription(
             `error 😥 please join my [support server](${supportServerLink}) and report this`
           );
-        await message.channel.send({ embeds: [embed] });
+        await message.reply({ embeds: [embed] });
         sendLogEventMessage({
           eventType: EventType.CRITICAL_ERROR,
           logOutputChannel,

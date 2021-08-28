@@ -32,7 +32,8 @@ const sendDiceResultMessage = async (
         sendLogEventMessage({
             eventType: EventType.SENT_ROLL_RESULT_MESSAGE,
             logOutputChannel,
-            message
+            message,
+            resultMessage: reply
         });
     } catch (err) {
         console.error(err);

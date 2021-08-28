@@ -16,6 +16,7 @@ const sendLogEventMessage = async ({
   command,
   args,
   title,
+  resultMessage,
   guild,
   embedParam,
   interaction
@@ -137,6 +138,15 @@ const sendLogEventMessage = async ({
       case EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE:
         logOutputChannel
           .send(embedParam as EmbedObject)
+          .catch((err: Error) => console.error(err));
+        break;
+      case EventType.SENT_ROLL_RESULT_MESSAGE:
+        embed = new Discord.MessageEmbed()
+          .setColor(goodColor)
+          .setTitle(`${eventType}: ${title ? title : ''}`)
+          .setDescription(`${resultMessage}`);
+        logOutputChannel
+          .send({ embeds: [embed] })
           .catch((err: Error) => console.error(err));
         break;
       case EventType.SENT_HELER_MESSAGE:

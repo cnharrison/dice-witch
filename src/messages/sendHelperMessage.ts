@@ -97,11 +97,7 @@ const sendHelperMessage = async (
         value: "Click the buttons below for info on each topic 👇"
       }
     )
-    .addField(
-      "\u200B",
-      `_sent to ${interaction ? interaction.user.username : message.author.username
-      }_`
-    );
+
 
   const slashEmbed: MessageEmbed = new Discord.MessageEmbed()
     .setColor("#0000ff")
@@ -123,13 +119,9 @@ const sendHelperMessage = async (
         value: "Click the buttons below for info on each topic 👇"
       }
     )
-    .addField(
-      "\u200B",
-      `_sent to ${interaction ? interaction.user.username : message.author.username
-      }_`
-    );
 
-  const publicHelperMessage = ` 🎲 Invalid dice notation! DMing you some help 😉`;
+
+  const publicHelperMessage = ` 🚫🎲 Invalid dice notation! DMing you some help 😉`;
 
   interaction
     ? await interaction.followUp(publicHelperMessage)
