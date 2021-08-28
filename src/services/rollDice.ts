@@ -61,7 +61,8 @@ const rollDice = (
   )[];
   let result: Result;
   let resultArray: Result[] | [] = [];
-  let argsToMutate = args;
+  const lowerCaseArgs = args.map(args => args.toLowerCase());
+  let argsToMutate = lowerCaseArgs;
 
   try {
     if (timesToRepeat) {
