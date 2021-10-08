@@ -1,4 +1,8 @@
 import distinctColors from "distinct-colors";
+import { StandardDice } from "rpg-dice-roller/types/dice";
+import { RollResult } from "rpg-dice-roller/types/results";
+import { DiceRoll, Parser } from "rpg-dice-roller";
+import { getTotalDiceRolled, shuffle } from "../helpers";
 import {
   Icon,
   Result,
@@ -8,15 +12,12 @@ import {
   DiceArray,
   ColorlessDie,
 } from "../types";
-import { StandardDice } from "rpg-dice-roller/types/dice";
-import { RollResult } from "rpg-dice-roller/types/results";
-import { DiceRoll, Parser } from "rpg-dice-roller";
 
 const mapColorsToDice = (diceArray: ColorlessDie[][], colorArray: string[]) =>
   diceArray.map((diceGroup: ColorlessDie[]) =>
     diceGroup.map((die: ColorlessDie) => ({
       ...die,
-      color: colorArray.reverse().shift(),
+      color: shuffle(colorArray).slice(0, getTotalDiceRolled(diceArray)).pop(),
     }))
   );
 
@@ -163,11 +164,9 @@ const rollDice = (
     const flattenedDiceArray = diceArray.flat();
 
     const colorArray = distinctColors({
-      count: flattenedDiceArray.length,
+      count: flattenedDiceArray.length + 50,
       lightMin: 35,
-      samples: 5000,
-      hueMax: Math.floor(Math.random() * 361),
-      hueMin: 0,
+      samples: 10000,
     }).map((color) => color.hex());
 
     return {

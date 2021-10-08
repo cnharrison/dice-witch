@@ -16,10 +16,27 @@ const makeItalic = (string?: string | null | Guild) =>
 const pluralPick = (isSingleDie: boolean, singular: string, plural: string) =>
   isSingleDie ? singular : plural;
 
+const shuffle = (array: any[]) => {
+  let currentIndex = array.length,
+    randomIndex;
+
+  while (currentIndex != 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = [
+      array[randomIndex],
+      array[currentIndex],
+    ];
+  }
+
+  return array;
+};
+
 export {
   getRandomNumber,
   getTotalDiceRolled,
   makeBold,
   makeItalic,
   pluralPick,
+  shuffle,
 };
