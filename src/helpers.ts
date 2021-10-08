@@ -21,5 +21,5 @@ export {
   getTotalDiceRolled,
   makeBold,
   makeItalic,
-  pluralPick
+  pluralPick,
 };

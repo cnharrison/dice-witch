@@ -4,7 +4,7 @@ import Discord, {
   Guild,
   Collection,
   Message,
-  MessageEmbed
+  MessageEmbed,
 } from "discord.js";
 import fs from "fs";
 import path from "path";
@@ -49,7 +49,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           logOutputChannel,
           message,
           command,
-          args
+          args,
         });
       } catch (error) {
         const embed: MessageEmbed = new Discord.MessageEmbed()
@@ -63,7 +63,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           logOutputChannel,
           message,
           command,
-          args
+          args,
         });
       }
     });
@@ -87,8 +87,8 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       const args = diceNotation
         ? diceNotation?.toString().trim().split(/ +/)
         : unformattedArgs[1]
-          ? [unformattedArgs[1]]
-          : [];
+        ? [unformattedArgs[1]]
+        : [];
       const titleAsString = title?.toString();
       const timesToRepeatAsNumber = Number(timesToRepeat);
 
@@ -107,14 +107,14 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           interaction,
           title: titleAsString,
           timesToRepeat: timesToRepeatAsNumber,
-          wasFromSlash
+          wasFromSlash,
         });
       sendLogEventMessage({
         eventType: EventType.RECEIVED_COMMAND,
         logOutputChannel,
         command,
         args,
-        interaction
+        interaction,
       });
     });
 
@@ -140,14 +140,14 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           logOutputChannel,
           commands,
           interaction,
-          wasFromSlash
+          wasFromSlash,
         });
       sendLogEventMessage({
         eventType: EventType.RECEIVED_COMMAND,
         logOutputChannel,
         command,
         args,
-        interaction
+        interaction,
       });
     });
 
@@ -155,7 +155,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       sendLogEventMessage({
         eventType: EventType.GUILD_ADD,
         logOutputChannel,
-        guild
+        guild,
       });
     });
 
@@ -163,7 +163,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       sendLogEventMessage({
         eventType: EventType.GUILD_REMOVE,
         logOutputChannel,
-        guild
+        guild,
       });
     });
   } catch (err) {

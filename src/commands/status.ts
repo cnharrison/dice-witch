@@ -12,21 +12,22 @@ module.exports = {
       .setColor("#99999")
       .setTitle("Status")
       .setDescription(
-        `Latency: **${interaction
-          ? now - interaction.createdTimestamp
-          : now - message.createdTimestamp
+        `Latency: **${
+          interaction
+            ? now - interaction.createdTimestamp
+            : now - message.createdTimestamp
         }ms**\n I'm in **${discord.guilds.cache.size}** discord servers 😈`
-      )
+      );
 
     interaction
       ? await interaction.reply({
-        embeds: [embed],
-        components: [footerButtonRow]
-      })
+          embeds: [embed],
+          components: [footerButtonRow],
+        })
       : await message.reply({
-        embeds: [embed],
-        components: [footerButtonRow]
-      });
+          embeds: [embed],
+          components: [footerButtonRow],
+        });
     return;
-  }
+  },
 };

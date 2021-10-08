@@ -65,7 +65,7 @@ const sendDiceRolledMessage = async (
       isSingleDie,
       "pirouettes",
       "piroutte"
-    )} across the table's ancient cracks..._`
+    )} across the table's ancient cracks..._`,
   ];
 
   const number = getRandomNumber(messages.length);

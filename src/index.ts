@@ -6,15 +6,15 @@ import {
   discordToken,
   logOutputChannel,
   botListAuthKeys,
-  clientID
+  clientID,
 } from "../config.json";
 const { discordbotlist, topgg, dbots } = botListAuthKeys;
 
 const getHeaders = (key: string) => {
   return {
     headers: {
-      Authorization: key
-    }
+      Authorization: key,
+    },
   };
 };
 
@@ -27,24 +27,24 @@ const globalSlashCommands: any = [
         name: "notation",
         required: true,
         description: "Dice notation, e.g. 1d6+2",
-        type: "STRING"
+        type: "STRING",
       },
       {
         name: "title",
         description: "What is this roll for? e.g. attack with enchanted sword",
-        type: "STRING"
+        type: "STRING",
       },
       {
         name: "timestorepeat",
         description:
           "If you would like to repeat this roll, enter the number of times here.",
-        type: "STRING"
-      }
-    ]
+        type: "STRING",
+      },
+    ],
   },
   {
     name: "status",
-    description: "Pings Dice Witch"
+    description: "Pings Dice Witch",
   },
   {
     name: "knowledgebase",
@@ -58,40 +58,40 @@ const globalSlashCommands: any = [
         choices: [
           {
             name: "Exploding dice",
-            value: "kb-exploding-slash"
+            value: "kb-exploding-slash",
           },
           {
             name: "Auto-reroll",
-            value: "kb-reroll-slash"
+            value: "kb-reroll-slash",
           },
           {
             name: "Keep/drop AKA advantage",
-            value: "kb-keepdrop-slash"
+            value: "kb-keepdrop-slash",
           },
           {
             name: "Target success/failure AKA Dice pool",
-            value: "kb-target-slash"
+            value: "kb-target-slash",
           },
           {
             name: "Critical success/failure",
-            value: "kb-crit-slash"
+            value: "kb-crit-slash",
           },
           {
             name: "Sorting",
-            value: "kb-sort-slash"
+            value: "kb-sort-slash",
           },
           {
             name: "Math",
-            value: "kb-math-slash"
+            value: "kb-math-slash",
           },
           {
             name: "Repeating",
-            value: "kb-repeating-slash"
-          }
-        ]
-      }
-    ]
-  }
+            value: "kb-repeating-slash",
+          },
+        ],
+      },
+    ],
+  },
 ];
 
 const startServer = () => {
@@ -100,9 +100,9 @@ const startServer = () => {
       Intents.FLAGS.GUILDS,
       Intents.FLAGS.GUILD_MESSAGES,
       Intents.FLAGS.DIRECT_MESSAGES,
-      Intents.FLAGS.DIRECT_MESSAGE_TYPING
+      Intents.FLAGS.DIRECT_MESSAGE_TYPING,
     ],
-    partials: ["MESSAGE", "CHANNEL", "REACTION"]
+    partials: ["MESSAGE", "CHANNEL", "REACTION"],
   });
   discord.on("ready", async () => {
     let logOutputChannelTemp;
@@ -126,21 +126,21 @@ const startServer = () => {
           axios.post(
             `https://top.gg/api/bots/${clientID}/stats`,
             {
-              server_count: discord.guilds.cache.size
+              server_count: discord.guilds.cache.size,
             },
             getHeaders(topgg)
           );
           axios.post(
             `https://discordbotlist.com/api/v1/bots/${clientID}}/stats`,
             {
-              guilds: discord.guilds.cache.size
+              guilds: discord.guilds.cache.size,
             },
             getHeaders(discordbotlist)
           );
           axios.post(
             `https://dbots.co/api/v1/bots/${clientID}/stats`,
             {
-              guildCount: discord.guilds.cache.size
+              guildCount: discord.guilds.cache.size,
             },
             getHeaders(dbots)
           );

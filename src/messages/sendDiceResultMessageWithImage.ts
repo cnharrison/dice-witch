@@ -1,7 +1,7 @@
 import Discord, {
   ButtonInteraction,
   CommandInteraction,
-  MessageEmbed
+  MessageEmbed,
 } from "discord.js";
 import { getRandomNumber } from "../helpers";
 import { sendLogEventMessage } from ".";
@@ -21,22 +21,24 @@ const generateEmbedMessage = async (
   try {
     const embed = title
       ? new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .setTitle(title)
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\n${interaction ? `sent to ` + interaction.user.username : ``}
+          .setColor("#966F33")
+          .setTitle(title)
+          .setImage("attachment://currentDice.png")
+          .setFooter(
+            `${resultArray.map((result) => result.output).join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+            }\n${interaction ? `sent to ` + interaction.user.username : ``}
           `
-        )
+          )
       : new Discord.MessageEmbed()
-        .setColor("#966F33")
-        .setImage("attachment://currentDice.png")
-        .setFooter(
-          `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-          }\n${interaction ? `sent to ` + interaction.user.username : ``}
+          .setColor("#966F33")
+          .setImage("attachment://currentDice.png")
+          .setFooter(
+            `${resultArray.map((result) => result.output).join("\n")} ${
+              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+            }\n${interaction ? `sent to ` + interaction.user.username : ``}
           `
-        );
+          );
     return { embeds: [embed], files: [attachment] };
   } catch (err) {
     console.error(err);
@@ -69,7 +71,7 @@ const sendDiceResultMessageWithImage = async (
           eventType: EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE,
           logOutputChannel,
           message,
-          embedParam: embedMessage
+          embedParam: embedMessage,
         });
       } catch (err) {
         console.error(err);

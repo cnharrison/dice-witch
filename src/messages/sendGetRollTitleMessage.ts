@@ -17,7 +17,7 @@ const sendGetRollTitleMessage = async (
     const collected = (await originalMessage.channel.awaitMessages({
       filter,
       max: 1,
-      time: 30000
+      time: 30000,
     })) as Collection<string, Message>;
     if (!collected) return;
     const firstCollected = collected.first();
@@ -30,7 +30,7 @@ const sendGetRollTitleMessage = async (
         eventType: EventType.ROLL_TITLE_REJECTED,
         logOutputChannel,
         message,
-        title
+        title,
       });
       return;
     }
@@ -40,7 +40,7 @@ const sendGetRollTitleMessage = async (
       eventType: EventType.ROLL_TITLE_ACCEPTED,
       logOutputChannel,
       message,
-      title
+      title,
     });
   } catch (err) {
     console.error(err);
@@ -50,7 +50,7 @@ const sendGetRollTitleMessage = async (
     sendLogEventMessage({
       eventType: EventType.ROLL_TITLE_TIMEOUT,
       logOutputChannel,
-      message
+      message,
     });
     return;
   }

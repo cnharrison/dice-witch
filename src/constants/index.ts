@@ -14,26 +14,26 @@ const infoColor: ColorResolvable = "#1E90FF";
 const deprecationWarning = `⚠** BEGIN SCARY WARNING **⚠\n\n The \`!roll\` and \`!titledroll\` commands are being deprecated. You should start using \`/roll\` instead (It's much better 😈). For help with it, just start typing \`/roll\`. If you invited Dice Witch on or before **August 1, 2021**, you will need to grant her permissions to create slash commands on your server before you will see the \`/roll\` command. You can do this by clicking [here](${inviteLink}).\n\n⚠ **END SCARY WARNING** ⚠`;
 
 const footerButtonRow = new MessageActionRow()
-    .addComponents(
-        new MessageButton()
-            .setLabel("Invite me")
-            .setStyle("LINK")
-            .setURL(inviteLink)
-    )
-    .addComponents(
-        new MessageButton()
-            .setLabel("Questions? Join the support server")
-            .setStyle("LINK")
-            .setURL(supportServerLink)
-    );
+  .addComponents(
+    new MessageButton()
+      .setLabel("Invite me")
+      .setStyle("LINK")
+      .setURL(inviteLink)
+  )
+  .addComponents(
+    new MessageButton()
+      .setLabel("Questions? Join the support server")
+      .setStyle("LINK")
+      .setURL(supportServerLink)
+  );
 
 export {
-    availableDice,
-    maxDice,
-    eventColor,
-    errorColor,
-    goodColor,
-    infoColor,
-    deprecationWarning,
-    footerButtonRow
+  availableDice,
+  maxDice,
+  eventColor,
+  errorColor,
+  goodColor,
+  infoColor,
+  deprecationWarning,
+  footerButtonRow,
 };

@@ -3,7 +3,7 @@ import {
   ButtonInteraction,
   CommandInteraction,
   Message,
-  TextChannel
+  TextChannel,
 } from "discord.js";
 import { sendLogEventMessage } from "../messages";
 import { EventType } from "../types";
@@ -16,15 +16,13 @@ const sendDiceOverMaxMessage = async (
   args?: string[],
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
-  interaction
-    ? await interaction.followUp(msg)
-    : await message.reply(msg);
+  interaction ? await interaction.followUp(msg) : await message.reply(msg);
   sendLogEventMessage({
     eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
     logOutputChannel,
     message,
     interaction,
-    args
+    args,
   });
   return;
 };

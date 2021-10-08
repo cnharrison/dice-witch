@@ -21,13 +21,14 @@ const getIconSpacing = (iarr: Icon[]) => {
   }
 };
 
-const getIconWidth = (index: number, diceIndex: number, iconArray: Icon[]) => defaultDiceDimension * diceIndex +
+const getIconWidth = (index: number, diceIndex: number, iconArray: Icon[]) =>
+  defaultDiceDimension * diceIndex +
   defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1));
 
-const getIconHeight = (diceOuterIndex: number) => diceOuterIndex * defaultDiceDimension +
+const getIconHeight = (diceOuterIndex: number) =>
+  diceOuterIndex * defaultDiceDimension +
   defaultDiceDimension +
   diceOuterIndex * defaultIconDimension;
-
 
 const drawIcon = async (
   iconArray: Icon[] | null | undefined,
@@ -35,7 +36,6 @@ const drawIcon = async (
   diceIndex: number,
   diceOuterIndex: number
 ) => {
-
   if (iconArray) {
     let iconImage: Image;
     const promiseArray = iconArray.map(async (icon: Icon, index: number) => {
@@ -58,9 +58,8 @@ const drawIcon = async (
 const getCanvasHeight = (paginatedArray: DiceArray, shouldHaveIcon: boolean) =>
   shouldHaveIcon
     ? defaultDiceDimension * paginatedArray.length +
-    defaultIconDimension * paginatedArray.length
-    : defaultDiceDimension * paginatedArray.length
-
+      defaultIconDimension * paginatedArray.length
+    : defaultDiceDimension * paginatedArray.length;
 
 const getCanvasWidth = (diceArray: DiceArray) => {
   const isSingleGroup = diceArray.length === 1;
@@ -90,10 +89,10 @@ const getCanvasWidth = (diceArray: DiceArray) => {
 
 const getDiceWidth = (index: number) => defaultDiceDimension * index;
 
-const getDiceHeight = (outerIndex: number, shouldHaveIcon: boolean) => shouldHaveIcon
-  ? outerIndex * defaultDiceDimension +
-  outerIndex * defaultIconDimension
-  : outerIndex * defaultDiceDimension;
+const getDiceHeight = (outerIndex: number, shouldHaveIcon: boolean) =>
+  shouldHaveIcon
+    ? outerIndex * defaultDiceDimension + outerIndex * defaultIconDimension
+    : outerIndex * defaultDiceDimension;
 
 const paginateDiceArray = (diceArray: DiceArray): DiceArray => {
   const paginateDiceGroup = (diceArray: Die[]) =>
