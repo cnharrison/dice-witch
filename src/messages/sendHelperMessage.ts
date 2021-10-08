@@ -6,14 +6,14 @@ import Discord, {
   MessageActionRow,
   MessageButton,
   MessageComponentInteraction,
-  ButtonInteraction
+  ButtonInteraction,
 } from "discord.js";
 import { prefix } from "../../config.json";
 import {
   availableDice,
   deprecationWarning,
   footerButtonRow,
-  maxDice
+  maxDice,
 } from "../constants";
 import { sendLogEventMessage } from "../messages";
 import { EventType } from "../types";
@@ -86,15 +86,15 @@ const sendHelperMessage = async (
           .map((dice: number | string) => `d${dice}`)
           .join(
             ", "
-          )}**.\nYou can roll up to **${maxDice}** dice at once 😈\n\n`
+          )}**.\nYou can roll up to **${maxDice}** dice at once 😈\n\n`,
       },
       {
         name: "Basic rolls",
-        value: `\`${prefix}${name} 1d20\`: Roll one twenty-sided die.\n\`${prefix}${name} 1d20 1d12 1d8\`: Roll one twenty-sided die, one twelve-sided die, and one eight-sided die.\n\`${prefix}${name} 1d12+3 5d4\`: Roll one twelve-sided die, adding three to the total, and five four-sided dice.\n\`!roll 3d6+3d6\`: Roll two sets of three six-sided dice and add the total.\n\n`
+        value: `\`${prefix}${name} 1d20\`: Roll one twenty-sided die.\n\`${prefix}${name} 1d20 1d12 1d8\`: Roll one twenty-sided die, one twelve-sided die, and one eight-sided die.\n\`${prefix}${name} 1d12+3 5d4\`: Roll one twelve-sided die, adding three to the total, and five four-sided dice.\n\`!roll 3d6+3d6\`: Roll two sets of three six-sided dice and add the total.\n\n`,
       },
       {
         name: "Advanced rolls and modifiers",
-        value: "Click the buttons below for info on each topic 👇"
+        value: "Click the buttons below for info on each topic 👇",
       }
     );
 
@@ -107,15 +107,15 @@ const sendHelperMessage = async (
           .map((dice: number | string) => `d${dice}`)
           .join(
             ", "
-          )}**.\nYou can roll up to **${maxDice}** dice at once 😈\n\n`
+          )}**.\nYou can roll up to **${maxDice}** dice at once 😈\n\n`,
       },
       {
         name: "Basic rolls",
-        value: `\`/roll notation:1d20\`: roll one twenty sided die\n\`/roll notation:1d20 1d12 1d8\`: Roll one twenty-sided die, one twelve-sided die, and one eight-sided die.\n\`/roll notation:1d12+3 5d4\`: Roll one twelve-sided die, adding three to the total, and five four-sided dice.\n\`/roll notation:3d6+3d6\`: Roll two sets of three six-sided dice and add the total.\n\n`
+        value: `\`/roll notation:1d20\`: roll one twenty sided die\n\`/roll notation:1d20 1d12 1d8\`: Roll one twenty-sided die, one twelve-sided die, and one eight-sided die.\n\`/roll notation:1d12+3 5d4\`: Roll one twelve-sided die, adding three to the total, and five four-sided dice.\n\`/roll notation:3d6+3d6\`: Roll two sets of three six-sided dice and add the total.\n\n`,
       },
       {
         name: "Advanced rolls and modifiers",
-        value: "Click the buttons below for info on each topic 👇"
+        value: "Click the buttons below for info on each topic 👇",
       }
     );
 
@@ -127,13 +127,13 @@ const sendHelperMessage = async (
 
   interaction
     ? await interaction.user.send({
-      embeds: [slashEmbed],
-      components: [kbButtonRow, kbButtonRow2, footerButtonRow]
-    })
+        embeds: [slashEmbed],
+        components: [kbButtonRow, kbButtonRow2, footerButtonRow],
+      })
     : await message.author.send({
-      embeds: [commandEmbed],
-      components: [kbButtonRow, kbButtonRow2, footerButtonRow]
-    });
+        embeds: [commandEmbed],
+        components: [kbButtonRow, kbButtonRow2, footerButtonRow],
+      });
 
   if (interaction && interaction.channel) {
     const filter = (i: MessageComponentInteraction) =>
@@ -155,7 +155,7 @@ const sendHelperMessage = async (
       i.customId === "kb-keepdrop-slash";
     const collector = interaction.channel.createMessageComponentCollector({
       filter,
-      time: 15000
+      time: 15000,
     });
 
     collector.on("collect", async (i) => {
@@ -170,7 +170,7 @@ const sendHelperMessage = async (
     logOutputChannel,
     message,
     args,
-    interaction
+    interaction,
   });
   return;
 };

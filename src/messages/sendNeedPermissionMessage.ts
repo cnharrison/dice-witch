@@ -3,7 +3,7 @@ import {
   ButtonInteraction,
   CommandInteraction,
   Message,
-  TextChannel
+  TextChannel,
 } from "discord.js";
 import { EventType } from "../types";
 
@@ -14,14 +14,12 @@ const sendNeedPermissionMessage = async (
   logOutputChannel: TextChannel,
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
-  interaction
-    ? await interaction.followUp(msg)
-    : await message.reply(msg);
+  interaction ? await interaction.followUp(msg) : await message.reply(msg);
   sendLogEventMessage({
     eventType: EventType.SENT_NEED_PERMISSION_MESSAGE,
     logOutputChannel,
     message,
-    interaction
+    interaction,
   });
 };
 

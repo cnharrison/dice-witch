@@ -12,7 +12,7 @@ import {
   ButtonInteraction,
   CommandInteraction,
   PartialDMChannel,
-  ThreadChannel
+  ThreadChannel,
 } from "discord.js";
 const checkForAttachPermission = (
   message: Message,
@@ -41,13 +41,11 @@ const checkForAttachPermission = (
     guild &&
     channel?.type === "GUILD_TEXT" &&
     (channel.permissionsFor(me) as any);
-  const permissionArray:
-    | PermissionString[]
-    | undefined
-    | null = doesHavePermission && doesHavePermission?.toArray();
+  const permissionArray: PermissionString[] | undefined | null =
+    doesHavePermission && doesHavePermission?.toArray();
   return channel?.type !== "GUILD_TEXT"
     ? true
     : !!permissionArray?.includes("ATTACH_FILES") &&
-    !!permissionArray?.includes("EMBED_LINKS");
+        !!permissionArray?.includes("EMBED_LINKS");
 };
 export default checkForAttachPermission;

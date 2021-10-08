@@ -8,7 +8,7 @@ import {
   Message,
   MessageAttachment,
   MessageEmbed,
-  TextChannel
+  TextChannel,
 } from "discord.js";
 
 export type Icon =
@@ -36,7 +36,7 @@ export enum EventType {
   SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE = "sentRollResultMessageWithImage",
   SENT_HELER_MESSAGE = "sentHelperMessage",
   SENT_NEED_PERMISSION_MESSAGE = "sentNeedPermissionsMessage",
-  SENT_DICE_OVER_MAX_MESSAGE = "sentDiceOverMaxMessage"
+  SENT_DICE_OVER_MAX_MESSAGE = "sentDiceOverMaxMessage",
 }
 
 export type DiceArray = any;
@@ -152,10 +152,14 @@ export interface LogEventProps {
   interaction?: CommandInteraction | ButtonInteraction;
 }
 
-export interface Die {
+export interface ColorlessDie {
   sides: DiceTypes;
   rolled: DiceFaces;
   icon: Icon[] | null;
+}
+
+export interface Die extends ColorlessDie {
+  color: string;
 }
 
 export type ArticleTypes =

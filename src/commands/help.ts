@@ -17,11 +17,11 @@ module.exports = {
       const embed = new Discord.MessageEmbed()
         .setColor("#0000ff")
         .setTitle("Commands")
-        .setDescription(`${deprecationWarning}\n\n${data.join("\r")}`)
+        .setDescription(`${deprecationWarning}\n\n${data.join("\r")}`);
 
       await message.reply({
         embeds: [embed],
-        components: [footerButtonRow]
+        components: [footerButtonRow],
       });
       return;
     }
@@ -50,8 +50,8 @@ module.exports = {
 
     await message.channel.send({
       embeds: [embed],
-      components: [footerButtonRow]
+      components: [footerButtonRow],
     });
     return;
-  }
+  },
 };

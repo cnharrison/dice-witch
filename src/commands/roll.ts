@@ -6,12 +6,12 @@ import {
   sendDiceRolledMessage,
   sendDiceOverMaxMessage,
   sendNeedPermissionMessage,
-  sendDiceResultMessage
+  sendDiceResultMessage,
 } from "../messages";
 import {
   rollDice,
   generateDiceAttachment,
-  checkForAttachPermission
+  checkForAttachPermission,
 } from "../services";
 import { getTotalDiceRolled } from "../helpers";
 
@@ -27,9 +27,8 @@ module.exports = {
     logOutputChannel,
     interaction,
     title,
-    timesToRepeat
+    timesToRepeat,
   }: RollProps) {
-    let attachment;
     if (!args.length) {
       sendHelperMessage(
         message,
@@ -48,7 +47,7 @@ module.exports = {
     const {
       diceArray,
       resultArray,
-      shouldHaveImage
+      shouldHaveImage,
     }: {
       diceArray: DiceArray;
       resultArray: Result[];
@@ -71,7 +70,7 @@ module.exports = {
 
     if (shouldHaveImage) {
       await sendDiceRolledMessage(message, diceArray, interaction);
-      attachment = await generateDiceAttachment(diceArray);
+      const attachment = await generateDiceAttachment(diceArray);
       await sendDiceResultMessageWithImage(
         resultArray,
         message,
@@ -91,5 +90,5 @@ module.exports = {
       );
       return;
     }
-  }
+  },
 };
