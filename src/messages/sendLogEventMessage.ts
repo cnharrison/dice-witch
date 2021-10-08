@@ -7,7 +7,13 @@ import Discord, {
 } from "discord.js";
 import { EmbedObject, EventType, LogEventProps } from "../types";
 import { adminID, prefix } from "../../config.json";
-import { eventColor, errorColor, goodColor, infoColor } from "../constants";
+import {
+  eventColor,
+  errorColor,
+  goodColor,
+  infoColor,
+  tabletopColor,
+} from "../constants";
 import { makeBold } from "../helpers";
 
 const getNameString = (isThread: boolean): string =>
@@ -161,7 +167,7 @@ const sendLogEventMessage = async ({
         break;
       case EventType.SENT_ROLL_RESULT_MESSAGE:
         embed = new Discord.MessageEmbed()
-          .setColor(goodColor)
+          .setColor(tabletopColor)
           .setTitle(`${eventType}: ${title ? title : ""}`)
           .setDescription(`${resultMessage}`);
         logOutputChannel

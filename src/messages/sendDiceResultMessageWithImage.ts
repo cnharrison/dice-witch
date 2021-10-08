@@ -7,6 +7,7 @@ import { getRandomNumber } from "../helpers";
 import { sendLogEventMessage } from ".";
 import { MessageAttachment, Message, TextChannel } from "discord.js";
 import { EmbedObject, EventType, Result } from "../types";
+import { tabletopColor } from "../constants";
 
 const generateEmbedMessage = async (
   resultArray: Result[],
@@ -21,7 +22,7 @@ const generateEmbedMessage = async (
   try {
     const embed = title
       ? new Discord.MessageEmbed()
-          .setColor("#966F33")
+          .setColor(tabletopColor)
           .setTitle(title)
           .setImage("attachment://currentDice.png")
           .setFooter(
@@ -31,7 +32,7 @@ const generateEmbedMessage = async (
           `
           )
       : new Discord.MessageEmbed()
-          .setColor("#966F33")
+          .setColor(tabletopColor)
           .setImage("attachment://currentDice.png")
           .setFooter(
             `${resultArray.map((result) => result.output).join("\n")} ${

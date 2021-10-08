@@ -10,6 +10,7 @@ const eventColor: ColorResolvable = "#99999";
 const errorColor: ColorResolvable = "#FF0000";
 const goodColor: ColorResolvable = "#00FF00";
 const infoColor: ColorResolvable = "#1E90FF";
+const tabletopColor: ColorResolvable = "#966F33";
 
 const deprecationWarning = `⚠** BEGIN SCARY WARNING **⚠\n\n The \`!roll\` and \`!titledroll\` commands are being deprecated. You should start using \`/roll\` instead (It's much better 😈). For help with it, just start typing \`/roll\`. If you invited Dice Witch on or before **August 1, 2021**, you will need to grant her permissions to create slash commands on your server before you will see the \`/roll\` command. You can do this by clicking [here](${inviteLink}).\n\n⚠ **END SCARY WARNING** ⚠`;
 
@@ -34,6 +35,7 @@ export {
   errorColor,
   goodColor,
   infoColor,
+  tabletopColor,
   deprecationWarning,
   footerButtonRow,
 };
