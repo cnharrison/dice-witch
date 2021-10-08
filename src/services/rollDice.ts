@@ -1,14 +1,24 @@
+import distinctColors from "distinct-colors";
 import {
   Icon,
   Result,
   Die,
   DiceTypesToDisplay,
   DiceFaces,
-  DiceArray
+  DiceArray,
+  ColorlessDie
 } from "../types";
 import { StandardDice } from "rpg-dice-roller/types/dice";
 import { RollResult } from "rpg-dice-roller/types/results";
 import { DiceRoll, Parser } from "rpg-dice-roller";
+
+const mapColorsToDice = (diceArray: ColorlessDie[][], colorArray: string[]) =>
+  diceArray.map((diceGroup: ColorlessDie[]) =>
+    diceGroup.map((die: ColorlessDie) => ({
+      ...die,
+      color: colorArray.reverse().shift()
+    }))
+  );
 
 const generateIconArray = (modifierSet: Set<string>): Icon[] | null => {
   return modifierSet.size > 0
@@ -61,7 +71,7 @@ const rollDice = (
   )[];
   let result: Result;
   let resultArray: Result[] | [] = [];
-  const lowerCaseArgs = args.map(args => args.toLowerCase());
+  const lowerCaseArgs = args.map((args) => args.toLowerCase());
   let argsToMutate = lowerCaseArgs;
 
   try {
@@ -112,7 +122,7 @@ const rollDice = (
           .filter((rollGroup: any) => typeof rollGroup !== "number")
           .map((rollGroup: any, outerIndex: number) =>
             sidesArray[outerIndex] === 100
-              ? rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
+              ? rollGroup.rolls.reduce((acc: ColorlessDie[], cur: RollResult) => {
                 acc.push(
                   {
                     sides: "%",
@@ -140,11 +150,23 @@ const rollDice = (
         shouldHaveImageArray = [...shouldHaveImageArray, shouldHaveImage];
       }
     });
+
     const shouldHaveImage = !!shouldHaveImageArray.every(
       (value: boolean) => value
     );
+
+    const flattenedDiceArray = diceArray.flat();
+
+    const colorArray = distinctColors({
+      count: flattenedDiceArray.length,
+      lightMin: 35,
+      samples: 5000,
+      hueMax: Math.floor(Math.random() * 361),
+      hueMin: 0
+    }).map((color) => color.hex());
+
     return {
-      diceArray,
+      diceArray: mapColorsToDice(diceArray, colorArray),
       resultArray,
       shouldHaveImage
     };

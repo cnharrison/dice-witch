@@ -29,7 +29,6 @@ module.exports = {
     title,
     timesToRepeat
   }: RollProps) {
-    let attachment;
     if (!args.length) {
       sendHelperMessage(
         message,
@@ -71,7 +70,7 @@ module.exports = {
 
     if (shouldHaveImage) {
       await sendDiceRolledMessage(message, diceArray, interaction);
-      attachment = await generateDiceAttachment(diceArray);
+      const attachment = await generateDiceAttachment(diceArray);
       await sendDiceResultMessageWithImage(
         resultArray,
         message,

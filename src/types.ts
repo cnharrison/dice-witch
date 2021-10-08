@@ -152,10 +152,14 @@ export interface LogEventProps {
   interaction?: CommandInteraction | ButtonInteraction;
 }
 
-export interface Die {
+export interface ColorlessDie {
   sides: DiceTypes;
   rolled: DiceFaces;
   icon: Icon[] | null;
+}
+
+export interface Die extends ColorlessDie {
+  color: string;
 }
 
 export type ArticleTypes =
