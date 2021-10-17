@@ -3,6 +3,10 @@ import Canvas, { CanvasRenderingContext2D, Image } from "canvas";
 import generateIcon from "./generateIcon";
 import generateDie from "./generateDie";
 import { Icon, Die, DiceArray } from "../types";
+import generateLinearGradientFill from "./generateDice/fills/generateLinearGradientFill";
+import distinctColors from "distinct-colors";
+import randomColor from "randomcolor";
+import { getRandomNumber } from "../helpers";
 
 const maxRowLength = 10;
 const defaultDiceDimension = 100;
@@ -128,11 +132,15 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
       (array: Die[], outerIndex: number) =>
         array.map(async (die: Die, index: number) => {
           const { icon: iconArray } = die;
+          const flip = getRandomNumber(2);
+
           const toLoad: Buffer | null = await generateDie(
             die.sides,
             die.rolled,
-            die.color,
-            "#000000"
+            flip > 1 ? "#FFFFFF" : "#000000",
+            flip > 1 ? "#FFFFFF" : "#000000",
+            undefined,
+            generateLinearGradientFill(randomColor(), randomColor())
           );
           const image: Image = await Canvas.loadImage(toLoad as Buffer);
           const diceWidth = getDiceWidth(index);

@@ -176,3 +176,19 @@ export type ArticleTypes =
 export type KnowledgeBase = {
   [key: string]: EmbedFieldData[];
 };
+
+export interface PatternFillObject {
+  string: string;
+  name: string;
+}
+
+export interface GenerateDieProps {
+  result: number;
+  textColor?: string;
+  outlineColor?: string;
+  solidFill?: string;
+  patternFill?: PatternFillObject;
+  borderWidth: string;
+  viewBoxW: string;
+  viewBoxH: string;
+}

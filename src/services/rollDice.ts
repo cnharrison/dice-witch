@@ -156,6 +156,7 @@ const rollDice = (
         resultArray = [...resultArray, result];
         shouldHaveImageArray = [...shouldHaveImageArray, shouldHaveImage];
       }
+      console.log(diceArray);
     });
 
     const shouldHaveImage = !!shouldHaveImageArray.every(
