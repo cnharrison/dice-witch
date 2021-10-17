@@ -7,11 +7,11 @@ import generateD20 from "./generateD20";
 import generateDPercent from "./generateD%";
 
 export {
-    generateD4,
-    generateD6,
-    generateD8,
-    generateD10,
-    generateD12,
-    generateD20,
-    generateDPercent,
+  generateD4,
+  generateD6,
+  generateD8,
+  generateD10,
+  generateD12,
+  generateD20,
+  generateDPercent,
 };

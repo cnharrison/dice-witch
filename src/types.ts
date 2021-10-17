@@ -10,6 +10,7 @@ import {
   MessageEmbed,
   TextChannel,
 } from "discord.js";
+import chroma from "chroma-js";
 
 export type Icon =
   | "trashcan"
@@ -159,7 +160,7 @@ export interface ColorlessDie {
 }
 
 export interface Die extends ColorlessDie {
-  color: string;
+  color: chroma.Color;
 }
 
 export type ArticleTypes =

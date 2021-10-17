@@ -1,8 +1,7 @@
-import distinctColors from "distinct-colors";
+import chroma from "chroma-js";
 import { StandardDice } from "rpg-dice-roller/types/dice";
 import { RollResult } from "rpg-dice-roller/types/results";
 import { DiceRoll, Parser } from "rpg-dice-roller";
-import { getTotalDiceRolled, shuffle } from "../helpers";
 import {
   Icon,
   Result,
@@ -13,11 +12,11 @@ import {
   ColorlessDie,
 } from "../types";
 
-const mapColorsToDice = (diceArray: ColorlessDie[][], colorArray: string[]) =>
+const mapColorsToDice = (diceArray: ColorlessDie[][]) =>
   diceArray.map((diceGroup: ColorlessDie[]) =>
     diceGroup.map((die: ColorlessDie) => ({
       ...die,
-      color: shuffle(colorArray).slice(0, getTotalDiceRolled(diceArray)).pop(),
+      color: chroma.random(),
     }))
   );
 
@@ -156,7 +155,6 @@ const rollDice = (
         resultArray = [...resultArray, result];
         shouldHaveImageArray = [...shouldHaveImageArray, shouldHaveImage];
       }
-      console.log(diceArray);
     });
 
     const shouldHaveImage = !!shouldHaveImageArray.every(
@@ -165,13 +163,8 @@ const rollDice = (
 
     const flattenedDiceArray = diceArray.flat();
 
-    const colorArray = distinctColors({
-      count: flattenedDiceArray.length + 50,
-      lightMin: 35,
-    }).map((color) => color.hex());
-
     return {
-      diceArray: mapColorsToDice(diceArray, colorArray),
+      diceArray: mapColorsToDice(diceArray),
       resultArray,
       shouldHaveImage,
     };

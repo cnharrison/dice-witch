@@ -4,9 +4,7 @@ import generateIcon from "./generateIcon";
 import generateDie from "./generateDie";
 import { Icon, Die, DiceArray } from "../types";
 import generateLinearGradientFill from "./generateDice/fills/generateLinearGradientFill";
-import distinctColors from "distinct-colors";
-import randomColor from "randomcolor";
-import { getRandomNumber } from "../helpers";
+import chroma from "chroma-js";
 
 const maxRowLength = 10;
 const defaultDiceDimension = 100;
@@ -132,15 +130,16 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
       (array: Die[], outerIndex: number) =>
         array.map(async (die: Die, index: number) => {
           const { icon: iconArray } = die;
-          const flip = getRandomNumber(2);
-
+          const randomColor = chroma.random();
           const toLoad: Buffer | null = await generateDie(
             die.sides,
             die.rolled,
-            flip > 1 ? "#FFFFFF" : "#000000",
-            flip > 1 ? "#FFFFFF" : "#000000",
+            (die.color.get("lab.l") + randomColor.get("lab.l")) / 2 < 60
+              ? "#FAF9F6"
+              : "#000000",
+            "#000000",
             undefined,
-            generateLinearGradientFill(randomColor(), randomColor())
+            generateLinearGradientFill(randomColor.hex(), die.color.hex())
           );
           const image: Image = await Canvas.loadImage(toLoad as Buffer);
           const diceWidth = getDiceWidth(index);
