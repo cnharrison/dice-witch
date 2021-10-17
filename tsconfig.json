@@ -5,9 +5,8 @@
     "module": "commonjs",
     "importHelpers": true,
     "strict": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
+    "checkJs": false,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,

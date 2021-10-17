@@ -10,6 +10,7 @@ import {
   MessageEmbed,
   TextChannel,
 } from "discord.js";
+import chroma from "chroma-js";
 
 export type Icon =
   | "trashcan"
@@ -159,7 +160,7 @@ export interface ColorlessDie {
 }
 
 export interface Die extends ColorlessDie {
-  color: string;
+  color: chroma.Color;
 }
 
 export type ArticleTypes =
@@ -176,3 +177,19 @@ export type ArticleTypes =
 export type KnowledgeBase = {
   [key: string]: EmbedFieldData[];
 };
+
+export interface PatternFillObject {
+  string: string;
+  name: string;
+}
+
+export interface GenerateDieProps {
+  result: number;
+  textColor?: string;
+  outlineColor?: string;
+  solidFill?: string;
+  patternFill?: PatternFillObject;
+  borderWidth: string;
+  viewBoxW: string;
+  viewBoxH: string;
+}
