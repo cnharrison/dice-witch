@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   DiceFaceData,
   DiceTypes,
@@ -35,8 +34,8 @@ const generateDie = async (
       solidFill,
       patternFill,
       borderWidth,
-      width,
-      height,
+      width: width,
+      height: height,
     }),
     12: generateD12({
       result: number,

@@ -57,17 +57,16 @@ const generateD8 = ({
   solidFill,
   patternFill,
   borderWidth = "6px",
-  viewBoxW = "400",
-  viewBoxH = "400",
+  width = "400",
+  height = "400",
 }: GenerateDieProps) => {
   const faces = getFaces(result);
   return `
-  <svg viewBox="0 0 ${viewBoxW} ${viewBoxH}">
+  <svg viewBox="0 0 ${width} ${height}">
     <defs>
  ${patternFill?.string ?? ""}
     <style>
-    .outline{fill:${
-      `url(#${patternFill?.name})` ?? solidFill
+    .outline{fill:${`url(#${patternFill?.name})` ?? solidFill
     };stroke:${outlineColor};stroke-miterlimit:10;stroke-width:${borderWidth}}
   .text{fill:${textColor};stroke:${textColor}}
     </style>

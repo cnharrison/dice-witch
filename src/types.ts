@@ -81,9 +81,7 @@ export type DieGenerator = (
 ) => void;
 
 export type DiceFaceData = {
-  [K in DiceTypes]: {
-    [K in DiceFaces]?: string;
-  };
+  [K in DiceTypes]: string;
 };
 export interface Result {
   output: string;
@@ -189,7 +187,7 @@ export interface GenerateDieProps {
   outlineColor?: string;
   solidFill?: string;
   patternFill?: PatternFillObject;
-  borderWidth: string;
-  viewBoxW: string;
-  viewBoxH: string;
+  borderWidth?: string;
+  width?: string;
+  height?: string;
 }
