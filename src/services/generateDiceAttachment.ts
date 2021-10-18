@@ -5,6 +5,7 @@ import generateDie from "./generateDie";
 import { Icon, Die, DiceArray } from "../types";
 import generateLinearGradientFill from "./generateDice/fills/generateLinearGradientFill";
 import chroma from "chroma-js";
+import { getRandomNumber } from "../helpers";
 
 const maxRowLength = 10;
 const defaultDiceDimension = 100;
@@ -60,7 +61,7 @@ const drawIcon = async (
 const getCanvasHeight = (paginatedArray: DiceArray, shouldHaveIcon: boolean) =>
   shouldHaveIcon
     ? defaultDiceDimension * paginatedArray.length +
-      defaultIconDimension * paginatedArray.length
+    defaultIconDimension * paginatedArray.length
     : defaultDiceDimension * paginatedArray.length;
 
 const getCanvasWidth = (diceArray: DiceArray) => {
@@ -131,15 +132,24 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
         array.map(async (die: Die, index: number) => {
           const { icon: iconArray } = die;
           const randomColor = chroma.random();
+          const isDiceColorDark = die.color.get("lab.l") < 60;
+          const shadeColor = isDiceColorDark
+            ? die.color.brighten(2)
+            : die.color.darken(2);
+
+          const isHeads = getRandomNumber(2) > 1;
+          const toCompare = isHeads ? randomColor : shadeColor;
           const toLoad: Buffer | null = await generateDie(
             die.sides,
             die.rolled,
-            (die.color.get("lab.l") + randomColor.get("lab.l")) / 2 < 60
+            (die.color.get("lab.l") + toCompare.get("lab.l")) / 2 < 60
               ? "#FAF9F6"
               : "#000000",
             "#000000",
             undefined,
-            generateLinearGradientFill(randomColor.hex(), die.color.hex())
+            isHeads
+              ? generateLinearGradientFill(die.color.hex(), randomColor.hex())
+              : generateLinearGradientFill(die.color.hex(), shadeColor.hex())
           );
           const image: Image = await Canvas.loadImage(toLoad as Buffer);
           const diceWidth = getDiceWidth(index);
