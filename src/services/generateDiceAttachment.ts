@@ -61,7 +61,7 @@ const drawIcon = async (
 const getCanvasHeight = (paginatedArray: DiceArray, shouldHaveIcon: boolean) =>
   shouldHaveIcon
     ? defaultDiceDimension * paginatedArray.length +
-    defaultIconDimension * paginatedArray.length
+      defaultIconDimension * paginatedArray.length
     : defaultDiceDimension * paginatedArray.length;
 
 const getCanvasWidth = (diceArray: DiceArray) => {
