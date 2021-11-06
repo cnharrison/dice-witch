@@ -27,9 +27,8 @@ const getIconWidth = (index: number, diceIndex: number, iconArray: Icon[]) =>
   defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1));
 
 const getIconHeight = (diceOuterIndex: number) =>
-  diceOuterIndex * defaultDiceDimension +
-  defaultDiceDimension +
-  diceOuterIndex * defaultIconDimension;
+  (diceOuterIndex * defaultDiceDimension * 2) +
+  defaultDiceDimension;
 
 const drawIcon = async (
   iconArray: Icon[] | null | undefined,
@@ -92,7 +91,7 @@ const getDiceWidth = (index: number) => defaultDiceDimension * index;
 
 const getDiceHeight = (outerIndex: number, shouldHaveIcon: boolean) =>
   shouldHaveIcon
-    ? outerIndex * defaultDiceDimension + outerIndex * defaultIconDimension
+    ? (outerIndex * defaultDiceDimension) * 2
     : outerIndex * defaultDiceDimension;
 
 const paginateDiceArray = (diceArray: DiceArray): DiceArray => {
