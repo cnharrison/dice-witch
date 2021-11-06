@@ -54,6 +54,20 @@ const generateIconArray = (modifierSet: Set<string>): Icon[] | null => {
     : null;
 };
 
+const getIconSpacing = (iconArray: Icon[] | null) => {
+  switch (iconArray?.length) {
+    case 1:
+      return 0.375;
+    case 2:
+      return 0.26;
+    case 3:
+      return 0.19;
+    default:
+      return null;
+  }
+};
+
+
 const getDPercentRolled = (rolled: number): number =>
   rolled === 100 ? 0 : Math.floor(rolled / 10) * 10;
 const getD10PercentRolled = (rolled: number): number =>
@@ -132,15 +146,17 @@ const rollDice = (
                   (acc: Die[], cur: RollResult) => {
                     const isHeads = coinFlip();
                     const color = chroma.random();
-                    const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random()
-                    const textColor = getTextColorFromColors(color, secondaryColor)
+                    const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random();
+                    const textColor = getTextColorFromColors(color, secondaryColor);
+                    const icon = generateIconArray(cur.modifiers)
                     acc.push(
                       {
                         sides: "%",
                         rolled: getDPercentRolled(
                           cur.initialValue
                         ) as DiceFaces,
-                        icon: generateIconArray(cur.modifiers),
+                        icon,
+                        iconSpacing: 2.875,
                         color,
                         secondaryColor,
                         textColor
@@ -149,8 +165,7 @@ const rollDice = (
                         sides: 10,
                         rolled: getD10PercentRolled(
                           cur.initialValue
-                        ) as DiceFaces,
-                        icon: generateIconArray(cur.modifiers),
+                        ) as DiceFaces,   
                         color,
                         secondaryColor,
                         textColor
@@ -165,10 +180,13 @@ const rollDice = (
                 const color = chroma.random();
                 const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random()
                 const textColor = getTextColorFromColors(color, secondaryColor)
+                const icon = generateIconArray(currentRoll.modifiers)
+                const iconSpacing = getIconSpacing(icon);
                 return {
                   sides: sidesArray[outerIndex],
                   rolled: currentRoll.initialValue,
-                  icon: generateIconArray(currentRoll.modifiers),
+                  icon,
+                  iconSpacing,
                   color,
                   secondaryColor,
                   textColor

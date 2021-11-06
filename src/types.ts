@@ -154,7 +154,8 @@ export interface LogEventProps {
 export interface Die  {
   sides: DiceTypes;
   rolled: DiceFaces;
-  icon: Icon[] | null;
+  icon?: Icon[] | null;
+  iconSpacing?: number | null;
   color: chroma.Color;
   secondaryColor: chroma.Color,
   textColor: chroma.Color

@@ -9,22 +9,9 @@ const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 25;
 
-const getIconSpacing = (iarr: Icon[]) => {
-  switch (iarr.length) {
-    case 1:
-      return 0.375;
-    case 2:
-      return 0.26;
-    case 3:
-      return 0.19;
-    default:
-      return 0.19;
-  }
-};
-
-const getIconWidth = (index: number, diceIndex: number, iconArray: Icon[]) =>
+const getIconWidth = (index: number, diceIndex: number, iconSpacing: number) =>
   defaultDiceDimension * diceIndex +
-  defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1));
+  defaultDiceDimension * iconSpacing * (index + 1);
 
 const getIconHeight = (diceOuterIndex: number) =>
   diceOuterIndex * defaultDiceDimension +
@@ -33,6 +20,7 @@ const getIconHeight = (diceOuterIndex: number) =>
 
 const drawIcon = async (
   iconArray: Icon[] | null | undefined,
+  iconSpacing: number,
   ctx: CanvasRenderingContext2D,
   diceIndex: number,
   diceOuterIndex: number
@@ -41,7 +29,7 @@ const drawIcon = async (
     let iconImage: Image;
     const promiseArray = iconArray.map(async (icon: Icon, index: number) => {
       const iconToLoad = await generateIcon(icon);
-      const iconWidth = getIconWidth(index, diceIndex, iconArray);
+      const iconWidth = getIconWidth(index, diceIndex, iconSpacing);
       const iconHeight = getIconHeight(diceOuterIndex);
       iconImage = await Canvas.loadImage(iconToLoad as Buffer);
       ctx.drawImage(
@@ -147,8 +135,8 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
             defaultDiceDimension,
             defaultDiceDimension
           );
-          if (shouldHaveIcon) {
-            await drawIcon(iconArray, ctx, index, outerIndex);
+          if (shouldHaveIcon && die.iconSpacing) {
+            await drawIcon(iconArray, die.iconSpacing, ctx, index, outerIndex);
           }
         })
     );
