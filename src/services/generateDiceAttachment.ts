@@ -131,25 +131,13 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
       (array: Die[], outerIndex: number) =>
         array.map(async (die: Die, index: number) => {
           const { icon: iconArray } = die;
-          const randomColor = chroma.random();
-          const isDiceColorDark = die.color.get("lab.l") < 60;
-          const shadeColor = isDiceColorDark
-            ? die.color.brighten(2)
-            : die.color.darken(2);
-
-          const isHeads = getRandomNumber(2) > 1;
-          const toCompare = isHeads ? randomColor : shadeColor;
           const toLoad: Buffer | null = await generateDie(
             die.sides,
             die.rolled,
-            (die.color.get("lab.l") + toCompare.get("lab.l")) / 2 < 60
-              ? "#FAF9F6"
-              : "#000000",
+            die.textColor.hex(),
             "#000000",
             undefined,
-            isHeads
-              ? generateLinearGradientFill(die.color.hex(), randomColor.hex())
-              : generateLinearGradientFill(die.color.hex(), shadeColor.hex())
+            generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex())
           );
           const image: Image = await Canvas.loadImage(toLoad as Buffer);
           const diceWidth = getDiceWidth(index);

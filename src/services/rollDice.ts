@@ -9,16 +9,21 @@ import {
   DiceTypesToDisplay,
   DiceFaces,
   DiceArray,
-  ColorlessDie,
 } from "../types";
+import { getRandomNumber } from "../helpers";
 
-const mapColorsToDice = (diceArray: ColorlessDie[][]) =>
-  diceArray.map((diceGroup: ColorlessDie[]) =>
-    diceGroup.map((die: ColorlessDie) => ({
-      ...die,
-      color: chroma.random(),
-    }))
-  );
+const getSecondaryColorFromColor = (color: chroma.Color) => { 
+  const isDiceColorDark = color.get("lab.l") > 65
+  return isDiceColorDark
+  ? color.brighten(2)
+  : color.darken(2);
+}
+
+const getTextColorFromColors = (color: chroma.Color, secondaryColor: chroma.Color) => 
+  color.get("lab.l") + secondaryColor.get("lab.l") / 2 < 65
+  ? chroma("#FAF9F6")
+  : chroma("#000000");
+
 
 const generateIconArray = (modifierSet: Set<string>): Icon[] | null => {
   return modifierSet.size > 0
@@ -121,10 +126,14 @@ const rollDice = (
         groupArray = roll.rolls
           .filter((rollGroup: any) => typeof rollGroup !== "string")
           .filter((rollGroup: any) => typeof rollGroup !== "number")
-          .map((rollGroup: any, outerIndex: number) =>
+          .map((rollGroup: any, outerIndex: number) => 
             sidesArray[outerIndex] === 100
               ? rollGroup.rolls.reduce(
-                  (acc: ColorlessDie[], cur: RollResult) => {
+                  (acc: Die[], cur: RollResult) => {
+                    const isHeads = getRandomNumber(2) > 1;
+                    const color = chroma.random();
+                    const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random()
+                    const textColor = getTextColorFromColors(color, secondaryColor)
                     acc.push(
                       {
                         sides: "%",
@@ -132,6 +141,9 @@ const rollDice = (
                           cur.initialValue
                         ) as DiceFaces,
                         icon: generateIconArray(cur.modifiers),
+                        color,
+                        secondaryColor,
+                        textColor
                       },
                       {
                         sides: 10,
@@ -139,18 +151,30 @@ const rollDice = (
                           cur.initialValue
                         ) as DiceFaces,
                         icon: generateIconArray(cur.modifiers),
+                        color,
+                        secondaryColor,
+                        textColor
                       }
                     );
                     return acc;
                   },
                   []
                 )
-              : rollGroup.rolls.map((currentRoll: RollResult) => ({
+              : rollGroup.rolls.map((currentRoll: RollResult) => {
+                const isHeads = getRandomNumber(2) > 1;
+                const color = chroma.random();
+                const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random()
+                const textColor = getTextColorFromColors(color, secondaryColor)
+                return {
                   sides: sidesArray[outerIndex],
                   rolled: currentRoll.initialValue,
                   icon: generateIconArray(currentRoll.modifiers),
-                }))
-          );
+                  color,
+                  secondaryColor,
+                  textColor
+                }
+              
+              }));
         diceArray = [...diceArray, ...groupArray];
         resultArray = [...resultArray, result];
         shouldHaveImageArray = [...shouldHaveImageArray, shouldHaveImage];
@@ -161,10 +185,8 @@ const rollDice = (
       (value: boolean) => value
     );
 
-    const flattenedDiceArray = diceArray.flat();
-
     return {
-      diceArray: mapColorsToDice(diceArray),
+      diceArray,
       resultArray,
       shouldHaveImage,
     };
