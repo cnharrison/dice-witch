@@ -10,7 +10,7 @@ import {
   DiceFaces,
   DiceArray,
 } from "../types";
-import { getRandomNumber } from "../helpers";
+import { coinFlip } from "../helpers";
 
 const getSecondaryColorFromColor = (color: chroma.Color) => { 
   const isDiceColorDark = color.get("lab.l") > 65
@@ -130,7 +130,7 @@ const rollDice = (
             sidesArray[outerIndex] === 100
               ? rollGroup.rolls.reduce(
                   (acc: Die[], cur: RollResult) => {
-                    const isHeads = getRandomNumber(2) > 1;
+                    const isHeads = coinFlip();
                     const color = chroma.random();
                     const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random()
                     const textColor = getTextColorFromColors(color, secondaryColor)
@@ -161,7 +161,7 @@ const rollDice = (
                   []
                 )
               : rollGroup.rolls.map((currentRoll: RollResult) => {
-                const isHeads = getRandomNumber(2) > 1;
+                const isHeads = coinFlip();
                 const color = chroma.random();
                 const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random()
                 const textColor = getTextColorFromColors(color, secondaryColor)

@@ -16,10 +16,13 @@ const makeItalic = (string?: string | null | Guild) =>
 const pluralPick = (isSingleDie: boolean, singular: string, plural: string) =>
   isSingleDie ? singular : plural;
 
+const coinFlip = () => getRandomNumber(2) > 1
+
 export {
   getRandomNumber,
   getTotalDiceRolled,
   makeBold,
   makeItalic,
   pluralPick,
+  coinFlip
 };
