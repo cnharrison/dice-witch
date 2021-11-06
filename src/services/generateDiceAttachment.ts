@@ -4,8 +4,6 @@ import generateIcon from "./generateIcon";
 import generateDie from "./generateDie";
 import { Icon, Die, DiceArray } from "../types";
 import generateLinearGradientFill from "./generateDice/fills/generateLinearGradientFill";
-import chroma from "chroma-js";
-import { getRandomNumber } from "../helpers";
 
 const maxRowLength = 10;
 const defaultDiceDimension = 100;
