@@ -12,18 +12,18 @@ import {
 } from "../types";
 import { coinFlip } from "../helpers";
 
-const getSecondaryColorFromColor = (color: chroma.Color) => { 
-  const isDiceColorDark = color.get("lab.l") > 65
-  return isDiceColorDark
-  ? color.brighten(2)
-  : color.darken(2);
-}
+const getSecondaryColorFromColor = (color: chroma.Color) => {
+  const isDiceColorDark = color.get("lab.l") > 65;
+  return isDiceColorDark ? color.brighten(2) : color.darken(2);
+};
 
-const getTextColorFromColors = (color: chroma.Color, secondaryColor: chroma.Color) => 
+const getTextColorFromColors = (
+  color: chroma.Color,
+  secondaryColor: chroma.Color
+) =>
   color.get("lab.l") + secondaryColor.get("lab.l") / 2 < 65
-  ? chroma("#FAF9F6")
-  : chroma("#000000");
-
+    ? chroma("#FAF9F6")
+    : chroma("#000000");
 
 const generateIconArray = (modifierSet: Set<string>): Icon[] | null => {
   return modifierSet.size > 0
@@ -66,7 +66,6 @@ const getIconSpacing = (iconArray: Icon[] | null) => {
       return null;
   }
 };
-
 
 const getDPercentRolled = (rolled: number): number =>
   rolled === 100 ? 0 : Math.floor(rolled / 10) * 10;
@@ -140,59 +139,64 @@ const rollDice = (
         groupArray = roll.rolls
           .filter((rollGroup: any) => typeof rollGroup !== "string")
           .filter((rollGroup: any) => typeof rollGroup !== "number")
-          .map((rollGroup: any, outerIndex: number) => 
+          .map((rollGroup: any, outerIndex: number) =>
             sidesArray[outerIndex] === 100
-              ? rollGroup.rolls.reduce(
-                  (acc: Die[], cur: RollResult) => {
-                    const isHeads = coinFlip();
-                    const color = chroma.random();
-                    const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random();
-                    const textColor = getTextColorFromColors(color, secondaryColor);
-                    const icon = generateIconArray(cur.modifiers)
-                    acc.push(
-                      {
-                        sides: "%",
-                        rolled: getDPercentRolled(
-                          cur.initialValue
-                        ) as DiceFaces,
-                        icon,
-                        iconSpacing: 2.875,
-                        color,
-                        secondaryColor,
-                        textColor
-                      },
-                      {
-                        sides: 10,
-                        rolled: getD10PercentRolled(
-                          cur.initialValue
-                        ) as DiceFaces,   
-                        color,
-                        secondaryColor,
-                        textColor
-                      }
-                    );
-                    return acc;
-                  },
-                  []
-                )
+              ? rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
+                  const isHeads = coinFlip();
+                  const color = chroma.random();
+                  const secondaryColor = isHeads
+                    ? getSecondaryColorFromColor(color)
+                    : chroma.random();
+                  const textColor = getTextColorFromColors(
+                    color,
+                    secondaryColor
+                  );
+                  const icon = generateIconArray(cur.modifiers);
+                  acc.push(
+                    {
+                      sides: "%",
+                      rolled: getDPercentRolled(cur.initialValue) as DiceFaces,
+                      icon,
+                      iconSpacing: 2.875,
+                      color,
+                      secondaryColor,
+                      textColor,
+                    },
+                    {
+                      sides: 10,
+                      rolled: getD10PercentRolled(
+                        cur.initialValue
+                      ) as DiceFaces,
+                      color,
+                      secondaryColor,
+                      textColor,
+                    }
+                  );
+                  return acc;
+                }, [])
               : rollGroup.rolls.map((currentRoll: RollResult) => {
-                const isHeads = coinFlip();
-                const color = chroma.random();
-                const secondaryColor = isHeads ? getSecondaryColorFromColor(color) : chroma.random()
-                const textColor = getTextColorFromColors(color, secondaryColor)
-                const icon = generateIconArray(currentRoll.modifiers)
-                const iconSpacing = getIconSpacing(icon);
-                return {
-                  sides: sidesArray[outerIndex],
-                  rolled: currentRoll.initialValue,
-                  icon,
-                  iconSpacing,
-                  color,
-                  secondaryColor,
-                  textColor
-                }
-              
-              }));
+                  const isHeads = coinFlip();
+                  const color = chroma.random();
+                  const secondaryColor = isHeads
+                    ? getSecondaryColorFromColor(color)
+                    : chroma.random();
+                  const textColor = getTextColorFromColors(
+                    color,
+                    secondaryColor
+                  );
+                  const icon = generateIconArray(currentRoll.modifiers);
+                  const iconSpacing = getIconSpacing(icon);
+                  return {
+                    sides: sidesArray[outerIndex],
+                    rolled: currentRoll.initialValue,
+                    icon,
+                    iconSpacing,
+                    color,
+                    secondaryColor,
+                    textColor,
+                  };
+                })
+          );
         diceArray = [...diceArray, ...groupArray];
         resultArray = [...resultArray, result];
         shouldHaveImageArray = [...shouldHaveImageArray, shouldHaveImage];

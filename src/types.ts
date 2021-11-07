@@ -151,14 +151,14 @@ export interface LogEventProps {
   interaction?: CommandInteraction | ButtonInteraction;
 }
 
-export interface Die  {
+export interface Die {
   sides: DiceTypes;
   rolled: DiceFaces;
   icon?: Icon[] | null;
   iconSpacing?: number | null;
   color: chroma.Color;
-  secondaryColor: chroma.Color,
-  textColor: chroma.Color
+  secondaryColor: chroma.Color;
+  textColor: chroma.Color;
 }
 
 export type ArticleTypes =

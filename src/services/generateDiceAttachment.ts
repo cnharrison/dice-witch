@@ -123,7 +123,10 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
             die.textColor.hex(),
             "#000000",
             undefined,
-            generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex())
+            generateLinearGradientFill(
+              die.color.hex(),
+              die.secondaryColor.hex()
+            )
           );
           const image: Image = await Canvas.loadImage(toLoad as Buffer);
           const diceWidth = getDiceWidth(index);

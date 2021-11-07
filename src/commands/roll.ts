@@ -1,5 +1,5 @@
 import { Result, DiceArray, RollProps } from "../types";
-import { availableDice, maxDice } from "../constants";
+import { availableDice, maxDiceSides, maxImageDice, maxTextDice } from "../constants";
 import {
   sendDiceResultMessageWithImage,
   sendHelperMessage,
@@ -13,7 +13,7 @@ import {
   generateDiceAttachment,
   checkForAttachPermission,
 } from "../services";
-import { getTotalDiceRolled } from "../helpers";
+import { getTotalDiceRolled, getHighestDiceSide } from "../helpers";
 
 module.exports = {
   name: "roll",
@@ -63,12 +63,12 @@ module.exports = {
       );
       return;
     }
-    if (getTotalDiceRolled(diceArray) > maxDice) {
-      sendDiceOverMaxMessage(message, logOutputChannel, args, interaction);
-      return;
-    }
 
     if (shouldHaveImage) {
+      if (getTotalDiceRolled(diceArray) > maxImageDice) {
+        sendDiceOverMaxMessage(message, logOutputChannel, args, interaction, shouldHaveImage);
+        return;
+      }
       await sendDiceRolledMessage(message, diceArray, interaction);
       const attachment = await generateDiceAttachment(diceArray);
       await sendDiceResultMessageWithImage(
@@ -81,6 +81,14 @@ module.exports = {
       );
       return;
     } else {
+      if (getTotalDiceRolled(diceArray) > maxTextDice) {
+        sendDiceOverMaxMessage(message, logOutputChannel, args, interaction, shouldHaveImage);
+        return;
+      }
+      if (getHighestDiceSide(diceArray) > maxDiceSides) {
+        sendDiceOverMaxMessage(message, logOutputChannel, args, interaction, shouldHaveImage);
+        return;
+      }
       sendDiceResultMessage(
         resultArray,
         message,

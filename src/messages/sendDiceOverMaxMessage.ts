@@ -1,4 +1,4 @@
-import { maxDice } from "../constants/index";
+import { maxDiceSides, maxImageDice, maxTextDice } from "../constants/index";
 import {
   ButtonInteraction,
   CommandInteraction,
@@ -8,14 +8,17 @@ import {
 import { sendLogEventMessage } from "../messages";
 import { EventType } from "../types";
 
-const msg = `${maxDice} dice max, sorry 😅`;
+const imageMsg = `${maxImageDice} dice max, sorry 😅`;
+const textMsg = `${maxDiceSides} sides max and ${maxTextDice} dice max, sorry 😅`;
 
 const sendDiceOverMaxMessage = async (
   message: Message,
   logOutputChannel: TextChannel,
   args?: string[],
-  interaction?: CommandInteraction | ButtonInteraction
+  interaction?: CommandInteraction | ButtonInteraction,
+  shouldHaveImage?: boolean
 ) => {
+  const msg = shouldHaveImage ? imageMsg : textMsg;
   interaction ? await interaction.followUp(msg) : await message.reply(msg);
   sendLogEventMessage({
     eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
