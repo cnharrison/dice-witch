@@ -4,29 +4,14 @@ import generateIcon from "./generateIcon";
 import generateDie from "./generateDie";
 import { Icon, Die, DiceArray } from "../types";
 import generateLinearGradientFill from "./generateDice/fills/generateLinearGradientFill";
-import chroma from "chroma-js";
-import { getRandomNumber } from "../helpers";
 
 const maxRowLength = 10;
 const defaultDiceDimension = 100;
 const defaultIconDimension = 25;
 
-const getIconSpacing = (iarr: Icon[]) => {
-  switch (iarr.length) {
-    case 1:
-      return 0.375;
-    case 2:
-      return 0.26;
-    case 3:
-      return 0.19;
-    default:
-      return 0.19;
-  }
-};
-
-const getIconWidth = (index: number, diceIndex: number, iconArray: Icon[]) =>
+const getIconWidth = (index: number, diceIndex: number, iconSpacing: number) =>
   defaultDiceDimension * diceIndex +
-  defaultDiceDimension * (getIconSpacing(iconArray) * (index + 1));
+  defaultDiceDimension * iconSpacing * (index + 1);
 
 const getIconHeight = (diceOuterIndex: number) =>
   diceOuterIndex * defaultDiceDimension +
@@ -35,6 +20,7 @@ const getIconHeight = (diceOuterIndex: number) =>
 
 const drawIcon = async (
   iconArray: Icon[] | null | undefined,
+  iconSpacing: number,
   ctx: CanvasRenderingContext2D,
   diceIndex: number,
   diceOuterIndex: number
@@ -43,7 +29,7 @@ const drawIcon = async (
     let iconImage: Image;
     const promiseArray = iconArray.map(async (icon: Icon, index: number) => {
       const iconToLoad = await generateIcon(icon);
-      const iconWidth = getIconWidth(index, diceIndex, iconArray);
+      const iconWidth = getIconWidth(index, diceIndex, iconSpacing);
       const iconHeight = getIconHeight(diceOuterIndex);
       iconImage = await Canvas.loadImage(iconToLoad as Buffer);
       ctx.drawImage(
@@ -131,25 +117,16 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
       (array: Die[], outerIndex: number) =>
         array.map(async (die: Die, index: number) => {
           const { icon: iconArray } = die;
-          const randomColor = chroma.random();
-          const isDiceColorDark = die.color.get("lab.l") < 60;
-          const shadeColor = isDiceColorDark
-            ? die.color.brighten(2)
-            : die.color.darken(2);
-
-          const isHeads = getRandomNumber(2) > 1;
-          const toCompare = isHeads ? randomColor : shadeColor;
           const toLoad: Buffer | null = await generateDie(
             die.sides,
             die.rolled,
-            (die.color.get("lab.l") + toCompare.get("lab.l")) / 2 < 60
-              ? "#FAF9F6"
-              : "#000000",
+            die.textColor.hex(),
             "#000000",
             undefined,
-            isHeads
-              ? generateLinearGradientFill(die.color.hex(), randomColor.hex())
-              : generateLinearGradientFill(die.color.hex(), shadeColor.hex())
+            generateLinearGradientFill(
+              die.color.hex(),
+              die.secondaryColor.hex()
+            )
           );
           const image: Image = await Canvas.loadImage(toLoad as Buffer);
           const diceWidth = getDiceWidth(index);
@@ -161,8 +138,8 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
             defaultDiceDimension,
             defaultDiceDimension
           );
-          if (shouldHaveIcon) {
-            await drawIcon(iconArray, ctx, index, outerIndex);
+          if (shouldHaveIcon && die.iconSpacing) {
+            await drawIcon(iconArray, die.iconSpacing, ctx, index, outerIndex);
           }
         })
     );

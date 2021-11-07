@@ -13,7 +13,7 @@ import {
   availableDice,
   deprecationWarning,
   footerButtonRow,
-  maxDice,
+  maxImageDice,
 } from "../constants";
 import { sendLogEventMessage } from "../messages";
 import { EventType } from "../types";
@@ -86,7 +86,7 @@ const sendHelperMessage = async (
           .map((dice: number | string) => `d${dice}`)
           .join(
             ", "
-          )}**.\nYou can roll up to **${maxDice}** dice at once 😈\n\n`,
+          )}**.\nYou can roll up to **${maxImageDice}** dice at once 😈\n\n`,
       },
       {
         name: "Basic rolls",
@@ -107,7 +107,7 @@ const sendHelperMessage = async (
           .map((dice: number | string) => `d${dice}`)
           .join(
             ", "
-          )}**.\nYou can roll up to **${maxDice}** dice at once 😈\n\n`,
+          )}**.\nYou can roll up to **${maxImageDice}** dice at once 😈\n\n`,
       },
       {
         name: "Basic rolls",

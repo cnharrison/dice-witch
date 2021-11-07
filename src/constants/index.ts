@@ -4,7 +4,9 @@ import { inviteLink, supportServerLink } from "../../config.json";
 
 const availableDice: DiceTypesToDisplay[] = [100, 20, 12, 10, 8, 6, 4];
 
-const maxDice: number = 50;
+const maxImageDice: number = 50;
+const maxTextDice: number = 500;
+const maxDiceSides: number = 100;
 
 const eventColor: ColorResolvable = "#99999";
 const errorColor: ColorResolvable = "#FF0000";
@@ -30,7 +32,9 @@ const footerButtonRow = new MessageActionRow()
 
 export {
   availableDice,
-  maxDice,
+  maxImageDice,
+  maxTextDice,
+  maxDiceSides,
   eventColor,
   errorColor,
   goodColor,

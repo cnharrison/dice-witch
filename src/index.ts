@@ -8,7 +8,7 @@ import {
   botListAuthKeys,
   clientID,
 } from "../config.json";
-const { discordbotlist, topgg, dbots } = botListAuthKeys;
+const { discordbotlist, topgg } = botListAuthKeys;
 
 const getHeaders = (key: string) => {
   return {
@@ -136,13 +136,6 @@ const startServer = () => {
               guilds: discord.guilds.cache.size,
             },
             getHeaders(discordbotlist)
-          );
-          axios.post(
-            `https://dbots.co/api/v1/bots/${clientID}/stats`,
-            {
-              guildCount: discord.guilds.cache.size,
-            },
-            getHeaders(dbots)
           );
         } catch (err) {
           console.error(err);

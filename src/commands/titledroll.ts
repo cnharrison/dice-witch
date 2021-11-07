@@ -1,5 +1,10 @@
 import { DiceArray, Result, TitledRollProps } from "../types";
-import { availableDice, maxDice } from "../constants";
+import {
+  availableDice,
+  maxDiceSides,
+  maxImageDice,
+  maxTextDice,
+} from "../constants";
 import {
   sendDiceResultMessageWithImage,
   sendDiceResultMessage,
@@ -14,7 +19,7 @@ import {
   generateDiceAttachment,
   checkForAttachPermission,
 } from "../services";
-import { getTotalDiceRolled } from "../helpers";
+import { getHighestDiceSide, getTotalDiceRolled } from "../helpers";
 
 module.exports = {
   name: "titledroll",
@@ -58,15 +63,21 @@ module.exports = {
       sendHelperMessage(message, module.exports.name, logOutputChannel);
       return;
     }
-    if (getTotalDiceRolled(diceArray) > maxDice) {
-      sendDiceOverMaxMessage(message, logOutputChannel, args);
-      return;
-    }
 
     const title = await sendGetRollTitleMessage(message, logOutputChannel);
 
     if (title) {
       if (shouldHaveImage) {
+        if (getTotalDiceRolled(diceArray) > maxImageDice) {
+          sendDiceOverMaxMessage(
+            message,
+            logOutputChannel,
+            args,
+            interaction,
+            shouldHaveImage
+          );
+          return;
+        }
         await sendDiceRolledMessage(message, diceArray, interaction);
         attachment = await generateDiceAttachment(diceArray);
         await sendDiceResultMessageWithImage(
@@ -79,6 +90,26 @@ module.exports = {
         );
         return;
       } else {
+        if (getTotalDiceRolled(diceArray) > maxTextDice) {
+          sendDiceOverMaxMessage(
+            message,
+            logOutputChannel,
+            args,
+            interaction,
+            shouldHaveImage
+          );
+          return;
+        }
+        if (getHighestDiceSide(diceArray) > maxDiceSides) {
+          sendDiceOverMaxMessage(
+            message,
+            logOutputChannel,
+            args,
+            interaction,
+            shouldHaveImage
+          );
+          return;
+        }
         sendDiceResultMessage(
           resultArray,
           message,
