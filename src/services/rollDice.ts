@@ -157,7 +157,7 @@ const rollDice = (
                       sides: "%",
                       rolled: getDPercentRolled(cur.initialValue) as DiceFaces,
                       icon,
-                      iconSpacing: 2.875,
+                      iconSpacing: 0.89,
                       color,
                       secondaryColor,
                       textColor,
