@@ -1,8 +1,6 @@
 import { Client, Intents } from "discord.js";
 import { PrismaClient } from "@prisma/client";
-import {
-  discordToken,
-} from "../../config.json";
+import { discordToken } from "../../config.json";
 
 const prisma = new PrismaClient();
 

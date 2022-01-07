@@ -1,9 +1,7 @@
-import { PrismaClient } from "@prisma/client";
 import { UpdateOnCommandProps } from "../types";
 
-const prisma = new PrismaClient();
-
 const updateOnCommand = async ({
+  prisma,
   commandName,
   message,
   interaction,

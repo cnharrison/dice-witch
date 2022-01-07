@@ -15,6 +15,8 @@ import { sendLogEventMessage } from "../messages";
 import { errorColor } from "../constants/";
 import { updateOnCommand } from "../services";
 
+const prisma = new PrismaClient();
+
 export default (discord: Client, logOutputChannel: TextChannel) => {
   try {
     let commands: Collection<string, Command>;
@@ -44,7 +46,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
       if (!command) return;
 
-      await updateOnCommand({ commandName, message });
+      await updateOnCommand({ prisma, commandName, message });
 
       try {
         command.execute({ message, args, discord, logOutputChannel, commands });
@@ -77,7 +79,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
       const { commandName } = interaction;
 
-      await updateOnCommand({ commandName, interaction });
+      await updateOnCommand({ prisma, commandName, interaction });
 
       if (commandName !== "status") {
         await interaction.defer();
@@ -159,7 +161,49 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       });
     });
 
-    discord.on("guildCreate", (guild: Guild) => {
+    discord.on("guildCreate", async (guild: Guild) => {
+      const {
+        id,
+        name,
+        icon,
+        ownerId,
+        memberCount,
+        approximateMemberCount,
+        preferredLocale,
+        publicUpdatesChannelId,
+        joinedTimestamp,
+      } = guild;
+      try {
+        await prisma.guilds.upsert({
+          where: {
+            id: Number(id),
+          },
+          update: {
+            name,
+            icon,
+            ownerId: Number(ownerId),
+            memberCount,
+            approximateMemberCount,
+            preferredLocale,
+            publicUpdatesChannelId: Number(publicUpdatesChannelId),
+            joinedTimestamp,
+          },
+          create: {
+            id: Number(id),
+            name,
+            icon,
+            ownerId: Number(ownerId),
+            memberCount,
+            approximateMemberCount,
+            preferredLocale,
+            publicUpdatesChannelId: Number(publicUpdatesChannelId),
+            joinedTimestamp,
+            rollCount: 0,
+          },
+        });
+      } catch (err) {
+        console.error(err);
+      }
       sendLogEventMessage({
         eventType: EventType.GUILD_ADD,
         logOutputChannel,
@@ -167,7 +211,51 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       });
     });
 
-    discord.on("guildDelete", (guild: Guild) => {
+    discord.on("guildDelete", async (guild: Guild) => {
+      const {
+        id,
+        name,
+        icon,
+        ownerId,
+        memberCount,
+        approximateMemberCount,
+        preferredLocale,
+        publicUpdatesChannelId,
+        joinedTimestamp,
+      } = guild;
+      try {
+        await prisma.guilds.upsert({
+          where: {
+            id: Number(id),
+          },
+          update: {
+            name,
+            icon,
+            ownerId: Number(ownerId),
+            memberCount,
+            approximateMemberCount,
+            preferredLocale,
+            publicUpdatesChannelId: Number(publicUpdatesChannelId),
+            joinedTimestamp,
+            isActive: false,
+          },
+          create: {
+            id: Number(id),
+            name,
+            icon,
+            ownerId: Number(ownerId),
+            memberCount,
+            approximateMemberCount,
+            preferredLocale,
+            publicUpdatesChannelId: Number(publicUpdatesChannelId),
+            joinedTimestamp,
+            rollCount: 0,
+            isActive: false,
+          },
+        });
+      } catch (err) {
+        console.error(err);
+      }
       sendLogEventMessage({
         eventType: EventType.GUILD_REMOVE,
         logOutputChannel,

@@ -12,6 +12,7 @@ import {
   TextChannel,
 } from "discord.js";
 import chroma from "chroma-js";
+import { PrismaClient } from "@prisma/client";
 
 export type Icon =
   | "trashcan"
@@ -194,6 +195,7 @@ export interface GenerateDieProps {
 }
 
 export interface UpdateOnCommandProps {
+  prisma: PrismaClient;
   commandName: string;
   message?: Message;
   interaction?: Interaction;
