@@ -8,7 +8,6 @@ const updateOnCommand = async ({
   message,
   interaction,
 }: UpdateOnCommandProps) => {
-  console.log(interaction);
   if (message) {
     const {
       author: { id, username, flags, discriminator, avatar },
@@ -56,7 +55,6 @@ const updateOnCommand = async ({
       } = message;
 
       const isARoll = ["r", "roll", "tr", "titledroll"].includes(commandName);
-      console.log(isARoll);
       try {
         await prisma.guilds.upsert({
           where: {
