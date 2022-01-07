@@ -3,6 +3,7 @@ import rollDice from "./rollDice";
 import generateIcon from "./generateIcon";
 import checkForAttachPermission from "./checkForAttachPermission";
 import generateDie from "./generateDie";
+import updateOnCommand from "./updateOnCommand";
 
 export {
   generateDiceAttachment,
@@ -10,4 +11,5 @@ export {
   rollDice,
   generateDie,
   generateIcon,
+  updateOnCommand,
 };

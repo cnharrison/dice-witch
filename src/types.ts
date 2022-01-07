@@ -5,6 +5,7 @@ import {
   CommandInteraction,
   EmbedFieldData,
   Guild,
+  Interaction,
   Message,
   MessageAttachment,
   MessageEmbed,
@@ -190,4 +191,10 @@ export interface GenerateDieProps {
   borderWidth?: string;
   width?: string;
   height?: string;
+}
+
+export interface UpdateOnCommandProps {
+  commandName: string;
+  message?: Message;
+  interaction?: Interaction;
 }
