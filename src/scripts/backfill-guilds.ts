@@ -56,6 +56,7 @@ const startServer = () => {
             preferredLocale,
             publicUpdatesChannelId: Number(publicUpdatesChannelId),
             joinedTimestamp,
+            rollCount: 0,
           },
         });
       } catch (err) {
