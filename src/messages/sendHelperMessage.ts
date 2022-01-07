@@ -120,20 +120,23 @@ const sendHelperMessage = async (
     );
 
   const publicHelperMessage = ` 🚫🎲 Invalid dice notation! DMing you some help 😉`;
+  try {
+    interaction
+      ? await interaction.followUp(publicHelperMessage)
+      : await message.reply(publicHelperMessage);
 
-  interaction
-    ? await interaction.followUp(publicHelperMessage)
-    : await message.reply(publicHelperMessage);
-
-  interaction
-    ? await interaction.user.send({
-        embeds: [slashEmbed],
-        components: [kbButtonRow, kbButtonRow2, footerButtonRow],
-      })
-    : await message.author.send({
-        embeds: [commandEmbed],
-        components: [kbButtonRow, kbButtonRow2, footerButtonRow],
-      });
+    interaction
+      ? await interaction.user.send({
+          embeds: [slashEmbed],
+          components: [kbButtonRow, kbButtonRow2, footerButtonRow],
+        })
+      : await message.author.send({
+          embeds: [commandEmbed],
+          components: [kbButtonRow, kbButtonRow2, footerButtonRow],
+        });
+  } catch (err) {
+    console.error(err);
+  }
 
   if (interaction && interaction.channel) {
     const filter = (i: MessageComponentInteraction) =>

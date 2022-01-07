@@ -19,7 +19,11 @@ const sendDiceOverMaxMessage = async (
   shouldHaveImage?: boolean
 ) => {
   const msg = shouldHaveImage ? imageMsg : textMsg;
-  interaction ? await interaction.followUp(msg) : await message.reply(msg);
+  try {
+    interaction ? await interaction.followUp(msg) : await message.reply(msg);
+  } catch (err) {
+    console.error(err);
+  }
   sendLogEventMessage({
     eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
     logOutputChannel,
