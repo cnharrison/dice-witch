@@ -145,7 +145,11 @@ const startServer = () => {
       true,
       "America/New_York"
     );
-    job.start();
+    try {
+      job.start();
+    } catch (err) {
+      console.error(err);
+    }
   });
 
   discord.login(discordToken);
