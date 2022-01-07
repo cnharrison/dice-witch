@@ -6,12 +6,14 @@ import Discord, {
   Message,
   MessageEmbed,
 } from "discord.js";
+import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";
 import { prefix, botPath, supportServerLink } from "../../config.json";
 import { Command, EventType } from "../types";
 import { sendLogEventMessage } from "../messages";
 import { errorColor } from "../constants/";
+import { updateOnCommand } from "../services";
 
 export default (discord: Client, logOutputChannel: TextChannel) => {
   try {
@@ -42,6 +44,8 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
       if (!command) return;
 
+      await updateOnCommand({ commandName, message });
+
       try {
         command.execute({ message, args, discord, logOutputChannel, commands });
         sendLogEventMessage({
@@ -71,7 +75,11 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
     discord.on("interactionCreate", async (interaction) => {
       if (!interaction.isCommand()) return;
 
-      if (interaction.commandName !== "status") {
+      const { commandName } = interaction;
+
+      await updateOnCommand({ commandName, interaction });
+
+      if (commandName !== "status") {
         await interaction.defer();
       }
 
