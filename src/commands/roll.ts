@@ -1,5 +1,10 @@
 import { Result, DiceArray, RollProps } from "../types";
-import { availableDice, maxDiceSides, maxImageDice, maxTextDice } from "../constants";
+import {
+  availableDice,
+  maxDiceSides,
+  maxImageDice,
+  maxTextDice,
+} from "../constants";
 import {
   sendDiceResultMessageWithImage,
   sendHelperMessage,
@@ -66,7 +71,13 @@ module.exports = {
 
     if (shouldHaveImage) {
       if (getTotalDiceRolled(diceArray) > maxImageDice) {
-        sendDiceOverMaxMessage(message, logOutputChannel, args, interaction, shouldHaveImage);
+        sendDiceOverMaxMessage(
+          message,
+          logOutputChannel,
+          args,
+          interaction,
+          shouldHaveImage
+        );
         return;
       }
       await sendDiceRolledMessage(message, diceArray, interaction);
@@ -82,11 +93,23 @@ module.exports = {
       return;
     } else {
       if (getTotalDiceRolled(diceArray) > maxTextDice) {
-        sendDiceOverMaxMessage(message, logOutputChannel, args, interaction, shouldHaveImage);
+        sendDiceOverMaxMessage(
+          message,
+          logOutputChannel,
+          args,
+          interaction,
+          shouldHaveImage
+        );
         return;
       }
       if (getHighestDiceSide(diceArray) > maxDiceSides) {
-        sendDiceOverMaxMessage(message, logOutputChannel, args, interaction, shouldHaveImage);
+        sendDiceOverMaxMessage(
+          message,
+          logOutputChannel,
+          args,
+          interaction,
+          shouldHaveImage
+        );
         return;
       }
       sendDiceResultMessage(

@@ -6,12 +6,15 @@ import Discord, {
   Message,
   MessageEmbed,
 } from "discord.js";
+import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";
 import { prefix, botPath, supportServerLink } from "../../config.json";
 import { Command, EventType } from "../types";
 import { sendLogEventMessage } from "../messages";
 import { errorColor } from "../constants/";
+
+const prisma = new PrismaClient();
 
 export default (discord: Client, logOutputChannel: TextChannel) => {
   try {
@@ -41,6 +44,99 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         );
 
       if (!command) return;
+
+      const {
+        author: { id, username, flags, discriminator, avatar },
+      } = message;
+
+      try {
+        await prisma.users.upsert({
+          where: {
+            id: Number(id),
+          },
+          update: {
+            username,
+            avatar,
+            flags: flags?.bitfield,
+            discriminator: Number(discriminator),
+            rollCount: { increment: 1 },
+          },
+          create: {
+            id: Number(id),
+            username,
+            avatar,
+            flags: flags?.bitfield,
+            discriminator: Number(discriminator),
+            rollCount: 1,
+          },
+        });
+      } catch (err) {
+        console.error(err);
+      }
+
+      if (message.guild) {
+        const {
+          author: { id: authorId },
+          guild: {
+            id,
+            name,
+            icon,
+            ownerId,
+            memberCount,
+            approximateMemberCount,
+            preferredLocale,
+            publicUpdatesChannelId,
+            joinedTimestamp,
+          },
+        } = message;
+        try {
+          await prisma.guilds.upsert({
+            where: {
+              id: Number(id),
+            },
+            update: {
+              name,
+              icon,
+              ownerId: Number(ownerId),
+              memberCount,
+              approximateMemberCount,
+              preferredLocale,
+              publicUpdatesChannelId: Number(publicUpdatesChannelId),
+              joinedTimestamp,
+              rollCount: { increment: 1 },
+            },
+            create: {
+              id: Number(id),
+              name,
+              icon,
+              ownerId: Number(ownerId),
+              memberCount,
+              approximateMemberCount,
+              preferredLocale,
+              publicUpdatesChannelId: Number(publicUpdatesChannelId),
+              joinedTimestamp,
+              rollCount: 1,
+            },
+          });
+
+          const relationship = await prisma.usersGuilds.findFirst({
+            where: {
+              guildId: Number(id),
+              userId: Number(authorId),
+            },
+          });
+          if (!relationship) {
+            await prisma.usersGuilds.create({
+              data: {
+                guildId: Number(id),
+                userId: Number(authorId),
+              },
+            });
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
 
       try {
         command.execute({ message, args, discord, logOutputChannel, commands });
