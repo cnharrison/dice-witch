@@ -23,14 +23,12 @@ const checkForAttachPermission = (
     | DMChannel
     | NewsChannel
     | PartialDMChannel
-    | ThreadChannel =
-    interaction && interaction.channel
-      ? interaction.channel
-      : (message.channel as TextChannel);
-  const guild: Guild =
-    interaction && interaction.guild
-      ? interaction.guild
-      : (message.guild as Guild);
+    | ThreadChannel = interaction?.channel
+    ? interaction?.channel
+    : (message?.channel as TextChannel);
+  const guild: Guild = interaction?.guild
+    ? interaction?.guild
+    : (message?.guild as Guild);
   const me:
     | string
     | Message
@@ -41,8 +39,10 @@ const checkForAttachPermission = (
     guild &&
     channel?.type === "GUILD_TEXT" &&
     (channel.permissionsFor(me) as any);
-  const permissionArray: PermissionString[] | undefined | null =
-    doesHavePermission && doesHavePermission?.toArray();
+  const permissionArray:
+    | PermissionString[]
+    | undefined
+    | null = doesHavePermission?.toArray();
   return channel?.type !== "GUILD_TEXT"
     ? true
     : !!permissionArray?.includes("ATTACH_FILES") &&
