@@ -133,7 +133,7 @@ const startServer = () => {
             getHeaders(topgg)
           ),
           axios.post(
-            `https://discordbotlist.com/api/v1/bots/${clientID}}/stats`,
+            `https://discordbotlist.com/api/v1/bots/${clientID}/stats`,
             {
               guilds: discord.guilds.cache.size,
             },
