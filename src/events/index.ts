@@ -82,7 +82,11 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       await updateOnCommand({ prisma, commandName, interaction });
 
       if (commandName !== "status") {
-        await interaction.defer();
+        try {
+          await interaction.defer();
+        } catch (err) {
+          console.error(err);
+        }
       }
 
       const { value: diceNotation } = interaction.options.get("notation") || {};

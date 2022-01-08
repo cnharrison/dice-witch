@@ -18,11 +18,14 @@ module.exports = {
         .setColor("#0000ff")
         .setTitle("Commands")
         .setDescription(`${deprecationWarning}\n\n${data.join("\r")}`);
-
-      await message.reply({
-        embeds: [embed],
-        components: [footerButtonRow],
-      });
+      try {
+        await message.reply({
+          embeds: [embed],
+          components: [footerButtonRow],
+        });
+      } catch (err) {
+        console.error(err);
+      }
       return;
     }
     const name = args[0].toLowerCase();
@@ -47,11 +50,14 @@ module.exports = {
       .setColor("#0000ff")
       .setTitle(`👩‍🏫 ${command?.name}`)
       .setDescription(data.join("\r"));
-
-    await message.channel.send({
-      embeds: [embed],
-      components: [footerButtonRow],
-    });
+    try {
+      await message.channel.send({
+        embeds: [embed],
+        components: [footerButtonRow],
+      });
+    } catch (err) {
+      console.error(err);
+    }
     return;
   },
 };
