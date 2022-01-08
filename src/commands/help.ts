@@ -11,7 +11,7 @@ module.exports = {
   async execute({ message, args, commands }: HelpProps) {
     const data = [];
     if (!args.length) {
-      data.push(commands.map((command) => command.name).join("\r"));
+      data.push(commands.map((command) => command?.name).join("\r"));
       data.push(`\n\n\More: \n\`${prefix}help [command name]\``);
 
       const embed = new Discord.MessageEmbed()
@@ -34,18 +34,18 @@ module.exports = {
       await message.react("❓");
     }
 
-    data.push(`**Name:** ${command.name}`);
+    data.push(`**Name:** ${command?.name}`);
 
-    if (command.aliases)
-      data.push(`**Aliases:** ${command.aliases.join(", ")}`);
-    if (command.description)
-      data.push(`**Description:** ${command.description}`);
-    if (command.usage)
-      data.push(`**Usage:** ${prefix}${command.name} ${command.usage}`);
+    if (command?.aliases)
+      data.push(`**Aliases:** ${command?.aliases.join(", ")}`);
+    if (command?.description)
+      data.push(`**Description:** ${command?.description}`);
+    if (command?.usage)
+      data.push(`**Usage:** ${prefix}${command?.name} ${command?.usage}`);
 
     const embed = new Discord.MessageEmbed()
       .setColor("#0000ff")
-      .setTitle(`👩‍🏫 ${command.name}`)
+      .setTitle(`👩‍🏫 ${command?.name}`)
       .setDescription(data.join("\r"));
 
     await message.channel.send({

@@ -8,10 +8,10 @@
     "axios": "^0.21.1",
     "canvas": "^2.7.0",
     "chroma-js": "^2.1.2",
-    "cron": "^1.8.2",
     "discord.js": "^13.0.0-dev.t1627689836.ee3cdc8",
     "rpg-dice-roller": "^4.5.2",
-    "sharp": "^0.27.2"
+    "sharp": "^0.27.2",
+    "toad-scheduler": "^1.6.0"
   },
   "devDependencies": {
     "@types/chroma-js": "^2.1.3",

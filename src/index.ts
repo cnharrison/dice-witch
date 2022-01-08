@@ -1,6 +1,6 @@
 import { Client, Intents } from "discord.js";
 import axios from "axios";
-import Cron from "cron";
+import { ToadScheduler, SimpleIntervalJob, AsyncTask } from "toad-scheduler";
 import events from "./events";
 import {
   discordToken,
@@ -9,6 +9,8 @@ import {
   clientID,
 } from "../config.json";
 const { discordbotlist, topgg } = botListAuthKeys;
+
+const scheduler = new ToadScheduler();
 
 const getHeaders = (key: string) => {
   return {
@@ -119,39 +121,35 @@ const startServer = () => {
     }
     events(discord, logOutputChannelTemp);
 
-    const job = new Cron.CronJob(
-      "22 * * * *",
-      () => {
-        try {
+    const task = new AsyncTask(
+      "botsite updates",
+      async () => {
+        const promises = [
           axios.post(
             `https://top.gg/api/bots/${clientID}/stats`,
             {
               server_count: discord.guilds.cache.size,
             },
             getHeaders(topgg)
-          );
+          ),
           axios.post(
             `https://discordbotlist.com/api/v1/bots/${clientID}}/stats`,
             {
               guilds: discord.guilds.cache.size,
             },
             getHeaders(discordbotlist)
-          );
-        } catch (err) {
-          console.error(err);
-        }
+          ),
+        ];
+        await Promise.all(promises);
       },
-      null,
-      true,
-      "America/New_York"
+      (err: Error) => {
+        console.error(err);
+      }
     );
-    try {
-      job.start();
-    } catch (err) {
-      console.error(err);
-    }
-  });
 
+    const job = new SimpleIntervalJob({ hours: 4 }, task);
+    scheduler.addSimpleIntervalJob(job);
+  });
   discord.login(discordToken);
 };
 startServer();
