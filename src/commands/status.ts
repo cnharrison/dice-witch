@@ -18,16 +18,19 @@ module.exports = {
             : now - message.createdTimestamp
         }ms**\n I'm in **${discord.guilds.cache.size}** discord servers 😈`
       );
-
-    interaction
-      ? await interaction.reply({
-          embeds: [embed],
-          components: [footerButtonRow],
-        })
-      : await message.reply({
-          embeds: [embed],
-          components: [footerButtonRow],
-        });
+    try {
+      interaction
+        ? await interaction.reply({
+            embeds: [embed],
+            components: [footerButtonRow],
+          })
+        : await message.reply({
+            embeds: [embed],
+            components: [footerButtonRow],
+          });
+    } catch (err) {
+      console.error(err);
+    }
     return;
   },
 };
