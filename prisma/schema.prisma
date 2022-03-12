@@ -8,20 +8,21 @@ datasource db {
 }
 
 model guilds {
-  id                     BigInt        @id @unique(map: "guilds_id_unique")
-  name                   String?       @db.VarChar(255)
-  icon                   String?       @db.VarChar(255)
-  ownerId                BigInt?       @map("owner_id")
-  memberCount            Int?          @map("member_count")
-  approximateMemberCount Int?          @map("approximate_member_count")
-  preferredLocale        String?       @map("preferred_locale") @db.VarChar(255)
-  publicUpdatesChannelId BigInt?       @map("public_updates_channel_id")
-  joinedTimestamp        BigInt?       @map("joined_timestamp")
-  rollCount              Int?          @map("roll_count")
-  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
-  isActive               Boolean?      @default(true) @map("is_active")
+  id                     BigInt              @id @unique(map: "guilds_id_unique")
+  name                   String?             @db.VarChar(255)
+  icon                   String?             @db.VarChar(255)
+  ownerId                BigInt?             @map("owner_id")
+  memberCount            Int?                @map("member_count")
+  approximateMemberCount Int?                @map("approximate_member_count")
+  preferredLocale        String?             @map("preferred_locale") @db.VarChar(255)
+  publicUpdatesChannelId BigInt?             @map("public_updates_channel_id")
+  joinedTimestamp        BigInt?             @map("joined_timestamp")
+  rollCount              Int?                @map("roll_count")
+  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+  isActive               Boolean?            @default(true) @map("is_active")
   users_guilds           usersGuilds[]
+  guilds_preferences     guildsPreferences[]
 }
 
 model stats {
@@ -35,15 +36,16 @@ model stats {
 }
 
 model users {
-  id            BigInt        @id @unique(map: "users_id_unique")
-  username      String?       @db.VarChar(255)
-  flags         Int?
-  discriminator Int?
-  avatar        String?       @db.VarChar(255)
-  rollCount     Int?          @map("roll_count")
-  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
-  users_guilds  usersGuilds[]
+  id                BigInt             @id @unique(map: "users_id_unique")
+  username          String?            @db.VarChar(255)
+  flags             Int?
+  discriminator     Int?
+  avatar            String?            @db.VarChar(255)
+  rollCount         Int?               @map("roll_count")
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+  users_guilds      usersGuilds[]
+  users_preferences usersPreferences[]
 }
 
 model usersGuilds {
@@ -58,4 +60,29 @@ model usersGuilds {
   users          users?   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_user_id_foreign")
 
   @@map("users_guilds")
+}
+
+model usersPreferences {
+  id     Int             @id @default(autoincrement())
+  userId BigInt?         @map("user_id")
+  delay  DelayPreference @default(LONG)
+  users  users?          @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_preferences_user_id_foreign")
+
+
+  @@map("users_preferences")
+}
+
+model guildsPreferences {
+  id      Int             @id @default(autoincrement())
+  guildId BigInt?         @map("guild_id")
+  delay   DelayPreference @default(LONG)
+  guilds  guilds?         @relation(fields: [guildId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "guilds_preferences_guild_id_foreign")
+
+  @@map("guilds_preferences")
+}
+
+enum DelayPreference {
+  NONE
+  SHORT
+  LONG
 }
