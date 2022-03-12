@@ -1,3 +1,4 @@
+import { GuildMember, Permissions } from "discord.js";
 import { UpdateOnCommandProps } from "../types";
 
 const updateOnCommand = async ({
@@ -89,11 +90,32 @@ const updateOnCommand = async ({
             userId: Number(authorId),
           },
         });
-        if (!relationship) {
+
+        if (relationship) {
+          await prisma.usersGuilds.update({
+            where: {
+              id: relationship.id,
+            },
+            data: {
+              hasManageGuild: !!message?.member?.permissions?.has(
+                Permissions.FLAGS.MANAGE_GUILD
+              ),
+              hasAdmin: !!message?.member?.permissions?.has(
+                Permissions.FLAGS.ADMINISTRATOR
+              ),
+            },
+          });
+        } else {
           await prisma.usersGuilds.create({
             data: {
               guildId: Number(id),
               userId: Number(authorId),
+              hasManageGuild: !!message?.member?.permissions?.has(
+                Permissions.FLAGS.MANAGE_GUILD
+              ),
+              hasAdmin: !!message?.member?.permissions?.has(
+                Permissions.FLAGS.ADMINISTRATOR
+              ),
             },
           });
         }
@@ -182,11 +204,32 @@ const updateOnCommand = async ({
             userId: Number(authorId),
           },
         });
-        if (!relationship) {
+        const castInteraction = interaction.member as GuildMember;
+        if (relationship) {
+          await prisma.usersGuilds.update({
+            where: {
+              id: relationship.id,
+            },
+            data: {
+              hasManageGuild: !!castInteraction.permissions?.has(
+                Permissions.FLAGS.MANAGE_GUILD
+              ),
+              hasAdmin: !!castInteraction.permissions?.has(
+                Permissions.FLAGS.ADMINISTRATOR
+              ),
+            },
+          });
+        } else {
           await prisma.usersGuilds.create({
             data: {
               guildId: Number(id),
               userId: Number(authorId),
+              hasManageGuild: !!castInteraction?.permissions?.has(
+                Permissions.FLAGS.MANAGE_GUILD
+              ),
+              hasAdmin: !!castInteraction.permissions?.has(
+                Permissions.FLAGS.ADMINISTRATOR
+              ),
             },
           });
         }

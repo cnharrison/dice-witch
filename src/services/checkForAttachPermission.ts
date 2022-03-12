@@ -39,7 +39,7 @@ const checkForAttachPermission = (
     guild &&
     channel?.type === "GUILD_TEXT" &&
     (channel.permissionsFor(me) as any);
-    const permissionArray: PermissionString[] | undefined | null =
+  const permissionArray: PermissionString[] | undefined | null =
     doesHavePermission && doesHavePermission?.toArray();
   return channel?.type !== "GUILD_TEXT"
     ? true
