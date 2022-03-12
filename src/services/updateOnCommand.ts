@@ -84,17 +84,17 @@ const updateOnCommand = async ({
           },
         });
 
-        const relationship = await prisma.usersGuilds.findFirst({
+        const usersGuilds = await prisma.usersGuilds.findFirst({
           where: {
             guildId: Number(id),
             userId: Number(authorId),
           },
         });
 
-        if (relationship) {
+        if (usersGuilds) {
           await prisma.usersGuilds.update({
             where: {
-              id: relationship.id,
+              id: usersGuilds.id,
             },
             data: {
               hasManageGuild: !!message?.member?.permissions?.has(
@@ -116,6 +116,20 @@ const updateOnCommand = async ({
               hasAdmin: !!message?.member?.permissions?.has(
                 Permissions.FLAGS.ADMINISTRATOR
               ),
+            },
+          });
+        }
+
+        const usersPreferences = await prisma.usersPreferences.findFirst({
+          where: {
+            userId: Number(authorId),
+          },
+        });
+
+        if (!usersPreferences) {
+          await prisma.usersPreferences.create({
+            data: {
+              userId: Number(authorId),
             },
           });
         }
@@ -198,17 +212,17 @@ const updateOnCommand = async ({
           },
         });
 
-        const relationship = await prisma.usersGuilds.findFirst({
+        const usersGuilds = await prisma.usersGuilds.findFirst({
           where: {
             guildId: Number(id),
             userId: Number(authorId),
           },
         });
         const castInteraction = interaction.member as GuildMember;
-        if (relationship) {
+        if (usersGuilds) {
           await prisma.usersGuilds.update({
             where: {
-              id: relationship.id,
+              id: usersGuilds.id,
             },
             data: {
               hasManageGuild: !!castInteraction.permissions?.has(
@@ -230,6 +244,20 @@ const updateOnCommand = async ({
               hasAdmin: !!castInteraction.permissions?.has(
                 Permissions.FLAGS.ADMINISTRATOR
               ),
+            },
+          });
+        }
+
+        const usersPreferences = await prisma.usersPreferences.findFirst({
+          where: {
+            userId: Number(authorId),
+          },
+        });
+
+        if (!usersPreferences) {
+          await prisma.usersPreferences.create({
+            data: {
+              userId: Number(authorId),
             },
           });
         }
