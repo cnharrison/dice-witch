@@ -49,7 +49,14 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       await updateOnCommand({ prisma, commandName, message });
 
       try {
-        command.execute({ message, args, discord, logOutputChannel, commands });
+        command.execute({
+          message,
+          args,
+          discord,
+          logOutputChannel,
+          commands,
+          prisma,
+        });
         sendLogEventMessage({
           eventType: EventType.RECEIVED_COMMAND,
           logOutputChannel,
@@ -81,9 +88,9 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
       await updateOnCommand({ prisma, commandName, interaction });
 
-      if (commandName !== "status") {
+      if (commandName !== "status" && commandName !== "setup") {
         try {
-          await interaction.defer();
+          await interaction.deferReply();
         } catch (err) {
           console.error(err);
         }
@@ -118,6 +125,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           discord,
           logOutputChannel,
           commands,
+          prisma,
           interaction,
           title: titleAsString,
           timesToRepeat: timesToRepeatAsNumber,
@@ -134,7 +142,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
     discord.on("interactionCreate", async (interaction) => {
       if (!interaction.isButton()) return;
-      await interaction.defer();
+      await interaction.deferReply();
       const unformattedArgs = interaction.customId.trim().split("-");
       const args = unformattedArgs[1] ? [unformattedArgs[1]] : [];
 

@@ -104,6 +104,7 @@ export interface CommandProps {
   discord: Client;
   logOutputChannel: TextChannel;
   commands: Collection<string, Command>;
+  prisma: PrismaClient;
   interaction?: CommandInteraction | ButtonInteraction;
   title?: string;
   timesToRepeat?: number;
@@ -133,6 +134,10 @@ export type StatusProps = Pick<
 export type TitledRollProps = Pick<
   CommandProps,
   "message" | "args" | "logOutputChannel" | "interaction"
+>;
+export type SetupProps = Pick<
+  CommandProps,
+  "message" | "discord" | "interaction" | "prisma"
 >;
 
 export type EmbedObject = {
@@ -197,6 +202,18 @@ export interface GenerateDieProps {
 export interface UpdateOnCommandProps {
   prisma: PrismaClient;
   commandName: string;
+  message?: Message;
+  interaction?: Interaction;
+}
+
+export interface GetUserPreferencesProps {
+  prisma: PrismaClient;
+  message?: Message;
+  interaction?: Interaction;
+}
+
+export interface GetGuildPreferencesProps {
+  prisma: PrismaClient;
   message?: Message;
   interaction?: Interaction;
 }

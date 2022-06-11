@@ -49,6 +49,10 @@ const globalSlashCommands: any = [
     description: "Pings Dice Witch",
   },
   {
+    name: "setup",
+    description: "Set user and guild preferences",
+  },
+  {
     name: "knowledgebase",
     description: "Shows the Dice Witch knowledgebase",
     options: [
