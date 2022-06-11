@@ -83,7 +83,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
       if (commandName !== "status") {
         try {
-          await interaction.defer();
+          await interaction.deferReply();
         } catch (err) {
           console.error(err);
         }
@@ -134,7 +134,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
 
     discord.on("interactionCreate", async (interaction) => {
       if (!interaction.isButton()) return;
-      await interaction.defer();
+      await interaction.deferReply();
       const unformattedArgs = interaction.customId.trim().split("-");
       const args = unformattedArgs[1] ? [unformattedArgs[1]] : [];
 

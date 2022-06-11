@@ -8,7 +8,7 @@
     "axios": "^0.21.1",
     "canvas": "^2.7.0",
     "chroma-js": "^2.1.2",
-    "discord.js": "^13.0.0-dev.t1627689836.ee3cdc8",
+    "discord.js": "^13.8.0",
     "rpg-dice-roller": "^4.5.2",
     "sharp": "^0.27.2",
     "toad-scheduler": "^1.6.0"

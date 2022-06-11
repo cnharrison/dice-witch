@@ -13,6 +13,7 @@ import {
   CommandInteraction,
   PartialDMChannel,
   ThreadChannel,
+  TextBasedChannel
 } from "discord.js";
 const checkForAttachPermission = (
   message: Message,
@@ -23,7 +24,9 @@ const checkForAttachPermission = (
     | DMChannel
     | NewsChannel
     | PartialDMChannel
+    | TextBasedChannel
     | ThreadChannel = interaction?.channel
+
     ? interaction?.channel
     : (message?.channel as TextChannel);
   const guild: Guild = interaction?.guild
