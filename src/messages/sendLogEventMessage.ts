@@ -4,6 +4,7 @@ import Discord, {
   NewsChannel,
   PartialDMChannel,
   ThreadChannel,
+  ChannelType,
 } from "discord.js";
 import { EmbedObject, EventType, LogEventProps } from "../types";
 import { adminID, prefix } from "../../config.json";
@@ -52,9 +53,9 @@ const sendLogEventMessage = async ({
     : message?.guild;
   const commandName = command?.name;
   const prefixName = interaction ? "/" : prefix;
-  const isGuildChannel = channel && channel.type === "GUILD_TEXT";
+  const isGuildChannel = channel && channel.type === ChannelType.GuildText;
   const isInGuild = message?.guild?.id || interaction?.inGuild();
-  const isThread = channel && channel.type === "GUILD_PUBLIC_THREAD";
+  const isThread = channel && channel.type === ChannelType.PublicThread;
 
   if (logOutputChannel) {
     switch (eventType) {
@@ -66,7 +67,7 @@ const sendLogEventMessage = async ({
               )} [ ${channelName} ] on [ ${guildName} ]`
             : `received ${prefixName}command ${commandName}: ${args} from [ ${username} ] in [ DM ]`
         );
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(eventColor)
           .setTitle(`${eventType}: ${prefixName}${commandName}`)
           .setDescription(
@@ -81,7 +82,7 @@ const sendLogEventMessage = async ({
           .catch((err) => console.error(err));
         break;
       case EventType.CRITICAL_ERROR:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor("#FF0000")
           .setTitle(`${eventType}: ${commandName}`)
           .setDescription(
@@ -98,7 +99,7 @@ const sendLogEventMessage = async ({
           .catch((err) => console.error(err));
         break;
       case EventType.ROLL_TITLE_REJECTED:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(errorColor)
           .setTitle(eventType)
           .setDescription(
@@ -113,7 +114,7 @@ const sendLogEventMessage = async ({
           .catch((err) => console.error(err));
         break;
       case EventType.ROLL_TITLE_ACCEPTED:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(eventColor)
           .setTitle(`${eventType}: ${title}`)
           .setDescription(
@@ -128,7 +129,7 @@ const sendLogEventMessage = async ({
           .catch((err) => console.error(err));
         break;
       case EventType.ROLL_TITLE_TIMEOUT:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(errorColor)
           .setTitle(eventType)
           .setDescription(
@@ -143,7 +144,7 @@ const sendLogEventMessage = async ({
           .catch((err: Error) => console.error(err));
         break;
       case EventType.GUILD_ADD:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(goodColor)
           .setTitle(eventType)
           .setDescription(`${guildName}`);
@@ -152,7 +153,7 @@ const sendLogEventMessage = async ({
           .catch((err: Error) => console.error(err));
         break;
       case EventType.GUILD_REMOVE:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(errorColor)
           .setTitle(eventType)
           .setDescription(`${guildName}`);
@@ -166,7 +167,7 @@ const sendLogEventMessage = async ({
           .catch((err: Error) => console.error(err));
         break;
       case EventType.SENT_ROLL_RESULT_MESSAGE:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(tabletopColor)
           .setTitle(`${eventType}: ${title ? title : ""}`)
           .setDescription(`${resultMessage}`);
@@ -175,7 +176,7 @@ const sendLogEventMessage = async ({
           .catch((err: Error) => console.error(err));
         break;
       case EventType.SENT_HELER_MESSAGE:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(infoColor)
           .setTitle(eventType)
           .setDescription(
@@ -186,7 +187,7 @@ const sendLogEventMessage = async ({
           .catch((err: Error) => console.error(err));
         break;
       case EventType.SENT_DICE_OVER_MAX_MESSAGE:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(infoColor)
           .setTitle(eventType)
           .setDescription(`${username} in ${channelName}`);
@@ -195,7 +196,7 @@ const sendLogEventMessage = async ({
           .catch((err: Error) => console.error(err));
         break;
       case EventType.SENT_NEED_PERMISSION_MESSAGE:
-        embed = new Discord.MessageEmbed()
+        embed = new Discord.EmbedBuilder()
           .setColor(errorColor)
           .setTitle(eventType)
           .setDescription(`${makeBold(channelName)} on ${makeBold(guildName)}`);

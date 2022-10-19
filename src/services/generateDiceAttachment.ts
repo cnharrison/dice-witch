@@ -1,4 +1,4 @@
-import Discord, { MessageAttachment } from "discord.js";
+import Discord, { AttachmentBuilder } from "discord.js";
 import Canvas, { CanvasRenderingContext2D, Image } from "canvas";
 import generateIcon from "./generateIcon";
 import generateDie from "./generateDie";
@@ -146,9 +146,9 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
 
     await Promise.all(outerPromiseArray.map(Promise.all, Promise));
 
-    const attachment: MessageAttachment = new Discord.MessageAttachment(
+    const attachment: AttachmentBuilder = new Discord.AttachmentBuilder(
       canvas.toBuffer("image/png", { compressionLevel: 0 }),
-      "currentDice.png"
+      { name: "currentDice.png" }
     );
     return attachment;
   } catch (err) {

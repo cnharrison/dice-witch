@@ -1,4 +1,4 @@
-import { Client, Intents } from "discord.js";
+import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { PrismaClient } from "@prisma/client";
 import { discordToken } from "../../config.json";
 
@@ -7,12 +7,12 @@ const prisma = new PrismaClient();
 const startServer = () => {
   const discord = new Client({
     intents: [
-      Intents.FLAGS.GUILDS,
-      Intents.FLAGS.GUILD_MESSAGES,
-      Intents.FLAGS.DIRECT_MESSAGES,
-      Intents.FLAGS.DIRECT_MESSAGE_TYPING,
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.DirectMessages,
+      GatewayIntentBits.DirectMessageTyping,
     ],
-    partials: ["MESSAGE", "CHANNEL", "REACTION"],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
   discord.on("ready", async () => {
     console.log(`[Discord] Registered.`);

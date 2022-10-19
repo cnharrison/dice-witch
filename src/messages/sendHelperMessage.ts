@@ -1,12 +1,13 @@
 import Discord, {
   Message,
   TextChannel,
-  MessageEmbed,
+  EmbedBuilder,
   CommandInteraction,
-  MessageActionRow,
-  MessageButton,
+  ActionRowBuilder,
+  ButtonBuilder,
   MessageComponentInteraction,
   ButtonInteraction,
+  SelectMenuBuilder,
 } from "discord.js";
 import { prefix } from "../../config.json";
 import {
@@ -25,59 +26,59 @@ const sendHelperMessage = async (
   args?: string[],
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
-  const kbButtonRow = new MessageActionRow()
+  const kbButtonRow = new ActionRowBuilder()
     .addComponents(
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`kb-exploding${interaction ? "-slash" : ""}`)
         .setLabel("Exploding 💥")
-        .setStyle("PRIMARY")
+        .setStyle(1)
     )
     .addComponents(
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`kb-reroll${interaction ? "-slash" : ""}`)
         .setLabel("Re-roll ♻")
-        .setStyle("PRIMARY")
+        .setStyle(1)
     )
     .addComponents(
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`kb-keepdrop${interaction ? "-slash" : ""}`)
         .setLabel("Keep/drop 🚮")
-        .setStyle("PRIMARY")
+        .setStyle(1)
     )
     .addComponents(
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`kb-target${interaction ? "-slash" : ""}`)
         .setLabel("Targets 🎯")
-        .setStyle("PRIMARY")
+        .setStyle(1)
     )
     .addComponents(
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`kb-crit${interaction ? "-slash" : ""}`)
         .setLabel("Criticals ⚔")
-        .setStyle("PRIMARY")
-    );
+        .setStyle(1)
+    ) as ActionRowBuilder<SelectMenuBuilder>;
 
-  const kbButtonRow2 = new MessageActionRow()
+  const kbButtonRow2 = new ActionRowBuilder()
     .addComponents(
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`kb-math${interaction ? "-slash" : ""}`)
         .setLabel("Math 🧮")
-        .setStyle("PRIMARY")
+        .setStyle(1)
     )
     .addComponents(
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`kb-sort${interaction ? "-slash" : ""}`)
         .setLabel("Sorting ↕")
-        .setStyle("PRIMARY")
+        .setStyle(1)
     )
     .addComponents(
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`kb-repeating${interaction ? "-slash" : ""}`)
         .setLabel("Repeating 👯‍♀️")
-        .setStyle("PRIMARY")
-    );
+        .setStyle(1)
+    ) as ActionRowBuilder<SelectMenuBuilder>;
 
-  const commandEmbed: MessageEmbed = new Discord.MessageEmbed()
+  const commandEmbed: EmbedBuilder = new Discord.EmbedBuilder()
     .setColor("#0000ff")
     .addFields(
       {
@@ -98,7 +99,7 @@ const sendHelperMessage = async (
       }
     );
 
-  const slashEmbed: MessageEmbed = new Discord.MessageEmbed()
+  const slashEmbed: EmbedBuilder = new Discord.EmbedBuilder()
     .setColor("#0000ff")
     .addFields(
       {

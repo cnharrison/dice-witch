@@ -4,7 +4,7 @@ import Discord, {
   Guild,
   Collection,
   Message,
-  MessageEmbed,
+  EmbedBuilder,
 } from "discord.js";
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
@@ -23,8 +23,8 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
     commands = new Discord.Collection();
     process.chdir(path.dirname(botPath));
     const commandFiles: string[] = fs
-      .readdirSync(`${botPath}/src/commands`)
-      .filter((file: string) => file.endsWith(".ts"));
+      .readdirSync(`${botPath}/build/src/commands`)
+      .filter((file: string) => file.endsWith(".js"));
 
     for (const file of commandFiles) {
       const command = require(`${botPath}/src/commands/${file}`);
@@ -58,7 +58,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           args,
         });
       } catch (error) {
-        const embed: MessageEmbed = new Discord.MessageEmbed()
+        const embed: EmbedBuilder = new Discord.EmbedBuilder()
           .setColor(errorColor)
           .setDescription(
             `error 😥 please join my [support server](${supportServerLink}) and report this`

@@ -8,7 +8,7 @@ module.exports = {
   aliases: ["ping"],
   async execute({ message, discord, interaction }: StatusProps) {
     const now = Date.now();
-    const embed = new Discord.MessageEmbed()
+    const embed = new Discord.EmbedBuilder()
       .setColor("#99999")
       .setTitle("Status")
       .setDescription(

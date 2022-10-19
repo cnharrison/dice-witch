@@ -14,7 +14,7 @@ module.exports = {
       data.push(commands.map((command) => command?.name).join("\r"));
       data.push(`\n\n\More: \n\`${prefix}help [command name]\``);
 
-      const embed = new Discord.MessageEmbed()
+      const embed = new Discord.EmbedBuilder()
         .setColor("#0000ff")
         .setTitle("Commands")
         .setDescription(`${deprecationWarning}\n\n${data.join("\r")}`);
@@ -46,7 +46,7 @@ module.exports = {
     if (command?.usage)
       data.push(`**Usage:** ${prefix}${command?.name} ${command?.usage}`);
 
-    const embed = new Discord.MessageEmbed()
+    const embed = new Discord.EmbedBuilder()
       .setColor("#0000ff")
       .setTitle(`👩‍🏫 ${command?.name}`)
       .setDescription(data.join("\r"));

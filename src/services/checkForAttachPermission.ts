@@ -2,7 +2,7 @@ import {
   Message,
   BitField,
   Role,
-  PermissionString,
+  PermissionsString,
   TextChannel,
   DMChannel,
   NewsChannel,
@@ -13,7 +13,8 @@ import {
   CommandInteraction,
   PartialDMChannel,
   ThreadChannel,
-  TextBasedChannel
+  TextBasedChannel,
+  ChannelType,
 } from "discord.js";
 const checkForAttachPermission = (
   message: Message,
@@ -26,27 +27,22 @@ const checkForAttachPermission = (
     | PartialDMChannel
     | TextBasedChannel
     | ThreadChannel = interaction?.channel
-
     ? interaction?.channel
     : (message?.channel as TextChannel);
   const guild: Guild = interaction?.guild
     ? interaction?.guild
     : (message?.guild as Guild);
-  const me:
-    | string
-    | Message
-    | GuildMember
-    | User
-    | Role = guild?.me as GuildMember;
-  const doesHavePermission: BitField<PermissionString> | null =
+  const me: string | Message | GuildMember | User | Role = guild?.members
+    .me as GuildMember;
+  const doesHavePermission: BitField<PermissionsString> | null =
     guild &&
-    channel?.type === "GUILD_TEXT" &&
+    channel?.type === ChannelType.GuildText &&
     (channel.permissionsFor(me) as any);
-    const permissionArray: PermissionString[] | undefined | null =
+  const permissionArray: PermissionsString[] | undefined | null =
     doesHavePermission && doesHavePermission?.toArray();
-  return channel?.type !== "GUILD_TEXT"
+  return channel?.type !== ChannelType.GuildText
     ? true
-    : !!permissionArray?.includes("ATTACH_FILES") &&
-        !!permissionArray?.includes("EMBED_LINKS");
+    : !!permissionArray?.includes("AttachFiles") &&
+        !!permissionArray?.includes("EmbedLinks");
 };
 export default checkForAttachPermission;

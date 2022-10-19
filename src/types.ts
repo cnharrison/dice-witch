@@ -3,12 +3,12 @@ import {
   Client,
   Collection,
   CommandInteraction,
-  EmbedFieldData,
   Guild,
   Interaction,
   Message,
-  MessageAttachment,
-  MessageEmbed,
+  AttachmentBuilder,
+  EmbedBuilder,
+  EmbedField,
   TextChannel,
 } from "discord.js";
 import chroma from "chroma-js";
@@ -136,8 +136,8 @@ export type TitledRollProps = Pick<
 >;
 
 export type EmbedObject = {
-  embeds: MessageEmbed[];
-  files: MessageAttachment[];
+  embeds: EmbedBuilder[];
+  files: AttachmentBuilder[];
 };
 
 export interface LogEventProps {
@@ -151,6 +151,7 @@ export interface LogEventProps {
   resultMessage?: string;
   embedParam: EmbedObject;
   interaction?: CommandInteraction | ButtonInteraction;
+  error: Error,
 }
 
 export interface Die {
@@ -175,7 +176,7 @@ export type ArticleTypes =
   | "repeating";
 
 export type KnowledgeBase = {
-  [key: string]: EmbedFieldData[];
+  [key: string]: EmbedField[];
 };
 
 export interface PatternFillObject {

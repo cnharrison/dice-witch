@@ -5,11 +5,11 @@
     "module": "commonjs",
     "importHelpers": true,
     "strict": true,
-    "types": ["node"],
     "checkJs": false,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
+    "useUnknownInCatchVariables": false,
     "outDir": "build"
   }
 }
