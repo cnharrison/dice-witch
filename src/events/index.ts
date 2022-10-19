@@ -27,7 +27,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
       .filter((file: string) => file.endsWith(".js"));
 
     for (const file of commandFiles) {
-      const command = require(`${botPath}/src/commands/${file}`);
+      const command = require(`${botPath}/build/src/commands/${file}`);
       commands?.set(command.name, command);
     }
 
