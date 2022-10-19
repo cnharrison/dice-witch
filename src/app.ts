@@ -120,7 +120,7 @@ const startServer = () => {
     try {
       const channel: any = await discord.channels.fetch(logOutputChannel);
       logOutputChannelTemp = channel;
-      console.log(`[Discord] Found log output channel ${channel.name}`);
+      console.log(`[Discord] Found log output channel ${channel?.name}`);
       console.log(`[Discord] Registering global slash commands...`);
       await discord.application?.commands.set(globalSlashCommands);
       console.log(`[Discord] Registered.`);
