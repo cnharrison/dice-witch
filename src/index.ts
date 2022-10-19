@@ -26,4 +26,4 @@ manager.on("shardCreate", (shard: Shard) => {
   });
 });
 
-manager.spawn();
+manager.spawn({ delay: 10000, timeout: -1 });
