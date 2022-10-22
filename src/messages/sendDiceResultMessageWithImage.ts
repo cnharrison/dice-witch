@@ -8,12 +8,14 @@ import { sendLogEventMessage } from ".";
 import { AttachmentBuilder, Message, TextChannel } from "discord.js";
 import { EmbedObject, EventType, Result } from "../types";
 import { tabletopColor } from "../constants";
+import { Canvas } from "canvas";
 
 const generateEmbedMessage = async (
   resultArray: Result[],
   attachment: AttachmentBuilder,
+  canvas: Canvas,
   title?: string,
-  interaction?: CommandInteraction | ButtonInteraction
+  interaction?: CommandInteraction | ButtonInteraction,
 ): Promise<{ embeds: EmbedBuilder[]; files: AttachmentBuilder[] }> => {
   const grandTotal = resultArray.reduce(
     (prev: number, cur: Result) => prev + cur.results,
@@ -51,6 +53,7 @@ const sendDiceResultMessageWithImage = async (
   resultArray: Result[],
   message: Message,
   attachment: AttachmentBuilder,
+  canvas: Canvas,
   logOutputChannel: TextChannel,
   interaction?: CommandInteraction | ButtonInteraction,
   title?: string
@@ -59,6 +62,7 @@ const sendDiceResultMessageWithImage = async (
     const embedMessage: EmbedObject = await generateEmbedMessage(
       resultArray,
       attachment,
+      canvas,
       title,
       interaction
     );
@@ -73,6 +77,7 @@ const sendDiceResultMessageWithImage = async (
           logOutputChannel,
           message,
           embedParam: embedMessage,
+          canvas,
         });
       } catch (err) {
         console.error(err);

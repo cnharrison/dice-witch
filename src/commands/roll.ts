@@ -78,17 +78,17 @@ module.exports = {
           discord,
           args,
           interaction,
-          shouldHaveImage,
-     
+          shouldHaveImage
         );
         return;
       }
       await sendDiceRolledMessage(message, diceArray, interaction);
-      const attachment = await generateDiceAttachment(diceArray);
+      const { attachment, canvas } = await generateDiceAttachment(diceArray);
       await sendDiceResultMessageWithImage(
         resultArray,
         message,
         attachment,
+        canvas,
         logOutputChannel,
         interaction,
         title
