@@ -150,7 +150,7 @@ const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
       canvas.toBuffer("image/png", { compressionLevel: 0 }),
       { name: "currentDice.png" }
     );
-    return { attachment, canvas }
+    return attachment;
   } catch (err) {
     console.error(err);
     return null;

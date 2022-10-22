@@ -13,7 +13,6 @@ import {
 } from "discord.js";
 import chroma from "chroma-js";
 import { PrismaClient } from "@prisma/client";
-import { Canvas } from "canvas";
 
 export type Icon =
   | "trashcan"
@@ -154,8 +153,7 @@ export interface LogEventProps {
   embedParam: EmbedObject;
   interaction?: CommandInteraction | ButtonInteraction;
   error: Error,
-  discord: Client,
-  canvas: Canvas
+  discord: Client
 }
 
 export interface Die {

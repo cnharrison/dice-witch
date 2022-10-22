@@ -30,7 +30,6 @@ const sendLogEventMessage = async ({
   guild,
   interaction,
   discord,
-  canvas,
 }: Partial<LogEventProps>) => {
   const channel:
     | TextChannel
