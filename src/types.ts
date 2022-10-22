@@ -123,6 +123,7 @@ export type RollProps = Pick<
   | "interaction"
   | "title"
   | "timesToRepeat"
+  | "discord"
 >;
 
 export type HelpProps = Pick<CommandProps, "message" | "args" | "commands">;
@@ -152,6 +153,7 @@ export interface LogEventProps {
   embedParam: EmbedObject;
   interaction?: CommandInteraction | ButtonInteraction;
   error: Error,
+  discord: Client
 }
 
 export interface Die {

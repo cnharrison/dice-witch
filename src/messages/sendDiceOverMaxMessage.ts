@@ -1,6 +1,7 @@
 import { maxDiceSides, maxImageDice, maxTextDice } from "../constants/index";
 import {
   ButtonInteraction,
+  Client,
   CommandInteraction,
   Message,
   TextChannel,
@@ -14,9 +15,11 @@ const textMsg = `${maxDiceSides} sides max and ${maxTextDice} dice max, sorry ðŸ
 const sendDiceOverMaxMessage = async (
   message: Message,
   logOutputChannel: TextChannel,
+  discord: Client,
   args?: string[],
   interaction?: CommandInteraction | ButtonInteraction,
-  shouldHaveImage?: boolean
+  shouldHaveImage?: boolean,
+
 ) => {
   const msg = shouldHaveImage ? imageMsg : textMsg;
   try {
@@ -30,6 +33,7 @@ const sendDiceOverMaxMessage = async (
     message,
     interaction,
     args,
+    discord,
   });
   return;
 };

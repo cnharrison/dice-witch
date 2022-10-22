@@ -133,10 +133,6 @@ You can title a roll using the 2nd paramater of `/roll`, `title`.
 
   - `/roll notation:1d20: title:to flirt with the bartender`: Roll 1d20 with the title "to flirt with the bartender" 
 
-If you're still using non-slash commands, you can use the `!titledroll` command. 
-
-  - `!titledroll 1d20`: Roll 1d20 with a title. You'll be prompted for the title after typing the command, and the roll will only be performed once you've given it. Any `!roll` can also be a `!titledroll`. You have 30 seconds to answer the prompt.
-
 ### Repeating rolls
 
 You can repeat any roll by using the `timestorepeat`, the 3rd parameter of `/roll`.

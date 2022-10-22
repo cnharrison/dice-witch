@@ -33,6 +33,7 @@ module.exports = {
     interaction,
     title,
     timesToRepeat,
+    discord,
   }: RollProps) {
     if (!args.length) {
       sendHelperMessage(
@@ -74,9 +75,11 @@ module.exports = {
         sendDiceOverMaxMessage(
           message,
           logOutputChannel,
+          discord,
           args,
           interaction,
-          shouldHaveImage
+          shouldHaveImage,
+     
         );
         return;
       }
@@ -96,6 +99,7 @@ module.exports = {
         sendDiceOverMaxMessage(
           message,
           logOutputChannel,
+          discord,
           args,
           interaction,
           shouldHaveImage
@@ -106,6 +110,7 @@ module.exports = {
         sendDiceOverMaxMessage(
           message,
           logOutputChannel,
+          discord,
           args,
           interaction,
           shouldHaveImage

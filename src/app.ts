@@ -1,6 +1,4 @@
 import {
-  ApplicationCommand,
-  ApplicationCommandData,
   ApplicationCommandDataResolvable,
   ApplicationCommandOptionType,
   Client,
