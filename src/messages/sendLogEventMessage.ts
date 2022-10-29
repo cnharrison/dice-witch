@@ -133,7 +133,6 @@ const sendLogEventMessage = async ({
       canvasString?: string;
     }
   ) => {
-    console.log("logEvent ran");
     if (!logOutputChannelID) return;
     const logOutputChannel = c.channels.cache.get(
       logOutputChannelID
