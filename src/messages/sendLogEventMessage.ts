@@ -1,13 +1,16 @@
-import Discord, {
+import {
   TextChannel,
   DMChannel,
   NewsChannel,
   PartialDMChannel,
   ThreadChannel,
   ChannelType,
+  Client,
+  resolveColor,
+  AttachmentBuilder,
 } from "discord.js";
-import { EmbedObject, EventType, LogEventProps } from "../types";
-import { adminID, prefix } from "../../config.json";
+import { EventType, LogEventProps } from "../types";
+import { adminID, prefix, logOutputChannelID } from "../../config.json";
 import {
   eventColor,
   errorColor,
@@ -16,23 +19,18 @@ import {
   tabletopColor,
 } from "../constants";
 import { makeBold } from "../helpers";
-
-const getNameString = (isThread: boolean): string =>
-  isThread ? "thread" : "channel";
-
 const sendLogEventMessage = async ({
   eventType,
-  logOutputChannel,
   message,
   command,
   args,
   title,
   resultMessage,
   guild,
-  embedParam,
   interaction,
+  discord,
+  canvasString,
 }: Partial<LogEventProps>) => {
-  let embed: any;
   const channel:
     | TextChannel
     | DMChannel
@@ -46,169 +44,137 @@ const sendLogEventMessage = async ({
   const username = interaction
     ? interaction.user.username
     : message?.author.username;
-  const guildName = guild
-    ? guild.name
-    : interaction
-    ? interaction?.guild?.name
-    : message?.guild;
+  const guildName = guild ? guild.name : interaction?.guild?.name;
   const commandName = command?.name;
   const prefixName = interaction ? "/" : prefix;
   const isGuildChannel = channel && channel.type === ChannelType.GuildText;
-  const isInGuild = message?.guild?.id || interaction?.inGuild();
   const isThread = channel && channel.type === ChannelType.PublicThread;
+  const isInGuild = !!interaction?.inGuild();
 
-  if (logOutputChannel) {
+  const generateEmbed = () => {
+    const getNameString = (isThread: boolean): string =>
+      isThread ? "thread" : "channel";
     switch (eventType) {
       case EventType.RECEIVED_COMMAND:
-        console.log(
-          message?.guild?.id || interaction?.inGuild()
-            ? `received command ${prefixName}${commandName}: ${args} from [ ${username} ] in ${getNameString(
+        return {
+          color: eventColor,
+          title: `${eventType}: ${prefixName}${commandName}`,
+          description: isInGuild
+            ? `${args} from ** ${username}** in ${getNameString(
                 isThread
-              )} [ ${channelName} ] on [ ${guildName} ]`
-            : `received ${prefixName}command ${commandName}: ${args} from [ ${username} ] in [ DM ]`
-        );
-        embed = new Discord.EmbedBuilder()
-          .setColor(eventColor)
-          .setTitle(`${eventType}: ${prefixName}${commandName}`)
-          .setDescription(
-            isInGuild
-              ? `${args} from ** ${username}** in ${getNameString(
-                  isThread
-                )} ${makeBold(channelName)} on ${makeBold(guildName)}`
-              : `${args} from ** ${username}** in **DM**`
-          );
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err) => console.error(err));
-        break;
+              )} ${makeBold(channelName)} on ${makeBold(guildName)}`
+            : `${args} from ** ${username}** in **DM**`,
+        };
       case EventType.CRITICAL_ERROR:
-        embed = new Discord.EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle(`${eventType}: ${commandName}`)
-          .setDescription(
-            isInGuild
-              ? `${args} from ${makeBold(username)} in ${getNameString(
-                  isThread
-                )} ${makeBold(channelName)} on ${makeBold(
-                  guildName
-                )} <@${adminID}>`
-              : `${args} from ${makeBold(username)} in **DM** ${adminID}`
-          );
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err) => console.error(err));
-        break;
-      case EventType.ROLL_TITLE_REJECTED:
-        embed = new Discord.EmbedBuilder()
-          .setColor(errorColor)
-          .setTitle(eventType)
-          .setDescription(
-            isInGuild
-              ? `${makeBold(username)} in ${getNameString(isThread)} ${makeBold(
-                  channelName
-                )} on ${makeBold(guildName)}`
-              : `${makeBold(username)} in **DM**`
-          );
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err) => console.error(err));
-        break;
-      case EventType.ROLL_TITLE_ACCEPTED:
-        embed = new Discord.EmbedBuilder()
-          .setColor(eventColor)
-          .setTitle(`${eventType}: ${title}`)
-          .setDescription(
-            isInGuild
-              ? ` ${makeBold(username)} in ${getNameString(
-                  isThread
-                )} ${makeBold(channelName)} on ${makeBold(guildName)}`
-              : `${makeBold(username)} in **DM**`
-          );
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err) => console.error(err));
-        break;
-      case EventType.ROLL_TITLE_TIMEOUT:
-        embed = new Discord.EmbedBuilder()
-          .setColor(errorColor)
-          .setTitle(eventType)
-          .setDescription(
-            isInGuild
-              ? `${makeBold(username)} in ${getNameString(isThread)} ${makeBold(
-                  channelName
-                )} on ${makeBold(guildName)}`
-              : `${makeBold(username)} in **DM**`
-          );
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err: Error) => console.error(err));
-        break;
+        return {
+          color: resolveColor("#FF0000"),
+          title: `${eventType}: ${commandName}`,
+          description: isInGuild
+            ? `${args} from ${makeBold(username)} in ${getNameString(
+                isThread
+              )} ${makeBold(channelName)} on ${makeBold(
+                guildName
+              )} <@${adminID}>`
+            : `${args} from ${makeBold(username)} in **DM** ${adminID}`,
+        };
       case EventType.GUILD_ADD:
-        embed = new Discord.EmbedBuilder()
-          .setColor(goodColor)
-          .setTitle(eventType)
-          .setDescription(`${guildName}`);
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err: Error) => console.error(err));
-        break;
+        return {
+          color: goodColor,
+          title: eventType,
+          description: guildName,
+        };
       case EventType.GUILD_REMOVE:
-        embed = new Discord.EmbedBuilder()
-          .setColor(errorColor)
-          .setTitle(eventType)
-          .setDescription(`${guildName}`);
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err: Error) => console.error(err));
-        break;
+        return {
+          color: errorColor,
+          title: eventType,
+          description: guildName,
+        };
       case EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE:
-        logOutputChannel
-          .send(embedParam as EmbedObject)
-          .catch((err: Error) => console.error(err));
-        break;
+        return {
+          color: tabletopColor,
+          description: `Attachment sent🖼️`,
+        };
       case EventType.SENT_ROLL_RESULT_MESSAGE:
-        embed = new Discord.EmbedBuilder()
-          .setColor(tabletopColor)
-          .setTitle(`${eventType}: ${title ? title : ""}`)
-          .setDescription(`${resultMessage}`);
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err: Error) => console.error(err));
-        break;
-      case EventType.SENT_HELER_MESSAGE:
-        embed = new Discord.EmbedBuilder()
-          .setColor(infoColor)
-          .setTitle(eventType)
-          .setDescription(
-            `${username} in ${isGuildChannel ? channelName : "DM"}`
-          );
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err: Error) => console.error(err));
-        break;
-      case EventType.SENT_DICE_OVER_MAX_MESSAGE:
-        embed = new Discord.EmbedBuilder()
-          .setColor(infoColor)
-          .setTitle(eventType)
-          .setDescription(`${username} in ${channelName}`);
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err: Error) => console.error(err));
-        break;
-      case EventType.SENT_NEED_PERMISSION_MESSAGE:
-        embed = new Discord.EmbedBuilder()
-          .setColor(errorColor)
-          .setTitle(eventType)
-          .setDescription(`${makeBold(channelName)} on ${makeBold(guildName)}`);
-        logOutputChannel
-          .send({ embeds: [embed] })
-          .catch((err: Error) => console.error(err));
-        break;
+        return {
+          color: tabletopColor,
+          title: `${eventType}: ${title ? title : ""}`,
+          description: resultMessage,
+        };
 
+      case EventType.SENT_HELER_MESSAGE:
+        return {
+          color: infoColor,
+          title: eventType,
+          description: `${username} in ${isGuildChannel ? channelName : "DM"}`,
+        };
+      case EventType.SENT_DICE_OVER_MAX_MESSAGE:
+        return {
+          color: infoColor,
+          title: eventType,
+          description: `${username} in ${channelName}`,
+        };
+      case EventType.SENT_NEED_PERMISSION_MESSAGE:
+        return {
+          color: errorColor,
+          title: eventType,
+          description: `${makeBold(channelName)} on ${makeBold(guildName)}`,
+        };
       default:
-        return null;
+        return {};
     }
-  }
+  };
+
+  const logEvent = (
+    c: Client,
+    {
+      embed,
+      logOutputChannelID,
+      canvasString,
+    }: {
+      embed: any;
+      logOutputChannelID?: string;
+      canvasString?: string;
+    }
+  ) => {
+    if (!logOutputChannelID) return;
+    const logOutputChannel = c.channels.cache.get(
+      logOutputChannelID
+    ) as TextChannel;
+    if (logOutputChannel) {
+      // if (canvasString) {
+      //   const attachment = new AttachmentBuilder(
+      //     Buffer.from(canvasString.split(",")[1], "base64"),
+      //     { name: "currentDice.png" }
+      //   );
+      //   logOutputChannel.send({
+      //     embeds: [
+      //       {
+      //         image: {
+      //           url: "attachment://currentDice.png",
+      //         },
+      //       },
+      //     ],
+      //     files: [attachment],
+      //   });
+      // } else {
+      logOutputChannel
+        .send({
+          embeds: [embed],
+        })
+        .catch((err: Error) => console.error(err));
+    }
+  };
+  // };
+
+  discord?.shard
+    ?.broadcastEval(logEvent, {
+      context: {
+        embed: generateEmbed(),
+        logOutputChannelID,
+        canvasString,
+      },
+    })
+    .catch(console.error);
 };
 
 export default sendLogEventMessage;

@@ -52,7 +52,7 @@ const updateOnCommand = async ({
         },
       } = message;
 
-      const isARoll = ["r", "roll", "tr", "titledroll"].includes(commandName);
+      const isARoll = ["r", "roll"].includes(commandName);
       try {
         await prisma.guilds.upsert({
           where: {

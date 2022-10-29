@@ -1,4 +1,3 @@
-import sendGetRollTitleMessage from "./sendGetRollTitleMessage";
 import sendDiceResultMessageWithImage from "./sendDiceResultMessageWithImage";
 import sendHelperMessage from "./sendHelperMessage";
 import sendDiceRolledMessage from "./sendDiceRolledMessage";
@@ -8,7 +7,6 @@ import sendLogEventMessage from "./sendLogEventMessage";
 import sendDiceResultMessage from "./sendDiceResultMessage";
 
 export {
-  sendGetRollTitleMessage,
   sendDiceResultMessage,
   sendDiceResultMessageWithImage,
   sendHelperMessage,

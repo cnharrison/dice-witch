@@ -1,5 +1,6 @@
 import Discord, {
   ButtonInteraction,
+  Client,
   CommandInteraction,
   EmbedBuilder,
 } from "discord.js";
@@ -8,6 +9,7 @@ import { sendLogEventMessage } from ".";
 import { AttachmentBuilder, Message, TextChannel } from "discord.js";
 import { EmbedObject, EventType, Result } from "../types";
 import { tabletopColor } from "../constants";
+import { Canvas } from "canvas";
 
 const generateEmbedMessage = async (
   resultArray: Result[],
@@ -51,7 +53,9 @@ const sendDiceResultMessageWithImage = async (
   resultArray: Result[],
   message: Message,
   attachment: AttachmentBuilder,
+  canvas: Canvas,
   logOutputChannel: TextChannel,
+  discord: Client,
   interaction?: CommandInteraction | ButtonInteraction,
   title?: string
 ) => {
@@ -71,8 +75,10 @@ const sendDiceResultMessageWithImage = async (
         sendLogEventMessage({
           eventType: EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE,
           logOutputChannel,
+          discord,
           message,
           embedParam: embedMessage,
+          canvasString: canvas.toDataURL(),
         });
       } catch (err) {
         console.error(err);

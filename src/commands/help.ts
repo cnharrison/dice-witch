@@ -1,7 +1,7 @@
 import Discord from "discord.js";
 import { Command, HelpProps } from "../types";
 import { prefix } from "../../config.json";
-import { deprecationWarning, footerButtonRow } from "../constants";
+import { footerButtonRow } from "../constants";
 
 module.exports = {
   name: "help",
@@ -17,7 +17,7 @@ module.exports = {
       const embed = new Discord.EmbedBuilder()
         .setColor("#0000ff")
         .setTitle("Commands")
-        .setDescription(`${deprecationWarning}\n\n${data.join("\r")}`);
+        .setDescription(`${data.join("\r")}`);
       try {
         await message.reply({
           embeds: [embed],

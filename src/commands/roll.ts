@@ -33,6 +33,7 @@ module.exports = {
     interaction,
     title,
     timesToRepeat,
+    discord,
   }: RollProps) {
     if (!args.length) {
       sendHelperMessage(
@@ -74,6 +75,7 @@ module.exports = {
         sendDiceOverMaxMessage(
           message,
           logOutputChannel,
+          discord,
           args,
           interaction,
           shouldHaveImage
@@ -81,14 +83,16 @@ module.exports = {
         return;
       }
       await sendDiceRolledMessage(message, diceArray, interaction);
-      const attachment = await generateDiceAttachment(diceArray);
+      const { attachment, canvas } = await generateDiceAttachment(diceArray);
       await sendDiceResultMessageWithImage(
         resultArray,
         message,
         attachment,
+        canvas,
         logOutputChannel,
+        discord,
         interaction,
-        title
+        title,
       );
       return;
     } else {
@@ -96,6 +100,7 @@ module.exports = {
         sendDiceOverMaxMessage(
           message,
           logOutputChannel,
+          discord,
           args,
           interaction,
           shouldHaveImage
@@ -106,6 +111,7 @@ module.exports = {
         sendDiceOverMaxMessage(
           message,
           logOutputChannel,
+          discord,
           args,
           interaction,
           shouldHaveImage

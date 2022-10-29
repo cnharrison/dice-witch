@@ -13,6 +13,7 @@ import {
 } from "discord.js";
 import chroma from "chroma-js";
 import { PrismaClient } from "@prisma/client";
+import { Canvas } from "canvas";
 
 export type Icon =
   | "trashcan"
@@ -123,6 +124,7 @@ export type RollProps = Pick<
   | "interaction"
   | "title"
   | "timesToRepeat"
+  | "discord"
 >;
 
 export type HelpProps = Pick<CommandProps, "message" | "args" | "commands">;
@@ -152,6 +154,8 @@ export interface LogEventProps {
   embedParam: EmbedObject;
   interaction?: CommandInteraction | ButtonInteraction;
   error: Error,
+  discord: Client,
+  canvasString: string;
 }
 
 export interface Die {

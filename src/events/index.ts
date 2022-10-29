@@ -56,6 +56,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           message,
           command,
           args,
+          discord,
         });
       } catch (error) {
         const embed: EmbedBuilder = new Discord.EmbedBuilder()
@@ -70,6 +71,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
           message,
           command,
           args,
+          discord,
         });
       }
     });
@@ -129,6 +131,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         command,
         args,
         interaction,
+        discord,
       });
     });
 
@@ -162,6 +165,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         command,
         args,
         interaction,
+        discord,
       });
     });
 
@@ -212,6 +216,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         eventType: EventType.GUILD_ADD,
         logOutputChannel,
         guild,
+        discord,
       });
     });
 
@@ -264,6 +269,7 @@ export default (discord: Client, logOutputChannel: TextChannel) => {
         eventType: EventType.GUILD_REMOVE,
         logOutputChannel,
         guild,
+        discord,
       });
     });
   } catch (err) {

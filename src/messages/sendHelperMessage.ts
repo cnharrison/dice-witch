@@ -12,7 +12,6 @@ import Discord, {
 import { prefix } from "../../config.json";
 import {
   availableDice,
-  deprecationWarning,
   footerButtonRow,
   maxImageDice,
 } from "../constants";
@@ -83,7 +82,7 @@ const sendHelperMessage = async (
     .addFields(
       {
         name: `Need help ?😅`,
-        value: `${deprecationWarning}\n\n You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any dice, but you can only see images of these dice: **${availableDice
+        value: `You need to put least one valid argument after the **${prefix}${name}** command.\nArguments must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any dice, but you can only see images of these dice: **${availableDice
           .map((dice: number | string) => `d${dice}`)
           .join(
             ", "

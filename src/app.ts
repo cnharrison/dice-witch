@@ -1,6 +1,4 @@
 import {
-  ApplicationCommand,
-  ApplicationCommandData,
   ApplicationCommandDataResolvable,
   ApplicationCommandOptionType,
   Client,
@@ -12,10 +10,11 @@ import { ToadScheduler, SimpleIntervalJob, AsyncTask } from "toad-scheduler";
 import events from "./events";
 import {
   discordToken,
-  logOutputChannel,
+  logOutputChannelID,
   botListAuthKeys,
   clientID,
 } from "../config.json";
+import { getUserCount } from "./services";
 const { discordbotlist, topgg } = botListAuthKeys;
 
 const scheduler = new ToadScheduler();
@@ -118,7 +117,7 @@ const startServer = () => {
     let logOutputChannelTemp;
     discord.user ? discord.user.setActivity("/roll") : {};
     try {
-      const channel: any = await discord.channels.fetch(logOutputChannel);
+      const channel: any = await discord.channels.fetch(logOutputChannelID);
       logOutputChannelTemp = channel;
       console.log(`[Discord] Found log output channel ${channel?.name}`);
       console.log(`[Discord] Registering global slash commands...`);
@@ -132,18 +131,19 @@ const startServer = () => {
     const task = new AsyncTask(
       "botsite updates",
       async () => {
+        const { totalGuilds } = await getUserCount({ discord }) ?? {};
         const promises = [
           axios.post(
             `https://top.gg/api/bots/${clientID}/stats`,
             {
-              server_count: discord.guilds.cache.size,
+              server_count: totalGuilds,
             },
             getHeaders(topgg)
           ),
           axios.post(
             `https://discordbotlist.com/api/v1/bots/${clientID}/stats`,
             {
-              guilds: discord.guilds.cache.size,
+              guilds: totalGuilds,
             },
             getHeaders(discordbotlist)
           ),
