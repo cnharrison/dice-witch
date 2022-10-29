@@ -155,7 +155,7 @@ export interface LogEventProps {
   interaction?: CommandInteraction | ButtonInteraction;
   error: Error,
   discord: Client,
-  canvas: Canvas
+  canvasString: string;
 }
 
 export interface Die {

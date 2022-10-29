@@ -90,8 +90,9 @@ module.exports = {
         attachment,
         canvas,
         logOutputChannel,
+        discord,
         interaction,
-        title
+        title,
       );
       return;
     } else {

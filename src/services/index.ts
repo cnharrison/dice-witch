@@ -4,6 +4,7 @@ import generateIcon from "./generateIcon";
 import checkForAttachPermission from "./checkForAttachPermission";
 import generateDie from "./generateDie";
 import updateOnCommand from "./updateOnCommand";
+import getUserCount from "./getUserCount";
 
 export {
   generateDiceAttachment,
@@ -12,4 +13,5 @@ export {
   generateDie,
   generateIcon,
   updateOnCommand,
+  getUserCount,
 };

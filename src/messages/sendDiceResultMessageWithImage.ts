@@ -1,5 +1,6 @@
 import Discord, {
   ButtonInteraction,
+  Client,
   CommandInteraction,
   EmbedBuilder,
 } from "discord.js";
@@ -13,9 +14,8 @@ import { Canvas } from "canvas";
 const generateEmbedMessage = async (
   resultArray: Result[],
   attachment: AttachmentBuilder,
-  canvas: Canvas,
   title?: string,
-  interaction?: CommandInteraction | ButtonInteraction,
+  interaction?: CommandInteraction | ButtonInteraction
 ): Promise<{ embeds: EmbedBuilder[]; files: AttachmentBuilder[] }> => {
   const grandTotal = resultArray.reduce(
     (prev: number, cur: Result) => prev + cur.results,
@@ -55,6 +55,7 @@ const sendDiceResultMessageWithImage = async (
   attachment: AttachmentBuilder,
   canvas: Canvas,
   logOutputChannel: TextChannel,
+  discord: Client,
   interaction?: CommandInteraction | ButtonInteraction,
   title?: string
 ) => {
@@ -62,7 +63,6 @@ const sendDiceResultMessageWithImage = async (
     const embedMessage: EmbedObject = await generateEmbedMessage(
       resultArray,
       attachment,
-      canvas,
       title,
       interaction
     );
@@ -75,9 +75,10 @@ const sendDiceResultMessageWithImage = async (
         sendLogEventMessage({
           eventType: EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE,
           logOutputChannel,
+          discord,
           message,
           embedParam: embedMessage,
-          canvas,
+          canvasString: canvas.toDataURL(),
         });
       } catch (err) {
         console.error(err);

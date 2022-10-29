@@ -1,5 +1,6 @@
 import Discord from "discord.js";
 import { footerButtonRow } from "../constants";
+import { getUserCount } from "../services";
 import { StatusProps } from "../types";
 
 module.exports = {
@@ -8,6 +9,8 @@ module.exports = {
   aliases: ["ping"],
   async execute({ message, discord, interaction }: StatusProps) {
     const now = Date.now();
+    const { totalGuilds, totalMembers } =
+      (await getUserCount({ discord })) ?? {};
     const embed = new Discord.EmbedBuilder()
       .setColor("#99999")
       .setTitle("Status")
@@ -16,7 +19,7 @@ module.exports = {
           interaction
             ? now - interaction.createdTimestamp
             : now - message.createdTimestamp
-        }ms**\n I'm in **${discord.guilds.cache.size}** discord servers 😈`
+        }ms**\n I'm in **${totalGuilds}** discord servers with **${totalMembers}** users 😈`
       );
     try {
       interaction

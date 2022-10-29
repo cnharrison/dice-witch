@@ -7,9 +7,10 @@ import {
   ChannelType,
   Client,
   resolveColor,
+  AttachmentBuilder,
 } from "discord.js";
 import { EventType, LogEventProps } from "../types";
-import { adminID, prefix } from "../../config.json";
+import { adminID, prefix, logOutputChannelID } from "../../config.json";
 import {
   eventColor,
   errorColor,
@@ -18,10 +19,8 @@ import {
   tabletopColor,
 } from "../constants";
 import { makeBold } from "../helpers";
-
 const sendLogEventMessage = async ({
   eventType,
-  logOutputChannel,
   message,
   command,
   args,
@@ -30,7 +29,7 @@ const sendLogEventMessage = async ({
   guild,
   interaction,
   discord,
-  canvas,
+  canvasString,
 }: Partial<LogEventProps>) => {
   const channel:
     | TextChannel
@@ -91,12 +90,7 @@ const sendLogEventMessage = async ({
           description: guildName,
         };
       case EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE:
-        return {
-          color: tabletopColor,
-          title: `${eventType}: ${title ? title : ""}`,
-          description: `${resultMessage}`,
-        };
-
+        return;
       case EventType.SENT_ROLL_RESULT_MESSAGE:
         return {
           color: tabletopColor,
@@ -123,15 +117,7 @@ const sendLogEventMessage = async ({
           description: `${makeBold(channelName)} on ${makeBold(guildName)}`,
         };
       default:
-        return {
-          color: eventColor,
-          title: `${eventType}: ${prefixName}${commandName}`,
-          description: isInGuild
-            ? `${args} from ** ${username}** in ${getNameString(
-                isThread
-              )} ${makeBold(channelName)} on ${makeBold(guildName)}`
-            : `${args} from ** ${username}** in **DM**`,
-        };
+        return {};
     }
   };
 
@@ -140,19 +126,41 @@ const sendLogEventMessage = async ({
     {
       embed,
       logOutputChannelID,
+      canvasString,
     }: {
       embed: any;
       logOutputChannelID?: string;
+      canvasString?: string;
     }
   ) => {
+    console.log("logEvent ran");
     if (!logOutputChannelID) return;
     const logOutputChannel = c.channels.cache.get(
       logOutputChannelID
     ) as TextChannel;
     if (logOutputChannel) {
-      logOutputChannel
-        .send({ embeds: [embed] })
-        .catch((err: Error) => console.error(err));
+      if (canvasString) {
+        const attachment = new AttachmentBuilder(
+          Buffer.from(canvasString.split(",")[1], "base64"),
+          { name: "currentDice.png" }
+        );
+        logOutputChannel.send({
+          embeds: [
+            {
+              image: {
+                url: "attachment://currentDice.png",
+              },
+            },
+          ],
+          files: [attachment],
+        });
+      } else {
+        logOutputChannel
+          .send({
+            embeds: [embed],
+          })
+          .catch((err: Error) => console.error(err));
+      }
     }
   };
 
@@ -160,7 +168,8 @@ const sendLogEventMessage = async ({
     ?.broadcastEval(logEvent, {
       context: {
         embed: generateEmbed(),
-        logOutputChannelID: "809430929676042290",
+        logOutputChannelID,
+        canvasString,
       },
     })
     .then(console.log)
