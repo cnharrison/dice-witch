@@ -90,7 +90,10 @@ const sendLogEventMessage = async ({
           description: guildName,
         };
       case EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE:
-        return;
+        return {
+          color: tabletopColor,
+          description: `Attachment sent🖼️`,
+        };
       case EventType.SENT_ROLL_RESULT_MESSAGE:
         return {
           color: tabletopColor,
@@ -138,30 +141,30 @@ const sendLogEventMessage = async ({
       logOutputChannelID
     ) as TextChannel;
     if (logOutputChannel) {
-      if (canvasString) {
-        const attachment = new AttachmentBuilder(
-          Buffer.from(canvasString.split(",")[1], "base64"),
-          { name: "currentDice.png" }
-        );
-        logOutputChannel.send({
-          embeds: [
-            {
-              image: {
-                url: "attachment://currentDice.png",
-              },
-            },
-          ],
-          files: [attachment],
-        });
-      } else {
-        logOutputChannel
-          .send({
-            embeds: [embed],
-          })
-          .catch((err: Error) => console.error(err));
-      }
+      // if (canvasString) {
+      //   const attachment = new AttachmentBuilder(
+      //     Buffer.from(canvasString.split(",")[1], "base64"),
+      //     { name: "currentDice.png" }
+      //   );
+      //   logOutputChannel.send({
+      //     embeds: [
+      //       {
+      //         image: {
+      //           url: "attachment://currentDice.png",
+      //         },
+      //       },
+      //     ],
+      //     files: [attachment],
+      //   });
+      // } else {
+      logOutputChannel
+        .send({
+          embeds: [embed],
+        })
+        .catch((err: Error) => console.error(err));
     }
   };
+  // };
 
   discord?.shard
     ?.broadcastEval(logEvent, {
@@ -171,7 +174,6 @@ const sendLogEventMessage = async ({
         canvasString,
       },
     })
-    .then(console.log)
     .catch(console.error);
 };
 
