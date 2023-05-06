@@ -93,7 +93,9 @@ const blank = `
 </svg>
 `;
 
-const generateIcon = async (iconType: Icon | null) => {
+const generateIcon = async (
+  iconType: Icon | null
+): Promise<Buffer | undefined> => {
   try {
     let image: string | undefined;
     switch (iconType) {

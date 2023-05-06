@@ -1,11 +1,12 @@
 {
   "extends": [
     "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
     "prettier",
     "plugin:security/recommended",
     "plugin:import/errors",
     "plugin:import/warnings",
-    "plugin:import/typescript",
+    "plugin:import/typescript"
   ],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
@@ -31,7 +32,6 @@
     }
   },
   "rules": {
-    "@typescript-eslint/rule-name": "error",
     "no-useless-escape": "off",
     "max-len": "off",
     "indent": "off",
@@ -39,6 +39,7 @@
     "new-cap": "off",
     "global-require": "off",
     "no-plusplus": "off",
-    "no-shadow": "off"
+    "no-shadow": "off",
+    "require-await": 2
   }
 }

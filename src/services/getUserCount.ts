@@ -1,6 +1,13 @@
 import { Client } from "discord.js";
 
-const getUserCount = ({ discord }: { discord: Client}) => {
+const getUserCount = ({
+  discord,
+}: {
+  discord: Client;
+}): Promise<void | {
+  totalGuilds: unknown;
+  totalMembers: unknown;
+}> => {
   const promises = [
     discord?.shard?.fetchClientValues("guilds.cache.size"),
     discord?.shard?.broadcastEval((c) =>

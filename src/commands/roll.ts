@@ -92,7 +92,7 @@ module.exports = {
         logOutputChannel,
         discord,
         interaction,
-        title,
+        title
       );
       return;
     } else {

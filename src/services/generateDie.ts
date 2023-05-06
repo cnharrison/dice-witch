@@ -25,83 +25,28 @@ const generateDie = async (
   borderWidth?: string,
   width?: string,
   height?: string
-) => {
-  const dice: DiceFaceData = {
-    20: generateD20({
-      result: number,
-      textColor,
-      outlineColor,
-      solidFill,
-      patternFill,
-      borderWidth,
-      width: width,
-      height: height,
-    }),
-    12: generateD12({
-      result: number,
-      textColor,
-      outlineColor,
-      solidFill,
-      patternFill,
-      borderWidth,
-      width,
-      height,
-    }),
-    10: generateD10({
-      result: number,
-      textColor,
-      outlineColor,
-      solidFill,
-      patternFill,
-      borderWidth,
-      width,
-      height,
-    }),
-
-    8: generateD8({
-      result: number,
-      textColor,
-      outlineColor,
-      solidFill,
-      patternFill,
-      borderWidth,
-      width,
-      height,
-    }),
-
-    6: generateD6({
-      result: number,
-      textColor,
-      outlineColor,
-      solidFill,
-      patternFill,
-      borderWidth,
-      width,
-      height,
-    }),
-
-    4: generateD4({
-      result: number,
-      textColor,
-      outlineColor,
-      solidFill,
-      patternFill,
-      borderWidth,
-      width,
-      height,
-    }),
-
-    "%": generateDPercent({
-      result: number,
-      textColor,
-      outlineColor,
-      solidFill,
-      patternFill,
-      borderWidth,
-      width,
-      height,
-    }),
+): Promise<Buffer | null> => {
+  const props = {
+    result: number,
+    textColor,
+    outlineColor,
+    solidFill,
+    patternFill,
+    borderWidth,
+    width,
+    height,
   };
+
+  const dice: DiceFaceData = {
+    20: generateD20(props),
+    12: generateD12(props),
+    10: generateD10(props),
+    8: generateD8(props),
+    6: generateD6(props),
+    4: generateD4(props),
+    "%": generateDPercent(props),
+  };
+
   const image = dice[sides];
 
   try {

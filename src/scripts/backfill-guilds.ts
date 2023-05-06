@@ -1,3 +1,4 @@
+import { exit } from "node:process";
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { PrismaClient } from "@prisma/client";
 import { discordToken } from "../../config.json";
@@ -60,13 +61,16 @@ const startServer = () => {
       } catch (err) {
         console.log(`❌ error writing ${guild.name}....`);
         console.error(err);
+        exit(1);
       }
       console.log(`...written! ✅`);
     });
     await Promise.all(promises);
     console.log("..all done! ✅✅✅😊👌");
+    exit(0);
   });
 
   discord.login(discordToken);
+  exit(process.exitCode);
 };
 startServer();
