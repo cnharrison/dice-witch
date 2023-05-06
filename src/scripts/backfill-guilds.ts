@@ -71,6 +71,5 @@ const startServer = () => {
   });
 
   discord.login(discordToken);
-  exit(process.exitCode);
 };
 startServer();
