@@ -9,13 +9,24 @@ import Discord, {
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";
-import { prefix, botPath, supportServerLink } from "../../config.json";
+import {
+  prefix,
+  botPath,
+  supportServerLink,
+  databaseURL,
+} from "../../config.json";
 import { Command, EventType } from "../types";
 import { sendLogEventMessage } from "../messages";
 import { errorColor } from "../constants/";
 import { updateOnCommand } from "../services";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: databaseURL,
+    },
+  },
+});
 
 export default (discord: Client, logOutputChannel: TextChannel) => {
   try {
