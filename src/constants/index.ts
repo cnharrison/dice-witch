@@ -14,7 +14,7 @@ const maxImageDice: number = 50;
 const maxTextDice: number = 500;
 const maxDiceSides: number = 100;
 
-const eventColor = resolveColor('#99999');
+const eventColor = resolveColor('#999999');
 const errorColor = resolveColor('#FF0000');
 const goodColor = resolveColor('#00FF00');
 const infoColor = resolveColor('#1E90FF');
