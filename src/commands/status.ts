@@ -12,7 +12,7 @@ module.exports = {
     const { totalGuilds, totalMembers } =
       (await getUserCount({ discord })) ?? {};
     const embed = new Discord.EmbedBuilder()
-      .setColor("#99999")
+      .setColor([153, 153, 153])
       .setTitle("Status")
       .setDescription(
         `Latency: **${
