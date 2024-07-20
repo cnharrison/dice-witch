@@ -4,6 +4,7 @@ import {
   Client,
   GatewayIntentBits,
   Partials,
+  TextChannel,
 } from "discord.js";
 import axios from "axios";
 import { ToadScheduler, SimpleIntervalJob, AsyncTask } from "toad-scheduler";
@@ -114,10 +115,12 @@ const startServer = () => {
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
   discord.on("ready", async () => {
-    let logOutputChannelTemp;
-    discord.user ? discord.user.setActivity("/roll") : {};
+    let logOutputChannelTemp: TextChannel | null = null;
+    if (discord.user) {
+      discord.user.setActivity("/roll");
+    }
     try {
-      const channel: any = await discord.channels.fetch(logOutputChannelID);
+      const channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
       logOutputChannelTemp = channel;
       console.log(`[Discord] Found log output channel ${channel?.name}`);
       console.log(`[Discord] Registering global slash commands...`);
@@ -126,7 +129,11 @@ const startServer = () => {
     } catch (err) {
       console.error(err);
     }
-    events(discord, logOutputChannelTemp);
+    if (logOutputChannelTemp) {
+      events(discord, logOutputChannelTemp);
+    } else {
+      console.error("Log output channel not found.");
+    }
 
     const task = new AsyncTask(
       "botsite updates",
