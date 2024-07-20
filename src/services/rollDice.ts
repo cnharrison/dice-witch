@@ -88,6 +88,7 @@ const processRollGroup = (
 ): Die[] => {
   const sides = sidesArray[outerIndex];
   if (sides === 100) {
+    // Special handling for d100 dice
     return rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
       const isHeads = coinFlip();
       const color = chroma.random();
@@ -117,6 +118,7 @@ const processRollGroup = (
       return acc;
     }, []);
   } else {
+    // General handling for other dice
     return rollGroup.rolls.map((currentRoll: RollResult) => {
       const isHeads = coinFlip();
       const color = chroma.random();
@@ -159,12 +161,14 @@ const rollDice = (
       let parsedRoll;
 
       try {
+        // Parse the dice roll expression
         parsedRoll = Parser.parse(value);
       } catch (err) {
         console.error(err);
         return;
       }
 
+      // Extract the sides of the dice from the parsed roll
       const sidesArray = parsedRoll
         ? parsedRoll.reduce((acc: number[], rollGroup: StandardDice) => {
           if (typeof rollGroup === "object") {
@@ -174,16 +178,20 @@ const rollDice = (
         }, [])
         : [];
 
+      // Determine if the dice should have an image based on available dice types
       const shouldHaveImage = sidesArray.every((sides: any) =>
         availableDice.includes(sides)
       );
 
       if (parsedRoll) {
+        // Roll the dice
         const roll = new DiceRoll(value);
         const result: Result = {
           output: roll.output,
           results: roll.total,
         };
+
+        // Process each roll group and accumulate the results
         const groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
           if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
             acc.push(...processRollGroup(rollGroup, sidesArray, outerIndex, availableDice));
@@ -197,6 +205,7 @@ const rollDice = (
       }
     });
 
+    // Determine if all dice should have an image
     const shouldHaveImage = shouldHaveImageArray.every(
       (value: boolean) => value
     );

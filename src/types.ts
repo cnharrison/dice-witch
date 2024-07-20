@@ -13,7 +13,6 @@ import {
 } from "discord.js";
 import chroma from "chroma-js";
 import { PrismaClient } from "@prisma/client";
-import { Canvas } from "canvas";
 
 export type Icon =
   | "trashcan"
@@ -111,6 +110,18 @@ export interface CommandProps {
   wasFromSlash: boolean;
 }
 
+export type CommandContext = {
+  message?: Message;
+  args: string[];
+  discord: Client;
+  logOutputChannel: TextChannel;
+  commands: Collection<string, Command>;
+  interaction?: Interaction;
+  title?: string;
+  timesToRepeat?: number;
+  wasFromSlash?: boolean;
+};
+
 export type KnowledgeBaseProps = Pick<
   CommandProps,
   "message" | "args" | "interaction" | "wasFromSlash"
@@ -204,4 +215,24 @@ export interface UpdateOnCommandProps {
   commandName: string;
   message?: Message;
   interaction?: Interaction;
+}
+
+export interface GuildType {
+  id: string;
+  name: string;
+  icon: string | null;
+  ownerId: string;
+  memberCount: number;
+  approximateMemberCount?: number;
+  preferredLocale: string;
+  publicUpdatesChannelId?: string;
+  joinedTimestamp: number;
+}
+
+export interface UserType {
+  id: string;
+  username: string;
+  flags?: { bitfield: number };
+  discriminator: string;
+  avatar?: string;
 }

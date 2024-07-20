@@ -4,14 +4,10 @@ import { Die } from "../types";
 
 const sendDiceRolledMessage = async (
   message: Message,
-  diceArray: any,
+  diceArray: (Die | Die[])[],
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
-  const diceArrayLengths = diceArray.map(
-    (array: (Die | Die[])[]) => array.length
-  );
-  const isSingleDie =
-    diceArrayLengths.length === 1 && diceArray[0].length === 1;
+  const isSingleDie = diceArray.length === 1 && Array.isArray(diceArray[0]) && diceArray[0].length === 1;
 
   const messages = [
     `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(
@@ -64,23 +60,25 @@ const sendDiceRolledMessage = async (
     )} and ${pluralPick(
       isSingleDie,
       "pirouettes",
-      "piroutte"
+      "pirouette"
     )} across the table's ancient cracks..._`,
   ];
 
-  const number = getRandomNumber(messages.length);
+  const getText = () => {
+    const number = getRandomNumber(messages.length);
+    return getRandomNumber(20) === 1 ? messages[number - 1] : messages[0];
+  };
 
-  const getText = () =>
-    getRandomNumber(20) === 1 ? messages[number - 1] : messages[0];
   try {
-    interaction
-      ? await interaction.followUp(getText())
-      : await message.channel.send(getText());
-    if (message?.channel) {
-      message.channel.sendTyping();
+    const text = getText();
+    if (interaction) {
+      await interaction.followUp(text);
+    } else {
+      await message.channel.send(text);
     }
+    message?.channel?.sendTyping();
   } catch (err) {
-    console.error(err);
+    console.error("Error sending dice rolled message:", err);
   }
 };
 

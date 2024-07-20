@@ -9,31 +9,23 @@ module.exports = {
   aliases: ["ping"],
   async execute({ message, discord, interaction }: StatusProps) {
     const now = Date.now();
-    const { totalGuilds, totalMembers } =
-      (await getUserCount({ discord })) ?? {};
+    const { totalGuilds, totalMembers } = await getUserCount({ discord }) ?? {};
+    const latency = now - (interaction?.createdTimestamp ?? message.createdTimestamp);
     const embed = new Discord.EmbedBuilder()
       .setColor([153, 153, 153])
       .setTitle("Status")
       .setDescription(
-        `Latency: **${
-          interaction
-            ? now - interaction.createdTimestamp
-            : now - message.createdTimestamp
-        }ms**\n I'm in **${totalGuilds}** discord servers with **${totalMembers}** users 😈`
+        `Latency: **${latency}ms**\n I'm in **${totalGuilds}** discord servers with **${totalMembers}** users 😈`
       );
+
     try {
-      interaction
-        ? await interaction.reply({
-            embeds: [embed],
-            components: [footerButtonRow],
-          })
-        : await message.reply({
-            embeds: [embed],
-            components: [footerButtonRow],
-          });
+      const response = {
+        embeds: [embed],
+        components: [footerButtonRow],
+      };
+      interaction ? await interaction.reply(response) : await message.reply(response);
     } catch (err) {
       console.error(err);
     }
-    return;
   },
 };

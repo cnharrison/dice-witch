@@ -11,6 +11,28 @@ import { EmbedObject, EventType, Result } from "../types";
 import { tabletopColor } from "../constants";
 import { Canvas } from "canvas";
 
+const createEmbed = (
+  resultArray: Result[],
+  grandTotal: number,
+  attachment: AttachmentBuilder,
+  title?: string,
+  interaction?: CommandInteraction | ButtonInteraction
+): EmbedBuilder => {
+  const footerText = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
+    }\n${interaction ? `sent to ` + interaction.user.username : ``}`;
+
+  const embed = new EmbedBuilder()
+    .setColor(tabletopColor)
+    .setImage("attachment://currentDice.png")
+    .setFooter({ text: footerText });
+
+  if (title) {
+    embed.setTitle(title);
+  }
+
+  return embed;
+};
+
 const generateEmbedMessage = async (
   resultArray: Result[],
   attachment: AttachmentBuilder,
@@ -21,31 +43,13 @@ const generateEmbedMessage = async (
     (prev: number, cur: Result) => prev + cur.results,
     0
   );
+
   try {
-    const embed = title
-      ? new Discord.EmbedBuilder()
-          .setColor(tabletopColor)
-          .setTitle(title)
-          .setImage("attachment://currentDice.png")
-          .setFooter({
-            text: `${resultArray.map((result) => result.output).join("\n")} ${
-              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-            }\n${interaction ? `sent to ` + interaction.user.username : ``}
-          `,
-          })
-      : new Discord.EmbedBuilder()
-          .setColor(tabletopColor)
-          .setImage("attachment://currentDice.png")
-          .setFooter({
-            text: `${resultArray.map((result) => result.output).join("\n")} ${
-              resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-            }\n${interaction ? `sent to ` + interaction.user.username : ``}
-          `,
-          });
+    const embed = createEmbed(resultArray, grandTotal, attachment, title, interaction);
     return { embeds: [embed], files: [attachment] };
   } catch (err) {
-    console.error(err);
-    throw new Error(err);
+    console.error("Error generating embed message:", err);
+    throw new Error("Failed to generate embed message");
   }
 };
 
@@ -69,9 +73,11 @@ const sendDiceResultMessageWithImage = async (
 
     const sendMessage = async () => {
       try {
-        interaction
-          ? await interaction?.followUp(embedMessage)
-          : await message.reply(embedMessage);
+        if (interaction) {
+          await interaction.followUp(embedMessage);
+        } else {
+          await message.reply(embedMessage);
+        }
         sendLogEventMessage({
           eventType: EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE,
           logOutputChannel,
@@ -81,16 +87,14 @@ const sendDiceResultMessageWithImage = async (
           canvasString: canvas.toDataURL(),
         });
       } catch (err) {
-        console.error(err);
+        console.error("Error sending message:", err);
       }
     };
 
     setTimeout(sendMessage, getRandomNumber(5000));
-
-    return;
   } catch (err) {
-    console.error(err);
-    throw new Error(err);
+    console.error("Error in sendDiceResultMessageWithImage:", err);
+    throw new Error("Failed to send dice result message with image");
   }
 };
 
