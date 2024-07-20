@@ -83,7 +83,12 @@ module.exports = {
         return;
       }
       await sendDiceRolledMessage(message, diceArray, interaction);
-      const { attachment, canvas } = await generateDiceAttachment(diceArray);
+      const attachmentResult = await generateDiceAttachment(diceArray);
+      if (!attachmentResult) {
+        console.error("Failed to generate dice attachment");
+        return;
+      }
+      const { attachment, canvas } = attachmentResult;
       await sendDiceResultMessageWithImage(
         resultArray,
         message,
