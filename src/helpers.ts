@@ -8,8 +8,8 @@ const getTotalDiceRolled = (diceArray: DiceArray) =>
   diceArray.reduce((acc: number, element: Die[]) => acc + element.length, 0);
 
 const getHighestDiceSide = (diceArray: DiceArray): number => {
-  const sidesArray = diceArray.flat().map((die: Die) => die.sides);
-  return sidesArray.reduce((a: any, b: any) => Math.max(a, b), 0);
+  const sidesArray: number[] = diceArray.flat().map((die: Die) => Number(die.sides));
+  return sidesArray.reduce((a: number, b: number) => Math.max(a, b), 0);
 };
 
 const makeBold = (string?: string | null | Guild) =>
