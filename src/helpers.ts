@@ -7,8 +7,8 @@ const getRandomNumber = (range: number) =>
 const getTotalDiceRolled = (diceArray: DiceArray) =>
   diceArray.reduce((acc: number, element: Die[]) => acc + element.length, 0);
 
-const getHighestDiceSide = (diceArray: DiceArray) => {
-  const sidesArray = diceArray.flat().map((die: any) => die.sides);
+const getHighestDiceSide = (diceArray: DiceArray): number => {
+  const sidesArray = diceArray.flat().map((die: Die) => die.sides);
   return sidesArray.reduce((a: any, b: any) => Math.max(a, b), 0);
 };
 
