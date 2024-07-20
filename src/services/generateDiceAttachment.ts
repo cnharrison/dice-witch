@@ -1,5 +1,5 @@
 import Discord, { AttachmentBuilder } from "discord.js";
-import Canvas, { CanvasRenderingContext2D, Image } from "canvas";
+import Canvas, { CanvasRenderingContext2D, Image, Canvas as CanvasType } from "canvas";
 import generateIcon from "./generateIcon";
 import generateDie from "./generateDie";
 import { Icon, Die, DiceArray } from "../types";
@@ -10,13 +10,10 @@ const defaultDiceDimension = 100;
 const defaultIconDimension = 25;
 
 const getIconWidth = (index: number, diceIndex: number, iconSpacing: number) =>
-  defaultDiceDimension * diceIndex +
-  defaultDiceDimension * iconSpacing * (index + 1);
+  defaultDiceDimension * (diceIndex + iconSpacing * (index + 1));
 
 const getIconHeight = (diceOuterIndex: number) =>
-  diceOuterIndex * defaultDiceDimension +
-  defaultDiceDimension +
-  diceOuterIndex * defaultIconDimension;
+  diceOuterIndex * (defaultDiceDimension + defaultIconDimension) + defaultDiceDimension;
 
 const drawIcon = async (
   iconArray: Icon[] | null | undefined,
@@ -24,14 +21,15 @@ const drawIcon = async (
   ctx: CanvasRenderingContext2D,
   diceIndex: number,
   diceOuterIndex: number
-) => {
-  if (iconArray) {
-    let iconImage: Image;
-    const promiseArray = iconArray.map(async (icon: Icon, index: number) => {
+): Promise<void> => {
+  if (!iconArray) return;
+
+  await Promise.all(iconArray.map(async (icon, index) => {
+    try {
       const iconToLoad = await generateIcon(icon);
       const iconWidth = getIconWidth(index, diceIndex, iconSpacing);
       const iconHeight = getIconHeight(diceOuterIndex);
-      iconImage = await Canvas.loadImage(iconToLoad as Buffer);
+      const iconImage = await Canvas.loadImage(iconToLoad as Buffer);
       ctx.drawImage(
         iconImage,
         iconWidth,
@@ -39,121 +37,85 @@ const drawIcon = async (
         defaultIconDimension,
         defaultIconDimension
       );
-    });
-    await Promise.all(promiseArray);
-  }
+    } catch (error) {
+      console.error(`Error loading icon: ${icon}`, error);
+    }
+  }));
 };
 
 const getCanvasHeight = (paginatedArray: DiceArray, shouldHaveIcon: boolean) =>
   shouldHaveIcon
     ? defaultDiceDimension * paginatedArray.length +
-      defaultIconDimension * paginatedArray.length
+    defaultIconDimension * paginatedArray.length
     : defaultDiceDimension * paginatedArray.length;
 
 const getCanvasWidth = (diceArray: DiceArray) => {
-  const isSingleGroup = diceArray.length === 1;
-  const onlyGroupLength = diceArray[0].length;
-  const isFirstShorterOrEqualToMax = onlyGroupLength <= maxRowLength;
-  const longestDiceGroupIndex = diceArray.reduce(
-    (acc: number, cur: Die[], curidx: number, arr: any) =>
-      cur.length > arr[acc].length ? curidx : acc,
-    0
-  );
-  const longestGroupLength = diceArray[longestDiceGroupIndex].length;
-  const isLongestShorterOrEqualToMax = longestGroupLength <= maxRowLength;
+  const groupLength = diceArray.length === 1
+    ? diceArray[0].length
+    : Math.max(...diceArray.map(group => group.length));
 
-  switch (true) {
-    case isSingleGroup && isFirstShorterOrEqualToMax:
-      return defaultDiceDimension * onlyGroupLength;
-    case isSingleGroup && !isFirstShorterOrEqualToMax:
-      return defaultDiceDimension * maxRowLength;
-    case !isSingleGroup && isLongestShorterOrEqualToMax:
-      return defaultDiceDimension * longestGroupLength;
-    case !isSingleGroup && !isLongestShorterOrEqualToMax:
-      return defaultDiceDimension * maxRowLength;
-    default:
-      return defaultDiceDimension * onlyGroupLength;
-  }
+  return defaultDiceDimension * Math.min(groupLength, maxRowLength);
 };
 
 const getDiceWidth = (index: number) => defaultDiceDimension * index;
 
 const getDiceHeight = (outerIndex: number, shouldHaveIcon: boolean) =>
-  shouldHaveIcon
-    ? outerIndex * defaultDiceDimension + outerIndex * defaultIconDimension
-    : outerIndex * defaultDiceDimension;
+  outerIndex * defaultDiceDimension + (shouldHaveIcon ? outerIndex * defaultIconDimension : 0);
 
 const paginateDiceArray = (diceArray: DiceArray): DiceArray => {
-  const paginateDiceGroup = (diceArray: Die[]) =>
-    Array(Math.ceil(diceArray.length / maxRowLength))
-      .fill(undefined)
-      .map((_, index: number) => index * maxRowLength)
-      .map((begin: number) => diceArray.slice(begin, begin + maxRowLength));
+  const paginateDiceGroup = (group: Die[]) =>
+    Array.from({ length: Math.ceil(group.length / maxRowLength) }, (_, index) =>
+      group.slice(index * maxRowLength, (index + 1) * maxRowLength)
+    );
 
-  const newArray = diceArray.reduce(
-    (acc: DiceArray, cur: Die[]) =>
-      cur.length > maxRowLength
-        ? acc.concat(paginateDiceGroup(cur))
-        : acc.concat([cur]),
-    []
+  return diceArray.flatMap(group =>
+    group.length > maxRowLength ? paginateDiceGroup(group) : [group]
   );
-  return newArray;
 };
 
-const generateDiceAttachment = async (diceArray: DiceArray): Promise<any> => {
+const generateDiceAttachment = async (
+  diceArray: DiceArray
+): Promise<{ attachment: AttachmentBuilder; canvas: CanvasType } | undefined> => {
   try {
+    const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
     const paginatedArray = paginateDiceArray(diceArray);
-    const shouldHaveIcon = diceArray
-      .map((diceGroup: Die[]) =>
-        diceGroup.some((dice: Die) => !!dice.icon?.length)
-      )
-      .some((bool: boolean) => bool === true);
     const canvasHeight = getCanvasHeight(paginatedArray, shouldHaveIcon);
     const canvasWidth = getCanvasWidth(paginatedArray);
     const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
-
     const ctx: CanvasRenderingContext2D = canvas.getContext("2d");
-    const outerPromiseArray = paginatedArray.map(
-      (array: Die[], outerIndex: number) =>
-        array.map(async (die: Die, index: number) => {
-          const { icon: iconArray } = die;
-          const toLoad: Buffer | null = await generateDie(
-            die.sides,
-            die.rolled,
-            die.textColor.hex(),
-            "#000000",
-            undefined,
-            generateLinearGradientFill(
-              die.color.hex(),
-              die.secondaryColor.hex()
-            )
-          );
-          const image: Image = await Canvas.loadImage(toLoad as Buffer);
-          const diceWidth = getDiceWidth(index);
-          const diceHeight = getDiceHeight(outerIndex, shouldHaveIcon);
-          ctx.drawImage(
-            image,
-            diceWidth,
-            diceHeight,
-            defaultDiceDimension,
-            defaultDiceDimension
-          );
-          if (shouldHaveIcon && die.iconSpacing) {
-            await drawIcon(iconArray, die.iconSpacing, ctx, index, outerIndex);
-          }
-        })
+
+    const drawDice = async (die: Die, index: number, outerIndex: number) => {
+      const toLoad = await generateDie(
+        die.sides,
+        die.rolled,
+        die.textColor.hex(),
+        "#000000",
+        undefined,
+        generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex())
+      );
+      const image = await Canvas.loadImage(toLoad as Buffer);
+      const diceWidth = getDiceWidth(index);
+      const diceHeight = getDiceHeight(outerIndex, shouldHaveIcon);
+      ctx.drawImage(image, diceWidth, diceHeight, defaultDiceDimension, defaultDiceDimension);
+      if (shouldHaveIcon && die.iconSpacing) {
+        await drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
+      }
+    };
+
+    await Promise.all(
+      paginatedArray.map((array, outerIndex) =>
+        Promise.all(array.map((die, index) => drawDice(die, index, outerIndex)))
+      )
     );
 
-    await Promise.all(outerPromiseArray.map(Promise.all, Promise));
-
-    const attachment: AttachmentBuilder = new Discord.AttachmentBuilder(
+    const attachment = new Discord.AttachmentBuilder(
       canvas.toBuffer("image/png", { compressionLevel: 0 }),
       { name: "currentDice.png" }
     );
     return { attachment, canvas };
   } catch (err) {
-    console.error(err);
-    return null;
+    console.error("Error generating dice attachment:", err);
+    return undefined;
   }
 };
 

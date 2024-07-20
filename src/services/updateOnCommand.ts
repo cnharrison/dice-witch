@@ -1,4 +1,87 @@
-import { UpdateOnCommandProps } from "../types";
+import { User } from "discord.js";
+import { UpdateOnCommandProps, GuildType, UserType } from "../types";
+import { PrismaClient } from "@prisma/client";
+
+const upsertUser = async (prisma: PrismaClient, user: UserType, isARoll: boolean) => {
+  const { id, username, flags, discriminator, avatar } = user;
+  await prisma.users.upsert({
+    where: { id: Number(id) },
+    update: {
+      username,
+      avatar,
+      flags: flags ? flags.bitfield : undefined,
+      discriminator: Number(discriminator),
+      rollCount: isARoll ? { increment: 1 } : undefined,
+    },
+    create: {
+      id: Number(id),
+      username,
+      avatar,
+      flags: flags ? flags.bitfield : undefined,
+      discriminator: Number(discriminator),
+      rollCount: isARoll ? 1 : undefined,
+    },
+  });
+};
+
+const upsertGuild = async (prisma: PrismaClient, guild: GuildType, isARoll: boolean) => {
+  const {
+    id,
+    name,
+    icon,
+    ownerId,
+    memberCount,
+    approximateMemberCount,
+    preferredLocale,
+    publicUpdatesChannelId,
+    joinedTimestamp,
+  } = guild;
+  await prisma.guilds.upsert({
+    where: { id: Number(id) },
+    update: {
+      name,
+      icon,
+      ownerId: Number(ownerId),
+      memberCount,
+      approximateMemberCount,
+      preferredLocale,
+      publicUpdatesChannelId: Number(publicUpdatesChannelId),
+      joinedTimestamp,
+      rollCount: isARoll ? { increment: 1 } : undefined,
+    },
+    create: {
+      id: Number(id),
+      name,
+      icon,
+      ownerId: Number(ownerId),
+      memberCount,
+      approximateMemberCount: approximateMemberCount ?? undefined,
+      preferredLocale,
+      publicUpdatesChannelId: Number(publicUpdatesChannelId),
+      joinedTimestamp,
+      rollCount: isARoll ? 1 : undefined,
+    },
+  });
+};
+
+const upsertUserGuildRelationship = async (prisma: PrismaClient, guildId: number, userId: number) => {
+  const relationship = await prisma.usersGuilds.findFirst({
+    where: { guildId: Number(guildId), userId: Number(userId) },
+  });
+  if (!relationship) {
+    await prisma.usersGuilds.create({
+      data: { guildId: Number(guildId), userId: Number(userId) },
+    });
+  }
+};
+
+const mapUserToUserType = (user: User): UserType => ({
+  id: user.id,
+  username: user.username,
+  flags: user.flags ? { bitfield: user.flags.bitfield } : undefined,
+  discriminator: user.discriminator,
+  avatar: user.avatar ?? undefined,
+});
 
 const updateOnCommand = async ({
   prisma,
@@ -6,194 +89,38 @@ const updateOnCommand = async ({
   message,
   interaction,
 }: UpdateOnCommandProps) => {
-  if (message) {
-    const {
-      author: { id, username, flags, discriminator, avatar },
-    } = message;
+  const isARoll = ["r", "roll"].includes(commandName);
 
-    try {
-      await prisma.users.upsert({
-        where: {
-          id: Number(id),
-        },
-        update: {
-          username,
-          avatar,
-          flags: flags?.bitfield,
-          discriminator: Number(discriminator),
-          rollCount: { increment: 1 },
-        },
-        create: {
-          id: Number(id),
-          username,
-          avatar,
-          flags: flags?.bitfield,
-          discriminator: Number(discriminator),
-          rollCount: 1,
-        },
-      });
-    } catch (err) {
-      console.error(err);
-    }
+  try {
+    if (message) {
+      const { author, guild } = message;
+      await upsertUser(prisma, mapUserToUserType(author), isARoll);
 
-    if (message.guild) {
-      const {
-        author: { id: authorId },
-        guild: {
-          id,
-          name,
-          icon,
-          ownerId,
-          memberCount,
-          approximateMemberCount,
-          preferredLocale,
-          publicUpdatesChannelId,
-          joinedTimestamp,
-        },
-      } = message;
+      if (guild) {
+        const guildData: GuildType = {
+          ...guild,
+          approximateMemberCount: guild.approximateMemberCount ?? undefined,
+          publicUpdatesChannelId: guild.publicUpdatesChannelId ?? undefined,
+        };
+        await upsertGuild(prisma, guildData, isARoll);
+        await upsertUserGuildRelationship(prisma, Number(guild.id), Number(author.id));
+      }
+    } else if (interaction) {
+      const { user, guild } = interaction;
+      await upsertUser(prisma, mapUserToUserType(user), isARoll);
 
-      const isARoll = ["r", "roll"].includes(commandName);
-      try {
-        await prisma.guilds.upsert({
-          where: {
-            id: Number(id),
-          },
-          update: {
-            name,
-            icon,
-            ownerId: Number(ownerId),
-            memberCount,
-            approximateMemberCount,
-            preferredLocale,
-            publicUpdatesChannelId: Number(publicUpdatesChannelId),
-            joinedTimestamp,
-            rollCount: isARoll ? { increment: 1 } : undefined,
-          },
-          create: {
-            id: Number(id),
-            name,
-            icon,
-            ownerId: Number(ownerId),
-            memberCount,
-            approximateMemberCount,
-            preferredLocale,
-            publicUpdatesChannelId: Number(publicUpdatesChannelId),
-            joinedTimestamp,
-            rollCount: isARoll ? 1 : undefined,
-          },
-        });
-
-        const relationship = await prisma.usersGuilds.findFirst({
-          where: {
-            guildId: Number(id),
-            userId: Number(authorId),
-          },
-        });
-        if (!relationship) {
-          await prisma.usersGuilds.create({
-            data: {
-              guildId: Number(id),
-              userId: Number(authorId),
-            },
-          });
-        }
-      } catch (err) {
-        console.error(err);
+      if (guild) {
+        const guildData: GuildType = {
+          ...guild,
+          approximateMemberCount: guild.approximateMemberCount ?? undefined,
+          publicUpdatesChannelId: guild.publicUpdatesChannelId ?? undefined,
+        };
+        await upsertGuild(prisma, guildData, isARoll);
+        await upsertUserGuildRelationship(prisma, Number(guild.id), Number(user.id));
       }
     }
-  } else if (interaction) {
-    const {
-      user: { id, username, flags, discriminator, avatar },
-    } = interaction;
-    const isARoll = commandName === "roll";
-    try {
-      await prisma.users.upsert({
-        where: {
-          id: Number(id),
-        },
-        update: {
-          username,
-          avatar,
-          flags: flags?.bitfield,
-          discriminator: Number(discriminator),
-          rollCount: isARoll ? { increment: 1 } : undefined,
-        },
-        create: {
-          id: Number(id),
-          username,
-          avatar,
-          flags: flags?.bitfield,
-          discriminator: Number(discriminator),
-          rollCount: isARoll ? 1 : undefined,
-        },
-      });
-    } catch (err) {
-      console.error(err);
-    }
-
-    if (interaction.guild) {
-      const {
-        user: { id: authorId },
-        guild: {
-          id,
-          name,
-          icon,
-          ownerId,
-          memberCount,
-          approximateMemberCount,
-          preferredLocale,
-          publicUpdatesChannelId,
-          joinedTimestamp,
-        },
-      } = interaction;
-      try {
-        await prisma.guilds.upsert({
-          where: {
-            id: Number(id),
-          },
-          update: {
-            name,
-            icon,
-            ownerId: Number(ownerId),
-            memberCount,
-            approximateMemberCount,
-            preferredLocale,
-            publicUpdatesChannelId: Number(publicUpdatesChannelId),
-            joinedTimestamp,
-            rollCount: isARoll ? { increment: 1 } : undefined,
-          },
-          create: {
-            id: Number(id),
-            name,
-            icon,
-            ownerId: Number(ownerId),
-            memberCount,
-            approximateMemberCount,
-            preferredLocale,
-            publicUpdatesChannelId: Number(publicUpdatesChannelId),
-            joinedTimestamp,
-            rollCount: isARoll ? 1 : undefined,
-          },
-        });
-
-        const relationship = await prisma.usersGuilds.findFirst({
-          where: {
-            guildId: Number(id),
-            userId: Number(authorId),
-          },
-        });
-        if (!relationship) {
-          await prisma.usersGuilds.create({
-            data: {
-              guildId: Number(id),
-              userId: Number(authorId),
-            },
-          });
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    }
+  } catch (err) {
+    console.error(err);
   }
 };
 

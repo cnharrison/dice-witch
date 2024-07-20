@@ -25,7 +25,7 @@ const generateDie = async (
   borderWidth?: string,
   width?: string,
   height?: string
-): Promise<Buffer | null> => {
+): Promise<Buffer | undefined> => {
   const props = {
     result: number,
     textColor,
@@ -47,16 +47,19 @@ const generateDie = async (
     "%": generateDPercent(props),
   };
 
-  const image = dice[sides];
+  const image = dice[sides]; 
+
+  if (!image) {
+    console.error("Failed to generate image");
+    return undefined;
+  }
 
   try {
-    const attachment = await sharp(new (Buffer as any).from(image))
-      .png()
-      .toBuffer();
+    const attachment = await sharp(Buffer.from(image)).png().toBuffer();
     return attachment;
   } catch (err) {
     console.error(err);
-    return null;
+    return undefined;
   }
 };
 

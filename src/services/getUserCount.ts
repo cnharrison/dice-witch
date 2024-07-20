@@ -1,32 +1,30 @@
 import { Client } from "discord.js";
 
-const getUserCount = ({
+type UserCountResult = {
+  totalGuilds: number;
+  totalMembers: number;
+};
+
+const getUserCount = async ({
   discord,
 }: {
   discord: Client;
-}): Promise<void | {
-  totalGuilds: unknown;
-  totalMembers: unknown;
-}> => {
-  const promises = [
-    discord?.shard?.fetchClientValues("guilds.cache.size"),
-    discord?.shard?.broadcastEval((c) =>
-      c.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)
-    ),
-  ];
+  }): Promise<UserCountResult> => {
+  try {
+    const [guildSizes, memberCounts] = await Promise.all([
+      discord?.shard?.fetchClientValues("guilds.cache.size"),
+      discord?.shard?.broadcastEval((c) =>
+        c.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)
+      ),
+    ]);
 
-  return Promise.all(promises)
-    .then((results) => {
-      const totalGuilds = results[0]?.reduce(
-        (acc: any, guildCount: any) => acc + guildCount,
-        0
-      );
-      const totalMembers = results[1]?.reduce(
-        (acc: any, memberCount: any) => acc + memberCount,
-        0
-      );
-      return { totalGuilds, totalMembers };
-    })
-    .catch(console.error);
+    const totalGuilds = (guildSizes as number[])?.reduce((acc, count) => acc + count, 0) || 0;
+    const totalMembers = (memberCounts as number[])?.reduce((acc, count) => acc + count, 0) || 0;
+
+    return { totalGuilds, totalMembers };
+  } catch (error) {
+    return Promise.reject(error);
+  }
 };
+
 export default getUserCount;

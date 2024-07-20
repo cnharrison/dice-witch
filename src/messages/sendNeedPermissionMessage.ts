@@ -15,10 +15,15 @@ const sendNeedPermissionMessage = async (
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
   try {
-    interaction ? await interaction.followUp(msg) : await message.reply(msg);
+    if (interaction) {
+      await interaction.followUp(msg);
+    } else {
+      await message.reply(msg);
+    }
   } catch (err) {
-    console.error(err);
+    console.error("Error sending permission message:", err);
   }
+
   sendLogEventMessage({
     eventType: EventType.SENT_NEED_PERMISSION_MESSAGE,
     logOutputChannel,

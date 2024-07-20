@@ -19,18 +19,25 @@ const sendDiceResultMessage = async (
     (prev: number, cur: Result) => prev + cur.results,
     0
   );
-  const reply = `<@${
-    interaction ? interaction.user.id : message.author.id
-  }> 🎲 ${title ? makeBold(title) : ""}\n${resultArray
-    .map((result) => result.output)
-    .join("\n")} ${
-    resultArray.length > 1 ? `\ngrand total = \`${grandTotal}\`` : ""
-  }`;
+
+  const userId = interaction ? interaction.user.id : message.author.id;
+  const titleText = title ? makeBold(title) : "";
+  const resultsText = resultArray.map((result) => result.output).join("\n");
+  const grandTotalText = resultArray.length > 1 ? `\ngrand total = \`${grandTotal}\`` : "";
+
+  const reply = `<@${userId}> 🎲 ${titleText}\n${resultsText} ${grandTotalText}`;
 
   try {
-    interaction
-      ? await interaction.followUp(reply)
-      : await message.reply(reply);
+    if (interaction) {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp(reply);
+      } else {
+        await interaction.reply(reply);
+      }
+    } else {
+      await message.reply(reply);
+    }
+
     sendLogEventMessage({
       eventType: EventType.SENT_ROLL_RESULT_MESSAGE,
       logOutputChannel,
@@ -38,8 +45,8 @@ const sendDiceResultMessage = async (
       resultMessage: reply,
     });
   } catch (err) {
-    console.error(err);
-    throw new Error(err);
+    console.error("Error sending dice result message:", err);
+    throw new Error("Failed to send dice result message");
   }
 };
 

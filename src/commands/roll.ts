@@ -1,4 +1,4 @@
-import { Result, DiceArray, RollProps } from "../types";
+import { RollProps } from "../types";
 import {
   availableDice,
   maxDiceSides,
@@ -50,15 +50,7 @@ module.exports = {
       return;
     }
 
-    const {
-      diceArray,
-      resultArray,
-      shouldHaveImage,
-    }: {
-      diceArray: DiceArray;
-      resultArray: Result[];
-      shouldHaveImage?: boolean;
-    } = rollDice(args, availableDice, timesToRepeat);
+    const { diceArray, resultArray, shouldHaveImage } = rollDice(args, availableDice, timesToRepeat);
     if (!diceArray.length) {
       sendHelperMessage(
         message,
@@ -70,20 +62,29 @@ module.exports = {
       return;
     }
 
+    const handleOverMaxMessage = () => {
+      sendDiceOverMaxMessage(
+        message,
+        logOutputChannel,
+        discord,
+        args,
+        interaction,
+        shouldHaveImage
+      );
+    };
+
     if (shouldHaveImage) {
       if (getTotalDiceRolled(diceArray) > maxImageDice) {
-        sendDiceOverMaxMessage(
-          message,
-          logOutputChannel,
-          discord,
-          args,
-          interaction,
-          shouldHaveImage
-        );
+        handleOverMaxMessage();
         return;
       }
       await sendDiceRolledMessage(message, diceArray, interaction);
-      const { attachment, canvas } = await generateDiceAttachment(diceArray);
+      const attachmentResult = await generateDiceAttachment(diceArray);
+      if (!attachmentResult) {
+        console.error("Failed to generate dice attachment");
+        return;
+      }
+      const { attachment, canvas } = attachmentResult;
       await sendDiceResultMessageWithImage(
         resultArray,
         message,
@@ -94,28 +95,9 @@ module.exports = {
         interaction,
         title
       );
-      return;
     } else {
-      if (getTotalDiceRolled(diceArray) > maxTextDice) {
-        sendDiceOverMaxMessage(
-          message,
-          logOutputChannel,
-          discord,
-          args,
-          interaction,
-          shouldHaveImage
-        );
-        return;
-      }
-      if (getHighestDiceSide(diceArray) > maxDiceSides) {
-        sendDiceOverMaxMessage(
-          message,
-          logOutputChannel,
-          discord,
-          args,
-          interaction,
-          shouldHaveImage
-        );
+      if (getTotalDiceRolled(diceArray) > maxTextDice || getHighestDiceSide(diceArray) > maxDiceSides) {
+        handleOverMaxMessage();
         return;
       }
       sendDiceResultMessage(
@@ -125,7 +107,6 @@ module.exports = {
         interaction,
         title
       );
-      return;
     }
   },
 };

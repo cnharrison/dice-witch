@@ -18,15 +18,19 @@ const sendDiceOverMaxMessage = async (
   discord: Client,
   args?: string[],
   interaction?: CommandInteraction | ButtonInteraction,
-  shouldHaveImage?: boolean,
-
+  shouldHaveImage?: boolean
 ) => {
   const msg = shouldHaveImage ? imageMsg : textMsg;
   try {
-    interaction ? await interaction.followUp(msg) : await message.reply(msg);
+    if (interaction) {
+      await interaction.followUp(msg);
+    } else {
+      await message.reply(msg);
+    }
   } catch (err) {
-    console.error(err);
+    console.error("Error sending dice over max message:", err);
   }
+
   sendLogEventMessage({
     eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
     logOutputChannel,
@@ -35,7 +39,6 @@ const sendDiceOverMaxMessage = async (
     args,
     discord,
   });
-  return;
 };
 
 export default sendDiceOverMaxMessage;
