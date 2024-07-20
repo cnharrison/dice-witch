@@ -25,7 +25,7 @@ const generateDie = async (
   borderWidth?: string,
   width?: string,
   height?: string
-): Promise<Buffer | null> => {
+): Promise<Buffer | undefined> => {
   const props = {
     result: number,
     textColor,
@@ -56,7 +56,6 @@ const generateDie = async (
     return attachment;
   } catch (err) {
     console.error(err);
-    return null;
   }
 };
 
