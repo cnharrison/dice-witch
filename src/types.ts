@@ -43,7 +43,7 @@ export enum EventType {
   SENT_DICE_OVER_MAX_MESSAGE = "sentDiceOverMaxMessage",
 }
 
-export type DiceArray = any;
+export type DiceArray = Die[][];
 export type DiceTypes = 20 | 12 | 10 | 8 | 6 | 4 | "%";
 export type DiceTypesToDisplay = DiceTypes | 100;
 export type DiceFaces =
