@@ -77,14 +77,7 @@ const repeatArgs = (args: string[], timesToRepeat?: number): string[] => {
     return new Array(timesToRepeat).fill(args).flat();
   }
 
-  return args.flatMap((value) => {
-    const isMultiRollToken = value.match(/^.*?(\<[^\d]*(\d+)[^\d]*\>).*/);
-    if (isMultiRollToken) {
-      const number = Number(isMultiRollToken[2]);
-      return new Array(number).fill(value);
-    }
-    return value;
-  });
+  return [...args];
 };
 
 const processRollGroup = (
@@ -191,14 +184,14 @@ const rollDice = (
           output: roll.output,
           results: roll.total,
         };
-        const groupArray = roll.rolls.reduce((acc: Die[], rollGroup: any, outerIndex: number) => {
+        const groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
           if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
             acc.push(...processRollGroup(rollGroup, sidesArray, outerIndex, availableDice));
           }
           return acc;
         }, []);
 
-        diceArray.push(...groupArray);
+        diceArray.push([...groupArray]);
         resultArray.push(result);
         shouldHaveImageArray.push(shouldHaveImage);
       }
