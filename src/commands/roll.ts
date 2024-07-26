@@ -50,7 +50,7 @@ module.exports = {
       return;
     }
 
-    const { diceArray, resultArray, shouldHaveImage } = rollDice(args, availableDice, timesToRepeat);
+    const { diceArray, resultArray, allDiceShouldHaveImage: shouldHaveImage } = rollDice(args, availableDice, timesToRepeat);
     if (!diceArray.length) {
       sendHelperMessage(
         message,

@@ -2,7 +2,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   SelectMenuBuilder,
-
   resolveColor,
 } from "discord.js";
 import { DiceTypesToDisplay } from "../types";
@@ -31,6 +30,47 @@ const footerButtonRow = new ActionRowBuilder()
       .setURL(supportServerLink)
   ) as ActionRowBuilder<SelectMenuBuilder>;
 
+const ICON_SPACING_SINGLE = 0.375;
+const ICON_SPACING_DOUBLE = 0.26;
+const ICON_SPACING_TRIPLE = 0.19;
+
+enum Modifier {
+  DROP = "drop",
+  EXPLODE = "explode",
+  RE_ROLL = "re-roll",
+  MAX = "max",
+  MIN = "min",
+  TARGET_SUCCESS = "target-success",
+  CRITICAL_SUCCESS = "critical-success",
+  CRITICAL_FAILURE = "critical-failure",
+  PENETRATE = "penetrate",
+}
+
+enum IconType {
+  TRASHCAN = "trashcan",
+  EXPLOSION = "explosion",
+  RECYCLE = "recycle",
+  CHEVRON_DOWN = "chevronDown",
+  CHEVRON_UP = "chevronUp",
+  BULLSEYE = "bullseye",
+  CRIT = "crit",
+  DIZZY_FACE = "dizzyFace",
+  ARROW_THROUGH = "arrowThrough",
+  BLANK = "blank",
+}
+
+const modifierToIconMap = new Map<string, IconType>([
+  [Modifier.DROP, IconType.TRASHCAN],
+  [Modifier.EXPLODE, IconType.EXPLOSION],
+  [Modifier.RE_ROLL, IconType.RECYCLE],
+  [Modifier.MAX, IconType.CHEVRON_DOWN],
+  [Modifier.MIN, IconType.CHEVRON_UP],
+  [Modifier.TARGET_SUCCESS, IconType.BULLSEYE],
+  [Modifier.CRITICAL_SUCCESS, IconType.CRIT],
+  [Modifier.CRITICAL_FAILURE, IconType.DIZZY_FACE],
+  [Modifier.PENETRATE, IconType.ARROW_THROUGH],
+]);
+
 export {
   availableDice,
   maxImageDice,
@@ -42,4 +82,10 @@ export {
   infoColor,
   tabletopColor,
   footerButtonRow,
+  ICON_SPACING_SINGLE,
+  ICON_SPACING_DOUBLE,
+  ICON_SPACING_TRIPLE,
+  Modifier,
+  IconType,
+  modifierToIconMap,
 };
