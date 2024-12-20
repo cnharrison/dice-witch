@@ -26,7 +26,7 @@ import {
   Result,
 } from "../../shared/types";
 import generateDie from "./images/generateDie";
-import generateLinearGradientFill from "./generateDice/fills/generateLinearGradientFill";
+import generateLinearGradientFill from "./images/generateDice/fills/generateLinearGradientFill";
 
 export class DiceService {
   private static instance: DiceService;
