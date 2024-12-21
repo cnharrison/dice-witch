@@ -6,7 +6,8 @@ import {
   resolveColor,
 } from "discord.js";
 import { DiceTypesToDisplay } from "../../shared/types";
-import { inviteLink, supportServerLink } from "../../config.json";
+import { CONFIG } from "../../config";
+const { inviteLink, supportServerLink } = CONFIG.discord;
 
 const availableDice: DiceTypesToDisplay[] = [100, 20, 12, 10, 8, 6, 4];
 

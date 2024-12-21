@@ -37,6 +37,8 @@ model stats {
 model users {
   id            BigInt        @id @unique(map: "users_id_unique")
   username      String?       @db.VarChar(255)
+  email         String?       @unique @db.VarChar(255)
+  lastWebLogin  DateTime?     @map("last_web_login") @db.Timestamptz(6)
   flags         Int?
   discriminator Int?
   avatar        String?       @db.VarChar(255)
@@ -47,13 +49,16 @@ model users {
 }
 
 model usersGuilds {
-  id         Int      @id @default(autoincrement())
-  userId     BigInt?  @map("user_id")
-  guildId    BigInt?  @map("guild_id")
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
-  guilds     guilds?  @relation(fields: [guildId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_guild_id_foreign")
-  users      users?   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_user_id_foreign")
+  id                   Int      @id @default(autoincrement())
+  userId               BigInt?  @map("user_id")
+  guildId              BigInt?  @map("guild_id")
+  isAdmin              Boolean  @default(false)
+  isDiceWitchAdmin     Boolean  @default(false)
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+  guilds               guilds?  @relation(fields: [guildId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_guild_id_foreign")
+  users                users?   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_user_id_foreign")
 
+  @@unique([userId, guildId])
   @@map("users_guilds")
 }

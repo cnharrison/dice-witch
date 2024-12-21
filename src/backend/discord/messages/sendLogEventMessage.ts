@@ -6,7 +6,7 @@ import {
   resolveColor,
 } from "discord.js";
 import { EventType, LogEventProps } from "../../shared/types";
-import { adminID, logOutputChannelID } from "../../config.json";
+import { CONFIG } from "../../config";
 import {
   eventColor,
   errorColor,
@@ -15,6 +15,8 @@ import {
   tabletopColor,
 } from "../constants";
 import { makeBold } from "../../shared/helpers";
+
+const { adminId, logOutputChannelId } = CONFIG.discord;
 
 const sendLogEventMessage = async ({
   eventType,
@@ -50,8 +52,8 @@ const sendLogEventMessage = async ({
       color: resolveColor("#FF0000"),
       title: `${eventType}: ${commandName}`,
       description: isInGuild
-        ? `${args} from ${makeBold(username)} in ${getNameString(isThread)} ${makeBold(channelName)} on ${makeBold(guildName)} <@${adminID}>`
-        : `${args} from ${makeBold(username)} in **DM** ${adminID}`,
+        ? `${args} from ${makeBold(username)} in ${getNameString(isThread)} ${makeBold(channelName)} on ${makeBold(guildName)} <@${adminId}>`
+        : `${args} from ${makeBold(username)} in **DM** ${adminId}`,
     },
     [EventType.GUILD_ADD]: {
       color: goodColor,
@@ -108,7 +110,7 @@ const sendLogEventMessage = async ({
     ?.broadcastEval(logEvent, {
       context: {
         embed: generateEmbed(),
-        logOutputChannelID,
+        logOutputChannelId,
       },
     })
     .catch(console.error);

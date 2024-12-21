@@ -1,7 +1,8 @@
 import { exit } from "node:process";
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { PrismaClient } from "@prisma/client";
-import { discordToken } from "../../config.json";
+import { CONFIG } from "../../config";
+const { token: discordToken } = CONFIG.discord;
 
 const prisma = new PrismaClient();
 

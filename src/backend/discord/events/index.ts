@@ -6,7 +6,7 @@ import {
 } from "discord.js";
 import fs from "fs";
 import path from "path";
-import { botPath } from "../../config.json";
+import { CONFIG } from "../../config";
 import { Command, EventType } from "../../shared/types";
 import { sendLogEventMessage } from "../messages";
 import { DatabaseService } from "../../core/services/DatabaseService";
@@ -16,14 +16,14 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
     const databaseService = DatabaseService.getInstance();
     const commands = new Collection<string, Command>();
 
-    process.chdir(path.dirname(botPath));
+    process.chdir(path.dirname(CONFIG.botPath));
     const commandFiles: string[] = fs
-      .readdirSync(`${botPath}/src/backend/discord/commands`)
+      .readdirSync(`${CONFIG.botPath}/src/backend/discord/commands`)
       .filter((file: string) => file.endsWith(".ts"));
 
     for (const file of commandFiles) {
       try {
-        const commandModule = await import(`${botPath}/src/backend/discord/commands/${file}`);
+        const commandModule = await import(`${CONFIG.botPath}/src/backend/discord/commands/${file}`);
         const command = commandModule.default;
 
         if (command?.name) {
@@ -38,6 +38,14 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
     discord.on("interactionCreate", async (interaction) => {
       if (!interaction.isCommand()) return;
+
+      const targetShard = interaction.guild
+        ? discord.shard?.ids[0]
+        : 0;
+
+      if (targetShard !== discord.shard?.ids[0]) {
+        return;
+      }
 
       const { commandName } = interaction;
 
@@ -103,6 +111,15 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
     discord.on("interactionCreate", async (interaction) => {
       if (!interaction.isButton()) return;
+
+      const targetShard = interaction.guild
+        ? discord.shard?.ids[0]
+        : 0;
+
+      if (targetShard !== discord.shard?.ids[0]) {
+        return;
+      }
+
       await interaction.deferReply();
       const unformattedArgs = interaction.customId.trim().split("-");
       const args = unformattedArgs[1] ? [unformattedArgs[1]] : [];

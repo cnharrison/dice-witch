@@ -3,7 +3,8 @@ import {
   Message,
   CommandInteraction,
   ButtonInteraction,
-  Guild
+  Guild,
+  GuildMember,
 } from "discord.js";
 import { PrismaClient } from "@prisma/client";
 import { GuildType, UserType } from "../../shared/types";
@@ -12,6 +13,11 @@ type UpdateOnCommandParams = {
   commandName: string;
   message?: Message;
   interaction?: CommandInteraction | ButtonInteraction;
+};
+
+type ClerkUserData = {
+  id: string;
+  email_addresses: Array<{ email_address: string }>;
 };
 
 export class DatabaseService {
@@ -102,14 +108,43 @@ export class DatabaseService {
     });
   }
 
-  private async upsertUserGuildRelationship(guildId: number, userId: number): Promise<void> {
-    const relationship = await this.prisma.usersGuilds.findFirst({
-      where: { guildId: Number(guildId), userId: Number(userId) },
-    });
-    if (!relationship) {
-      await this.prisma.usersGuilds.create({
-        data: { guildId: Number(guildId), userId: Number(userId) },
+  private async upsertUserGuildRelationship(
+    guildId: number,
+    userId: number,
+    isAdmin: boolean = false,
+    isDiceWitchAdmin: boolean = false
+  ): Promise<void> {
+    try {
+      const existing = await this.prisma.usersGuilds.findFirst({
+        where: {
+          AND: [
+            { userId: Number(userId) },
+            { guildId: Number(guildId) }
+          ]
+        }
       });
+
+      if (existing) {
+        await this.prisma.usersGuilds.update({
+          where: { id: existing.id },
+          data: {
+            isAdmin,
+            isDiceWitchAdmin,
+            updated_at: new Date()
+          }
+        });
+      } else {
+        await this.prisma.usersGuilds.create({
+          data: {
+            userId: Number(userId),
+            guildId: Number(guildId),
+            isAdmin,
+            isDiceWitchAdmin
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Error upserting user guild relationship:', err);
     }
   }
 
@@ -127,26 +162,132 @@ export class DatabaseService {
     const isARoll = ["r", "roll"].includes(commandName);
 
     try {
-      if (message) {
-        const { author, guild } = message;
-        await this.upsertUser(this.mapUserToUserType(author), isARoll);
-
-        if (guild) {
-          await this.upsertGuild(guild, isARoll);
-          await this.upsertUserGuildRelationship(Number(guild.id), Number(author.id));
-        }
-      } else if (interaction) {
-        const { user, guild } = interaction;
+      if (interaction) {
+        const { user, guild, member } = interaction;
         await this.upsertUser(this.mapUserToUserType(user), isARoll);
 
-        if (guild) {
+        if (guild && member) {
+          const guildMember = member as GuildMember;
+          const isAdmin = guildMember.permissions.has("Administrator");
+          const isDiceWitchAdmin = guildMember.roles.cache.some(role => role.name === "Dice Witch Admin");
+
           await this.upsertGuild(guild, isARoll);
-          await this.upsertUserGuildRelationship(Number(guild.id), Number(user.id));
+          await this.upsertUserGuildRelationship(
+            Number(guild.id),
+            Number(user.id),
+            isAdmin,
+            isDiceWitchAdmin
+          );
+        }
+      } else if (message) {
+        const { author, guild, member } = message;
+        await this.upsertUser(this.mapUserToUserType(author), isARoll);
+
+        if (guild && member) {
+          const guildMember = member as GuildMember;
+          const isAdmin = guildMember.permissions.has("Administrator");
+          const isDiceWitchAdmin = guildMember.roles.cache.some(role => role.name === "Dice Witch Admin");
+
+          await this.upsertGuild(guild, isARoll);
+          await this.upsertUserGuildRelationship(
+            Number(guild.id),
+            Number(author.id),
+            isAdmin,
+            isDiceWitchAdmin
+          );
         }
       }
     } catch (err) {
       console.error("Error in updateOnCommand:", err);
+      throw err;
     }
+  }
+
+  public async handleWebLogin(userData: ClerkUserData): Promise<void> {
+    try {
+      const existingUser = await this.prisma.users.findUnique({
+        where: { id: Number(userData.id) }
+      });
+
+      if (existingUser) {
+        await this.prisma.users.update({
+          where: { id: Number(userData.id) },
+          data: {
+            lastWebLogin: new Date(),
+            email: userData.email_addresses[0].email_address
+          }
+        });
+      } else {
+        await this.prisma.users.create({
+          data: {
+            id: Number(userData.id),
+            email: userData.email_addresses[0].email_address,
+            lastWebLogin: new Date()
+          }
+        });
+      }
+    } catch (err) {
+      console.error("Error in handleWebLogin:", err);
+      throw err;
+    }
+  }
+
+  public async getMutualGuilds(discordId: string): Promise<any[]> {
+    try {
+      const mutualGuilds = await this.prisma.usersGuilds.findMany({
+        where: {
+          userId: Number(discordId)
+        },
+        include: {
+          guilds: true
+        }
+      });
+      return mutualGuilds;
+    } catch (err) {
+      console.error("Error in getMutualGuilds:", err);
+      throw err;
+    }
+  }
+
+  public async getMutualGuildsWithPermissions(discordId: string) {
+    return await this.prisma.usersGuilds.findMany({
+      where: { userId: Number(discordId) },
+      include: {
+        guilds: true
+      }
+    });
+  }
+
+  async updateUserGuildPermissions({
+    userId,
+    guildId,
+    isAdmin,
+    isDiceWitchAdmin
+  }: {
+    userId: string;
+    guildId: string;
+    isAdmin: boolean;
+    isDiceWitchAdmin: boolean;
+  }) {
+    await this.prisma.usersGuilds.upsert({
+      where: {
+        userId_guildId: {
+          userId: Number(userId),
+          guildId: Number(guildId)
+        }
+      },
+      update: {
+        isAdmin,
+        isDiceWitchAdmin,
+        updated_at: new Date()
+      },
+      create: {
+        userId: Number(userId),
+        guildId: Number(guildId),
+        isAdmin,
+        isDiceWitchAdmin
+      }
+    });
   }
 
 }

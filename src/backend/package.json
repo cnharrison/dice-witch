@@ -7,7 +7,7 @@
     "@hono/clerk-auth": "^2.0.0",
     "@hono/node-server": "^1.13.7",
     "@napi-rs/canvas": "^0.1.65",
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^6.1.0",
     "axios": "0.21.1",
     "chroma-js": "2.1.2",
     "discord.js": "^14.16.3",

@@ -9,14 +9,10 @@ import {
 import axios from "axios";
 import { ToadScheduler, SimpleIntervalJob, AsyncTask } from "toad-scheduler";
 import setupEvents from './events';
-import {
-  discordToken,
-  logOutputChannelID,
-  botListAuthKeys,
-  clientID,
-} from "../config.json";
+import { CONFIG } from "../config";
 import { DiscordService } from "../core/services/DiscordService";
-const { discordbotlist, topgg } = botListAuthKeys;
+const { token: discordToken, logOutputChannelId: logOutputChannelID, clientId } = CONFIG.discord;
+const { discordbotlist, topgg } = CONFIG.botListAuth;
 
 const scheduler = new ToadScheduler();
 const discordService = DiscordService.getInstance();
@@ -112,12 +108,12 @@ const createBotSiteUpdateTask = (discord: Client) => {
       const { totalGuilds } = await discordService.getUserCount({ discord }) ?? {};
       const promises = [
         axios.post(
-          `https://top.gg/api/bots/${clientID}/stats`,
+          `https://top.gg/api/bots/${clientId}/stats`,
           { server_count: totalGuilds },
           getHeaders(topgg)
         ),
         axios.post(
-          `https://discordbotlist.com/api/v1/bots/${clientID}/stats`,
+          `https://discordbotlist.com/api/v1/bots/${clientId}/stats`,
           { guilds: totalGuilds },
           getHeaders(discordbotlist)
         ),
@@ -139,6 +135,13 @@ const startServer = () => {
       GatewayIntentBits.DirectMessageTyping,
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+    failIfNotExists: false,
+    sweepers: {
+      messages: {
+        interval: 300,
+        lifetime: 600
+      }
+    }
   });
 
   discord.on("ready", async () => {
@@ -159,6 +162,10 @@ const startServer = () => {
   });
 
   discord.login(discordToken);
+
+  discord.on('shardReady', (shardId) => {
+    console.log(`Shard ${shardId} ready`);
+  });
 };
 
 startServer();
