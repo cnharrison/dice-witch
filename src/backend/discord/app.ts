@@ -11,11 +11,29 @@ import { ToadScheduler, SimpleIntervalJob, AsyncTask } from "toad-scheduler";
 import setupEvents from './events';
 import { CONFIG } from "../config";
 import { DiscordService } from "../core/services/DiscordService";
+
 const { token: discordToken, logOutputChannelId: logOutputChannelID, clientId } = CONFIG.discord;
 const { discordbotlist, topgg } = CONFIG.botListAuth;
 
 const scheduler = new ToadScheduler();
 const discordService = DiscordService.getInstance();
+
+export const discord = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.DirectMessageTyping,
+  ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+  failIfNotExists: false,
+  sweepers: {
+    messages: {
+      interval: 300,
+      lifetime: 600
+    }
+  }
+});
 
 const getHeaders = (key: string) => ({
   headers: {
@@ -61,14 +79,14 @@ const globalSlashCommands: ApplicationCommandDataResolvable[] = [
         description: "what you want to know about",
         type: ApplicationCommandOptionType.String,
         choices: [
-          { name: "Exploding dice", value: "kb-exploding-slash" },
-          { name: "Auto-reroll", value: "kb-reroll-slash" },
-          { name: "Keep/drop AKA advantage", value: "kb-keepdrop-slash" },
-          { name: "Target success/failure AKA Dice pool", value: "kb-target-slash" },
-          { name: "Critical success/failure", value: "kb-crit-slash" },
-          { name: "Sorting", value: "kb-sort-slash" },
-          { name: "Math", value: "kb-math-slash" },
-          { name: "Repeating", value: "kb-repeating-slash" },
+          { name: "Exploding dice", value: "exploding" },
+          { name: "Auto-reroll", value: "reroll" },
+          { name: "Keep/drop AKA advantage", value: "keepdrop" },
+          { name: "Target success/failure AKA Dice pool", value: "target" },
+          { name: "Critical success/failure", value: "crit" },
+          { name: "Sorting", value: "sort" },
+          { name: "Math", value: "math" },
+          { name: "Repeating", value: "repeating" },
         ],
       },
     ],
@@ -127,23 +145,6 @@ const createBotSiteUpdateTask = (discord: Client) => {
 };
 
 const startServer = () => {
-  const discord = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.DirectMessages,
-      GatewayIntentBits.DirectMessageTyping,
-    ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
-    failIfNotExists: false,
-    sweepers: {
-      messages: {
-        interval: 300,
-        lifetime: 600
-      }
-    }
-  });
-
   discord.on("ready", async () => {
     if (discord.user) {
       discord.user.setActivity("/roll");

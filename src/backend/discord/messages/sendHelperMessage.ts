@@ -3,14 +3,14 @@ import  {
   ButtonBuilder,
   EmbedBuilder,
 } from "discord.js";
-import { availableDice, footerButtonRow, maxImageDice } from "../constants";
+import { availableDice, footerButtonRow, maxImageDice } from "../../core/constants";
 import { sendLogEventMessage } from ".";
 import { EventType } from "../../shared/types";
 import { SendHelperMessageParams } from "../../shared/types";
 
 const createButton = (id: string, label: string) =>
   new ButtonBuilder()
-    .setCustomId(`${id}-slash`)
+    .setCustomId(id)
     .setLabel(label)
     .setStyle(1);
 
@@ -25,18 +25,18 @@ const sendHelperMessage = async ({
 }: SendHelperMessageParams) => {
   const kbButtonRow = new ActionRowBuilder()
     .addComponents(
-      createButton("kb-exploding", "Exploding 💥"),
-      createButton("kb-reroll", "Re-roll ♻"),
-      createButton("kb-keepdrop", "Keep/drop 🚮"),
-      createButton("kb-target", "Targets 🎯"),
-      createButton("kb-crit", "Criticals ⚔")
+      createButton("exploding", "Exploding 💥"),
+      createButton("reroll", "Re-roll ♻"),
+      createButton("keepdrop", "Keep/drop 🚮"),
+      createButton("target", "Targets 🎯"),
+      createButton("crit", "Criticals ⚔")
     ) as ActionRowBuilder<ButtonBuilder>;
 
   const kbButtonRow2 = new ActionRowBuilder()
     .addComponents(
-      createButton("kb-math", "Math 🧮"),
-      createButton("kb-sort", "Sorting ↕"),
-      createButton("kb-repeating", "Repeating 👯‍♀️")
+      createButton("math", "Math 🧮"),
+      createButton("sort", "Sorting ↕"),
+      createButton("repeating", "Repeating 👯‍♀️")
     ) as ActionRowBuilder<ButtonBuilder>;
 
   const embed = createEmbed(
@@ -62,7 +62,7 @@ const sendHelperMessage = async ({
   }
 
   sendLogEventMessage({
-    eventType: EventType.SENT_HELER_MESSAGE,
+    eventType: EventType.SENT_HELPER_MESSAGE,
     logOutputChannel,
     interaction,
   });

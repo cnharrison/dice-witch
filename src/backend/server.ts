@@ -5,6 +5,7 @@ import { CONFIG } from "./config";
 import { logger } from "./web/middleware/logger";
 import guilds from "./web/routes/guilds";
 import clerkWebhook from "./web/webhooks/clerk-webhook";
+import diceRouter from "./web/routes/dice";
 import { ChildProcess } from "child_process";
 
 const app = new Hono();
@@ -45,6 +46,7 @@ app.use("*", logger());
 
 app.route("/api/guilds", guilds);
 app.route("/webhook", clerkWebhook);
+app.route("/api/dice", diceRouter);
 
 const startServer = async () => {
   try {

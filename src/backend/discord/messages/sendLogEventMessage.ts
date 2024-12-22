@@ -14,7 +14,7 @@ import {
   goodColor,
   infoColor,
   tabletopColor,
-} from "../constants";
+} from "../../core/constants";
 
 const { adminId, logOutputChannelId } = CONFIG.discord;
 
@@ -28,6 +28,11 @@ const sendLogEventMessage = async ({
   interaction,
   discord,
 }: Partial<LogEventProps>) => {
+  if (!eventType) {
+    console.error("Event type is undefined");
+    return;
+  }
+
   const channel = interaction?.channel as TextChannel | ThreadChannel | null;
   const channelName = channel?.name ?? "";
   const username = interaction?.user.username ?? "";
@@ -73,7 +78,7 @@ const sendLogEventMessage = async ({
       title: `${eventType}: ${title ?? ""}`,
       description: resultMessage,
     },
-    [EventType.SENT_HELER_MESSAGE]: {
+    [EventType.SENT_HELPER_MESSAGE]: {
       color: infoColor,
       title: eventType,
       description: `${username} in ${isGuildChannel ? channelName : "DM"}`,
@@ -89,11 +94,6 @@ const sendLogEventMessage = async ({
       description: `${makeBold(channelName)} on ${makeBold(guildName)}`,
     },
   };
-
-  if (!eventType) {
-    console.error("Event type is undefined");
-    return;
-  }
 
   const generateEmbed = () => embedMap[eventType as keyof typeof embedMap] ?? {};
 

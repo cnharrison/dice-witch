@@ -38,7 +38,7 @@ export enum EventType {
   GUILD_REMOVE = "guildRemove",
   SENT_ROLL_RESULT_MESSAGE = "sentRollResultMessage",
   SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE = "sentRollResultMessageWithImage",
-  SENT_HELER_MESSAGE = "sentHelperMessage",
+  SENT_HELPER_MESSAGE = "sentHelperMessage",
   SENT_NEED_PERMISSION_MESSAGE = "sentNeedPermissionsMessage",
   SENT_DICE_OVER_MAX_MESSAGE = "sentDiceOverMaxMessage",
 }
@@ -171,6 +171,9 @@ export interface LogEventProps {
 export interface Die {
   sides: DiceTypes;
   rolled: DiceFaces;
+  value: number;
+  notation?: string;
+  modifiers?: string[];
   icon?: Icon[] | null;
   iconSpacing?: number | null;
   color: chroma.Color;
@@ -274,5 +277,12 @@ export interface SendHelperMessageParams {
 
 export interface SendNeedPermissionMessageParams {
   logOutputChannel: TextChannel;
+  interaction?: CommandInteraction | ButtonInteraction;
+}
+
+export interface GenerateEmbedMessageParams {
+  resultArray: Result[];
+  attachment: AttachmentBuilder;
+  title?: string;
   interaction?: CommandInteraction | ButtonInteraction;
 }

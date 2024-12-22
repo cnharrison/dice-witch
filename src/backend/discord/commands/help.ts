@@ -1,6 +1,6 @@
 import { EmbedBuilder } from "discord.js";
 import { Command, HelpProps } from "../../shared/types";
-import { footerButtonRow } from "../constants";
+import { footerButtonRow } from "../../core/constants/index";
 
 const help: Command = {
   name: "help",

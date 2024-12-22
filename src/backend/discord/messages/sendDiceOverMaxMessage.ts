@@ -1,4 +1,4 @@
-import { maxDiceSides, maxImageDice, maxTextDice } from "../constants/index";
+import { maxDiceSides, maxImageDice, maxTextDice } from "../../core/constants/index";
 import { sendLogEventMessage } from ".";
 import { EventType, SendDiceOverMaxMessageParams } from "../../shared/types";
 
@@ -24,7 +24,6 @@ const sendDiceOverMaxMessage = async ({
   sendLogEventMessage({
     eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
     logOutputChannel,
-    message,
     interaction,
     args,
     discord,

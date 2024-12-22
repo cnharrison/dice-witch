@@ -1,7 +1,7 @@
 import { EmbedBuilder } from "discord.js";
 import { DiscordService } from "../../core/services/DiscordService";
 import { StatusProps } from "../../shared/types";
-import { footerButtonRow } from "../constants";
+import { footerButtonRow } from "../../core/constants/index";
 
 const status = {
   name: "status",
@@ -13,7 +13,7 @@ const status = {
 
     try {
       const { totalGuilds, totalMembers } = await discordService.getUserCount({ discord }) ?? {};
-      const latency = now - (interaction?.createdTimestamp ?? message.createdTimestamp);
+      const latency = now - (interaction?.createdTimestamp ?? now);
 
       const embed = new EmbedBuilder()
         .setColor([153, 153, 153])

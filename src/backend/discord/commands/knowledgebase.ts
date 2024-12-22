@@ -5,7 +5,7 @@ import {
   EmbedBuilder
 } from "discord.js";
 import { KnowledgeBase, KnowledgeBaseProps } from "../../shared/types";
-import { footerButtonRow, infoColor } from "../constants";
+import { footerButtonRow, infoColor } from "../../core/constants/index";
 
 const kb: KnowledgeBase = {
   minmax: [

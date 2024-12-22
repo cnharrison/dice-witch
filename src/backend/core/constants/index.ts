@@ -15,6 +15,8 @@ const maxImageDice: number = 50;
 const maxTextDice: number = 500;
 const maxDiceSides: number = 100;
 
+const MAX_DELAY_MS = 5000;
+
 const eventColor = resolveColor('#999999');
 const errorColor = resolveColor('#FF0000');
 const goodColor = resolveColor('#00FF00');
@@ -37,6 +39,7 @@ export {
   maxImageDice,
   maxTextDice,
   maxDiceSides,
+  MAX_DELAY_MS,
   eventColor,
   errorColor,
   goodColor,

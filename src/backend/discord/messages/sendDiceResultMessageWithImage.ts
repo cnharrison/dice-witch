@@ -1,55 +1,10 @@
-import {
-  ButtonInteraction,
-  CommandInteraction,
-  EmbedBuilder,
-} from "discord.js";
+import { DiceService } from '../../core/services/DiceService';
 import { getRandomNumber } from "../../shared/helpers";
 import { sendLogEventMessage } from ".";
-import { AttachmentBuilder } from "discord.js";
 import { EmbedObject, EventType, Result, SendDiceResultMessageWithImageParams } from "../../shared/types";
-import { tabletopColor } from "../constants";
+import { MAX_DELAY_MS } from '../../core/constants/index';
 
-const createEmbed = (
-  resultArray: Result[],
-  grandTotal: number,
-  attachment: AttachmentBuilder,
-  title?: string,
-  interaction?: CommandInteraction | ButtonInteraction
-): EmbedBuilder => {
-  const footerText = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-    }\n${interaction ? `sent to ` + interaction.user.username : ``}`;
-
-  const embed = new EmbedBuilder()
-    .setColor(tabletopColor)
-    .setImage("attachment://currentDice.png")
-    .setFooter({ text: footerText });
-
-  if (title) {
-    embed.setTitle(title);
-  }
-
-  return embed;
-};
-
-const generateEmbedMessage = async (
-  resultArray: Result[],
-  attachment: AttachmentBuilder,
-  title?: string,
-  interaction?: CommandInteraction | ButtonInteraction
-): Promise<{ embeds: EmbedBuilder[]; files: AttachmentBuilder[] }> => {
-  const grandTotal = resultArray.reduce(
-    (prev: number, cur: Result) => prev + cur.results,
-    0
-  );
-
-  try {
-    const embed = createEmbed(resultArray, grandTotal, attachment, title, interaction);
-    return { embeds: [embed], files: [attachment] };
-  } catch (err) {
-    console.error("Error generating embed message:", err);
-    throw new Error("Failed to generate embed message");
-  }
-};
+const diceService = DiceService.getInstance();
 
 const sendDiceResultMessageWithImage = async ({
   resultArray,
@@ -61,12 +16,12 @@ const sendDiceResultMessageWithImage = async ({
   title,
 }: SendDiceResultMessageWithImageParams) => {
   try {
-    const embedMessage: EmbedObject = await generateEmbedMessage(
+    const embedMessage: EmbedObject = await diceService.generateEmbedMessage({
       resultArray,
       attachment,
       title,
       interaction
-    );
+    });
 
     const sendMessage = async () => {
       try {
@@ -88,7 +43,7 @@ const sendDiceResultMessageWithImage = async ({
     if (interaction) {
       await sendMessage();
     } else {
-      setTimeout(sendMessage, getRandomNumber(5000));
+      setTimeout(sendMessage, getRandomNumber(MAX_DELAY_MS));
     }
   } catch (err) {
     console.error("Error in sendDiceResultMessageWithImage:", err);
