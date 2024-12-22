@@ -135,7 +135,7 @@ export type RollProps = Pick<
   | "discord"
 >;
 
-export type HelpProps = Pick<CommandProps, "message" | "args"> & {
+export type HelpProps = Pick<CommandProps, "args"> & {
   commands?: Collection<string, Command>;
   interaction?: CommandInteraction | ButtonInteraction;
 };
@@ -238,7 +238,6 @@ export interface UserType {
 }
 
 export interface SendDiceOverMaxMessageParams {
-  message: Message;
   logOutputChannel: TextChannel;
   discord: Client;
   args?: string[];

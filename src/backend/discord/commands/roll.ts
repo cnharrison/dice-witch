@@ -25,7 +25,6 @@ const command = {
   usage: "[dice notation], e.g. 1d20 2d12. Type `/roll` for a detailed explanation",
 
   async execute({
-    message,
     args,
     logOutputChannel,
     interaction,
@@ -60,7 +59,7 @@ const command = {
       }
 
       const handleOverMaxMessage = async () => {
-        await sendDiceOverMaxMessage({message, logOutputChannel, discord, args, interaction, shouldHaveImage});
+        await sendDiceOverMaxMessage({ logOutputChannel, discord, args, interaction, shouldHaveImage});
       };
 
       if (shouldHaveImage) {
