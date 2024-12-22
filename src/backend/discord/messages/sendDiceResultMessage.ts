@@ -1,19 +1,14 @@
-import {
-  Message,
-  TextChannel,
-  CommandInteraction,
-  ButtonInteraction,
-} from "discord.js";
+
 import { makeBold } from "../../shared/helpers";
-import { EventType, Result } from "../../shared/types";
+import { EventType, Result, SendDiceResultMessageParams } from "../../shared/types";
 import sendLogEventMessage from "./sendLogEventMessage";
 
-const sendDiceResultMessage = async (
-  resultArray: Result[],
-  logOutputChannel: TextChannel,
-  interaction?: CommandInteraction | ButtonInteraction,
-  title?: string
-) => {
+const sendDiceResultMessage = async ({
+  resultArray,
+  logOutputChannel,
+  interaction,
+  title,
+}: SendDiceResultMessageParams) => {
   const grandTotal = resultArray.reduce(
     (prev: number, cur: Result) => prev + cur.results,
     0

@@ -1,25 +1,18 @@
 import { maxDiceSides, maxImageDice, maxTextDice } from "../constants/index";
-import {
-  ButtonInteraction,
-  Client,
-  CommandInteraction,
-  Message,
-  TextChannel,
-} from "discord.js";
 import { sendLogEventMessage } from ".";
-import { EventType } from "../../shared/types";
+import { EventType, SendDiceOverMaxMessageParams } from "../../shared/types";
 
 const imageMsg = `${maxImageDice} dice max, sorry 😅`;
 const textMsg = `${maxDiceSides} sides max and ${maxTextDice} dice max, sorry 😅`;
 
-const sendDiceOverMaxMessage = async (
-  message: Message,
-  logOutputChannel: TextChannel,
-  discord: Client,
-  args?: string[],
-  interaction?: CommandInteraction | ButtonInteraction,
-  shouldHaveImage?: boolean
-) => {
+const sendDiceOverMaxMessage = async ({
+  message,
+  logOutputChannel,
+  discord,
+  args,
+  interaction,
+  shouldHaveImage,
+}: SendDiceOverMaxMessageParams) => {
   const msg = shouldHaveImage ? imageMsg : textMsg;
   try {
     if (interaction) {

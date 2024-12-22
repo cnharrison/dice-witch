@@ -62,7 +62,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         const { value: timesToRepeat } = interaction.options.get("timestorepeat") || {};
 
         const unformattedArgs = topic?.toString().trim().split("-") || [];
-        const wasFromSlash = !!unformattedArgs.length && unformattedArgs[2] === "slash";
         const args = diceNotation
           ? diceNotation?.toString().trim().split(/ +/)
           : unformattedArgs[1]
@@ -86,7 +85,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
           interaction,
           title: titleAsString,
           timesToRepeat: timesToRepeatAsNumber,
-          wasFromSlash,
         });
 
         sendLogEventMessage({
@@ -129,9 +127,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         commands.find(
           (cmd) => cmd.aliases && cmd.aliases.includes(unformattedArgs[0])
         );
-
-      const wasFromSlash =
-        !!unformattedArgs.length && unformattedArgs[2] === "slash";
 
       if (command)
         command.execute({

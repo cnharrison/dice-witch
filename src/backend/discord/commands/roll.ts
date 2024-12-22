@@ -43,24 +43,24 @@ const command = {
       const databaseService = DatabaseService.getInstance();
 
       if (!args.length && interaction) {
-        await sendHelperMessage(interaction, logOutputChannel);
+        await sendHelperMessage({interaction, logOutputChannel});
         return;
       }
 
       if (!discordService.checkForAttachPermission(interaction)) {
-        await sendNeedPermissionMessage(logOutputChannel, interaction);
+        await sendNeedPermissionMessage({logOutputChannel, interaction});
         return;
       }
 
       const { diceArray, resultArray, shouldHaveImage } = diceService.rollDice(args, availableDice, timesToRepeat);
 
       if (!diceArray.length && interaction) {
-        await sendHelperMessage(interaction, logOutputChannel);
+        await sendHelperMessage({interaction, logOutputChannel});
         return;
       }
 
       const handleOverMaxMessage = async () => {
-        await sendDiceOverMaxMessage(message, logOutputChannel, discord, args, interaction, shouldHaveImage);
+        await sendDiceOverMaxMessage({message, logOutputChannel, discord, args, interaction, shouldHaveImage});
       };
 
       if (shouldHaveImage) {
@@ -68,14 +68,14 @@ const command = {
           await handleOverMaxMessage();
           return;
         }
-        await sendDiceRolledMessage(diceArray, interaction);
+        await sendDiceRolledMessage({diceArray, interaction});
         const attachmentResult = await diceService.generateDiceAttachment(diceArray);
         if (!attachmentResult) {
           console.error("Failed to generate dice attachment");
           return;
         }
         const { attachment, canvas } = attachmentResult;
-        await sendDiceResultMessageWithImage(
+        await sendDiceResultMessageWithImage({
           resultArray,
           attachment,
           canvas,
@@ -83,13 +83,13 @@ const command = {
           discord,
           interaction,
           title
-        );
+      });
       } else {
         if (getTotalDiceRolled(diceArray) > maxTextDice || getHighestDiceSide(diceArray) > maxDiceSides) {
           await handleOverMaxMessage();
           return;
         }
-        await sendDiceResultMessage(resultArray, logOutputChannel, interaction, title);
+        await sendDiceResultMessage({ resultArray, logOutputChannel, interaction, title });
       }
 
       await databaseService.updateOnCommand({

@@ -1,15 +1,13 @@
 import {
   ButtonInteraction,
-  Client,
   CommandInteraction,
   EmbedBuilder,
 } from "discord.js";
 import { getRandomNumber } from "../../shared/helpers";
 import { sendLogEventMessage } from ".";
-import { AttachmentBuilder, Message, TextChannel } from "discord.js";
-import { EmbedObject, EventType, Result } from "../../shared/types";
+import { AttachmentBuilder } from "discord.js";
+import { EmbedObject, EventType, Result, SendDiceResultMessageWithImageParams } from "../../shared/types";
 import { tabletopColor } from "../constants";
-import { Canvas } from "@napi-rs/canvas";
 
 const createEmbed = (
   resultArray: Result[],
@@ -53,15 +51,15 @@ const generateEmbedMessage = async (
   }
 };
 
-const sendDiceResultMessageWithImage = async (
-  resultArray: Result[],
-  attachment: AttachmentBuilder,
-  canvas: Canvas,
-  logOutputChannel: TextChannel,
-  discord: Client,
-  interaction?: CommandInteraction | ButtonInteraction,
-  title?: string
-) => {
+const sendDiceResultMessageWithImage = async ({
+  resultArray,
+  attachment,
+  canvas,
+  logOutputChannel,
+  discord,
+  interaction,
+  title,
+}: SendDiceResultMessageWithImageParams) => {
   try {
     const embedMessage: EmbedObject = await generateEmbedMessage(
       resultArray,

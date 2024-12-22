@@ -1,20 +1,20 @@
 import {
-  TextChannel,
-  ThreadChannel,
   ChannelType,
   Client,
   resolveColor,
+  TextChannel,
+  ThreadChannel,
 } from "discord.js";
-import { EventType, LogEventProps } from "../../shared/types";
 import { CONFIG } from "../../config";
+import { makeBold } from "../../shared/helpers";
+import { EventType, LogEventProps } from "../../shared/types";
 import {
-  eventColor,
   errorColor,
+  eventColor,
   goodColor,
   infoColor,
   tabletopColor,
 } from "../constants";
-import { makeBold } from "../../shared/helpers";
 
 const { adminId, logOutputChannelId } = CONFIG.discord;
 
@@ -29,7 +29,7 @@ const sendLogEventMessage = async ({
   discord,
 }: Partial<LogEventProps>) => {
   const channel = interaction?.channel as TextChannel | ThreadChannel | null;
-  const channelName = (channel && 'name' in channel) ? channel.name : "";
+  const channelName = channel?.name ?? "";
   const username = interaction?.user.username ?? "";
   const guildName = guild?.name ?? interaction?.guild?.name ?? "";
   const commandName = command?.name ?? "";

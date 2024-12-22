@@ -1,18 +1,19 @@
+import { Canvas } from "@napi-rs/canvas";
+import { PrismaClient } from "@prisma/client";
+import chroma from "chroma-js";
 import {
+  AttachmentBuilder,
   ButtonInteraction,
   Client,
   Collection,
   CommandInteraction,
+  EmbedBuilder,
+  EmbedField,
   Guild,
   Interaction,
   Message,
-  AttachmentBuilder,
-  EmbedBuilder,
-  EmbedField,
   TextChannel,
 } from "discord.js";
-import chroma from "chroma-js";
-import { PrismaClient } from "@prisma/client";
 
 export type Icon =
   | "trashcan"
@@ -99,7 +100,6 @@ export interface Command {
 }
 
 export interface CommandProps {
-  message: Message;
   args: string[];
   discord: Client;
   logOutputChannel: TextChannel;
@@ -107,11 +107,9 @@ export interface CommandProps {
   interaction?: CommandInteraction | ButtonInteraction;
   title?: string;
   timesToRepeat?: number;
-  wasFromSlash: boolean;
 }
 
 export type CommandContext = {
-  message?: Message;
   args: string[];
   discord: Client;
   logOutputChannel: TextChannel;
@@ -119,17 +117,16 @@ export type CommandContext = {
   interaction?: Interaction;
   title?: string;
   timesToRepeat?: number;
-  wasFromSlash?: boolean;
 };
 
 export type KnowledgeBaseProps = Pick<
   CommandProps,
-  "message" | "args" | "interaction" | "wasFromSlash"
+  "args" | "interaction"
+
 >;
 
 export type RollProps = Pick<
   CommandProps,
-  | "message"
   | "args"
   | "logOutputChannel"
   | "interaction"
@@ -144,11 +141,11 @@ export type HelpProps = Pick<CommandProps, "message" | "args"> & {
 };
 export type StatusProps = Pick<
   CommandProps,
-  "message" | "discord" | "interaction"
+  "discord" | "interaction"
 >;
 export type TitledRollProps = Pick<
   CommandProps,
-  "message" | "args" | "logOutputChannel" | "interaction"
+  "args" | "logOutputChannel" | "interaction"
 >;
 
 export type EmbedObject = {
@@ -159,7 +156,6 @@ export type EmbedObject = {
 export interface LogEventProps {
   eventType: EventType;
   logOutputChannel: TextChannel;
-  message?: Message;
   command?: Command;
   args?: string[];
   title?: string;
@@ -239,4 +235,45 @@ export interface UserType {
   flags?: { bitfield: number };
   discriminator: string;
   avatar?: string;
+}
+
+export interface SendDiceOverMaxMessageParams {
+  message: Message;
+  logOutputChannel: TextChannel;
+  discord: Client;
+  args?: string[];
+  interaction?: CommandInteraction | ButtonInteraction;
+  shouldHaveImage?: boolean;
+}
+
+export interface SendDiceResultMessageParams {
+  resultArray: Result[];
+  logOutputChannel: TextChannel;
+  interaction?: CommandInteraction | ButtonInteraction;
+  title?: string;
+}
+
+export interface SendDiceResultMessageWithImageParams {
+  resultArray: Result[];
+  attachment: AttachmentBuilder;
+  canvas: Canvas;
+  logOutputChannel: TextChannel;
+  discord: Client;
+  interaction?: CommandInteraction | ButtonInteraction;
+  title?: string;
+}
+
+export interface SendDiceRolledMessageParams {
+  diceArray: (Die | Die[])[];
+  interaction?: CommandInteraction | ButtonInteraction;
+}
+
+export interface SendHelperMessageParams {
+  interaction: CommandInteraction | ButtonInteraction;
+  logOutputChannel: TextChannel;
+}
+
+export interface SendNeedPermissionMessageParams {
+  logOutputChannel: TextChannel;
+  interaction?: CommandInteraction | ButtonInteraction;
 }

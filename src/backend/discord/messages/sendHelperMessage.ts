@@ -1,14 +1,12 @@
 import  {
-  CommandInteraction,
-  ButtonInteraction,
   ActionRowBuilder,
   ButtonBuilder,
   EmbedBuilder,
-  TextChannel,
 } from "discord.js";
 import { availableDice, footerButtonRow, maxImageDice } from "../constants";
 import { sendLogEventMessage } from ".";
 import { EventType } from "../../shared/types";
+import { SendHelperMessageParams } from "../../shared/types";
 
 const createButton = (id: string, label: string) =>
   new ButtonBuilder()
@@ -21,10 +19,10 @@ const createEmbed = (title: string, description: string) =>
     .setColor("#0000ff")
     .addFields({ name: title, value: description });
 
-const sendHelperMessage = async (
-  interaction: CommandInteraction | ButtonInteraction,
-  logOutputChannel: TextChannel
-) => {
+const sendHelperMessage = async ({
+  interaction,
+  logOutputChannel,
+}: SendHelperMessageParams) => {
   const kbButtonRow = new ActionRowBuilder()
     .addComponents(
       createButton("kb-exploding", "Exploding 💥"),

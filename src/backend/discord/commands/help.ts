@@ -1,4 +1,4 @@
-import Discord from "discord.js";
+import { EmbedBuilder } from "discord.js";
 import { Command, HelpProps } from "../../shared/types";
 import { footerButtonRow } from "../constants";
 
@@ -7,13 +7,13 @@ const help: Command = {
   description: "List commands",
   aliases: ["commands"],
   usage: "[command name]",
-  async execute({ message, args = [], commands, interaction }: Partial<HelpProps>) {
+  async execute({ args = [], commands, interaction }: Partial<HelpProps>) {
     if (!commands) return;
 
     const data: string[] = [];
 
     const sendEmbed = async (title: string, description: string) => {
-      const embed = new Discord.EmbedBuilder()
+      const embed = new EmbedBuilder()
         .setColor("#0000ff")
         .setTitle(title)
         .setDescription(description);

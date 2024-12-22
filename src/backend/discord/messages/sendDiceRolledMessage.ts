@@ -1,11 +1,10 @@
 import { getRandomNumber, pluralPick } from "../../shared/helpers";
-import { ButtonInteraction, CommandInteraction, Message } from "discord.js";
-import { Die } from "../../shared/types";
+import { SendDiceRolledMessageParams } from "../../shared/types";
 
-const sendDiceRolledMessage = async (
-  diceArray: (Die | Die[])[],
-  interaction?: CommandInteraction | ButtonInteraction
-) => {
+const sendDiceRolledMessage = async ({
+  diceArray,
+  interaction,
+}: SendDiceRolledMessageParams) => {
   const isSingleDie = diceArray.length === 1 && Array.isArray(diceArray[0]) && diceArray[0].length === 1;
 
   const messages = [
