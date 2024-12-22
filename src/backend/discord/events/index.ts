@@ -77,7 +77,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         }
 
         await command.execute({
-          message: undefined,
           args,
           discord,
           logOutputChannel,
@@ -135,7 +134,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
           logOutputChannel,
           commands,
           interaction,
-          wasFromSlash,
         });
       sendLogEventMessage({
         eventType: EventType.RECEIVED_COMMAND,

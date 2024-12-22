@@ -1,5 +1,5 @@
 import { Guild } from "discord.js";
-import { DiceArray, Die } from "../src/types";
+import { DiceArray, Die } from "../shared/types";
 
 const getRandomNumber = (range: number) =>
   Math.floor(Math.random() * range) + 1;

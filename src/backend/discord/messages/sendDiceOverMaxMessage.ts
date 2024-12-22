@@ -6,7 +6,6 @@ const imageMsg = `${maxImageDice} dice max, sorry 😅`;
 const textMsg = `${maxDiceSides} sides max and ${maxTextDice} dice max, sorry 😅`;
 
 const sendDiceOverMaxMessage = async ({
-  message,
   logOutputChannel,
   discord,
   args,

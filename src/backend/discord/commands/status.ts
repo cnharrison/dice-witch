@@ -7,7 +7,7 @@ const status = {
   name: "status",
   description: "Get ping and server info",
   aliases: ["ping"],
-  async execute({ message, discord, interaction }: StatusProps) {
+  async execute({ discord, interaction }: StatusProps) {
     const discordService = DiscordService.getInstance();
     const now = Date.now();
 
