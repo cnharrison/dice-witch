@@ -55,7 +55,6 @@ const generateEmbedMessage = async (
 
 const sendDiceResultMessageWithImage = async (
   resultArray: Result[],
-  message: Message,
   attachment: AttachmentBuilder,
   canvas: Canvas,
   logOutputChannel: TextChannel,
@@ -75,14 +74,11 @@ const sendDiceResultMessageWithImage = async (
       try {
         if (interaction) {
           await interaction.followUp(embedMessage);
-        } else {
-          await message.reply(embedMessage);
         }
         sendLogEventMessage({
           eventType: EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE,
           logOutputChannel,
           discord,
-          message,
           embedParam: embedMessage,
           canvasString: canvas.toDataURL(),
         });

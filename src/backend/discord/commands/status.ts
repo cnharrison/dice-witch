@@ -1,7 +1,7 @@
 import { EmbedBuilder } from "discord.js";
-import { footerButtonRow } from "../constants";
-import { StatusProps } from "../../shared/types";
 import { DiscordService } from "../../core/services/DiscordService";
+import { StatusProps } from "../../shared/types";
+import { footerButtonRow } from "../constants";
 
 const status = {
   name: "status",
@@ -26,8 +26,9 @@ const status = {
         embeds: [embed],
         components: [footerButtonRow],
       };
-
-      interaction ? await interaction.reply(response) : await message.reply(response);
+      if (interaction) {
+        await interaction.reply(response);
+      }
     } catch (err) {
       console.error("Error in status command:", err);
       const errorResponse = {
@@ -39,10 +40,9 @@ const status = {
         ],
         components: [footerButtonRow],
       };
-
-      interaction ?
-        await interaction.reply(errorResponse) :
-        await message.reply(errorResponse);
+      if (interaction) {
+        await interaction.reply(errorResponse);
+      }
     }
   },
 };

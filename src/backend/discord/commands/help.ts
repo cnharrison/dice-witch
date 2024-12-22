@@ -21,8 +21,6 @@ const help: Command = {
         const response = { embeds: [embed], components: [footerButtonRow] };
         if (interaction) {
           await interaction.reply(response);
-        } else if (message) {
-          await message.reply(response);
         }
       } catch (err) {
         console.error(err);
@@ -42,8 +40,6 @@ const help: Command = {
     if (!command) {
       if (interaction) {
         await interaction.reply({ content: "❓ Command not found", ephemeral: true });
-      } else if (message) {
-        await message.react("❓");
       }
       return;
     }

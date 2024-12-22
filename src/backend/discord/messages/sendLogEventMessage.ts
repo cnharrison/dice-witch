@@ -20,7 +20,6 @@ const { adminId, logOutputChannelId } = CONFIG.discord;
 
 const sendLogEventMessage = async ({
   eventType,
-  message,
   command,
   args,
   title,
@@ -29,9 +28,9 @@ const sendLogEventMessage = async ({
   interaction,
   discord,
 }: Partial<LogEventProps>) => {
-  const channel = interaction?.channel ?? message?.channel as TextChannel | ThreadChannel | null;
+  const channel = interaction?.channel as TextChannel | ThreadChannel | null;
   const channelName = (channel && 'name' in channel) ? channel.name : "";
-  const username = interaction?.user.username ?? message?.author.username ?? "";
+  const username = interaction?.user.username ?? "";
   const guildName = guild?.name ?? interaction?.guild?.name ?? "";
   const commandName = command?.name ?? "";
   const isGuildChannel = channel?.type === ChannelType.GuildText;

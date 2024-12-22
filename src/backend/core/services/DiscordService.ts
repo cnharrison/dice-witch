@@ -1,7 +1,6 @@
 import {
   Client,
   Message,
-  TextChannel,
   ButtonInteraction,
   CommandInteraction,
   ChannelType,
@@ -44,14 +43,13 @@ export class DiscordService {
   }
 
   public checkForAttachPermission(
-    message: Message,
     interaction?: ButtonInteraction | CommandInteraction
   ): boolean {
-    const channel = interaction?.channel ?? (message.channel as TextChannel);
-    const guild = interaction?.guild ?? message.guild;
+    const channel = interaction?.channel
+    const guild = interaction?.guild
     const me = guild?.members.me;
 
-    if (!guild || !me || channel.type !== ChannelType.GuildText) {
+    if (!guild || !me || channel?.type !== ChannelType.GuildText) {
       return true;
     }
 

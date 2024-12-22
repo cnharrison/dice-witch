@@ -37,8 +37,6 @@ const knowledgebase = {
 
       if (interaction) {
         await interaction.followUp(response);
-      } else if (message) {
-        await message.reply(response);
       }
 
     } catch (error) {
@@ -51,8 +49,6 @@ const knowledgebase = {
         } else {
           await interaction.followUp(errorResponse);
         }
-      } else if (message) {
-        await message.reply(errorResponse);
       }
     }
   },

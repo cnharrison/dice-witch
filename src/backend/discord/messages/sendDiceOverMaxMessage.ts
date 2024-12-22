@@ -24,8 +24,6 @@ const sendDiceOverMaxMessage = async (
   try {
     if (interaction) {
       await interaction.followUp(msg);
-    } else {
-      await message.reply(msg);
     }
   } catch (err) {
     console.error("Error sending dice over max message:", err);

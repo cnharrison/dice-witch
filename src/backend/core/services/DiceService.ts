@@ -1,18 +1,8 @@
-import chroma from "chroma-js";
 import Canvas, { Canvas as CanvasType, Image } from "@napi-rs/canvas";
+import chroma from "chroma-js";
 import { AttachmentBuilder } from "discord.js";
-import { DiceRoll, Parser } from "rpg-dice-roller";
-import { StandardDice, RollResult } from "rpg-dice-roller";
+import { DiceRoll, Parser, RollResult, StandardDice } from "rpg-dice-roller";
 import sharp from "sharp";
-import {
-  generateD10,
-  generateD12,
-  generateD20,
-  generateD4,
-  generateD6,
-  generateD8,
-  generateDPercent,
-} from "./images/generateDice/dice";
 import { coinFlip } from "../../shared/helpers";
 import {
   DiceArray,
@@ -25,8 +15,17 @@ import {
   PatternFillObject,
   Result,
 } from "../../shared/types";
-import generateDie from "./images/generateDie";
+import {
+  generateD10,
+  generateD12,
+  generateD20,
+  generateD4,
+  generateD6,
+  generateD8,
+  generateDPercent,
+} from "./images/generateDice/dice";
 import generateLinearGradientFill from "./images/generateDice/fills/generateLinearGradientFill";
+import generateDie from "./images/generateDie";
 
 export class DiceService {
   private static instance: DiceService;

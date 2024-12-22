@@ -10,7 +10,6 @@ import sendLogEventMessage from "./sendLogEventMessage";
 
 const sendDiceResultMessage = async (
   resultArray: Result[],
-  message: Message,
   logOutputChannel: TextChannel,
   interaction?: CommandInteraction | ButtonInteraction,
   title?: string
@@ -20,7 +19,7 @@ const sendDiceResultMessage = async (
     0
   );
 
-  const userId = interaction ? interaction.user.id : message.author.id;
+  const userId = interaction ? interaction.user.id : "unknown user";
   const titleText = title ? makeBold(title) : "";
   const resultsText = resultArray.map((result) => result.output).join("\n");
   const grandTotalText = resultArray.length > 1 ? `\ngrand total = \`${grandTotal}\`` : "";
@@ -34,14 +33,11 @@ const sendDiceResultMessage = async (
       } else {
         await interaction.reply(reply);
       }
-    } else {
-      await message.reply(reply);
     }
 
     sendLogEventMessage({
       eventType: EventType.SENT_ROLL_RESULT_MESSAGE,
       logOutputChannel,
-      message,
       resultMessage: reply,
     });
   } catch (err) {

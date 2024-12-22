@@ -47,8 +47,8 @@ const command = {
         return;
       }
 
-      if (!discordService.checkForAttachPermission(message, interaction)) {
-        await sendNeedPermissionMessage(message, logOutputChannel, interaction);
+      if (!discordService.checkForAttachPermission(interaction)) {
+        await sendNeedPermissionMessage(logOutputChannel, interaction);
         return;
       }
 
@@ -68,7 +68,7 @@ const command = {
           await handleOverMaxMessage();
           return;
         }
-        await sendDiceRolledMessage(message, diceArray, interaction);
+        await sendDiceRolledMessage(diceArray, interaction);
         const attachmentResult = await diceService.generateDiceAttachment(diceArray);
         if (!attachmentResult) {
           console.error("Failed to generate dice attachment");
@@ -77,7 +77,6 @@ const command = {
         const { attachment, canvas } = attachmentResult;
         await sendDiceResultMessageWithImage(
           resultArray,
-          message,
           attachment,
           canvas,
           logOutputChannel,
@@ -90,12 +89,11 @@ const command = {
           await handleOverMaxMessage();
           return;
         }
-        await sendDiceResultMessage(resultArray, message, logOutputChannel, interaction, title);
+        await sendDiceResultMessage(resultArray, logOutputChannel, interaction, title);
       }
 
       await databaseService.updateOnCommand({
         commandName: command.name,
-        message,
         interaction
       });
 
@@ -109,8 +107,6 @@ const command = {
         } else {
           await interaction.followUp(errorResponse);
         }
-      } else if (message) {
-        await message.reply(errorResponse);
       }
     }
   },

@@ -3,7 +3,6 @@ import { ButtonInteraction, CommandInteraction, Message } from "discord.js";
 import { Die } from "../../shared/types";
 
 const sendDiceRolledMessage = async (
-  message: Message,
   diceArray: (Die | Die[])[],
   interaction?: CommandInteraction | ButtonInteraction
 ) => {
@@ -73,10 +72,7 @@ const sendDiceRolledMessage = async (
     const text = getText();
     if (interaction) {
       await interaction.followUp(text);
-    } else {
-      await message.channel.send(text);
     }
-    message?.channel?.sendTyping();
   } catch (err) {
     console.error("Error sending dice rolled message:", err);
   }

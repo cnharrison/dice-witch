@@ -1,6 +1,5 @@
 import {
   User,
-  Message,
   CommandInteraction,
   ButtonInteraction,
   Guild,
@@ -11,7 +10,6 @@ import { GuildType, UserType } from "../../shared/types";
 
 type UpdateOnCommandParams = {
   commandName: string;
-  message?: Message;
   interaction?: CommandInteraction | ButtonInteraction;
 };
 
@@ -158,7 +156,7 @@ export class DatabaseService {
     };
   }
 
-  public async updateOnCommand({ commandName, message, interaction }: UpdateOnCommandParams): Promise<void> {
+  public async updateOnCommand({ commandName, interaction }: UpdateOnCommandParams): Promise<void> {
     const isARoll = ["r", "roll"].includes(commandName);
 
     try {
@@ -175,23 +173,6 @@ export class DatabaseService {
           await this.upsertUserGuildRelationship(
             Number(guild.id),
             Number(user.id),
-            isAdmin,
-            isDiceWitchAdmin
-          );
-        }
-      } else if (message) {
-        const { author, guild, member } = message;
-        await this.upsertUser(this.mapUserToUserType(author), isARoll);
-
-        if (guild && member) {
-          const guildMember = member as GuildMember;
-          const isAdmin = guildMember.permissions.has("Administrator");
-          const isDiceWitchAdmin = guildMember.roles.cache.some(role => role.name === "Dice Witch Admin");
-
-          await this.upsertGuild(guild, isARoll);
-          await this.upsertUserGuildRelationship(
-            Number(guild.id),
-            Number(author.id),
             isAdmin,
             isDiceWitchAdmin
           );
