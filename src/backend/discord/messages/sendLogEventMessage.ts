@@ -97,22 +97,35 @@ const sendLogEventMessage = async ({
 
   const generateEmbed = () => embedMap[eventType as keyof typeof embedMap] ?? {};
 
-  const logEvent = (c: Client, { embed, logOutputChannelID }: { embed: any; logOutputChannelID?: string }) => {
+  const logEvent = async (c: Client, { embed, logOutputChannelID }: { embed: any; logOutputChannelID?: string }) => {
     if (!logOutputChannelID) return;
     const logOutputChannel = c.channels.cache.get(logOutputChannelID) as TextChannel;
     if (logOutputChannel) {
-      logOutputChannel.send({ embeds: [embed] }).catch(console.error);
+      try {
+        await logOutputChannel.send({ embeds: [embed] });
+      } catch (error) {
+        console.error("Error sending log event message:", error);
+      }
     }
   };
 
-  discord?.shard
-    ?.broadcastEval(logEvent, {
-      context: {
+  if (discord) {
+    if (discord.shard && discord.shard.count > 1) {
+      discord.shard.broadcastEval(logEvent, {
+        context: {
+          embed: generateEmbed(),
+          logOutputChannelId,
+        },
+      }).catch(console.error);
+    } else {
+      await logEvent(discord, {
         embed: generateEmbed(),
-        logOutputChannelId,
-      },
-    })
-    .catch(console.error);
+        logOutputChannelID: logOutputChannelId,
+      });
+    }
+  } else {
+    console.error("Discord client is undefined");
+  }
 };
 
 export default sendLogEventMessage;
