@@ -9,7 +9,7 @@ const sendDiceRolledMessage = async ({
     const numericResults = diceArray.flat().map(die => die.rolled);
     const diceService = DiceService.getInstance();
     const text = diceService.generateDiceRolledMessage(diceArray as DiceArray, numericResults);
-    if (interaction) {
+    if (interaction?.deferred) {
       await interaction.followUp(text);
     }
   } catch (err) {

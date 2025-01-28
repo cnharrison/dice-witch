@@ -25,8 +25,14 @@ const sendDiceResultMessageWithImage = async ({
 
     const sendMessage = async () => {
       try {
-        if (interaction) {
-          await interaction.followUp(embedMessage);
+        if (interaction?.isRepliable()) {
+          const shardId = interaction?.guild?.shardId ? discord?.shard?.ids[0] : null;
+          if (!shardId || shardId === interaction?.guild?.shardId) {
+            if (!interaction.deferred && !interaction.replied) {
+              await interaction.deferReply();
+            }
+            await interaction.followUp(embedMessage);
+          }
         }
         sendLogEventMessage({
           eventType: EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE,

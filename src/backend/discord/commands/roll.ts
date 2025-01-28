@@ -33,10 +33,6 @@ const command = {
     discord,
   }: RollProps) {
     try {
-      if (interaction && !interaction.deferred && !interaction.replied) {
-        await interaction.deferReply();
-      }
-
       const diceService = DiceService.getInstance();
       const discordService = DiscordService.getInstance();
       const databaseService = DatabaseService.getInstance();
@@ -64,7 +60,13 @@ const command = {
                         (!shouldHaveImage && (totalDiceRolled > maxTextDice || highestDiceSide > maxDiceSides));
 
       if (isOverMax) {
-        await sendDiceOverMaxMessage({ logOutputChannel, discord, args, interaction, shouldHaveImage });
+        await sendDiceOverMaxMessage({
+          logOutputChannel,
+          discord,
+          args,
+          interaction,
+          shouldHaveImage,
+        });
         return;
       }
 
@@ -98,12 +100,8 @@ const command = {
       console.error('Error in roll command:', error);
       const errorResponse = { content: 'There was an error processing your roll' };
 
-      if (interaction) {
-        if (!interaction.replied) {
-          await interaction.reply(errorResponse);
-        } else {
-          await interaction.followUp(errorResponse);
-        }
+      if (interaction?.isRepliable()) {
+        await interaction.followUp(errorResponse);
       }
     }
   },

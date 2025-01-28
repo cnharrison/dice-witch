@@ -50,9 +50,7 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
       const { commandName } = interaction;
 
       try {
-        if (commandName !== "status") {
-          await interaction.deferReply();
-        }
+        await interaction.deferReply().catch(console.error);
 
         await databaseService.updateOnCommand({ commandName, interaction });
 
