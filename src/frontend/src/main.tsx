@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter as Router } from "react-router-dom";
 import { ClerkProvider } from '@clerk/clerk-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from "@/components/theme-provider"
 import './index.css'
 import App from './App'
 
@@ -16,11 +17,13 @@ if (!clerkPubKey) {
 const root = createRoot(document.getElementById('root')!);
 
 root.render(
-  <QueryClientProvider client={queryClient}>
-    <ClerkProvider publishableKey={clerkPubKey}>
-      <Router>
-        <App />
-      </Router>
-    </ClerkProvider>
-  </QueryClientProvider>
+  <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+    <QueryClientProvider client={queryClient}>
+      <ClerkProvider publishableKey={clerkPubKey}>
+        <Router>
+          <App />
+        </Router>
+      </ClerkProvider>
+    </QueryClientProvider>
+  </ThemeProvider>
 );

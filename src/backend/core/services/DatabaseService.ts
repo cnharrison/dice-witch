@@ -233,8 +233,16 @@ export class DatabaseService {
   public async getMutualGuildsWithPermissions(discordId: string) {
     return await this.prisma.usersGuilds.findMany({
       where: { userId: Number(discordId) },
-      include: {
-        guilds: true
+      select: {
+        isAdmin: true,
+        isDiceWitchAdmin: true,
+        guilds: {
+          select: {
+            id: true,
+            name: true,
+            icon: true
+          }
+        }
       }
     });
   }
