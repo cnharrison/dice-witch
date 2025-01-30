@@ -20,13 +20,19 @@ router.get('/mutual', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const discordId = c.req.query('discordId');
-  if (!discordId) {
-    return c.json({ error: 'Discord ID required' }, 400);
-  }
-
   try {
-    const guilds = await db.getMutualGuildsWithPermissions(discordId);
+    const clerkClient = c.get('clerk');
+    const user = await clerkClient.users.getUser(auth.userId);
+
+    const discordAccount = user.externalAccounts.find(
+      account => account.provider === 'oauth_discord'
+    );
+
+    if (!discordAccount?.id) {
+      return c.json({ error: 'No Discord account connected' }, 400);
+    }
+
+    const guilds = await db.getMutualGuildsWithPermissions(discordAccount.externalId);
 
     return new Response(JSON.stringify({ guilds }, bigIntSerializer), {
       headers: {

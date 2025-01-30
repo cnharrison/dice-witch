@@ -27,7 +27,7 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
     queryFn: async (): Promise<Guild[]> => {
       if (!discordAccount?.providerUserId) return [];
       console.log('Discord ID:', discordAccount.providerUserId);
-      const response = await fetch(`/api/guilds/mutual?discordId=${discordAccount.providerUserId}`);
+      const response = await fetch(`/api/guilds/mutual`);
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
