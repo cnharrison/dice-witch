@@ -1,0 +1,16 @@
+<svg viewBox="0 0 300 300">
+  <defs>
+    <style>
+      .outline {
+        stroke: black;
+        fill: none;
+        stroke-width: 6px;
+        stroke-miterlimit: 10;
+      }
+    </style>
+  </defs>
+  <g>
+    <path class="outline" d="M38.4 233.6L143.2 52.1c3.2-5.5 11.1-5.5 14.3 0l104.8 181.5c3.2 5.5-.8 12.4-7.1 12.4H45.6c-6.4 0-10.3-6.9-7.2-12.4z"/>
+    <path class="outline" d="M38.4 233.6L143.2 52.1c3.2-5.5 11.1-5.5 14.3 0l104.8 181.5c3.2 5.5-.8 12.4-7.1 12.4H45.6c-6.4 0-10.3-6.9-7.2-12.4z"/>
+  </g>
+</svg>
