@@ -7,7 +7,7 @@ export function Navbar() {
 
   return (
     <nav className="border-b">
-      <div className="flex h-16 items-center px-4">
+      <div className="flex items-center px-3">
         <div className="flex items-center font-semibold">
           Dice Witch
         </div>

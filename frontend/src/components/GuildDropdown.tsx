@@ -33,7 +33,7 @@ export function GuildDropdown({ guilds = [] }: GuildDropdownProps) {
         {adminGuilds.map((guild) => (
           <DropdownMenuItem key={guild.guilds.id} className="flex items-center justify-between">
             <span>{guild.guilds.name}</span>
-            <div className="flex gap-2 ml-4">
+            <div className="flex ml-4">
               {guild.isAdmin && (
                 <Badge variant="secondary">Admin</Badge>
               )}
