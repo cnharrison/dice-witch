@@ -18,12 +18,12 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
     process.chdir(path.dirname(CONFIG.botPath));
     const commandFiles: string[] = fs
-      .readdirSync(`${CONFIG.botPath}/src/backend/discord/commands`)
+      .readdirSync(`${CONFIG.botPath}/backend/discord/commands`)
       .filter((file: string) => file.endsWith(".ts"));
 
     for (const file of commandFiles) {
       try {
-        const commandModule = await import(`${CONFIG.botPath}/src/backend/discord/commands/${file}`);
+        const commandModule = await import(`${CONFIG.botPath}/backend/discord/commands/${file}`);
         const command = commandModule.default;
 
         if (command?.name) {
