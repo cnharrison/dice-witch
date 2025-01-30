@@ -40,8 +40,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "npx tsc",
-    "start": "bun src/index.ts",
-    "dev": "bun --watch src/index.ts",
+    "start": "bun run server.ts",
+    "dev": "bun --watch server.ts",
     "dev:debug": "nodemon --config nodemon.json --inspect-brk src/index.ts"
   },
   "author": "Christopher Harrison",
