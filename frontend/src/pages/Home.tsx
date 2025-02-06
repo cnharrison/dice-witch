@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { LoaderIcon } from "lucide-react";
@@ -6,6 +6,7 @@ import { GuildDropdown } from '@/components/GuildDropdown';
 import { Guild } from "@/types/guild";
 import { Roller } from '@/components/Roller';
 import { DiceInput } from '@/components/DiceInput';
+import { useDiceValidation } from '@/hooks/useDiceValidation';
 
 export const Home = () => {
   const { user } = useUser();
@@ -13,6 +14,7 @@ export const Home = () => {
     account => account.provider === 'discord'
   );
   const [selectedGuild, setSelectedGuild] = React.useState<string | undefined>();
+  const { input, setInput, isValid, diceInfo } = useDiceValidation('');
 
   const { data: mutualGuilds, isLoading } = useQuery<Guild[]>({
     queryKey: ['mutualGuilds', discordAccount?.providerUserId],
@@ -52,8 +54,12 @@ export const Home = () => {
       </div>
       {selectedGuild && (
         <div className="w-full max-w-6xl px-4">
-          <Roller />
-          <DiceInput />
+          <Roller diceInfo={diceInfo} />
+          <DiceInput
+            input={input}
+            setInput={setInput}
+            isValid={isValid}
+          />
         </div>
       )}
     </div>
