@@ -4,12 +4,15 @@ import { useQuery } from '@tanstack/react-query';
 import { LoaderIcon } from "lucide-react";
 import { GuildDropdown } from '@/components/GuildDropdown';
 import { Guild } from "@/types/guild";
+import { Roller } from '@/components/Roller';
+import { DiceInput } from '@/components/DiceInput';
 
 export const Home = () => {
   const { user } = useUser();
   const discordAccount = user?.externalAccounts.find(
     account => account.provider === 'discord'
   );
+  const [selectedGuild, setSelectedGuild] = React.useState<string | undefined>();
 
   const { data: mutualGuilds, isLoading } = useQuery<Guild[]>({
     queryKey: ['mutualGuilds', discordAccount?.providerUserId],
@@ -40,8 +43,19 @@ export const Home = () => {
   }
 
   return (
-    <div className="flex justify-center mt-8">
-      <GuildDropdown guilds={mutualGuilds} />
+    <div className="flex flex-col items-center mt-8">
+      <div className="w-[300px] mb-8">
+        <GuildDropdown
+          guilds={mutualGuilds}
+          onValueChange={setSelectedGuild}
+        />
+      </div>
+      {selectedGuild && (
+        <div className="w-full max-w-6xl px-4">
+          <Roller />
+          <DiceInput />
+        </div>
+      )}
     </div>
   );
 };

@@ -11,13 +11,14 @@ import { Guild } from "@/types/guild";
 
 interface GuildDropdownProps {
   guilds?: Guild[];
+  onValueChange?: (value: string) => void;
 }
 
-export function GuildDropdown({ guilds = [] }: GuildDropdownProps) {
+export function GuildDropdown({ guilds = [], onValueChange }: GuildDropdownProps) {
   const adminGuilds = guilds.filter(guild => guild.isAdmin || guild.isDiceWitchAdmin);
 
   return (
-    <Select>
+    <Select onValueChange={onValueChange}>
       <SelectTrigger>
         <SelectValue placeholder="Select Guild" />
       </SelectTrigger>
