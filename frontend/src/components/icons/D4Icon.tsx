@@ -1,11 +1,15 @@
-export function D4Icon({ className }: { className?: string }) {
+
+import * as React from "react";
+export function D4Icon({ className, darkMode = true }: { className?: string; darkMode?: boolean }) {
   return (
-    <svg viewBox="0 0 600 600" className={className} fill="currentColor">
-      <style>
-        {`.outline { stroke: currentColor; fill: none; stroke-width: 6px; stroke-miterlimit: 10; }`}
-      </style>
-      <path className="outline" d="M300 50L50 500h500L300 50zm0 120.4L466.9 470H133.1L300 170.4z"/>
-      <path className="outline" d="M300 470V170.4L133.1 470h333.8L300 170.4"/>
+    <svg viewBox="0 0 50.800001 50.800001" className={className}>
+      <g transform="translate(0,-246.19998)">
+        <path
+          stroke={darkMode ? "white" : "black"}
+          fill={darkMode ? "white" : "black"}
+          d="m 25.488338,249.61774 c -0.201358,0.0109 -0.315722,0.17448 -0.288424,0.14491 L 1.7743462,279.11273 c -0.180494,0.20862 -0.09757,0.5437 0.159121,0.64455 l 30.9333958,12.91058 a 0.15755393,0.15755393 0 0 0 0.0033,10e-4 l 0.200352,0.0788 c 0.169398,0.0665 0.364109,0.011 0.473326,-0.13385 l 0.15579,-0.20614 15.368624,-20.38946 c 0.124342,-0.16503 0.104373,-0.40031 -0.04631,-0.54175 a 0.15755393,0.15755393 0 0 0 -0.001,0 l -22.996508,-21.52113 -0.229302,-0.2228 a 0.15755393,0.15755393 0 0 0 -8.83e-4,-0.001 c -0.05898,-0.057 -0.133397,-0.0947 -0.214912,-0.10858 -0.03215,-0.006 -0.06263,-0.007 -0.0914,-0.006 z m 0.602097,1.92262 21.706809,20.31577 -14.330215,19.01158 c -2.458772,-13.10918 -4.917687,-26.21828 -7.376594,-39.32735 z m -1.125258,0.21228 c 2.47115,13.17423 4.942794,26.34845 7.413799,39.52279 L 3.2576652,279.08554 Z" />
+      </g>
     </svg>
+
   );
 }

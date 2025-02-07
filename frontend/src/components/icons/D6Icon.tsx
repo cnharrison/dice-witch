@@ -1,11 +1,15 @@
-export function D6Icon({ className }: { className?: string }) {
+import * as React from "react";
+export function D6Icon({ className, darkMode = true }: { className?: string; darkMode?: boolean }) {
+
   return (
-    <svg viewBox="0 0 600 600" className={className} fill="currentColor">
-      <style>
-        {`.outline { stroke: currentColor; fill: none; stroke-width: 6px; stroke-miterlimit: 10; }`}
-      </style>
-      <path className="outline" d="M150 75h300v450H150z"/>
-      <path className="outline" d="M150 75l150-45 150 45M150 525l150 45 150-45M450 75v450"/>
+    <svg viewBox="0 0 127 127" className={className}>
+      <g transform="translate(0,-169.99998)">
+        <path
+          stroke={darkMode ? "White" : "black"}
+          fill={darkMode ? "White" : "black"}
+          d="m 82.21267,173.7285 -62.067264,21.1408 -0.285486,0.85646 -0.419127,0.13718 0.04573,58.02197 0.18955,0.5984 26.659307,37.94443 0.477605,-0.15964 0.768784,0.5158 61.538625,-25.22337 0.64613,-0.96387 v -55.47233 l -0.31292,-0.20535 0.11647,-0.39305 -26.17742,-36.41168 z m -0.05697,2.22005 24.94123,34.69296 -31.936361,12.39483 -27.577849,10.70259 -19.076093,-27.96761 -6.39236,-9.37263 z m -60.629083,23.28319 1.104543,1.61939 23.517178,34.47913 v 53.19949 L 21.570115,253.5472 Z m 86.159873,13.41445 v 53.25388 l -59.457107,24.3706 v -54.54961 z" />
+      </g>
     </svg>
+
   );
 }
