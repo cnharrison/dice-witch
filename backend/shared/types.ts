@@ -19,14 +19,14 @@ export type Icon =
   | "trashcan"
   | "explosion"
   | "recycle"
-  | "re-roll"
-  | "chevronDown"
   | "chevronUp"
-  | "bullseye"
-  | "crit"
-  | "dizzyFace"
-  | "arrowThrough"
-  | "blank";
+  | "chevronDown"
+  | "target-success"
+  | "critical-success"
+  | "critical-failure"
+  | "penetrate"
+  | "blank"
+  | null;
 
 export enum EventType {
   RECEIVED_COMMAND = "receivedCommand",
