@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
 import { DiceRoll } from '@dice-roller/rpg-dice-roller';
+import { useEffect, useState } from 'react';
 
 interface DiceGroup {
   numberOfDice: number;

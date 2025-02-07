@@ -1,3 +1,5 @@
+import * as React from "react";
+
 export function D20Icon({ className }: { className?: string }) {
   return (
     <svg
@@ -6,8 +8,7 @@ export function D20Icon({ className }: { className?: string }) {
     >
       <style>
         {`.outline {
-          stroke: currentColor;
-          fill: none;
+          stroke: #FFFFFF;
           stroke-width: 6px;
         }`}
       </style>
@@ -36,7 +37,7 @@ export function D20Icon({ className }: { className?: string }) {
         className="outline"
       />
       <path
-        d="M300.3 47.5v94.1c0 1-.8 1.9-1.8 2L89.4 171.2c-2.2.3-3.2-2.7-1.3-3.8L297.2 45.7c1.4-.8 3.1.2 3.1 1.8zm0 0v94.1c0 1 .8 1.9 1.8 2l209.1 27.6c2.2.3 3.2-2.7 1.3-3.8L303.4 45.7c-1.4-.8-3.1.2-3.1 1.8zM151.2 398.6l-68.4 28.1c-.9.4-2-.3-2-1.3l-1.6-243.6c0-1.6 2.3-2 2.8-.4l70 215.5c.2.7-.1 1.4-.8 1.7z"
+        d="M299.3 47.5v94.1c0 1-.8 1.9-1.8 2L89.4 171.2c-2.2.3-3.2-2.7-1.3-3.8L297.2 45.7c1.4-.8 3.1.2 3.1 1.8zm0 0v94.1c0 1 .8 1.9 1.8 2l209.1 27.6c2.2.3 3.2-2.7 1.3-3.8L303.4 45.7c-1.4-.8-3.1.2-3.1 1.8zM151.2 398.6l-68.4 28.1c-.9.4-2-.3-2-1.3l-1.6-243.6c0-1.6 2.3-2 2.8-.4l70 215.5c.2.7-.1 1.4-.8 1.7z"
         className="outline"
       />
       <path

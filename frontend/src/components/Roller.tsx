@@ -1,11 +1,11 @@
+import { D10Icon, D12Icon, D20Icon, D4Icon, D6Icon, D8Icon } from "@/components/icons";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@/components/ui/resizable"
-import { D4Icon, D6Icon, D8Icon, D10Icon, D12Icon, D20Icon } from "@/components/icons"
-import { type DiceInfo } from "@/hooks/useDiceValidation"
-import * as React from "react"
+} from "@/components/ui/resizable";
+import { type DiceInfo } from "@/hooks/useDiceValidation";
+import * as React from "react";
 const DiceIcons = {
   d4: D4Icon,
   d6: D6Icon,
