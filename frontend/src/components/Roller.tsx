@@ -26,7 +26,7 @@ export function Roller({ diceInfo }: RollerProps) {
       className="min-h-[500px] rounded-lg border"
     >
       <ResizablePanel defaultSize={50}>
-        <div className="flex h-full flex-col p-6">
+        <div className="flex h-full items-center justify-center p-6">
           <div className="flex flex-wrap gap-4 justify-center">
             {diceInfo?.diceGroups.map((group, index) => {
               const DiceIcon = DiceIcons[`d${group.diceSize}` as keyof typeof DiceIcons];
