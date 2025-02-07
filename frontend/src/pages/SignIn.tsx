@@ -36,9 +36,6 @@ export default function CustomSignIn() {
             path="/sign-in"
             afterSignInUrl="/"
             signUpUrl="/sign-up"
-            socialAuth={{
-              strategy: "discord",
-            }}
           />
         </CardContent>
       </Card>
