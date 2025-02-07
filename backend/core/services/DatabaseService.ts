@@ -7,23 +7,21 @@ import {
 } from "discord.js";
 import { PrismaClient } from "@prisma/client";
 import { GuildType, UserType } from "../../shared/types";
+import { PERMISSION_ADMINISTRATOR, ROLE_DICE_WITCH_ADMIN } from "../constants";
 
 type UpdateOnCommandParams = {
   commandName: string;
   interaction?: CommandInteraction | ButtonInteraction;
 };
 
-type ClerkUserData = {
-  id: string;
-  email_addresses: Array<{ email_address: string }>;
-};
-
 export class DatabaseService {
-  private static instance: DatabaseService;
+  private static instance: DatabaseService | null = null;
+  private readonly processedInteractions: Set<string>;
   private prisma: PrismaClient;
 
   private constructor() {
     this.prisma = new PrismaClient();
+    this.processedInteractions = new Set<string>();
   }
 
   public static getInstance(): DatabaseService {
@@ -33,7 +31,7 @@ export class DatabaseService {
     return DatabaseService.instance;
   }
 
-  private mapGuildToGuildType(guild: Guild): GuildType {
+  public mapGuildToGuildType(guild: Guild): GuildType {
     return {
       id: guild.id,
       name: guild.name,
@@ -47,103 +45,89 @@ export class DatabaseService {
     };
   }
 
-  public async upsertGuild(guild: Guild, isARoll: boolean, isActive: boolean = true): Promise<void> {
-    const guildData = this.mapGuildToGuildType(guild);
+  public async updateGuild(guildData: GuildType, isARoll = false, isActive = true) {
+    const guildId = guildData.id;
+    const ownerId = guildData.ownerId;
+    const updateChannelId = guildData.publicUpdatesChannelId
 
-    try {
-      await this.prisma.guilds.upsert({
-        where: { id: Number(guildData.id) },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.guilds.upsert({
+        where: { id: guildId },
         update: {
           name: guildData.name,
           icon: guildData.icon,
-          ownerId: Number(guildData.ownerId),
+          ownerId,
           memberCount: guildData.memberCount,
           approximateMemberCount: guildData.approximateMemberCount,
           preferredLocale: guildData.preferredLocale,
-          publicUpdatesChannelId: Number(guildData.publicUpdatesChannelId),
+          publicUpdatesChannelId: updateChannelId,
           joinedTimestamp: guildData.joinedTimestamp,
           rollCount: isARoll ? { increment: 1 } : undefined,
           isActive,
         },
         create: {
-          id: Number(guildData.id),
+          id: guildId,
           name: guildData.name,
           icon: guildData.icon,
-          ownerId: Number(guildData.ownerId),
+          ownerId,
           memberCount: guildData.memberCount,
           approximateMemberCount: guildData.approximateMemberCount,
           preferredLocale: guildData.preferredLocale,
-          publicUpdatesChannelId: Number(guildData.publicUpdatesChannelId),
+          publicUpdatesChannelId: updateChannelId,
           joinedTimestamp: guildData.joinedTimestamp,
           rollCount: isARoll ? 1 : 0,
           isActive,
         },
       });
-    } catch (err) {
-      console.error("Error in upsertGuild:", err);
-    }
+    });
   }
 
   private async upsertUser(user: UserType, isARoll: boolean): Promise<void> {
-    const { id, username, flags, discriminator, avatar } = user;
     await this.prisma.users.upsert({
-      where: { id: Number(id) },
+      where: { id: user.id },
       update: {
-        username,
-        avatar,
-        flags: flags ? flags.bitfield : undefined,
-        discriminator: Number(discriminator),
+        username: user.username,
+        avatar: user.avatar,
+        flags: user.flags ? user.flags.bitfield : undefined,
+        discriminator: user.discriminator,
         rollCount: isARoll ? { increment: 1 } : undefined,
       },
       create: {
-        id: Number(id),
-        username,
-        avatar,
-        flags: flags ? flags.bitfield : undefined,
-        discriminator: Number(discriminator),
+        id: user.id,
+        username: user.username,
+        avatar: user.avatar,
+        flags: user.flags ? user.flags.bitfield : undefined,
+        discriminator: user.discriminator,
         rollCount: isARoll ? 1 : undefined,
       },
     });
   }
 
   private async upsertUserGuildRelationship(
-    guildId: number,
-    userId: number,
+    guildId: string,
+    userId: string,
     isAdmin: boolean = false,
     isDiceWitchAdmin: boolean = false
   ): Promise<void> {
-    try {
-      const existing = await this.prisma.usersGuilds.findFirst({
-        where: {
-          AND: [
-            { userId: Number(userId) },
-            { guildId: Number(guildId) }
-          ]
+    await this.prisma.usersGuilds.upsert({
+      where: {
+        userId_guildId: {
+          userId,
+          guildId
         }
-      });
-
-      if (existing) {
-        await this.prisma.usersGuilds.update({
-          where: { id: existing.id },
-          data: {
-            isAdmin,
-            isDiceWitchAdmin,
-            updated_at: new Date()
-          }
-        });
-      } else {
-        await this.prisma.usersGuilds.create({
-          data: {
-            userId: Number(userId),
-            guildId: Number(guildId),
-            isAdmin,
-            isDiceWitchAdmin
-          }
-        });
+      },
+      update: {
+        isAdmin,
+        isDiceWitchAdmin,
+        updated_at: new Date()
+      },
+      create: {
+        userId,
+        guildId,
+        isAdmin,
+        isDiceWitchAdmin
       }
-    } catch (err) {
-      console.error('Error upserting user guild relationship:', err);
-    }
+    });
   }
 
   private mapUserToUserType(user: User): UserType {
@@ -157,82 +141,116 @@ export class DatabaseService {
   }
 
   public async updateOnCommand({ commandName, interaction }: UpdateOnCommandParams): Promise<void> {
-    const isARoll = ["r", "roll"].includes(commandName);
+    if (!interaction) return;
+    if (this.processedInteractions.has(interaction.id)) return;
+
+    const { user, guild, member } = interaction;
+    if (!guild?.id) return;
 
     try {
-      if (interaction) {
-        const { user, guild, member } = interaction;
-        await this.upsertUser(this.mapUserToUserType(user), isARoll);
+      await this.prisma.$transaction(async (tx) => {
+        const userId = user.id;
+        const guildId = guild.id;
 
-        if (guild && member) {
+        const guildData = this.mapGuildToGuildType(guild);
+        await tx.guilds.upsert({
+          where: { id: guildId },
+          update: {
+            name: guildData.name,
+            icon: guildData.icon,
+            ownerId: guildData.ownerId,
+            memberCount: guildData.memberCount,
+            approximateMemberCount: guildData.approximateMemberCount,
+            preferredLocale: guildData.preferredLocale,
+            publicUpdatesChannelId: guildData.publicUpdatesChannelId,
+            joinedTimestamp: guildData.joinedTimestamp,
+            rollCount: ["r", "roll"].includes(commandName) ? { increment: 1 } : undefined,
+            isActive: true,
+          },
+          create: {
+            id: guildId,
+            name: guildData.name,
+            icon: guildData.icon,
+            ownerId: guildData.ownerId,
+            memberCount: guildData.memberCount,
+            approximateMemberCount: guildData.approximateMemberCount,
+            preferredLocale: guildData.preferredLocale,
+            publicUpdatesChannelId: guildData.publicUpdatesChannelId,
+            joinedTimestamp: guildData.joinedTimestamp,
+            rollCount: ["r", "roll"].includes(commandName) ? 1 : 0,
+            isActive: true,
+          },
+        });
+
+        const userData = this.mapUserToUserType(user);
+        await tx.users.upsert({
+          where: { id: userId },
+          update: {
+            username: userData.username,
+            avatar: userData.avatar,
+            flags: userData.flags ? userData.flags.bitfield : undefined,
+            discriminator: userData.discriminator,
+            rollCount: ["r", "roll"].includes(commandName) ? { increment: 1 } : undefined,
+          },
+          create: {
+            id: userId,
+            username: userData.username,
+            avatar: userData.avatar,
+            flags: userData.flags ? userData.flags.bitfield : undefined,
+            discriminator: userData.discriminator,
+            rollCount: ["r", "roll"].includes(commandName) ? 1 : 0,
+          },
+        });
+
+        if (member) {
           const guildMember = member as GuildMember;
-          const isAdmin = guildMember.permissions.has("Administrator");
-          const isDiceWitchAdmin = guildMember.roles.cache.some(role => role.name === "Dice Witch Admin");
+          const isAdmin = guildMember.permissions.has(PERMISSION_ADMINISTRATOR);
+          const isDiceWitchAdmin = guildMember.roles.cache.some(role => role.name === ROLE_DICE_WITCH_ADMIN);
 
-          await this.upsertGuild(guild, isARoll);
-          await this.upsertUserGuildRelationship(
-            Number(guild.id),
-            Number(user.id),
-            isAdmin,
-            isDiceWitchAdmin
-          );
+          await tx.usersGuilds.upsert({
+            where: {
+              userId_guildId: {
+                userId,
+                guildId
+              }
+            },
+            update: {
+              isAdmin,
+              isDiceWitchAdmin,
+              updated_at: new Date()
+            },
+            create: {
+              userId,
+              guildId,
+              isAdmin,
+              isDiceWitchAdmin
+            }
+          });
         }
-      }
-    } catch (err) {
-      console.error("Error in updateOnCommand:", err);
-      throw err;
-    }
-  }
-
-  public async handleWebLogin(userData: ClerkUserData): Promise<void> {
-    try {
-      const existingUser = await this.prisma.users.findUnique({
-        where: { id: Number(userData.id) }
       });
 
-      if (existingUser) {
-        await this.prisma.users.update({
-          where: { id: Number(userData.id) },
-          data: {
-            lastWebLogin: new Date(),
-            email: userData.email_addresses[0].email_address
-          }
-        });
-      } else {
-        await this.prisma.users.create({
-          data: {
-            id: Number(userData.id),
-            email: userData.email_addresses[0].email_address,
-            lastWebLogin: new Date()
-          }
-        });
+      this.processedInteractions.add(interaction.id);
+
+      if (this.processedInteractions.size > 1000) {
+        const toRemove = Array.from(this.processedInteractions).slice(0, this.processedInteractions.size - 1000);
+        toRemove.forEach(id => this.processedInteractions.delete(id));
       }
     } catch (err) {
-      console.error("Error in handleWebLogin:", err);
-      throw err;
+      console.error("Error updating on command:", err);
     }
   }
 
   public async getMutualGuilds(discordId: string): Promise<any[]> {
-    try {
-      const mutualGuilds = await this.prisma.usersGuilds.findMany({
-        where: {
-          userId: Number(discordId)
-        },
-        include: {
-          guilds: true
-        }
-      });
-      return mutualGuilds;
-    } catch (err) {
-      console.error("Error in getMutualGuilds:", err);
-      throw err;
-    }
+    return await this.prisma.usersGuilds.findMany({
+      where: { userId: discordId },
+      include: { guilds: true }
+    });
   }
 
   public async getMutualGuildsWithPermissions(discordId: string) {
-    return await this.prisma.usersGuilds.findMany({
-      where: { userId: Number(discordId) },
+    const userId = discordId;
+    const guilds = await this.prisma.usersGuilds.findMany({
+      where: { userId },
       select: {
         isAdmin: true,
         isDiceWitchAdmin: true,
@@ -245,6 +263,14 @@ export class DatabaseService {
         }
       }
     });
+
+    return guilds.map(guild => ({
+      ...guild,
+      guilds: guild.guilds ? {
+        ...guild.guilds,
+        id: guild.guilds.id.toString()
+      } : null
+    }));
   }
 
   async updateUserGuildPermissions({
@@ -261,8 +287,8 @@ export class DatabaseService {
     await this.prisma.usersGuilds.upsert({
       where: {
         userId_guildId: {
-          userId: Number(userId),
-          guildId: Number(guildId)
+          userId,
+          guildId
         }
       },
       update: {
@@ -271,12 +297,11 @@ export class DatabaseService {
         updated_at: new Date()
       },
       create: {
-        userId: Number(userId),
-        guildId: Number(guildId),
+        userId,
+        guildId,
         isAdmin,
         isDiceWitchAdmin
       }
     });
   }
-
 }

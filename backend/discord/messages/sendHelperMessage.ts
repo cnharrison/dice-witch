@@ -1,4 +1,4 @@
-import  {
+import {
   ActionRowBuilder,
   ButtonBuilder,
   EmbedBuilder,
@@ -7,6 +7,7 @@ import { availableDice, footerButtonRow, maxImageDice } from "../../core/constan
 import { sendLogEventMessage } from ".";
 import { EventType } from "../../shared/types";
 import { SendHelperMessageParams } from "../../shared/types";
+import { DiscordService } from "../../core/services/DiscordService";
 
 const createButton = (id: string, label: string) =>
   new ButtonBuilder()
@@ -22,21 +23,23 @@ const createEmbed = (title: string, description: string) =>
 const sendHelperMessage = async ({
   interaction,
   logOutputChannel,
-}: SendHelperMessageParams) => {
+}: Omit<SendHelperMessageParams, 'discord'>) => {
+  const discordService = DiscordService.getInstance();
+
   const kbButtonRow = new ActionRowBuilder()
     .addComponents(
-      createButton("exploding", "Exploding 💥"),
-      createButton("reroll", "Re-roll ♻"),
-      createButton("keepdrop", "Keep/drop 🚮"),
-      createButton("target", "Targets 🎯"),
-      createButton("crit", "Criticals ⚔")
+      createButton("knowledgebase-exploding", "Exploding 💥"),
+      createButton("knowledgebase-reroll", "Re-roll ♻"),
+      createButton("knowledgebase-keepdrop", "Keep/drop 🚮"),
+      createButton("knowledgebase-target", "Targets 🎯"),
+      createButton("knowledgebase-crit", "Criticals ⚔")
     ) as ActionRowBuilder<ButtonBuilder>;
 
   const kbButtonRow2 = new ActionRowBuilder()
     .addComponents(
-      createButton("math", "Math 🧮"),
-      createButton("sort", "Sorting ↕"),
-      createButton("repeating", "Repeating 👯‍♀️")
+      createButton("knowledgebase-math", "Math 🧮"),
+      createButton("knowledgebase-sort", "Sorting ↕"),
+      createButton("knowledgebase-repeating", "Repeating 👯‍♀️")
     ) as ActionRowBuilder<ButtonBuilder>;
 
   const embed = createEmbed(
@@ -63,8 +66,7 @@ const sendHelperMessage = async ({
 
   sendLogEventMessage({
     eventType: EventType.SENT_HELPER_MESSAGE,
-    logOutputChannel,
-    interaction,
+    interaction
   });
 };
 

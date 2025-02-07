@@ -5,7 +5,6 @@ import sendLogEventMessage from "./sendLogEventMessage";
 
 const sendDiceResultMessage = async ({
   resultArray,
-  logOutputChannel,
   interaction,
   title,
 }: SendDiceResultMessageParams) => {
@@ -32,7 +31,6 @@ const sendDiceResultMessage = async ({
 
     sendLogEventMessage({
       eventType: EventType.SENT_ROLL_RESULT_MESSAGE,
-      logOutputChannel,
       resultMessage: reply,
     });
   } catch (err) {

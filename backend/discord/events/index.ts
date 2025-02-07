@@ -52,8 +52,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
       try {
         await interaction.deferReply().catch(console.error);
 
-        await databaseService.updateOnCommand({ commandName, interaction });
-
         const { value: diceNotation } = interaction.options.get("notation") || {};
         const { value: title } = interaction.options.get("title") || {};
         const { value: topic } = interaction.options.get("topic") || {};
@@ -71,13 +69,13 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         const command = commands.get(commandName);
 
         if (!command) {
-          throw new Error(`Command ${commandName} not found`);
+          console.error(`Command ${commandName} not found`);
+          return;
         }
 
         await command.execute({
           args,
           discord,
-          logOutputChannel,
           commands,
           interaction,
           title: titleAsString,
@@ -86,11 +84,9 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
         sendLogEventMessage({
           eventType: EventType.RECEIVED_COMMAND,
-          logOutputChannel,
           command,
           args,
-          interaction,
-          discord,
+          interaction
         });
       } catch (error) {
         console.error(`Error executing command ${commandName}:`, error);
@@ -115,42 +111,41 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         return;
       }
 
-      await interaction.deferReply();
-      const unformattedArgs = interaction.customId.trim().split("-");
-      const args = unformattedArgs[1] ? [unformattedArgs[1]] : [];
+      try {
+        const unformattedArgs = interaction.customId.trim().split("-");
+        const args = unformattedArgs[1] ? [unformattedArgs[1]] : [];
 
-      const command =
-        commands.get(unformattedArgs[0]) ||
-        commands.find(
-          (cmd) => cmd.aliases && cmd.aliases.includes(unformattedArgs[0])
-        );
+        const command =
+          commands.get(unformattedArgs[0]) ||
+          commands.find(
+            (cmd) => cmd.aliases && cmd.aliases.includes(unformattedArgs[0])
+          );
 
-      if (command)
-        command.execute({
-          args,
-          discord,
-          logOutputChannel,
-          commands,
-          interaction,
-        });
-      sendLogEventMessage({
-        eventType: EventType.RECEIVED_COMMAND,
-        logOutputChannel,
-        command,
-        args,
-        interaction,
-        discord,
-      });
+        if (command) {
+          command.execute({
+            args,
+            commands,
+            interaction,
+          });
+
+          sendLogEventMessage({
+            eventType: EventType.RECEIVED_COMMAND,
+            command,
+            args,
+            interaction
+          });
+        }
+      } catch (error) {
+        console.error('Error handling button interaction:', error);
+      }
     });
 
     discord.on("guildCreate", async (guild: Guild) => {
       try {
-        await databaseService.upsertGuild(guild, false);
+        await databaseService.updateGuild(databaseService.mapGuildToGuildType(guild), false);
         sendLogEventMessage({
           eventType: EventType.GUILD_ADD,
-          logOutputChannel,
           guild,
-          discord,
         });
       } catch (err) {
         console.error(err);
@@ -159,12 +154,10 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
     discord.on("guildDelete", async (guild: Guild) => {
       try {
-        await databaseService.upsertGuild(guild, false, false);
+        await databaseService.updateGuild(databaseService.mapGuildToGuildType(guild), false, false);
         sendLogEventMessage({
           eventType: EventType.GUILD_REMOVE,
-          logOutputChannel,
-          guild,
-          discord,
+          guild
         });
       } catch (err) {
         console.error(err);

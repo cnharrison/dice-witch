@@ -22,6 +22,17 @@ export const Home = () => {
     staleTime: 1000 * 60 * 5,
   });
 
+  const { data: channels } = useQuery({
+    queryKey: ['channels', selectedGuild],
+    queryFn: async () => {
+      const response = await fetch(`/api/guilds/${selectedGuild}/channels`);
+      const data = await response.json();
+      console.log('Channels:', data);
+      return data.channels;
+    },
+    enabled: !!selectedGuild,
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">

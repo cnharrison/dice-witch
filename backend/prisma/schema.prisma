@@ -8,14 +8,14 @@ datasource db {
 }
 
 model guilds {
-  id                     BigInt        @id @unique(map: "guilds_id_unique")
+  id                     String        @id @unique
   name                   String?       @db.VarChar(255)
   icon                   String?       @db.VarChar(255)
-  ownerId                BigInt?       @map("owner_id")
+  ownerId                String?       @map("owner_id")
   memberCount            Int?          @map("member_count")
   approximateMemberCount Int?          @map("approximate_member_count")
   preferredLocale        String?       @map("preferred_locale") @db.VarChar(255)
-  publicUpdatesChannelId BigInt?       @map("public_updates_channel_id")
+  publicUpdatesChannelId String?       @map("public_updates_channel_id")
   joinedTimestamp        BigInt?       @map("joined_timestamp")
   rollCount              Int?          @map("roll_count")
   createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -35,29 +35,31 @@ model stats {
 }
 
 model users {
-  id            BigInt        @id @unique(map: "users_id_unique")
+  id            String        @id @unique(map: "users_id_unique")
   username      String?       @db.VarChar(255)
   email         String?       @unique @db.VarChar(255)
   lastWebLogin  DateTime?     @map("last_web_login") @db.Timestamptz(6)
   flags         Int?
-  discriminator Int?
+  discriminator String?       @db.VarChar(255)
   avatar        String?       @db.VarChar(255)
   rollCount     Int?          @map("roll_count")
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
   users_guilds  usersGuilds[]
+
+  @@map("users")
 }
 
 model usersGuilds {
-  id                   Int      @id @default(autoincrement())
-  userId               BigInt?  @map("user_id")
-  guildId              BigInt?  @map("guild_id")
-  isAdmin              Boolean  @default(false)
-  isDiceWitchAdmin     Boolean  @default(false)
-  created_at           DateTime @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime @default(now()) @db.Timestamptz(6)
-  guilds               guilds?  @relation(fields: [guildId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_guild_id_foreign")
-  users                users?   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_user_id_foreign")
+  id               Int      @id @default(autoincrement())
+  userId           String?  @map("user_id")
+  guildId          String?  @map("guild_id")
+  isAdmin          Boolean  @default(false)
+  isDiceWitchAdmin Boolean  @default(false)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+  guilds           guilds?  @relation(fields: [guildId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_guild_id_foreign")
+  users            users?   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_guilds_user_id_foreign")
 
   @@unique([userId, guildId])
   @@map("users_guilds")

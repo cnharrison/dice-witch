@@ -2,7 +2,6 @@ import { sendLogEventMessage } from ".";
 import { EventType, SendNeedPermissionMessageParams } from "../../shared/types";
 
 const sendNeedPermissionMessage = async ({
-  logOutputChannel,
   interaction,
 }: SendNeedPermissionMessageParams) => {
   const msg = `Looks like I don't have permission to either **attach files** or **embed links** in this channel. I need both of them to show you the dice 😅`;
@@ -17,7 +16,6 @@ const sendNeedPermissionMessage = async ({
 
   sendLogEventMessage({
     eventType: EventType.SENT_NEED_PERMISSION_MESSAGE,
-    logOutputChannel,
     interaction,
   });
 };

@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { UserProfile } from '@clerk/clerk-react';
 import { AuthWrapper } from './components/AuthWrapper';

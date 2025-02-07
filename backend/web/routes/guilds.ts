@@ -1,18 +1,13 @@
-import { Hono } from 'hono';
 import { clerkMiddleware, getAuth } from '@hono/clerk-auth';
+import { Hono } from 'hono';
 import { DatabaseService } from '../../core/services/DatabaseService';
+import { DiscordService } from '../../core/services/DiscordService';
+import { bigIntSerializer } from '../../shared/utils';
 
 const router = new Hono();
 const db = DatabaseService.getInstance();
 
 router.use('*', clerkMiddleware());
-
-const bigIntSerializer = (key: string, value: any) => {
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-  return value;
-};
 
 router.get('/mutual', async (c) => {
   const auth = getAuth(c);
@@ -40,8 +35,47 @@ router.get('/mutual', async (c) => {
       }
     });
   } catch (err) {
-    console.error('Error fetching mutual guilds:', err);
     return c.json({ error: 'Failed to fetch guilds' }, 500);
+  }
+});
+
+router.get('/:guildId/channels', async (c) => {
+  const auth = getAuth(c);
+  if (!auth?.userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const rawGuildId = c.req.param('guildId');
+
+  try {
+    const clerkClient = c.get('clerk');
+    const user = await clerkClient.users.getUser(auth.userId);
+    const discordAccount = user.externalAccounts.find(
+      account => account.provider === 'oauth_discord'
+    );
+
+    if (!discordAccount?.id) {
+      return c.json({ error: 'No Discord account connected' }, 400);
+    }
+
+    const guilds = await db.getMutualGuildsWithPermissions(discordAccount.externalId);
+    const normalizedGuildId = BigInt(rawGuildId).toString();
+
+    const guild = guilds.find(g => {
+      const guildId = g.guilds?.id.toString();
+      return guildId === normalizedGuildId;
+    });
+
+    if (!guild || (!guild.isAdmin && !guild.isDiceWitchAdmin)) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const discordService = DiscordService.getInstance();
+    const channels = await discordService.getTextChannels(normalizedGuildId);
+
+    return c.json({ channels });
+  } catch (err) {
+    return c.json({ error: 'Failed to fetch channels' }, 500);
   }
 });
 

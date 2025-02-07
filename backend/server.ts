@@ -7,6 +7,7 @@ import guilds from "./web/routes/guilds";
 import clerkWebhook from "./web/webhooks/clerk-webhook";
 import diceRouter from "./web/routes/dice";
 import { ChildProcess } from "child_process";
+import { DiscordService } from "./core/services/DiscordService";
 
 const app = new Hono();
 const port = process.env.PORT || 3000;
@@ -17,6 +18,9 @@ const manager = new ShardingManager("./discord/app.ts", {
   respawn: true,
   mode: 'process'
 });
+
+const discordService = await DiscordService.getInstance();
+discordService.setManager(manager);
 
 manager.on("shardCreate", (shard) => {
   console.log(`[Discord] [Shard] Launched shard ${shard.id}`);

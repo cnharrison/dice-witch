@@ -6,8 +6,6 @@ const imageMsg = `${maxImageDice} dice max, sorry 😅`;
 const textMsg = `${maxDiceSides} sides max and ${maxTextDice} dice max, sorry 😅`;
 
 const sendDiceOverMaxMessage = async ({
-  logOutputChannel,
-  discord,
   args,
   interaction,
   shouldHaveImage,
@@ -15,7 +13,11 @@ const sendDiceOverMaxMessage = async ({
   const msg = shouldHaveImage ? imageMsg : textMsg;
   try {
     if (interaction) {
-      await interaction.followUp(msg);
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.reply(msg);
+      } else {
+        await interaction.followUp(msg);
+      }
     }
   } catch (err) {
     console.error("Error sending dice over max message:", err);
@@ -23,10 +25,8 @@ const sendDiceOverMaxMessage = async ({
 
   sendLogEventMessage({
     eventType: EventType.SENT_DICE_OVER_MAX_MESSAGE,
-    logOutputChannel,
     interaction,
-    args,
-    discord,
+    args
   });
 };
 

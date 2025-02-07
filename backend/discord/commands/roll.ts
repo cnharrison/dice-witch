@@ -2,7 +2,7 @@ import { DatabaseService } from "../../core/services/DatabaseService";
 import { DiceService } from "../../core/services/DiceService";
 import { DiscordService } from "../../core/services/DiscordService";
 import { getHighestDiceSide, getTotalDiceRolled } from "../../shared/helpers";
-import { RollProps } from "../../shared/types";
+import { DiceTypesToDisplay, RollProps } from "../../shared/types";
 import {
   availableDice,
   maxDiceSides,
@@ -26,49 +26,53 @@ const command = {
 
   async execute({
     args,
-    logOutputChannel,
     interaction,
     title,
     timesToRepeat,
-    discord,
   }: RollProps) {
     try {
-      const diceService = DiceService.getInstance();
-      const discordService = DiscordService.getInstance();
-      const databaseService = DatabaseService.getInstance();
+      if (interaction && !interaction.deferred && !interaction.replied) {
+        await interaction.deferReply();
+      }
 
       if (!args.length && interaction) {
-        await sendHelperMessage({ interaction, logOutputChannel });
+        await sendHelperMessage({ interaction });
         return;
       }
 
+      const discordService = DiscordService.getInstance();
       if (!discordService.checkForAttachPermission(interaction)) {
-        await sendNeedPermissionMessage({ logOutputChannel, interaction });
+        await sendNeedPermissionMessage({ interaction });
         return;
       }
 
+      const match = args[0]?.match(/(\d+)d(\d+)/i);
+      if (match) {
+        const [_, count, sides] = match;
+        const totalDiceRolled = parseInt(count);
+        const highestDiceSide = parseInt(sides);
+        const shouldHaveImage = availableDice.includes(highestDiceSide as DiceTypesToDisplay);
+
+        const isOverMax = (shouldHaveImage && totalDiceRolled > maxImageDice) ||
+                         (!shouldHaveImage && (totalDiceRolled > maxTextDice || highestDiceSide > maxDiceSides));
+
+          if (isOverMax) {
+            await sendDiceOverMaxMessage({
+              args,
+              interaction,
+              shouldHaveImage,
+            });
+            return;
+          }
+        }
+
+      const diceService = DiceService.getInstance();
       const { diceArray, resultArray, shouldHaveImage } = diceService.rollDice(args, availableDice, timesToRepeat);
 
-      if (!diceArray.length && interaction) {
-        await sendHelperMessage({ interaction, logOutputChannel });
-        return;
-      }
-
-      const totalDiceRolled = getTotalDiceRolled(diceArray);
-      const highestDiceSide = getHighestDiceSide(diceArray);
-      const isOverMax = (shouldHaveImage && totalDiceRolled > maxImageDice) ||
-                        (!shouldHaveImage && (totalDiceRolled > maxTextDice || highestDiceSide > maxDiceSides));
-
-      if (isOverMax) {
-        await sendDiceOverMaxMessage({
-          logOutputChannel,
-          discord,
-          args,
-          interaction,
-          shouldHaveImage,
-        });
-        return;
-      }
+        if (!diceArray.length && interaction) {
+          await sendHelperMessage({ interaction });
+          return;
+        }
 
       if (shouldHaveImage) {
         await sendDiceRolledMessage({ diceArray, interaction });
@@ -82,26 +86,22 @@ const command = {
           resultArray,
           attachment,
           canvas,
-          logOutputChannel,
-          discord,
           interaction,
           title
         });
       } else {
-        await sendDiceResultMessage({ resultArray, logOutputChannel, interaction, title });
+        await sendDiceResultMessage({ resultArray, interaction, title });
       }
 
-      await databaseService.updateOnCommand({
+      await DatabaseService.getInstance().updateOnCommand({
         commandName: command.name,
         interaction
       });
 
     } catch (error) {
       console.error('Error in roll command:', error);
-      const errorResponse = { content: 'There was an error processing your roll' };
-
-      if (interaction?.isRepliable()) {
-        await interaction.followUp(errorResponse);
+      if (interaction?.isRepliable() && !interaction.replied) {
+        await sendHelperMessage({ interaction });
       }
     }
   },

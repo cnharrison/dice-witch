@@ -2,9 +2,10 @@ import { exit } from "node:process";
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { PrismaClient } from "@prisma/client";
 import { CONFIG } from "../../config";
-const { token: discordToken } = CONFIG.discord;
+import { snowflakeUtils } from "../../shared/utils";
 
 const prisma = new PrismaClient();
+const { token: discordToken } = CONFIG.discord;
 
 const startServer = () => {
   const discord = new Client({
@@ -16,6 +17,7 @@ const startServer = () => {
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
+
   discord.on("ready", async () => {
     console.log(`[Discord] Registered.`);
     const promises = discord.guilds.cache.map(async (guild) => {
@@ -30,47 +32,48 @@ const startServer = () => {
         publicUpdatesChannelId,
         joinedTimestamp,
       } = guild;
-      console.log(`writing ${guild.name}....`);
+
       try {
+        const guildId = BigInt(id);
+        const ownerBigInt = BigInt(ownerId);
+        const updateChannelId = publicUpdatesChannelId ? BigInt(publicUpdatesChannelId) : null;
+
         await prisma.guilds.upsert({
-          where: {
-            id: Number(id),
-          },
+          where: { id: guildId },
           update: {
             name,
             icon,
-            ownerId: Number(ownerId),
+            ownerId: ownerBigInt,
             memberCount,
             approximateMemberCount,
             preferredLocale,
-            publicUpdatesChannelId: Number(publicUpdatesChannelId),
+            publicUpdatesChannelId: updateChannelId,
             joinedTimestamp,
           },
           create: {
-            id: Number(id),
+            id: guildId,
             name,
             icon,
-            ownerId: Number(ownerId),
+            ownerId: ownerBigInt,
             memberCount,
             approximateMemberCount,
             preferredLocale,
-            publicUpdatesChannelId: Number(publicUpdatesChannelId),
+            publicUpdatesChannelId: updateChannelId,
             joinedTimestamp,
             rollCount: 0,
           },
         });
       } catch (err) {
-        console.log(`❌ error writing ${guild.name}....`);
-        console.error(err);
-        exit(1);
+        console.error(`Error writing ${guild.name}:`, err);
+        process.exit(1);
       }
-      console.log(`...written! ✅`);
     });
     await Promise.all(promises);
-    console.log("..all done! ✅✅✅😊👌");
-    exit(0);
+    console.log('Finished backfilling guilds');
+    process.exit(0);
   });
 
   discord.login(discordToken);
 };
+
 startServer();

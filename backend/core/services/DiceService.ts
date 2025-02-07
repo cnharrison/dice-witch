@@ -473,7 +473,7 @@ export class DiceService {
       return { embeds: [embed], files: [attachment] };
     } catch (err) {
       console.error("Error generating embed message:", err);
-      throw new Error("Failed to generate embed message");
+      return { embeds: [], files: [] };
     }
   }
 

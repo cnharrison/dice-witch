@@ -111,7 +111,10 @@ const generateAndSendEmbed = async (
   };
 
   if (interaction) {
-    await interaction.followUp(response);
+    if (!interaction.deferred) {
+      await interaction.deferReply();
+    }
+    await interaction.editReply(response);
   }
 };
 

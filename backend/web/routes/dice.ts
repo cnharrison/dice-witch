@@ -18,9 +18,9 @@ router.post('/roll', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const { userId, channelId, notation } = await c.req.json();
+  const { channelId, notation } = await c.req.json();
 
-  if (!userId || !channelId || !notation) {
+  if (!channelId || !notation) {
     return c.json({ error: 'User ID, Channel ID, and Notation are required' }, 400);
   }
 

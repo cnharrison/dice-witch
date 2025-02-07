@@ -123,7 +123,7 @@ const createBotSiteUpdateTask = (discord: Client) => {
   return new AsyncTask(
     "botsite updates",
     async () => {
-      const { totalGuilds } = await discordService.getUserCount({ discord }) ?? {};
+      const { totalGuilds } = await discordService.getUserCount() ?? {};
       const promises = [
         axios.post(
           `https://top.gg/api/bots/${clientId}/stats`,
@@ -146,6 +146,9 @@ const createBotSiteUpdateTask = (discord: Client) => {
 
 const startServer = () => {
   discord.on("ready", async () => {
+    const discordService = DiscordService.getInstance();
+    discordService.setClient(discord);
+
     if (discord.user) {
       discord.user.setActivity("/roll");
     }

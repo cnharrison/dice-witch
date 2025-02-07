@@ -15,6 +15,7 @@ import {
   infoColor,
   tabletopColor,
 } from "../../core/constants";
+import { DiscordService } from "../../core/services/DiscordService";
 
 const { adminId, logOutputChannelId } = CONFIG.discord;
 
@@ -26,12 +27,14 @@ const sendLogEventMessage = async ({
   resultMessage,
   guild,
   interaction,
-  discord,
-}: Partial<LogEventProps>) => {
+}: LogEventProps) => {
   if (!eventType) {
     console.error("Event type is undefined");
     return;
   }
+
+  const discordService = DiscordService.getInstance();
+  const discord = discordService.getClient();
 
   const channel = interaction?.channel as TextChannel | ThreadChannel | null;
   const channelName = channel?.name ?? "";

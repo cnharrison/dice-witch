@@ -2,7 +2,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   SelectMenuBuilder,
-
+  PermissionFlagsBits,
   resolveColor,
 } from "discord.js";
 import { DiceTypesToDisplay } from "../../shared/types";
@@ -16,6 +16,9 @@ const maxTextDice: number = 500;
 const maxDiceSides: number = 100;
 
 const MAX_DELAY_MS = 5000;
+
+const ROLE_DICE_WITCH_ADMIN = "Dice Witch Admin";
+const PERMISSION_ADMINISTRATOR = PermissionFlagsBits.Administrator;
 
 const eventColor = resolveColor('#999999');
 const errorColor = resolveColor('#FF0000');
@@ -40,6 +43,8 @@ export {
   maxTextDice,
   maxDiceSides,
   MAX_DELAY_MS,
+  ROLE_DICE_WITCH_ADMIN,
+  PERMISSION_ADMINISTRATOR,
   eventColor,
   errorColor,
   goodColor,

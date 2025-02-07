@@ -102,7 +102,6 @@ export interface Command {
 export interface CommandProps {
   args: string[];
   discord: Client;
-  logOutputChannel: TextChannel;
   commands: Collection<string, Command>;
   interaction?: CommandInteraction | ButtonInteraction;
   title?: string;
@@ -128,7 +127,6 @@ export type KnowledgeBaseProps = Pick<
 export type RollProps = Pick<
   CommandProps,
   | "args"
-  | "logOutputChannel"
   | "interaction"
   | "title"
   | "timesToRepeat"
@@ -145,7 +143,7 @@ export type StatusProps = Pick<
 >;
 export type TitledRollProps = Pick<
   CommandProps,
-  "args" | "logOutputChannel" | "interaction"
+  "args" | "interaction"
 >;
 
 export type EmbedObject = {
@@ -155,17 +153,15 @@ export type EmbedObject = {
 
 export interface LogEventProps {
   eventType: EventType;
-  logOutputChannel: TextChannel;
   command?: Command;
   args?: string[];
   title?: string;
   guild?: Guild;
   resultMessage?: string;
-  embedParam: EmbedObject;
+  embedParam?: EmbedObject;
   interaction?: CommandInteraction | ButtonInteraction;
-  error: Error,
-  discord: Client,
-  canvasString: string;
+  error?: Error;
+  canvasString?: string;
 }
 
 export interface Die {
@@ -241,8 +237,6 @@ export interface UserType {
 }
 
 export interface SendDiceOverMaxMessageParams {
-  logOutputChannel: TextChannel;
-  discord: Client;
   args?: string[];
   interaction?: CommandInteraction | ButtonInteraction;
   shouldHaveImage?: boolean;
@@ -250,7 +244,6 @@ export interface SendDiceOverMaxMessageParams {
 
 export interface SendDiceResultMessageParams {
   resultArray: Result[];
-  logOutputChannel: TextChannel;
   interaction?: CommandInteraction | ButtonInteraction;
   title?: string;
 }
@@ -259,8 +252,6 @@ export interface SendDiceResultMessageWithImageParams {
   resultArray: Result[];
   attachment: AttachmentBuilder;
   canvas: Canvas;
-  logOutputChannel: TextChannel;
-  discord: Client;
   interaction?: CommandInteraction | ButtonInteraction;
   title?: string;
 }
@@ -272,11 +263,10 @@ export interface SendDiceRolledMessageParams {
 
 export interface SendHelperMessageParams {
   interaction: CommandInteraction | ButtonInteraction;
-  logOutputChannel: TextChannel;
+  discord: Client;
 }
 
 export interface SendNeedPermissionMessageParams {
-  logOutputChannel: TextChannel;
   interaction?: CommandInteraction | ButtonInteraction;
 }
 
@@ -285,4 +275,9 @@ export interface GenerateEmbedMessageParams {
   attachment: AttachmentBuilder;
   title?: string;
   interaction?: CommandInteraction | ButtonInteraction;
+}
+
+export interface UserCount {
+  totalGuilds?: number;
+  totalMembers?: number;
 }
