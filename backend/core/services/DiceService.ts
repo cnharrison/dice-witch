@@ -124,10 +124,29 @@ export class DiceService {
 
   private processRollGroup(
     rollGroup: any,
-    sidesArray: number[],
-    outerIndex: number,
+    sides: number,
   ): Die[] {
-    const sides = sidesArray[outerIndex];
+    if (sides === undefined) {
+      return rollGroup.rolls.map((currentRoll: RollResult) => {
+        const isHeads = coinFlip();
+        const color = chroma.random();
+        const secondaryColor = isHeads
+          ? this.getSecondaryColorFromColor(color)
+          : chroma.random();
+        const textColor = this.getTextColorFromColors(color, secondaryColor);
+        return {
+          sides: 6,
+          rolled: currentRoll.initialValue,
+          icon: null,
+          iconSpacing: 0,
+          color,
+          secondaryColor,
+          textColor,
+          value: currentRoll.initialValue,
+        };
+      });
+    }
+
     if (sides === 100) {
       return rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
         const isHeads = coinFlip();
@@ -212,37 +231,37 @@ export class DiceService {
           return;
         }
 
-        const sidesArray = parsedRoll
-          ? parsedRoll.reduce((acc: number[], rollGroup: StandardDice) => {
-              if (typeof rollGroup === "object") {
-                acc.push(rollGroup.sides);
-              }
-              return acc;
-            }, [])
-          : [];
-
-        const shouldHaveImage = sidesArray.every((sides: any) =>
+        const rollGroupSidesMap = new Map();
+        if (parsedRoll && Array.isArray(parsedRoll)) {
+          parsedRoll.forEach((group, index) => {
+            if (typeof group === 'object' && group.sides) {
+              rollGroupSidesMap.set(index, group.sides);
+            }
+          });
+        }
+        const allSides = Array.from(rollGroupSidesMap.values());
+        const shouldHaveImage = allSides.length > 0 && allSides.every(sides => 
           availableDice.includes(sides)
         );
 
-        if (parsedRoll) {
-          const roll = new DiceRoll(value);
-          const result: Result = {
-            output: roll.output,
-            results: roll.total,
-          };
+        const roll = new DiceRoll(value);
+        const result: Result = {
+          output: roll.output,
+          results: roll.total,
+        };
 
-          const groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
-            if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
-              acc.push(...this.processRollGroup(rollGroup, sidesArray, outerIndex));
-            }
-            return acc;
-          }, []);
+        const groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
+          if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
+            const sides = rollGroupSidesMap.get(outerIndex);
+            const processedGroup = this.processRollGroup(rollGroup, sides);
+            acc.push(...processedGroup);
+          }
+          return acc;
+        }, []);
 
-          diceArray.push([...groupArray]);
-          resultArray.push(result);
-          shouldHaveImageArray.push(shouldHaveImage);
-        }
+        diceArray.push([...groupArray]);
+        resultArray.push(result);
+        shouldHaveImageArray.push(shouldHaveImage);
       });
 
       const shouldHaveImage = shouldHaveImageArray.every(
@@ -297,6 +316,73 @@ export class DiceService {
     }));
   }
 
+  public async generateDiceAttachment(
+    diceArray: DiceArray
+  ): Promise<{ attachment: AttachmentBuilder; canvas: CanvasType } | undefined> {
+    try {
+      const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
+      const paginatedArray = this.paginateDiceArray(diceArray);
+      const canvasHeight = this.getCanvasHeight(paginatedArray, shouldHaveIcon);
+      const canvasWidth = this.getCanvasWidth(paginatedArray);
+      const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
+      const ctx = canvas.getContext("2d");
+
+      const drawDice = async (die: Die, index: number, outerIndex: number) => {
+        try {
+          const toLoad = await generateDie(
+            die.sides,
+            die.rolled,
+            die.textColor.hex(),
+            "#000000",
+            undefined,
+            generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex())
+          );
+
+          if (!toLoad) {
+            console.error(`Failed to generate image for die: ${die.sides}, rolled: ${die.rolled}`);
+            return;
+          }
+
+          try {
+            const image = await Canvas.loadImage(toLoad as Buffer);
+            const diceWidth = this.getDiceWidth(index);
+            const diceHeight = this.getDiceHeight(outerIndex, shouldHaveIcon);
+            ctx.drawImage(
+              image as unknown as Image,
+              diceWidth,
+              diceHeight,
+              this.defaultDiceDimension,
+              this.defaultDiceDimension
+            );
+
+            if (shouldHaveIcon && die.iconSpacing) {
+              await this.drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
+            }
+          } catch (imgErr) {
+            console.error(`Error loading dice image:`, imgErr);
+          }
+        } catch (err) {
+          console.error(`Unexpected error in drawDice:`, err);
+        }
+      };
+
+      await Promise.all(
+        paginatedArray.map((array, outerIndex) =>
+          Promise.all(array.map((die, index) => drawDice(die, index, outerIndex)))
+        )
+      );
+
+      const attachment = new AttachmentBuilder(
+        canvas.toBuffer('image/webp'),
+        { name: "currentDice.png" }
+      );
+      return { attachment, canvas };
+    } catch (err) {
+      console.error("Error generating dice attachment:", err);
+      return undefined;
+    }
+  }
+
   private getCanvasHeight(paginatedArray: DiceArray, shouldHaveIcon: boolean) {
     return shouldHaveIcon
       ? this.defaultDiceDimension * paginatedArray.length +
@@ -330,58 +416,6 @@ export class DiceService {
     return diceArray.flatMap(group =>
       group.length > this.maxRowLength ? paginateDiceGroup(group) : [group]
     );
-  }
-
-  public async generateDiceAttachment(
-    diceArray: DiceArray
-  ): Promise<{ attachment: AttachmentBuilder; canvas: CanvasType } | undefined> {
-    try {
-      const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
-      const paginatedArray = this.paginateDiceArray(diceArray);
-      const canvasHeight = this.getCanvasHeight(paginatedArray, shouldHaveIcon);
-      const canvasWidth = this.getCanvasWidth(paginatedArray);
-      const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
-      const ctx = canvas.getContext("2d");
-
-      const drawDice = async (die: Die, index: number, outerIndex: number) => {
-       const toLoad = await generateDie(
-        die.sides,
-        die.rolled,
-        die.textColor.hex(),
-        "#000000",
-        undefined,
-        generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex())
-      );
-        const image = await Canvas.loadImage(toLoad as Buffer);
-        const diceWidth = this.getDiceWidth(index);
-        const diceHeight = this.getDiceHeight(outerIndex, shouldHaveIcon);
-        ctx.drawImage(
-          image as unknown as Image,
-          diceWidth,
-          diceHeight,
-          this.defaultDiceDimension,
-          this.defaultDiceDimension
-        );
-        if (shouldHaveIcon && die.iconSpacing) {
-          await this.drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
-        }
-      };
-
-      await Promise.all(
-        paginatedArray.map((array, outerIndex) =>
-          Promise.all(array.map((die, index) => drawDice(die, index, outerIndex)))
-        )
-      );
-
-      const attachment = new AttachmentBuilder(
-        canvas.toBuffer('image/webp'),
-        { name: "currentDice.png" }
-      );
-      return { attachment, canvas };
-    } catch (err) {
-      console.error("Error generating dice attachment:", err);
-      return undefined;
-    }
   }
 
   public async generateDie({
@@ -502,16 +536,16 @@ export class DiceService {
   public generateDiceRolledMessage(diceArray: DiceArray, resultArray: number[]): string {
     const isSingleDie = diceArray.length === 1 && Array.isArray(diceArray[0]) && diceArray[0].length === 1;
 
-  const messages = [
-    `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "clatters", "clatter")} across the table..._`,
-    `_...as the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "tumbles", "tumble")}, ${pluralPick(isSingleDie, "it", "one")} continues to spin on its axis for a few seconds, as if possessed by an unknown force..._`,
-    `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "bangs", "bang")} angrily across the table..._`,
-    `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "clatters", "clatter")} crisply across the table..._`,
-    `_...as the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "rolls", "roll")} across the gnarly surface, you think you can spot a faint light emanating from deep within ${pluralPick(isSingleDie, "it..._", "one of them..._")}`,
-    `_...a sibilant wind suddenly hisses across the table as the restless ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "settles", "settle")} onto its planks..._`,
-    `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "bumps", "bump")} proudly across the table's wizened grooves..._`,
-    `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "dances", "dance")} and ${pluralPick(isSingleDie, "pirouettes", "pirouette")} across the table's ancient cracks..._`,
-  ];
+    const messages = [
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "clatters", "clatter")} across the table..._`,
+      `_...as the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "tumbles", "tumble")}, ${pluralPick(isSingleDie, "it", "one")} continues to spin on its axis for a few seconds, as if possessed by an unknown force..._`,
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "bangs", "bang")} angrily across the table..._`,
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "clatters", "clatter")} crisply across the table..._`,
+      `_...as the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "rolls", "roll")} across the gnarly surface, you think you can spot a faint light emanating from deep within ${pluralPick(isSingleDie, "it..._", "one of them..._")}`,
+      `_...a sibilant wind suddenly hisses across the table as the restless ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "settles", "settle")} onto its planks..._`,
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "bumps", "bump")} proudly across the table's wizened grooves..._`,
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "dances", "dance")} and ${pluralPick(isSingleDie, "pirouettes", "pirouette")} across the table's ancient cracks..._`,
+    ];
 
     const calculatePercentile = (total: number, min: number, max: number) => {
       return ((Number(total) - Number(min)) / (Number(max) - Number(min))) * 100;

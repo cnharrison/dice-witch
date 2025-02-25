@@ -3,7 +3,7 @@ import {
   DiceTypes,
   DiceFaces,
   PatternFillObject,
-} from "../../shared/types";
+} from "../../../shared/types";
 import sharp from "sharp";
 import {
   generateD4,
