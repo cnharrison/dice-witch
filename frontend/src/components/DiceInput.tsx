@@ -13,18 +13,33 @@ export function DiceInput({ input, setInput, isValid }: DiceInputProps) {
     setInput(e.target.value);
   }, [setInput]);
 
+  const handleClearInput = React.useCallback(() => {
+    setInput('');
+  }, [setInput]);
+
   return (
     <div className="w-full mt-4">
-      <Input
-        type="text"
-        value={input}
-        onChange={handleInputChange}
-        placeholder="Enter dice roll (e.g., 2d20+3d8+5)"
-        className={cn(
-          "w-full",
-          !isValid && "text-red-500"
+      <div className="relative w-full">
+        <Input
+          type="text"
+          value={input}
+          onChange={handleInputChange}
+          placeholder="Enter dice roll (e.g., 2d20+3d8+5)"
+          className={cn(
+            "w-full pr-10",
+            !isValid && "text-red-500"
+          )}
+        />
+        {input && (
+          <button 
+            onClick={handleClearInput}
+            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+            aria-label="Clear input"
+          >
+            ✕
+          </button>
         )}
-      />
+      </div>
     </div>
   )
 }

@@ -52,7 +52,10 @@ export function Roller({ diceInfo, rollResults, isRolling }: RollerProps) {
         <div className="flex h-full flex-col items-center justify-center p-6 relative">
           {isRolling && (
             <div className="absolute inset-0">
-              <DiceAnimation3D diceInfo={diceInfo} />
+              <DiceAnimation3D 
+                diceInfo={diceInfo} 
+                key={diceInfo ? JSON.stringify(diceInfo.diceGroups) : 'no-dice'}
+              />
             </div>
           )}
           {rollResults ? (

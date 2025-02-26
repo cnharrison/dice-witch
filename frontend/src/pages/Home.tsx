@@ -23,6 +23,21 @@ export const Home = () => {
   const [isRolling, setIsRolling] = React.useState(false);
   const [rollResults, setRollResults] = React.useState<RollResponse | null>(null);
 
+  React.useEffect(() => {
+    if (!input) {
+      setIsRolling(false);
+      setRollResults(null);
+    }
+  }, [input]);
+
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    if (!value) {
+      setIsRolling(false);
+      setRollResults(null);
+    }
+  };
+
   const { data: mutualGuilds, isLoading } = useQuery<Guild[]>({
     queryKey: ['mutualGuilds', discordAccount?.providerUserId],
     enabled: !!discordAccount?.providerUserId,
@@ -128,14 +143,14 @@ export const Home = () => {
       )}
       {selectedGuild && (
         <div className="w-full max-w-6xl px-4">
-          <Roller 
-            diceInfo={diceInfo} 
-            rollResults={rollResults} 
+          <Roller
+            diceInfo={diceInfo}
+            rollResults={rollResults}
             isRolling={isRolling}
           />
           <DiceInput
             input={input}
-            setInput={setInput}
+            setInput={handleInputChange}
             isValid={isValid}
           />
           <div className="mt-4 flex justify-center">
