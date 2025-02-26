@@ -22,18 +22,99 @@ interface RollerProps {
   diceInfo: DiceInfo | null;
   rollResults: RollResponse | null;
   isRolling: boolean;
+  showAnimation?: boolean;
 }
 
-export function Roller({ diceInfo, rollResults, isRolling }: RollerProps) {
+export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false }: RollerProps) {
+  const previousDiceInfoRef = React.useRef<DiceInfo | null>(null);
+  const combinedDiceInfoRef = React.useRef<DiceInfo | null>(null);
+  const [combinedDiceInfo, setCombinedDiceInfo] = React.useState<DiceInfo | null>(null);
+  const [diceToRemove, setDiceToRemove] = React.useState<{diceSize: number, count: number}[]>([]);
+
+  React.useEffect(() => {
+    if (!diceInfo) {
+      if (previousDiceInfoRef.current) {
+        const allDiceToRemove = previousDiceInfoRef.current.diceGroups.map(group => ({
+          diceSize: group.diceSize,
+          count: group.numberOfDice
+        }));
+        setDiceToRemove(allDiceToRemove);
+      }
+      
+      setTimeout(() => {
+        previousDiceInfoRef.current = null;
+        combinedDiceInfoRef.current = null;
+        setCombinedDiceInfo(null);
+        setDiceToRemove([]);
+      }, 1000);
+      
+      return;
+    }
+
+    if (previousDiceInfoRef.current) {
+      const diceSizeToRemove: {diceSize: number, count: number}[] = [];
+      
+      previousDiceInfoRef.current.diceGroups.forEach(prevGroup => {
+        const newGroup = diceInfo.diceGroups.find(g => g.diceSize === prevGroup.diceSize);
+        
+        if (!newGroup) {
+          diceSizeToRemove.push({
+            diceSize: prevGroup.diceSize,
+            count: prevGroup.numberOfDice
+          });
+        } else if (newGroup.numberOfDice < prevGroup.numberOfDice) {
+          diceSizeToRemove.push({
+            diceSize: prevGroup.diceSize,
+            count: prevGroup.numberOfDice - newGroup.numberOfDice
+          });
+        }
+      });
+      
+      setDiceToRemove(diceSizeToRemove);
+      
+      const existingGroups = [...previousDiceInfoRef.current.diceGroups];
+      
+      diceInfo.diceGroups.forEach(newGroup => {
+        const existingGroupIndex = existingGroups.findIndex(g => g.diceSize === newGroup.diceSize);
+        
+        if (existingGroupIndex >= 0) {
+          existingGroups[existingGroupIndex].numberOfDice = newGroup.numberOfDice;
+        } else {
+          existingGroups.push(newGroup);
+        }
+      });
+      
+      const filteredGroups = existingGroups.filter(group => group.numberOfDice > 0);
+      
+      const combined = {
+        diceGroups: filteredGroups,
+        modifier: diceInfo.modifier
+      };
+      
+      combinedDiceInfoRef.current = combined;
+      setCombinedDiceInfo(combined);
+    } else {
+      previousDiceInfoRef.current = diceInfo;
+      combinedDiceInfoRef.current = diceInfo;
+      setCombinedDiceInfo(diceInfo);
+    }
+    
+    previousDiceInfoRef.current = { ...diceInfo };
+    
+    setTimeout(() => {
+      setDiceToRemove([]);
+    }, 1000);
+  }, [diceInfo]);
+
   return (
     <ResizablePanelGroup
       direction="horizontal"
-      className="min-h-[500px] rounded-lg border"
+      className="min-h-[600px] h-[70vh] rounded-lg border"
     >
       <ResizablePanel defaultSize={50}>
-        <div className="flex h-full items-center justify-center p-6 relative">
-          <div className="flex flex-wrap gap-4 justify-center z-10 relative">
-            {diceInfo?.diceGroups.map((group, index) => {
+        <div className="flex h-full flex-col items-center justify-center p-6">
+          <div className="flex flex-wrap gap-4 justify-center">
+            {diceInfo?.diceGroups?.map((group, index) => {
               const DiceIcon = DiceIcons[`d${group.diceSize}` as keyof typeof DiceIcons];
               if (!DiceIcon) return null;
 
@@ -49,32 +130,51 @@ export function Roller({ diceInfo, rollResults, isRolling }: RollerProps) {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel defaultSize={50}>
-        <div className="flex h-full flex-col items-center justify-center p-6 relative">
-          {isRolling && (
-            <div className="absolute inset-0">
+        <div 
+          className="flex h-full flex-col items-center justify-center p-6 relative isolate"
+        >
+          {showAnimation && combinedDiceInfo && (
+            <div className="absolute inset-0 z-[1]">
               <DiceAnimation3D 
-                diceInfo={diceInfo} 
-                key={diceInfo ? JSON.stringify(diceInfo.diceGroups) : 'no-dice'}
+                key="persistent-dice-animation"
+                diceInfo={combinedDiceInfo}
+                diceToRemove={diceToRemove}
+                className="h-full w-full"
               />
             </div>
           )}
+          
+          {rollResults && rollResults.imageData && (
+            <div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-[999]"
+            >
+              <div className="pointer-events-auto">
+                <img 
+                  src={`data:image/webp;base64,${rollResults.imageData}`}
+                  alt="Dice roll result"
+                  className="max-w-full p-4"
+                />
+              </div>
+            </div>
+          )}
+          
           {rollResults ? (
-            <div className="w-full flex flex-col items-center z-10 relative">
+            <div className="w-full flex flex-col items-center relative mt-64 z-[1000]">
               <div className="flex flex-col items-center mb-6">
-                <div className="text-3xl font-extrabold">
+                <div className="text-7xl font-extrabold [text-shadow:-1px_-1px_0_#000,1px_-1px_0_#000,-1px_1px_0_#000,1px_1px_0_#000,0_0_8px_rgba(0,0,0,0.5)]">
                   {rollResults.resultArray.map(result => result.results).reduce((a, b) => a + b, 0)}
+                </div>
+                <div className="mt-2 text-xl [text-shadow:0_0_3px_rgba(0,0,0,0.7)]">
+                  {rollResults.resultArray.map((result, i) => (
+                    <span key={i} className="mx-1">
+                      {i > 0 ? ' + ' : ''}
+                      {result.output}
+                    </span>
+                  ))}
                 </div>
               </div>
               
-              {rollResults.imageData ? (
-                <div className="flex justify-center mb-4">
-                  <img 
-                    src={`data:image/webp;base64,${rollResults.imageData}`}
-                    alt="Dice roll result"
-                    className="max-w-full rounded-lg shadow-md"
-                  />
-                </div>
-              ) : (
+              {!rollResults.imageData && (
                 <div className="flex flex-wrap gap-4 justify-center mb-4">
                   {rollResults.diceArray.flat().map((die, index) => {
                     const DiceIcon = DiceIcons[`d${die.sides}` as keyof typeof DiceIcons];
@@ -83,29 +183,23 @@ export function Roller({ diceInfo, rollResults, isRolling }: RollerProps) {
                     return (
                       <div 
                         key={index} 
-                        className="flex flex-col items-center p-3 border rounded-lg"
+                        className="flex flex-col items-center p-3 border rounded-lg relative z-[999] pointer-events-auto"
                         style={{
                           background: `linear-gradient(135deg, ${die.color}, ${die.secondaryColor})`,
-                          color: die.textColor,
+                          color: die.textColor
                         }}
                       >
-                        <DiceIcon className="w-12 h-12" />
-                        <span className="text-xl font-bold mt-1">{die.rolled}</span>
+                        <div className="text-xl font-bold mb-1">{die.value}</div>
+                        <DiceIcon className="w-8 h-8" />
                       </div>
                     );
                   })}
                 </div>
               )}
-              
-              {rollResults.resultArray.map((result, index) => (
-                <div key={index} className="text-center text-lg font-medium">
-                  {result.output}
-                </div>
-              ))}
             </div>
           ) : null}
         </div>
       </ResizablePanel>
     </ResizablePanelGroup>
-  )
+  );
 }

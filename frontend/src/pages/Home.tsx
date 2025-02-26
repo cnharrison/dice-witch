@@ -22,19 +22,24 @@ export const Home = () => {
   const { input, setInput, isValid, diceInfo } = useDiceValidation('');
   const [isRolling, setIsRolling] = React.useState(false);
   const [rollResults, setRollResults] = React.useState<RollResponse | null>(null);
+  const [showAnimation, setShowAnimation] = React.useState(false);
 
   React.useEffect(() => {
     if (!input) {
       setIsRolling(false);
       setRollResults(null);
+      setShowAnimation(false);
+    } else {
+      setShowAnimation(isValid);
     }
-  }, [input]);
+  }, [input, isValid]);
 
   const handleInputChange = (value: string) => {
     setInput(value);
     if (!value) {
       setIsRolling(false);
       setRollResults(null);
+      setShowAnimation(false);
     }
   };
 
@@ -56,8 +61,6 @@ export const Home = () => {
 
   const channels = channelsResponse?.channels || [];
 
-  const uniqueChannelTypes = [...new Set(channels.map(c => c.type))];
-
   const handleRollDice = async () => {
     if (!isValid || !selectedChannel || !input) return;
 
@@ -65,6 +68,7 @@ export const Home = () => {
 
     try {
       setIsRolling(true);
+      setShowAnimation(true);
       setRollResults(null);
 
       const response = await fetch('/api/dice/roll', {
@@ -112,14 +116,26 @@ export const Home = () => {
 
   return (
     <div className="flex flex-col items-center mt-8">
-      <LoadingMedia
-        staticImage="/images/dice-witch-banner.webp"
-        loadingVideo="/videos/dice-witch-loading.mp4"
-        isLoading={isRolling}
-        alt="Dice Witch"
-        className="w-full max-w-4xl mb-8"
-        blendMode="soft-light"
-      />
+      <div className="relative w-full max-w-md mb-8 overflow-visible">
+        <LoadingMedia
+          staticImage="/images/dice-witch-banner.webp"
+          loadingVideo="/videos/dice-witch-loading.mp4"
+          className="w-full h-auto rounded-full"
+          isLoading={isRolling}
+          alt="Dice Witch"
+          blendMode="normal"
+          hideText
+        />
+
+        <div
+          className="absolute inset-0 flex items-center justify-center z-[9999]"
+        >
+          <div className="font-['UnifrakturMaguntia'] text-[#ff00ff] text-[14rem] font-bold tracking-wide whitespace-nowrap [text-shadow:4px_4px_8px_rgba(0,0,0,0.95)]">
+            Dice Witch
+          </div>
+        </div>
+      </div>
+
       <div className="w-[300px] mb-4">
         <GuildDropdown
           guilds={mutualGuilds}
@@ -147,6 +163,7 @@ export const Home = () => {
             diceInfo={diceInfo}
             rollResults={rollResults}
             isRolling={isRolling}
+            showAnimation={showAnimation || isRolling}
           />
           <DiceInput
             input={input}

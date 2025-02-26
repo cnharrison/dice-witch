@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 interface LoadingMediaProps {
   staticImage: string;
@@ -8,6 +8,7 @@ interface LoadingMediaProps {
   className?: string;
   blendMode?: 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';
   filter?: string;
+  hideText?: boolean;
 }
 
 export const LoadingMedia: React.FC<LoadingMediaProps> = ({
@@ -18,20 +19,35 @@ export const LoadingMedia: React.FC<LoadingMediaProps> = ({
   className = "",
   blendMode = "normal",
   filter = "",
+  hideText = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [videoEnded, setVideoEnded] = useState(false);
 
   useEffect(() => {
-    if (videoRef.current) {
-      if (isLoading) {
-        videoRef.current.currentTime = 0;
-        videoRef.current.play().catch(err => {
-          console.error('Error playing video:', err);
-        });
-      } else {
-        videoRef.current.pause();
-      }
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isLoading) {
+      setVideoEnded(false);
+
+      video.currentTime = 0;
+
+      video.play().catch(() => {});
+
+      const handleEnded = () => {
+        setVideoEnded(true);
+      };
+
+      video.addEventListener('ended', handleEnded);
+
+      return () => {
+        video.removeEventListener('ended', handleEnded);
+      };
+    } else {
+      video.pause();
+      setVideoEnded(false);
     }
   }, [isLoading]);
 
@@ -40,7 +56,6 @@ export const LoadingMedia: React.FC<LoadingMediaProps> = ({
 
     const container = containerRef.current;
 
-    // Create canvas overlay for the pointillistic effect
     let canvas = container.querySelector('canvas');
     if (!canvas) {
       canvas = document.createElement('canvas');
@@ -93,42 +108,67 @@ export const LoadingMedia: React.FC<LoadingMediaProps> = ({
     };
   }, []);
 
+  const bwImageStyle: React.CSSProperties = {
+    filter: 'grayscale(100%)',
+    mixBlendMode: blendMode as React.CSSProperties['mixBlendMode'],
+  };
+
   const bwOverlayStyle: React.CSSProperties = {
     position: 'absolute',
     inset: 0,
-    backgroundColor: 'black',
-    mixBlendMode: 'saturation',
+    backgroundColor: 'transparent',
     zIndex: 15,
-    opacity: 1,
-  };
-
-  const bwImageStyle: React.CSSProperties = {
-    filter: 'grayscale(100%) contrast(0.8) brightness(0.6) opacity(0.7) blur(0.5px)',
-    mixBlendMode: blendMode as React.CSSProperties['mixBlendMode'],
   };
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
-      {/* Static image shown when not loading */}
-      <img
-        src={staticImage}
-        alt={alt}
-        style={bwImageStyle}
-        className={`w-full h-auto transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
-      />
+      <div className="relative w-full aspect-square overflow-hidden rounded-full">
+        <img
+          src={staticImage}
+          alt={alt}
+          style={bwImageStyle}
+          className={`w-full h-full object-cover transition-opacity duration-300 ${isLoading && !videoEnded ? 'opacity-0' : 'opacity-100'}`}
+        />
 
-      {/* Video shown when loading */}
-      <video
-        ref={videoRef}
-        src={loadingVideo}
-        loop
-        muted
-        playsInline
-        style={bwImageStyle}
-        className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-300 ${isLoading ? 'opacity-100' : 'opacity-0'}`}
-      />
+        <video
+          ref={videoRef}
+          src={loadingVideo}
+          muted
+          playsInline
+          controls={false}
+          autoPlay={isLoading}
+          loop
+          disablePictureInPicture
+          disableRemotePlayback
+          style={{
+            ...bwImageStyle,
+            pointerEvents: 'none'
+          }}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${isLoading && !videoEnded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      </div>
 
-      <div style={bwOverlayStyle}></div>
+      {!hideText && (
+        <div
+          className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none"
+          style={{ width: 'auto', minWidth: '200%' }}
+        >
+          <span style={{
+            fontFamily: 'UnifrakturMaguntia, serif',
+            color: '#ff00ff',
+            fontSize: '12rem',
+            textShadow: '4px 4px 8px rgba(0,0,0,0.95)',
+            fontWeight: 'bold',
+            letterSpacing: '0.05em',
+            whiteSpace: 'nowrap',
+            display: 'block',
+            textAlign: 'center',
+            width: '100%',
+          }}>
+            Dice Witch
+          </span>
+        </div>
+      )}
     </div>
   );
 };

@@ -6,74 +6,312 @@ import { useEffect, useRef } from 'react';
 interface DiceAnimation3DProps {
   className?: string;
   diceInfo?: DiceInfo | null;
+  diceToRemove?: {diceSize: number, count: number}[];
 }
 
-export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({ className = "", diceInfo = null }) => {
+export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({ 
+  className = "", 
+  diceInfo = null,
+  diceToRemove = []
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const diceObjectsRef = useRef<THREE.Mesh[]>([]);
-  const previousDiceGroupsRef = useRef<{diceSize: number, numberOfDice: number}[]>([]);
   const smokeParticlesRef = useRef<THREE.Points[]>([]);
+  const previousDiceGroupsRef = useRef<any[]>([]);
   const animationFrameRef = useRef<number | null>(null);
   const renderer = useRef<THREE.WebGLRenderer | null>(null);
+  const diceInfoRef = useRef(diceInfo);
 
-  const createSmokeEffect = (position: THREE.Vector3) => {
-    if (!sceneRef.current) return;
+  useEffect(() => {
+    diceInfoRef.current = diceInfo;
+  }, [diceInfo]);
 
-    const particleCount = 30;
-    const particles = new Float32Array(particleCount * 3);
-    const sizes = new Float32Array(particleCount);
-
+  const createSmokeEffect = (position) => {
+    const particleCount = 20;
+    const particleGeometry = new THREE.BufferGeometry();
+    const particlePositions = new Float32Array(particleCount * 3);
     for (let i = 0; i < particleCount; i++) {
       const i3 = i * 3;
-      particles[i3] = position.x + (Math.random() - 0.5) * 0.5;
-      particles[i3 + 1] = position.y + (Math.random() - 0.5) * 0.5;
-      particles[i3 + 2] = position.z + (Math.random() - 0.5) * 0.5;
-
-      sizes[i] = Math.random() * 0.2 + 0.1;
+      const radius = 0.5;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI;
+      particlePositions[i3] = position.x + radius * Math.sin(phi) * Math.cos(theta);
+      particlePositions[i3 + 1] = position.y + radius * Math.sin(phi) * Math.sin(theta);
+      particlePositions[i3 + 2] = position.z + radius * Math.cos(phi);
     }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(particles, 3));
-    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-
-    const smokeTexture = new THREE.TextureLoader().load('/smoke.png');
-
-    const material = new THREE.PointsMaterial({
-      size: 0.5,
-      map: smokeTexture,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+    const particleMaterial = new THREE.PointsMaterial({
+      color: 0xcccccc,
+      size: 0.15,
       transparent: true,
       opacity: 0.8,
-      color: 0xcccccc
+      blending: THREE.AdditiveBlending,
     });
-
-    const smokeParticles = new THREE.Points(geometry, material);
-    smokeParticles.userData = {
+    const smoke = new THREE.Points(particleGeometry, particleMaterial);
+    smoke.position.copy(position);
+    smoke.userData = {
       createdAt: Date.now(),
-      velocity: Array(particleCount).fill(0).map(() => new THREE.Vector3(
+      lifetime: 1000 + Math.random() * 500, 
+      velocity: new THREE.Vector3(
         (Math.random() - 0.5) * 0.02,
-        Math.random() * 0.05,
+        0.02 + Math.random() * 0.01,
         (Math.random() - 0.5) * 0.02
-      )),
-      lifetime: 1000
+      )
     };
+    if (sceneRef.current) {
+      sceneRef.current.add(smoke);
+      smokeParticlesRef.current.push(smoke);
+    }
+    return smoke;
+  };
 
-    sceneRef.current.add(smokeParticles);
-    smokeParticlesRef.current.push(smokeParticles);
+  const createD4 = () => {
+    const geometry = new THREE.TetrahedronGeometry(1);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff00ff,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.position.set(
+      (Math.random() - 0.5) * 8,
+      Math.random() * 5 + 3,
+      (Math.random() - 0.5) * 8
+    );
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
+    mesh.userData = {
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.05,
+        -0.05 - Math.random() * 0.05,
+        (Math.random() - 0.5) * 0.05
+      ),
+      angularVelocity: new THREE.Vector3(
+        Math.random() * 0.05,
+        Math.random() * 0.05,
+        Math.random() * 0.05
+      ),
+      bounceCounter: 0,
+      diceType: 4
+    };
+    return mesh;
+  };
 
-    setTimeout(() => {
-      if (!sceneRef.current) return;
+  const createD6 = () => {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff00ff,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.position.set(
+      (Math.random() - 0.5) * 8,
+      Math.random() * 5 + 3,
+      (Math.random() - 0.5) * 8
+    );
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
+    mesh.userData = {
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.05,
+        -0.05 - Math.random() * 0.05,
+        (Math.random() - 0.5) * 0.05
+      ),
+      angularVelocity: new THREE.Vector3(
+        Math.random() * 0.05,
+        Math.random() * 0.05,
+        Math.random() * 0.05
+      ),
+      bounceCounter: 0,
+      diceType: 6
+    };
+    return mesh;
+  };
 
-      const index = smokeParticlesRef.current.indexOf(smokeParticles);
-      if (index !== -1) {
-        smokeParticlesRef.current.splice(index, 1);
-        sceneRef.current.remove(smokeParticles);
-        geometry.dispose();
-        material.dispose();
-      }
-    }, smokeParticles.userData.lifetime);
+  const createD8 = () => {
+    const geometry = new THREE.OctahedronGeometry(1);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff00ff,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.position.set(
+      (Math.random() - 0.5) * 8,
+      Math.random() * 5 + 3,
+      (Math.random() - 0.5) * 8
+    );
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
+    mesh.userData = {
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.05,
+        -0.05 - Math.random() * 0.05,
+        (Math.random() - 0.5) * 0.05
+      ),
+      angularVelocity: new THREE.Vector3(
+        Math.random() * 0.05,
+        Math.random() * 0.05,
+        Math.random() * 0.05
+      ),
+      bounceCounter: 0,
+      diceType: 8
+    };
+    return mesh;
+  };
+
+  const createD10 = () => {
+    const geometry = new THREE.CylinderGeometry(0, 1, 1.5, 10);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff00ff,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.position.set(
+      (Math.random() - 0.5) * 8,
+      Math.random() * 5 + 3,
+      (Math.random() - 0.5) * 8
+    );
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
+    mesh.userData = {
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.05,
+        -0.05 - Math.random() * 0.05,
+        (Math.random() - 0.5) * 0.05
+      ),
+      angularVelocity: new THREE.Vector3(
+        Math.random() * 0.05,
+        Math.random() * 0.05,
+        Math.random() * 0.05
+      ),
+      bounceCounter: 0,
+      diceType: 10
+    };
+    return mesh;
+  };
+
+  const createD12 = () => {
+    const geometry = new THREE.DodecahedronGeometry(1);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff00ff,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.position.set(
+      (Math.random() - 0.5) * 8,
+      Math.random() * 5 + 3,
+      (Math.random() - 0.5) * 8
+    );
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
+    mesh.userData = {
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.05,
+        -0.05 - Math.random() * 0.05,
+        (Math.random() - 0.5) * 0.05
+      ),
+      angularVelocity: new THREE.Vector3(
+        Math.random() * 0.05,
+        Math.random() * 0.05,
+        Math.random() * 0.05
+      ),
+      bounceCounter: 0,
+      diceType: 12
+    };
+    return mesh;
+  };
+
+  const createD20 = () => {
+    const geometry = new THREE.IcosahedronGeometry(1);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff00ff,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.position.set(
+      (Math.random() - 0.5) * 8,
+      Math.random() * 5 + 3,
+      (Math.random() - 0.5) * 8
+    );
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
+    mesh.userData = {
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.05,
+        -0.05 - Math.random() * 0.05,
+        (Math.random() - 0.5) * 0.05
+      ),
+      angularVelocity: new THREE.Vector3(
+        Math.random() * 0.05,
+        Math.random() * 0.05,
+        Math.random() * 0.05
+      ),
+      bounceCounter: 0,
+      diceType: 20
+    };
+    return mesh;
+  };
+
+  const createDie = (sides: number) => {
+    let dice;
+    switch (sides) {
+      case 4: dice = createD4(); break;
+      case 6: dice = createD6(); break;
+      case 8: dice = createD8(); break;
+      case 10: dice = createD10(); break;
+      case 12: dice = createD12(); break;
+      case 20: dice = createD20(); break;
+      default: dice = createD6();
+    }
+    dice.userData.diceType = sides;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 3 + Math.random(); 
+    dice.position.set(
+      Math.cos(angle) * radius,
+      1.5 + Math.random(), 
+      Math.sin(angle) * radius
+    );
+    dice.userData.velocity = new THREE.Vector3(
+      -dice.position.x * 0.05, 
+      -0.5 - Math.random() * 0.3, 
+      -dice.position.z * 0.05 
+    );
+    dice.userData.angularVelocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 0.1, 
+      (Math.random() - 0.5) * 0.1,
+      (Math.random() - 0.5) * 0.1
+    );
+    return dice;
   };
 
   useEffect(() => {
@@ -105,321 +343,6 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({ className = ""
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    const planeGeometry = new THREE.PlaneGeometry(20, 20);
-    const planeMaterial = new THREE.MeshStandardMaterial({
-      color: 0x333333,
-      transparent: true,
-      opacity: 0.2,
-      side: THREE.DoubleSide
-    });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.y = -2;
-    plane.receiveShadow = true;
-    scene.add(plane);
-
-    const createD4 = () => {
-      const geometry = new THREE.TetrahedronGeometry(1);
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xdddddd,
-        roughness: 0.4,
-        metalness: 0.2
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-
-      mesh.position.set(
-        (Math.random() - 0.5) * 8,
-        Math.random() * 5 + 3,
-        (Math.random() - 0.5) * 8
-      );
-      mesh.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-      );
-
-      mesh.userData = {
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.05,
-          -0.05 - Math.random() * 0.05,
-          (Math.random() - 0.5) * 0.05
-        ),
-        angularVelocity: new THREE.Vector3(
-          Math.random() * 0.05,
-          Math.random() * 0.05,
-          Math.random() * 0.05
-        ),
-        bounceCounter: 0,
-        diceType: 4
-      };
-
-      return mesh;
-    };
-
-    const createD6 = () => {
-      const geometry = new THREE.BoxGeometry(1, 1, 1);
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xdddddd,
-        roughness: 0.4,
-        metalness: 0.2
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-
-      mesh.position.set(
-        (Math.random() - 0.5) * 8,
-        Math.random() * 5 + 3,
-        (Math.random() - 0.5) * 8
-      );
-      mesh.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-      );
-
-      mesh.userData = {
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.05,
-          -0.05 - Math.random() * 0.05,
-          (Math.random() - 0.5) * 0.05
-        ),
-        angularVelocity: new THREE.Vector3(
-          Math.random() * 0.05,
-          Math.random() * 0.05,
-          Math.random() * 0.05
-        ),
-        bounceCounter: 0,
-        diceType: 6
-      };
-
-      return mesh;
-    };
-
-    const createD8 = () => {
-      const geometry = new THREE.OctahedronGeometry(1);
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xdddddd,
-        roughness: 0.4,
-        metalness: 0.2
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-
-      mesh.position.set(
-        (Math.random() - 0.5) * 8,
-        Math.random() * 5 + 3,
-        (Math.random() - 0.5) * 8
-      );
-      mesh.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-      );
-
-      mesh.userData = {
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.05,
-          -0.05 - Math.random() * 0.05,
-          (Math.random() - 0.5) * 0.05
-        ),
-        angularVelocity: new THREE.Vector3(
-          Math.random() * 0.05,
-          Math.random() * 0.05,
-          Math.random() * 0.05
-        ),
-        bounceCounter: 0,
-        diceType: 8
-      };
-
-      return mesh;
-    };
-
-    const createD10 = () => {
-      const vertices = [];
-      const radius = 1;
-
-      const pentagonalFaceVertices = [];
-      const topPentagonY = 0.3;
-      const bottomPentagonY = -0.3;
-
-      for (let i = 0; i < 5; i++) {
-        const angle = (i / 5) * Math.PI * 2;
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
-
-        pentagonalFaceVertices.push(new THREE.Vector3(x, topPentagonY, z));
-        pentagonalFaceVertices.push(new THREE.Vector3(x, bottomPentagonY, z));
-      }
-
-      const topPoint = new THREE.Vector3(0, radius, 0);
-      const bottomPoint = new THREE.Vector3(0, -radius, 0);
-
-      const geometry = new THREE.BufferGeometry();
-
-      for (let i = 0; i < 5; i++) {
-        const i1 = i * 2;
-        const i2 = ((i + 1) % 5) * 2;
-
-        vertices.push(...topPoint.toArray());
-        vertices.push(...pentagonalFaceVertices[i1].toArray());
-        vertices.push(...pentagonalFaceVertices[i2].toArray());
-
-        vertices.push(...bottomPoint.toArray());
-        vertices.push(...pentagonalFaceVertices[i2 + 1].toArray());
-        vertices.push(...pentagonalFaceVertices[i1 + 1].toArray());
-
-        vertices.push(...pentagonalFaceVertices[i1].toArray());
-        vertices.push(...pentagonalFaceVertices[i1 + 1].toArray());
-        vertices.push(...pentagonalFaceVertices[i2 + 1].toArray());
-
-        vertices.push(...pentagonalFaceVertices[i1].toArray());
-        vertices.push(...pentagonalFaceVertices[i2 + 1].toArray());
-        vertices.push(...pentagonalFaceVertices[i2].toArray());
-      }
-
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-      geometry.computeVertexNormals();
-
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xdddddd,
-        roughness: 0.4,
-        metalness: 0.2
-      });
-
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-
-      mesh.position.set(
-        (Math.random() - 0.5) * 8,
-        Math.random() * 5 + 3,
-        (Math.random() - 0.5) * 8
-      );
-      mesh.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-      );
-
-      mesh.userData = {
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.05,
-          -0.05 - Math.random() * 0.05,
-          (Math.random() - 0.5) * 0.05
-        ),
-        angularVelocity: new THREE.Vector3(
-          Math.random() * 0.05,
-          Math.random() * 0.05,
-          Math.random() * 0.05
-        ),
-        bounceCounter: 0,
-        diceType: 10
-      };
-
-      return mesh;
-    };
-
-    const createD12 = () => {
-      const geometry = new THREE.DodecahedronGeometry(1);
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xdddddd,
-        roughness: 0.4,
-        metalness: 0.2
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-
-      mesh.position.set(
-        (Math.random() - 0.5) * 8,
-        Math.random() * 5 + 3,
-        (Math.random() - 0.5) * 8
-      );
-      mesh.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-      );
-
-      mesh.userData = {
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.05,
-          -0.05 - Math.random() * 0.05,
-          (Math.random() - 0.5) * 0.05
-        ),
-        angularVelocity: new THREE.Vector3(
-          Math.random() * 0.05,
-          Math.random() * 0.05,
-          Math.random() * 0.05
-        ),
-        bounceCounter: 0,
-        diceType: 12
-      };
-
-      return mesh;
-    };
-
-    const createD20 = () => {
-      const geometry = new THREE.IcosahedronGeometry(1);
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xdddddd,
-        roughness: 0.4,
-        metalness: 0.2
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-
-      mesh.position.set(
-        (Math.random() - 0.5) * 8,
-        Math.random() * 5 + 3,
-        (Math.random() - 0.5) * 8
-      );
-      mesh.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-      );
-
-      mesh.userData = {
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.05,
-          -0.05 - Math.random() * 0.05,
-          (Math.random() - 0.5) * 0.05
-        ),
-        angularVelocity: new THREE.Vector3(
-          Math.random() * 0.05,
-          Math.random() * 0.05,
-          Math.random() * 0.05
-        ),
-        bounceCounter: 0,
-        diceType: 20
-      };
-
-      return mesh;
-    };
-
-    if (diceInfo && diceInfo.diceGroups && diceInfo.diceGroups.length > 0) {
-      diceInfo.diceGroups.forEach(group => {
-        let createDice;
-        switch (group.diceSize) {
-          case 4: createDice = createD4; break;
-          case 6: createDice = createD6; break;
-          case 8: createDice = createD8; break;
-          case 10: createDice = createD10; break;
-          case 12: createDice = createD12; break;
-          case 20: createDice = createD20; break;
-          default: createDice = createD6;
-        }
-
-        for (let i = 0; i < group.numberOfDice; i++) {
-          const dice = createDice();
-          dice.userData.diceType = group.diceSize;
-          sceneRef.current.add(dice);
-          diceObjectsRef.current.push(dice);
-        }
-      });
-      previousDiceGroupsRef.current = [...diceInfo.diceGroups];
-    }
-
     const handleResize = () => {
       if (!containerRef.current) return;
 
@@ -435,104 +358,132 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({ className = ""
     window.addEventListener('resize', handleResize);
 
     const animate = () => {
-      diceObjectsRef.current.forEach(dice => {
-        const data = dice.userData;
+      if (!renderer.current || !sceneRef.current) return;
 
-        if (data.velocity) {
-          data.velocity.y -= 0.002;
+      const now = Date.now();
 
-          dice.position.x += data.velocity.x;
-          dice.position.y += data.velocity.y;
-          dice.position.z += data.velocity.z;
-
-          dice.rotation.x += data.angularVelocity.x;
-          dice.rotation.y += data.angularVelocity.y;
-          dice.rotation.z += data.angularVelocity.z;
-
-          if (dice.position.y < -1 && data.velocity.y < 0) {
-            data.velocity.y = -data.velocity.y * 0.6;
-            data.velocity.x *= 0.8;
-            data.velocity.z *= 0.8;
-
-            dice.position.y = -1;
-
-            data.angularVelocity.multiplyScalar(0.9);
-
-            data.bounceCounter++;
-
-            if (data.bounceCounter > 3 && Math.abs(data.velocity.y) < 0.03) {
-              data.velocity.set(0, 0, 0);
-              data.angularVelocity.multiplyScalar(0.3);
-
-              if (Math.abs(data.angularVelocity.x) < 0.002 &&
-                  Math.abs(data.angularVelocity.y) < 0.002 &&
-                  Math.abs(data.angularVelocity.z) < 0.002) {
-                data.settled = true;
-              }
+      for (let i = smokeParticlesRef.current.length - 1; i >= 0; i--) {
+        const smoke = smokeParticlesRef.current[i];
+        const elapsed = now - smoke.userData.createdAt;
+        if (elapsed >= smoke.userData.lifetime) {
+          sceneRef.current.remove(smoke);
+          if (smoke.geometry) smoke.geometry.dispose();
+          if (smoke.material) {
+            if (Array.isArray(smoke.material)) {
+              smoke.material.forEach(m => m.dispose());
+            } else {
+              smoke.material.dispose();
             }
           }
-
-          const wallLimit = 9;
-          if (Math.abs(dice.position.x) > wallLimit) {
-            data.velocity.x = -data.velocity.x * 0.8;
-            dice.position.x = Math.sign(dice.position.x) * wallLimit;
+          smokeParticlesRef.current.splice(i, 1);
+        } else {
+          const opacity = 0.8 * (1 - elapsed / smoke.userData.lifetime);
+          if (smoke.material instanceof THREE.PointsMaterial) {
+            smoke.material.opacity = opacity;
           }
-
-          if (Math.abs(dice.position.z) > wallLimit) {
-            data.velocity.z = -data.velocity.z * 0.8;
-            dice.position.z = Math.sign(dice.position.z) * wallLimit;
-          }
-
-          if (dice.position.y < -10) {
-            dice.position.set(
-              (Math.random() - 0.5) * 8,
-              Math.random() * 5 + 6,
-              (Math.random() - 0.5) * 8
-            );
-            data.velocity = new THREE.Vector3(
-              (Math.random() - 0.5) * 0.05,
-              -0.05 - Math.random() * 0.05,
-              (Math.random() - 0.5) * 0.05
-            );
-            data.bounceCounter = 0;
-          }
-
-          if (Math.random() < 0.01 && data.bounceCounter > 3) {
-            data.velocity.y = 0.1 + Math.random() * 0.1;
-            data.velocity.x = (Math.random() - 0.5) * 0.05;
-            data.velocity.z = (Math.random() - 0.5) * 0.05;
-            data.angularVelocity.x = Math.random() * 0.05;
-            data.angularVelocity.y = Math.random() * 0.05;
-            data.angularVelocity.z = Math.random() * 0.05;
-            data.bounceCounter = 0;
-          }
+          smoke.scale.set(
+            1 + elapsed / smoke.userData.lifetime * 0.5,
+            1 + elapsed / smoke.userData.lifetime * 0.5,
+            1 + elapsed / smoke.userData.lifetime * 0.5
+          );
+          smoke.position.y += smoke.userData.velocity.y;
+          smoke.position.x += smoke.userData.velocity.x;
+          smoke.position.z += smoke.userData.velocity.z;
         }
-      });
-
-      smokeParticlesRef.current.forEach(smoke => {
-        const positions = smoke.geometry.attributes.position.array;
-        const velocities = smoke.userData.velocity;
-        const elapsed = Date.now() - smoke.userData.createdAt;
-        const progress = Math.min(elapsed / smoke.userData.lifetime, 1);
-
-        if (smoke.material instanceof THREE.PointsMaterial) {
-          smoke.material.opacity = 0.8 * (1 - progress);
-        }
-
-        for (let i = 0; i < velocities.length; i++) {
-          const i3 = i * 3;
-          positions[i3] += velocities[i].x;
-          positions[i3 + 1] += velocities[i].y;
-          positions[i3 + 2] += velocities[i].z;
-        }
-
-        smoke.geometry.attributes.position.needsUpdate = true;
-      });
-
-      if (renderer.current && sceneRef.current) {
-        renderer.current.render(sceneRef.current, camera);
       }
 
+      const gravity = new THREE.Vector3(0, -0.03, 0); 
+      const floorY = -1.5; 
+      const boundaryX = 3.0; 
+      const boundaryZ = 3.0;
+
+      for (let i = 0; i < diceObjectsRef.current.length; i++) {
+        const diceA = diceObjectsRef.current[i];
+        
+        for (let j = i + 1; j < diceObjectsRef.current.length; j++) {
+          const diceB = diceObjectsRef.current[j];
+          
+          const distance = diceA.position.distanceTo(diceB.position);
+          const minDistance = 1.2; 
+          
+          if (distance < minDistance) {
+            const normal = new THREE.Vector3()
+              .subVectors(diceA.position, diceB.position)
+              .normalize();
+            
+            const correction = (minDistance - distance) / 2;
+            diceA.position.add(normal.clone().multiplyScalar(correction));
+            diceB.position.add(normal.clone().multiplyScalar(-correction));
+            
+            const velA = diceA.userData.velocity || new THREE.Vector3();
+            const velB = diceB.userData.velocity || new THREE.Vector3();
+            const relativeVelocity = new THREE.Vector3().subVectors(velA, velB);
+            
+            const impulseStrength = normal.dot(relativeVelocity) * 0.8;
+            const impulse = normal.clone().multiplyScalar(impulseStrength);
+            
+            if (diceA.userData.velocity && diceB.userData.velocity) {
+              diceA.userData.velocity.sub(impulse);
+              diceB.userData.velocity.add(impulse);
+              
+              diceA.userData.angularVelocity.add(new THREE.Vector3(
+                (Math.random() - 0.5) * 0.03,
+                (Math.random() - 0.5) * 0.03,
+                (Math.random() - 0.5) * 0.03
+              ));
+              
+              diceB.userData.angularVelocity.add(new THREE.Vector3(
+                (Math.random() - 0.5) * 0.03,
+                (Math.random() - 0.5) * 0.03,
+                (Math.random() - 0.5) * 0.03
+              ));
+            }
+          }
+        }
+      }
+
+      diceObjectsRef.current.forEach(dice => {
+        if (!dice.userData.velocity) {
+          dice.userData.velocity = new THREE.Vector3(0, 0, 0);
+        }
+        if (!dice.userData.angularVelocity) {
+          dice.userData.angularVelocity = new THREE.Vector3(
+            Math.random() * 0.02 - 0.01, 
+            Math.random() * 0.02 - 0.01,
+            Math.random() * 0.02 - 0.01
+          );
+        }
+        dice.userData.velocity.add(gravity);
+        dice.position.add(dice.userData.velocity);
+        dice.rotation.x += dice.userData.angularVelocity.x;
+        dice.rotation.y += dice.userData.angularVelocity.y;
+        dice.rotation.z += dice.userData.angularVelocity.z;
+        if (dice.position.y < floorY + 0.5) { 
+          dice.position.y = floorY + 0.5;
+          if (Math.abs(dice.userData.velocity.y) > 0.01) {
+            dice.userData.velocity.y = -dice.userData.velocity.y * 0.5; 
+            
+            dice.userData.angularVelocity.multiplyScalar(0.85);
+            dice.userData.velocity.x *= 0.92;
+            dice.userData.velocity.z *= 0.92;
+          } else {
+            dice.userData.velocity.y = 0;
+            dice.userData.velocity.x *= 0.92;
+            dice.userData.velocity.z *= 0.92;
+            dice.userData.angularVelocity.multiplyScalar(0.92);
+          }
+        }
+        if (Math.abs(dice.position.x) > boundaryX) {
+          dice.position.x = Math.sign(dice.position.x) * boundaryX;
+          dice.userData.velocity.x = -dice.userData.velocity.x * 0.5;
+        }
+        if (Math.abs(dice.position.z) > boundaryZ) {
+          dice.position.z = Math.sign(dice.position.z) * boundaryZ;
+          dice.userData.velocity.z = -dice.userData.velocity.z * 0.5;
+        }
+      });
+
+      renderer.current.render(sceneRef.current, camera);
       animationFrameRef.current = requestAnimationFrame(animate);
     };
 
@@ -596,98 +547,102 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({ className = ""
   }, []);
 
   useEffect(() => {
-    if (!sceneRef.current) return;
-
-    if (!diceInfo || !diceInfo.diceGroups || diceInfo.diceGroups.length === 0) {
+    diceInfoRef.current = diceInfo;
+    if (!sceneRef.current || !diceInfoRef.current) return;
+    if (!diceInfoRef.current.diceGroups || diceInfoRef.current.diceGroups.length === 0) {
       diceObjectsRef.current.forEach(dice => {
-        createSmokeEffect(dice.position.clone());
+        createSmokeEffect(dice.position);
         sceneRef.current?.remove(dice);
-
-        dice.geometry.dispose();
+        if (dice.geometry) dice.geometry.dispose();
         if (Array.isArray(dice.material)) {
-          dice.material.forEach(material => material.dispose());
-        } else {
+          dice.material.forEach(m => m.dispose());
+        } else if (dice.material) {
           dice.material.dispose();
         }
       });
-
       diceObjectsRef.current = [];
       previousDiceGroupsRef.current = [];
       return;
     }
-
+    const currentDiceMap = new Map();
+    diceInfoRef.current.diceGroups.forEach(group => {
+      currentDiceMap.set(group.diceSize, (currentDiceMap.get(group.diceSize) || 0) + group.numberOfDice);
+    });
+    const existingDiceByType = new Map();
+    diceObjectsRef.current.forEach(die => {
+      if (die.userData.diceType) {
+        const type = die.userData.diceType;
+        existingDiceByType.set(type, (existingDiceByType.get(type) || 0) + 1);
+      }
+    });
     const diceToRemove = [];
-    const diceToKeep = [];
-
-    const currentTypeMap = new Map();
-    diceInfo.diceGroups.forEach(group => {
-      currentTypeMap.set(group.diceSize, (currentTypeMap.get(group.diceSize) || 0) + group.numberOfDice);
-    });
-
-    diceObjectsRef.current.forEach(dice => {
-      const type = dice.userData.diceType;
-      if (!type) {
-        diceToKeep.push(dice);
-        return;
-      }
-
-      if (currentTypeMap.has(type) && currentTypeMap.get(type) > 0) {
-        diceToKeep.push(dice);
-        currentTypeMap.set(type, currentTypeMap.get(type) - 1);
-      } else {
-        diceToRemove.push(dice);
+    diceObjectsRef.current.forEach(die => {
+      const type = die.userData.diceType;
+      if (!type) return;
+      const currentCount = currentDiceMap.get(type) || 0;
+      const existingCount = existingDiceByType.get(type) || 0;
+      if (existingCount > currentCount) {
+        diceToRemove.push(die);
+        existingDiceByType.set(type, existingCount - 1); 
       }
     });
-
-    diceToRemove.forEach(dice => {
-      createSmokeEffect(dice.position.clone());
-      sceneRef.current?.remove(dice);
-
-      dice.geometry.dispose();
-      if (Array.isArray(dice.material)) {
-        dice.material.forEach(material => material.dispose());
-      } else {
-        dice.material.dispose();
+    diceToRemove.forEach(die => {
+      createSmokeEffect(die.position);
+      sceneRef.current?.remove(die);
+      if (die.geometry) die.geometry.dispose();
+      if (Array.isArray(die.material)) {
+        die.material.forEach(m => m.dispose());
+      } else if (die.material) {
+        die.material.dispose();
+      }
+      const index = diceObjectsRef.current.indexOf(die);
+      if (index !== -1) {
+        diceObjectsRef.current.splice(index, 1);
       }
     });
-
-    diceObjectsRef.current = diceToKeep;
-
-    diceInfo.diceGroups.forEach(group => {
-      const currentCount = diceObjectsRef.current.filter(
-        dice => dice.userData.diceType === group.diceSize
-      ).length;
-
-      const neededCount = group.numberOfDice;
-
-      if (neededCount > currentCount) {
-        for (let i = 0; i < (neededCount - currentCount); i++) {
-          let dice;
-          switch (group.diceSize) {
-            case 4: dice = createD4(); break;
-            case 6: dice = createD6(); break;
-            case 8: dice = createD8(); break;
-            case 10: dice = createD10(); break;
-            case 12: dice = createD12(); break;
-            case 20: dice = createD20(); break;
-            default: dice = createD6();
-          }
-
-          dice.userData.diceType = group.diceSize;
-          sceneRef.current.add(dice);
-          diceObjectsRef.current.push(dice);
+    diceInfoRef.current.diceGroups.forEach(group => {
+      const type = group.diceSize;
+      const currentCount = currentDiceMap.get(type) || 0;
+      const existingCount = existingDiceByType.get(type) || 0;
+      if (currentCount > existingCount) {
+        for (let i = 0; i < (currentCount - existingCount); i++) {
+          const die = createDie(type);
+          sceneRef.current.add(die);
+          diceObjectsRef.current.push(die);
         }
       }
     });
-
-    previousDiceGroupsRef.current = diceInfo.diceGroups ? [...diceInfo.diceGroups] : [];
-
+    previousDiceGroupsRef.current = [...diceInfoRef.current.diceGroups];
   }, [diceInfo]);
+
+  useEffect(() => {
+    if (!sceneRef.current || diceToRemove.length === 0) return;
+    diceToRemove.forEach(({ diceSize, count }) => {
+      const diceOfType = diceObjectsRef.current.filter(
+        die => die.userData.diceType === diceSize
+      );
+      const diceToRemoveWithSmoke = diceOfType.slice(0, count);
+      diceToRemoveWithSmoke.forEach(die => {
+        createSmokeEffect(die.position);
+        sceneRef.current?.remove(die);
+        if (die.geometry) die.geometry.dispose();
+        if (Array.isArray(die.material)) {
+          die.material.forEach(m => m.dispose());
+        } else if (die.material) {
+          die.material.dispose();
+        }
+        const index = diceObjectsRef.current.indexOf(die);
+        if (index !== -1) {
+          diceObjectsRef.current.splice(index, 1);
+        }
+      });
+    });
+  }, [diceToRemove]);
 
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full ${className}`}
+      className={`w-full h-full ${className} isolate`}
       style={{ position: 'relative' }}
     />
   );
