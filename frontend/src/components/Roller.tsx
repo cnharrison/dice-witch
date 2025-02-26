@@ -7,6 +7,7 @@ import {
 import { type DiceInfo } from "@/hooks/useDiceValidation";
 import { RollResponse } from "@/types/dice";
 import * as React from "react";
+import { DiceAnimation3D } from "./DiceAnimation3D";
 
 const DiceIcons = {
   d4: D4Icon,
@@ -20,17 +21,18 @@ const DiceIcons = {
 interface RollerProps {
   diceInfo: DiceInfo | null;
   rollResults: RollResponse | null;
+  isRolling: boolean;
 }
 
-export function Roller({ diceInfo, rollResults }: RollerProps) {
+export function Roller({ diceInfo, rollResults, isRolling }: RollerProps) {
   return (
     <ResizablePanelGroup
       direction="horizontal"
       className="min-h-[500px] rounded-lg border"
     >
       <ResizablePanel defaultSize={50}>
-        <div className="flex h-full items-center justify-center p-6">
-          <div className="flex flex-wrap gap-4 justify-center">
+        <div className="flex h-full items-center justify-center p-6 relative">
+          <div className="flex flex-wrap gap-4 justify-center z-10 relative">
             {diceInfo?.diceGroups.map((group, index) => {
               const DiceIcon = DiceIcons[`d${group.diceSize}` as keyof typeof DiceIcons];
               if (!DiceIcon) return null;
@@ -47,9 +49,14 @@ export function Roller({ diceInfo, rollResults }: RollerProps) {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel defaultSize={50}>
-        <div className="flex h-full flex-col items-center justify-center p-6">
+        <div className="flex h-full flex-col items-center justify-center p-6 relative">
+          {isRolling && (
+            <div className="absolute inset-0">
+              <DiceAnimation3D diceInfo={diceInfo} />
+            </div>
+          )}
           {rollResults ? (
-            <div className="w-full flex flex-col items-center">
+            <div className="w-full flex flex-col items-center z-10 relative">
               <div className="flex flex-col items-center mb-6">
                 <div className="text-3xl font-extrabold">
                   {rollResults.resultArray.map(result => result.results).reduce((a, b) => a + b, 0)}
@@ -93,9 +100,7 @@ export function Roller({ diceInfo, rollResults }: RollerProps) {
                 </div>
               ))}
             </div>
-          ) : (
-            <span className="font-semibold">Results will appear here after rolling dice</span>
-          )}
+          ) : null}
         </div>
       </ResizablePanel>
     </ResizablePanelGroup>

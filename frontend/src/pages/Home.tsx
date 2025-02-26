@@ -2,6 +2,7 @@ import { DiceInput } from '@/components/DiceInput';
 import { GuildDropdown } from '@/components/GuildDropdown';
 import { ChannelDropdown } from '@/components/ChannelDropdown';
 import { Roller } from '@/components/Roller';
+import { LoadingMedia } from '@/components/LoadingMedia';
 import { useDiceValidation } from '@/hooks/useDiceValidation';
 import { Guild } from "@/types/guild";
 import { RollResponse } from '@/types/dice';
@@ -39,7 +40,7 @@ export const Home = () => {
   });
 
   const channels = channelsResponse?.channels || [];
-  
+
   const uniqueChannelTypes = [...new Set(channels.map(c => c.type))];
 
   const handleRollDice = async () => {
@@ -50,7 +51,7 @@ export const Home = () => {
     try {
       setIsRolling(true);
       setRollResults(null);
-      
+
       const response = await fetch('/api/dice/roll', {
         method: 'POST',
         headers: {
@@ -64,7 +65,7 @@ export const Home = () => {
 
       const data = await response.json();
       setRollResults(data);
-      
+
     } catch (error) {
       console.error('Error rolling dice:', error);
     } finally {
@@ -96,6 +97,14 @@ export const Home = () => {
 
   return (
     <div className="flex flex-col items-center mt-8">
+      <LoadingMedia
+        staticImage="/images/dice-witch-banner.webp"
+        loadingVideo="/videos/dice-witch-loading.mp4"
+        isLoading={isRolling}
+        alt="Dice Witch"
+        className="w-full max-w-4xl mb-8"
+        blendMode="soft-light"
+      />
       <div className="w-[300px] mb-4">
         <GuildDropdown
           guilds={mutualGuilds}
@@ -119,7 +128,11 @@ export const Home = () => {
       )}
       {selectedGuild && (
         <div className="w-full max-w-6xl px-4">
-          <Roller diceInfo={diceInfo} rollResults={rollResults} />
+          <Roller 
+            diceInfo={diceInfo} 
+            rollResults={rollResults} 
+            isRolling={isRolling}
+          />
           <DiceInput
             input={input}
             setInput={setInput}
