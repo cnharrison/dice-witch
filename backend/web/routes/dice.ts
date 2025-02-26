@@ -27,7 +27,7 @@ router.post('/roll', async (c) => {
   try {
     await new Promise(resolve => setTimeout(resolve, getRandomNumber(MAX_DELAY_MS)));
 
-    const { diceArray, resultArray, errors } = diceService.rollDice([notation], availableDice);
+    const { diceArray, resultArray, shouldHaveImage, errors } = diceService.rollDice([notation], availableDice);
 
     if (errors && errors.length > 0) {
       return c.json({ error: `Invalid notation: ${errors.join(', ')}` }, 400);
@@ -37,6 +37,9 @@ router.post('/roll', async (c) => {
     if (!diceAttachment) {
       return c.json({ error: 'Failed to generate dice image' }, 500);
     }
+
+    const imageBuffer = diceAttachment.canvas.toBuffer('image/webp');
+    const base64Image = Buffer.from(imageBuffer).toString('base64');
 
     const embedMessage = await diceService.generateEmbedMessage({
       resultArray,
@@ -48,12 +51,17 @@ router.post('/roll', async (c) => {
       files: embedMessage.files
     });
 
-    if (sent) {
-      return c.json({ message: 'Message sent to Discord channel' }, 200);
-    } else {
-      return c.json({ error: 'Channel not found or not a text channel' }, 404);
-    }
+    const response = {
+      message: 'Message sent to Discord channel',
+      diceArray,
+      resultArray,
+      shouldHaveImage,
+      imageData: base64Image
+    };
+
+    return c.json(response, 200);
   } catch (err) {
+    console.error('Error in dice roll API:', err);
     return c.json({ error: 'Failed to roll dice or send message' }, 500);
   }
 });

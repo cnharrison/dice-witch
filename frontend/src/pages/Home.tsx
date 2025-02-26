@@ -4,6 +4,7 @@ import { ChannelDropdown } from '@/components/ChannelDropdown';
 import { Roller } from '@/components/Roller';
 import { useDiceValidation } from '@/hooks/useDiceValidation';
 import { Guild } from "@/types/guild";
+import { RollResponse } from '@/types/dice';
 import { useUser } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { LoaderIcon } from "lucide-react";
@@ -19,6 +20,7 @@ export const Home = () => {
   const [selectedChannel, setSelectedChannel] = React.useState<string | undefined>();
   const { input, setInput, isValid, diceInfo } = useDiceValidation('');
   const [isRolling, setIsRolling] = React.useState(false);
+  const [rollResults, setRollResults] = React.useState<RollResponse | null>(null);
 
   const { data: mutualGuilds, isLoading } = useQuery<Guild[]>({
     queryKey: ['mutualGuilds', discordAccount?.providerUserId],
@@ -47,6 +49,8 @@ export const Home = () => {
 
     try {
       setIsRolling(true);
+      setRollResults(null);
+      
       const response = await fetch('/api/dice/roll', {
         method: 'POST',
         headers: {
@@ -58,9 +62,11 @@ export const Home = () => {
         }),
       });
 
-      await response.json();
+      const data = await response.json();
+      setRollResults(data);
       
     } catch (error) {
+      console.error('Error rolling dice:', error);
     } finally {
       setIsRolling(false);
     }
@@ -96,6 +102,7 @@ export const Home = () => {
           onValueChange={(value) => {
             setSelectedGuild(value);
             setSelectedChannel(undefined);
+            setRollResults(null);
           }}
         />
       </div>
@@ -103,13 +110,16 @@ export const Home = () => {
         <div className="w-[300px] mb-8">
           <ChannelDropdown
             channels={channels}
-            onValueChange={setSelectedChannel}
+            onValueChange={(value) => {
+              setSelectedChannel(value);
+              setRollResults(null);
+            }}
           />
         </div>
       )}
       {selectedGuild && (
         <div className="w-full max-w-6xl px-4">
-          <Roller diceInfo={diceInfo} />
+          <Roller diceInfo={diceInfo} rollResults={rollResults} />
           <DiceInput
             input={input}
             setInput={setInput}
