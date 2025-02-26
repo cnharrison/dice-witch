@@ -1,14 +1,14 @@
 import { clerkMiddleware, getAuth } from '@hono/clerk-auth';
-import { TextChannel } from 'discord.js';
 import { Hono } from 'hono';
 import { availableDice } from '../../core/constants';
 import { MAX_DELAY_MS } from '../../core/constants/index';
 import { DiceService } from '../../core/services/DiceService';
-import { discord } from '../../discord/app';
+import { DiscordService } from '../../core/services/DiscordService';
 import { getRandomNumber } from '../../shared/helpers';
 
 const router = new Hono();
 const diceService = DiceService.getInstance();
+const discordService = DiscordService.getInstance();
 
 router.use('*', clerkMiddleware());
 
@@ -43,22 +43,17 @@ router.post('/roll', async (c) => {
       attachment: diceAttachment.attachment,
     });
 
-    const result = await discord.shard?.broadcastEval(async (client) => {
-      const channel = await client.channels.fetch(channelId);
-      if (channel?.isTextBased() && channel instanceof TextChannel) {
-        await channel.send({ embeds: embedMessage.embeds, files: embedMessage.files });
-        return true;
-      }
-      return false;
+    const sent = await discordService.sendMessage(channelId, {
+      embeds: embedMessage.embeds,
+      files: embedMessage.files
     });
 
-    if (result?.some(success => success)) {
+    if (sent) {
       return c.json({ message: 'Message sent to Discord channel' }, 200);
     } else {
       return c.json({ error: 'Channel not found or not a text channel' }, 404);
     }
   } catch (err) {
-    console.error('Error rolling dice or sending message:', err);
     return c.json({ error: 'Failed to roll dice or send message' }, 500);
   }
 });

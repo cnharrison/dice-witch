@@ -1,5 +1,6 @@
 import { DiceInput } from '@/components/DiceInput';
 import { GuildDropdown } from '@/components/GuildDropdown';
+import { ChannelDropdown } from '@/components/ChannelDropdown';
 import { Roller } from '@/components/Roller';
 import { useDiceValidation } from '@/hooks/useDiceValidation';
 import { Guild } from "@/types/guild";
@@ -7,6 +8,7 @@ import { useUser } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { LoaderIcon } from "lucide-react";
 import * as React from 'react';
+import { Button } from '@/components/ui/button';
 
 export const Home = () => {
   const { user } = useUser();
@@ -14,7 +16,9 @@ export const Home = () => {
     account => account.provider === 'discord'
   );
   const [selectedGuild, setSelectedGuild] = React.useState<string | undefined>();
+  const [selectedChannel, setSelectedChannel] = React.useState<string | undefined>();
   const { input, setInput, isValid, diceInfo } = useDiceValidation('');
+  const [isRolling, setIsRolling] = React.useState(false);
 
   const { data: mutualGuilds, isLoading } = useQuery<Guild[]>({
     queryKey: ['mutualGuilds', discordAccount?.providerUserId],
@@ -22,16 +26,45 @@ export const Home = () => {
     staleTime: 1000 * 60 * 5,
   });
 
-  const { data: channels } = useQuery({
+  const { data: channelsResponse } = useQuery({
     queryKey: ['channels', selectedGuild],
     queryFn: async () => {
       const response = await fetch(`/api/guilds/${selectedGuild}/channels`);
       const data = await response.json();
-      console.log('Channels:', data);
-      return data.channels;
+      return data;
     },
     enabled: !!selectedGuild,
   });
+
+  const channels = channelsResponse?.channels || [];
+  
+  const uniqueChannelTypes = [...new Set(channels.map(c => c.type))];
+
+  const handleRollDice = async () => {
+    if (!isValid || !selectedChannel || !input) return;
+
+    const selectedChannelObj = channels.find(c => c.id === selectedChannel);
+
+    try {
+      setIsRolling(true);
+      const response = await fetch('/api/dice/roll', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channelId: selectedChannel,
+          notation: input,
+        }),
+      });
+
+      await response.json();
+      
+    } catch (error) {
+    } finally {
+      setIsRolling(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -57,12 +90,23 @@ export const Home = () => {
 
   return (
     <div className="flex flex-col items-center mt-8">
-      <div className="w-[300px] mb-8">
+      <div className="w-[300px] mb-4">
         <GuildDropdown
           guilds={mutualGuilds}
-          onValueChange={setSelectedGuild}
+          onValueChange={(value) => {
+            setSelectedGuild(value);
+            setSelectedChannel(undefined);
+          }}
         />
       </div>
+      {selectedGuild && Array.isArray(channels) && channels.length > 0 && (
+        <div className="w-[300px] mb-8">
+          <ChannelDropdown
+            channels={channels}
+            onValueChange={setSelectedChannel}
+          />
+        </div>
+      )}
       {selectedGuild && (
         <div className="w-full max-w-6xl px-4">
           <Roller diceInfo={diceInfo} />
@@ -71,6 +115,15 @@ export const Home = () => {
             setInput={setInput}
             isValid={isValid}
           />
+          <div className="mt-4 flex justify-center">
+            <Button
+              onClick={handleRollDice}
+              disabled={!isValid || !selectedChannel || isRolling}
+              className="w-1/3"
+            >
+              {isRolling ? 'Rolling...' : 'Roll Dice'}
+            </Button>
+          </div>
         </div>
       )}
     </div>

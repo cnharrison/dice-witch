@@ -98,7 +98,7 @@ export class DiscordService {
 
   public async getTextChannels(guildId: string) {
     if (!this.manager) {
-      console.error('Sharding manager not initialized');
+      return Promise.reject('Sharding manager not initialized');
     }
 
     try {
@@ -106,7 +106,6 @@ export class DiscordService {
       const shard = this.manager.shards.get(shardId);
 
       if (!shard) {
-        console.error('Shard not found');
         return Promise.reject('Shard not found');
       }
 
@@ -122,11 +121,13 @@ export class DiscordService {
           }
 
           const channels = await guild.channels.fetch();
+          const textChannelTypes = [0, 5]; // Text and Announcement channels
           const textChannels = Array.from(channels.values())
-            .filter(c => c?.type === 0)
+            .filter(c => textChannelTypes.includes(c?.type as number))
             .map(c => ({
               id: c.id,
-              name: c.name
+              name: c.name,
+              type: c.type
             }));
 
           return textChannels;
@@ -138,6 +139,68 @@ export class DiscordService {
       return channels || [];
     } catch (error) {
       return Promise.reject(error);
+    }
+  }
+
+  public async sendMessage(channelId: string, messageOptions: any): Promise<boolean> {
+    if (!this.manager) {
+      return false;
+    }
+
+    try {
+      const shardId = Number(BigInt(channelId) >> 22n) % this.manager.shards.size;
+      const shard = this.manager.shards.get(shardId);
+
+      if (!shard) {
+        return false;
+      }
+
+      const serializedMessageOptions = {
+        embeds: messageOptions.embeds,
+        files: messageOptions.files.map((file: any) => {
+          return {
+            name: file.name,
+            data: file.data ? Buffer.from(file.data).toString('base64') : null,
+            attachment: file.attachment && Buffer.isBuffer(file.attachment)
+              ? file.attachment.toString('base64')
+              : null
+          };
+        })
+      };
+
+      const result = await shard.eval(async (client, { context }) => {
+        try {
+          const channel = await client.channels.fetch(context.channelId);
+
+          if (!channel) {
+            return false;
+          }
+
+          if (!channel.isTextBased()) {
+            return false;
+          }
+
+          const deserializedOptions = {
+            embeds: context.messageOptions.embeds,
+            files: context.messageOptions.files.map((file: any) => {
+              return {
+                name: file.name,
+                attachment: file.attachment ? Buffer.from(file.attachment, 'base64') : null,
+                data: file.data ? Buffer.from(file.data, 'base64') : null
+              };
+            })
+          };
+
+          await channel.send(deserializedOptions);
+          return true;
+        } catch (error) {
+          return false;
+        }
+      }, { context: { channelId, messageOptions: serializedMessageOptions } });
+
+      return !!result;
+    } catch (error) {
+      return false;
     }
   }
 
