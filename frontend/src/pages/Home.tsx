@@ -86,6 +86,7 @@ export const Home = () => {
 
       const data = await response.json();
       setRollResults(data);
+      setIsRolling(false);
 
     } catch (error) {
       setIsRolling(false);
