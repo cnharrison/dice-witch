@@ -48,6 +48,111 @@ export class DiscordService {
     return this.manager;
   }
 
+  public async getShardStatus(): Promise<{id: number, status: string, guilds: number, ping: number}[]> {
+    try {
+      if (this.client && this.client.isReady()) {
+
+        return [{
+          id: 0,
+          status: "Online",
+          guilds: this.client.guilds.cache.size,
+          ping: this.client.ws.ping
+        }];
+      }
+
+      if (!this.manager || this.manager.shards.size === 0) {
+        return [{
+          id: 0,
+          status: "Running",
+          guilds: -1,
+          ping: -1
+        }];
+      }
+
+      if (this.client?.shard) {
+        try {
+
+          const shardIds = this.client.shard.ids;
+          return shardIds.map(id => ({
+            id,
+            status: "Online", // If we can access it, it's online
+            guilds: this.client.guilds.cache.size,
+            ping: this.client.ws.ping
+          }));
+        } catch (err) {
+          console.error("Error getting shard info from client.shard:", err);
+        }
+      }
+
+      const shardInfo = await Promise.all(
+        Array.from(this.manager.shards.values()).map(async (shard) => {
+          try {
+            const status = await shard.eval(c => ({
+              status: c.ws.status,
+              guilds: c.guilds.cache.size,
+              ping: c.ws.ping
+            })).catch(e => {
+              return null;
+            });
+
+            if (!status) {
+              return {
+                id: shard.id,
+                status: "Unknown",
+                guilds: 0,
+                ping: -1
+              };
+            }
+
+            return {
+              id: shard.id,
+              status: this.getStatusText(status.status),
+              guilds: status.guilds,
+              ping: status.ping
+            };
+          } catch (err) {
+            console.error(`Error getting status for shard ${shard.id}:`, err);
+            return {
+              id: shard.id,
+              status: "Offline",
+              guilds: 0,
+              ping: -1
+            };
+          }
+        })
+      );
+
+      if (shardInfo.length === 0) {
+        return [{
+          id: 0,
+          status: "Running",
+          guilds: -1,
+          ping: -1
+        }];
+      }
+
+      return shardInfo;
+    } catch (error) {
+      console.error("Error getting shard status:", error);
+      return [{
+        id: 0,
+        status: "Running",
+        guilds: -1,
+        ping: -1
+      }];
+    }
+  }
+
+  private getStatusText(status: number): string {
+    switch (status) {
+      case 0: return "Connecting";
+      case 1: return "Online";
+      case 2: return "Closing";
+      case 3: return "Closed";
+      default: return "Unknown";
+    }
+  }
+
   public async getUserCount(): Promise<UserCountResult> {
     try {
       const [guildSizes, memberCounts] = await Promise.all([
@@ -254,7 +359,7 @@ export class DiscordService {
               };
             }) : []
           };
-          
+
           if (context.messageOptions.reply) {
             deserializedOptions.reply = {
               messageReference: context.messageOptions.reply.messageReference
@@ -262,8 +367,8 @@ export class DiscordService {
           }
 
           const sentMessage = await channel.send(deserializedOptions);
-          return { 
-            success: true, 
+          return {
+            success: true,
             messageId: sentMessage.id,
             channelId: sentMessage.channelId
           };
