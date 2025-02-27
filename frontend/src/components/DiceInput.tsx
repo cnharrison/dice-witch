@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { D20Icon } from '@/components/icons/D20Icon';
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/components/theme-provider";
 
 interface DiceInputProps {
   input: string;
@@ -32,6 +33,7 @@ export function DiceInput({
 }: DiceInputProps) {
   const diceInputRef = React.useRef<HTMLInputElement>(null);
   const timesToRepeatRef = React.useRef<HTMLInputElement>(null);
+  const { theme } = useTheme();
 
   const handleInputChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
@@ -42,10 +44,10 @@ export function DiceInput({
   }, [setInput]);
 
   const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && isValid && onRoll) {
-      onRoll();
+    if (e.key === 'Enter' && isValid && selectedChannel && input.trim()) {
+      if (onRoll) onRoll();
     }
-  }, [isValid, onRoll]);
+  }, [isValid, selectedChannel, input, onRoll]);
 
   const handleDiceInputKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     handleKeyDown(e);
@@ -77,10 +79,11 @@ export function DiceInput({
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleDiceInputKeyDown}
-            placeholder="Enter dice roll (e.g., 2d20+3d8+5)"
+            placeholder={selectedChannel ? "Enter dice roll (e.g., 2d20+3d8+5)" : "Select a channel first, then enter dice"}
             className={cn(
               "w-full pr-10",
-              !isValid && "text-red-500"
+              !isValid && "text-red-500",
+              !selectedChannel && "border-amber-500"
             )}
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center space-x-1">
@@ -94,10 +97,10 @@ export function DiceInput({
               ✕
             </Button>
             <div
-              onClick={isValid && selectedChannel && input.trim() ? onRoll : undefined}
+              onClick={() => isValid && selectedChannel && input.trim() && onRoll && onRoll()}
               className={cn(
                 "cursor-pointer transition-opacity duration-300",
-                (!isValid || !selectedChannel || !input.trim()) && "opacity-30 cursor-not-allowed"
+                (!isValid || !selectedChannel || !input.trim()) && "opacity-50 cursor-not-allowed"
               )}
             >
               <D20Icon
@@ -107,7 +110,7 @@ export function DiceInput({
                     ? "text-white"
                     : ""
                 )}
-                darkMode={true}
+                darkMode={theme === 'dark'}
                 disabled={!isValid || !selectedChannel || !input.trim()}
                 shouldGlow={isValid && selectedChannel && input.trim()}
                 glowColor="#ff00ff"

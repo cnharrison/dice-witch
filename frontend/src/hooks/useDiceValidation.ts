@@ -41,24 +41,29 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
       setTotal(roll.total);
 
       const diceMatches = debouncedInput.match(/(\d+)?d(\d+)/g) || [];
+      
       const diceGroups = diceMatches.map(match => {
-        const [full, numDice = '1', dSize] = match.match(/(\d+)?d(\d+)/) || [];
+        const parts = match.match(/(\d+)?d(\d+)/);
+        
+        const numDice = parts?.[1] || '1';
+        const dSize = parts?.[2];
+        
         return {
-          numberOfDice: parseInt(numDice || '1'),
+          numberOfDice: parseInt(numDice),
           diceSize: parseInt(dSize)
         };
       });
 
-      setIsValid(
-        diceMatches.length > 0 &&
-        diceGroups.every(group => group.numberOfDice > 0 && group.diceSize > 0)
-      );
+      const isValidDice = diceMatches.length > 0 && 
+        diceGroups.every(group => group.numberOfDice > 0 && group.diceSize > 0);
+      
+      setIsValid(isValidDice);
 
       setDiceInfo({
         diceGroups,
-        modifier: roll.modifier
+        modifier: roll.modifier || 0
       });
-    } catch {
+    } catch (error) {
       setIsValid(false);
       setTotal(null);
       setDiceInfo(null);

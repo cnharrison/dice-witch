@@ -1,4 +1,5 @@
 import { D10Icon, D12Icon, D20Icon, D4Icon, D6Icon, D8Icon } from "@/components/icons";
+import { useTheme } from "@/components/theme-provider";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -30,6 +31,7 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
   const combinedDiceInfoRef = React.useRef<DiceInfo | null>(null);
   const [combinedDiceInfo, setCombinedDiceInfo] = React.useState<DiceInfo | null>(null);
   const [diceToRemove, setDiceToRemove] = React.useState<{diceSize: number, count: number}[]>([]);
+  const { theme } = useTheme();
 
   React.useEffect(() => {
     if (!diceInfo) {
@@ -120,7 +122,7 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
               return (
                 <div key={index} className="flex flex-col items-center">
                   {DiceIcon ? (
-                    <DiceIcon className="w-16 h-16" />
+                    <DiceIcon className="w-16 h-16" darkMode={theme === 'dark'} />
                   ) : (
                     <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
                       {group.diceSize}
@@ -155,7 +157,7 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
           
           {rollResults && rollResults.imageData && (
             <div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none z-[999]"
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-[10]"
             >
               <div className="pointer-events-auto">
                 <img 
@@ -168,12 +170,12 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
           )}
           
           {rollResults ? (
-            <div className="w-full flex flex-col items-center relative mt-64 z-[1000]">
-              <div className="flex flex-col items-center mb-6">
-                <div className="text-7xl font-extrabold [text-shadow:-1px_-1px_0_#000,1px_-1px_0_#000,-1px_1px_0_#000,1px_1px_0_#000,0_0_8px_rgba(0,0,0,0.5)]">
+            <div className="w-full flex flex-col items-center absolute top-6 left-0 right-0 z-[20]">
+              <div className="flex flex-col items-center">
+                <div className="text-7xl font-extrabold text-white [text-shadow:-2px_-2px_0_#000,2px_-2px_0_#000,-2px_2px_0_#000,2px_2px_0_#000,0_0_12px_rgba(0,0,0,0.8)]">
                   {rollResults.resultArray.map(result => result.results).reduce((a, b) => a + b, 0)}
                 </div>
-                <div className="mt-2 text-xl [text-shadow:0_0_3px_rgba(0,0,0,0.7)]">
+                <div className="mt-2 text-xl text-white [text-shadow:-1px_-1px_0_#000,1px_-1px_0_#000,-1px_1px_0_#000,1px_1px_0_#000,0_0_8px_rgba(0,0,0,0.8)]">
                   {rollResults.resultArray.map((result, i) => (
                     <span key={i} className="mx-1">
                       {i > 0 ? ' + ' : ''}
@@ -199,7 +201,7 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
                       >
                         <div className="text-xl font-bold mb-1">{die.value}</div>
                         {DiceIcon ? (
-                          <DiceIcon className="w-8 h-8" />
+                          <DiceIcon className="w-8 h-8" darkMode={theme === 'dark'} />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-xs font-bold">
                             d{die.sides}

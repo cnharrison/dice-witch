@@ -272,6 +272,41 @@ export class DatabaseService {
       } : null
     }));
   }
+  
+  public async getGuildSettings(guildId: string): Promise<{
+    skipDiceDelay: boolean;
+  }> {
+    try {
+      const guild = await this.prisma.guilds.findUnique({
+        where: { id: guildId }
+      });
+      
+      return {
+        skipDiceDelay: guild?.skipDiceDelay ?? false
+      };
+    } catch (error) {
+      console.error("Error retrieving guild settings:", error);
+      return {
+        skipDiceDelay: false
+      };
+    }
+  }
+  
+  public async updateGuildPreferences(guildId: string, preferences: {
+    skipDiceDelay?: boolean;
+  }): Promise<void> {
+    try {
+      await this.prisma.guilds.update({
+        where: { id: guildId },
+        data: {
+          skipDiceDelay: preferences.skipDiceDelay
+        }
+      });
+    } catch (error) {
+      console.error("Error updating guild preferences:", error);
+      throw error;
+    }
+  }
 
   async updateUserGuildPermissions({
     userId,

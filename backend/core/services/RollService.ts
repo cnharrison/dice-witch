@@ -73,9 +73,9 @@ export class RollService {
     const [_, count, sides] = match;
     const totalDiceRolled = parseInt(count);
     const highestDiceSide = parseInt(sides);
-    
+
     const isOverMax = totalDiceRolled > maxImageDice || highestDiceSide > maxDiceSides;
-    
+
     return { isOverMax, containsDice: true };
   }
 
@@ -119,11 +119,24 @@ export class RollService {
 
       if (channel && diceArray.some(group => group.length > 0)) {
         let rollingMessageResult;
-        
+        let skipDelay = false;
+
+        if (channel.guild?.id) {
+          const guildSettings = await this.dbService.getGuildSettings(channel.guild.id);
+          skipDelay = guildSettings.skipDiceDelay;
+        }
+
         const numericResults = diceArray.flat().map(die => die.rolled);
-        const rollingMessage = this.diceService.generateDiceRolledMessage(diceArray, numericResults);
-        rollingMessageResult = await this.discordService.sendMessage(channelId, { content: rollingMessage });
-        
+        let messageReference = null;
+
+        if (!skipDelay) {
+          const rollingMessage = this.diceService.generateDiceRolledMessage(diceArray, numericResults);
+          rollingMessageResult = await this.discordService.sendMessage(channelId, { content: rollingMessage });
+          if (rollingMessageResult?.success) {
+            messageReference = rollingMessageResult.messageId;
+          }
+        }
+
         const diceAttachment = await this.diceService.generateDiceAttachment(diceArray);
         if (diceAttachment) {
           const imageBuffer = diceAttachment.canvas.toBuffer('image/webp');
@@ -137,37 +150,34 @@ export class RollService {
             title: options.title || undefined
           });
 
-          if (rollingMessageResult?.success) {
-            await this.discordService.sendMessage(channelId, {
-              embeds: embedMessage.embeds,
-              files: embedMessage.files,
-              reply: { messageReference: rollingMessageResult.messageId }
+          await this.discordService.sendMessage(channelId, {
+            embeds: embedMessage.embeds,
+            files: embedMessage.files,
+            ...(messageReference ? { reply: { messageReference } } : {})
+          });
+
+          try {
+            const files = [{
+              name: 'currentDice.png',
+              attachment: Buffer.isBuffer(diceAttachment.attachment) ? diceAttachment.attachment : null
+            }].filter(file => file.attachment !== null);
+
+            await sendLogEventMessage({
+              eventType: EventType.RECEIVED_COMMAND,
+              args: Array.isArray(notation) ? notation : [notation],
+              guild: channel.guild,
+              files: files.length > 0 ? files : undefined,
+              sourceName: 'web',
+              username,
+              channelName,
+              guildName
             });
-
-            try {
-              const files = [{
-                name: 'currentDice.png',
-                attachment: Buffer.isBuffer(diceAttachment.attachment) ? diceAttachment.attachment : null
-              }].filter(file => file.attachment !== null);
-
-              await sendLogEventMessage({
-                eventType: EventType.RECEIVED_COMMAND,
-                args: Array.isArray(notation) ? notation : [notation],
-                guild: channel.guild,
-                files: files.length > 0 ? files : undefined,
-                sourceName: 'web',
-                username,
-                channelName,
-                guildName
-              });
-            } catch (error) {
-              console.error('Failed to send to log channel:', error);
-            }
+          } catch (error) {
+            console.error('Failed to send to log channel:', error);
           }
         }
       }
 
-      // Add web-specific fields to the result
       result.base64Image = base64Image;
       result.message = `Message sent to Discord channel ${channelName}`;
       result.channelName = channelName;

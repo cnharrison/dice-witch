@@ -6,6 +6,8 @@ import CustomSignIn from './pages/SignIn';
 import { Navbar } from './components/Navbar';
 import { SvgFilters } from './components/SvgFilters';
 import Home from './pages/Home';
+import Preferences from './pages/Preferences';
+import { GuildProvider } from './context/GuildContext';
 
 function App() {
   return (
@@ -15,17 +17,31 @@ function App() {
         <Route path="/sign-in/*" element={<CustomSignIn />} />
         <Route path="/" element={
           <AuthWrapper>
-            <div className="min-h-screen">
-              <Navbar />
-              <main className="container mx-auto py-6">
-                <Home />
-              </main>
-            </div>
+            <GuildProvider>
+              <div className="min-h-screen bg-background text-foreground">
+                <Navbar />
+                <main className="container mx-auto py-6">
+                  <Home />
+                </main>
+              </div>
+            </GuildProvider>
+          </AuthWrapper>
+        } />
+        <Route path="/preferences" element={
+          <AuthWrapper>
+            <GuildProvider>
+              <div className="min-h-screen bg-background text-foreground">
+                <Navbar />
+                <main className="container mx-auto py-6">
+                  <Preferences />
+                </main>
+              </div>
+            </GuildProvider>
           </AuthWrapper>
         } />
         <Route path="/profile" element={
           <AuthWrapper>
-            <div className="min-h-screen">
+            <div className="min-h-screen bg-background text-foreground">
               <Navbar />
               <main className="container mx-auto py-6">
                 <UserProfile />

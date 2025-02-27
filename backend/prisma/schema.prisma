@@ -18,6 +18,7 @@ model guilds {
   publicUpdatesChannelId String?       @map("public_updates_channel_id")
   joinedTimestamp        BigInt?       @map("joined_timestamp")
   rollCount              Int?          @map("roll_count")
+  skipDiceDelay          Boolean       @default(false) @map("skip_dice_delay")
   createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
   isActive               Boolean?      @default(true)

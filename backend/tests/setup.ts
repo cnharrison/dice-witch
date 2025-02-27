@@ -1,4 +1,3 @@
-// Jest setup file
 jest.mock('../config', () => {
   return {
     CONFIG: {
@@ -13,7 +12,6 @@ jest.mock('../config', () => {
   };
 });
 
-// Mock the database service
 jest.mock('../core/services/DatabaseService', () => {
   return {
     DatabaseService: {
@@ -25,24 +23,19 @@ jest.mock('../core/services/DatabaseService', () => {
   };
 });
 
-// Mock discord messages
 jest.mock('../discord/messages/sendLogEventMessage', () => {
   return {
     sendLogEventMessage: jest.fn().mockResolvedValue(null)
   };
 });
 
-// Add global beforeAll and afterAll hooks for test setup and teardown
 beforeAll(async () => {
-  // Initialize any services or connections needed for integration testing
-  jest.setTimeout(30000); // Increase timeout for integration tests
+  jest.setTimeout(30000);
 });
 
 afterAll(async () => {
-  // Clean up any resources after tests
 });
 
-// Suppress console logs/errors during tests unless in debug mode
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 
@@ -51,7 +44,6 @@ if (process.env.DEBUG !== 'true') {
   console.error = jest.fn();
 }
 
-// Restore console functions after tests
 afterAll(() => {
   console.log = originalConsoleLog;
   console.error = originalConsoleError;

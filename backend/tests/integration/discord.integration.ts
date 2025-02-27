@@ -1,19 +1,17 @@
 import { DiscordServiceMock as DiscordService } from '../mocks/serviceMocks';
 import { Client, ShardingManager, EmbedBuilder, TextChannel } from 'discord.js';
 
-// Mock the discord.js classes
 jest.mock('discord.js', () => {
   const original = jest.requireActual('discord.js');
   
-  // Create mock implementations
   const ClientMock = jest.fn().mockImplementation(() => ({
     login: jest.fn().mockResolvedValue('token'),
     isReady: jest.fn().mockReturnValue(true),
     on: jest.fn(),
     once: jest.fn(),
     shard: {
-      fetchClientValues: jest.fn().mockResolvedValue([5]), // 5 guilds
-      broadcastEval: jest.fn().mockResolvedValue([500]) // 500 members
+      fetchClientValues: jest.fn().mockResolvedValue([5]), 
+      broadcastEval: jest.fn().mockResolvedValue([500]) 
     },
     guilds: {
       cache: {
@@ -38,7 +36,6 @@ jest.mock('discord.js', () => {
 
   const ShardMock = {
     eval: jest.fn().mockImplementation(async (func, context) => {
-      // Simulate the shard evaluation logic
       if (context.context.channelId === 'valid-channel') {
         return {
           id: 'valid-channel',
@@ -114,13 +111,11 @@ describe('Discord Integration Tests', () => {
     });
 
     test('should get channel information', async () => {
-      // Test with a valid channel ID
       const validChannel = await discordService.getChannel('valid-channel');
       expect(validChannel).toBeDefined();
       expect(validChannel?.name).toBe('test-channel');
       expect(validChannel?.guild?.name).toBe('Test Guild');
 
-      // Test with an invalid channel ID
       const invalidChannel = await discordService.getChannel('invalid-channel');
       expect(invalidChannel).toBeNull();
     });
@@ -136,6 +131,35 @@ describe('Discord Integration Tests', () => {
       });
       
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('Discord Integration', () => {
+    const mockClient = {
+        guilds: {
+            cache: {
+                size: 5,
+                fetchClientValues: jest.fn().mockResolvedValue([5]),
+                broadcastEval: jest.fn().mockResolvedValue([500])
+            }
+        }
+    };
+
+    test('Client guild and member count', async () => {
+        const guildCount = await mockClient.guilds.cache.fetchClientValues('guilds.size');
+        const memberCount = await mockClient.guilds.cache.broadcastEval('this.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)');
+
+        expect(guildCount[0]).toBe(5);
+        expect(memberCount[0]).toBe(500);
+    });
+
+    test('Channel message sending', async () => {
+        const mockChannel = {
+            send: jest.fn()
+        };
+
+        await sendMessageToChannel(mockChannel, 'Test message');
+        expect(mockChannel.send).toHaveBeenCalledWith('Test message');
     });
   });
 });

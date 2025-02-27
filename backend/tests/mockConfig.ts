@@ -1,4 +1,3 @@
-// Mock config for testing
 export const CONFIG = {
   HOST: 'localhost',
   PORT: 3000,
@@ -12,4 +11,9 @@ export const CONFIG = {
     supportServerLink: 'https://mock-support.com'
   },
   botPath: '/home/mock/bot'
+};
+
+export const mockConfig = {
+  inviteLink: 'https://mock-invite.com',
+  supportServerLink: 'https://mock-support.com'
 };

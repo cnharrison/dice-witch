@@ -2,6 +2,7 @@ import * as React from 'react';
 import * as THREE from 'three';
 import { DiceInfo } from '@/hooks/useDiceValidation';
 import { useEffect, useRef } from 'react';
+import { useTheme } from '@/components/theme-provider';
 
 interface DiceAnimation3DProps {
   className?: string;
@@ -16,6 +17,7 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
   diceToRemove = [],
   diceColors = {}
 }) => {
+  const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const diceObjectsRef = useRef<THREE.Mesh[]>([]);
@@ -28,6 +30,14 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
   useEffect(() => {
     diceInfoRef.current = diceInfo;
   }, [diceInfo]);
+  
+  useEffect(() => {
+    if (sceneRef.current && renderer.current) {
+      const bgColor = theme === 'dark' ? 0x000000 : 0xd8c9a3; // Darker parchment color in light mode
+      sceneRef.current.background = new THREE.Color(bgColor);
+      renderer.current.setClearColor(bgColor, 1);
+    }
+  }, [theme]);
 
   const diceColorsRef = useRef(diceColors);
   useEffect(() => {
@@ -403,15 +413,18 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x000000);
-    scene.background.alpha = 0;
+    
+    const bgColor = theme === 'dark' ? 0x000000 : 0xd8c9a3; // Black for dark mode, darker parchment for light mode
+    scene.background = new THREE.Color(bgColor);
 
     const rendererInstance = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.current = rendererInstance;
     const container = containerRef.current;
     rendererInstance.setSize(container.clientWidth, container.clientHeight);
     rendererInstance.setPixelRatio(window.devicePixelRatio);
-    rendererInstance.setClearColor(0x000000, 0);
+    
+    const clearColor = theme === 'dark' ? 0x000000 : 0xd8c9a3; // Black for dark mode, darker parchment for light mode
+    rendererInstance.setClearColor(clearColor, 1);
     rendererInstance.shadowMap.enabled = true;
     container.appendChild(rendererInstance.domElement);
 

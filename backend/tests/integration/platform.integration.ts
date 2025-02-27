@@ -14,7 +14,6 @@ describe('Platform-Specific Integration Tests', () => {
 
   describe('Web vs Discord Rolling', () => {
     test('should handle web rolls correctly with dice rolling message and replies', async () => {
-      // Mock the instance directly since we're using a mock class
       const mockGenerateMessage = jest.fn().mockReturnValue('_...the dice clatter across the table..._');
       diceService.generateDiceRolledMessage = mockGenerateMessage;
       
@@ -87,6 +86,21 @@ describe('Platform-Specific Integration Tests', () => {
       });
       
       expect(result.resultArray).toBeDefined();
+    });
+  });
+
+  describe('Platform Integration', () => {
+    test('Platform configuration', async () => {
+      const platformConfig = await getPlatformConfig();
+      expect(platformConfig).toBeDefined();
+      expect(platformConfig.maxDicePerRoll).toBeGreaterThan(0);
+      expect(platformConfig.maxDicePerRoll).toBeLessThan(100);
+    });
+
+    test('Platform instance creation', async () => {
+      const platformInstance = await createPlatformInstance();
+      expect(platformInstance).toBeDefined();
+      expect(platformInstance.isInitialized).toBe(true);
     });
   });
 });

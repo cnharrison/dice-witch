@@ -1,7 +1,6 @@
 import { EmbedBuilder, AttachmentBuilder } from 'discord.js';
 import { DiceArray, Result } from '../../shared/types';
 
-// Mock DiceService
 export class DiceServiceMock {
   private static instance: DiceServiceMock;
 
@@ -15,7 +14,6 @@ export class DiceServiceMock {
   }
 
   public async rollDice(args: string[], availableDice: any[]): Promise<any> {
-    // Special case for handling the invalid notation test
     if (args.includes('invalid')) {
       return {
         diceArray: [],
@@ -24,7 +22,6 @@ export class DiceServiceMock {
       };
     }
 
-    // Special case for 2d20+5
     if (args.includes('2d20 + 5')) {
       return {
         diceArray: [
@@ -50,7 +47,7 @@ export class DiceServiceMock {
         resultArray: [
           {
             output: `${args[0]}: 30`,
-            results: 30 // 10 + 15 + 5
+            results: 30 
           }
         ],
         shouldHaveImage: true,
@@ -189,7 +186,6 @@ export class DiceServiceMock {
   public generateDiceRolledMessage = jest.fn().mockReturnValue('_...the dice clatter across the table..._');
 }
 
-// Mock RollService
 export class RollServiceMock {
   private static instance: RollServiceMock;
   private diceService: DiceServiceMock;
@@ -216,13 +212,12 @@ export class RollServiceMock {
     const isWeb = options.source === 'web';
     const isDiscord = options.source === 'discord' || options.interaction;
     
-    // Special handling for initiative roll tests
     if (options.title && options.title.includes('Initiative')) {
       const modifier = options.title.includes('Rogue') ? 4 :
                       options.title.includes('Fighter') ? 2 : 
                       options.title.includes('Wizard') ? -1 : 0;
       
-      const rollValue = 10; // Base value
+      const rollValue = 10; 
       const total = rollValue + modifier;
       
       return {
@@ -247,7 +242,6 @@ export class RollServiceMock {
       };
     }
     
-    // Regular handling for other cases
     const availableDice = [4, 6, 8, 10, 12, 20, 100];
     const { diceArray, resultArray, files } = await this.diceService.rollDice(
       notation, 
@@ -267,7 +261,6 @@ export class RollServiceMock {
   }
 }
 
-// Mock DiscordService
 export class DiscordServiceMock {
   private static instance: DiscordServiceMock;
   private client: any = null;

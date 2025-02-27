@@ -3,7 +3,6 @@ import rollCommand from '../../discord/commands/roll';
 import { CommandInteraction } from 'discord.js';
 import { RollServiceMock, DiceServiceMock } from '../mocks/serviceMocks';
 
-// Mock services
 jest.mock('../../core/services/RollService', () => ({
   RollService: {
     getInstance: () => RollServiceMock.getInstance()
@@ -196,7 +195,6 @@ describe('Roll Command Integration Tests', () => {
   });
 
   test('should handle no results from dice roll', async () => {
-    // Mock empty results
     rollService.rollDice = jest.fn().mockResolvedValue({
       diceArray: [],
       resultArray: []

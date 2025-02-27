@@ -13,14 +13,19 @@ import * as React from 'react';
 import { Input as InputComponent } from '@/components/ui/input';
 import { Button as ButtonComponent } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { useGuild } from '@/context/GuildContext';
 
 export const Home = () => {
   const { user } = useUser();
   const discordAccount = user?.externalAccounts.find(
     account => account.provider === 'discord'
   );
-  const [selectedGuild, setSelectedGuild] = React.useState<string | undefined>();
-  const [selectedChannel, setSelectedChannel] = React.useState<string | undefined>();
+  const { 
+    selectedGuildId: selectedGuild, 
+    selectedChannelId: selectedChannel, 
+    setSelectedGuildId: setSelectedGuild,
+    setSelectedChannelId: setSelectedChannel 
+  } = useGuild();
   const { input, setInput, isValid, diceInfo } = useDiceValidation('');
   const [isRolling, setIsRolling] = React.useState(false);
   const [rollResults, setRollResults] = React.useState<RollResponse | null>(null);
@@ -153,6 +158,7 @@ export const Home = () => {
         <div className="w-[300px] mb-4">
           <GuildDropdown
             guilds={mutualGuilds}
+            value={selectedGuild}
             onValueChange={(value) => {
               setSelectedGuild(value);
               setSelectedChannel(undefined);
@@ -164,6 +170,7 @@ export const Home = () => {
           <div className="w-[300px] mb-8">
             <ChannelDropdown
               channels={channels}
+              value={selectedChannel}
               onValueChange={(value) => {
                 setSelectedChannel(value);
                 setRollResults(null);

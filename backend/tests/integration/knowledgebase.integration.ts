@@ -1,7 +1,6 @@
 import { describe, expect, test, jest, beforeEach } from '@jest/globals';
 import { CommandInteraction } from 'discord.js';
 
-// Mock dependencies
 jest.mock('../../config', () => ({
   CONFIG: {
     discord: {
@@ -11,10 +10,8 @@ jest.mock('../../config', () => ({
   }
 }));
 
-// Import after mocking dependencies
 import knowledgebaseCommand from '../../discord/commands/knowledgebase';
 
-// Mock interaction
 const createMockInteraction = () => {
   return {
     deferReply: jest.fn().mockResolvedValue(undefined),
@@ -55,8 +52,7 @@ describe('Knowledgebase Command Tests', () => {
     const call = mockInteraction.editReply.mock.calls[0][0];
     expect(call).toHaveProperty('embeds');
     expect(call.embeds[0].data.title).toBe('👩‍🎓 Knowledge base');
-    
-    // Verify math topic content is present
+
     const fields = call.embeds[0].data.fields;
     expect(fields.length).toBeGreaterThanOrEqual(1);
     expect(fields[0].name).toBe('Math');
@@ -72,8 +68,7 @@ describe('Knowledgebase Command Tests', () => {
     expect(mockInteraction.editReply).toHaveBeenCalledTimes(1);
     const call = mockInteraction.editReply.mock.calls[0][0];
     expect(call).toHaveProperty('embeds');
-    
-    // Verify exploding topic content is present
+
     const fields = call.embeds[0].data.fields;
     expect(fields.length).toBeGreaterThanOrEqual(1);
     expect(fields.some(field => field.name === 'Exploding dice')).toBe(true);

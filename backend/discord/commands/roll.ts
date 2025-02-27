@@ -1,5 +1,6 @@
 import { RollService } from "../../core/services/RollService";
 import { DiscordService } from "../../core/services/DiscordService";
+import { DatabaseService } from "../../core/services/DatabaseService";
 import { RollProps } from "../../shared/types";
 import {
   sendDiceOverMaxMessage,
@@ -72,7 +73,16 @@ const command = {
         return;
       }
 
-      await sendDiceRolledMessage({ diceArray, interaction });
+      let skipDelay = false;
+      if (interaction?.guildId) {
+        const databaseService = DatabaseService.getInstance();
+        const guildSettings = await databaseService.getGuildSettings(interaction.guildId);
+        skipDelay = guildSettings.skipDiceDelay;
+      }
+
+      if (!skipDelay) {
+        await sendDiceRolledMessage({ diceArray, interaction });
+      }
 
       const diceService = await import("../../core/services/DiceService").then(mod => mod.DiceService.getInstance());
       const attachmentResult = await diceService.generateDiceAttachment(diceArray);
