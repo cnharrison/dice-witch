@@ -150,20 +150,10 @@ export const LoadingMedia: React.FC<LoadingMediaProps> = ({
 
       {!hideText && (
         <div
-          className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none"
-          style={{ width: 'auto', minWidth: '200%' }}
+          className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none w-auto min-w-[200%]"
         >
-          <span style={{
-            fontFamily: 'UnifrakturMaguntia, serif',
-            color: '#ff00ff',
-            fontSize: '12rem',
+          <span className="font-fraktur text-fuchsia-500 text-[12rem] font-bold" style={{
             textShadow: '4px 4px 8px rgba(0,0,0,0.95)',
-            fontWeight: 'bold',
-            letterSpacing: '0.05em',
-            whiteSpace: 'nowrap',
-            display: 'block',
-            textAlign: 'center',
-            width: '100%',
           }}>
             Dice Witch
           </span>

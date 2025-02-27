@@ -275,6 +275,8 @@ export interface GenerateEmbedMessageParams {
   attachment: AttachmentBuilder;
   title?: string;
   interaction?: CommandInteraction | ButtonInteraction;
+  source?: string;
+  username?: string;
 }
 
 export interface UserCount {

@@ -1,10 +1,5 @@
-import { DiceService } from '../../core/services/DiceService';
-import { getRandomNumber } from "../../shared/helpers";
-import { sendLogEventMessage } from ".";
-import { EmbedObject, EventType, SendDiceResultMessageWithImageParams } from "../../shared/types";
-import { MAX_DELAY_MS } from '../../core/constants/index';
-
-const diceService = DiceService.getInstance();
+import { DiceService } from "../../core/services/DiceService";
+import { SendDiceResultMessageWithImageParams } from "../../shared/types";
 
 const sendDiceResultMessageWithImage = async ({
   resultArray,
@@ -14,39 +9,23 @@ const sendDiceResultMessageWithImage = async ({
   title,
 }: SendDiceResultMessageWithImageParams) => {
   try {
-    const embedMessage: EmbedObject = await diceService.generateEmbedMessage({
+    const diceService = DiceService.getInstance();
+    const embedMessage = await diceService.generateEmbedMessage({
       resultArray,
       attachment,
       title,
-      interaction
+      interaction,
+      source: 'discord'
     });
 
-    const sendMessage = async () => {
-      try {
-        if (interaction?.isRepliable()) {
-          if (!interaction.deferred && !interaction.replied) {
-            await interaction.deferReply();
-          }
-          await interaction.followUp(embedMessage);
-        }
-
-        sendLogEventMessage({
-          eventType: EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE,
-          embedParam: embedMessage,
-          canvasString: canvas.toDataURL(),
-        });
-      } catch (err) {
-        console.error("Error sending message:", err);
-      }
-    };
-
-    if (interaction) {
-      await sendMessage();
-    } else {
-      setTimeout(sendMessage, getRandomNumber(MAX_DELAY_MS));
+    if (interaction?.deferred) {
+      await interaction.followUp({
+        embeds: embedMessage.embeds,
+        files: embedMessage.files,
+      });
     }
   } catch (err) {
-    console.error("Error in sendDiceResultMessageWithImage:", err);
+    console.error("Error sending dice result message with image:", err);
   }
 };
 

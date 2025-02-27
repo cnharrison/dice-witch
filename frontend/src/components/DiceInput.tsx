@@ -6,9 +6,10 @@ interface DiceInputProps {
   input: string;
   setInput: (value: string) => void;
   isValid: boolean;
+  onRoll?: () => void;
 }
 
-export function DiceInput({ input, setInput, isValid }: DiceInputProps) {
+export function DiceInput({ input, setInput, isValid, onRoll }: DiceInputProps) {
   const handleInputChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
   }, [setInput]);
@@ -16,6 +17,12 @@ export function DiceInput({ input, setInput, isValid }: DiceInputProps) {
   const handleClearInput = React.useCallback(() => {
     setInput('');
   }, [setInput]);
+  
+  const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && isValid && onRoll) {
+      onRoll();
+    }
+  }, [isValid, onRoll]);
 
   return (
     <div className="w-full mt-4">
@@ -24,6 +31,7 @@ export function DiceInput({ input, setInput, isValid }: DiceInputProps) {
           type="text"
           value={input}
           onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
           placeholder="Enter dice roll (e.g., 2d20+3d8+5)"
           className={cn(
             "w-full pr-10",

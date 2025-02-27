@@ -60,7 +60,6 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
 
       setDiceInfo(newDiceInfo);
     } catch (error) {
-      console.error('Error parsing dice:', error);
       setIsValid(false);
       setTotal(null);
       setDiceInfo(null);

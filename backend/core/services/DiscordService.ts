@@ -142,6 +142,47 @@ export class DiscordService {
     }
   }
 
+  public async getChannel(channelId: string) {
+    if (!this.manager) {
+      return null;
+    }
+
+    try {
+      const shardId = Number(BigInt(channelId) >> 22n) % this.manager.shards.size;
+      const shard = this.manager.shards.get(shardId);
+
+      if (!shard) {
+        return null;
+      }
+
+      const channel = await shard.eval(async (client, { context }) => {
+        try {
+          if (!client.isReady()) {
+            await new Promise<void>(resolve => (client as Client).once('ready', () => resolve()));
+          }
+
+          const channel = await client.channels.fetch(context.channelId);
+          if (!channel) {
+            return null;
+          }
+
+          return {
+            id: channel.id,
+            name: channel.name,
+            type: channel.type
+          };
+        } catch (error) {
+          return null;
+        }
+      }, { context: { channelId: channelId.toString() } });
+
+      return channel;
+    } catch (error) {
+      console.error('Error getting channel:', error);
+      return null;
+    }
+  }
+
   public async sendMessage(channelId: string, messageOptions: any): Promise<boolean> {
     if (!this.manager) {
       return false;

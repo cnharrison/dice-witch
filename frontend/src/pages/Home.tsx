@@ -79,6 +79,8 @@ export const Home = () => {
         body: JSON.stringify({
           channelId: selectedChannel,
           notation: input,
+          source: 'web',
+          username: user?.username || discordAccount?.username
         }),
       });
 
@@ -86,8 +88,6 @@ export const Home = () => {
       setRollResults(data);
 
     } catch (error) {
-      console.error('Error rolling dice:', error);
-    } finally {
       setIsRolling(false);
     }
   };
@@ -169,6 +169,7 @@ export const Home = () => {
             input={input}
             setInput={handleInputChange}
             isValid={isValid}
+            onRoll={handleRollDice}
           />
           <div className="mt-4 flex justify-center">
             <Button

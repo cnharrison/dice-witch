@@ -18,7 +18,7 @@ router.post('/roll', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const { channelId, notation } = await c.req.json();
+  const { channelId, notation, source, username } = await c.req.json();
 
   if (!channelId || !notation) {
     return c.json({ error: 'User ID, Channel ID, and Notation are required' }, 400);
@@ -44,6 +44,8 @@ router.post('/roll', async (c) => {
     const embedMessage = await diceService.generateEmbedMessage({
       resultArray,
       attachment: diceAttachment.attachment,
+      source: source || 'web',
+      username: username
     });
 
     const sent = await discordService.sendMessage(channelId, {
@@ -51,18 +53,21 @@ router.post('/roll', async (c) => {
       files: embedMessage.files
     });
 
+    const channel = await discordService.getChannel(channelId);
+    const channelName = channel?.name || 'unknown channel';
+
     const response = {
-      message: 'Message sent to Discord channel',
+      message: `Message sent to Discord channel ${channelName}`,
       diceArray,
       resultArray,
       shouldHaveImage,
-      imageData: base64Image
+      imageData: base64Image,
+      channelName
     };
 
     return c.json(response, 200);
   } catch (err) {
-    console.error('Error in dice roll API:', err);
-    return c.json({ error: 'Failed to roll dice or send message' }, 500);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

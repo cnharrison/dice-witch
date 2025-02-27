@@ -226,7 +226,6 @@ export class DiceService {
         try {
           parsedRoll = Parser.parse(value);
         } catch (err) {
-          console.error(err);
           errors.push(`Invalid notation: ${value}`);
           return;
         }
@@ -274,8 +273,7 @@ export class DiceService {
         shouldHaveImage,
         errors: errors.length ? errors : undefined,
       };
-    } catch (err) {
-      console.error(err);
+    } catch {
       return { diceArray: [], resultArray: [], errors: ['Unexpected error occurred'] };
     }
   }
@@ -311,7 +309,6 @@ export class DiceService {
           this.defaultIconDimension
         );
       } catch (error) {
-        console.error(`Error loading icon: ${icon}`, error);
       }
     }));
   }
@@ -339,7 +336,6 @@ export class DiceService {
           );
 
           if (!toLoad) {
-            console.error(`Failed to generate image for die: ${die.sides}, rolled: ${die.rolled}`);
             return;
           }
 
@@ -359,10 +355,8 @@ export class DiceService {
               await this.drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
             }
           } catch (imgErr) {
-            console.error(`Error loading dice image:`, imgErr);
           }
         } catch (err) {
-          console.error(`Unexpected error in drawDice:`, err);
         }
       };
 
@@ -377,8 +371,7 @@ export class DiceService {
         { name: "currentDice.png" }
       );
       return { attachment, canvas };
-    } catch (err) {
-      console.error("Error generating dice attachment:", err);
+    } catch {
       return undefined;
     }
   }
@@ -463,7 +456,6 @@ export class DiceService {
     const image = dice[sides];
 
     if (!image) {
-      console.error("Failed to generate image");
       return undefined;
     }
 
@@ -471,7 +463,6 @@ export class DiceService {
       const attachment = await sharp(Buffer.from(image)).webp({ lossless: true, quality: 100 }).toBuffer();
       return attachment;
     } catch (err) {
-      console.error(err);
       return undefined;
     }
   }
@@ -486,7 +477,6 @@ export class DiceService {
         .toBuffer();
       return attachment;
     } catch (err) {
-      console.error(err);
       return undefined;
     }
   }
@@ -496,6 +486,8 @@ export class DiceService {
     attachment,
     title,
     interaction,
+    source,
+    username,
   }: GenerateEmbedMessageParams): Promise<{ embeds: EmbedBuilder[]; files: AttachmentBuilder[] }> {
     const grandTotal = resultArray.reduce(
       (prev: number, cur: Result) => prev + cur.results,
@@ -503,10 +495,9 @@ export class DiceService {
     );
 
     try {
-      const embed = this.createEmbed(resultArray, grandTotal, attachment, title, interaction);
+      const embed = this.createEmbed(resultArray, grandTotal, attachment, title, interaction, source, username);
       return { embeds: [embed], files: [attachment] };
-    } catch (err) {
-      console.error("Error generating embed message:", err);
+    } catch {
       return { embeds: [], files: [] };
     }
   }
@@ -516,15 +507,23 @@ export class DiceService {
     grandTotal: number,
     attachment: AttachmentBuilder,
     title?: string,
-    interaction?: CommandInteraction | ButtonInteraction
+    interaction?: CommandInteraction | ButtonInteraction,
+    source?: string,
+    username?: string
   ): EmbedBuilder {
-    const footerText = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""
-      }\n${interaction ? `sent to ` + interaction.user.username : ``}`;
+    const footerText = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
+    
+    let sourceText = '';
+    if (interaction) {
+      sourceText = `\nsent to ${interaction.user.username} via discord`;
+    } else if (source === 'web') {
+      sourceText = `\nsent to ${username} via web`;
+    }
 
     const embed = new EmbedBuilder()
       .setColor(tabletopColor)
       .setImage("attachment://currentDice.png")
-      .setFooter({ text: footerText });
+      .setFooter({ text: footerText + sourceText });
 
     if (title) {
       embed.setTitle(title);
