@@ -30,7 +30,7 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
 
   useEffect(() => {
     if (!debouncedInput) {
-      setIsValid(true);
+      setIsValid(false);
       setTotal(null);
       setDiceInfo(null);
       return;
@@ -39,7 +39,6 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
     try {
       const roll = new DiceRoll(debouncedInput);
       setTotal(roll.total);
-      setIsValid(true);
 
       const diceMatches = debouncedInput.match(/(\d+)?d(\d+)/g) || [];
       const diceGroups = diceMatches.map(match => {
@@ -50,16 +49,16 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
         };
       });
 
-      const modMatch = debouncedInput.match(/([+-]\d+)$/);
-      const modifier = modMatch ? parseInt(modMatch[1]) : 0;
+      setIsValid(
+        diceMatches.length > 0 &&
+        diceGroups.every(group => group.numberOfDice > 0 && group.diceSize > 0)
+      );
 
-      const newDiceInfo = {
+      setDiceInfo({
         diceGroups,
-        modifier
-      };
-
-      setDiceInfo(newDiceInfo);
-    } catch (error) {
+        modifier: roll.modifier
+      });
+    } catch {
       setIsValid(false);
       setTotal(null);
       setDiceInfo(null);

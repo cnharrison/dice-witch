@@ -10,7 +10,9 @@ import { useUser } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { LoaderIcon } from "lucide-react";
 import * as React from 'react';
-import { Button } from '@/components/ui/button';
+import { Input as InputComponent } from '@/components/ui/input';
+import { Button as ButtonComponent } from '@/components/ui/button';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 export const Home = () => {
   const { user } = useUser();
@@ -23,6 +25,8 @@ export const Home = () => {
   const [isRolling, setIsRolling] = React.useState(false);
   const [rollResults, setRollResults] = React.useState<RollResponse | null>(null);
   const [showAnimation, setShowAnimation] = React.useState(false);
+  const [timesToRepeat, setTimesToRepeat] = React.useState<number>(1);
+  const [rollTitle, setRollTitle] = React.useState<string>('');
 
   React.useEffect(() => {
     if (!input) {
@@ -75,17 +79,20 @@ export const Home = () => {
       setShowAnimation(true);
       setRollResults(null);
 
+      const requestBody = {
+        channelId: selectedChannel,
+        notation: input,
+        source: 'web',
+        username: user?.username || discordAccount?.username,
+        timesToRepeat: timesToRepeat,
+        title: rollTitle || undefined
+      };
       const response = await fetch('/api/dice/roll', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          channelId: selectedChannel,
-          notation: input,
-          source: 'web',
-          username: user?.username || discordAccount?.username
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -93,6 +100,7 @@ export const Home = () => {
       setIsRolling(false);
 
     } catch (error) {
+      console.error('Error rolling dice:', error);
       setIsRolling(false);
     }
   };
@@ -120,74 +128,72 @@ export const Home = () => {
   }
 
   return (
-    <div className="flex flex-col items-center mt-8">
-      <div className="relative w-full max-w-md mb-8 overflow-visible">
-        <LoadingMedia
-          staticImage="/images/dice-witch-banner.webp"
-          loadingVideo="/videos/dice-witch-loading.mp4"
-          className="w-full h-auto rounded-full"
-          isLoading={isRolling}
-          alt="Dice Witch"
-          blendMode="normal"
-          hideText
-        />
+    <TooltipProvider>
+      <div className="flex flex-col items-center mt-8">
+        <div className="relative w-full max-w-md mb-8 overflow-visible">
+          <LoadingMedia
+            staticImage="/images/dice-witch-banner.webp"
+            loadingVideo="/videos/dice-witch-loading.mp4"
+            className="w-full h-auto rounded-full"
+            isLoading={isRolling}
+            alt="Dice Witch"
+            blendMode="normal"
+            hideText
+          />
 
-        <div
-          className="absolute inset-0 flex items-center justify-center z-[9999]"
-        >
-          <div className="font-['UnifrakturMaguntia'] text-[#ff00ff] text-[14rem] font-bold tracking-wide whitespace-nowrap [text-shadow:4px_4px_8px_rgba(0,0,0,0.95)]">
-            Dice Witch
+          <div
+            className="absolute inset-0 flex items-center justify-center z-[9999]"
+          >
+            <div className="font-['UnifrakturMaguntia'] text-[#ff00ff] text-[14rem] font-bold tracking-wide whitespace-nowrap [text-shadow:4px_4px_8px_rgba(0,0,0,0.95)]">
+              Dice Witch
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="w-[300px] mb-4">
-        <GuildDropdown
-          guilds={mutualGuilds}
-          onValueChange={(value) => {
-            setSelectedGuild(value);
-            setSelectedChannel(undefined);
-            setRollResults(null);
-          }}
-        />
-      </div>
-      {selectedGuild && Array.isArray(channels) && channels.length > 0 && (
-        <div className="w-[300px] mb-8">
-          <ChannelDropdown
-            channels={channels}
+        <div className="w-[300px] mb-4">
+          <GuildDropdown
+            guilds={mutualGuilds}
             onValueChange={(value) => {
-              setSelectedChannel(value);
+              setSelectedGuild(value);
+              setSelectedChannel(undefined);
               setRollResults(null);
             }}
           />
         </div>
-      )}
-      {selectedGuild && (
-        <div className="w-full max-w-6xl px-4">
-          <Roller
-            diceInfo={diceInfo}
-            rollResults={rollResults}
-            isRolling={isRolling}
-            showAnimation={showAnimation || isRolling}
-          />
-          <DiceInput
-            input={input}
-            setInput={handleInputChange}
-            isValid={isValid}
-            onRoll={handleRollDice}
-          />
-          <div className="mt-4 flex justify-center">
-            <Button
-              onClick={handleRollDice}
-              disabled={!isValid || !selectedChannel || isRolling}
-              className="w-1/3"
-            >
-              {isRolling ? 'Rolling...' : 'Roll Dice'}
-            </Button>
+        {selectedGuild && Array.isArray(channels) && channels.length > 0 && (
+          <div className="w-[300px] mb-8">
+            <ChannelDropdown
+              channels={channels}
+              onValueChange={(value) => {
+                setSelectedChannel(value);
+                setRollResults(null);
+              }}
+            />
           </div>
-        </div>
-      )}
-    </div>
+        )}
+        {selectedGuild && (
+          <div className="w-full max-w-6xl px-4">
+            <Roller
+              diceInfo={diceInfo}
+              rollResults={rollResults}
+              isRolling={isRolling}
+              showAnimation={showAnimation || isRolling}
+            />
+            <DiceInput
+              input={input}
+              setInput={handleInputChange}
+              isValid={isValid}
+              onRoll={handleRollDice}
+              timesToRepeat={timesToRepeat}
+              onTimesToRepeatChange={setTimesToRepeat}
+              selectedChannel={!!selectedChannel}
+              rollTitle={rollTitle}
+              onRollTitleChange={setRollTitle}
+            />
+          </div>
+        )}
+      </div>
+    </TooltipProvider>
   );
 };
 

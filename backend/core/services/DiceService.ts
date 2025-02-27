@@ -517,9 +517,7 @@ export class DiceService {
     source?: string,
     username?: string
   ): EmbedBuilder {
-    const titleText = title ? `**${title}**\n` : '';
-
-    const diceOutput = `${titleText}${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
+    const diceOutput = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
 
     let sourceText = '';
 
@@ -538,6 +536,10 @@ export class DiceService {
       .setFooter({
         text: sourceText,
       });
+
+    if (title) {
+      embed.setTitle(title);
+    }
 
     if (attachment) {
       embed.setImage('attachment://currentDice.png');

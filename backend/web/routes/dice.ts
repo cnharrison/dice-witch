@@ -13,7 +13,7 @@ router.post('/roll', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const { channelId, notation, source, username } = await c.req.json();
+  const { channelId, notation, source, username, timesToRepeat, title } = await c.req.json();
 
   if (!channelId || !notation) {
     return c.json({ error: 'Channel ID and Notation are required' }, 400);
@@ -29,7 +29,9 @@ router.post('/roll', async (c) => {
       notation,
       channelId,
       username,
-      source: 'web'
+      source: 'web',
+      timesToRepeat: timesToRepeat || 1,
+      title
     });
 
     if (rollResult.errors && rollResult.errors.length > 0) {
@@ -47,7 +49,6 @@ router.post('/roll', async (c) => {
 
     return c.json(response, 200);
   } catch (err) {
-    console.error('Error processing dice roll:', err);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

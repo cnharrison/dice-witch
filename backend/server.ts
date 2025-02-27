@@ -19,32 +19,36 @@ const manager = new ShardingManager("./discord/app.ts", {
   mode: 'process'
 });
 
-const discordService = await DiscordService.getInstance();
-discordService.setManager(manager);
+const initializeDiscordService = async () => {
+  const discordService = await DiscordService.getInstance();
+  discordService.setManager(manager);
 
-manager.on("shardCreate", (shard) => {
-  console.log(`[Discord] [Shard] Launched shard ${shard.id}`);
+  manager.on("shardCreate", (shard) => {
+    console.log(`[Discord] [Shard] Launched shard ${shard.id}`);
 
-  shard.on("error", (error) => {
-    console.error(`[Shard ${shard.id}] Error:`, error);
+    shard.on("error", (error) => {
+      console.error(`[Shard ${shard.id}] Error:`, error);
+    });
+
+    shard.on("death", (process) => {
+      console.log(`[Shard ${shard.id}] Process died with exit code: ${(process as ChildProcess).exitCode ?? 'unknown'}`);
+    });
+
+    shard.on("disconnect", () => {
+      console.log(`[Shard ${shard.id}] Disconnected. Attempting to reconnect...`);
+    });
+
+    shard.on("reconnecting", () => {
+      console.log(`[Shard ${shard.id}] Reconnecting...`);
+    });
+
+    shard.on("ready", () => {
+      console.log(`[Shard ${shard.id}] Ready and operational`);
+    });
   });
+};
 
-  shard.on("death", (process) => {
-    console.log(`[Shard ${shard.id}] Process died with exit code: ${(process as ChildProcess).exitCode ?? 'unknown'}`);
-  });
-
-  shard.on("disconnect", () => {
-    console.log(`[Shard ${shard.id}] Disconnected. Attempting to reconnect...`);
-  });
-
-  shard.on("reconnecting", () => {
-    console.log(`[Shard ${shard.id}] Reconnecting...`);
-  });
-
-  shard.on("ready", () => {
-    console.log(`[Shard ${shard.id}] Ready and operational`);
-  });
-});
+initializeDiscordService().catch(console.error);
 
 app.use("*", logger());
 
@@ -68,7 +72,7 @@ const startServer = async () => {
       port: Number(port),
     });
 
-    console.log(`🎲[Web] Dice Witch Web Server is running on port ${port}`);
+    console.log(`🎲 [Web] Dice Witch Web Server is running on port ${port}`);
   } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);

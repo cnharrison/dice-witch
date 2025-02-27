@@ -9,8 +9,6 @@ import {
 } from "discord.js";
 import { DatabaseService } from "./DatabaseService";
 import { PERMISSION_ADMINISTRATOR, ROLE_DICE_WITCH_ADMIN, tabletopColor, eventColor } from "../constants";
-import { EmbedBuilder, AttachmentBuilder } from "discord.js";
-import { CONFIG } from "../../config";
 
 type UserCountResult = {
   totalGuilds: number;

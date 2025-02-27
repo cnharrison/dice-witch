@@ -133,7 +133,8 @@ export class RollService {
             resultArray,
             attachment: diceAttachment.attachment,
             source: 'web',
-            username
+            username,
+            title: options.title || undefined
           });
 
           if (rollingMessageResult?.success) {
