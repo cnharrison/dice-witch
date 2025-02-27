@@ -27,8 +27,6 @@ router.post('/roll', async (c) => {
   }
 
   try {
-    await new Promise(resolve => setTimeout(resolve, getRandomNumber(MAX_DELAY_MS)));
-
     const { diceArray, resultArray, shouldHaveImage, errors } = await diceService.rollDice([notation], availableDice);
 
     if (errors && errors.length > 0) {
@@ -41,13 +39,13 @@ router.post('/roll', async (c) => {
 
     let diceAttachment;
     let base64Image = '';
-    
+
     if (shouldHaveImage && diceArray.some(group => group.length > 0)) {
       diceAttachment = await diceService.generateDiceAttachment(diceArray);
       if (!diceAttachment) {
         return c.json({ error: 'Failed to generate dice image' }, 500);
       }
-      
+
       const imageBuffer = diceAttachment.canvas.toBuffer('image/webp');
       base64Image = Buffer.from(imageBuffer).toString('base64');
     }
@@ -70,7 +68,7 @@ router.post('/roll', async (c) => {
           name: 'currentDice.png',
           attachment: Buffer.isBuffer(diceAttachment.attachment) ? diceAttachment.attachment : null
         }].filter(file => file.attachment !== null);
-        
+
         if (files.length > 0) {
           await sendLogEventMessage({
             eventType: EventType.RECEIVED_COMMAND,
