@@ -10,8 +10,8 @@ interface DiceAnimation3DProps {
   diceColors?: Record<number, string>;
 }
 
-export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({ 
-  className = "", 
+export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
+  className = "",
   diceInfo = null,
   diceToRemove = [],
   diceColors = {}
@@ -28,7 +28,7 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
   useEffect(() => {
     diceInfoRef.current = diceInfo;
   }, [diceInfo]);
-  
+
   const diceColorsRef = useRef(diceColors);
   useEffect(() => {
     diceColorsRef.current = diceColors;
@@ -59,7 +59,7 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
     smoke.position.copy(position);
     smoke.userData = {
       createdAt: Date.now(),
-      lifetime: 1000 + Math.random() * 500, 
+      lifetime: 1000 + Math.random() * 500,
       velocity: new THREE.Vector3(
         (Math.random() - 0.5) * 0.02,
         0.02 + Math.random() * 0.01,
@@ -182,7 +182,43 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
   };
 
   const createD10 = (color = 0xff00ff) => {
-    const geometry = new THREE.CylinderGeometry(0, 1, 1.5, 10);
+    const radius = 0.8;
+    const height = 1.2;
+    const geometry = new THREE.BufferGeometry();
+
+    const vertices = [];
+
+    vertices.push(0, height/2, 0);
+
+    vertices.push(0, -height/2, 0);
+
+    for (let i = 0; i < 5; i++) {
+      const angle = (Math.PI * 2 / 5) * i;
+      vertices.push(
+        Math.cos(angle) * radius,
+        0,
+        Math.sin(angle) * radius
+      );
+    }
+
+    const indices = [];
+
+    for (let i = 0; i < 5; i++) {
+      const current = i + 2;
+      const next = i < 4 ? current + 1 : 2;
+      indices.push(0, current, next);
+    }
+
+    for (let i = 0; i < 5; i++) {
+      const current = i + 2;
+      const next = i < 4 ? current + 1 : 2;
+      indices.push(1, next, current);
+    }
+
+    geometry.setIndex(indices);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.computeVertexNormals();
+
     const material = new THREE.MeshStandardMaterial({
       color: color,
       roughness: 0.4,
@@ -330,7 +366,7 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
     const diceColor = diceColorsRef.current[sides] && typeof diceColorsRef.current[sides] === 'string'
       ? parseInt(diceColorsRef.current[sides].replace('#', '0x'), 16)
       : Math.random() * 0xffffff;
-    
+
     let dice;
     switch (sides) {
       case 4: dice = createD4(diceColor); break;
@@ -343,19 +379,19 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
     }
     dice.userData.diceType = sides;
     const angle = Math.random() * Math.PI * 2;
-    const radius = 3 + Math.random(); 
+    const radius = 3 + Math.random();
     dice.position.set(
       Math.cos(angle) * radius,
-      1.5 + Math.random(), 
+      1.5 + Math.random(),
       Math.sin(angle) * radius
     );
     dice.userData.velocity = new THREE.Vector3(
-      -dice.position.x * 0.05, 
-      -0.5 - Math.random() * 0.3, 
-      -dice.position.z * 0.05 
+      -dice.position.x * 0.05,
+      -0.5 - Math.random() * 0.3,
+      -dice.position.z * 0.05
     );
     dice.userData.angularVelocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 0.1, 
+      (Math.random() - 0.5) * 0.1,
       (Math.random() - 0.5) * 0.1,
       (Math.random() - 0.5) * 0.1
     );
@@ -440,48 +476,48 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
         }
       }
 
-      const gravity = new THREE.Vector3(0, -0.03, 0); 
-      const floorY = -1.5; 
-      const boundaryX = 3.0; 
+      const gravity = new THREE.Vector3(0, -0.03, 0);
+      const floorY = -1.5;
+      const boundaryX = 3.0;
       const boundaryZ = 3.0;
 
       for (let i = 0; i < diceObjectsRef.current.length; i++) {
         const diceA = diceObjectsRef.current[i];
         if (!diceA) continue;
-        
+
         for (let j = i + 1; j < diceObjectsRef.current.length; j++) {
           const diceB = diceObjectsRef.current[j];
           if (!diceB) continue;
-          
+
           const distance = diceA.position.distanceTo(diceB.position);
-          const minDistance = 1.2; 
-          
+          const minDistance = 1.2;
+
           if (distance < minDistance) {
             const normal = new THREE.Vector3()
               .subVectors(diceA.position, diceB.position)
               .normalize();
-            
+
             const correction = (minDistance - distance) / 2;
             diceA.position.add(normal.clone().multiplyScalar(correction));
             diceB.position.add(normal.clone().multiplyScalar(-correction));
-            
+
             const velA = diceA.userData.velocity || new THREE.Vector3();
             const velB = diceB.userData.velocity || new THREE.Vector3();
             const relativeVelocity = new THREE.Vector3().subVectors(velA, velB);
-            
+
             const impulseStrength = normal.dot(relativeVelocity) * 0.8;
             const impulse = normal.clone().multiplyScalar(impulseStrength);
-            
+
             if (diceA.userData.velocity && diceB.userData.velocity) {
               diceA.userData.velocity.sub(impulse);
               diceB.userData.velocity.add(impulse);
-              
+
               diceA.userData.angularVelocity.add(new THREE.Vector3(
                 (Math.random() - 0.5) * 0.03,
                 (Math.random() - 0.5) * 0.03,
                 (Math.random() - 0.5) * 0.03
               ));
-              
+
               diceB.userData.angularVelocity.add(new THREE.Vector3(
                 (Math.random() - 0.5) * 0.03,
                 (Math.random() - 0.5) * 0.03,
@@ -494,13 +530,13 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
 
       diceObjectsRef.current.forEach(dice => {
         if (!dice) return;
-        
+
         if (!dice.userData.velocity) {
           dice.userData.velocity = new THREE.Vector3(0, 0, 0);
         }
         if (!dice.userData.angularVelocity) {
           dice.userData.angularVelocity = new THREE.Vector3(
-            Math.random() * 0.02 - 0.01, 
+            Math.random() * 0.02 - 0.01,
             Math.random() * 0.02 - 0.01,
             Math.random() * 0.02 - 0.01
           );
@@ -510,11 +546,11 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
         dice.rotation.x += dice.userData.angularVelocity.x;
         dice.rotation.y += dice.userData.angularVelocity.y;
         dice.rotation.z += dice.userData.angularVelocity.z;
-        if (dice.position.y < floorY + 0.5) { 
+        if (dice.position.y < floorY + 0.5) {
           dice.position.y = floorY + 0.5;
           if (Math.abs(dice.userData.velocity.y) > 0.01) {
-            dice.userData.velocity.y = -dice.userData.velocity.y * 0.5; 
-            
+            dice.userData.velocity.y = -dice.userData.velocity.y * 0.5;
+
             dice.userData.angularVelocity.multiplyScalar(0.85);
             dice.userData.velocity.x *= 0.92;
             dice.userData.velocity.z *= 0.92;
@@ -641,7 +677,7 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
       const existingCount = existingDiceByType.get(type) || 0;
       if (existingCount > currentCount) {
         diceToRemove.push(die);
-        existingDiceByType.set(type, existingCount - 1); 
+        existingDiceByType.set(type, existingCount - 1);
       }
     });
     diceToRemove.forEach(die => {

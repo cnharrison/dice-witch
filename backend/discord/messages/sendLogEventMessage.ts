@@ -74,6 +74,8 @@ const sendLogEventMessage = async ({
     user = "Unknown User";
   }
 
+  const userWithSource = source === 'web' ? `${user} [from web]` : `${user} [from discord]`;
+
   const getNameString = (isThreadValue: boolean) => {
     return isThreadValue ? "thread " : "channel ";
   };
@@ -84,7 +86,7 @@ const sendLogEventMessage = async ({
         color: eventColor,
         title: `${eventType}: /${source === 'web' ? 'roll' : commandName}`,
         description: (isInGuild || (source === 'web' && channelNameParam))
-          ? `${args} from **${user}** in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')}`
+          ? `${args} from **${userWithSource}** in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')}`
           : `${args} from **${user}** in **DM**`,
         image: undefined,
       },
@@ -92,7 +94,7 @@ const sendLogEventMessage = async ({
         color: resolveColor("#FF0000"),
         title: `${eventType}: ${commandName}`,
         description: (isInGuild || (source === 'web' && channelNameParam))
-          ? `${args} from ${makeBold(user)} in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')} <@${adminId}>`
+          ? `${args} from ${makeBold(userWithSource)} in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')} <@${adminId}>`
           : `${args} from ${makeBold(user)} in **DM** ${adminId}`,
         image: undefined,
       },
@@ -123,13 +125,13 @@ const sendLogEventMessage = async ({
       [EventType.SENT_HELPER_MESSAGE]: {
         color: infoColor,
         title: eventType,
-        description: `${user} in ${(isGuildChannel || (source === 'web' && channelNameParam)) ? channelNameParam : "DM"}`,
+        description: `${(isGuildChannel || (source === 'web' && channelNameParam)) ? userWithSource + ' in ' + channelNameParam : user + ' in DM'}`,
         image: undefined,
       },
       [EventType.SENT_DICE_OVER_MAX_MESSAGE]: {
         color: infoColor,
         title: eventType,
-        description: `${user} in ${channelNameParam}`,
+        description: `${(isGuildChannel || (source === 'web' && channelNameParam)) ? userWithSource + ' in ' + channelNameParam : user + ' in DM'}`,
         image: undefined,
       },
       [EventType.SENT_NEED_PERMISSION_MESSAGE]: {
@@ -139,7 +141,7 @@ const sendLogEventMessage = async ({
         image: undefined,
       },
     };
-    
+
     return embedMap[eventType] || {
       color: infoColor,
       title: `${eventType}`,
@@ -160,7 +162,7 @@ const sendLogEventMessage = async ({
         if (files && files.length > 0 && eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE) {
           const serializedFiles: SerializedFile[] = files.map(file => {
             if (!file || !file.name) return { name: null, attachment: null };
-            
+
             return {
               name: file.name,
               attachment: file.attachment && Buffer.isBuffer(file.attachment)
@@ -181,7 +183,7 @@ const sendLogEventMessage = async ({
                     try {
                       let base64String: string;
                       const attachment = file.attachment as string | Buffer;
-                      
+
                       if (typeof attachment === 'string') {
                         base64String = attachment;
                       } else if (Buffer.isBuffer(attachment)) {
@@ -189,7 +191,7 @@ const sendLogEventMessage = async ({
                       } else {
                         return null;
                       }
-                      
+
                       const buffer = Buffer.from(base64String, 'base64');
                       if (file.name) {
                         return new AttachmentBuilder(buffer, { name: file.name });
@@ -300,7 +302,7 @@ const sendLogEventMessage = async ({
           if (eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE && files && files.length > 0) {
             const serializedFiles: SerializedFile[] = files.map(file => {
               if (!file || !file.name) return { name: null, attachment: null };
-              
+
               return {
                 name: file.name,
                 attachment: file.attachment && Buffer.isBuffer(file.attachment)
@@ -315,7 +317,7 @@ const sendLogEventMessage = async ({
                 try {
                   let base64String: string;
                   const attachment = file.attachment as string | Buffer;
-                  
+
                   if (typeof attachment === 'string') {
                     base64String = attachment;
                   } else if (Buffer.isBuffer(attachment)) {
@@ -323,7 +325,7 @@ const sendLogEventMessage = async ({
                   } else {
                     return null;
                   }
-                  
+
                   const buffer = Buffer.from(base64String, 'base64');
                   if (file.name) {
                     return new AttachmentBuilder(buffer, { name: file.name });
@@ -367,7 +369,7 @@ const sendLogEventMessage = async ({
       if (files && files.length > 0 && eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE) {
         const serializedFiles: SerializedFile[] = files.map(file => {
           if (!file || !file.name) return { name: null, attachment: null };
-          
+
           return {
             name: file.name,
             attachment: file.attachment && Buffer.isBuffer(file.attachment)
@@ -388,7 +390,7 @@ const sendLogEventMessage = async ({
                   try {
                     let base64String: string;
                     const attachment = file.attachment as string | Buffer;
-                    
+
                     if (typeof attachment === 'string') {
                       base64String = attachment;
                     } else if (Buffer.isBuffer(attachment)) {
@@ -396,7 +398,7 @@ const sendLogEventMessage = async ({
                     } else {
                       return null;
                     }
-                    
+
                     const buffer = Buffer.from(base64String, 'base64');
                     if (file.name) {
                       return new AttachmentBuilder(buffer, { name: file.name });
