@@ -60,6 +60,8 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         const unformattedArgs = topic?.toString().trim().split("-") || [];
         const args = diceNotation
           ? diceNotation?.toString().trim().split(/ +/)
+          : topic && commandName === "knowledgebase"
+          ? [topic.toString().toLowerCase()]
           : unformattedArgs[1]
           ? [unformattedArgs[1]]
           : [];

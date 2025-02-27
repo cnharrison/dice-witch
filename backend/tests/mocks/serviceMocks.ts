@@ -205,9 +205,10 @@ export class RollServiceMock {
     return RollServiceMock.instance;
   }
 
-  public checkDiceLimits(notation: string): { isOverMax: boolean } {
+  public checkDiceLimits(notation: string): { isOverMax: boolean; containsDice: boolean } {
     const isOverMax = notation.includes('100d');
-    return { isOverMax };
+    const containsDice = /\d+d\d+/i.test(notation);
+    return { isOverMax, containsDice };
   }
 
   public async rollDice(options: any): Promise<any> {

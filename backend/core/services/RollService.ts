@@ -64,10 +64,10 @@ export class RollService {
     return Array.isArray(notation) ? notation : [notation];
   }
 
-  public checkDiceLimits(notation: string): { isOverMax: boolean } {
+  public checkDiceLimits(notation: string): { isOverMax: boolean; containsDice: boolean } {
     const match = notation.match(/(\d+)d(\d+)/i);
     if (!match) {
-      return { isOverMax: false };
+      return { isOverMax: false, containsDice: false };
     }
 
     const [_, count, sides] = match;
@@ -76,7 +76,7 @@ export class RollService {
     
     const isOverMax = totalDiceRolled > maxImageDice || highestDiceSide > maxDiceSides;
     
-    return { isOverMax };
+    return { isOverMax, containsDice: true };
   }
 
   public async rollDice(options: RollOptions): Promise<RollResult> {
@@ -95,7 +95,6 @@ export class RollService {
     const {
       diceArray,
       resultArray,
-      shouldHaveImage,
       errors,
       files
     } = await this.diceService.rollDice(notationArray, availableDice, timesToRepeat);
@@ -103,7 +102,6 @@ export class RollService {
     const result: RollResult = {
       diceArray,
       resultArray,
-      shouldHaveImage: Boolean(shouldHaveImage),
       errors,
       files
     };

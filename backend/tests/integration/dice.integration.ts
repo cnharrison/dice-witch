@@ -101,10 +101,26 @@ describe('Dice Integration Tests', () => {
       // Valid dice within limits
       const result1 = rollService.checkDiceLimits('5d6');
       expect(result1.isOverMax).toBe(false);
+      expect(result1.containsDice).toBe(true);
       
       // Too many dice (assuming maxImageDice is under 100)
       const result2 = rollService.checkDiceLimits('100d6');
       expect(result2.isOverMax).toBe(true);
+      expect(result2.containsDice).toBe(true);
+    });
+    
+    test('should detect invalid dice notation', () => {
+      // Plain number without dice notation
+      const result1 = rollService.checkDiceLimits('8000');
+      expect(result1.containsDice).toBe(false);
+      
+      // Invalid text
+      const result2 = rollService.checkDiceLimits('heyheyhey');
+      expect(result2.containsDice).toBe(false);
+      
+      // Empty string
+      const result3 = rollService.checkDiceLimits('');
+      expect(result3.containsDice).toBe(false);
     });
   });
 });

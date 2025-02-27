@@ -40,7 +40,12 @@ const command = {
 
       const rollService = RollService.getInstance();
       const firstArg = args[0] || '';
-      const { isOverMax } = rollService.checkDiceLimits(firstArg);
+      const { isOverMax, containsDice } = rollService.checkDiceLimits(firstArg);
+
+      if (!containsDice && interaction) {
+        await sendHelperMessage({ interaction });
+        return;
+      }
 
       if (isOverMax && interaction) {
         await sendDiceOverMaxMessage({
