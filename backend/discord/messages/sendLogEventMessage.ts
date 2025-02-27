@@ -18,6 +18,12 @@ import {
 } from "../../core/constants";
 import { DiscordService } from "../../core/services/DiscordService";
 import { ShardClientUtil } from "discord.js";
+import { AttachmentBuilder } from "discord.js";
+
+interface SerializedFile {
+  name: string | null;
+  attachment: string | Buffer | null;
+}
 
 const { adminId, logOutputChannelId } = CONFIG.discord;
 
@@ -42,7 +48,7 @@ const sendLogEventMessage = async ({
 
   const discordService = DiscordService.getInstance();
   const discord = discordService.getClient();
-  const manager = discordService.manager || discordService.getManager?.();
+  const manager = discordService.getManager();
 
   if (!discord && !manager) {
     console.error("Discord client and manager are both undefined");
@@ -72,104 +78,148 @@ const sendLogEventMessage = async ({
     return isThreadValue ? "thread " : "channel ";
   };
 
-  const embedMap = {
-    [EventType.RECEIVED_COMMAND]: {
-      color: eventColor,
-      title: `${eventType}: /${source === 'web' ? 'roll' : commandName}`,
-      description: (isInGuild || (source === 'web' && channelNameParam))
-        ? `${args} from **${user}** in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')}`
-        : `${args} from **${user}** in **DM**`,
-    },
-    [EventType.CRITICAL_ERROR]: {
-      color: resolveColor("#FF0000"),
-      title: `${eventType}: ${commandName}`,
-      description: (isInGuild || (source === 'web' && channelNameParam))
-        ? `${args} from ${makeBold(user)} in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')} <@${adminId}>`
-        : `${args} from ${makeBold(user)} in **DM** ${adminId}`,
-    },
-    [EventType.GUILD_ADD]: {
-      color: goodColor,
-      title: eventType,
-      description: guildName,
-    },
-    [EventType.GUILD_REMOVE]: {
-      color: errorColor,
-      title: eventType,
-      description: guildName,
-    },
-    [EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE]: {
-      color: tabletopColor,
-      title: title || "Dice Roll",
-      description: `${resultMessage || args || ""}`,
-      image: true,
-    },
-    [EventType.SENT_ROLL_RESULT_MESSAGE]: {
-      color: tabletopColor,
-      title: `${eventType}: ${title ?? ""}`,
-      description: resultMessage,
-    },
-    [EventType.SENT_HELPER_MESSAGE]: {
+  const generateEmbed = () => {
+    const embedMap = {
+      [EventType.RECEIVED_COMMAND]: {
+        color: eventColor,
+        title: `${eventType}: /${source === 'web' ? 'roll' : commandName}`,
+        description: (isInGuild || (source === 'web' && channelNameParam))
+          ? `${args} from **${user}** in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')}`
+          : `${args} from **${user}** in **DM**`,
+        image: undefined,
+      },
+      [EventType.CRITICAL_ERROR]: {
+        color: resolveColor("#FF0000"),
+        title: `${eventType}: ${commandName}`,
+        description: (isInGuild || (source === 'web' && channelNameParam))
+          ? `${args} from ${makeBold(user)} in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')} <@${adminId}>`
+          : `${args} from ${makeBold(user)} in **DM** ${adminId}`,
+        image: undefined,
+      },
+      [EventType.GUILD_ADD]: {
+        color: goodColor,
+        title: eventType,
+        description: guildName,
+        image: undefined,
+      },
+      [EventType.GUILD_REMOVE]: {
+        color: errorColor,
+        title: eventType,
+        description: guildName,
+        image: undefined,
+      },
+      [EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE]: {
+        color: tabletopColor,
+        title: title || "Dice Roll",
+        description: `${resultMessage || args || ""}`,
+        image: { url: 'attachment://currentDice.png' },
+      },
+      [EventType.SENT_ROLL_RESULT_MESSAGE]: {
+        color: tabletopColor,
+        title: `${eventType}: ${title ?? ""}`,
+        description: resultMessage,
+        image: undefined,
+      },
+      [EventType.SENT_HELPER_MESSAGE]: {
+        color: infoColor,
+        title: eventType,
+        description: `${user} in ${(isGuildChannel || (source === 'web' && channelNameParam)) ? channelNameParam : "DM"}`,
+        image: undefined,
+      },
+      [EventType.SENT_DICE_OVER_MAX_MESSAGE]: {
+        color: infoColor,
+        title: eventType,
+        description: `${user} in ${channelNameParam}`,
+        image: undefined,
+      },
+      [EventType.SENT_NEED_PERMISSION_MESSAGE]: {
+        color: errorColor,
+        title: eventType,
+        description: `${makeBold(channelNameParam)} on ${makeBold(guildName)}`,
+        image: undefined,
+      },
+    };
+    
+    return embedMap[eventType] || {
       color: infoColor,
-      title: eventType,
-      description: `${user} in ${(isGuildChannel || (source === 'web' && channelNameParam)) ? channelNameParam : "DM"}`,
-    },
-    [EventType.SENT_DICE_OVER_MAX_MESSAGE]: {
-      color: infoColor,
-      title: eventType,
-      description: `${user} in ${channelNameParam}`,
-    },
-    [EventType.SENT_NEED_PERMISSION_MESSAGE]: {
-      color: errorColor,
-      title: eventType,
-      description: `${makeBold(channelNameParam)} on ${makeBold(guildName)}`,
-    },
+      title: `${eventType}`,
+      description: `${args || ""}`,
+      image: undefined,
+    };
   };
-
-  const generateEmbed = () => embedMap[eventType as keyof typeof embedMap] ?? {};
 
   if (discord) {
     try {
       const embed = generateEmbed();
-      if (eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE && files && files.length > 0) {
-        embed.image = { url: 'attachment://currentDice.png' };
-      }
 
       const logChannelId = logOutputChannelId;
 
       if (discord.shard && discord.shard.count > 1) {
-        const shardForChannel = ShardClientUtil.shardIdForGuildId(CONFIG.discord.logOutputChannelId);
+        const shardForChannel = ShardClientUtil.shardIdForGuildId(CONFIG.discord.logOutputChannelId, discord.shard.count);
 
         if (files && files.length > 0 && eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE) {
-          const serializedFiles = files.map(file => ({
-            name: file.name,
-            attachment: file.attachment && Buffer.isBuffer(file.attachment)
-              ? file.attachment.toString('base64')
-              : null
-          }));
+          const serializedFiles: SerializedFile[] = files.map(file => {
+            if (!file || !file.name) return { name: null, attachment: null };
+            
+            return {
+              name: file.name,
+              attachment: file.attachment && Buffer.isBuffer(file.attachment)
+                ? file.attachment.toString('base64')
+                : null
+            };
+          });
 
-          discord.shard.broadcastEval(
+          discord.shard?.broadcastEval(
             async (c, { channelId, embedData, files }) => {
               const channel = await c.channels.fetch(channelId).catch(() => null);
               if (!channel || !channel.isTextBased()) return false;
 
               try {
-                const deserializedFiles = files.map(file => ({
-                  name: file.name,
-                  attachment: file.attachment ? Buffer.from(file.attachment, 'base64') : null
-                }));
+                const deserializedFiles = files
+                  .map(file => {
+                    if (!file || !file.name || !file.attachment) return null;
+                    try {
+                      let base64String: string;
+                      const attachment = file.attachment as string | Buffer;
+                      
+                      if (typeof attachment === 'string') {
+                        base64String = attachment;
+                      } else if (Buffer.isBuffer(attachment)) {
+                        base64String = attachment.toString('base64');
+                      } else {
+                        return null;
+                      }
+                      
+                      const buffer = Buffer.from(base64String, 'base64');
+                      if (file.name) {
+                        return new AttachmentBuilder(buffer, { name: file.name });
+                      }
+                      return new AttachmentBuilder(buffer, { name: 'attachment.png' });
+                    } catch (error) {
+                      console.error('Error creating attachment:', error);
+                      return null;
+                    }
+                  })
+                  .filter((file): file is AttachmentBuilder => file !== null);
 
-                await channel.send({
-                  embeds: [embedData],
-                  files: deserializedFiles
-                });
-                return true;
+                if ('send' in channel) {
+                  await channel.send({
+                    embeds: [embedData],
+                    files: deserializedFiles
+                  });
+                  return true;
+                }
+                return false;
               } catch (err) {
                 console.error('Error sending to log channel with files:', err);
 
                 if (err.code === 50013) {
                   try {
-                    await channel.send({ embeds: [embedData] });
-                    return true;
+                    if ('send' in channel) {
+                      await channel.send({ embeds: [embedData] });
+                      return true;
+                    }
+                    return false;
                   } catch (innerErr) {
                     console.error('Fallback also failed:', innerErr);
                   }
@@ -188,14 +238,17 @@ const sendLogEventMessage = async ({
           ).catch(error => {
             console.error('Error in broadcastEval with files:', error);
 
-            discord.shard.broadcastEval(
+            discord.shard?.broadcastEval(
               async (c, { channelId, embedData }) => {
                 try {
                   const channel = await c.channels.fetch(channelId).catch(() => null);
                   if (!channel || !channel.isTextBased()) return false;
 
-                  await channel.send({ embeds: [embedData] });
-                  return true;
+                  if ('send' in channel) {
+                    await channel.send({ embeds: [embedData] });
+                    return true;
+                  }
+                  return false;
                 } catch (err) {
                   return false;
                 }
@@ -211,14 +264,17 @@ const sendLogEventMessage = async ({
             });
           });
         } else {
-          discord.shard.broadcastEval(
+          discord.shard?.broadcastEval(
             async (c, { channelId, embedData }) => {
               try {
                 const channel = await c.channels.fetch(channelId).catch(() => null);
                 if (!channel || !channel.isTextBased()) return false;
 
-                await channel.send({ embeds: [embedData] });
-                return true;
+                if ('send' in channel) {
+                  await channel.send({ embeds: [embedData] });
+                  return true;
+                }
+                return false;
               } catch (err) {
                 return false;
               }
@@ -242,9 +298,47 @@ const sendLogEventMessage = async ({
 
         try {
           if (eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE && files && files.length > 0) {
+            const serializedFiles: SerializedFile[] = files.map(file => {
+              if (!file || !file.name) return { name: null, attachment: null };
+              
+              return {
+                name: file.name,
+                attachment: file.attachment && Buffer.isBuffer(file.attachment)
+                  ? file.attachment.toString('base64')
+                  : null
+              };
+            });
+
+            const deserializedFiles = serializedFiles
+              .map(file => {
+                if (!file || !file.name || !file.attachment) return null;
+                try {
+                  let base64String: string;
+                  const attachment = file.attachment as string | Buffer;
+                  
+                  if (typeof attachment === 'string') {
+                    base64String = attachment;
+                  } else if (Buffer.isBuffer(attachment)) {
+                    base64String = attachment.toString('base64');
+                  } else {
+                    return null;
+                  }
+                  
+                  const buffer = Buffer.from(base64String, 'base64');
+                  if (file.name) {
+                    return new AttachmentBuilder(buffer, { name: file.name });
+                  }
+                  return new AttachmentBuilder(buffer, { name: 'attachment.png' });
+                } catch (error) {
+                  console.error('Error creating attachment:', error);
+                  return null;
+                }
+              })
+              .filter((file): file is AttachmentBuilder => file !== null);
+
             await channel.send({
               embeds: [embed],
-              files
+              files: deserializedFiles
             });
           } else {
             await channel.send({ embeds: [embed] });
@@ -267,36 +361,62 @@ const sendLogEventMessage = async ({
   } else if (manager) {
     try {
       const embed = generateEmbed();
-      if (eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE && files && files.length > 0) {
-        embed.image = { url: 'attachment://currentDice.png' };
-      }
 
       const logChannelId = logOutputChannelId;
 
       if (files && files.length > 0 && eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE) {
-        const serializedFiles = files.map(file => ({
-          name: file.name,
-          attachment: file.attachment && Buffer.isBuffer(file.attachment)
-            ? file.attachment.toString('base64')
-            : null
-        }));
+        const serializedFiles: SerializedFile[] = files.map(file => {
+          if (!file || !file.name) return { name: null, attachment: null };
+          
+          return {
+            name: file.name,
+            attachment: file.attachment && Buffer.isBuffer(file.attachment)
+              ? file.attachment.toString('base64')
+              : null
+          };
+        });
 
         await manager.broadcastEval(
           async (c, { channelId, embedData, files }) => {
-            const channel = await c.channels.fetch(channelId).catch(() => null);
-            if (!channel || !channel.isTextBased()) return false;
+            const channel = c.channels.cache.get(channelId);
+            if (!channel || !channel.isTextBased()) return;
 
             try {
-              const deserializedFiles = files.map(file => ({
-                name: file.name,
-                attachment: file.attachment ? Buffer.from(file.attachment, 'base64') : null
-              }));
+              const deserializedFiles = files
+                .map(file => {
+                  if (!file || !file.name || !file.attachment) return null;
+                  try {
+                    let base64String: string;
+                    const attachment = file.attachment as string | Buffer;
+                    
+                    if (typeof attachment === 'string') {
+                      base64String = attachment;
+                    } else if (Buffer.isBuffer(attachment)) {
+                      base64String = attachment.toString('base64');
+                    } else {
+                      return null;
+                    }
+                    
+                    const buffer = Buffer.from(base64String, 'base64');
+                    if (file.name) {
+                      return new AttachmentBuilder(buffer, { name: file.name });
+                    }
+                    return new AttachmentBuilder(buffer, { name: 'attachment.png' });
+                  } catch (error) {
+                    console.error('Error creating attachment:', error);
+                    return null;
+                  }
+                })
+                .filter((file): file is AttachmentBuilder => file !== null);
 
-              await channel.send({
-                embeds: [embedData],
-                files: deserializedFiles
-              });
-              return true;
+              if ('send' in channel) {
+                await channel.send({
+                  embeds: [embedData],
+                  files: deserializedFiles
+                });
+                return true;
+              }
+              return false;
             } catch (err) {
               console.error('Error sending to log channel with files:', err);
               return false;
@@ -307,12 +427,15 @@ const sendLogEventMessage = async ({
       } else {
         await manager.broadcastEval(
           async (c, { channelId, embedData }) => {
-            const channel = await c.channels.fetch(channelId).catch(() => null);
-            if (!channel || !channel.isTextBased()) return false;
+            const channel = c.channels.cache.get(channelId);
+            if (!channel || !channel.isTextBased()) return;
 
             try {
-              await channel.send({ embeds: [embedData] });
-              return true;
+              if ('send' in channel) {
+                await channel.send({ embeds: [embedData] });
+                return true;
+              }
+              return false;
             } catch (err) {
               console.error('Error sending to log channel:', err);
               return false;
