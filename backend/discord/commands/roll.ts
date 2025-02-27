@@ -16,6 +16,7 @@ import {
   sendDiceRolledMessage,
   sendHelperMessage,
   sendNeedPermissionMessage,
+  sendLogEventMessage
 } from "../messages";
 
 const command = {
@@ -46,8 +47,9 @@ const command = {
         return;
       }
 
-      const match = args[0]?.match(/(\d+)d(\d+)/i);
-      if (match) {
+      const firstArg = args[0] || '';
+      const match = firstArg.match(/(\d+)d(\d+)/i);
+      if (match && interaction) {
         const [_, count, sides] = match;
         const totalDiceRolled = parseInt(count);
         const highestDiceSide = parseInt(sides);
@@ -56,23 +58,25 @@ const command = {
         const isOverMax = (shouldHaveImage && totalDiceRolled > maxImageDice) ||
                          (!shouldHaveImage && (totalDiceRolled > maxTextDice || highestDiceSide > maxDiceSides));
 
-          if (isOverMax) {
-            await sendDiceOverMaxMessage({
-              args,
-              interaction,
-              shouldHaveImage,
-            });
-            return;
-          }
-        }
-
-      const diceService = DiceService.getInstance();
-      const { diceArray, resultArray, shouldHaveImage } = diceService.rollDice(args, availableDice, timesToRepeat);
-
-        if (!diceArray.length && interaction) {
-          await sendHelperMessage({ interaction });
+        if (isOverMax) {
+          await sendDiceOverMaxMessage({
+            args,
+            interaction,
+            shouldHaveImage,
+          });
           return;
         }
+      }
+
+      const diceService = DiceService.getInstance();
+      const { diceArray, resultArray, shouldHaveImage, files } = await diceService.rollDice(args, availableDice, timesToRepeat);
+
+      const hasResults = resultArray.length > 0 && resultArray.some(r => r.output);
+      
+      if (!hasResults && interaction) {
+        await sendHelperMessage({ interaction });
+        return;
+      }
 
       if (shouldHaveImage) {
         await sendDiceRolledMessage({ diceArray, interaction });
@@ -101,7 +105,7 @@ const command = {
     } catch (error) {
       console.error('Error in roll command:', error);
       if (interaction?.isRepliable() && !interaction.replied) {
-        await sendHelperMessage({ interaction });
+        await interaction.reply({ content: "Something went wrong with your dice roll. Please try again.", ephemeral: true });
       }
     }
   },

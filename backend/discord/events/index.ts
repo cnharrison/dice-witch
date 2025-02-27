@@ -8,7 +8,7 @@ import fs from "fs";
 import path from "path";
 import { CONFIG } from "../../config";
 import { Command, EventType } from "../../shared/types";
-import { sendLogEventMessage } from "../messages";
+import { sendLogEventMessage } from "../messages/sendLogEventMessage";
 import { DatabaseService } from "../../core/services/DatabaseService";
 
 const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {

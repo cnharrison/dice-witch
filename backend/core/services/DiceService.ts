@@ -202,32 +202,34 @@ export class DiceService {
     }
   }
 
-  public rollDice(
+  public async rollDice(
     args: string[],
     availableDice: DiceTypesToDisplay[],
     timesToRepeat?: number
-  ): {
+  ): Promise<{
     diceArray: DiceArray;
     resultArray: Result[];
     shouldHaveImage?: boolean;
     errors?: string[];
-  } {
+    files?: AttachmentBuilder[];
+  }> {
     let diceArray: DiceArray = [];
     let shouldHaveImageArray: boolean[] = [];
     let resultArray: Result[] = [];
     let errors: string[] = [];
+    let files: AttachmentBuilder[] = [];
     const lowerCaseArgs = args.map((arg) => arg.toLowerCase());
     const argsToMutate = this.repeatArgs(lowerCaseArgs, timesToRepeat);
 
     try {
-      argsToMutate.forEach((value) => {
+      for (const value of argsToMutate) {
         let parsedRoll;
 
         try {
           parsedRoll = Parser.parse(value);
         } catch (err) {
           errors.push(`Invalid notation: ${value}`);
-          return;
+          continue;
         }
 
         const rollGroupSidesMap = new Map();
@@ -252,8 +254,11 @@ export class DiceService {
         const groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
           if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
             const sides = rollGroupSidesMap.get(outerIndex);
-            const processedGroup = this.processRollGroup(rollGroup, sides);
-            acc.push(...processedGroup);
+            
+            if (availableDice.includes(sides)) {
+              const processedGroup = this.processRollGroup(rollGroup, sides);
+              acc.push(...processedGroup);
+            }
           }
           return acc;
         }, []);
@@ -261,17 +266,31 @@ export class DiceService {
         diceArray.push([...groupArray]);
         resultArray.push(result);
         shouldHaveImageArray.push(shouldHaveImage);
-      });
+      }
 
-      const shouldHaveImage = shouldHaveImageArray.every(
+      const shouldHaveImage = shouldHaveImageArray.some(
         (value: boolean) => value
-      );
+      ) ? shouldHaveImageArray.every(
+        (value: boolean) => value
+      ) : false;
+
+      if (shouldHaveImage) {
+        try {
+          const attachment = await this.generateDiceAttachment(diceArray);
+          if (attachment) {
+            files = [attachment.attachment];
+          }
+        } catch (error) {
+          console.error("Failed to generate dice attachment", error);
+        }
+      }
 
       return {
         diceArray,
         resultArray,
         shouldHaveImage,
-        errors: errors.length ? errors : undefined,
+        errors: resultArray.length > 0 ? undefined : errors.length ? errors : undefined,
+        files: files.length ? files : undefined,
       };
     } catch {
       return { diceArray: [], resultArray: [], errors: ['Unexpected error occurred'] };
@@ -496,7 +515,10 @@ export class DiceService {
 
     try {
       const embed = this.createEmbed(resultArray, grandTotal, attachment, title, interaction, source, username);
-      return { embeds: [embed], files: [attachment] };
+      return { 
+        embeds: [embed], 
+        files: attachment ? [attachment] : [] 
+      };
     } catch {
       return { embeds: [], files: [] };
     }
@@ -511,22 +533,28 @@ export class DiceService {
     source?: string,
     username?: string
   ): EmbedBuilder {
-    const footerText = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
+    const diceOutput = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
     
     let sourceText = '';
-    if (interaction) {
-      sourceText = `\nsent to ${interaction.user.username} via discord`;
+    
+    if (source === 'discord') {
+      const discordUsername = interaction?.user?.username;
+      sourceText = discordUsername ? `sent to ${discordUsername} via discord` : 'via discord';
     } else if (source === 'web') {
-      sourceText = `\nsent to ${username} via web`;
+      sourceText = username ? `sent to ${username} via web` : 'via web';
     }
+
+    const serverName = interaction?.guild?.name;
 
     const embed = new EmbedBuilder()
       .setColor(tabletopColor)
-      .setImage("attachment://currentDice.png")
-      .setFooter({ text: footerText + sourceText });
+      .setDescription(diceOutput)
+      .setFooter({
+        text: sourceText,
+      });
 
-    if (title) {
-      embed.setTitle(title);
+    if (attachment) {
+      embed.setImage('attachment://currentDice.png');
     }
 
     return embed;

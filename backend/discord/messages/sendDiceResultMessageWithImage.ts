@@ -1,5 +1,7 @@
 import { DiceService } from "../../core/services/DiceService";
+import { DiscordService } from "../../core/services/DiscordService";
 import { SendDiceResultMessageWithImageParams } from "../../shared/types";
+import { EventType } from "../../shared/types";
 
 const sendDiceResultMessageWithImage = async ({
   resultArray,
@@ -10,6 +12,8 @@ const sendDiceResultMessageWithImage = async ({
 }: SendDiceResultMessageWithImageParams) => {
   try {
     const diceService = DiceService.getInstance();
+    const discordService = DiscordService.getInstance();
+    
     const embedMessage = await diceService.generateEmbedMessage({
       resultArray,
       attachment,
@@ -24,6 +28,7 @@ const sendDiceResultMessageWithImage = async ({
         files: embedMessage.files,
       });
     }
+
   } catch (err) {
     console.error("Error sending dice result message with image:", err);
   }

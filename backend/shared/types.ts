@@ -162,6 +162,11 @@ export interface LogEventProps {
   interaction?: CommandInteraction | ButtonInteraction;
   error?: Error;
   canvasString?: string;
+  files?: AttachmentBuilder[];
+  sourceName?: string;
+  username?: string;
+  channelName?: string;
+  guildName?: string;
 }
 
 export interface Die {
