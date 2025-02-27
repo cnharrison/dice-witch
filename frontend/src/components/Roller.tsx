@@ -116,11 +116,16 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
           <div className="flex flex-wrap gap-4 justify-center">
             {diceInfo?.diceGroups?.map((group, index) => {
               const DiceIcon = DiceIcons[`d${group.diceSize}` as keyof typeof DiceIcons];
-              if (!DiceIcon) return null;
-
+              
               return (
                 <div key={index} className="flex flex-col items-center">
-                  <DiceIcon className="w-16 h-16" />
+                  {DiceIcon ? (
+                    <DiceIcon className="w-16 h-16" />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
+                      {group.diceSize}
+                    </div>
+                  )}
                   <span className="text-sm font-medium mt-1">×{group.numberOfDice}</span>
                 </div>
               );
@@ -139,6 +144,10 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
                 key="persistent-dice-animation"
                 diceInfo={combinedDiceInfo}
                 diceToRemove={diceToRemove}
+                diceColors={rollResults?.diceArray?.flat()?.reduce((colors, die) => {
+                  colors[die.sides] = die.color;
+                  return colors;
+                }, {} as Record<number, string>)}
                 className="h-full w-full"
               />
             </div>
@@ -178,8 +187,7 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
                 <div className="flex flex-wrap gap-4 justify-center mb-4">
                   {rollResults.diceArray.flat().map((die, index) => {
                     const DiceIcon = DiceIcons[`d${die.sides}` as keyof typeof DiceIcons];
-                    if (!DiceIcon) return null;
-
+                    
                     return (
                       <div 
                         key={index} 
@@ -190,7 +198,13 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
                         }}
                       >
                         <div className="text-xl font-bold mb-1">{die.value}</div>
-                        <DiceIcon className="w-8 h-8" />
+                        {DiceIcon ? (
+                          <DiceIcon className="w-8 h-8" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-xs font-bold">
+                            d{die.sides}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

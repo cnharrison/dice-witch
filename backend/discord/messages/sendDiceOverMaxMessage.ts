@@ -1,16 +1,14 @@
-import { maxDiceSides, maxImageDice, maxTextDice } from "../../core/constants/index";
+import { maxDiceSides, maxImageDice } from "../../core/constants/index";
 import { sendLogEventMessage } from ".";
 import { EventType, SendDiceOverMaxMessageParams } from "../../shared/types";
 
-const imageMsg = `${maxImageDice} dice max, sorry 😅`;
-const textMsg = `${maxDiceSides} sides max and ${maxTextDice} dice max, sorry 😅`;
+const maxMsg = `${maxImageDice} dice max and ${maxDiceSides} sides max, sorry 😅`;
 
 const sendDiceOverMaxMessage = async ({
   args,
   interaction,
-  shouldHaveImage,
 }: SendDiceOverMaxMessageParams) => {
-  const msg = shouldHaveImage ? imageMsg : textMsg;
+  const msg = maxMsg;
   try {
     if (interaction) {
       if (!interaction.deferred && !interaction.replied) {

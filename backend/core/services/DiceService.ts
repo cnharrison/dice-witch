@@ -25,6 +25,7 @@ import {
   generateD6,
   generateD8,
   generateDPercent,
+  generateGeneric,
 } from "./images/generateDice/dice";
 import generateLinearGradientFill from "./images/generateDice/fills/generateLinearGradientFill";
 import generateDie from "./images/generateDie";
@@ -209,12 +210,10 @@ export class DiceService {
   ): Promise<{
     diceArray: DiceArray;
     resultArray: Result[];
-    shouldHaveImage?: boolean;
     errors?: string[];
     files?: AttachmentBuilder[];
   }> {
     let diceArray: DiceArray = [];
-    let shouldHaveImageArray: boolean[] = [];
     let resultArray: Result[] = [];
     let errors: string[] = [];
     let files: AttachmentBuilder[] = [];
@@ -240,10 +239,6 @@ export class DiceService {
             }
           });
         }
-        const allSides = Array.from(rollGroupSidesMap.values());
-        const shouldHaveImage = allSides.length > 0 && allSides.every(sides => 
-          availableDice.includes(sides)
-        );
 
         const roll = new DiceRoll(value);
         const result: Result = {
@@ -254,43 +249,31 @@ export class DiceService {
         const groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
           if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
             const sides = rollGroupSidesMap.get(outerIndex);
-            
-            if (availableDice.includes(sides)) {
-              const processedGroup = this.processRollGroup(rollGroup, sides);
-              acc.push(...processedGroup);
-            }
+
+            const processedGroup = this.processRollGroup(rollGroup, sides);
+            acc.push(...processedGroup);
           }
           return acc;
         }, []);
 
         diceArray.push([...groupArray]);
         resultArray.push(result);
-        shouldHaveImageArray.push(shouldHaveImage);
       }
 
-      const shouldHaveImage = shouldHaveImageArray.some(
-        (value: boolean) => value
-      ) ? shouldHaveImageArray.every(
-        (value: boolean) => value
-      ) : false;
-
-      if (shouldHaveImage) {
-        try {
-          const attachment = await this.generateDiceAttachment(diceArray);
-          if (attachment) {
-            files = [attachment.attachment];
-          }
-        } catch (error) {
-          console.error("Failed to generate dice attachment", error);
+      try {
+        const attachment = await this.generateDiceAttachment(diceArray);
+        if (attachment) {
+          files = [attachment.attachment];
         }
+      } catch (error) {
+        console.error("Failed to generate dice attachment", error);
       }
 
       return {
         diceArray,
         resultArray,
-        shouldHaveImage,
         errors: resultArray.length > 0 ? undefined : errors.length ? errors : undefined,
-        files: files.length ? files : undefined,
+        files,
       };
     } catch {
       return { diceArray: [], resultArray: [], errors: ['Unexpected error occurred'] };
@@ -345,14 +328,14 @@ export class DiceService {
 
       const drawDice = async (die: Die, index: number, outerIndex: number) => {
         try {
-          const toLoad = await generateDie(
-            die.sides,
-            die.rolled,
-            die.textColor.hex(),
-            "#000000",
-            undefined,
-            generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex())
-          );
+          const toLoad = await this.generateDie({
+            sides: die.sides,
+            rolled: die.rolled,
+            textColor: die.textColor.hex(),
+            outlineColor: "#000000",
+            solidFill: die.color.hex(),
+            patternFill: generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex())
+          });
 
           if (!toLoad) {
             return;
@@ -441,7 +424,7 @@ export class DiceService {
     width,
     height
   }: {
-    sides: DiceTypes;
+    sides: any;
     rolled: DiceFaces;
     textColor?: string;
     outlineColor?: string;
@@ -453,6 +436,7 @@ export class DiceService {
   }): Promise<Buffer | undefined> {
     const props = {
       result: rolled,
+      sides: sides,
       textColor,
       outlineColor,
       solidFill,
@@ -472,10 +456,10 @@ export class DiceService {
       "%": generateDPercent(props),
     };
 
-    const image = dice[sides];
+    let image = dice[sides];
 
     if (!image) {
-      return undefined;
+      image = generateGeneric(props);
     }
 
     try {
@@ -515,14 +499,13 @@ export class DiceService {
 
     try {
       const embed = this.createEmbed(resultArray, grandTotal, attachment, title, interaction, source, username);
-      return { 
-        embeds: [embed], 
-        files: attachment ? [attachment] : [] 
+      return {
+        embeds: [embed],
+        files: attachment ? [attachment] : []
       };
     } catch (error) {
       return { embeds: [], files: [] };
     }
-  }
   }
 
   private createEmbed(
@@ -535,11 +518,11 @@ export class DiceService {
     username?: string
   ): EmbedBuilder {
     const titleText = title ? `**${title}**\n` : '';
-    
+
     const diceOutput = `${titleText}${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
-    
+
     let sourceText = '';
-    
+
     if (source === 'discord') {
       const discordUsername = interaction?.user?.username;
       sourceText = discordUsername ? `sent to ${discordUsername} via discord` : 'via discord';

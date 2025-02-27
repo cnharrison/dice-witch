@@ -203,7 +203,7 @@ export class DiscordService {
     }
   }
 
-  public async sendMessage(channelId: string, messageOptions: any): Promise<boolean> {
+  public async sendMessage(channelId: string, messageOptions: any): Promise<any> {
     if (!this.manager) {
       return false;
     }
@@ -217,6 +217,7 @@ export class DiscordService {
       }
 
       const serializedMessageOptions = {
+        content: messageOptions.content,
         embeds: messageOptions.embeds,
         files: messageOptions.files?.length ? messageOptions.files.map((file: any) => {
           return {
@@ -226,7 +227,8 @@ export class DiscordService {
               ? file.attachment.toString('base64')
               : null
           };
-        }) : []
+        }) : [],
+        reply: messageOptions.reply
       };
 
       const result = await shard.eval(async (client, { context }) => {
@@ -234,14 +236,15 @@ export class DiscordService {
           const channel = await client.channels.fetch(context.channelId);
 
           if (!channel) {
-            return false;
+            return { success: false };
           }
 
           if (!channel.isTextBased() || !('send' in channel) || typeof channel.send !== 'function') {
-            return false;
+            return { success: false };
           }
 
           const deserializedOptions = {
+            content: context.messageOptions.content,
             embeds: context.messageOptions.embeds,
             files: context.messageOptions.files?.length ? context.messageOptions.files.map((file: any) => {
               return {
@@ -251,17 +254,29 @@ export class DiscordService {
               };
             }) : []
           };
+          
+          if (context.messageOptions.reply) {
+            deserializedOptions.reply = {
+              messageReference: context.messageOptions.reply.messageReference
+            };
+          }
 
-          await channel.send(deserializedOptions);
-          return true;
+          const sentMessage = await channel.send(deserializedOptions);
+          return { 
+            success: true, 
+            messageId: sentMessage.id,
+            channelId: sentMessage.channelId
+          };
         } catch (error) {
-          return false;
+          console.error('Error sending message to Discord channel:', error);
+          return { success: false };
         }
       }, { context: { channelId, messageOptions: serializedMessageOptions } });
 
-      return !!result;
+      return result;
     } catch (error) {
-      return false;
+      console.error('Error in sendMessage:', error);
+      return { success: false };
     }
   }
 }

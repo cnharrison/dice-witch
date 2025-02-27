@@ -20,10 +20,9 @@ router.post('/roll', async (c) => {
   }
 
   try {
-    // Check dice limits
     const { isOverMax } = rollService.checkDiceLimits(notation);
     if (isOverMax) {
-      return c.json({ error: 'Dice roll exceeds maximum limits' }, 400);
+      return c.json({ error: 'Dice roll exceeds maximum limits (50 dice max, 100 sides max)' }, 400);
     }
 
     const rollResult = await rollService.rollDice({
@@ -41,8 +40,7 @@ router.post('/roll', async (c) => {
       message: rollResult.message || `Roll processed successfully`,
       diceArray: rollResult.diceArray,
       resultArray: rollResult.resultArray,
-      shouldHaveImage: rollResult.shouldHaveImage,
-      ...(rollResult.shouldHaveImage ? { imageData: rollResult.base64Image } : {}),
+      imageData: rollResult.base64Image,
       channelName: rollResult.channelName,
       guildName: rollResult.guildName
     };

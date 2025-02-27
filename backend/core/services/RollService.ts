@@ -33,7 +33,6 @@ export interface RollOptions {
 export interface RollResult {
   diceArray: DiceArray;
   resultArray: Result[];
-  shouldHaveImage: boolean;
   errors?: string[];
   files?: AttachmentBuilder[];
   base64Image?: string; // For web response
@@ -65,21 +64,19 @@ export class RollService {
     return Array.isArray(notation) ? notation : [notation];
   }
 
-  public checkDiceLimits(notation: string): { isOverMax: boolean; shouldHaveImage: boolean } {
+  public checkDiceLimits(notation: string): { isOverMax: boolean } {
     const match = notation.match(/(\d+)d(\d+)/i);
     if (!match) {
-      return { isOverMax: false, shouldHaveImage: false };
+      return { isOverMax: false };
     }
 
     const [_, count, sides] = match;
     const totalDiceRolled = parseInt(count);
     const highestDiceSide = parseInt(sides);
-    const shouldHaveImage = availableDice.includes(highestDiceSide as DiceTypesToDisplay);
-
-    const isOverMax = (shouldHaveImage && totalDiceRolled > maxImageDice) ||
-                     (!shouldHaveImage && (totalDiceRolled > maxTextDice || highestDiceSide > maxDiceSides));
-
-    return { isOverMax, shouldHaveImage };
+    
+    const isOverMax = totalDiceRolled > maxImageDice || highestDiceSide > maxDiceSides;
+    
+    return { isOverMax };
   }
 
   public async rollDice(options: RollOptions): Promise<RollResult> {
@@ -122,7 +119,13 @@ export class RollService {
         guildName = channel.guild?.name || '';
       }
 
-      if (shouldHaveImage && diceArray.some(group => group.length > 0)) {
+      if (channel && diceArray.some(group => group.length > 0)) {
+        let rollingMessageResult;
+        
+        const numericResults = diceArray.flat().map(die => die.rolled);
+        const rollingMessage = this.diceService.generateDiceRolledMessage(diceArray, numericResults);
+        rollingMessageResult = await this.discordService.sendMessage(channelId, { content: rollingMessage });
+        
         const diceAttachment = await this.diceService.generateDiceAttachment(diceArray);
         if (diceAttachment) {
           const imageBuffer = diceAttachment.canvas.toBuffer('image/webp');
@@ -135,10 +138,11 @@ export class RollService {
             username
           });
 
-          if (channel) {
+          if (rollingMessageResult?.success) {
             await this.discordService.sendMessage(channelId, {
               embeds: embedMessage.embeds,
-              files: embedMessage.files
+              files: embedMessage.files,
+              reply: { messageReference: rollingMessageResult.messageId }
             });
 
             try {
@@ -161,34 +165,6 @@ export class RollService {
               console.error('Failed to send to log channel:', error);
             }
           }
-        }
-      } else if (resultArray.length > 0 && channel) {
-        try {
-          const embedMessage = await this.diceService.generateEmbedMessage({
-            resultArray,
-            attachment: null,
-            source: 'web',
-            username
-          });
-
-          if (embedMessage.embeds.length > 0) {
-            await this.discordService.sendMessage(channelId, {
-              embeds: embedMessage.embeds,
-              files: []
-            });
-          }
-
-          await sendLogEventMessage({
-            eventType: EventType.RECEIVED_COMMAND,
-            args: Array.isArray(notation) ? notation : [notation],
-            guild: channel.guild,
-            sourceName: 'web',
-            username,
-            channelName,
-            guildName
-          });
-        } catch (error) {
-          console.error('Error sending text-only dice roll to Discord:', error);
         }
       }
 

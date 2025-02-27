@@ -244,7 +244,6 @@ export interface UserType {
 export interface SendDiceOverMaxMessageParams {
   args?: string[];
   interaction?: CommandInteraction | ButtonInteraction;
-  shouldHaveImage?: boolean;
 }
 
 export interface SendDiceResultMessageParams {

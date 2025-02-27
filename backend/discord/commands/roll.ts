@@ -40,13 +40,12 @@ const command = {
 
       const rollService = RollService.getInstance();
       const firstArg = args[0] || '';
-      const { isOverMax, shouldHaveImage } = rollService.checkDiceLimits(firstArg);
+      const { isOverMax } = rollService.checkDiceLimits(firstArg);
 
       if (isOverMax && interaction) {
         await sendDiceOverMaxMessage({
           args,
           interaction,
-          shouldHaveImage,
         });
         return;
       }
@@ -59,7 +58,7 @@ const command = {
         source: 'discord'
       });
 
-      const { diceArray, resultArray, shouldHaveImage: resultHasImage, files } = rollResult;
+      const { diceArray, resultArray } = rollResult;
 
       const hasResults = resultArray.length > 0 && resultArray.some(r => r.output);
 
@@ -68,28 +67,24 @@ const command = {
         return;
       }
 
-      if (resultHasImage) {
-        await sendDiceRolledMessage({ diceArray, interaction });
+      await sendDiceRolledMessage({ diceArray, interaction });
 
-        const diceService = await import("../../core/services/DiceService").then(mod => mod.DiceService.getInstance());
-        const attachmentResult = await diceService.generateDiceAttachment(diceArray);
+      const diceService = await import("../../core/services/DiceService").then(mod => mod.DiceService.getInstance());
+      const attachmentResult = await diceService.generateDiceAttachment(diceArray);
 
-        if (!attachmentResult) {
-          console.error("Failed to generate dice attachment");
-          return;
-        }
-
-        const { attachment, canvas } = attachmentResult;
-        await sendDiceResultMessageWithImage({
-          resultArray,
-          attachment,
-          canvas,
-          interaction,
-          title
-        });
-      } else {
-        await sendDiceResultMessage({ resultArray, interaction, title });
+      if (!attachmentResult) {
+        console.error("Failed to generate dice attachment");
+        return;
       }
+
+      const { attachment, canvas } = attachmentResult;
+      await sendDiceResultMessageWithImage({
+        resultArray,
+        attachment,
+        canvas,
+        interaction,
+        title
+      });
 
     } catch (error) {
       console.error('Error in roll command:', error);

@@ -5,6 +5,7 @@ import generateD10 from "./generateD10";
 import generateD12 from "./generateD12";
 import generateD20 from "./generateD20";
 import generateDPercent from "./generateD%";
+import generateGeneric from "./generateGeneric";
 
 export {
   generateD4,
@@ -14,4 +15,5 @@ export {
   generateD12,
   generateD20,
   generateDPercent,
+  generateGeneric,
 };
