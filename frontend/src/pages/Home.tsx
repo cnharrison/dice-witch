@@ -57,6 +57,10 @@ export const Home = () => {
       return data;
     },
     enabled: !!selectedGuild,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   const channels = channelsResponse?.channels || [];
