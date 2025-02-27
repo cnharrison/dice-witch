@@ -218,7 +218,7 @@ export class DiscordService {
 
       const serializedMessageOptions = {
         embeds: messageOptions.embeds,
-        files: messageOptions.files.map((file: any) => {
+        files: messageOptions.files?.length ? messageOptions.files.map((file: any) => {
           return {
             name: file.name,
             data: file.data ? Buffer.from(file.data).toString('base64') : null,
@@ -226,7 +226,7 @@ export class DiscordService {
               ? file.attachment.toString('base64')
               : null
           };
-        })
+        }) : []
       };
 
       const result = await shard.eval(async (client, { context }) => {
@@ -243,13 +243,13 @@ export class DiscordService {
 
           const deserializedOptions = {
             embeds: context.messageOptions.embeds,
-            files: context.messageOptions.files.map((file: any) => {
+            files: context.messageOptions.files?.length ? context.messageOptions.files.map((file: any) => {
               return {
                 name: file.name,
                 attachment: file.attachment ? Buffer.from(file.attachment, 'base64') : null,
                 data: file.data ? Buffer.from(file.data, 'base64') : null
               };
-            })
+            }) : []
           };
 
           await channel.send(deserializedOptions);

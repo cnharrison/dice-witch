@@ -519,9 +519,10 @@ export class DiceService {
         embeds: [embed], 
         files: attachment ? [attachment] : [] 
       };
-    } catch {
+    } catch (error) {
       return { embeds: [], files: [] };
     }
+  }
   }
 
   private createEmbed(
@@ -533,7 +534,9 @@ export class DiceService {
     source?: string,
     username?: string
   ): EmbedBuilder {
-    const diceOutput = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
+    const titleText = title ? `**${title}**\n` : '';
+    
+    const diceOutput = `${titleText}${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
     
     let sourceText = '';
     

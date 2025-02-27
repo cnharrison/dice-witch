@@ -277,7 +277,7 @@ export interface SendNeedPermissionMessageParams {
 
 export interface GenerateEmbedMessageParams {
   resultArray: Result[];
-  attachment: AttachmentBuilder;
+  attachment?: AttachmentBuilder | null;
   title?: string;
   interaction?: CommandInteraction | ButtonInteraction;
   source?: string;

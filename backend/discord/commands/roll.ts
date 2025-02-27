@@ -1,22 +1,13 @@
-import { DatabaseService } from "../../core/services/DatabaseService";
-import { DiceService } from "../../core/services/DiceService";
+import { RollService } from "../../core/services/RollService";
 import { DiscordService } from "../../core/services/DiscordService";
-import { getHighestDiceSide, getTotalDiceRolled } from "../../shared/helpers";
-import { DiceTypesToDisplay, RollProps } from "../../shared/types";
-import {
-  availableDice,
-  maxDiceSides,
-  maxImageDice,
-  maxTextDice,
-} from "../../core/constants/index";
+import { RollProps } from "../../shared/types";
 import {
   sendDiceOverMaxMessage,
   sendDiceResultMessage,
   sendDiceResultMessageWithImage,
   sendDiceRolledMessage,
   sendHelperMessage,
-  sendNeedPermissionMessage,
-  sendLogEventMessage
+  sendNeedPermissionMessage
 } from "../messages";
 
 const command = {
@@ -47,44 +38,47 @@ const command = {
         return;
       }
 
+      const rollService = RollService.getInstance();
       const firstArg = args[0] || '';
-      const match = firstArg.match(/(\d+)d(\d+)/i);
-      if (match && interaction) {
-        const [_, count, sides] = match;
-        const totalDiceRolled = parseInt(count);
-        const highestDiceSide = parseInt(sides);
-        const shouldHaveImage = availableDice.includes(highestDiceSide as DiceTypesToDisplay);
+      const { isOverMax, shouldHaveImage } = rollService.checkDiceLimits(firstArg);
 
-        const isOverMax = (shouldHaveImage && totalDiceRolled > maxImageDice) ||
-                         (!shouldHaveImage && (totalDiceRolled > maxTextDice || highestDiceSide > maxDiceSides));
-
-        if (isOverMax) {
-          await sendDiceOverMaxMessage({
-            args,
-            interaction,
-            shouldHaveImage,
-          });
-          return;
-        }
+      if (isOverMax && interaction) {
+        await sendDiceOverMaxMessage({
+          args,
+          interaction,
+          shouldHaveImage,
+        });
+        return;
       }
 
-      const diceService = DiceService.getInstance();
-      const { diceArray, resultArray, shouldHaveImage, files } = await diceService.rollDice(args, availableDice, timesToRepeat);
+      const rollResult = await rollService.rollDice({
+        notation: args,
+        timesToRepeat,
+        title,
+        interaction,
+        source: 'discord'
+      });
+
+      const { diceArray, resultArray, shouldHaveImage: resultHasImage, files } = rollResult;
 
       const hasResults = resultArray.length > 0 && resultArray.some(r => r.output);
-      
+
       if (!hasResults && interaction) {
         await sendHelperMessage({ interaction });
         return;
       }
 
-      if (shouldHaveImage) {
+      if (resultHasImage) {
         await sendDiceRolledMessage({ diceArray, interaction });
+
+        const diceService = await import("../../core/services/DiceService").then(mod => mod.DiceService.getInstance());
         const attachmentResult = await diceService.generateDiceAttachment(diceArray);
+
         if (!attachmentResult) {
           console.error("Failed to generate dice attachment");
           return;
         }
+
         const { attachment, canvas } = attachmentResult;
         await sendDiceResultMessageWithImage({
           resultArray,
@@ -96,11 +90,6 @@ const command = {
       } else {
         await sendDiceResultMessage({ resultArray, interaction, title });
       }
-
-      await DatabaseService.getInstance().updateOnCommand({
-        commandName: command.name,
-        interaction
-      });
 
     } catch (error) {
       console.error('Error in roll command:', error);
