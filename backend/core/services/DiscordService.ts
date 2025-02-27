@@ -133,10 +133,10 @@ export class DiscordService {
           const channels = await guild.channels.fetch();
           const textChannelTypes = [0, 5]; // Text and Announcement channels
           const textChannels = Array.from(channels.values())
-            .filter(c => textChannelTypes.includes(c?.type as number))
+            .filter((c): c is NonNullable<typeof c> => c !== null && c !== undefined && textChannelTypes.includes(c?.type as number))
             .map(c => ({
               id: c.id,
-              name: c.name,
+              name: 'name' in c ? c.name : 'Unknown Channel',
               type: c.type
             }));
 
@@ -176,15 +176,19 @@ export class DiscordService {
             return null;
           }
 
-          const guild = (channel as any).guild;
-          
-          return {
+          const channelProps = {
             id: channel.id,
-            name: channel.name,
-            type: channel.type,
+            name: 'name' in channel ? channel.name : 'Unknown Channel',
+            type: channel.type
+          };
+
+          const guild = 'guild' in channel ? channel.guild : null;
+
+          return {
+            ...channelProps,
             guild: guild ? {
               id: guild.id,
-              name: guild.name
+              name: 'name' in guild ? guild.name : 'Unknown Guild'
             } : null
           };
         } catch (error) {
@@ -233,7 +237,7 @@ export class DiscordService {
             return false;
           }
 
-          if (!channel.isTextBased()) {
+          if (!channel.isTextBased() || !('send' in channel) || typeof channel.send !== 'function') {
             return false;
           }
 
@@ -276,10 +280,10 @@ export class DiscordService {
 
     try {
       const { eventType, resultMessage, files, source, username, channelName, guildName } = options;
-      
+
       const embed = new EmbedBuilder()
         .setColor(tabletopColor);
-      
+
       if (eventType === 'RECEIVED_COMMAND') {
         embed.setColor(eventColor)
             .setTitle(`receivedCommand: /${source === 'web' ? 'roll' : source}`)
@@ -295,28 +299,24 @@ export class DiscordService {
         embed.setImage('attachment://currentDice.png');
       }
 
-      // Use Discord.js calculation to determine shard ID
       const logChannelId = CONFIG.discord.logOutputChannelId;
-      
-      // First try to get the actual guild via the channels cache
+
       let targetShard = 0;
-      
-      // Try all shards to find which has access
+
       for (const [id, shard] of this.manager.shards.entries()) {
         try {
-          const hasAccess = await shard.eval(async (client, { channelId }) => {
+          const hasAccess = await shard.eval(async (client, { context }) => {
             try {
-              const channel = await client.channels.fetch(channelId);
+              const channel = await client.channels.fetch(context.channelId);
               if (channel && channel.isTextBased()) {
-                // Return guild ID if channel found and accessible
-                return channel.guild ? channel.guild.id : null;
+                return 'guild' in channel && channel.guild ? channel.guild.id : null;
               }
               return null;
             } catch (error) {
               return null;
             }
           }, { context: { channelId: logChannelId } });
-          
+
           if (hasAccess) {
             targetShard = id;
             break;
@@ -325,66 +325,67 @@ export class DiscordService {
           console.error(`Error checking shard ${id}:`, error);
         }
       }
-      
-      // Target only that specific shard
+
       const shard = this.manager.shards.get(targetShard);
       if (!shard) {
         console.error(`Could not find shard ${targetShard} for log channel`);
         return false;
       }
-      
-      // Prepare files for serialization - ensure they're in the right format
+
       const serializedFiles = files?.map(file => ({
         name: file.name,
         attachment: file.attachment && Buffer.isBuffer(file.attachment)
           ? file.attachment.toString('base64')
           : null
       })) || [];
-      
-      // Send only to the specific shard
+
       return await shard.eval(async (client, { context }) => {
         try {
-          // Get the channel
           const logChannel = await client.channels.fetch(context.logChannelId)
             .catch(err => {
               console.error('Failed to fetch log channel:', err);
               return null;
             });
-            
-          if (!logChannel || !logChannel.isTextBased()) {
+
+          if (!logChannel || !logChannel.isTextBased() || !('send' in logChannel) || typeof logChannel.send !== 'function') {
             console.error('Log channel not found or not text-based');
             return false;
           }
-          
-          // Check permissions
-          const me = logChannel.guild?.members.me;
+
+          if (!('guild' in logChannel) || !logChannel.guild) {
+            console.error('Channel is not in a guild');
+            return false;
+          }
+
+          const me = logChannel.guild.members.me;
           if (!me) {
             console.error('Could not find bot member in guild');
             return false;
           }
-          
-          const permissions = logChannel.permissionsFor(me);
-          if (!permissions?.has('SendMessages')) {
-            console.error('Bot does not have permission to send messages to log channel');
-            
-            try {
-              await client.rest.post(`/channels/${context.logChannelId}/messages`, {
-                body: {
-                  embeds: [context.embed]
-                }
-              });
-              return true;
-            } catch (restError) {
-              console.error('Error:', restError);
-              return false;
+
+          if ('permissionsFor' in logChannel && typeof logChannel.permissionsFor === 'function') {
+            const permissions = logChannel.permissionsFor(me);
+            if (!permissions?.has('SendMessages')) {
+              console.error('Bot does not have permission to send messages to log channel');
+
+              try {
+                await client.rest.post(`/channels/${context.logChannelId}/messages`, {
+                  body: {
+                    embeds: [context.embed]
+                  }
+                });
+                return true;
+              } catch (restError) {
+                console.error('Error:', restError);
+                return false;
+              }
             }
           }
-          
-          // Deserialize files and send normally
-          let messageOptions = { 
+
+          let messageOptions: { embeds: any[], files?: any[] } = {
             embeds: [context.embed]
           };
-          
+
           if (context.files && context.files.length > 0) {
             try {
               const deserializedFiles = context.files
@@ -404,7 +405,7 @@ export class DiscordService {
                   }
                 })
                 .filter(Boolean);
-              
+
               if (deserializedFiles.length > 0) {
                 messageOptions.files = deserializedFiles;
               }
@@ -412,29 +413,30 @@ export class DiscordService {
               console.error('Error deserializing files:', fileError);
             }
           }
-          
+
           await logChannel.send(messageOptions);
           return true;
         } catch (error) {
           console.error('Error in eval execution:', error);
-          
-          // Last resort - try without files
+
           if (context.files && context.files.length > 0) {
             try {
               const logChannelFallback = await client.channels.fetch(context.logChannelId);
-              if (logChannelFallback && logChannelFallback.isTextBased()) {
+              if (logChannelFallback && 'send' in logChannelFallback && typeof logChannelFallback.send === 'function') {
                 await logChannelFallback.send({ embeds: [context.embed] });
                 return true;
+              } else {
+                console.error('Fallback channel does not support sending messages');
               }
             } catch (fallbackError) {
               console.error('Final fallback also failed:', fallbackError);
             }
           }
-          
+
           return false;
         }
-      }, { 
-        context: { 
+      }, {
+        context: {
           embed: embed.toJSON(),
           files: serializedFiles,
           logChannelId: logChannelId
