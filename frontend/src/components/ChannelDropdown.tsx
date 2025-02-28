@@ -20,14 +20,22 @@ interface ChannelDropdownProps {
 }
 
 export function ChannelDropdown({ channels = [], value, onValueChange }: ChannelDropdownProps) {
+  const selectedChannel = channels.find(channel => channel.id === value);
+
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger>
-        <SelectValue placeholder="Select Channel" />
+      <SelectTrigger className="w-[300px]">
+        <div className="flex items-center w-full">
+          {selectedChannel ? (
+            <span className="truncate">#{selectedChannel.name}</span>
+          ) : (
+            <span className="text-muted-foreground">Select Channel</span>
+          )}
+        </div>
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="min-w-[300px]">
         {channels.map((channel) => (
-          <SelectItem key={channel.id} value={channel.id}>
+          <SelectItem key={channel.id} value={channel.id} className="py-2">
             <span>#{channel.name}</span>
           </SelectItem>
         ))}

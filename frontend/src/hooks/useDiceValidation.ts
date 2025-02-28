@@ -41,33 +41,73 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
       setTotal(roll.total);
 
       let diceGroups: DiceGroup[] = [];
-
-      if (debouncedInput.includes('{')) {
-        const diceRegex = /\{(\d+)d(\d+)[^}]*\}/g;
-        let match;
-
-        while ((match = diceRegex.exec(debouncedInput)) !== null) {
-          if (match[1] && match[2]) {
-            const count = parseInt(match[1]);
-            const size = parseInt(match[2]);
-
-            diceGroups.push({
-              numberOfDice: count,
-              diceSize: size
-            });
-          }
-        }
-
-        if (diceGroups.length > 0) {
-          const isValidDice = diceGroups.length > 0 &&
-            diceGroups.every(group => group.numberOfDice > 0 && group.diceSize > 0);
-
-          setIsValid(isValidDice);
-          setDiceInfo({ diceGroups, modifier: roll.modifier || 0 });
-          return;
+      
+      const diceRegex = /(\d+)d(\d+)(?:k|d)?(\d+)?/gi;
+      let match;
+      
+      while ((match = diceRegex.exec(roll.notation)) !== null) {
+        const count = parseInt(match[1]);
+        const size = parseInt(match[2]);
+        if (count > 0 && size > 0) {
+          diceGroups.push({
+            numberOfDice: count,
+            diceSize: size
+          });
         }
       }
-
+      
+      if (diceGroups.length === 0 && roll.rolls) {
+        const processedDice = new Set();
+        
+        const extractDice = (rollGroup) => {
+          if (typeof rollGroup === 'string' || typeof rollGroup === 'number') {
+            return;
+          }
+          
+          if (rollGroup.dice && rollGroup.dice.sides) {
+            const sides = rollGroup.dice.sides;
+            const count = rollGroup.dice.qty || 0;
+            
+            const key = `${count}d${sides}`;
+            if (count > 0 && sides > 0 && !processedDice.has(key)) {
+              diceGroups.push({
+                numberOfDice: count,
+                diceSize: sides
+              });
+              processedDice.add(key);
+            }
+          }
+          
+          if (rollGroup.results) {
+            rollGroup.results.forEach(subGroup => extractDice(subGroup));
+          }
+          
+          if (rollGroup.rolls && Array.isArray(rollGroup.rolls)) {
+            if (!rollGroup.dice && rollGroup.type === 'roll-results') {
+              let sides = 20;
+              const count = rollGroup.rolls.length;
+              
+              const key = `${count}d${sides}`;
+              if (count > 0 && !processedDice.has(key)) {
+                diceGroups.push({
+                  numberOfDice: count,
+                  diceSize: sides
+                });
+                processedDice.add(key);
+              }
+            }
+          }
+        };
+        
+        roll.rolls.forEach(rollGroup => extractDice(rollGroup));
+      }
+      
+      if (diceGroups.length > 0) {
+        setIsValid(true);
+        setDiceInfo({ diceGroups, modifier: roll.modifier || 0 });
+        return;
+      }
+      
       const groupMap = new Map<number, { count: number, size: number }>();
 
       if (roll.rolls) {

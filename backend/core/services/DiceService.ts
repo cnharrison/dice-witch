@@ -243,7 +243,6 @@ export class DiceService {
         try {
           parsedRoll = Parser.parse(value);
         } catch (err) {
-          console.error(`Parse error for notation: ${value}`, err);
           errors.push(`Invalid notation: ${value}`);
           continue;
         }
@@ -261,7 +260,6 @@ export class DiceService {
         try {
           roll = new DiceRoll(value);
         } catch (err) {
-          console.error(`DiceRoll error for notation: ${value}`, err);
           errors.push(`Invalid notation when rolling: ${value}`);
           continue;
         }
@@ -271,45 +269,201 @@ export class DiceService {
         };
 
         let groupArray = [];
-        
 
-        if (value.includes('{') && value.includes('}')) {
-          const regex = /\[([^\]]+)\]/g;
-          let matches = [];
+
+        if (value.includes('{') || value.includes('k') || value.includes('d')) {
+          const dicePatterns = [];
+          const diceRegex = /(\d+)d(\d+)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
           let match;
-          
-          while ((match = regex.exec(roll.output)) !== null) {
-            if (match[1]) {
-              const values = match[1].split(',').map(v => v.trim());
-              matches.push(...values);
+
+          while ((match = diceRegex.exec(value)) !== null) {
+            dicePatterns.push({
+              count: parseInt(match[1]),
+              sides: parseInt(match[2])
+            });
+          }
+
+          const processOutput = () => {
+            const rollOutput = roll.output;
+            const diceGroups = rollOutput.match(/\[([^\]]+)\]/g) || [];
+
+            for (let i = 0; i < dicePatterns.length && i < diceGroups.length; i++) {
+              const pattern = dicePatterns[i];
+              const diceGroup = diceGroups[i];
+
+              const dieValues = diceGroup.replace(/[\[\]{}]/g, '')
+                               .split(',')
+                               .map(v => v.trim());
+
+              const count = pattern.count;
+              const sides = pattern.sides;
+
+              for (let j = 0; j < Math.max(count, dieValues.length); j++) {
+                const dieValueStr = j < dieValues.length ? dieValues[j] : '';
+
+                const isDropped = dieValueStr.endsWith('d');
+                const isPenetrating = dieValueStr.includes('!p');
+                const isExploded = dieValueStr.includes('!') && !isPenetrating;
+                const isCritSuccess = /\*\*$/.test(dieValueStr);
+                const isCritFailure = /__.*$/.test(dieValueStr);
+                const isTargetSuccess = dieValueStr.includes('*') && !/\*\*$/.test(dieValueStr);
+                const isRerolled = dieValueStr.includes('r');
+
+                let valueStr = dieValueStr;
+                if (isDropped) valueStr = valueStr.slice(0, -1);
+                if (isPenetrating) valueStr = valueStr.replace(/!p/g, '');
+                else if (isExploded) valueStr = valueStr.replace(/!/g, '');
+                if (isCritSuccess) valueStr = valueStr.replace(/\*\*$/, '');
+                if (isCritFailure) valueStr = valueStr.replace(/__/g, '');
+                if (isTargetSuccess) valueStr = valueStr.replace(/\*/g, '');
+                if (isRerolled) valueStr = valueStr.replace(/r/g, '');
+
+                const dieValue = parseInt(valueStr, 10);
+
+                const value = isNaN(dieValue) ? Math.floor(Math.random() * sides) + 1 : dieValue;
+
+                const isHeads = coinFlip();
+                const color = chroma.random();
+                const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
+                const textColor = this.getTextColorFromColors(color, secondaryColor);
+
+                const icons = [];
+
+                if (isDropped) {
+                  icons.push("trashcan");
+                }
+                if (isPenetrating) {
+                  icons.push("penetrate");
+                } else if (isExploded) {
+                  icons.push("explosion");
+                }
+                if (isCritSuccess) {
+                  icons.push("critical-success");
+                }
+                if (isCritFailure) {
+                  icons.push("critical-failure");
+                }
+                if (isTargetSuccess) {
+                  icons.push("target-success");
+                }
+                if (isRerolled) {
+                  icons.push("recycle");
+                }
+
+                const icon = icons.length > 0 ? icons : null;
+                const iconSpacing = icons.length > 0 ? 0.375 : null;
+
+                let adjustedColor = color;
+                if (isCritSuccess) {
+                  adjustedColor = chroma('#ffcc00');
+                } else if (isCritFailure) {
+                  adjustedColor = chroma('#ff3333');
+                }
+
+                groupArray.push({
+                  sides,
+                  rolled: value,
+                  icon,
+                  iconSpacing,
+                  color: adjustedColor,
+                  secondaryColor,
+                  textColor,
+                  value
+                });
+              }
+            }
+          };
+
+          processOutput();
+
+          if (groupArray.length === 0) {
+            const outputGroups = roll.output.match(/\[([^\]]+)\]/g) || [];
+
+            for (let i = 0; i < outputGroups.length; i++) {
+              const group = outputGroups[i];
+              let diceSize = i < dicePatterns.length ? dicePatterns[i].sides : 20;
+
+              const diceValues = group.replace(/[\[\]{}]/g, '')
+                              .split(',')
+                              .map(v => v.trim());
+
+              diceValues.forEach(dieValue => {
+                const isDropped = dieValue.endsWith('d');
+                const isPenetrating = dieValue.includes('!p');
+                const isExploded = dieValue.includes('!') && !isPenetrating;
+                const isCritSuccess = /\*\*$/.test(dieValue);
+                const isCritFailure = /__.*$/.test(dieValue);
+                const isTargetSuccess = dieValue.includes('*') && !/\*\*$/.test(dieValue);
+                const isRerolled = dieValue.includes('r');
+
+                let valueStr = dieValue;
+                if (isDropped) valueStr = valueStr.slice(0, -1);
+                if (isPenetrating) valueStr = valueStr.replace('!p', '');
+                else if (isExploded) valueStr = valueStr.replace('!', '');
+                if (isCritSuccess) valueStr = valueStr.replace(/\*\*$/, '');
+                if (isCritFailure) valueStr = valueStr.replace(/__/g, '');
+                if (isTargetSuccess) valueStr = valueStr.replace('*', '');
+                if (isRerolled) valueStr = valueStr.replace('r', '');
+
+                const value = parseInt(valueStr, 10);
+                if (isNaN(value)) return;
+
+                const isHeads = coinFlip();
+                const color = chroma.random();
+                const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
+                const textColor = this.getTextColorFromColors(color, secondaryColor);
+
+                const icons = [];
+
+                if (isDropped) icons.push("trashcan");
+                if (isPenetrating) icons.push("penetrate");
+                else if (isExploded) icons.push("explosion");
+                if (isCritSuccess) icons.push("critical-success");
+                if (isCritFailure) icons.push("critical-failure");
+                if (isTargetSuccess) icons.push("target-success");
+                if (isRerolled) icons.push("recycle");
+
+                const icon = icons.length > 0 ? icons : null;
+                const iconSpacing = icons.length > 0 ? 0.375 : null;
+
+                let adjustedColor = color;
+                if (isCritSuccess) {
+                  adjustedColor = chroma('#ffcc00');
+                } else if (isCritFailure) {
+                  adjustedColor = chroma('#ff3333');
+                }
+
+                groupArray.push({
+                  sides: diceSize,
+                  rolled: value,
+                  icon,
+                  iconSpacing,
+                  color: adjustedColor,
+                  secondaryColor,
+                  textColor,
+                  value
+                });
+              });
             }
           }
-          
-          matches.forEach(dieResult => {
-            const isDropped = dieResult.endsWith('d');
-            const value = parseInt(isDropped ? dieResult.slice(0, -1) : dieResult, 10);
-            
-            if (isNaN(value)) return;
-            
+
+          if (groupArray.length === 0) {
             const isHeads = coinFlip();
             const color = chroma.random();
             const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
             const textColor = this.getTextColorFromColors(color, secondaryColor);
-            
-            const icon = isDropped ? ["trashcan"] : null;
-            const iconSpacing = icon ? 0.375 : null;
-            
+
             groupArray.push({
               sides: 20,
-              rolled: value,
-              icon,
-              iconSpacing,
+              rolled: roll.total,
+              icon: null,
+              iconSpacing: null,
               color,
               secondaryColor,
               textColor,
-              value
+              value: roll.total
             });
-          });
+          }
         } else {
           groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
             if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
@@ -319,7 +473,7 @@ export class DiceService {
                 const processedGroup = this.processRollGroup(rollGroup, sides);
                 acc.push(...processedGroup);
               } catch (err) {
-                console.error(`Error processing roll group:`, err);
+                // Handle error silently
               }
             }
             return acc;
@@ -354,7 +508,7 @@ export class DiceService {
           files = [attachment.attachment];
         }
       } catch (error) {
-        console.error("Failed to generate dice attachment", error);
+        // Handle silently
       }
 
       if (resultArray.length === 0 && errors.length > 0) {

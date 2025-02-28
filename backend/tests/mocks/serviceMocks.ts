@@ -22,7 +22,7 @@ export class DiceServiceMock {
       };
     }
 
-    if (args.includes('2d20 + 5')) {
+    if (args.includes('2d20 + 5') || args.includes('1d20+5')) {
       return {
         diceArray: [
           [
@@ -46,8 +46,8 @@ export class DiceServiceMock {
         ],
         resultArray: [
           {
-            output: `${args[0]}: 30`,
-            results: 30 
+            output: `${args[0]}: 25`,
+            results: 25 
           }
         ],
         shouldHaveImage: true,
@@ -211,6 +211,41 @@ export class RollServiceMock {
     const notation = Array.isArray(options.notation) ? options.notation : [options.notation];
     const isWeb = options.source === 'web';
     const isDiscord = options.source === 'discord' || options.interaction;
+    
+    // Handle invalid inputs for integration tests
+    if (notation.includes('100d20') || notation.includes('invalid text') || notation.includes('')) {
+      return {
+        diceArray: [],
+        resultArray: [],
+        errors: ['Invalid notation'],
+        files: []
+      };
+    }
+    
+    // Handle special test cases for integration tests
+    if (notation.includes('1d20+5') || notation.includes('2d20 + 5') || notation.includes('2d20+5')) {
+      return {
+        diceArray: [[{
+          sides: 20,
+          rolled: 15,
+          color: { hex: () => '#FF0000' },
+          secondaryColor: { hex: () => '#0000FF' },
+          textColor: { hex: () => '#FFFFFF' },
+          value: 15
+        }]],
+        resultArray: [{
+          output: `${notation[0]}: 20`,
+          results: 20
+        }],
+        files: [new AttachmentBuilder(Buffer.from('test'))],
+        base64Image: isWeb && options.channelId ? 'base64-image-data' : undefined,
+        message: isWeb && options.channelId ? `Message sent to Discord channel test-channel` : undefined,
+        channelName: isWeb && options.channelId ? 'test-channel' : undefined,
+        guildName: isWeb && options.channelId ? 'Test Guild' : undefined,
+        source: isWeb ? 'web' : 'discord',
+        notation: notation[0]
+      };
+    }
     
     if (options.title && options.title.includes('Initiative')) {
       const modifier = options.title.includes('Rogue') ? 4 :

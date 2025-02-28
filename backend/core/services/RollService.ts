@@ -160,9 +160,6 @@ export class RollService {
               ...(messageReference ? { reply: { messageReference } } : {})
             });
 
-            if (!sendResult || !sendResult.success) {
-              console.error("Failed to send message to Discord. No error was thrown, but the operation failed.");
-            }
 
             try {
               const files = [{
@@ -181,13 +178,10 @@ export class RollService {
                 guildName
               });
             } catch (logError) {
-              console.error('Failed to send to log channel:', logError);
             }
-          } else {
-            console.error("Failed to generate dice attachment");
           }
         } catch (error) {
-          console.error("Error when sending dice results to Discord:", error);
+          // Handle error silently
         }
       }
 

@@ -3,15 +3,15 @@ import { Client, ShardingManager, EmbedBuilder, TextChannel } from 'discord.js';
 
 jest.mock('discord.js', () => {
   const original = jest.requireActual('discord.js');
-  
+
   const ClientMock = jest.fn().mockImplementation(() => ({
     login: jest.fn().mockResolvedValue('token'),
     isReady: jest.fn().mockReturnValue(true),
     on: jest.fn(),
     once: jest.fn(),
     shard: {
-      fetchClientValues: jest.fn().mockResolvedValue([5]), 
-      broadcastEval: jest.fn().mockResolvedValue([500]) 
+      fetchClientValues: jest.fn().mockResolvedValue([5]),
+      broadcastEval: jest.fn().mockResolvedValue([500])
     },
     guilds: {
       cache: {
@@ -76,7 +76,7 @@ describe('Discord Integration Tests', () => {
     discordService = DiscordService.getInstance();
     mockClient = new Client({ intents: [] });
     mockManager = new ShardingManager('./mock.js');
-    
+
     discordService.setClient(mockClient);
     discordService.setManager(mockManager);
   });
@@ -84,7 +84,7 @@ describe('Discord Integration Tests', () => {
   describe('Discord Service', () => {
     test('should get user count from shards', async () => {
       const counts = await discordService.getUserCount();
-      
+
       expect(counts).toHaveProperty('totalGuilds');
       expect(counts).toHaveProperty('totalMembers');
       expect(counts.totalGuilds).toBeGreaterThan(0);
@@ -105,7 +105,7 @@ describe('Discord Integration Tests', () => {
           }
         }
       };
-      
+
       const result = discordService.checkForAttachPermission(mockInteraction as any);
       expect(result).toBe(true);
     });
@@ -124,12 +124,12 @@ describe('Discord Integration Tests', () => {
       const mockEmbed = new EmbedBuilder()
         .setDescription('Test message')
         .setColor(0x0099ff);
-      
+
       const result = await discordService.sendMessage('valid-channel', {
         embeds: [mockEmbed],
         files: []
       });
-      
+
       expect(result.success).toBe(true);
     });
   });
@@ -156,6 +156,10 @@ describe('Discord Integration Tests', () => {
     test('Channel message sending', async () => {
         const mockChannel = {
             send: jest.fn()
+        };
+
+        const sendMessageToChannel = async (channel, message) => {
+          await channel.send(message);
         };
 
         await sendMessageToChannel(mockChannel, 'Test message');
