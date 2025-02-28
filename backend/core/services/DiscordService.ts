@@ -319,20 +319,44 @@ export class DiscordService {
         return false;
       }
 
-      const serializedMessageOptions = {
-        content: messageOptions.content,
-        embeds: messageOptions.embeds,
-        files: messageOptions.files?.length ? messageOptions.files.map((file: any) => {
-          return {
-            name: file.name,
-            data: file.data ? Buffer.from(file.data).toString('base64') : null,
-            attachment: file.attachment && Buffer.isBuffer(file.attachment)
-              ? file.attachment.toString('base64')
-              : null
-          };
-        }) : [],
-        reply: messageOptions.reply
-      };
+      let serializedMessageOptions;
+      try {
+        if (messageOptions.files?.length) {
+          messageOptions.files.forEach((file: any, index: number) => {
+            if (file.attachment && !Buffer.isBuffer(file.attachment)) {
+              console.error(`File attachment at index ${index} is not a Buffer. Type:`, typeof file.attachment);
+              if (typeof file.attachment === 'string') {
+                messageOptions.files[index].attachment = Buffer.from(file.attachment);
+              } else if (Array.isArray(file.attachment)) {
+                messageOptions.files[index].attachment = Buffer.from(file.attachment);
+              }
+            }
+          });
+        }
+        
+        serializedMessageOptions = {
+          content: messageOptions.content,
+          embeds: messageOptions.embeds,
+          files: messageOptions.files?.length ? messageOptions.files.map((file: any) => {
+            return {
+              name: file.name,
+              data: file.data ? Buffer.from(file.data).toString('base64') : null,
+              attachment: file.attachment && Buffer.isBuffer(file.attachment)
+                ? file.attachment.toString('base64')
+                : null
+            };
+          }) : [],
+          reply: messageOptions.reply
+        };
+      } catch (error) {
+        console.error("Error serializing message options:", error);
+        serializedMessageOptions = {
+          content: messageOptions.content,
+          embeds: messageOptions.embeds,
+          files: [],
+          reply: messageOptions.reply
+        };
+      }
 
       const result = await shard.eval(async (client, { context }) => {
         try {

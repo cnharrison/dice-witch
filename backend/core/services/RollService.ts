@@ -92,12 +92,14 @@ export class RollService {
 
     const notationArray = this.normalizeNotation(notation);
 
+    const rollResult = await this.diceService.rollDice(notationArray, availableDice, timesToRepeat);
+
     const {
       diceArray,
       resultArray,
       errors,
       files
-    } = await this.diceService.rollDice(notationArray, availableDice, timesToRepeat);
+    } = rollResult;
 
     const result: RollResult = {
       diceArray,
@@ -137,44 +139,55 @@ export class RollService {
           }
         }
 
-        const diceAttachment = await this.diceService.generateDiceAttachment(diceArray);
-        if (diceAttachment) {
-          const imageBuffer = diceAttachment.canvas.toBuffer('image/webp');
-          base64Image = Buffer.from(imageBuffer).toString('base64');
+        let diceAttachment;
+        try {
+          diceAttachment = await this.diceService.generateDiceAttachment(diceArray);
+          if (diceAttachment) {
+            const imageBuffer = diceAttachment.canvas.toBuffer('image/webp');
+            base64Image = Buffer.from(imageBuffer).toString('base64');
 
-          const embedMessage = await this.diceService.generateEmbedMessage({
-            resultArray,
-            attachment: diceAttachment.attachment,
-            source: 'web',
-            username,
-            title: options.title || undefined
-          });
-
-          await this.discordService.sendMessage(channelId, {
-            embeds: embedMessage.embeds,
-            files: embedMessage.files,
-            ...(messageReference ? { reply: { messageReference } } : {})
-          });
-
-          try {
-            const files = [{
-              name: 'currentDice.png',
-              attachment: Buffer.isBuffer(diceAttachment.attachment) ? diceAttachment.attachment : null
-            }].filter(file => file.attachment !== null);
-
-            await sendLogEventMessage({
-              eventType: EventType.RECEIVED_COMMAND,
-              args: Array.isArray(notation) ? notation : [notation],
-              guild: channel.guild,
-              files: files.length > 0 ? files : undefined,
-              sourceName: 'web',
+            const embedMessage = await this.diceService.generateEmbedMessage({
+              resultArray,
+              attachment: diceAttachment.attachment,
+              source: 'web',
               username,
-              channelName,
-              guildName
+              title: options.title || undefined
             });
-          } catch (error) {
-            console.error('Failed to send to log channel:', error);
+
+            const sendResult = await this.discordService.sendMessage(channelId, {
+              embeds: embedMessage.embeds,
+              files: embedMessage.files,
+              ...(messageReference ? { reply: { messageReference } } : {})
+            });
+
+            if (!sendResult || !sendResult.success) {
+              console.error("Failed to send message to Discord. No error was thrown, but the operation failed.");
+            }
+
+            try {
+              const files = [{
+                name: 'currentDice.png',
+                attachment: Buffer.isBuffer(diceAttachment.attachment) ? diceAttachment.attachment : null
+              }].filter(file => file.attachment !== null);
+
+              await sendLogEventMessage({
+                eventType: EventType.RECEIVED_COMMAND,
+                args: Array.isArray(notation) ? notation : [notation],
+                guild: channel.guild,
+                files: files.length > 0 ? files : undefined,
+                sourceName: 'web',
+                username,
+                channelName,
+                guildName
+              });
+            } catch (logError) {
+              console.error('Failed to send to log channel:', logError);
+            }
+          } else {
+            console.error("Failed to generate dice attachment");
           }
+        } catch (error) {
+          console.error("Error when sending dice results to Discord:", error);
         }
       }
 

@@ -83,7 +83,7 @@ export class DiceService {
   }
 
   private generateIconArray(modifierSet: Set<string>): Icon[] | null {
-    if (modifierSet.size === 0) return null;
+    if (!modifierSet || modifierSet.size === 0) return null;
     return [...modifierSet].map((item) => {
       switch (item) {
         case "drop": return "trashcan";
@@ -127,8 +127,14 @@ export class DiceService {
     rollGroup: any,
     sides: number,
   ): Die[] {
+    if (!rollGroup || !rollGroup.rolls) {
+      return [];
+    }
+
     if (sides === undefined) {
       return rollGroup.rolls.map((currentRoll: RollResult) => {
+        if (!currentRoll) return null;
+
         const isHeads = coinFlip();
         const color = chroma.random();
         const secondaryColor = isHeads
@@ -137,19 +143,21 @@ export class DiceService {
         const textColor = this.getTextColorFromColors(color, secondaryColor);
         return {
           sides: 6,
-          rolled: currentRoll.initialValue,
+          rolled: currentRoll.initialValue || 0,
           icon: null,
           iconSpacing: 0,
           color,
           secondaryColor,
           textColor,
-          value: currentRoll.initialValue,
+          value: currentRoll.initialValue || 0,
         };
-      });
+      }).filter(Boolean);
     }
 
     if (sides === 100) {
       return rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
+        if (!cur) return acc;
+
         const isHeads = coinFlip();
         const color = chroma.random();
         const secondaryColor = isHeads
@@ -157,30 +165,35 @@ export class DiceService {
           : chroma.random();
         const textColor = this.getTextColorFromColors(color, secondaryColor);
         const icon = this.generateIconArray(cur.modifiers);
+
+        const initialValue = cur.initialValue || 0;
+
         acc.push(
           {
             sides: "%",
-            rolled: this.getDPercentRolled(cur.initialValue) as DiceFaces,
+            rolled: this.getDPercentRolled(initialValue) as DiceFaces,
             icon,
             iconSpacing: 0.89,
             color,
             secondaryColor,
             textColor,
-            value: cur.initialValue,
+            value: initialValue,
           },
           {
             sides: 10,
-            rolled: this.getD10PercentRolled(cur.initialValue) as DiceFaces,
+            rolled: this.getD10PercentRolled(initialValue) as DiceFaces,
             color,
             secondaryColor,
             textColor,
-            value: cur.initialValue,
+            value: initialValue,
           }
         );
         return acc;
       }, []);
     } else {
       return rollGroup.rolls.map((currentRoll: RollResult) => {
+        if (!currentRoll) return null;
+
         const isHeads = coinFlip();
         const color = chroma.random();
         const secondaryColor = isHeads
@@ -189,17 +202,20 @@ export class DiceService {
         const textColor = this.getTextColorFromColors(color, secondaryColor);
         const icon = this.generateIconArray(currentRoll.modifiers);
         const iconSpacing = this.getIconSpacing(icon);
+
+        const initialValue = currentRoll.initialValue || 0;
+
         return {
           sides,
-          rolled: currentRoll.initialValue,
+          rolled: initialValue,
           icon,
           iconSpacing,
           color,
           secondaryColor,
           textColor,
-          value: currentRoll.initialValue,
+          value: initialValue,
         };
-      });
+      }).filter(Boolean);
     }
   }
 
@@ -227,6 +243,7 @@ export class DiceService {
         try {
           parsedRoll = Parser.parse(value);
         } catch (err) {
+          console.error(`Parse error for notation: ${value}`, err);
           errors.push(`Invalid notation: ${value}`);
           continue;
         }
@@ -240,21 +257,92 @@ export class DiceService {
           });
         }
 
-        const roll = new DiceRoll(value);
+        let roll;
+        try {
+          roll = new DiceRoll(value);
+        } catch (err) {
+          console.error(`DiceRoll error for notation: ${value}`, err);
+          errors.push(`Invalid notation when rolling: ${value}`);
+          continue;
+        }
         const result: Result = {
           output: roll.output,
           results: roll.total,
         };
 
-        const groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
-          if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
-            const sides = rollGroupSidesMap.get(outerIndex);
+        let groupArray = [];
+        
 
-            const processedGroup = this.processRollGroup(rollGroup, sides);
-            acc.push(...processedGroup);
+        if (value.includes('{') && value.includes('}')) {
+          const regex = /\[([^\]]+)\]/g;
+          let matches = [];
+          let match;
+          
+          while ((match = regex.exec(roll.output)) !== null) {
+            if (match[1]) {
+              const values = match[1].split(',').map(v => v.trim());
+              matches.push(...values);
+            }
           }
-          return acc;
-        }, []);
+          
+          matches.forEach(dieResult => {
+            const isDropped = dieResult.endsWith('d');
+            const value = parseInt(isDropped ? dieResult.slice(0, -1) : dieResult, 10);
+            
+            if (isNaN(value)) return;
+            
+            const isHeads = coinFlip();
+            const color = chroma.random();
+            const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
+            const textColor = this.getTextColorFromColors(color, secondaryColor);
+            
+            const icon = isDropped ? ["trashcan"] : null;
+            const iconSpacing = icon ? 0.375 : null;
+            
+            groupArray.push({
+              sides: 20,
+              rolled: value,
+              icon,
+              iconSpacing,
+              color,
+              secondaryColor,
+              textColor,
+              value
+            });
+          });
+        } else {
+          groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
+            if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
+              const sides = rollGroupSidesMap.get(outerIndex);
+
+              try {
+                const processedGroup = this.processRollGroup(rollGroup, sides);
+                acc.push(...processedGroup);
+              } catch (err) {
+                console.error(`Error processing roll group:`, err);
+              }
+            }
+            return acc;
+          }, []);
+        }
+
+        if (groupArray.length === 0) {
+          const isHeads = coinFlip();
+          const color = chroma.random();
+          const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
+          const textColor = this.getTextColorFromColors(color, secondaryColor);
+
+          groupArray.push({
+            sides: 20,
+            rolled: roll.total,
+            icon: null,
+            iconSpacing: null,
+            color,
+            secondaryColor,
+            textColor,
+            value: roll.total
+          });
+        }
 
         diceArray.push([...groupArray]);
         resultArray.push(result);
@@ -269,10 +357,14 @@ export class DiceService {
         console.error("Failed to generate dice attachment", error);
       }
 
+      if (resultArray.length === 0 && errors.length > 0) {
+        return { diceArray: [], resultArray: [], errors };
+      }
+
       return {
         diceArray,
         resultArray,
-        errors: resultArray.length > 0 ? undefined : errors.length ? errors : undefined,
+        errors: errors.length > 0 ? errors : undefined,
         files,
       };
     } catch {

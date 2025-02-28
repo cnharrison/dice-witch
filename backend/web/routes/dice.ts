@@ -25,27 +25,43 @@ router.post('/roll', async (c) => {
       return c.json({ error: 'Dice roll exceeds maximum limits (50 dice max, 100 sides max)' }, 400);
     }
 
-    const rollResult = await rollService.rollDice({
-      notation,
-      channelId,
-      username,
-      source: 'web',
-      timesToRepeat: timesToRepeat || 1,
-      title
-    });
+    let response;
+    try {
+      const rollResult = await rollService.rollDice({
+        notation,
+        channelId,
+        username,
+        source: 'web',
+        timesToRepeat: timesToRepeat || 1,
+        title
+      });
 
-    if (rollResult.errors && rollResult.errors.length > 0) {
-      return c.json({ error: `Invalid notation: ${rollResult.errors.join(', ')}` }, 400);
+      if (rollResult.errors && rollResult.errors.length > 0 && (!rollResult.resultArray || rollResult.resultArray.length === 0)) {
+        return c.json({ 
+          error: `Invalid notation: ${rollResult.errors.join(', ')}`,
+          message: `Invalid notation: ${rollResult.errors.join(', ')}`,
+          diceArray: [],
+          resultArray: []
+        }, 400);
+      }
+
+      response = {
+        message: rollResult.message || `Roll processed successfully`,
+        diceArray: rollResult.diceArray || [],
+        resultArray: rollResult.resultArray || [],
+        imageData: rollResult.base64Image,
+        channelName: rollResult.channelName,
+        guildName: rollResult.guildName
+      };
+    } catch (error) {
+      console.error("Roll error:", error);
+      return c.json({ 
+        error: 'Error processing dice roll',
+        message: 'Error processing dice roll. Please try a different notation.',
+        diceArray: [],
+        resultArray: []
+      }, 500);
     }
-
-    const response = {
-      message: rollResult.message || `Roll processed successfully`,
-      diceArray: rollResult.diceArray,
-      resultArray: rollResult.resultArray,
-      imageData: rollResult.base64Image,
-      channelName: rollResult.channelName,
-      guildName: rollResult.guildName
-    };
 
     return c.json(response, 200);
   } catch (err) {

@@ -173,19 +173,23 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
             <div className="w-full flex flex-col items-center absolute top-6 left-0 right-0 z-[20]">
               <div className="flex flex-col items-center">
                 <div className="text-7xl font-extrabold text-white [text-shadow:-2px_-2px_0_#000,2px_-2px_0_#000,-2px_2px_0_#000,2px_2px_0_#000,0_0_12px_rgba(0,0,0,0.8)]">
-                  {rollResults.resultArray.map(result => result.results).reduce((a, b) => a + b, 0)}
+                  {rollResults.resultArray && rollResults.resultArray.length > 0
+                    ? rollResults.resultArray.map(result => result.results).reduce((a, b) => a + b, 0)
+                    : 'Error'}
                 </div>
                 <div className="mt-2 text-xl text-white [text-shadow:-1px_-1px_0_#000,1px_-1px_0_#000,-1px_1px_0_#000,1px_1px_0_#000,0_0_8px_rgba(0,0,0,0.8)]">
-                  {rollResults.resultArray.map((result, i) => (
-                    <span key={i} className="mx-1">
-                      {i > 0 ? ' + ' : ''}
-                      {result.output}
-                    </span>
-                  ))}
+                  {rollResults.resultArray && rollResults.resultArray.length > 0 
+                    ? rollResults.resultArray.map((result, i) => (
+                        <span key={i} className="mx-1">
+                          {i > 0 ? ' + ' : ''}
+                          {result.output}
+                        </span>
+                      ))
+                    : rollResults.message || 'Invalid notation'}
                 </div>
               </div>
               
-              {!rollResults.imageData && (
+              {!rollResults.imageData && rollResults.diceArray && rollResults.diceArray.length > 0 && (
                 <div className="flex flex-wrap gap-4 justify-center mb-4">
                   {rollResults.diceArray.flat().map((die, index) => {
                     const DiceIcon = DiceIcons[`d${die.sides}` as keyof typeof DiceIcons];
