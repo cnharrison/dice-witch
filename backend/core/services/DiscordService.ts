@@ -170,22 +170,35 @@ export class DiscordService {
   }
 
   public checkForAttachPermission(
-    interaction?: ButtonInteraction | CommandInteraction
+    interaction?: ButtonInteraction | CommandInteraction | any
   ): boolean {
-    const channel = interaction?.channel
-    const guild = interaction?.guild
-    const me = guild?.members.me;
-
-    if (!guild || !me || channel?.type !== ChannelType.GuildText) {
-      return true;
+    if (!interaction) return true;
+    
+    if (interaction.type === ChannelType.GuildText && interaction.guild) {
+      const channel = interaction;
+      const guild = channel.guild;
+      const me = guild?.members?.me;
+      
+      if (!me) return true;
+      
+      const permissions = channel.permissionsFor(me);
+      const permissionArray = permissions?.toArray();
+      
+      return (permissionArray?.includes("AttachFiles") &&
+             permissionArray?.includes("EmbedLinks") &&
+             permissionArray?.includes("ReadMessageHistory")) ||
+             false;
+    } else {
+      try {
+        const channelId = interaction.id || interaction.channelId;
+        if (!channelId) return true;
+        
+        return true;
+      } catch (error) {
+        console.error("Error checking permissions:", error);
+        return true;
+      }
     }
-
-    const permissions = channel.permissionsFor(me);
-    const permissionArray = permissions?.toArray();
-
-    return permissionArray?.includes("AttachFiles") &&
-           permissionArray?.includes("EmbedLinks") ||
-           false;
   }
 
   public trackInteraction(interactionId: string) {
@@ -396,6 +409,20 @@ export class DiscordService {
           };
         } catch (error) {
           console.error('Error sending message to Discord channel:', error);
+          if (error.code === 50013 || error.code === 160002 || 
+              (error.message && (
+                error.message.includes("Missing Permissions") ||
+                error.message.includes("Missing Access") ||
+                error.message.includes("Cannot reply without permission") ||
+                error.message.includes("read message history")
+              ))) {
+            return { 
+              success: false, 
+              error: "PERMISSION_ERROR",
+              message: "Cannot reply without permission to read message history",
+              code: error.code || 50013
+            };
+          }
           return { success: false };
         }
       }, { context: { channelId, messageOptions: serializedMessageOptions } });
@@ -403,6 +430,20 @@ export class DiscordService {
       return result;
     } catch (error) {
       console.error('Error in sendMessage:', error);
+      if (error.code === 50013 || error.code === 160002 || 
+          (error.message && (
+            error.message.includes("Missing Permissions") ||
+            error.message.includes("Missing Access") ||
+            error.message.includes("Cannot reply without permission") ||
+            error.message.includes("read message history")
+          ))) {
+        return { 
+          success: false, 
+          error: "PERMISSION_ERROR",
+          message: "Cannot reply without permission to read message history",
+          code: error.code || 50013
+        };
+      }
       return { success: false };
     }
   }

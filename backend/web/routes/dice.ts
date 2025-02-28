@@ -36,6 +36,15 @@ router.post('/roll', async (c) => {
         title
       });
 
+      if (rollResult.error === 'PERMISSION_ERROR') {
+        return c.json({
+          error: 'PERMISSION_ERROR',
+          message: rollResult.message || 'Dice Witch needs permission to read message history, attach files, and embed links to show you the dice. 😊',
+          diceArray: rollResult.diceArray || [],
+          resultArray: rollResult.resultArray || []
+        }, 403);
+      }
+
       if (rollResult.errors && rollResult.errors.length > 0 && (!rollResult.resultArray || rollResult.resultArray.length === 0)) {
         return c.json({ 
           error: `Invalid notation: ${rollResult.errors.join(', ')}`,

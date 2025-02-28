@@ -119,6 +119,7 @@ export class RollService {
         guildName = channel.guild?.name || '';
       }
 
+      
       if (channel && diceArray.some(group => group.length > 0)) {
         let rollingMessageResult;
         let skipDelay = false;
@@ -134,7 +135,14 @@ export class RollService {
         if (!skipDelay) {
           const rollingMessage = this.diceService.generateDiceRolledMessage(diceArray, numericResults);
           rollingMessageResult = await this.discordService.sendMessage(channelId, { content: rollingMessage });
-          if (rollingMessageResult?.success) {
+          
+          if (!rollingMessageResult.success) {
+            if (rollingMessageResult.error === "PERMISSION_ERROR") {
+              result.message = 'Dice Witch needs permission to read message history, attach files, and embed links to show you the dice. 😊';
+              result.error = 'PERMISSION_ERROR';
+              return result;
+            }
+          } else if (rollingMessageResult?.success) {
             messageReference = rollingMessageResult.messageId;
           }
         }
@@ -159,6 +167,12 @@ export class RollService {
               files: embedMessage.files,
               ...(messageReference ? { reply: { messageReference } } : {})
             });
+            
+            if (!sendResult.success && sendResult.error === "PERMISSION_ERROR") {
+              result.message = 'Dice Witch needs permission to read message history, attach files, and embed links to show you the dice. 😊';
+              result.error = 'PERMISSION_ERROR';
+              return result;
+            }
 
 
             try {

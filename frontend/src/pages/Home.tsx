@@ -14,6 +14,7 @@ import { Input as InputComponent } from '@/components/ui/input';
 import { Button as ButtonComponent } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useGuild } from '@/context/GuildContext';
+import { useToast } from '@/hooks/use-toast';
 
 export const Home = () => {
   const { user } = useUser();
@@ -74,6 +75,8 @@ export const Home = () => {
 
   const channels = channelsResponse?.channels || [];
 
+  const { toast } = useToast();
+  
   const handleRollDice = async () => {
     if (!isValid || !selectedChannel || !input) return;
 
@@ -101,12 +104,27 @@ export const Home = () => {
       });
 
       const data = await response.json();
+      
+      if (data.error === 'PERMISSION_ERROR') {
+        toast({
+          title: "Missing Discord Permissions",
+          description: "I need permission to read message history, attach files, and embed links to show you the dice 😊",
+          variant: "destructive",
+        });
+      }
+      
       setRollResults(data);
       setIsRolling(false);
 
     } catch (error) {
       console.error('Error rolling dice:', error);
       setIsRolling(false);
+      
+      toast({
+        title: "Error Rolling Dice",
+        description: "Something went wrong when trying to roll. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 

@@ -4,6 +4,7 @@ import { UserProfile } from '@clerk/clerk-react';
 import { AuthWrapper } from './components/AuthWrapper';
 import { Navbar } from './components/Navbar';
 import { SvgFilters } from './components/SvgFilters';
+import { Toaster } from './components/ui/toaster';
 import Home from './pages/Home';
 import LandingPage from './pages/LandingPage';
 import Preferences from './pages/Preferences';
@@ -13,6 +14,7 @@ function App() {
   return (
     <>
       <SvgFilters />
+      <Toaster />
       <Routes>
         <Route path="/" element={<LandingPage />} />
 

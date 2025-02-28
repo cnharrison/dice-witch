@@ -131,7 +131,7 @@ export default function Preferences() {
         {isGuildsLoading ? (
           <p>Loading guilds...</p>
         ) : guilds.length === 0 ? (
-          <p>No guilds found where you have admin permissions</p>
+          <p>No guilds found where you have admin permissions, or the Dice Witch Admin role. If you think this is mistaken, try rolling in the guild you want to post to, then try again</p>
         ) : (
           <select
             className="w-full p-2 border border-amber-100 rounded-md dark:bg-gray-700 dark:border-amber-100/50 focus:ring-amber-100 focus:border-amber-100"
