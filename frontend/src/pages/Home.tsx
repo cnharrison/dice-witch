@@ -146,13 +146,6 @@ export const Home = () => {
             hideText
           />
 
-          <div
-            className="absolute inset-0 flex items-center justify-center z-[9999]"
-          >
-            <div className="font-['UnifrakturMaguntia'] text-[#ff00ff] text-[14rem] font-bold tracking-wide whitespace-nowrap [text-shadow:4px_4px_8px_rgba(0,0,0,0.95)]">
-              Dice Witch
-            </div>
-          </div>
         </div>
 
         <div className="w-[300px] mb-4">
@@ -185,6 +178,9 @@ export const Home = () => {
               rollResults={rollResults}
               isRolling={isRolling}
               showAnimation={showAnimation || isRolling}
+              input={input}
+              setInput={handleInputChange}
+              selectedChannel={!!selectedChannel}
             />
             <DiceInput
               input={input}

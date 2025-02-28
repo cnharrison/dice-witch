@@ -9,6 +9,7 @@ import { type DiceInfo } from "@/hooks/useDiceValidation";
 import { RollResponse } from "@/types/dice";
 import * as React from "react";
 import { DiceAnimation3D } from "./DiceAnimation3D";
+import { DiceNotationButtons } from "./DiceNotationButtons";
 
 const DiceIcons = {
   d4: D4Icon,
@@ -24,9 +25,20 @@ interface RollerProps {
   rollResults: RollResponse | null;
   isRolling: boolean;
   showAnimation?: boolean;
+  input: string;
+  setInput: (value: string) => void;
+  selectedChannel: boolean;
 }
 
-export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false }: RollerProps) {
+export function Roller({ 
+  diceInfo, 
+  rollResults, 
+  isRolling, 
+  showAnimation = false,
+  input,
+  setInput,
+  selectedChannel
+}: RollerProps) {
   const previousDiceInfoRef = React.useRef<DiceInfo | null>(null);
   const combinedDiceInfoRef = React.useRef<DiceInfo | null>(null);
   const [combinedDiceInfo, setCombinedDiceInfo] = React.useState<DiceInfo | null>(null);
@@ -203,8 +215,8 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
 
   if (isMobileView) {
     return (
-      <div className="flex flex-col min-h-[400px] h-[50vh] rounded-lg border">
-        <div className="h-[65%] relative isolate">
+      <div className="flex flex-col min-h-[500px] h-[90vh] rounded-lg border">
+        <div className="h-[45%] relative isolate">
           {showAnimation && combinedDiceInfo && (
             <div className="absolute inset-0 z-[1]">
               <DiceAnimation3D
@@ -285,25 +297,12 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
           )}
         </div>
 
-        <div className="h-[35%] flex flex-col items-center justify-center p-2 border-t">
-          <div className="flex flex-wrap gap-2 justify-center">
-            {diceInfo?.diceGroups?.map((group, index) => {
-              const DiceIcon = DiceIcons[`d${group.diceSize}` as keyof typeof DiceIcons];
-
-              return (
-                <div key={index} className="flex flex-col items-center">
-                  {DiceIcon ? (
-                    <DiceIcon className="w-10 h-10" darkMode={theme === 'dark'} />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
-                      {group.diceSize}
-                    </div>
-                  )}
-                  <span className="text-xs font-medium mt-1">×{group.numberOfDice}</span>
-                </div>
-              );
-            })}
-          </div>
+        <div className="h-[55%] p-2 border-t overflow-y-auto">
+          <DiceNotationButtons 
+            input={input}
+            setInput={setInput}
+            isDisabled={!selectedChannel}
+          />
         </div>
       </div>
     );
@@ -315,25 +314,12 @@ export function Roller({ diceInfo, rollResults, isRolling, showAnimation = false
       className="min-h-[600px] h-[70vh] rounded-lg border"
     >
       <ResizablePanel defaultSize={50}>
-        <div className="flex h-full flex-col items-center justify-center p-6">
-          <div className="flex flex-wrap gap-4 justify-center">
-            {diceInfo?.diceGroups?.map((group, index) => {
-              const DiceIcon = DiceIcons[`d${group.diceSize}` as keyof typeof DiceIcons];
-
-              return (
-                <div key={index} className="flex flex-col items-center">
-                  {DiceIcon ? (
-                    <DiceIcon className="w-16 h-16" darkMode={theme === 'dark'} />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
-                      {group.diceSize}
-                    </div>
-                  )}
-                  <span className="text-sm font-medium mt-1">×{group.numberOfDice}</span>
-                </div>
-              );
-            })}
-          </div>
+        <div className="flex h-full flex-col items-center justify-center p-6 overflow-auto">
+          <DiceNotationButtons 
+            input={input}
+            setInput={setInput}
+            isDisabled={!selectedChannel}
+          />
         </div>
       </ResizablePanel>
       <ResizableHandle />

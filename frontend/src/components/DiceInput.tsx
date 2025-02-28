@@ -2,7 +2,6 @@ import * as React from "react";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { D20Icon } from '@/components/icons/D20Icon';
 import { cn } from "@/lib/utils";
@@ -37,7 +36,26 @@ export function DiceInput({
 
   const handleInputChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
+
+    const selectionEvent = new CustomEvent('diceInputSelectionChange', {
+      detail: {
+        selectionStart: e.target.selectionStart,
+        selectionEnd: e.target.selectionEnd
+      }
+    });
+    e.target.dispatchEvent(selectionEvent);
   }, [setInput]);
+
+  const handleInputSelect = React.useCallback((e: React.SyntheticEvent<HTMLInputElement>) => {
+    const target = e.target as HTMLInputElement;
+    const selectionEvent = new CustomEvent('diceInputSelectionChange', {
+      detail: {
+        selectionStart: target.selectionStart,
+        selectionEnd: target.selectionEnd
+      }
+    });
+    window.dispatchEvent(selectionEvent);
+  }, []);
 
   const handleClearInput = React.useCallback(() => {
     setInput('');
@@ -87,6 +105,7 @@ export function DiceInput({
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleDiceInputKeyDown}
+            onSelect={handleInputSelect}
             placeholder={selectedChannel ? "Enter dice roll (e.g., 2d20+3d8+5)" : "Select a channel first, then enter dice"}
             disabled={!selectedChannel}
             className={cn(
@@ -130,7 +149,7 @@ export function DiceInput({
             </div>
           </div>
         </div>
-        
+
         {/* Row 2: Roll title and times to repeat */}
         <div className="flex items-center space-x-2 w-full">
           <div className="flex-grow">
@@ -147,7 +166,7 @@ export function DiceInput({
               )}
             />
           </div>
-          
+
           {timesToRepeat > 0 && (
             <div className="flex-shrink-0">
               <Tooltip>
@@ -211,8 +230,7 @@ export function DiceInput({
           )}
         </div>
       </div>
-      
-      {/* Desktop layout - unchanged */}
+
       <div className="hidden sm:flex items-center space-x-2 mt-4">
         <div className="relative flex-grow">
           <Input
@@ -221,6 +239,7 @@ export function DiceInput({
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleDiceInputKeyDown}
+            onSelect={handleInputSelect}
             placeholder={selectedChannel ? "Enter dice roll (e.g., 2d20+3d8+5)" : "Select a channel first, then enter dice"}
             disabled={!selectedChannel}
             className={cn(
