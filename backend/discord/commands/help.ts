@@ -28,9 +28,15 @@ const help: Command = {
     };
 
     if (!args.length) {
-      data.push(Array.from(commands.values()).map(command => command.name).join("\r"));
-      data.push(`\n\nUse /help [command name] for more info about a specific command`);
-      await sendEmbed("Commands", data.join("\r"));
+      data.push("**Available Commands:**");
+      data.push("• **/roll** - Roll dice using standard notation");
+      data.push("• **/status** - Check bot status");
+      data.push("• **/knowledgebase** - View dice rolling help");
+      data.push("• **/web** - Access the web interface");
+      data.push("• **/prefs** - Set your preferences on the web");
+      data.push("• **/help** - Show this help message");
+      data.push(`\nUse /help [command name] for more info about a specific command`);
+      await sendEmbed("Dice Witch Commands", data.join("\n"));
       return;
     }
 

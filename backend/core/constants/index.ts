@@ -25,6 +25,7 @@ const errorColor = resolveColor('#FF0000');
 const goodColor = resolveColor('#00FF00');
 const infoColor = resolveColor('#1E90FF');
 const tabletopColor = resolveColor('#966F33');
+const panacheColor = resolveColor('#FF00FF');
 
 const footerButtonRow = new ActionRowBuilder()
   .addComponents(
@@ -50,5 +51,6 @@ export {
   goodColor,
   infoColor,
   tabletopColor,
+  panacheColor,
   footerButtonRow,
 };

@@ -103,6 +103,14 @@ const globalSlashCommands: ApplicationCommandDataResolvable[] = [
       }
     ],
   },
+  {
+    name: "web",
+    description: "Access Dice Witch's web interface",
+  },
+  {
+    name: "prefs",
+    description: "Set your preferences on the web",
+  },
 ];
 
 const registerCommands = async (discord: Client) => {
