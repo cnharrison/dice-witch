@@ -20,16 +20,16 @@ interface DiceInputProps {
   onRollTitleChange?: (value: string) => void;
 }
 
-export function DiceInput({ 
-  input, 
-  setInput, 
-  isValid, 
-  onRoll, 
-  timesToRepeat = 1, 
-  onTimesToRepeatChange, 
-  selectedChannel, 
-  rollTitle = '', 
-  onRollTitleChange 
+export function DiceInput({
+  input,
+  setInput,
+  isValid,
+  onRoll,
+  timesToRepeat = 1,
+  onTimesToRepeatChange,
+  selectedChannel,
+  rollTitle = '',
+  onRollTitleChange
 }: DiceInputProps) {
   const diceInputRef = React.useRef<HTMLInputElement>(null);
   const timesToRepeatRef = React.useRef<HTMLInputElement>(null);
@@ -86,22 +86,26 @@ export function DiceInput({
             onChange={handleInputChange}
             onKeyDown={handleDiceInputKeyDown}
             placeholder={selectedChannel ? "Enter dice roll (e.g., 2d20+3d8+5)" : "Select a channel first, then enter dice"}
+            disabled={!selectedChannel}
             className={cn(
               "w-full pr-10",
               !isValid && "text-red-500",
-              !selectedChannel && "border-amber-500"
+              !selectedChannel && "border-amber-500 opacity-50"
             )}
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center space-x-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleClearInput}
-              className="h-7 w-7"
-              tabIndex={-1}
-            >
-              ✕
-            </Button>
+            {(input !== '' || rollTitle !== '' || timesToRepeat > 1) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClearInput}
+                className="h-7 w-7"
+                tabIndex={-1}
+                disabled={!selectedChannel}
+              >
+                ✕
+              </Button>
+            )}
             <div
               onClick={() => isValid && selectedChannel && input.trim() && onRoll && onRoll()}
               className={cn(
@@ -131,7 +135,11 @@ export function DiceInput({
             value={rollTitle}
             onChange={(e) => onRollTitleChange?.(e.target.value)}
             placeholder="Roll title"
-            className="w-32"
+            disabled={!selectedChannel}
+            className={cn(
+              "w-32",
+              !selectedChannel && "opacity-50"
+            )}
           />
         </div>
         {timesToRepeat > 0 && (
@@ -146,6 +154,7 @@ export function DiceInput({
                     min="1"
                     max="20"
                     value={timesToRepeat}
+                    disabled={!selectedChannel}
                     onChange={(e) => {
                       const value = parseInt(e.target.value, 10);
                       onTimesToRepeatChange?.(isNaN(value) ? 1 : value);
@@ -159,7 +168,10 @@ export function DiceInput({
                         onTimesToRepeatChange?.(Math.max(1, timesToRepeat - 1));
                       }
                     }}
-                    className="text-center pl-5 pr-6"
+                    className={cn(
+                      "text-center pl-5 pr-6",
+                      !selectedChannel && "opacity-50"
+                    )}
                   />
                   <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col">
                     <Button
@@ -168,6 +180,7 @@ export function DiceInput({
                       onClick={() => onTimesToRepeatChange?.(Math.min(20, timesToRepeat + 1))}
                       className="h-4 w-4 p-0"
                       tabIndex={-1}
+                      disabled={!selectedChannel}
                     >
                       <ChevronUp className="h-4 w-4" />
                     </Button>
@@ -177,6 +190,7 @@ export function DiceInput({
                       onClick={() => onTimesToRepeatChange?.(Math.max(1, timesToRepeat - 1))}
                       className="h-4 w-4 p-0"
                       tabIndex={-1}
+                      disabled={!selectedChannel}
                     >
                       <ChevronDown className="h-4 w-4" />
                     </Button>
