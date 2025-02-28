@@ -41,7 +41,13 @@ export function DiceInput({
 
   const handleClearInput = React.useCallback(() => {
     setInput('');
-  }, [setInput]);
+    if (onRollTitleChange) {
+      onRollTitleChange('');
+    }
+    if (onTimesToRepeatChange) {
+      onTimesToRepeatChange(1);
+    }
+  }, [setInput, onRollTitleChange, onTimesToRepeatChange]);
 
   const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && isValid && selectedChannel && input.trim()) {
