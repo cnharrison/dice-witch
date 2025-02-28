@@ -135,7 +135,7 @@ export const Home = () => {
   return (
     <TooltipProvider>
       <div className="flex flex-col items-center mt-8">
-        <div className="relative w-full max-w-md mb-8 overflow-visible">
+        <div className="relative w-full max-w-md mb-8 overflow-visible hidden sm:block">
           <LoadingMedia
             staticImage="/images/dice-witch-banner.webp"
             loadingVideo="/videos/dice-witch-loading.mp4"

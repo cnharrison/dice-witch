@@ -39,3 +39,4 @@ lerna-debug.log*
 
 # Misc
 .vercel
+fly.toml

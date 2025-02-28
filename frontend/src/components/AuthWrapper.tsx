@@ -35,7 +35,10 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
     },
     enabled: !!discordAccount?.providerUserId,
     refetchOnWindowFocus: false,
-    staleTime: 1000 * 60 * 5,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    staleTime: 1000 * 60 * 15, // 15 minutes
+    cacheTime: 1000 * 60 * 60, // 60 minutes
   });
 
   if (!isLoaded) {

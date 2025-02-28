@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { UserProfile } from '@clerk/clerk-react';
 import { AuthWrapper } from './components/AuthWrapper';
-import CustomSignIn from './pages/SignIn';
 import { Navbar } from './components/Navbar';
 import { SvgFilters } from './components/SvgFilters';
 import Home from './pages/Home';
+import LandingPage from './pages/LandingPage';
 import Preferences from './pages/Preferences';
 import { GuildProvider } from './context/GuildContext';
 
@@ -14,8 +14,11 @@ function App() {
     <>
       <SvgFilters />
       <Routes>
-        <Route path="/sign-in/*" element={<CustomSignIn />} />
-        <Route path="/" element={
+        <Route path="/" element={<LandingPage />} />
+
+        <Route path="/sign-in/*" element={<Navigate to="/" replace />} />
+
+        <Route path="/app" element={
           <AuthWrapper>
             <GuildProvider>
               <div className="min-h-screen bg-background text-foreground">
@@ -27,7 +30,8 @@ function App() {
             </GuildProvider>
           </AuthWrapper>
         } />
-        <Route path="/preferences" element={
+
+        <Route path="/app/preferences" element={
           <AuthWrapper>
             <GuildProvider>
               <div className="min-h-screen bg-background text-foreground">
@@ -39,7 +43,8 @@ function App() {
             </GuildProvider>
           </AuthWrapper>
         } />
-        <Route path="/profile" element={
+
+        <Route path="/app/profile" element={
           <AuthWrapper>
             <div className="min-h-screen bg-background text-foreground">
               <Navbar />
@@ -49,6 +54,9 @@ function App() {
             </div>
           </AuthWrapper>
         } />
+
+        <Route path="/preferences" element={<Navigate to="/app/preferences" replace />} />
+        <Route path="/profile" element={<Navigate to="/app/profile" replace />} />
       </Routes>
     </>
   );
