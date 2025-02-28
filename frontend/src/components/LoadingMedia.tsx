@@ -51,62 +51,6 @@ export const LoadingMedia: React.FC<LoadingMediaProps> = ({
     }
   }, [isLoading]);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const container = containerRef.current;
-
-    let canvas = container.querySelector('canvas');
-    if (!canvas) {
-      canvas = document.createElement('canvas');
-      canvas.className = 'absolute top-0 left-0 w-full h-full pointer-events-none z-10 opacity-40';
-      container.appendChild(canvas);
-    }
-
-    const updateCanvas = () => {
-      if (!canvas) return;
-
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.clearRect(0, 0, width, height);
-
-      const dotSize = 2;
-      const spacing = 12;
-
-      for (let x = 0; x < width; x += spacing) {
-        for (let y = 0; y < height; y += spacing) {
-          const offsetX = Math.random() * spacing * 0.7;
-          const offsetY = Math.random() * spacing * 0.7;
-
-          const radius = Math.random() * dotSize + 0.5;
-
-          ctx.globalAlpha = Math.random() * 0.2 + 0.05;
-
-          ctx.fillStyle = '#000000';
-
-          if (Math.random() > 0.3) {
-            ctx.beginPath();
-            ctx.arc(x + offsetX, y + offsetY, radius, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-      }
-    };
-
-    updateCanvas();
-    window.addEventListener('resize', updateCanvas);
-
-    return () => {
-      window.removeEventListener('resize', updateCanvas);
-    };
-  }, []);
 
   const bwImageStyle: React.CSSProperties = {
     filter: 'grayscale(100%)',
