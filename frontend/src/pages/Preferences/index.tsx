@@ -14,9 +14,6 @@ interface Guild {
   isDiceWitchAdmin: boolean;
 }
 
-interface GuildPreferences {
-  skipDiceDelay: boolean;
-}
 
 export default function Preferences() {
   const { selectedGuildId: contextGuildId, setSelectedGuildId: setContextGuildId } = useGuild();
@@ -38,14 +35,16 @@ export default function Preferences() {
     queryKey: ['guildPreferences', selectedGuildId],
     queryFn: async () => {
       if (!selectedGuildId) return null;
-      
+
       const response = await fetch(`/api/guilds/${selectedGuildId}/preferences`);
       if (!response.ok) {
         throw new Error('Failed to fetch guild preferences');
       }
       return response.json();
     },
-    enabled: !!selectedGuildId
+    enabled: !!selectedGuildId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    cacheTime: 1000 * 60 * 30 // 30 minutes
   });
 
   const updatePreferencesMutation = useMutation({
@@ -57,14 +56,33 @@ export default function Preferences() {
         },
         body: JSON.stringify(data),
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to update preferences');
       }
-      
+
       return response.json();
     },
-    onSuccess: () => {
+    onMutate: async (newPreferences) => {
+      await queryClient.cancelQueries({
+        queryKey: ['guildPreferences', selectedGuildId]
+      });
+
+      const previousPreferences = queryClient.getQueryData(['guildPreferences', selectedGuildId]);
+
+      queryClient.setQueryData(['guildPreferences', selectedGuildId], {
+        preferences: newPreferences
+      });
+
+      return { previousPreferences };
+    },
+    onError: (err, newPreferences, context) => {
+      queryClient.setQueryData(
+        ['guildPreferences', selectedGuildId],
+        context?.previousPreferences
+      );
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['guildPreferences', selectedGuildId] });
     }
   });
@@ -74,7 +92,7 @@ export default function Preferences() {
       const adminGuilds = guildsData.guilds.filter(
         (guild: Guild) => guild.isAdmin || guild.isDiceWitchAdmin
       );
-      
+
       if (adminGuilds.length > 0) {
         setSelectedGuildId(adminGuilds[0].guilds.id);
       }
@@ -103,21 +121,21 @@ export default function Preferences() {
           Guild Preferences
         </h1>
       </div>
-      
+
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-6 border border-amber-100">
         <h2 className="text-xl font-semibold mb-2">Select Guild</h2>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
           Choose a guild to configure preferences
         </p>
-        
+
         {isGuildsLoading ? (
           <p>Loading guilds...</p>
         ) : guilds.length === 0 ? (
           <p>No guilds found where you have admin permissions</p>
         ) : (
-          <select 
+          <select
             className="w-full p-2 border border-amber-100 rounded-md dark:bg-gray-700 dark:border-amber-100/50 focus:ring-amber-100 focus:border-amber-100"
-            value={selectedGuildId} 
+            value={selectedGuildId}
             onChange={handleGuildChange}
           >
             <option value="" disabled>Select a guild</option>
@@ -129,14 +147,14 @@ export default function Preferences() {
           </select>
         )}
       </div>
-      
+
       {selectedGuildId && (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md border border-amber-100">
           <h2 className="text-xl font-semibold mb-2">Dice Roll Settings</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-4">
             Configure how dice rolls appear in your server
           </p>
-          
+
           {isPreferencesLoading ? (
             <p>Loading preferences...</p>
           ) : (
