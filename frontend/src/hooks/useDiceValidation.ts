@@ -42,12 +42,12 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
 
       let diceGroups: DiceGroup[] = [];
       
-      const diceRegex = /(\d+)d(\d+)(?:k|d)?(\d+)?/gi;
+      const diceRegex = /(\d+)d(\d+|\%)(?:k|d)?(\d+)?/gi;
       let match;
       
       while ((match = diceRegex.exec(roll.notation)) !== null) {
         const count = parseInt(match[1]);
-        const size = parseInt(match[2]);
+        const size = match[2] === '%' ? 100 : parseInt(match[2]);
         if (count > 0 && size > 0) {
           diceGroups.push({
             numberOfDice: count,
@@ -137,17 +137,17 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
       }
 
       if (diceGroups.length === 0) {
-        const diceMatches = debouncedInput.match(/(\d+)?d(\d+)/g) || [];
+        const diceMatches = debouncedInput.match(/(\d+)?d(\d+|\%)/g) || [];
 
         diceGroups = diceMatches.map(match => {
-          const parts = match.match(/(\d+)?d(\d+)/);
+          const parts = match.match(/(\d+)?d(\d+|\%)/);
 
           const numDice = parts?.[1] || '1';
           const dSize = parts?.[2];
 
           return {
             numberOfDice: parseInt(numDice),
-            diceSize: parseInt(dSize)
+            diceSize: dSize === '%' ? 100 : parseInt(dSize)
           };
         });
       }

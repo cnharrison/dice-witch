@@ -273,13 +273,13 @@ export class DiceService {
 
         if (value.includes('{') || value.includes('k') || value.includes('d')) {
           const dicePatterns = [];
-          const diceRegex = /(\d+)d(\d+)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
+          const diceRegex = /(\d+)d(\d+|\%)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
           let match;
 
           while ((match = diceRegex.exec(value)) !== null) {
             dicePatterns.push({
               count: parseInt(match[1]),
-              sides: parseInt(match[2])
+              sides: match[2] === '%' ? 100 : parseInt(match[2])
             });
           }
 
@@ -360,16 +360,42 @@ export class DiceService {
                   adjustedColor = chroma('#ff3333');
                 }
 
-                groupArray.push({
-                  sides,
-                  rolled: value,
-                  icon,
-                  iconSpacing,
-                  color: adjustedColor,
-                  secondaryColor,
-                  textColor,
-                  value
-                });
+                // Handle d% (percentile dice) as two dice: d% and d10
+                if (sides === 100 || pattern.sides === 100) {
+                  // Create the tens digit die (d%)
+                  groupArray.push({
+                    sides: "%",
+                    rolled: this.getDPercentRolled(value) as DiceFaces,
+                    icon,
+                    iconSpacing: 0.89,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                  
+                  // Create the ones digit die (d10)  
+                  groupArray.push({
+                    sides: 10,
+                    rolled: this.getD10PercentRolled(value) as DiceFaces,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                } else {
+                  // Handle regular dice
+                  groupArray.push({
+                    sides,
+                    rolled: value,
+                    icon,
+                    iconSpacing,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                }
               }
             }
           };
@@ -433,16 +459,42 @@ export class DiceService {
                   adjustedColor = chroma('#ff3333');
                 }
 
-                groupArray.push({
-                  sides: diceSize,
-                  rolled: value,
-                  icon,
-                  iconSpacing,
-                  color: adjustedColor,
-                  secondaryColor,
-                  textColor,
-                  value
-                });
+                // Handle d% (percentile dice) as two dice: d% and d10
+                if (diceSize === 100) {
+                  // Create the tens digit die (d%)
+                  groupArray.push({
+                    sides: "%",
+                    rolled: this.getDPercentRolled(value) as DiceFaces,
+                    icon,
+                    iconSpacing: 0.89,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                  
+                  // Create the ones digit die (d10)  
+                  groupArray.push({
+                    sides: 10,
+                    rolled: this.getD10PercentRolled(value) as DiceFaces,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                } else {
+                  // Handle regular dice
+                  groupArray.push({
+                    sides: diceSize,
+                    rolled: value,
+                    icon,
+                    iconSpacing,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                }
               });
             }
           }

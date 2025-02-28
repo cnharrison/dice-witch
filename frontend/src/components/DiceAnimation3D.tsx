@@ -371,6 +371,77 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
     return mesh;
   };
 
+  const createDPercent = (color = 0xff00ff) => {
+    const radius = 0.8;
+    const height = 1.2;
+    const geometry = new THREE.BufferGeometry();
+
+    const vertices = [];
+
+    vertices.push(0, height/2, 0);
+    vertices.push(0, -height/2, 0);
+
+    for (let i = 0; i < 5; i++) {
+      const angle = (Math.PI * 2 / 5) * i;
+      vertices.push(
+        Math.cos(angle) * radius,
+        0,
+        Math.sin(angle) * radius
+      );
+    }
+
+    const indices = [];
+
+    for (let i = 0; i < 5; i++) {
+      const current = i + 2;
+      const next = i < 4 ? current + 1 : 2;
+      indices.push(0, current, next);
+    }
+
+    for (let i = 0; i < 5; i++) {
+      const current = i + 2;
+      const next = i < 4 ? current + 1 : 2;
+      indices.push(1, next, current);
+    }
+
+    geometry.setIndex(indices);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshStandardMaterial({
+      color: color,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.position.set(
+      (Math.random() - 0.5) * 8,
+      Math.random() * 5 + 3,
+      (Math.random() - 0.5) * 8
+    );
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
+    mesh.userData = {
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.05,
+        -0.05 - Math.random() * 0.05,
+        (Math.random() - 0.5) * 0.05
+      ),
+      angularVelocity: new THREE.Vector3(
+        Math.random() * 0.05,
+        Math.random() * 0.05,
+        Math.random() * 0.05
+      ),
+      bounceCounter: 0,
+      diceType: '%'
+    };
+    return mesh;
+  };
+
   const createDie = (sides: number) => {
     // Use provided color or generate a random one
     const diceColor = diceColorsRef.current[sides] && typeof diceColorsRef.current[sides] === 'string'
@@ -385,6 +456,27 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
       case 10: dice = createD10(diceColor); break;
       case 12: dice = createD12(diceColor); break;
       case 20: dice = createD20(diceColor); break;
+      case 100: 
+        if (sceneRef.current) {
+          const dPercent = createDPercent(diceColor);
+          sceneRef.current.add(dPercent);
+          diceObjectsRef.current.push(dPercent);
+          
+          const d10 = createD10(diceColor);
+          const angle = Math.random() * Math.PI * 2;
+          const radius = 1.2;
+          d10.position.set(
+            Math.cos(angle) * radius,
+            1.5 + Math.random(),
+            Math.sin(angle) * radius
+          );
+          sceneRef.current.add(d10);
+          diceObjectsRef.current.push(d10);
+          
+          return dPercent;
+        }
+        dice = createSphere(diceColor);
+        break;
       default: dice = createSphere(diceColor);
     }
     dice.userData.diceType = sides;
@@ -682,6 +774,13 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
         existingDiceByType.set(type, (existingDiceByType.get(type) || 0) + 1);
       }
     });
+    
+    if (currentDiceMap.has(100)) {
+      const d100Count = currentDiceMap.get(100) || 0;
+      if (d100Count > 0) {
+        currentDiceMap.set('%', d100Count);
+      }
+    }
     const diceToRemove = [];
     diceObjectsRef.current.forEach(die => {
       const type = die.userData.diceType;
