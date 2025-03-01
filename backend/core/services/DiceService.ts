@@ -1,0 +1,955 @@
+import Canvas, { Canvas as CanvasType, Image } from "@napi-rs/canvas";
+import chroma from "chroma-js";
+import { AttachmentBuilder, ButtonInteraction, CommandInteraction, EmbedBuilder } from "discord.js";
+import { DiceRoll, Parser, RollResult, StandardDice } from "rpg-dice-roller";
+import sharp from "sharp";
+import { coinFlip, getRandomNumber, pluralPick } from "../../shared/helpers";
+import {
+  DiceArray,
+  DiceFaceData,
+  DiceFaces,
+  DiceTypes,
+  DiceTypesToDisplay,
+  Die,
+  GenerateEmbedMessageParams,
+  Icon,
+  PatternFillObject,
+  Result,
+} from "../../shared/types";
+import { tabletopColor } from "../constants";
+import {
+  generateD10,
+  generateD12,
+  generateD20,
+  generateD4,
+  generateD6,
+  generateD8,
+  generateDPercent,
+  generateGeneric,
+} from "./images/generateDice/dice";
+import generateLinearGradientFill from "./images/generateDice/fills/generateLinearGradientFill";
+import patternFills, { getRandomPatternFill } from "./images/generateDice/fills/generatePatternFills";
+import {
+  arrowThroughIcon,
+  blankIcon,
+  bullseyeIcon,
+  chevronDownIcon,
+  chevronUpIcon,
+  critIcon,
+  dizzyFaceIcon,
+  explosionIcon,
+  recycleIcon,
+  trashcanIcon
+} from "./images/icons";
+
+export class DiceService {
+  private static instance: DiceService;
+  private icons: Map<Icon | null, string>;
+  private defaultDiceDimension = 150; // Increased from 100 for better resolution
+  private defaultIconDimension = 37; // Increased proportionally from 25
+  private maxRowLength = 10;
+
+  private constructor() {
+    this.icons = new Map<Icon | null, string>([
+      ["trashcan", trashcanIcon],
+      ["explosion", explosionIcon],
+      ["recycle", recycleIcon],
+      ["chevronUp", chevronUpIcon],
+      ["chevronDown", chevronDownIcon],
+      ["target-success", bullseyeIcon],
+      ["critical-success", critIcon],
+      ["critical-failure", dizzyFaceIcon],
+      ["penetrate", arrowThroughIcon],
+      ["blank", blankIcon],
+    ]);
+  }
+
+  public static getInstance(): DiceService {
+    if (!DiceService.instance) {
+      DiceService.instance = new DiceService();
+    }
+    return DiceService.instance;
+  }
+
+  private getSecondaryColorFromColor(color: chroma.Color) {
+    const isDiceColorDark = color.get("lab.l") > 65;
+    return isDiceColorDark ? color.brighten(2) : color.darken(2);
+  }
+
+  private getTextColorFromColors(color: chroma.Color, secondaryColor: chroma.Color) {
+    return color.get("lab.l") + secondaryColor.get("lab.l") / 2 < 65
+      ? chroma("#FAF9F6")
+      : chroma("#000000");
+  }
+
+  private generateIconArray(modifierSet: Set<string>): Icon[] | null {
+    if (!modifierSet || modifierSet.size === 0) return null;
+    return [...modifierSet].map((item) => {
+      switch (item) {
+        case "drop": return "trashcan";
+        case "explode": return "explosion";
+        case "re-roll": return "recycle";
+        case "max": return "chevronDown";
+        case "min": return "chevronUp";
+        case "target-success": return "target-success";
+        case "critical-success": return "critical-success";
+        case "critical-failure": return "critical-failure";
+        case "penetrate": return "penetrate";
+        default: return "blank";
+      }
+    });
+  }
+
+  private getIconSpacing(iconArray: Icon[] | null) {
+    if (!iconArray) return null;
+    switch (iconArray.length) {
+      case 1: return 0.375;
+      case 2: return 0.26;
+      case 3: return 0.19;
+      default: return null;
+    }
+  }
+
+  private getDPercentRolled = (rolled: number): number =>
+    rolled === 100 ? 0 : Math.floor(rolled / 10) * 10;
+
+  private getD10PercentRolled = (rolled: number): number =>
+    rolled % 10 === 0 ? 10 : rolled % 10;
+
+  private repeatArgs(args: string[], timesToRepeat?: number): string[] {
+    if (timesToRepeat) {
+      return new Array(timesToRepeat).fill(args).flat();
+    }
+    return [...args];
+  }
+
+  private shouldUsePatternFill(): boolean {
+    return Math.random() < 0.4;
+  }
+
+  private processRollGroup(
+    rollGroup: any,
+    sides: number,
+  ): Die[] {
+    if (!rollGroup || !rollGroup.rolls) {
+      return [];
+    }
+
+    if (sides === undefined) {
+      return rollGroup.rolls.map((currentRoll: RollResult) => {
+        if (!currentRoll) return null;
+
+        const isHeads = coinFlip();
+        const color = chroma.random();
+        const secondaryColor = isHeads
+          ? this.getSecondaryColorFromColor(color)
+          : chroma.random();
+        const textColor = this.getTextColorFromColors(color, secondaryColor);
+        return {
+          sides: 6,
+          rolled: currentRoll.initialValue || 0,
+          icon: null,
+          iconSpacing: 0,
+          color,
+          secondaryColor,
+          textColor,
+          value: currentRoll.initialValue || 0,
+        };
+      }).filter(Boolean);
+    }
+
+    if (sides === 100) {
+      return rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
+        if (!cur) return acc;
+
+        const isHeads = coinFlip();
+        const color = chroma.random();
+        const secondaryColor = isHeads
+          ? this.getSecondaryColorFromColor(color)
+          : chroma.random();
+        const textColor = this.getTextColorFromColors(color, secondaryColor);
+        const icon = this.generateIconArray(cur.modifiers);
+
+        const initialValue = cur.initialValue || 0;
+
+        acc.push(
+          {
+            sides: "%",
+            rolled: this.getDPercentRolled(initialValue) as DiceFaces,
+            icon,
+            iconSpacing: 0.89,
+            color,
+            secondaryColor,
+            textColor,
+            value: initialValue,
+          },
+          {
+            sides: 10,
+            rolled: this.getD10PercentRolled(initialValue) as DiceFaces,
+            color,
+            secondaryColor,
+            textColor,
+            value: initialValue,
+          }
+        );
+        return acc;
+      }, []);
+    } else {
+      return rollGroup.rolls.map((currentRoll: RollResult) => {
+        if (!currentRoll) return null;
+
+        const isHeads = coinFlip();
+        const color = chroma.random();
+        const secondaryColor = isHeads
+          ? this.getSecondaryColorFromColor(color)
+          : chroma.random();
+        const textColor = this.getTextColorFromColors(color, secondaryColor);
+        const icon = this.generateIconArray(currentRoll.modifiers);
+        const iconSpacing = this.getIconSpacing(icon);
+
+        const initialValue = currentRoll.initialValue || 0;
+
+        return {
+          sides,
+          rolled: initialValue,
+          icon,
+          iconSpacing,
+          color,
+          secondaryColor,
+          textColor,
+          value: initialValue,
+        };
+      }).filter(Boolean);
+    }
+  }
+
+  public async rollDice(
+    args: string[],
+    availableDice: DiceTypesToDisplay[],
+    timesToRepeat?: number
+  ): Promise<{
+    diceArray: DiceArray;
+    resultArray: Result[];
+    errors?: string[];
+    files?: AttachmentBuilder[];
+  }> {
+    let diceArray: DiceArray = [];
+    let resultArray: Result[] = [];
+    let errors: string[] = [];
+    let files: AttachmentBuilder[] = [];
+    const lowerCaseArgs = args.map((arg) => arg.toLowerCase());
+    const argsToMutate = this.repeatArgs(lowerCaseArgs, timesToRepeat);
+
+    try {
+      for (const value of argsToMutate) {
+        let parsedRoll;
+
+        try {
+          parsedRoll = Parser.parse(value);
+        } catch (err) {
+          errors.push(`Invalid notation: ${value}`);
+          continue;
+        }
+
+        const rollGroupSidesMap = new Map();
+        if (parsedRoll && Array.isArray(parsedRoll)) {
+          parsedRoll.forEach((group, index) => {
+            if (typeof group === 'object' && group.sides) {
+              rollGroupSidesMap.set(index, group.sides);
+            }
+          });
+        }
+
+        let roll;
+        try {
+          roll = new DiceRoll(value);
+        } catch (err) {
+          errors.push(`Invalid notation when rolling: ${value}`);
+          continue;
+        }
+        const result: Result = {
+          output: roll.output,
+          results: roll.total,
+        };
+
+        let groupArray = [];
+
+
+        if (value.includes('{') || value.includes('k') || value.includes('d')) {
+          const dicePatterns = [];
+          const diceRegex = /(\d+)d(\d+|\%)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
+          let match;
+
+          while ((match = diceRegex.exec(value)) !== null) {
+            dicePatterns.push({
+              count: parseInt(match[1]),
+              sides: match[2] === '%' ? 100 : parseInt(match[2])
+            });
+          }
+
+          const processOutput = () => {
+            const rollOutput = roll.output;
+            const diceGroups = rollOutput.match(/\[([^\]]+)\]/g) || [];
+
+            for (let i = 0; i < dicePatterns.length && i < diceGroups.length; i++) {
+              const pattern = dicePatterns[i];
+              const diceGroup = diceGroups[i];
+
+              const dieValues = diceGroup.replace(/[\[\]{}]/g, '')
+                               .split(',')
+                               .map(v => v.trim());
+
+              const count = pattern.count;
+              const sides = pattern.sides;
+
+              for (let j = 0; j < Math.max(count, dieValues.length); j++) {
+                const dieValueStr = j < dieValues.length ? dieValues[j] : '';
+
+                const isDropped = dieValueStr.endsWith('d');
+                const isPenetrating = dieValueStr.includes('!p');
+                const isExploded = dieValueStr.includes('!') && !isPenetrating;
+                const isCritSuccess = /\*\*$/.test(dieValueStr);
+                const isCritFailure = /__.*$/.test(dieValueStr);
+                const isTargetSuccess = dieValueStr.includes('*') && !/\*\*$/.test(dieValueStr);
+                const isRerolled = dieValueStr.includes('r');
+
+                let valueStr = dieValueStr;
+                if (isDropped) valueStr = valueStr.slice(0, -1);
+                if (isPenetrating) valueStr = valueStr.replace(/!p/g, '');
+                else if (isExploded) valueStr = valueStr.replace(/!/g, '');
+                if (isCritSuccess) valueStr = valueStr.replace(/\*\*$/, '');
+                if (isCritFailure) valueStr = valueStr.replace(/__/g, '');
+                if (isTargetSuccess) valueStr = valueStr.replace(/\*/g, '');
+                if (isRerolled) valueStr = valueStr.replace(/r/g, '');
+
+                const dieValue = parseInt(valueStr, 10);
+
+                const value = isNaN(dieValue) ? Math.floor(Math.random() * sides) + 1 : dieValue;
+
+                const isHeads = coinFlip();
+                const color = chroma.random();
+                const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
+                const textColor = this.getTextColorFromColors(color, secondaryColor);
+
+                const icons = [];
+
+                if (isDropped) {
+                  icons.push("trashcan");
+                }
+                if (isPenetrating) {
+                  icons.push("penetrate");
+                } else if (isExploded) {
+                  icons.push("explosion");
+                }
+                if (isCritSuccess) {
+                  icons.push("critical-success");
+                }
+                if (isCritFailure) {
+                  icons.push("critical-failure");
+                }
+                if (isTargetSuccess) {
+                  icons.push("target-success");
+                }
+                if (isRerolled) {
+                  icons.push("recycle");
+                }
+
+                const icon = icons.length > 0 ? icons : null;
+                const iconSpacing = icons.length > 0 ? 0.375 : null;
+
+                let adjustedColor = color;
+                if (isCritSuccess) {
+                  adjustedColor = chroma('#ffcc00');
+                } else if (isCritFailure) {
+                  adjustedColor = chroma('#ff3333');
+                }
+
+                // Handle d% (percentile dice) as two dice: d% and d10
+                if (sides === 100 || pattern.sides === 100) {
+                  groupArray.push({
+                    sides: "%",
+                    rolled: this.getDPercentRolled(value) as DiceFaces,
+                    icon,
+                    iconSpacing: 0.89,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+
+                  groupArray.push({
+                    sides: 10,
+                    rolled: this.getD10PercentRolled(value) as DiceFaces,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                } else {
+                  groupArray.push({
+                    sides,
+                    rolled: value,
+                    icon,
+                    iconSpacing,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                }
+              }
+            }
+          };
+
+          processOutput();
+
+          if (groupArray.length === 0) {
+            const outputGroups = roll.output.match(/\[([^\]]+)\]/g) || [];
+
+            for (let i = 0; i < outputGroups.length; i++) {
+              const group = outputGroups[i];
+              let diceSize = i < dicePatterns.length ? dicePatterns[i].sides : 20;
+
+              const diceValues = group.replace(/[\[\]{}]/g, '')
+                              .split(',')
+                              .map(v => v.trim());
+
+              diceValues.forEach(dieValue => {
+                const isDropped = dieValue.endsWith('d');
+                const isPenetrating = dieValue.includes('!p');
+                const isExploded = dieValue.includes('!') && !isPenetrating;
+                const isCritSuccess = /\*\*$/.test(dieValue);
+                const isCritFailure = /__.*$/.test(dieValue);
+                const isTargetSuccess = dieValue.includes('*') && !/\*\*$/.test(dieValue);
+                const isRerolled = dieValue.includes('r');
+
+                let valueStr = dieValue;
+                if (isDropped) valueStr = valueStr.slice(0, -1);
+                if (isPenetrating) valueStr = valueStr.replace('!p', '');
+                else if (isExploded) valueStr = valueStr.replace('!', '');
+                if (isCritSuccess) valueStr = valueStr.replace(/\*\*$/, '');
+                if (isCritFailure) valueStr = valueStr.replace(/__/g, '');
+                if (isTargetSuccess) valueStr = valueStr.replace('*', '');
+                if (isRerolled) valueStr = valueStr.replace('r', '');
+
+                const value = parseInt(valueStr, 10);
+                if (isNaN(value)) return;
+
+                const isHeads = coinFlip();
+                const color = chroma.random();
+                const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
+                const textColor = this.getTextColorFromColors(color, secondaryColor);
+
+                const icons = [];
+
+                if (isDropped) icons.push("trashcan");
+                if (isPenetrating) icons.push("penetrate");
+                else if (isExploded) icons.push("explosion");
+                if (isCritSuccess) icons.push("critical-success");
+                if (isCritFailure) icons.push("critical-failure");
+                if (isTargetSuccess) icons.push("target-success");
+                if (isRerolled) icons.push("recycle");
+
+                const icon = icons.length > 0 ? icons : null;
+                const iconSpacing = icons.length > 0 ? 0.375 : null;
+
+                let adjustedColor = color;
+                if (isCritSuccess) {
+                  adjustedColor = chroma('#ffcc00');
+                } else if (isCritFailure) {
+                  adjustedColor = chroma('#ff3333');
+                }
+
+                // Handle d% (percentile dice) as two dice: d% and d10
+                if (diceSize === 100) {
+                  groupArray.push({
+                    sides: "%",
+                    rolled: this.getDPercentRolled(value) as DiceFaces,
+                    icon,
+                    iconSpacing: 0.89,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+
+                  groupArray.push({
+                    sides: 10,
+                    rolled: this.getD10PercentRolled(value) as DiceFaces,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                } else {
+                  groupArray.push({
+                    sides: diceSize,
+                    rolled: value,
+                    icon,
+                    iconSpacing,
+                    color: adjustedColor,
+                    secondaryColor,
+                    textColor,
+                    value
+                  });
+                }
+              });
+            }
+          }
+
+          if (groupArray.length === 0) {
+            const isHeads = coinFlip();
+            const color = chroma.random();
+            const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
+            const textColor = this.getTextColorFromColors(color, secondaryColor);
+
+            groupArray.push({
+              sides: 20,
+              rolled: roll.total,
+              icon: null,
+              iconSpacing: null,
+              color,
+              secondaryColor,
+              textColor,
+              value: roll.total
+            });
+          }
+        } else {
+          groupArray = roll.rolls.reduce((acc: Die[], rollGroup, outerIndex: number) => {
+            if (typeof rollGroup !== "string" && typeof rollGroup !== "number") {
+              const sides = rollGroupSidesMap.get(outerIndex);
+
+              try {
+                const processedGroup = this.processRollGroup(rollGroup, sides);
+                acc.push(...processedGroup);
+              } catch (err) {
+                // Handle error silently
+              }
+            }
+            return acc;
+          }, []);
+        }
+
+        if (groupArray.length === 0) {
+          const isHeads = coinFlip();
+          const color = chroma.random();
+          const secondaryColor = isHeads ? this.getSecondaryColorFromColor(color) : chroma.random();
+          const textColor = this.getTextColorFromColors(color, secondaryColor);
+
+          groupArray.push({
+            sides: 20,
+            rolled: roll.total,
+            icon: null,
+            iconSpacing: null,
+            color,
+            secondaryColor,
+            textColor,
+            value: roll.total
+          });
+        }
+
+        diceArray.push([...groupArray]);
+        resultArray.push(result);
+      }
+
+      try {
+        const attachment = await this.generateDiceAttachment(diceArray);
+        if (attachment) {
+          files = [attachment.attachment];
+        }
+      } catch (error) {
+        // Handle silently
+      }
+
+      if (resultArray.length === 0 && errors.length > 0) {
+        return { diceArray: [], resultArray: [], errors };
+      }
+
+      return {
+        diceArray,
+        resultArray,
+        errors: errors.length > 0 ? errors : undefined,
+        files,
+      };
+    } catch {
+      return { diceArray: [], resultArray: [], errors: ['Unexpected error occurred'] };
+    }
+  }
+
+  private getIconWidth(index: number, diceIndex: number, iconSpacing: number) {
+    return this.defaultDiceDimension * (diceIndex + iconSpacing * (index + 1));
+  }
+
+  private getIconHeight(diceOuterIndex: number) {
+    return diceOuterIndex * (this.defaultDiceDimension + this.defaultIconDimension) + this.defaultDiceDimension;
+  }
+
+  private async drawIcon(
+    iconArray: Icon[] | null | undefined,
+    iconSpacing: number,
+    ctx,
+    diceIndex: number,
+    diceOuterIndex: number
+  ): Promise<void> {
+    if (!iconArray) return;
+
+    await Promise.all(iconArray.map(async (icon, index) => {
+      try {
+        const iconToLoad = await this.generateIcon(icon);
+        const iconWidth = this.getIconWidth(index, diceIndex, iconSpacing);
+        const iconHeight = this.getIconHeight(diceOuterIndex);
+        const iconImage = await Canvas.loadImage(iconToLoad as Buffer);
+        ctx.drawImage(
+          iconImage,
+          iconWidth,
+          iconHeight,
+          this.defaultIconDimension,
+          this.defaultIconDimension
+        );
+      } catch (error) {
+      }
+    }));
+  }
+
+  public async generateDiceAttachment(
+    diceArray: DiceArray
+  ): Promise<{ attachment: AttachmentBuilder; canvas: CanvasType } | undefined> {
+    try {
+      const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
+      const paginatedArray = this.paginateDiceArray(diceArray);
+      const canvasHeight = this.getCanvasHeight(paginatedArray, shouldHaveIcon);
+      const canvasWidth = this.getCanvasWidth(paginatedArray);
+      const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
+      const ctx = canvas.getContext("2d");
+
+      const drawDice = async (die: Die, index: number, outerIndex: number) => {
+        try {
+          let patternFillObj;
+
+          if (this.shouldUsePatternFill()) {
+            patternFillObj = getRandomPatternFill(die.color.hex(), die.secondaryColor.hex());
+          } else {
+            patternFillObj = generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex());
+          }
+
+          const toLoad = await this.generateDie({
+            sides: die.sides,
+            rolled: die.rolled,
+            textColor: die.textColor.hex(),
+            outlineColor: "#000000",
+            solidFill: die.color.hex(),
+            patternFill: patternFillObj
+          });
+
+          if (!toLoad) {
+            return;
+          }
+
+          try {
+            const image = await Canvas.loadImage(toLoad as Buffer);
+            const diceWidth = this.getDiceWidth(index);
+            const diceHeight = this.getDiceHeight(outerIndex, shouldHaveIcon);
+            ctx.drawImage(
+              image as unknown as Image,
+              diceWidth,
+              diceHeight,
+              this.defaultDiceDimension,
+              this.defaultDiceDimension
+            );
+
+            if (shouldHaveIcon && die.iconSpacing) {
+              await this.drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
+            }
+          } catch (imgErr) {
+          }
+        } catch (err) {
+        }
+      };
+
+      await Promise.all(
+        paginatedArray.map((array, outerIndex) =>
+          Promise.all(array.map((die, index) => drawDice(die, index, outerIndex)))
+        )
+      );
+
+      // Convert canvas to buffer with higher quality
+      const canvasBuffer = canvas.toBuffer('image/png');
+      
+      // Use sharp to process the buffer with higher quality settings
+      const processedBuffer = await sharp(canvasBuffer)
+        .webp({ 
+          lossless: true, 
+          quality: 100,
+          nearLossless: true,
+          smartSubsample: true
+        })
+        .toBuffer();
+        
+      const attachment = new AttachmentBuilder(
+        processedBuffer,
+        { name: "currentDice.png" }
+      );
+      return { attachment, canvas };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private getCanvasHeight(paginatedArray: DiceArray, shouldHaveIcon: boolean) {
+    return shouldHaveIcon
+      ? this.defaultDiceDimension * paginatedArray.length +
+        this.defaultIconDimension * paginatedArray.length
+      : this.defaultDiceDimension * paginatedArray.length;
+  }
+
+  private getCanvasWidth(diceArray: DiceArray) {
+    const groupLength = diceArray.length === 1
+      ? diceArray[0].length
+      : Math.max(...diceArray.map(group => group.length));
+
+    return this.defaultDiceDimension * Math.min(groupLength, this.maxRowLength);
+  }
+
+  private getDiceWidth(index: number) {
+    return this.defaultDiceDimension * index;
+  }
+
+  private getDiceHeight(outerIndex: number, shouldHaveIcon: boolean) {
+    return outerIndex * this.defaultDiceDimension +
+      (shouldHaveIcon ? outerIndex * this.defaultIconDimension : 0);
+  }
+
+  private paginateDiceArray(diceArray: DiceArray): DiceArray {
+    const paginateDiceGroup = (group: Die[]) =>
+      Array.from({ length: Math.ceil(group.length / this.maxRowLength) }, (_, index) =>
+        group.slice(index * this.maxRowLength, (index + 1) * this.maxRowLength)
+      );
+
+    return diceArray.flatMap(group =>
+      group.length > this.maxRowLength ? paginateDiceGroup(group) : [group]
+    );
+  }
+
+  public async generateDie({
+    sides,
+    rolled,
+    textColor,
+    outlineColor,
+    solidFill,
+    patternFill,
+    borderWidth,
+    width,
+    height
+  }: {
+    sides: any;
+    rolled: DiceFaces;
+    textColor?: string;
+    outlineColor?: string;
+    solidFill?: string;
+    patternFill?: PatternFillObject;
+    borderWidth?: string;
+    width?: string;
+    height?: string;
+  }): Promise<Buffer | undefined> {
+    if (!patternFill) {
+      if (this.shouldUsePatternFill()) {
+        patternFill = getRandomPatternFill(solidFill || '#ffffff', outlineColor || '#000000');
+      } else {
+        patternFill = generateLinearGradientFill(solidFill || '#ffffff', outlineColor || '#000000');
+      }
+    }
+
+    const props = {
+      result: rolled,
+      sides: sides,
+      textColor,
+      outlineColor,
+      solidFill,
+      patternFill,
+      borderWidth,
+      width,
+      height,
+    };
+
+    const dice: DiceFaceData = {
+      20: generateD20(props),
+      12: generateD12(props),
+      10: generateD10(props),
+      8: generateD8(props),
+      6: generateD6(props),
+      4: generateD4(props),
+      "%": generateDPercent(props),
+    };
+
+    let image = dice[sides];
+
+    if (!image) {
+      image = generateGeneric(props);
+    }
+
+    try {
+      // Determine if we need to resize based on dice type
+      const needsResize = sides === 20; // Only resize d20
+
+      let sharpInstance = sharp(Buffer.from(image));
+      
+      // If this is a D20, resize it to ensure it's properly scaled
+      if (needsResize) {
+        sharpInstance = sharpInstance.resize({
+          width: this.defaultDiceDimension * 2,
+          height: this.defaultDiceDimension * 2,
+          fit: 'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        });
+      }
+      
+      // Apply high quality WebP conversion
+      const attachment = await sharpInstance
+        .webp({ 
+          lossless: true, 
+          quality: 100,
+          nearLossless: true,
+          smartSubsample: true
+        })
+        .toBuffer();
+      
+      return attachment;
+    } catch (err) {
+      return undefined;
+    }
+  }
+
+  public async generateIcon(iconType: Icon | null): Promise<Buffer | undefined> {
+    try {
+      const image = this.icons.get(iconType) || this.icons.get(null);
+      if (!image) return;
+
+      const attachment = await sharp(Buffer.from(image))
+        .webp({ 
+          lossless: true, 
+          quality: 100,
+          nearLossless: true,
+          smartSubsample: true
+        })
+        .toBuffer();
+      return attachment;
+    } catch (err) {
+      return undefined;
+    }
+  }
+
+  public async generateEmbedMessage({
+    resultArray,
+    attachment,
+    title,
+    interaction,
+    source,
+    username,
+  }: GenerateEmbedMessageParams): Promise<{ embeds: EmbedBuilder[]; files: AttachmentBuilder[] }> {
+    const grandTotal = resultArray.reduce(
+      (prev: number, cur: Result) => prev + cur.results,
+      0
+    );
+
+    try {
+      const embed = this.createEmbed(resultArray, grandTotal, attachment, title, interaction, source, username);
+      return {
+        embeds: [embed],
+        files: attachment ? [attachment] : []
+      };
+    } catch (error) {
+      return { embeds: [], files: [] };
+    }
+  }
+
+  private createEmbed(
+    resultArray: Result[],
+    grandTotal: number,
+    attachment: AttachmentBuilder,
+    title?: string,
+    interaction?: CommandInteraction | ButtonInteraction,
+    source?: string,
+    username?: string
+  ): EmbedBuilder {
+    const diceOutput = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
+
+    let sourceText = '';
+
+    if (source === 'discord') {
+      const discordUsername = interaction?.user?.username;
+      sourceText = discordUsername ? `sent to ${discordUsername} via discord` : 'via discord';
+    } else if (source === 'web') {
+      sourceText = username ? `sent to ${username} via web` : 'via web';
+    }
+
+    const serverName = interaction?.guild?.name;
+
+    const embed = new EmbedBuilder()
+      .setColor(tabletopColor)
+      .setDescription(diceOutput)
+      .setFooter({
+        text: sourceText,
+      });
+
+    if (title) {
+      embed.setTitle(title);
+    }
+
+    if (attachment) {
+      embed.setImage('attachment://currentDice.png');
+    }
+
+    return embed;
+  }
+
+  public generateDiceRolledMessage(diceArray: DiceArray, resultArray: number[]): string {
+    const isSingleDie = diceArray.length === 1 && Array.isArray(diceArray[0]) && diceArray[0].length === 1;
+
+    const messages = [
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "clatters", "clatter")} across the table..._`,
+      `_...as the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "tumbles", "tumble")}, ${pluralPick(isSingleDie, "it", "one")} continues to spin on its axis for a few seconds, as if possessed by an unknown force..._`,
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "bangs", "bang")} angrily across the table..._`,
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "clatters", "clatter")} crisply across the table..._`,
+      `_...as the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "rolls", "roll")} across the gnarly surface, you think you can spot a faint light emanating from deep within ${pluralPick(isSingleDie, "it..._", "one of them..._")}`,
+      `_...a sibilant wind suddenly hisses across the table as the restless ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "settles", "settle")} onto its planks..._`,
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "bumps", "bump")} proudly across the table's wizened grooves..._`,
+      `_...the ${pluralPick(isSingleDie, "die", "dice")} ${pluralPick(isSingleDie, "dances", "dance")} and ${pluralPick(isSingleDie, "pirouettes", "pirouette")} across the table's ancient cracks..._`,
+    ];
+
+    const calculatePercentile = (total: number, min: number, max: number) => {
+      return ((Number(total) - Number(min)) / (Number(max) - Number(min))) * 100;
+    };
+
+    const total = resultArray.reduce((sum, value) => sum + value, 0);
+
+    const maxTotal = diceArray.reduce((sum, dieArray: Die | Die[]) => {
+      if (Array.isArray(dieArray)) {
+        return sum + dieArray.reduce((innerSum, die) => innerSum + (Number(die.sides) || 0), 0);
+      } else {
+        return sum + (Number(dieArray.sides) || 0);
+      }
+    }, 0);
+
+    const minTotal = diceArray.reduce((sum, dieArray) => {
+      if (Array.isArray(dieArray)) {
+        return sum + dieArray.reduce((innerSum, die) => innerSum + 1, 0);
+      } else {
+        return sum + 1;
+      }
+    }, 0);
+
+    const percentile = calculatePercentile(total, minTotal, maxTotal);
+
+    const isSingleD4 = diceArray.length === 1 && Array.isArray(diceArray[0]) && diceArray[0][0].sides === 4;
+    const isSingleD6 = diceArray.length === 1 && Array.isArray(diceArray[0]) && diceArray[0][0].sides === 6;
+
+    if ((isSingleD4 && (total === 1 || total === 4)) || (isSingleD6 && total === 6)) {
+      const index = getRandomNumber(messages.length - 1);
+      return messages[index];
+    } else if (!isSingleD4 && !isSingleD6 && (percentile >= 95 || total === maxTotal || percentile <= 15)) {
+      const index = getRandomNumber(messages.length - 1);
+      return messages[index];
+    }
+    return messages[0];
+  }
+}
