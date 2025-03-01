@@ -9,6 +9,13 @@ import App from './App'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
+const API_BASE = import.meta.env.VITE_API_PROXY_TARGET || '';
+const customFetch = async (url: string, options: RequestInit = {}) => {
+  const isApiUrl = url.startsWith('/api');
+  const fullUrl = isApiUrl ? `${API_BASE}${url}` : url;
+  return fetch(fullUrl, options);
+};
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -16,6 +23,16 @@ const queryClient = new QueryClient({
       gcTime: 1000 * 60 * 60,
       retry: 1,
       refetchOnWindowFocus: false,
+      queryFn: async ({ queryKey }) => {
+        const [url, params] = Array.isArray(queryKey) ? queryKey : [queryKey, {}];
+        if (typeof url !== 'string') return null;
+
+        const response = await customFetch(url);
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+        return response.json();
+      },
     },
   },
 });

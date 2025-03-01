@@ -4,6 +4,7 @@ import {
   Client,
   GatewayIntentBits,
   Partials,
+  ShardClientUtil,
   TextChannel,
 } from "discord.js";
 import axios from "axios";
@@ -115,8 +116,19 @@ const globalSlashCommands: ApplicationCommandDataResolvable[] = [
 
 const registerCommands = async (discord: Client) => {
   try {
-    const channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
-    console.log(`[Discord] Found log output channel ${channel?.name}`);
+    let channel = null;
+    
+    if (discord.shard) {
+      const shardForLogChannel = ShardClientUtil.shardIdForGuildId(logOutputChannelID, discord.shard.count);
+      if (discord.shard.ids.includes(shardForLogChannel)) {
+        channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
+        console.log(`[Discord] Found log output channel ${channel?.name}`);
+      }
+    } else {
+      channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
+      console.log(`[Discord] Found log output channel ${channel?.name}`);
+    }
+    
     console.log(`[Discord] Registering global slash commands...`);
     await discord.application?.commands.set(globalSlashCommands);
     console.log(`[Discord] Registered.`);

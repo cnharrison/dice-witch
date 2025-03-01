@@ -171,124 +171,114 @@ const sendLogEventMessage = async ({
             };
           });
 
-          discord.shard?.broadcastEval(
-            async (c, { channelId, embedData, files }) => {
-              const channel = await c.channels.fetch(channelId).catch(() => null);
-              if (!channel || !channel.isTextBased()) return false;
-
-              try {
-                const deserializedFiles = files
-                  .map(file => {
-                    if (!file || !file.name || !file.attachment) return null;
-                    try {
-                      let base64String: string;
-                      const attachment = file.attachment as string | Buffer;
-
-                      if (typeof attachment === 'string') {
-                        base64String = attachment;
-                      } else if (Buffer.isBuffer(attachment)) {
-                        base64String = attachment.toString('base64');
-                      } else {
-                        return null;
-                      }
-
-                      const buffer = Buffer.from(base64String, 'base64');
-                      if (file.name) {
-                        return new AttachmentBuilder(buffer, { name: file.name });
-                      }
-                      return new AttachmentBuilder(buffer, { name: 'attachment.png' });
-                    } catch (error) {
-                      console.error('Error creating attachment:', error);
-                      return null;
-                    }
-                  })
-                  .filter((file): file is AttachmentBuilder => file !== null);
-
-                if ('send' in channel) {
-                  await channel.send({
-                    embeds: [embedData],
-                    files: deserializedFiles
-                  });
-                  return true;
-                }
-                return false;
-              } catch (err) {
-                console.error('Error sending to log channel with files:', err);
-
-                if (err.code === 50013) {
+          discord.shard?.fetchClientValues('id').then(ids => {
+            const shardId = ids.indexOf(shardForChannel);
+            if (shardId !== -1) {
+              discord.shard?.broadcastEval(
+                async (c, { channelId, embedData, files }) => {
+                  const channel = await c.channels.fetch(channelId).catch(() => null);
+                  if (!channel || !channel.isTextBased()) return false;
+    
                   try {
+                    const deserializedFiles = files
+                      .map(file => {
+                        if (!file || !file.name || !file.attachment) return null;
+                        try {
+                          let base64String: string;
+                          const attachment = file.attachment as string | Buffer;
+    
+                          if (typeof attachment === 'string') {
+                            base64String = attachment;
+                          } else if (Buffer.isBuffer(attachment)) {
+                            base64String = attachment.toString('base64');
+                          } else {
+                            return null;
+                          }
+    
+                          const buffer = Buffer.from(base64String, 'base64');
+                          if (file.name) {
+                            return new AttachmentBuilder(buffer, { name: file.name });
+                          }
+                          return new AttachmentBuilder(buffer, { name: 'attachment.png' });
+                        } catch (error) {
+                          console.error('Error creating attachment:', error);
+                          return null;
+                        }
+                      })
+                      .filter((file): file is AttachmentBuilder => file !== null);
+    
+                    if ('send' in channel) {
+                      await channel.send({
+                        embeds: [embedData],
+                        files: deserializedFiles
+                      });
+                      return true;
+                    }
+                    return false;
+                  } catch (err) {
+                    console.error('Error sending to log channel with files:', err);
+    
+                    if (err.code === 50013) {
+                      try {
+                        if ('send' in channel) {
+                          await channel.send({ embeds: [embedData] });
+                          return true;
+                        }
+                        return false;
+                      } catch (innerErr) {
+                        console.error('Fallback also failed:', innerErr);
+                      }
+                    }
+                    return false;
+                  }
+                },
+                {
+                  context: {
+                    channelId: logChannelId,
+                    embedData: embed,
+                    files: serializedFiles
+                  },
+                  shard: shardForChannel
+                }
+              ).catch(error => {
+                console.error('Error in broadcastEval with files:', error);
+              });
+            }
+          }).catch(error => {
+            console.error('Error fetching client values:', error);
+          });
+        } else {
+          discord.shard?.fetchClientValues('id').then(ids => {
+            const shardId = ids.indexOf(shardForChannel);
+            if (shardId !== -1) {
+              discord.shard?.broadcastEval(
+                async (c, { channelId, embedData }) => {
+                  try {
+                    const channel = await c.channels.fetch(channelId).catch(() => null);
+                    if (!channel || !channel.isTextBased()) return false;
+    
                     if ('send' in channel) {
                       await channel.send({ embeds: [embedData] });
                       return true;
                     }
                     return false;
-                  } catch (innerErr) {
-                    console.error('Fallback also failed:', innerErr);
+                  } catch (err) {
+                    return false;
                   }
+                },
+                {
+                  context: {
+                    channelId: logChannelId,
+                    embedData: embed
+                  },
+                  shard: shardForChannel
                 }
-                return false;
-              }
-            },
-            {
-              context: {
-                channelId: logChannelId,
-                embedData: embed,
-                files: serializedFiles
-              },
-              shard: shardForChannel
+              ).catch(error => {
+                console.error('Error sending non-image log:', error);
+              });
             }
-          ).catch(error => {
-            console.error('Error in broadcastEval with files:', error);
-
-            discord.shard?.broadcastEval(
-              async (c, { channelId, embedData }) => {
-                try {
-                  const channel = await c.channels.fetch(channelId).catch(() => null);
-                  if (!channel || !channel.isTextBased()) return false;
-
-                  if ('send' in channel) {
-                    await channel.send({ embeds: [embedData] });
-                    return true;
-                  }
-                  return false;
-                } catch (err) {
-                  return false;
-                }
-              },
-              {
-                context: {
-                  channelId: logChannelId,
-                  embedData: embed
-                }
-              }
-            ).catch(finalError => {
-              console.error('Final fallback failed:', finalError);
-            });
-          });
-        } else {
-          discord.shard?.broadcastEval(
-            async (c, { channelId, embedData }) => {
-              try {
-                const channel = await c.channels.fetch(channelId).catch(() => null);
-                if (!channel || !channel.isTextBased()) return false;
-
-                if ('send' in channel) {
-                  await channel.send({ embeds: [embedData] });
-                  return true;
-                }
-                return false;
-              } catch (err) {
-                return false;
-              }
-            },
-            {
-              context: {
-                channelId: logChannelId,
-                embedData: embed
-              }
-            }
-          ).catch(error => {
-            console.error('Error sending non-image log:', error);
+          }).catch(error => {
+            console.error('Error fetching client values:', error);
           });
         }
       } else {
