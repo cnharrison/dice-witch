@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "build": "vite build",
     "preview": "vite preview",
-    "start": "bun run serve -s dist"
+    "start": "bun run src/main.tsx",
+    "lint": "eslint . --ext .ts,.tsx",
+    "clean": "rm -rf dist node_modules .cache",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.21.0",
