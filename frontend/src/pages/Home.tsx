@@ -54,7 +54,14 @@ export const Home = () => {
   };
 
   const { data: mutualGuilds, isLoading } = useQuery<Guild[]>({
-    queryKey: ['mutualGuilds', discordAccount?.providerUserId],
+    queryKey: ['guilds'],
+    queryFn: async () => {
+      const response = await fetch('/api/guilds/mutual');
+      if (!response.ok) {
+        throw new Error('Failed to fetch guilds');
+      }
+      return response.json().then(data => data.guilds);
+    },
     enabled: !!discordAccount?.providerUserId,
     staleTime: 1000 * 60 * 5,
   });
