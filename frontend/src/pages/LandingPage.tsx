@@ -139,6 +139,29 @@ const LandingPage = () => {
                 Continue with Discord
               </Button>
             )}
+            
+            <Button 
+              asChild 
+              className="bg-[#ff00ff] hover:bg-[#cc00cc] text-white px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors border border-[#ff66ff] shadow-[0_0_15px_rgba(255,0,255,0.5)]"
+            >
+              <a 
+                href="https://discord.com/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot%20applications.commands" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center"
+              >
+                <svg
+                  width="24"
+                  height="24"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  className="mr-3"
+                >
+                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                </svg>
+                Add to Discord
+              </a>
+            </Button>
           </div>
         </div>
       </section>
