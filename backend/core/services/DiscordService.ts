@@ -48,68 +48,17 @@ export class DiscordService {
 
   public async getShardStatus(): Promise<{id: number, status: string, guilds: number, ping: number}[]> {
     try {
-      if (this.manager && this.manager.shards.size > 0) {
-        const shardInfo = await Promise.all(
-          Array.from(this.manager.shards.keys()).map(async (shardId) => {
-            const shard = this.manager.shards.get(shardId);
-            if (!shard) {
-              return {
-                id: shardId,
-                status: "Unknown",
-                guilds: 0,
-                ping: -1
-              };
-            }
-
-            try {
-              const status = await shard.eval(c => ({
-                status: c.ws.status,
-                guilds: c.guilds.cache.size,
-                ping: c.ws.ping
-              })).catch(e => {
-                return null;
-              });
-
-              if (!status) {
-                return {
-                  id: shard.id,
-                  status: "Unknown",
-                  guilds: 0,
-                  ping: -1
-                };
-              }
-
-              return {
-                id: shard.id,
-                status: this.getStatusText(status.status),
-                guilds: status.guilds,
-                ping: status.ping
-              };
-            } catch (err) {
-              console.error(`Error getting status for shard ${shard.id}:`, err);
-              return {
-                id: shard.id,
-                status: "Offline",
-                guilds: 0,
-                ping: -1
-              };
-            }
-          })
-        );
-
-        if (shardInfo.length === 0) {
-          return [{
-            id: 0,
-            status: "Running",
-            guilds: -1,
-            ping: -1
-          }];
+      if (this.client && this.client.isReady()) {
+        if (this.client.shard) {
+          const shardIds = this.client.shard.ids;
+          return shardIds.map(id => ({
+            id,
+            status: "Online",
+            guilds: this.client.guilds.cache.size,
+            ping: this.client.ws.ping
+          }));
         }
 
-        return shardInfo;
-      }
-      
-      if (this.client && this.client.isReady()) {
         return [{
           id: 0,
           status: "Online",
@@ -117,13 +66,64 @@ export class DiscordService {
           ping: this.client.ws.ping
         }];
       }
+
+      if (!this.manager || this.manager.shards.size === 0) {
+        return [{
+          id: 0,
+          status: "Running",
+          guilds: -1,
+          ping: -1
+        }];
+      }
       
-      return [{
-        id: 0,
-        status: "Running",
-        guilds: -1,
-        ping: -1
-      }];
+      const shardInfo = await Promise.all(
+        Array.from(this.manager.shards.values()).map(async (shard) => {
+          try {
+            const status = await shard.eval(c => ({
+              status: c.ws.status,
+              guilds: c.guilds.cache.size,
+              ping: c.ws.ping
+            })).catch(e => {
+              return null;
+            });
+
+            if (!status) {
+              return {
+                id: shard.id,
+                status: "Unknown",
+                guilds: 0,
+                ping: -1
+              };
+            }
+
+            return {
+              id: shard.id,
+              status: this.getStatusText(status.status),
+              guilds: status.guilds,
+              ping: status.ping
+            };
+          } catch (err) {
+            console.error(`Error getting status for shard ${shard.id}:`, err);
+            return {
+              id: shard.id,
+              status: "Offline",
+              guilds: 0,
+              ping: -1
+            };
+          }
+        })
+      );
+      
+      if (shardInfo.length === 0) {
+        return [{
+          id: 0,
+          status: "Running",
+          guilds: -1,
+          ping: -1
+        }];
+      }
+      
+      return shardInfo;
     } catch (error) {
       console.error("Error getting shard status:", error);
       return [{
