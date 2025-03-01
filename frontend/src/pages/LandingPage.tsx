@@ -2,10 +2,15 @@ import * as React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useSignIn } from '@clerk/clerk-react';
 import { Button } from "@/components/ui/button";
+import { PreviewRoller } from '@/components/PreviewRoller';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { useServerStats } from '@/hooks/useServerStats';
+import { SvgFilters } from '@/components/SvgFilters';
 
 const LandingPage = () => {
   const { isSignedIn } = useAuth();
   const { signIn, isLoaded } = useSignIn();
+  const { servers, users, loading, error, available } = useServerStats();
 
   const handleSignInWithDiscord = async () => {
     if (!isLoaded) return;
@@ -18,6 +23,7 @@ const LandingPage = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-black text-white font-mono">
+      <SvgFilters />
       <section className="py-24 md:py-32">
         <div className="container mx-auto px-4 text-center">
           <div className="relative w-60 h-60 md:w-80 md:h-80 mx-auto mb-16">
@@ -33,8 +39,8 @@ const LandingPage = () => {
               />
             </div>
 
-            <div className="absolute top-[-25px] left-[209px]">
-              <svg width="240" height="160" viewBox="0 0 240 160" className="md:block">
+            <div className="absolute top-[-25px] left-[209px] hidden md:block">
+              <svg width="240" height="160" viewBox="0 0 240 160">
                 <path
                   d="M120,10
                   C175,10 220,35 220,70
@@ -88,9 +94,6 @@ const LandingPage = () => {
               </svg>
             </div>
 
-            <div className="text-center mt-4 mb-8 md:hidden font-bold uppercase tracking-wide">
-              THE DICE CLATTER ACROSS THE TABLE...
-            </div>
           </div>
 
           <h1 className="font-['UnifrakturMaguntia'] text-[#ff00ff] text-6xl md:text-8xl mb-8">
@@ -163,15 +166,37 @@ const LandingPage = () => {
               <h3 className="text-2xl font-mono mb-2">Web interface</h3>
               <p className="text-zinc-400">You can control the bot from the web as a GM</p>
             </div>
+
+            {available && (
+              <div className="flex flex-col items-start">
+                <h3 className="text-2xl font-mono mb-2">Popular</h3>
+                <p className="text-zinc-400">
+                  Dice Witch is used in {servers.toLocaleString()} Discord servers by a total of {users.toLocaleString()} people
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-8 border-t border-zinc-900 mt-auto bg-[#B0C7BD]">
+      <section className="py-24 border-t border-zinc-900 bg-[#1a1a1a]">
+        <div className="container mx-auto px-4">
+          <h2 className="text-3xl font-mono mb-8 text-center border-b border-zinc-800 pb-2 text-[#9933ff]">Roll</h2>
+          <p className="text-xl text-center mb-8 text-zinc-300 max-w-2xl mx-auto">You came here to roll, didn't you? Roll. (Note that these results won't be sent to Discord or anywhere else)</p>
+          <div className="max-w-5xl mx-auto">
+            <div className="preview-section rounded-lg p-6 shadow-lg bg-[#121212] border border-[#333333]">
+              <TooltipProvider>
+                <PreviewRoller />
+              </TooltipProvider>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer className="py-8 border-t border-zinc-900 mt-auto bg-[#0f0f0f]">
         <div className="container mx-auto px-4 text-center">
-          <p className="text-gray-700 font-mono">
-            © {new Date().getFullYear()} Christopher Harrison
+          <p className="text-gray-400 font-mono">
+            © {new Date().getFullYear()} Dice Witch, c/o Christopher Harrison
           </p>
         </div>
       </footer>

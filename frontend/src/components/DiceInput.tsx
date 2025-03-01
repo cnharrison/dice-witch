@@ -48,12 +48,15 @@ export function DiceInput({
 
   const handleInputSelect = React.useCallback((e: React.SyntheticEvent<HTMLInputElement>) => {
     const target = e.target as HTMLInputElement;
+    
     const selectionEvent = new CustomEvent('diceInputSelectionChange', {
       detail: {
         selectionStart: target.selectionStart,
         selectionEnd: target.selectionEnd
       }
     });
+    
+    target.dispatchEvent(selectionEvent);
     window.dispatchEvent(selectionEvent);
   }, []);
 

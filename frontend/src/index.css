@@ -74,3 +74,15 @@
     @apply bg-background text-foreground;
   }
 }
+
+.preview-section .dice-input-container button[variant="ghost"],
+.preview-section .absolute button[size="icon"] {
+  background-color: transparent !important;
+  color: #44665A !important;
+}
+
+.preview-section .dice-input-container button[variant="ghost"]:hover:not(:disabled),
+.preview-section .absolute button[size="icon"]:hover:not(:disabled) {
+  background-color: rgba(68, 102, 90, 0.1) !important;
+  color: #56877A !important;
+}
