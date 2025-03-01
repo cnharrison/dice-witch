@@ -231,20 +231,20 @@ const generateD20 = ({
   outlineColor,
   solidFill,
   patternFill,
-  borderWidth = "6px",
+  borderWidth = "3px",
   width = "600",
   height = "600",
 }: GenerateDieProps) => {
   const faces = getFaces(result);
   return `
-  <svg viewBox="0 0 ${width} ${height}">
+  <svg viewBox="0 0 ${width} ${height}" width="${width * 2}" height="${height * 2}" preserveAspectRatio="xMidYMid meet">
     <defs>
  ${patternFill?.string ?? ""}
     <style>
     .outline{fill:${
-      `url(#${patternFill?.name})` ?? solidFill
-    };stroke:${outlineColor};stroke-miterlimit:10;stroke-width:${borderWidth}}
-  .text{fill:${textColor};stroke:${textColor}}
+      patternFill ? `url(#${patternFill.name})` : solidFill
+    };stroke:${outlineColor};stroke-miterlimit:10;stroke-width:${borderWidth};shape-rendering:geometricPrecision}
+  .text{fill:${textColor};stroke:${textColor};shape-rendering:geometricPrecision;text-rendering:optimizeLegibility}
     </style>
     </defs>
   <g>

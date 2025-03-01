@@ -28,7 +28,7 @@ import {
   generateGeneric,
 } from "./images/generateDice/dice";
 import generateLinearGradientFill from "./images/generateDice/fills/generateLinearGradientFill";
-import generateDie from "./images/generateDie";
+import patternFills, { getRandomPatternFill } from "./images/generateDice/fills/generatePatternFills";
 import {
   arrowThroughIcon,
   blankIcon,
@@ -45,8 +45,8 @@ import {
 export class DiceService {
   private static instance: DiceService;
   private icons: Map<Icon | null, string>;
-  private defaultDiceDimension = 100;
-  private defaultIconDimension = 25;
+  private defaultDiceDimension = 150; // Increased from 100 for better resolution
+  private defaultIconDimension = 37; // Increased proportionally from 25
   private maxRowLength = 10;
 
   private constructor() {
@@ -121,6 +121,10 @@ export class DiceService {
       return new Array(timesToRepeat).fill(args).flat();
     }
     return [...args];
+  }
+
+  private shouldUsePatternFill(): boolean {
+    return Math.random() < 0.4;
   }
 
   private processRollGroup(
@@ -362,7 +366,6 @@ export class DiceService {
 
                 // Handle d% (percentile dice) as two dice: d% and d10
                 if (sides === 100 || pattern.sides === 100) {
-                  // Create the tens digit die (d%)
                   groupArray.push({
                     sides: "%",
                     rolled: this.getDPercentRolled(value) as DiceFaces,
@@ -373,8 +376,7 @@ export class DiceService {
                     textColor,
                     value
                   });
-                  
-                  // Create the ones digit die (d10)  
+
                   groupArray.push({
                     sides: 10,
                     rolled: this.getD10PercentRolled(value) as DiceFaces,
@@ -384,7 +386,6 @@ export class DiceService {
                     value
                   });
                 } else {
-                  // Handle regular dice
                   groupArray.push({
                     sides,
                     rolled: value,
@@ -461,7 +462,6 @@ export class DiceService {
 
                 // Handle d% (percentile dice) as two dice: d% and d10
                 if (diceSize === 100) {
-                  // Create the tens digit die (d%)
                   groupArray.push({
                     sides: "%",
                     rolled: this.getDPercentRolled(value) as DiceFaces,
@@ -472,8 +472,7 @@ export class DiceService {
                     textColor,
                     value
                   });
-                  
-                  // Create the ones digit die (d10)  
+
                   groupArray.push({
                     sides: 10,
                     rolled: this.getD10PercentRolled(value) as DiceFaces,
@@ -483,7 +482,6 @@ export class DiceService {
                     value
                   });
                 } else {
-                  // Handle regular dice
                   groupArray.push({
                     sides: diceSize,
                     rolled: value,
@@ -626,13 +624,21 @@ export class DiceService {
 
       const drawDice = async (die: Die, index: number, outerIndex: number) => {
         try {
+          let patternFillObj;
+
+          if (this.shouldUsePatternFill()) {
+            patternFillObj = getRandomPatternFill(die.color.hex(), die.secondaryColor.hex());
+          } else {
+            patternFillObj = generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex());
+          }
+
           const toLoad = await this.generateDie({
             sides: die.sides,
             rolled: die.rolled,
             textColor: die.textColor.hex(),
             outlineColor: "#000000",
             solidFill: die.color.hex(),
-            patternFill: generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex())
+            patternFill: patternFillObj
           });
 
           if (!toLoad) {
@@ -666,8 +672,21 @@ export class DiceService {
         )
       );
 
+      // Convert canvas to buffer with higher quality
+      const canvasBuffer = canvas.toBuffer('image/png');
+      
+      // Use sharp to process the buffer with higher quality settings
+      const processedBuffer = await sharp(canvasBuffer)
+        .webp({ 
+          lossless: true, 
+          quality: 100,
+          nearLossless: true,
+          smartSubsample: true
+        })
+        .toBuffer();
+        
       const attachment = new AttachmentBuilder(
-        canvas.toBuffer('image/webp'),
+        processedBuffer,
         { name: "currentDice.png" }
       );
       return { attachment, canvas };
@@ -732,6 +751,14 @@ export class DiceService {
     width?: string;
     height?: string;
   }): Promise<Buffer | undefined> {
+    if (!patternFill) {
+      if (this.shouldUsePatternFill()) {
+        patternFill = getRandomPatternFill(solidFill || '#ffffff', outlineColor || '#000000');
+      } else {
+        patternFill = generateLinearGradientFill(solidFill || '#ffffff', outlineColor || '#000000');
+      }
+    }
+
     const props = {
       result: rolled,
       sides: sides,
@@ -761,7 +788,31 @@ export class DiceService {
     }
 
     try {
-      const attachment = await sharp(Buffer.from(image)).webp({ lossless: true, quality: 100 }).toBuffer();
+      // Determine if we need to resize based on dice type
+      const needsResize = sides === 20; // Only resize d20
+
+      let sharpInstance = sharp(Buffer.from(image));
+      
+      // If this is a D20, resize it to ensure it's properly scaled
+      if (needsResize) {
+        sharpInstance = sharpInstance.resize({
+          width: this.defaultDiceDimension * 2,
+          height: this.defaultDiceDimension * 2,
+          fit: 'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        });
+      }
+      
+      // Apply high quality WebP conversion
+      const attachment = await sharpInstance
+        .webp({ 
+          lossless: true, 
+          quality: 100,
+          nearLossless: true,
+          smartSubsample: true
+        })
+        .toBuffer();
+      
       return attachment;
     } catch (err) {
       return undefined;
@@ -774,7 +825,12 @@ export class DiceService {
       if (!image) return;
 
       const attachment = await sharp(Buffer.from(image))
-        .webp({ lossless: true, quality: 100 })
+        .webp({ 
+          lossless: true, 
+          quality: 100,
+          nearLossless: true,
+          smartSubsample: true
+        })
         .toBuffer();
       return attachment;
     } catch (err) {

@@ -38,7 +38,7 @@ const generateD4 = ({
  ${patternFill?.string ?? ""}
     <style>
     .outline{fill:${
-      `url(#${patternFill?.name})` ?? solidFill
+      patternFill ? `url(#${patternFill.name})` : solidFill
     };stroke:${outlineColor};stroke-miterlimit:10;stroke-width:${borderWidth}}
   .text{fill:${textColor};stroke:${textColor}}
     </style>
