@@ -73,21 +73,54 @@ const initializeDiscordService = async () => {
           const shardIdStr = `Shard ${message.shardId || shard.id}`;
           const errorType = message.errorType || 'UNKNOWN_ERROR';
           
-          console.error(`[ERROR] [${timestamp}] [${shardIdStr}] [${errorType}]`);
+          console.error(`\n[ERROR] [${timestamp}] [${shardIdStr}] [${errorType}]`);
           
           if (message.message) {
             console.error(`Message: ${message.message}`);
           }
           
-          if (message.context && Object.keys(message.context).length > 0) {
-            console.error(`Context: ${JSON.stringify(message.context)}`);
+          if (message.context) {
+            if (message.context.commandName) {
+              console.error(`Command: ${message.context.commandName}`);
+            }
+            
+            if (message.context.args) {
+              console.error(`Args: ${JSON.stringify(message.context.args)}`);
+            }
+            
+            if (message.context.user) {
+              const user = message.context.user;
+              console.error(`User: ${user.username || user.tag || 'Unknown'} (${user.id || 'Unknown ID'})`);
+            } else if (message.context.userId) {
+              console.error(`User ID: ${message.context.userId}`);
+            }
+            
+            if (message.context.guild) {
+              const guild = message.context.guild;
+              console.error(`Guild: ${guild.name || 'Unknown'} (${guild.id || 'Unknown ID'})`);
+            } else if (message.context.guildId) {
+              console.error(`Guild ID: ${message.context.guildId}`);
+            }
+            
+            const otherContextProps = { ...message.context };
+            delete otherContextProps.user;
+            delete otherContextProps.guild;
+            delete otherContextProps.userId;
+            delete otherContextProps.guildId;
+            delete otherContextProps.commandName;
+            delete otherContextProps.args;
+            
+            if (Object.keys(otherContextProps).length > 0) {
+              console.error(`Additional Context: ${JSON.stringify(otherContextProps)}`);
+            }
           }
           
           if (message.stack) {
-            console.error(`Stack: ${message.stack}`);
+            console.error(`\nStack Trace:`);
+            console.error(message.stack);
           }
           
-          console.error('---');
+          console.error('\n---');
         } 
         else if (message.type === 'shardStatusRequest') {
           try {

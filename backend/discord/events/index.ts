@@ -55,7 +55,7 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         }
 
         try {
-          await interaction.deferReply({ ephemeral: commandName === 'status' }).catch(err => {
+          await interaction.deferReply({ ephemeral: false }).catch(err => {
             console.error(`Error deferring reply for ${commandName}:`, err);
           });
         } catch (deferError) {
@@ -120,6 +120,29 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         console.error(`Error executing command ${commandName}:`, error);
 
         if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+          const enhancedContext = {
+            commandName,
+            guildId: interaction.guildId,
+            channelId: interaction.channelId,
+            userId: interaction.user.id,
+            user: {
+              id: interaction.user.id,
+              tag: interaction.user.tag,
+              username: interaction.user.username
+            }
+          };
+
+          if (interaction.guild) {
+            enhancedContext.guild = {
+              id: interaction.guild.id,
+              name: interaction.guild.name
+            };
+          }
+
+          if (args && args.length > 0) {
+            enhancedContext.args = args;
+          }
+
           process.send({
             type: 'error',
             errorType: 'COMMAND_EXECUTION_ERROR',
@@ -127,13 +150,12 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
             stack: error?.stack,
             shardId: discord.shard?.ids[0],
             timestamp: Date.now(),
-            context: {
-              commandName,
-              guildId: interaction.guildId,
-              channelId: interaction.channelId,
-              userId: interaction.user.id
-            }
+            context: enhancedContext
           });
+
+          console.error(`Guild: ${interaction.guild?.name || 'Unknown'} (${interaction.guildId || 'Unknown ID'})`);
+          console.error(`User: ${interaction.user.username} (${interaction.user.id})`);
+          console.error(`Args: ${JSON.stringify(args)}`);
         }
 
         try {
@@ -183,19 +205,16 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         const unformattedArgs = interaction.customId.trim().split("-");
         const args = unformattedArgs[1] ? [unformattedArgs[1]] : [];
 
-        // Get command by name or alias
         const commandName = unformattedArgs[0];
-        const command = 
+        const command =
           commands.get(commandName) ||
           commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
-        
+
         if (!command) {
           console.error(`Button interaction references unknown command: ${commandName}`);
-          // For buttons, we DO need this check since custom IDs could reference commands that don't exist
           return;
         }
-        
-        // Execute the command
+
         command.execute({
           args,
           commands,

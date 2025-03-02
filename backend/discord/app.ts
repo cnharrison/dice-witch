@@ -48,6 +48,37 @@ console.error = function(...args) {
 };
 
 function forwardErrorToManager(type, error, context = {}) {
+  let enhancedContext = { ...context };
+
+  if (context.guildId && !enhancedContext.guild) {
+    try {
+      const guild = discord.guilds.cache.get(context.guildId);
+      if (guild) {
+        enhancedContext.guild = {
+          id: guild.id,
+          name: guild.name
+        };
+      }
+    } catch (e) {
+      enhancedContext.guild = { id: context.guildId };
+    }
+  }
+
+  if (context.userId && !enhancedContext.user) {
+    try {
+      const user = discord.users.cache.get(context.userId);
+      if (user) {
+        enhancedContext.user = {
+          id: user.id,
+          tag: user.tag,
+          username: user.username
+        };
+      }
+    } catch (e) {
+      enhancedContext.user = { id: context.userId };
+    }
+  }
+
   if (process.send) {
     const errorData = {
       type: 'error',
@@ -56,13 +87,25 @@ function forwardErrorToManager(type, error, context = {}) {
       stack: error?.stack,
       shardId: currentShardId,
       timestamp: Date.now(),
-      context
+      context: enhancedContext
     };
 
     process.send(errorData);
   }
 
   console.error(`${type}:`, error);
+
+  if (enhancedContext.guild) {
+    console.error(`Guild: ${enhancedContext.guild.name || 'Unknown'} (${enhancedContext.guild.id || 'Unknown ID'})`);
+  }
+
+  if (enhancedContext.user) {
+    console.error(`User: ${enhancedContext.user.username || enhancedContext.user.tag || 'Unknown'} (${enhancedContext.user.id || 'Unknown ID'})`);
+  }
+
+  if (enhancedContext.commandName) {
+    console.error(`Command: ${enhancedContext.commandName}`);
+  }
 }
 
 process.on('uncaughtException', (error) => {
