@@ -17,9 +17,7 @@ const manager = new ShardingManager(process.env.BOT_PATH ? `${process.env.BOT_PA
   token: CONFIG.discord.token,
   totalShards: 'auto',
   respawn: true,
-  mode: 'process',
-  shardArgs: ['--shard'],
-  execArgv: process.env.NODE_ENV === 'production' ? ['--enable-source-maps'] : []
+  mode: 'process'
 });
 
 process.on('uncaughtException', (error) => {
@@ -35,45 +33,32 @@ const initializeDiscordService = async () => {
   discordService.setManager(manager);
 
   manager.on("shardCreate", (shard) => {
-    console.log(`[Discord] [Shard] Launched shard ${shard.id}`);
+    console.log(`[Manager] Launched shard ${shard.id}`);
 
     shard.on("error", (error) => {
-      console.error(`[Shard ${shard.id}] Error:`, error);
+      console.error(`[Manager] Shard ${shard.id} Error:`, error);
     });
 
     shard.on("death", (process) => {
       const exitCode = (process as ChildProcess).exitCode ?? 'unknown';
-      console.error(`[Shard ${shard.id}] Process died with exit code: ${exitCode}`);
-      
-      const childProcess = process as ChildProcess;
-      if (childProcess && childProcess.stderr) {
-        childProcess.stderr.on('data', (data) => {
-          console.error(`[Shard ${shard.id}] stderr: ${data.toString()}`);
-        });
-      }
-      
-      if (childProcess && childProcess.stdout) {
-        childProcess.stdout.on('data', (data) => {
-          console.log(`[Shard ${shard.id}] stdout: ${data.toString()}`);
-        });
-      }
+      console.error(`[Manager] Shard ${shard.id} died with exit code: ${exitCode}`);
     });
 
     shard.on("disconnect", () => {
-      console.log(`[Shard ${shard.id}] Disconnected. Attempting to reconnect...`);
+      console.log(`[Manager] Shard ${shard.id} disconnected, attempting to reconnect...`);
     });
 
     shard.on("reconnecting", () => {
-      console.log(`[Shard ${shard.id}] Reconnecting...`);
+      console.log(`[Manager] Shard ${shard.id} reconnecting...`);
     });
 
     shard.on("ready", () => {
-      console.log(`[Shard ${shard.id}] Ready and operational`);
+      console.log(`[Manager] Shard ${shard.id} ready and operational`);
     });
     
     shard.on("message", (message) => {
-      if (message && message.type === 'error') {
-        console.error(`[Shard ${shard.id}] Error from child process:`, message.data);
+      if (message && typeof message === 'object') {
+        console.log(`[Manager] Message from Shard ${shard.id}:`, message);
       }
     });
   });

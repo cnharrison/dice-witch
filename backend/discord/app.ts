@@ -12,20 +12,41 @@ import setupEvents from './events';
 import { CONFIG } from "../config";
 import { DiscordService } from "../core/services/DiscordService";
 
-process.on('uncaughtException', (error) => {
-  console.error(`[Shard ${process.env.SHARD_ID || 'unknown'}] Uncaught Exception:`, error);
-  
-  if (process.send) {
-    process.send({ type: 'error', data: { type: 'uncaughtException', error: error.stack || error.toString() } });
+let currentShardId = 'unknown';
+
+const getShardId = () => {
+  if (currentShardId !== 'unknown') {
+    return currentShardId;
   }
+  
+  try {
+    if (discord && discord.shard && discord.shard.ids && discord.shard.ids.length > 0) {
+      currentShardId = discord.shard.ids[0].toString();
+      return currentShardId;
+    }
+  } catch (e) {
+  }
+  
+  return 'unknown';
+};
+
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+
+console.log = function(...args) {
+  originalConsoleLog.apply(console, [`[Shard ${getShardId()}]`, ...args]);
+};
+
+console.error = function(...args) {
+  originalConsoleError.apply(console, [`[Shard ${getShardId()}]`, ...args]);
+};
+
+process.on('uncaughtException', (error) => {
+  console.error('UNCAUGHT EXCEPTION:', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error(`[Shard ${process.env.SHARD_ID || 'unknown'}] Unhandled Rejection:`, reason);
-  
-  if (process.send) {
-    process.send({ type: 'error', data: { type: 'unhandledRejection', reason: reason instanceof Error ? reason.stack : String(reason) } });
-  }
+  console.error('UNHANDLED REJECTION:', reason);
 });
 
 const { token: discordToken, logOutputChannelId: logOutputChannelID, clientId } = CONFIG.discord;
@@ -129,35 +150,23 @@ const globalSlashCommands: ApplicationCommandDataResolvable[] = [
   },
 ];
 
-const isShardResponsibleForChannel = (shardId: number, channelId: string): boolean => {
-  if (typeof shardId !== 'number') return false;
-  const totalShards = discord.shard?.count ?? 1;
-  const channelShardId = Number((BigInt(channelId) >> 22n) % BigInt(totalShards));
-  return shardId === channelShardId;
-};
-
 const registerCommands = async (discord: Client) => {
-  const shardId = discord.shard?.ids[0] ?? 'unknown';
-  
   try {
-    console.log(`[Shard ${shardId}] Registering global slash commands...`);
+    console.log(`Registering global slash commands...`);
     await discord.application?.commands.set(globalSlashCommands);
-    console.log(`[Shard ${shardId}] Global slash commands registered successfully`);
-  } catch (err) {
-    console.error(`[Shard ${shardId}] Error registering commands:`, err);
-  }
-  
-  if (typeof shardId === 'number' && isShardResponsibleForChannel(shardId, logOutputChannelID)) {
+    console.log(`Commands registered successfully`);
+    
+    let channel = null;
     try {
-      const channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
-      console.log(`[Shard ${shardId}] Found log output channel ${channel?.name}`);
-      return channel;
+      channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
+      console.log(`Found log output channel: ${channel?.name}`);
     } catch (err) {
-      console.error(`[Shard ${shardId}] Error fetching log output channel:`, err);
-      return null;
+      console.log(`Log channel not available on this shard`);
     }
-  } else {
-    console.log(`[Shard ${shardId}] Not responsible for log output channel, skipping`);
+    
+    return channel;
+  } catch (err) {
+    console.error(`Error registering commands:`, err);
     return null;
   }
 };
@@ -211,10 +220,13 @@ const createBotSiteUpdateTask = (discord: Client) => {
 };
 
 const startServer = () => {
-  const shardId = discord.shard?.ids[0] ?? 'unknown';
-  console.log(`[Shard ${shardId}] Starting up...`);
+  console.log(`Starting up...`);
   
   discord.on("ready", async () => {
+    if (discord.shard?.ids?.length > 0) {
+      currentShardId = discord.shard.ids[0].toString();
+    }
+    
     const discordService = DiscordService.getInstance();
     discordService.setClient(discord);
 
@@ -222,66 +234,49 @@ const startServer = () => {
       discord.user.setActivity("/roll");
     }
 
-    console.log(`[Shard ${shardId}] Client ready. Logged in as ${discord.user?.tag} (${discord.user?.id})`);
-    console.log(`[Shard ${shardId}] Serving ${discord.guilds.cache.size} guilds with ${discord.users.cache.size} users`);
+    console.log(`Ready! Logged in as ${discord.user?.tag} in ${discord.guilds.cache.size} servers`);
+    
+    if (process.send) {
+      process.send({ type: 'ready', shardId: currentShardId });
+    }
 
     const logOutputChannel = await registerCommands(discord);
     if (logOutputChannel) {
       await setupEvents(discord, logOutputChannel);
-      console.log(`[Shard ${shardId}] Events setup completed`);
     }
     
-    if (typeof shardId === 'number' && shardId === 0) {
+    if (discord.shard?.ids[0] === 0) {
       const task = createBotSiteUpdateTask(discord);
       const job = new SimpleIntervalJob({ hours: 4 }, task);
       scheduler.addSimpleIntervalJob(job);
-      console.log(`[Shard ${shardId}] Bot site update scheduler initialized`);
+      console.log(`Bot site update scheduler initialized`);
     }
   });
 
   discord.login(discordToken);
 
   discord.on('shardReady', (shardId) => {
-    console.log(`[Shard ${shardId}] Ready and fully operational`);
+    console.log(`Shard ${shardId} ready`);
   });
   
   discord.on('shardError', (error, shardId) => {
-    console.error(`[Shard ${shardId}] Error:`, error);
-    
-    if (process.send) {
-      process.send({ 
-        type: 'error', 
-        data: { 
-          type: 'shardError', 
-          shardId,
-          error: error instanceof Error ? error.stack : String(error)
-        } 
-      });
-    }
+    console.error(`SHARD ERROR: ${shardId}:`, error);
   });
   
   discord.on('shardDisconnect', (event, shardId) => {
-    console.log(`[Shard ${shardId}] Disconnected from Discord gateway. Code: ${event.code}`);
-    
-    if (process.send) {
-      process.send({ 
-        type: 'error', 
-        data: { 
-          type: 'shardDisconnect', 
-          shardId,
-          code: event.code,
-          reason: event.reason
-        } 
-      });
-    }
+    console.log(`Shard ${shardId} disconnected. Code: ${event.code}`);
   });
   
   discord.on('shardReconnecting', (shardId) => {
-    console.log(`[Shard ${shardId}] Reconnecting to Discord gateway...`);
+    console.log(`Shard ${shardId} reconnecting...`);
   });
   
-  discord.on('shardResume', (shardId, replayedEvents) => {
-    console.log(`[Shard ${shardId}] Resumed connection. Replayed ${replayedEvents} events.`);
+  discord.on('error', (error) => {
+    console.error(`DISCORD CLIENT ERROR:`, error);
+  });
+  
+  process.on('exit', (code) => {
+    console.log(`Process exiting with code: ${code}`);
   });
 };
 
