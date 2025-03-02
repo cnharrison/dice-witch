@@ -19,7 +19,7 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
     process.chdir(path.dirname(CONFIG.botPath));
     const commandFiles: string[] = fs
       .readdirSync(`${CONFIG.botPath}/backend/discord/commands`)
-      .filter((file: string) => file.endsWith(".ts"));
+      .filter((file: string) => file.endsWith(".ts") && file !== "definitions.ts");
 
     for (const file of commandFiles) {
       try {
@@ -50,7 +50,34 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
       const { commandName } = interaction;
 
       try {
-        await interaction.deferReply().catch(console.error);
+        if (discord.trackCommandStart) {
+          discord.trackCommandStart(interaction);
+        }
+
+        try {
+          await interaction.deferReply({ ephemeral: commandName === 'status' }).catch(err => {
+            console.error(`Error deferring reply for ${commandName}:`, err);
+          });
+        } catch (deferError) {
+          console.error(`Error deferring reply for ${commandName}:`, deferError);
+
+          if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+            process.send({
+              type: 'error',
+              errorType: 'INTERACTION_DEFER_ERROR',
+              message: deferError?.message || String(deferError),
+              stack: deferError?.stack,
+              shardId: discord.shard?.ids[0],
+              timestamp: Date.now(),
+              context: {
+                commandName,
+                guildId: interaction.guildId,
+                channelId: interaction.channelId,
+                userId: interaction.user.id
+              }
+            });
+          }
+        }
 
         const { value: diceNotation } = interaction.options.get("notation") || {};
         const { value: title } = interaction.options.get("title") || {};
@@ -70,11 +97,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
         const command = commands.get(commandName);
 
-        if (!command) {
-          console.error(`Command ${commandName} not found`);
-          return;
-        }
-
         await command.execute({
           args,
           discord,
@@ -84,6 +106,10 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
           timesToRepeat: timesToRepeatAsNumber,
         });
 
+        if (discord.trackCommandEnd) {
+          discord.trackCommandEnd(interaction);
+        }
+
         sendLogEventMessage({
           eventType: EventType.RECEIVED_COMMAND,
           command,
@@ -92,12 +118,52 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         });
       } catch (error) {
         console.error(`Error executing command ${commandName}:`, error);
-        const errorResponse = { content: 'There was an error executing this command!' };
 
-        if (interaction.deferred) {
-          await interaction.editReply(errorResponse);
-        } else {
-          await interaction.reply(errorResponse);
+        if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+          process.send({
+            type: 'error',
+            errorType: 'COMMAND_EXECUTION_ERROR',
+            message: error?.message || String(error),
+            stack: error?.stack,
+            shardId: discord.shard?.ids[0],
+            timestamp: Date.now(),
+            context: {
+              commandName,
+              guildId: interaction.guildId,
+              channelId: interaction.channelId,
+              userId: interaction.user.id
+            }
+          });
+        }
+
+        try {
+          const errorResponse = {
+            content: "There was an error executing this command. The bot team has been notified.",
+            ephemeral: true
+          };
+
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(errorResponse);
+          } else {
+            await interaction.reply(errorResponse);
+          }
+        } catch (replyError) {
+          console.error(`Error replying to interaction after command error:`, replyError);
+
+          if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+            process.send({
+              type: 'error',
+              errorType: 'INTERACTION_REPLY_ERROR',
+              message: replyError?.message || String(replyError),
+              stack: replyError?.stack,
+              shardId: discord.shard?.ids[0],
+              timestamp: Date.now(),
+              context: {
+                commandName,
+                originalError: error?.message || String(error)
+              }
+            });
+          }
         }
       }
     });
@@ -117,26 +183,31 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         const unformattedArgs = interaction.customId.trim().split("-");
         const args = unformattedArgs[1] ? [unformattedArgs[1]] : [];
 
-        const command =
-          commands.get(unformattedArgs[0]) ||
-          commands.find(
-            (cmd) => cmd.aliases && cmd.aliases.includes(unformattedArgs[0])
-          );
-
-        if (command) {
-          command.execute({
-            args,
-            commands,
-            interaction,
-          });
-
-          sendLogEventMessage({
-            eventType: EventType.RECEIVED_COMMAND,
-            command,
-            args,
-            interaction
-          });
+        // Get command by name or alias
+        const commandName = unformattedArgs[0];
+        const command = 
+          commands.get(commandName) ||
+          commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
+        
+        if (!command) {
+          console.error(`Button interaction references unknown command: ${commandName}`);
+          // For buttons, we DO need this check since custom IDs could reference commands that don't exist
+          return;
         }
+        
+        // Execute the command
+        command.execute({
+          args,
+          commands,
+          interaction,
+        });
+
+        sendLogEventMessage({
+          eventType: EventType.RECEIVED_COMMAND,
+          command,
+          args,
+          interaction
+        });
       } catch (error) {
         console.error('Error handling button interaction:', error);
       }
