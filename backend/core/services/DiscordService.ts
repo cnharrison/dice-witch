@@ -48,26 +48,26 @@ export class DiscordService {
 
   public async getShardStatus(): Promise<{id: number, status: string, guilds: number, ping: number}[]> {
     try {
-      if (this.client && this.client.isReady()) {
-        if (this.client.shard) {
-          const shardIds = this.client.shard.ids;
-          return shardIds.map(id => ({
-            id,
+      if (!this.manager || this.manager.shards.size === 0) {
+        if (this.client && this.client.isReady()) {
+          if (this.client.shard) {
+            const shardIds = this.client.shard.ids;
+            return shardIds.map(id => ({
+              id,
+              status: "Online",
+              guilds: this.client.guilds.cache.size,
+              ping: this.client.ws.ping
+            }));
+          }
+  
+          return [{
+            id: 0,
             status: "Online",
             guilds: this.client.guilds.cache.size,
             ping: this.client.ws.ping
-          }));
+          }];
         }
-
-        return [{
-          id: 0,
-          status: "Online",
-          guilds: this.client.guilds.cache.size,
-          ping: this.client.ws.ping
-        }];
-      }
-
-      if (!this.manager || this.manager.shards.size === 0) {
+        
         return [{
           id: 0,
           status: "Running",
@@ -84,6 +84,7 @@ export class DiscordService {
               guilds: c.guilds.cache.size,
               ping: c.ws.ping
             })).catch(e => {
+              console.error(`Error evaluating shard ${shard.id}:`, e);
               return null;
             });
 
