@@ -152,19 +152,8 @@ const registerCommands = async (discord: Client) => {
     console.log(`Registering global slash commands...`);
     await discord.application?.commands.set(globalSlashCommands);
     console.log(`Commands registered successfully`);
-
-    let channel = null;
-    try {
-      channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
-      console.log(`Found log output channel: ${channel?.name}`);
-    } catch (err) {
-      console.log(`Log channel not available on this shard`);
-    }
-
-    return channel;
   } catch (err) {
     console.error(`Error registering commands:`, err);
-    return null;
   }
 };
 
@@ -233,10 +222,17 @@ const startServer = () => {
 
     console.log(`Ready! Logged in as ${discord.user?.tag} in ${discord.guilds.cache.size} servers`);
 
-    const logOutputChannel = await registerCommands(discord);
-    if (logOutputChannel) {
-      await setupEvents(discord, logOutputChannel);
+    await registerCommands(discord);
+    
+    let logOutputChannel = null;
+    try {
+      logOutputChannel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
+      console.log(`Found log output channel: ${logOutputChannel?.name}`);
+    } catch (err) {
+      console.log(`Log channel not available on this shard, continuing without it`);
     }
+    
+    await setupEvents(discord, logOutputChannel);
 
     if (discord.shard?.ids[0] === 0) {
       const task = createBotSiteUpdateTask(discord);

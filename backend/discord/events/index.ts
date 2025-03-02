@@ -11,7 +11,7 @@ import { Command, EventType } from "../../shared/types";
 import { sendLogEventMessage } from "../messages/sendLogEventMessage";
 import { DatabaseService } from "../../core/services/DatabaseService";
 
-const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
+const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null) => {
   try {
     const databaseService = DatabaseService.getInstance();
     const commands = new Collection<string, Command>();
