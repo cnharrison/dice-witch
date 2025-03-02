@@ -114,45 +114,56 @@ const globalSlashCommands: ApplicationCommandDataResolvable[] = [
 ];
 
 const registerCommands = async (discord: Client) => {
+  const shardId = discord.shard?.ids[0] ?? 'unknown';
   try {
     const channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
-    console.log(`[Discord] Found log output channel ${channel?.name}`);
-    console.log(`[Discord] Registering global slash commands...`);
+    console.log(`[Shard ${shardId}] Found log output channel ${channel?.name}`);
+    console.log(`[Shard ${shardId}] Registering global slash commands...`);
     await discord.application?.commands.set(globalSlashCommands);
-    console.log(`[Discord] Registered.`);
+    console.log(`[Shard ${shardId}] Global slash commands registered successfully`);
     return channel;
   } catch (err) {
-    console.error("Error registering commands:", err);
+    console.error(`[Shard ${shardId}] Error registering commands:`, err);
     return null;
   }
 };
 
 const createBotSiteUpdateTask = (discord: Client) => {
+  const shardId = discord.shard?.ids[0] ?? 'unknown';
   return new AsyncTask(
     "botsite updates",
     async () => {
+      console.log(`[Shard ${shardId}] Running scheduled bot site update task`);
       const { totalGuilds } = await discordService.getUserCount() ?? {};
+      console.log(`[Shard ${shardId}] Reporting ${totalGuilds} total guilds to bot listing sites`);
+      
       const promises = [
         axios.post(
           `https://top.gg/api/bots/${clientId}/stats`,
           { server_count: totalGuilds },
           getHeaders(topgg)
-        ),
+        ).then(() => console.log(`[Shard ${shardId}] Successfully updated stats on top.gg`)),
+        
         axios.post(
           `https://discordbotlist.com/api/v1/bots/${clientId}/stats`,
           { guilds: totalGuilds },
           getHeaders(discordbotlist)
-        ),
+        ).then(() => console.log(`[Shard ${shardId}] Successfully updated stats on discordbotlist.com`)),
       ];
+      
       await Promise.all(promises);
+      console.log(`[Shard ${shardId}] Bot site update completed successfully`);
     },
     (err: Error) => {
-      console.error("Error updating bot site stats:", err);
+      console.error(`[Shard ${shardId}] Error updating bot site stats:`, err);
     }
   );
 };
 
 const startServer = () => {
+  const shardId = discord.shard?.ids[0] ?? 'unknown';
+  console.log(`[Shard ${shardId}] Starting up...`);
+  
   discord.on("ready", async () => {
     const discordService = DiscordService.getInstance();
     discordService.setClient(discord);
@@ -161,22 +172,43 @@ const startServer = () => {
       discord.user.setActivity("/roll");
     }
 
+    console.log(`[Shard ${shardId}] Client ready. Logged in as ${discord.user?.tag} (${discord.user?.id})`);
+    console.log(`[Shard ${shardId}] Serving ${discord.guilds.cache.size} guilds with ${discord.users.cache.size} users`);
+
     const logOutputChannel = await registerCommands(discord);
     if (logOutputChannel) {
       await setupEvents(discord, logOutputChannel);
+      console.log(`[Shard ${shardId}] Events setup completed`);
     } else {
-      console.error("Log output channel not found.");
+      console.error(`[Shard ${shardId}] Log output channel not found.`);
     }
 
     const task = createBotSiteUpdateTask(discord);
     const job = new SimpleIntervalJob({ hours: 4 }, task);
     scheduler.addSimpleIntervalJob(job);
+    console.log(`[Shard ${shardId}] Bot site update scheduler initialized`);
   });
 
   discord.login(discordToken);
 
   discord.on('shardReady', (shardId) => {
-    console.log(`Shard ${shardId} ready`);
+    console.log(`[Shard ${shardId}] Ready and fully operational`);
+  });
+  
+  discord.on('shardError', (error, shardId) => {
+    console.error(`[Shard ${shardId}] Error:`, error);
+  });
+  
+  discord.on('shardDisconnect', (event, shardId) => {
+    console.log(`[Shard ${shardId}] Disconnected from Discord gateway. Code: ${event.code}`);
+  });
+  
+  discord.on('shardReconnecting', (shardId) => {
+    console.log(`[Shard ${shardId}] Reconnecting to Discord gateway...`);
+  });
+  
+  discord.on('shardResume', (shardId, replayedEvents) => {
+    console.log(`[Shard ${shardId}] Resumed connection. Replayed ${replayedEvents} events.`);
   });
 };
 

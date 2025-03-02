@@ -17,7 +17,8 @@ const manager = new ShardingManager(process.env.BOT_PATH ? `${process.env.BOT_PA
   token: CONFIG.discord.token,
   totalShards: 'auto',
   respawn: true,
-  mode: 'process'
+  mode: 'process',
+  shardArgs: ['--shard']
 });
 
 const initializeDiscordService = async () => {
