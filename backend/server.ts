@@ -96,6 +96,34 @@ const initializeDiscordService = async () => {
           const timestamp = new Date(message.timestamp || Date.now()).toISOString();
           console.log(`[STATUS_COMMAND] [${timestamp}] ✅ Response successfully sent for interaction ${message.interactionId}`);
         }
+        else if (message.type === 'roll_command_start') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[ROLL_COMMAND] [${timestamp}] Roll command started for interaction ${message.interactionId} from user ${message.userId} in guild ${message.guildId || 'DM'} - Dice: ${message.dice}`);
+        }
+        else if (message.type === 'roll_processing_dice') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[ROLL_COMMAND] [${timestamp}] Processing dice for interaction ${message.interactionId} - Dice: ${message.dice}`);
+        }
+        else if (message.type === 'roll_dice_processed') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[ROLL_COMMAND] [${timestamp}] Dice processed for interaction ${message.interactionId} - Results: ${message.resultCount}`);
+        }
+        else if (message.type === 'roll_generating_image') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[ROLL_COMMAND] [${timestamp}] Generating dice image for interaction ${message.interactionId} - Dice count: ${message.diceCount}`);
+        }
+        else if (message.type === 'roll_image_generated') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[ROLL_COMMAND] [${timestamp}] Dice image generated for interaction ${message.interactionId}`);
+        }
+        else if (message.type === 'roll_sending_result') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[ROLL_COMMAND] [${timestamp}] Sending dice result for interaction ${message.interactionId}`);
+        }
+        else if (message.type === 'roll_result_sent') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[ROLL_COMMAND] [${timestamp}] ✅ Dice result successfully sent for interaction ${message.interactionId}`);
+        }
         else if (message.type === 'error') {
           const timestamp = new Date(message.timestamp || Date.now()).toISOString();
           const shardIdStr = `Shard ${message.shardId || shard.id}`;

@@ -24,8 +24,49 @@ const command = {
     timesToRepeat,
   }: RollProps) {
     try {
+      if (interaction) {
+        const interactionId = interaction.id;
+        const timestamp = Date.now();
+        
+        if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+          process.send({
+            type: 'roll_command_start',
+            timestamp: timestamp,
+            interactionId: interactionId,
+            shardId: interaction.client.shard?.ids[0],
+            guildId: interaction.guildId,
+            channelId: interaction.channelId,
+            userId: interaction.user.id,
+            dice: args.join(' ')
+          });
+        }
+      }
+      
       if (interaction && !interaction.deferred && !interaction.replied) {
-        await interaction.deferReply();
+        await interaction.deferReply().catch(err => {
+          const isInteractionTimeout = err?.code === 10062 || 
+            (err?.message && err.message.includes("Unknown interaction"));
+          
+          if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+            process.send({
+              type: 'error',
+              errorType: isInteractionTimeout ? 'INTERACTION_TIMEOUT' : 'INTERACTION_DEFER_ERROR',
+              message: err?.message || String(err),
+              stack: err?.stack,
+              shardId: interaction.client.shard?.ids[0],
+              timestamp: Date.now(),
+              context: {
+                commandName: 'roll',
+                interactionId: interaction.id,
+                guildId: interaction.guildId,
+                channelId: interaction.channelId,
+                userId: interaction.user.id,
+                isTimeout: isInteractionTimeout,
+                dice: args.join(' ')
+              }
+            });
+          }
+        });
       }
 
       if (!args.length && interaction) {
@@ -56,6 +97,16 @@ const command = {
         return;
       }
 
+      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        process.send({
+          type: 'roll_processing_dice',
+          timestamp: Date.now(),
+          interactionId: interaction.id,
+          shardId: interaction.client.shard?.ids[0],
+          dice: args.join(' ')
+        });
+      }
+      
       const rollResult = await rollService.rollDice({
         notation: args,
         timesToRepeat,
@@ -63,6 +114,17 @@ const command = {
         interaction,
         source: 'discord'
       });
+      
+      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        process.send({
+          type: 'roll_dice_processed',
+          timestamp: Date.now(),
+          interactionId: interaction.id,
+          shardId: interaction.client.shard?.ids[0],
+          dice: args.join(' '),
+          resultCount: rollResult.resultArray.length
+        });
+      }
 
       const { diceArray, resultArray } = rollResult;
 
@@ -84,21 +146,93 @@ const command = {
         await sendDiceRolledMessage({ diceArray, interaction });
       }
 
+      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        process.send({
+          type: 'roll_generating_image',
+          timestamp: Date.now(),
+          interactionId: interaction.id,
+          shardId: interaction.client.shard?.ids[0],
+          diceCount: diceArray.length
+        });
+      }
+      
       const diceService = await import("../../core/services/DiceService").then(mod => mod.DiceService.getInstance());
       const attachmentResult = await diceService.generateDiceAttachment(diceArray);
 
       if (!attachmentResult) {
         console.error("Failed to generate dice attachment");
+        if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+          process.send({
+            type: 'error',
+            errorType: 'DICE_ATTACHMENT_GENERATION_ERROR',
+            message: "Failed to generate dice attachment",
+            shardId: interaction.client.shard?.ids[0],
+            timestamp: Date.now(),
+            context: {
+              commandName: 'roll',
+              interactionId: interaction.id,
+              guildId: interaction.guildId,
+              channelId: interaction.channelId,
+              userId: interaction.user.id,
+              diceCount: diceArray.length
+            }
+          });
+        }
         return;
+      }
+      
+      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        process.send({
+          type: 'roll_image_generated',
+          timestamp: Date.now(),
+          interactionId: interaction.id,
+          shardId: interaction.client.shard?.ids[0]
+        });
       }
 
       const { attachment, canvas } = attachmentResult;
+      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        process.send({
+          type: 'roll_sending_result',
+          timestamp: Date.now(),
+          interactionId: interaction.id,
+          shardId: interaction.client.shard?.ids[0]
+        });
+      }
+      
       await sendDiceResultMessageWithImage({
         resultArray,
         attachment,
         canvas,
         interaction,
         title
+      }).then(() => {
+        if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+          process.send({
+            type: 'roll_result_sent',
+            timestamp: Date.now(),
+            interactionId: interaction.id,
+            shardId: interaction.client.shard?.ids[0]
+          });
+        }
+      }).catch(err => {
+        if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+          process.send({
+            type: 'error',
+            errorType: 'SEND_RESULT_ERROR',
+            message: err?.message || String(err),
+            stack: err?.stack,
+            shardId: interaction.client.shard?.ids[0],
+            timestamp: Date.now(),
+            context: {
+              commandName: 'roll',
+              interactionId: interaction.id,
+              guildId: interaction.guildId,
+              channelId: interaction.channelId,
+              userId: interaction.user.id
+            }
+          });
+        }
       });
 
     } catch (error) {
