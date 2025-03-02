@@ -170,6 +170,15 @@ const initializeDiscordService = async () => {
               console.error(`INTERACTION TIMEOUT DETECTED: ${message.context.isTimeout}`);
             }
             
+            if (message.errorType === 'DISCORD_RATE_LIMIT') {
+              console.error(`DISCORD RATE LIMIT DETECTED:
+  Route: ${message.context.route || 'unknown'}
+  Limit: ${message.context.limit || 'unknown'}
+  Timeout: ${message.context.timeout || 'unknown'}ms
+  Global: ${message.context.global || false}
+  Path: ${message.context.path || 'unknown'}`);
+            }
+            
             if (Object.keys(otherContextProps).length > 0) {
               console.error(`Additional Context: ${JSON.stringify(otherContextProps)}`);
             }

@@ -498,6 +498,7 @@ export class DiscordService {
       return result;
     } catch (error) {
       console.error('Error in sendMessage:', error);
+      
       if (error.code === 50013 || error.code === 160002 ||
           (error.message && (
             error.message.includes("Missing Permissions") ||
@@ -512,6 +513,49 @@ export class DiscordService {
           code: error.code || 50013
         };
       }
+      
+      if (error.code === 429 || 
+          (error.message && (
+            error.message.includes("rate limit") || 
+            error.message.includes("You are being rate limited") ||
+            error.message.toLowerCase().includes("ratelimit")
+          ))) {
+          
+        if (typeof this.client !== 'undefined' && this.client.shard && typeof process.send === 'function') {
+          process.send({
+            type: 'error',
+            errorType: 'DISCORD_RATE_LIMIT',
+            message: error?.message || String(error),
+            stack: error?.stack,
+            shardId: this.client.shard?.ids[0],
+            timestamp: Date.now(),
+            context: {
+              code: error.code || 429,
+              method: error.method,
+              path: error.path,
+              limit: error.limit,
+              timeout: error.timeout,
+              route: error.route,
+              channelId: options.channelId,
+              global: error.global
+            }
+          });
+        }
+        
+        return {
+          success: false,
+          error: "RATE_LIMIT",
+          message: "Discord rate limit exceeded",
+          code: error.code || 429,
+          details: {
+            timeout: error.timeout,
+            limit: error.limit,
+            route: error.route,
+            global: error.global
+          }
+        };
+      }
+      
       return { success: false };
     }
   }

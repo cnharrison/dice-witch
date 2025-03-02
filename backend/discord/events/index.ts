@@ -137,14 +137,66 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
         const command = commands.get(commandName);
 
-        await command.execute({
-          args,
-          discord,
-          commands,
-          interaction,
-          title: titleAsString,
-          timesToRepeat: timesToRepeatAsNumber,
-        });
+        try {
+          await command.execute({
+            args,
+            discord,
+            commands,
+            interaction,
+            title: titleAsString,
+            timesToRepeat: timesToRepeatAsNumber,
+          });
+        } catch (error) {
+          if (error.code === 429 || 
+              (error.message && (
+                error.message.includes("rate limit") || 
+                error.message.includes("You are being rate limited") ||
+                error.message.toLowerCase().includes("ratelimit")
+              ))) {
+              
+            if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+              process.send({
+                type: 'error',
+                errorType: 'DISCORD_RATE_LIMIT',
+                message: error?.message || String(error),
+                stack: error?.stack,
+                shardId: discord.shard?.ids[0],
+                timestamp: Date.now(),
+                context: {
+                  commandName,
+                  code: error.code || 429,
+                  method: error.method,
+                  path: error.path,
+                  limit: error.limit,
+                  timeout: error.timeout,
+                  route: error.route,
+                  guildId: interaction.guildId,
+                  channelId: interaction.channelId, 
+                  userId: interaction.user.id,
+                  global: error.global
+                }
+              });
+            }
+            
+            try {
+              if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({
+                  content: "Discord is currently rate limiting requests. Please try again in a few moments.",
+                  ephemeral: true
+                });
+              } else {
+                await interaction.reply({
+                  content: "Discord is currently rate limiting requests. Please try again in a few moments.",
+                  ephemeral: true
+                });
+              }
+            } catch (replyError) {
+              console.error(`Error replying to rate limited interaction:`, replyError);
+            }
+          } else {
+            throw error;
+          }
+        }
 
         if (discord.trackCommandEnd) {
           discord.trackCommandEnd(interaction);
