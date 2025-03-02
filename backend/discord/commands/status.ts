@@ -22,30 +22,57 @@ const status = {
         }
       }
 
-      const userCountPromise = discordService.getUserCount();
-      const shardStatusPromise = discordService.getShardStatus();
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout getting service information')), 5000)
-      );
-
       let userCountResult: UserCount = { totalGuilds: undefined, totalMembers: undefined };
       let shardStatus: {id: number, status: string, guilds: number, ping: number}[] = [];
-
+      
       try {
-        try {
-          userCountResult = await Promise.race([userCountPromise, timeoutPromise]) as UserCount;
-        } catch (err) {
+        userCountResult = await discordService.getUserCount().catch(err => {
           console.error("Error fetching user count:", err);
+          return { totalGuilds: undefined, totalMembers: undefined };
+        });
+        
+        if (interaction && interaction.client.shard) {
+          try {
+            if (process.send) {
+              const requestId = `status_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+              
+              const responsePromise = new Promise<{id: number, status: string, guilds: number, ping: number}[]>((resolve) => {
+                const messageHandler = (message: any) => {
+                  if (message && message.type === 'shardStatusResponse' && message.requestId === requestId) {
+                    process.off('message', messageHandler);
+                    resolve(message.shardStatus);
+                  }
+                };
+                
+                process.on('message', messageHandler);
+                
+                setTimeout(() => {
+                  process.off('message', messageHandler);
+                  resolve([]);
+                }, 5000);
+              });
+              
+              process.send({ 
+                type: 'shardStatusRequest', 
+                requestId,
+                shardId: interaction.client.shard.ids[0]
+              });
+              
+              shardStatus = await responsePromise;
+            }
+          } catch (err) {
+            console.error("Error with shard status request:", err);
+          }
         }
-
-        try {
-          const shards = await Promise.race([shardStatusPromise, timeoutPromise]);
-          shardStatus = shards as typeof shardStatus;
-        } catch (err) {
-          console.error("Error fetching shard status:", err);
+        
+        if (shardStatus.length === 0) {
+          shardStatus = await discordService.getShardStatus().catch(err => {
+            console.error("Error fetching shard status:", err);
+            return [];
+          });
         }
       } catch (err) {
-        console.error("Error in status command outer try/catch:", err);
+        console.error("Error in status command:", err);
       }
 
       const { totalGuilds, totalMembers } = userCountResult;
