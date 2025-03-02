@@ -84,16 +84,16 @@ const status = {
       if (shardStatus.length > 0) {
         shardStatusText = "\n\n__Shard Status:__\n";
         shardStatus.forEach(shard => {
+          if (shard.guilds > 0) {
+            shard.status = "Online";
+          }
+          
           const statusEmoji = shard.status === "Online" ? "🟢" :
                              shard.status === "Connecting" ? "🟡" :
                              shard.status === "Running" ? "🟡" : "🔴";
 
           const guildText = shard.guilds >= 0 ? `${shard.guilds} servers` : "unknown servers";
           const pingText = shard.ping >= 0 ? `${shard.ping}ms` : "unknown";
-
-          if (shard.guilds > 0) {
-            shard.status = "Online";
-          }
 
           shardStatusText += `${statusEmoji} Shard ${shard.id}: ${shard.status} (${guildText}, ${pingText})\n`;
         });
