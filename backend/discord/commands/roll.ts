@@ -27,7 +27,7 @@ const command = {
       if (interaction) {
         const interactionId = interaction.id;
         const timestamp = Date.now();
-        
+
         if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
           process.send({
             type: 'roll_command_start',
@@ -41,33 +41,7 @@ const command = {
           });
         }
       }
-      
-      if (interaction && !interaction.deferred && !interaction.replied) {
-        await interaction.deferReply().catch(err => {
-          const isInteractionTimeout = err?.code === 10062 || 
-            (err?.message && err.message.includes("Unknown interaction"));
-          
-          if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
-            process.send({
-              type: 'error',
-              errorType: isInteractionTimeout ? 'INTERACTION_TIMEOUT' : 'INTERACTION_DEFER_ERROR',
-              message: err?.message || String(err),
-              stack: err?.stack,
-              shardId: interaction.client.shard?.ids[0],
-              timestamp: Date.now(),
-              context: {
-                commandName: 'roll',
-                interactionId: interaction.id,
-                guildId: interaction.guildId,
-                channelId: interaction.channelId,
-                userId: interaction.user.id,
-                isTimeout: isInteractionTimeout,
-                dice: args.join(' ')
-              }
-            });
-          }
-        });
-      }
+
 
       if (!args.length && interaction) {
         await sendHelperMessage({ interaction });
@@ -106,7 +80,7 @@ const command = {
           dice: args.join(' ')
         });
       }
-      
+
       const rollResult = await rollService.rollDice({
         notation: args,
         timesToRepeat,
@@ -114,7 +88,7 @@ const command = {
         interaction,
         source: 'discord'
       });
-      
+
       if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
           type: 'roll_dice_processed',
@@ -155,7 +129,7 @@ const command = {
           diceCount: diceArray.length
         });
       }
-      
+
       const diceService = await import("../../core/services/DiceService").then(mod => mod.DiceService.getInstance());
       const attachmentResult = await diceService.generateDiceAttachment(diceArray);
 
@@ -180,7 +154,7 @@ const command = {
         }
         return;
       }
-      
+
       if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
           type: 'roll_image_generated',
@@ -199,7 +173,7 @@ const command = {
           shardId: interaction.client.shard?.ids[0]
         });
       }
-      
+
       await sendDiceResultMessageWithImage({
         resultArray,
         attachment,

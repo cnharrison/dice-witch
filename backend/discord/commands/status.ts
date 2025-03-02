@@ -15,7 +15,7 @@ const status = {
       if (interaction) {
         const interactionId = interaction.id;
         const timestamp = Date.now();
-        
+
         if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
           process.send({
             type: 'status_command_start',
@@ -27,43 +27,12 @@ const status = {
             userId: interaction.user.id
           });
         }
-        
-        try {
-          if (!interaction.deferred && !interaction.replied) {
-            await interaction.deferReply({ ephemeral: true }).catch(err => {
-              const isInteractionTimeout = err?.code === 10062 || 
-                (err?.message && err.message.includes("Unknown interaction"));
-              
-              console.error(`Error deferring reply for status command:`, 
-                isInteractionTimeout ? "INTERACTION_TIMEOUT" : err);
-                
-              if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
-                process.send({
-                  type: 'error',
-                  errorType: isInteractionTimeout ? 'INTERACTION_TIMEOUT' : 'INTERACTION_DEFER_ERROR',
-                  message: err?.message || String(err),
-                  stack: err?.stack,
-                  shardId: interaction.client.shard?.ids[0],
-                  timestamp: Date.now(),
-                  context: {
-                    commandName: 'status',
-                    guildId: interaction.guildId,
-                    channelId: interaction.channelId,
-                    userId: interaction.user.id,
-                    isTimeout: isInteractionTimeout
-                  }
-                });
-              }
-            });
-          }
-        } catch (err) {
-          return;
-        }
+
       }
 
       let userCountResult: UserCount = { totalGuilds: undefined, totalMembers: undefined };
       let shardStatus: {id: number, status: string, guilds: number, ping: number}[] = [];
-      
+
       try {
         if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
           process.send({
@@ -73,17 +42,17 @@ const status = {
             shardId: interaction.client.shard?.ids[0]
           });
         }
-        
+
         userCountResult = await discordService.getUserCount().catch(err => {
           console.error("Error fetching user count:", err);
           return { totalGuilds: undefined, totalMembers: undefined };
         });
-        
+
         if (interaction && interaction.client.shard) {
           try {
             if (process.send) {
               const requestId = `status_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-              
+
               if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
                 process.send({
                   type: 'status_requesting_shards',
@@ -93,7 +62,7 @@ const status = {
                   shardId: interaction.client.shard?.ids[0]
                 });
               }
-              
+
               const responsePromise = new Promise<{id: number, status: string, guilds: number, ping: number}[]>((resolve) => {
                 const messageHandler = (message: any) => {
                   if (message && message.type === 'shardStatusResponse' && message.requestId === requestId) {
@@ -101,12 +70,12 @@ const status = {
                     resolve(message.shardStatus);
                   }
                 };
-                
+
                 process.on('message', messageHandler);
-                
+
                 setTimeout(() => {
                   process.off('message', messageHandler);
-                  
+
                   if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
                     process.send({
                       type: 'status_shards_timeout',
@@ -116,24 +85,24 @@ const status = {
                       shardId: interaction.client.shard?.ids[0]
                     });
                   }
-                  
+
                   resolve([]);
                 }, 5000);
               });
-              
-              process.send({ 
-                type: 'shardStatusRequest', 
+
+              process.send({
+                type: 'shardStatusRequest',
                 requestId,
                 shardId: interaction.client.shard.ids[0]
               });
-              
+
               shardStatus = await responsePromise;
             }
           } catch (err) {
             console.error("Error with shard status request:", err);
           }
         }
-        
+
         if (shardStatus.length === 0) {
           shardStatus = await discordService.getShardStatus().catch(err => {
             console.error("Error fetching shard status:", err);
@@ -156,7 +125,7 @@ const status = {
           if (shard.guilds > 0) {
             shard.status = "Online";
           }
-          
+
           const statusEmoji = shard.status === "Online" ? "🟢" :
                              shard.status === "Connecting" ? "🟡" :
                              shard.status === "Running" ? "🟡" : "🔴";

@@ -124,6 +124,14 @@ const initializeDiscordService = async () => {
           const timestamp = new Date(message.timestamp || Date.now()).toISOString();
           console.log(`[ROLL_COMMAND] [${timestamp}] ✅ Dice result successfully sent for interaction ${message.interactionId}`);
         }
+        else if (message.type === 'command_defer_start') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[DEFER] [${timestamp}] Deferring reply for /${message.commandName} interaction ${message.interactionId}`);
+        }
+        else if (message.type === 'command_defer_success') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[DEFER] [${timestamp}] ✅ Successfully deferred reply for interaction ${message.interactionId}`);
+        }
         else if (message.type === 'error') {
           const timestamp = new Date(message.timestamp || Date.now()).toISOString();
           const shardIdStr = `Shard ${message.shardId || shard.id}`;

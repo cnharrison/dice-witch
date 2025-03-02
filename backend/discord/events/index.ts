@@ -70,7 +70,21 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         }
 
         try {
-          await interaction.deferReply({ ephemeral: false }).catch(err => {
+          if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+            process.send({
+              type: 'command_defer_start',
+              timestamp: Date.now(),
+              interactionId: interaction.id,
+              commandName,
+              shardId: discord.shard?.ids[0],
+              guildId: interaction.guildId,
+              channelId: interaction.channelId,
+              userId: interaction.user.id
+            });
+          }
+          
+          const ephemeral = ['help', 'prefs', 'web'].includes(commandName);
+          await interaction.deferReply({ ephemeral }).catch(err => {
             console.error(`Error deferring reply for ${commandName}:`, err);
             
             const isInteractionTimeout = err?.code === 10062 || 
@@ -91,6 +105,16 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
                   userId: interaction.user.id,
                   isTimeout: isInteractionTimeout
                 }
+              });
+            }
+          }).then(() => {
+            if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+              process.send({
+                type: 'command_defer_success',
+                timestamp: Date.now(),
+                interactionId: interaction.id,
+                commandName,
+                shardId: discord.shard?.ids[0]
               });
             }
           });
