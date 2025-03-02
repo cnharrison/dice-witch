@@ -310,8 +310,21 @@ const startServer = () => {
   });
 
   discord.on('debug', (message) => {
-    if (message.includes('error') || message.includes('Error') || message.includes('failed')) {
-      forwardErrorToManager('DISCORD_DEBUG', new Error(message));
+    if (message.includes('error') || 
+        message.includes('Error') || 
+        message.includes('failed') || 
+        message.includes('Unknown interaction') || 
+        message.includes('Interaction has not been acknowledged') ||
+        message.includes('application did not respond')) {
+      
+      let errorType = 'DISCORD_DEBUG';
+      if (message.includes('Unknown interaction') || 
+          message.includes('Interaction has not been acknowledged') ||
+          message.includes('application did not respond')) {
+        errorType = 'INTERACTION_TIMEOUT_DEBUG';
+      }
+      
+      forwardErrorToManager(errorType, new Error(message));
     }
   });
 

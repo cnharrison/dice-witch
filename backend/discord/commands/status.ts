@@ -15,7 +15,31 @@ const status = {
       if (interaction) {
         try {
           if (!interaction.deferred && !interaction.replied) {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral: true }).catch(err => {
+              const isInteractionTimeout = err?.code === 10062 || 
+                (err?.message && err.message.includes("Unknown interaction"));
+              
+              console.error(`Error deferring reply for status command:`, 
+                isInteractionTimeout ? "INTERACTION_TIMEOUT" : err);
+                
+              if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+                process.send({
+                  type: 'error',
+                  errorType: isInteractionTimeout ? 'INTERACTION_TIMEOUT' : 'INTERACTION_DEFER_ERROR',
+                  message: err?.message || String(err),
+                  stack: err?.stack,
+                  shardId: interaction.client.shard?.ids[0],
+                  timestamp: Date.now(),
+                  context: {
+                    commandName: 'status',
+                    guildId: interaction.guildId,
+                    channelId: interaction.channelId,
+                    userId: interaction.user.id,
+                    isTimeout: isInteractionTimeout
+                  }
+                });
+              }
+            });
           }
         } catch (err) {
           return;

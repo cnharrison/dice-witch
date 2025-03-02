@@ -57,14 +57,38 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
         try {
           await interaction.deferReply({ ephemeral: false }).catch(err => {
             console.error(`Error deferring reply for ${commandName}:`, err);
+            
+            const isInteractionTimeout = err?.code === 10062 || 
+              (err?.message && err.message.includes("Unknown interaction"));
+              
+            if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+              process.send({
+                type: 'error',
+                errorType: isInteractionTimeout ? 'INTERACTION_TIMEOUT' : 'INTERACTION_DEFER_ERROR',
+                message: err?.message || String(err),
+                stack: err?.stack,
+                shardId: discord.shard?.ids[0],
+                timestamp: Date.now(),
+                context: {
+                  commandName,
+                  guildId: interaction.guildId,
+                  channelId: interaction.channelId,
+                  userId: interaction.user.id,
+                  isTimeout: isInteractionTimeout
+                }
+              });
+            }
           });
         } catch (deferError) {
           console.error(`Error deferring reply for ${commandName}:`, deferError);
 
+          const isInteractionTimeout = deferError?.code === 10062 || 
+            (deferError?.message && deferError.message.includes("Unknown interaction"));
+
           if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
             process.send({
               type: 'error',
-              errorType: 'INTERACTION_DEFER_ERROR',
+              errorType: isInteractionTimeout ? 'INTERACTION_TIMEOUT' : 'INTERACTION_DEFER_ERROR',
               message: deferError?.message || String(deferError),
               stack: deferError?.stack,
               shardId: discord.shard?.ids[0],
@@ -73,7 +97,8 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
                 commandName,
                 guildId: interaction.guildId,
                 channelId: interaction.channelId,
-                userId: interaction.user.id
+                userId: interaction.user.id,
+                isTimeout: isInteractionTimeout
               }
             });
           }
