@@ -18,7 +18,16 @@ const manager = new ShardingManager(process.env.BOT_PATH ? `${process.env.BOT_PA
   totalShards: 'auto',
   respawn: true,
   mode: 'process',
-  shardArgs: ['--shard']
+  shardArgs: ['--shard'],
+  execArgv: process.env.NODE_ENV === 'production' ? ['--enable-source-maps'] : []
+});
+
+process.on('uncaughtException', (error) => {
+  console.error(`[ShardManager] Uncaught Exception:`, error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error(`[ShardManager] Unhandled Rejection:`, reason);
 });
 
 const initializeDiscordService = async () => {
@@ -33,7 +42,21 @@ const initializeDiscordService = async () => {
     });
 
     shard.on("death", (process) => {
-      console.log(`[Shard ${shard.id}] Process died with exit code: ${(process as ChildProcess).exitCode ?? 'unknown'}`);
+      const exitCode = (process as ChildProcess).exitCode ?? 'unknown';
+      console.error(`[Shard ${shard.id}] Process died with exit code: ${exitCode}`);
+      
+      const childProcess = process as ChildProcess;
+      if (childProcess && childProcess.stderr) {
+        childProcess.stderr.on('data', (data) => {
+          console.error(`[Shard ${shard.id}] stderr: ${data.toString()}`);
+        });
+      }
+      
+      if (childProcess && childProcess.stdout) {
+        childProcess.stdout.on('data', (data) => {
+          console.log(`[Shard ${shard.id}] stdout: ${data.toString()}`);
+        });
+      }
     });
 
     shard.on("disconnect", () => {
@@ -46,6 +69,12 @@ const initializeDiscordService = async () => {
 
     shard.on("ready", () => {
       console.log(`[Shard ${shard.id}] Ready and operational`);
+    });
+    
+    shard.on("message", (message) => {
+      if (message && message.type === 'error') {
+        console.error(`[Shard ${shard.id}] Error from child process:`, message.data);
+      }
     });
   });
 };

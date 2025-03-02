@@ -12,6 +12,22 @@ import setupEvents from './events';
 import { CONFIG } from "../config";
 import { DiscordService } from "../core/services/DiscordService";
 
+process.on('uncaughtException', (error) => {
+  console.error(`[Shard ${process.env.SHARD_ID || 'unknown'}] Uncaught Exception:`, error);
+  
+  if (process.send) {
+    process.send({ type: 'error', data: { type: 'uncaughtException', error: error.stack || error.toString() } });
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error(`[Shard ${process.env.SHARD_ID || 'unknown'}] Unhandled Rejection:`, reason);
+  
+  if (process.send) {
+    process.send({ type: 'error', data: { type: 'unhandledRejection', reason: reason instanceof Error ? reason.stack : String(reason) } });
+  }
+});
+
 const { token: discordToken, logOutputChannelId: logOutputChannelID, clientId } = CONFIG.discord;
 const { discordbotlist, topgg } = CONFIG.botListAuth;
 
@@ -113,17 +129,35 @@ const globalSlashCommands: ApplicationCommandDataResolvable[] = [
   },
 ];
 
+const isShardResponsibleForChannel = (shardId: number, channelId: string): boolean => {
+  if (typeof shardId !== 'number') return false;
+  const totalShards = discord.shard?.count ?? 1;
+  const channelShardId = Number((BigInt(channelId) >> 22n) % BigInt(totalShards));
+  return shardId === channelShardId;
+};
+
 const registerCommands = async (discord: Client) => {
   const shardId = discord.shard?.ids[0] ?? 'unknown';
+  
   try {
-    const channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
-    console.log(`[Shard ${shardId}] Found log output channel ${channel?.name}`);
     console.log(`[Shard ${shardId}] Registering global slash commands...`);
     await discord.application?.commands.set(globalSlashCommands);
     console.log(`[Shard ${shardId}] Global slash commands registered successfully`);
-    return channel;
   } catch (err) {
     console.error(`[Shard ${shardId}] Error registering commands:`, err);
+  }
+  
+  if (typeof shardId === 'number' && isShardResponsibleForChannel(shardId, logOutputChannelID)) {
+    try {
+      const channel = await discord.channels.fetch(logOutputChannelID) as TextChannel;
+      console.log(`[Shard ${shardId}] Found log output channel ${channel?.name}`);
+      return channel;
+    } catch (err) {
+      console.error(`[Shard ${shardId}] Error fetching log output channel:`, err);
+      return null;
+    }
+  } else {
+    console.log(`[Shard ${shardId}] Not responsible for log output channel, skipping`);
     return null;
   }
 };
@@ -133,26 +167,42 @@ const createBotSiteUpdateTask = (discord: Client) => {
   return new AsyncTask(
     "botsite updates",
     async () => {
-      console.log(`[Shard ${shardId}] Running scheduled bot site update task`);
-      const { totalGuilds } = await discordService.getUserCount() ?? {};
-      console.log(`[Shard ${shardId}] Reporting ${totalGuilds} total guilds to bot listing sites`);
-      
-      const promises = [
-        axios.post(
+      try {
+        console.log(`[Shard ${shardId}] Running scheduled bot site update task`);
+        
+        const discordService = DiscordService.getInstance();
+        discordService.setClient(discord);
+        
+        const { totalGuilds } = await discordService.getUserCount() ?? {};
+        
+        if (!totalGuilds || totalGuilds <= 0) {
+          console.error(`[Shard ${shardId}] Failed to get guild count, skipping bot site update`);
+          return;
+        }
+        
+        console.log(`[Shard ${shardId}] Reporting ${totalGuilds} total guilds to bot listing sites`);
+        
+        const topggPromise = axios.post(
           `https://top.gg/api/bots/${clientId}/stats`,
           { server_count: totalGuilds },
           getHeaders(topgg)
-        ).then(() => console.log(`[Shard ${shardId}] Successfully updated stats on top.gg`)),
+        )
+        .then(() => console.log(`[Shard ${shardId}] Successfully updated stats on top.gg`))
+        .catch(err => console.error(`[Shard ${shardId}] Failed to update top.gg:`, err.message));
         
-        axios.post(
+        const discordbotlistPromise = axios.post(
           `https://discordbotlist.com/api/v1/bots/${clientId}/stats`,
           { guilds: totalGuilds },
           getHeaders(discordbotlist)
-        ).then(() => console.log(`[Shard ${shardId}] Successfully updated stats on discordbotlist.com`)),
-      ];
-      
-      await Promise.all(promises);
-      console.log(`[Shard ${shardId}] Bot site update completed successfully`);
+        )
+        .then(() => console.log(`[Shard ${shardId}] Successfully updated stats on discordbotlist.com`))
+        .catch(err => console.error(`[Shard ${shardId}] Failed to update discordbotlist:`, err.message));
+        
+        await Promise.allSettled([topggPromise, discordbotlistPromise]);
+        console.log(`[Shard ${shardId}] Bot site update task completed`);
+      } catch (err) {
+        console.error(`[Shard ${shardId}] Error in bot site update task:`, err);
+      }
     },
     (err: Error) => {
       console.error(`[Shard ${shardId}] Error updating bot site stats:`, err);
@@ -179,14 +229,14 @@ const startServer = () => {
     if (logOutputChannel) {
       await setupEvents(discord, logOutputChannel);
       console.log(`[Shard ${shardId}] Events setup completed`);
-    } else {
-      console.error(`[Shard ${shardId}] Log output channel not found.`);
     }
-
-    const task = createBotSiteUpdateTask(discord);
-    const job = new SimpleIntervalJob({ hours: 4 }, task);
-    scheduler.addSimpleIntervalJob(job);
-    console.log(`[Shard ${shardId}] Bot site update scheduler initialized`);
+    
+    if (typeof shardId === 'number' && shardId === 0) {
+      const task = createBotSiteUpdateTask(discord);
+      const job = new SimpleIntervalJob({ hours: 4 }, task);
+      scheduler.addSimpleIntervalJob(job);
+      console.log(`[Shard ${shardId}] Bot site update scheduler initialized`);
+    }
   });
 
   discord.login(discordToken);
@@ -197,10 +247,33 @@ const startServer = () => {
   
   discord.on('shardError', (error, shardId) => {
     console.error(`[Shard ${shardId}] Error:`, error);
+    
+    if (process.send) {
+      process.send({ 
+        type: 'error', 
+        data: { 
+          type: 'shardError', 
+          shardId,
+          error: error instanceof Error ? error.stack : String(error)
+        } 
+      });
+    }
   });
   
   discord.on('shardDisconnect', (event, shardId) => {
     console.log(`[Shard ${shardId}] Disconnected from Discord gateway. Code: ${event.code}`);
+    
+    if (process.send) {
+      process.send({ 
+        type: 'error', 
+        data: { 
+          type: 'shardDisconnect', 
+          shardId,
+          code: event.code,
+          reason: event.reason
+        } 
+      });
+    }
   });
   
   discord.on('shardReconnecting', (shardId) => {
