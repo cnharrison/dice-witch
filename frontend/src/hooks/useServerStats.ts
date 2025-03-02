@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import * as React from 'react';
+import { customFetch } from '../main';
 
 interface ServerStatsResponse {
   servers: number;
@@ -47,7 +48,7 @@ const storeStats = (data: ServerStatsResponse): void => {
 
 const fetchServerStats = async (): Promise<ServerStatsResponse> => {
   try {
-    const response = await fetch('/api/stats/public');
+    const response = await customFetch('/api/stats/public');
     
     if (!response.ok) {
       throw new Error('Failed to fetch stats');

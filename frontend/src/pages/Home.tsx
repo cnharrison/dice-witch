@@ -15,6 +15,7 @@ import { Button as ButtonComponent } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useGuild } from '@/context/GuildContext';
 import { useToast } from '@/hooks/use-toast';
+import { customFetch } from '../main';
 
 export const Home = () => {
   const { user } = useUser();
@@ -56,7 +57,7 @@ export const Home = () => {
   const { data: mutualGuilds, isLoading } = useQuery<Guild[]>({
     queryKey: ['guilds'],
     queryFn: async () => {
-      const response = await fetch('/api/guilds/mutual');
+      const response = await customFetch('/api/guilds/mutual');
       if (!response.ok) {
         throw new Error('Failed to fetch guilds');
       }
@@ -69,7 +70,7 @@ export const Home = () => {
   const { data: channelsResponse } = useQuery({
     queryKey: ['channels', selectedGuild],
     queryFn: async () => {
-      const response = await fetch(`/api/guilds/${selectedGuild}/channels`);
+      const response = await customFetch(`/api/guilds/${selectedGuild}/channels`);
       const data = await response.json();
       return data;
     },
@@ -102,7 +103,7 @@ export const Home = () => {
         timesToRepeat: timesToRepeat,
         title: rollTitle || undefined
       };
-      const response = await fetch('/api/dice/roll', {
+      const response = await customFetch('/api/dice/roll', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

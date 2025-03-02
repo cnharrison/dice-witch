@@ -2,6 +2,7 @@ import React, { type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
+import { customFetch } from '../main';
 
 type Guild = {
   id: string;
@@ -26,7 +27,7 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
     queryKey: ['mutualGuilds', discordAccount?.providerUserId],
     queryFn: async (): Promise<Guild[]> => {
       if (!discordAccount?.providerUserId) return [];
-      const response = await fetch(`/api/guilds/mutual`);
+      const response = await customFetch(`/api/guilds/mutual`);
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }

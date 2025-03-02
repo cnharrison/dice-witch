@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useGuild } from '@/context/GuildContext';
+import { customFetch } from '../../main';
 
 interface Guild {
   guilds: {
@@ -23,7 +24,7 @@ export default function Preferences() {
   const { data: guildsData, isLoading: isGuildsLoading } = useQuery({
     queryKey: ['guilds'],
     queryFn: async () => {
-      const response = await fetch('/api/guilds/mutual');
+      const response = await customFetch('/api/guilds/mutual');
       if (!response.ok) {
         throw new Error('Failed to fetch guilds');
       }
@@ -36,7 +37,7 @@ export default function Preferences() {
     queryFn: async () => {
       if (!selectedGuildId) return null;
 
-      const response = await fetch(`/api/guilds/${selectedGuildId}/preferences`);
+      const response = await customFetch(`/api/guilds/${selectedGuildId}/preferences`);
       if (!response.ok) {
         throw new Error('Failed to fetch guild preferences');
       }
@@ -49,7 +50,7 @@ export default function Preferences() {
 
   const updatePreferencesMutation = useMutation({
     mutationFn: async (data: { skipDiceDelay: boolean }) => {
-      const response = await fetch(`/api/guilds/${selectedGuildId}/preferences`, {
+      const response = await customFetch(`/api/guilds/${selectedGuildId}/preferences`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

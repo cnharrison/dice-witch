@@ -9,11 +9,14 @@ import App from './App'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-const API_BASE = 'https://api.dicewit.ch';
-const customFetch = async (url: string, options: RequestInit = {}) => {
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.dicewit.ch';
+export const customFetch = async (url: string, options: RequestInit = {}) => {
   const isApiUrl = url.startsWith('/api');
   const fullUrl = isApiUrl ? `${API_BASE}${url}` : url;
-  return fetch(fullUrl, options);
+  return fetch(fullUrl, {
+    ...options,
+    credentials: 'include'
+  });
 };
 
 const queryClient = new QueryClient({
