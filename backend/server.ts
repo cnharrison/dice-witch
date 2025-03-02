@@ -25,7 +25,6 @@ const port = process.env.PORT || 3000;
 
 const manager = new ShardingManager(process.env.BOT_PATH ? `${process.env.BOT_PATH}/backend/discord/app.ts` : "./discord/app.ts", {
   token: CONFIG.discord.token,
-  totalShards: 'auto',
   respawn: true,
   mode: 'process'
 });

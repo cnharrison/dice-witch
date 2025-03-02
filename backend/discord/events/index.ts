@@ -41,9 +41,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
       const interactionId = interaction.id;
       const timestamp = Date.now();
-      const targetShard = interaction.guild
-        ? discord.shard?.ids[0]
-        : 0;
 
       if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
@@ -56,10 +53,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
           channelId: interaction.channelId,
           userId: interaction.user.id
         });
-      }
-
-      if (targetShard !== discord.shard?.ids[0]) {
-        return;
       }
 
       const { commandName } = interaction;
@@ -308,14 +301,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
 
     discord.on("interactionCreate", async (interaction) => {
       if (!interaction.isButton()) return;
-
-      const targetShard = interaction.guild
-        ? discord.shard?.ids[0]
-        : 0;
-
-      if (targetShard !== discord.shard?.ids[0]) {
-        return;
-      }
 
       try {
         const unformattedArgs = interaction.customId.trim().split("-");
