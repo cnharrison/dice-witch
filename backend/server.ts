@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { ShardingManager } from "discord.js";
 import { CONFIG } from "./config";
@@ -64,7 +65,7 @@ const initializeDiscordService = async () => {
     shard.on("ready", () => {
       console.log(`[Manager] Shard ${shard.id} ready and operational`);
     });
-    
+
     shard.on("message", async (message) => {
       if (message && typeof message === 'object') {
         if (message.type === 'interaction_received') {
@@ -135,36 +136,36 @@ const initializeDiscordService = async () => {
           const timestamp = new Date(message.timestamp || Date.now()).toISOString();
           const shardIdStr = `Shard ${message.shardId || shard.id}`;
           const errorType = message.errorType || 'UNKNOWN_ERROR';
-          
+
           console.error(`\n[ERROR] [${timestamp}] [${shardIdStr}] [${errorType}]`);
-          
+
           if (message.message) {
             console.error(`Message: ${message.message}`);
           }
-          
+
           if (message.context) {
             if (message.context.commandName) {
               console.error(`Command: ${message.context.commandName}`);
             }
-            
+
             if (message.context.args) {
               console.error(`Args: ${JSON.stringify(message.context.args)}`);
             }
-            
+
             if (message.context.user) {
               const user = message.context.user;
               console.error(`User: ${user.username || user.tag || 'Unknown'} (${user.id || 'Unknown ID'})`);
             } else if (message.context.userId) {
               console.error(`User ID: ${message.context.userId}`);
             }
-            
+
             if (message.context.guild) {
               const guild = message.context.guild;
               console.error(`Guild: ${guild.name || 'Unknown'} (${guild.id || 'Unknown ID'})`);
             } else if (message.context.guildId) {
               console.error(`Guild ID: ${message.context.guildId}`);
             }
-            
+
             const otherContextProps = { ...message.context };
             delete otherContextProps.user;
             delete otherContextProps.guild;
@@ -172,11 +173,11 @@ const initializeDiscordService = async () => {
             delete otherContextProps.guildId;
             delete otherContextProps.commandName;
             delete otherContextProps.args;
-            
+
             if (message.context.isTimeout) {
               console.error(`INTERACTION TIMEOUT DETECTED: ${message.context.isTimeout}`);
             }
-            
+
             if (message.errorType === 'DISCORD_RATE_LIMIT') {
               console.error(`DISCORD RATE LIMIT DETECTED:
   Route: ${message.context.route || 'unknown'}
@@ -185,23 +186,23 @@ const initializeDiscordService = async () => {
   Global: ${message.context.global || false}
   Path: ${message.context.path || 'unknown'}`);
             }
-            
+
             if (Object.keys(otherContextProps).length > 0) {
               console.error(`Additional Context: ${JSON.stringify(otherContextProps)}`);
             }
           }
-          
+
           if (message.stack) {
             console.error(`\nStack Trace:`);
             console.error(message.stack);
           }
-          
+
           console.error('\n---');
-        } 
+        }
         else if (message.type === 'shardStatusRequest') {
           try {
             console.log(`[Manager] Received shard status request from Shard ${shard.id}, request ID: ${message.requestId}`);
-            
+
             const shardStatus = await Promise.all(
               Array.from(manager.shards.values()).map(async (s) => {
                 try {
@@ -209,7 +210,7 @@ const initializeDiscordService = async () => {
                   const guilds = await s.fetchClientValue('guilds.cache.size');
                   const ping = await s.fetchClientValue('ws.ping');
                   const status = ready === 0 ? 0 : 1;
-                  
+
                   return {
                     id: s.id,
                     status: getShardStatusText(status as number),
@@ -226,13 +227,13 @@ const initializeDiscordService = async () => {
                 }
               })
             );
-            
+
             shard.send({
               type: 'shardStatusResponse',
               requestId: message.requestId,
               shardStatus
             });
-            
+
             console.log(`[Manager] Sent shard status response to Shard ${shard.id} with ${shardStatus.length} shards`);
           } catch (err) {
             console.error(`[Manager] Error handling shard status request:`, err);
@@ -246,6 +247,14 @@ const initializeDiscordService = async () => {
 initializeDiscordService().catch(console.error);
 
 app.use("*", logger());
+
+app.use("*", cors({
+  origin: ["https://dicewit.ch", "http://localhost:5173", "http://localhost:3000"],
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  credentials: true,
+  maxAge: 86400,
+}));
 
 app.route("/api/guilds", guilds);
 app.route("/webhook", clerkWebhook);
