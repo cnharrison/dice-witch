@@ -68,7 +68,35 @@ const initializeDiscordService = async () => {
     
     shard.on("message", async (message) => {
       if (message && typeof message === 'object') {
-        if (message.type === 'error') {
+        if (message.type === 'interaction_received') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[INTERACTION] [${timestamp}] Received interaction ${message.interactionId} for command /${message.commandName} from user ${message.userId} in guild ${message.guildId || 'DM'}`);
+        }
+        else if (message.type === 'status_command_start') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[STATUS_COMMAND] [${timestamp}] Status command started for interaction ${message.interactionId} from user ${message.userId} in guild ${message.guildId || 'DM'}`);
+        }
+        else if (message.type === 'status_getting_data') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[STATUS_COMMAND] [${timestamp}] Getting user/guild data for interaction ${message.interactionId}`);
+        }
+        else if (message.type === 'status_requesting_shards') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[STATUS_COMMAND] [${timestamp}] Requesting shard status for interaction ${message.interactionId}, requestId: ${message.requestId}`);
+        }
+        else if (message.type === 'status_shards_timeout') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[STATUS_COMMAND] [${timestamp}] ⚠️ Shard status request timed out for interaction ${message.interactionId}, requestId: ${message.requestId}`);
+        }
+        else if (message.type === 'status_sending_response') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[STATUS_COMMAND] [${timestamp}] Preparing to send response for interaction ${message.interactionId}`);
+        }
+        else if (message.type === 'status_response_sent') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          console.log(`[STATUS_COMMAND] [${timestamp}] ✅ Response successfully sent for interaction ${message.interactionId}`);
+        }
+        else if (message.type === 'error') {
           const timestamp = new Date(message.timestamp || Date.now()).toISOString();
           const shardIdStr = `Shard ${message.shardId || shard.id}`;
           const errorType = message.errorType || 'UNKNOWN_ERROR';
@@ -109,6 +137,10 @@ const initializeDiscordService = async () => {
             delete otherContextProps.guildId;
             delete otherContextProps.commandName;
             delete otherContextProps.args;
+            
+            if (message.context.isTimeout) {
+              console.error(`INTERACTION TIMEOUT DETECTED: ${message.context.isTimeout}`);
+            }
             
             if (Object.keys(otherContextProps).length > 0) {
               console.error(`Additional Context: ${JSON.stringify(otherContextProps)}`);

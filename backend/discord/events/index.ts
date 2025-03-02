@@ -39,9 +39,24 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel) => {
     discord.on("interactionCreate", async (interaction) => {
       if (!interaction.isCommand()) return;
 
+      const interactionId = interaction.id;
+      const timestamp = Date.now();
       const targetShard = interaction.guild
         ? discord.shard?.ids[0]
         : 0;
+
+      if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
+        process.send({
+          type: 'interaction_received',
+          timestamp: timestamp,
+          interactionId: interactionId,
+          commandName: interaction.commandName,
+          shardId: discord.shard?.ids[0],
+          guildId: interaction.guildId,
+          channelId: interaction.channelId,
+          userId: interaction.user.id
+        });
+      }
 
       if (targetShard !== discord.shard?.ids[0]) {
         return;
