@@ -68,9 +68,28 @@ const initializeDiscordService = async () => {
     
     shard.on("message", async (message) => {
       if (message && typeof message === 'object') {
-        console.log(`[Manager] Message from Shard ${shard.id}:`, message);
-        
-        if (message.type === 'shardStatusRequest') {
+        if (message.type === 'error') {
+          const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+          const shardIdStr = `Shard ${message.shardId || shard.id}`;
+          const errorType = message.errorType || 'UNKNOWN_ERROR';
+          
+          console.error(`[ERROR] [${timestamp}] [${shardIdStr}] [${errorType}]`);
+          
+          if (message.message) {
+            console.error(`Message: ${message.message}`);
+          }
+          
+          if (message.context && Object.keys(message.context).length > 0) {
+            console.error(`Context: ${JSON.stringify(message.context)}`);
+          }
+          
+          if (message.stack) {
+            console.error(`Stack: ${message.stack}`);
+          }
+          
+          console.error('---');
+        } 
+        else if (message.type === 'shardStatusRequest') {
           try {
             console.log(`[Manager] Received shard status request from Shard ${shard.id}, request ID: ${message.requestId}`);
             

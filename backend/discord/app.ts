@@ -41,12 +41,30 @@ console.error = function(...args) {
   originalConsoleError.apply(console, [`[Shard ${getShardId()}]`, ...args]);
 };
 
+function forwardErrorToManager(type, error, context = {}) {
+  if (process.send) {
+    const errorData = {
+      type: 'error',
+      errorType: type,
+      message: error?.message || String(error),
+      stack: error?.stack,
+      shardId: currentShardId,
+      timestamp: Date.now(),
+      context
+    };
+    
+    process.send(errorData);
+  }
+  
+  console.error(`${type}:`, error);
+}
+
 process.on('uncaughtException', (error) => {
-  console.error('UNCAUGHT EXCEPTION:', error);
+  forwardErrorToManager('UNCAUGHT_EXCEPTION', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('UNHANDLED REJECTION:', reason);
+  forwardErrorToManager('UNHANDLED_REJECTION', reason);
 });
 
 const { token: discordToken, logOutputChannelId: logOutputChannelID, clientId } = CONFIG.discord;
@@ -222,6 +240,36 @@ const createBotSiteUpdateTask = (discord: Client) => {
 const startServer = () => {
   console.log(`Starting up...`);
   
+  const safeCommandHandler = async (interaction, handler) => {
+    try {
+      await handler(interaction);
+    } catch (error) {
+      const contextData = {
+        commandName: interaction.commandName,
+        channelId: interaction.channelId,
+        guildId: interaction.guildId,
+        userId: interaction.user.id
+      };
+      
+      forwardErrorToManager('COMMAND_EXECUTION_ERROR', error, contextData);
+      
+      try {
+        const errorReply = {
+          content: "An error occurred while processing your command. The bot team has been notified.",
+          ephemeral: true
+        };
+        
+        if (interaction.replied || interaction.deferred) {
+          await interaction.editReply(errorReply);
+        } else {
+          await interaction.reply(errorReply);
+        }
+      } catch (replyError) {
+        forwardErrorToManager('INTERACTION_REPLY_ERROR', replyError, contextData);
+      }
+    }
+  };
+  
   discord.on("ready", async () => {
     if (discord.shard?.ids?.length > 0) {
       currentShardId = discord.shard.ids[0].toString();
@@ -236,10 +284,6 @@ const startServer = () => {
 
     console.log(`Ready! Logged in as ${discord.user?.tag} in ${discord.guilds.cache.size} servers`);
     
-    if (process.send) {
-      process.send({ type: 'ready', shardId: currentShardId });
-    }
-
     const logOutputChannel = await registerCommands(discord);
     if (logOutputChannel) {
       await setupEvents(discord, logOutputChannel);
@@ -253,6 +297,103 @@ const startServer = () => {
     }
   });
 
+  discord.on('interactionCreate', async (interaction) => {
+    try {
+      if (!interaction.isCommand()) return;
+      
+      const timingData = {
+        receivedAt: Date.now(),
+        ackBy: Date.now() + 2500
+      };
+      
+      try {
+        await interaction.deferReply({ ephemeral: interaction.commandName === 'status' });
+        timingData.ackedAt = Date.now();
+      } catch (deferError) {
+        forwardErrorToManager('INTERACTION_DEFER_ERROR', deferError, {
+          commandName: interaction.commandName,
+          guildId: interaction.guildId,
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          timingData
+        });
+        return;
+      }
+      
+      const command = await import(`./commands/${interaction.commandName}`).catch(err => {
+        forwardErrorToManager('COMMAND_IMPORT_ERROR', err, {
+          commandName: interaction.commandName,
+          guildId: interaction.guildId
+        });
+        return null;
+      });
+      
+      if (!command || !command.default || typeof command.default.execute !== 'function') {
+        forwardErrorToManager('INVALID_COMMAND', new Error(`Command ${interaction.commandName} not found or invalid`), {
+          commandName: interaction.commandName
+        });
+        
+        await interaction.editReply({
+          content: "This command is currently unavailable. Please try again later.",
+          ephemeral: true
+        });
+        return;
+      }
+      
+      try {
+        await command.default.execute({
+          interaction,
+          client: discord,
+          discord
+        });
+        
+        timingData.completedAt = Date.now();
+        timingData.duration = timingData.completedAt - timingData.receivedAt;
+        
+        if (timingData.duration > 2500) {
+          forwardErrorToManager('SLOW_COMMAND', new Error(`Command ${interaction.commandName} took ${timingData.duration}ms to execute`), {
+            commandName: interaction.commandName,
+            duration: timingData.duration,
+            timingData,
+            guildId: interaction.guildId
+          });
+        }
+      } catch (commandError) {
+        forwardErrorToManager('COMMAND_EXECUTION_ERROR', commandError, {
+          commandName: interaction.commandName,
+          guildId: interaction.guildId,
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          timingData
+        });
+        
+        try {
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({
+              content: "There was an error executing this command. The bot team has been notified.",
+              ephemeral: true
+            });
+          } else {
+            await interaction.reply({
+              content: "There was an error executing this command. The bot team has been notified.",
+              ephemeral: true
+            });
+          }
+        } catch (replyError) {
+          forwardErrorToManager('INTERACTION_REPLY_ERROR', replyError, {
+            commandName: interaction.commandName,
+            originalError: commandError.message
+          });
+        }
+      }
+    } catch (globalError) {
+      forwardErrorToManager('GLOBAL_INTERACTION_ERROR', globalError, {
+        interactionId: interaction.id,
+        type: interaction.type
+      });
+    }
+  });
+
   discord.login(discordToken);
 
   discord.on('shardReady', (shardId) => {
@@ -260,11 +401,16 @@ const startServer = () => {
   });
   
   discord.on('shardError', (error, shardId) => {
-    console.error(`SHARD ERROR: ${shardId}:`, error);
+    forwardErrorToManager('SHARD_ERROR', error, { shardId });
   });
   
   discord.on('shardDisconnect', (event, shardId) => {
     console.log(`Shard ${shardId} disconnected. Code: ${event.code}`);
+    forwardErrorToManager('SHARD_DISCONNECT', new Error(`Shard disconnected with code ${event.code}`), { 
+      shardId, 
+      code: event.code,
+      reason: event.reason
+    });
   });
   
   discord.on('shardReconnecting', (shardId) => {
@@ -272,10 +418,23 @@ const startServer = () => {
   });
   
   discord.on('error', (error) => {
-    console.error(`DISCORD CLIENT ERROR:`, error);
+    forwardErrorToManager('DISCORD_CLIENT_ERROR', error);
+  });
+
+  discord.on('warn', (message) => {
+    forwardErrorToManager('DISCORD_WARNING', new Error(message));
+  });
+  
+  discord.on('debug', (message) => {
+    if (message.includes('error') || message.includes('Error') || message.includes('failed')) {
+      forwardErrorToManager('DISCORD_DEBUG', new Error(message));
+    }
   });
   
   process.on('exit', (code) => {
+    if (code !== 0) {
+      forwardErrorToManager('PROCESS_EXIT', new Error(`Process exiting with code: ${code}`), { exitCode: code });
+    }
     console.log(`Process exiting with code: ${code}`);
   });
 };
