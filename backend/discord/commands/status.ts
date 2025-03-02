@@ -91,6 +91,10 @@ const status = {
           const guildText = shard.guilds >= 0 ? `${shard.guilds} servers` : "unknown servers";
           const pingText = shard.ping >= 0 ? `${shard.ping}ms` : "unknown";
 
+          if (shard.guilds > 0) {
+            shard.status = "Online";
+          }
+
           shardStatusText += `${statusEmoji} Shard ${shard.id}: ${shard.status} (${guildText}, ${pingText})\n`;
         });
       }

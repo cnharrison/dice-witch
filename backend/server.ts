@@ -77,9 +77,10 @@ const initializeDiscordService = async () => {
             const shardStatus = await Promise.all(
               Array.from(manager.shards.values()).map(async (s) => {
                 try {
-                  const status = await s.fetchClientValue('ws.status');
+                  const ready = await s.fetchClientValue('ws.status');
                   const guilds = await s.fetchClientValue('guilds.cache.size');
                   const ping = await s.fetchClientValue('ws.ping');
+                  const status = ready === 0 ? 0 : 1;
                   
                   return {
                     id: s.id,
