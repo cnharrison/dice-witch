@@ -243,35 +243,10 @@ const startServer = () => {
   });
 
 
-  const commandTimers = new Map();
-  const SLOW_COMMAND_THRESHOLD = 2500;
-
   discord.trackCommandStart = (interaction) => {
-    commandTimers.set(interaction.id, {
-      receivedAt: Date.now(),
-      commandName: interaction.commandName,
-      guildId: interaction.guildId,
-      userId: interaction.user.id
-    });
   };
 
   discord.trackCommandEnd = (interaction) => {
-    const timer = commandTimers.get(interaction.id);
-    if (timer) {
-      const completedAt = Date.now();
-      const duration = completedAt - timer.receivedAt;
-
-      if (duration > SLOW_COMMAND_THRESHOLD) {
-        forwardErrorToManager('SLOW_COMMAND', new Error(`Command ${timer.commandName} took ${duration}ms to execute`), {
-          commandName: timer.commandName,
-          duration: duration,
-          guildId: timer.guildId,
-          userId: timer.userId
-        });
-      }
-
-      commandTimers.delete(interaction.id);
-    }
   };
 
   discord.login(discordToken);

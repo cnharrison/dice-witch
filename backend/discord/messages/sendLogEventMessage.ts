@@ -20,6 +20,17 @@ import { DiscordService } from "../../core/services/DiscordService";
 import { ShardClientUtil } from "discord.js";
 import { AttachmentBuilder } from "discord.js";
 
+const getShardId = () => {
+  const discordService = DiscordService.getInstance();
+  const discord = discordService.getClient();
+  
+  if (discord && discord.shard && discord.shard.ids && discord.shard.ids.length > 0) {
+    return discord.shard.ids[0].toString();
+  }
+  
+  return 'unknown';
+};
+
 interface SerializedFile {
   name: string | null;
   attachment: string | Buffer | null;
@@ -86,16 +97,16 @@ const sendLogEventMessage = async ({
         color: eventColor,
         title: `${eventType}: /${source === 'web' ? 'roll' : commandName}`,
         description: (isInGuild || (source === 'web' && channelNameParam))
-          ? `${args} from **${userWithSource}** in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')}`
-          : `${args} from **${user}** in **DM**`,
+          ? `${args} from **${userWithSource}** in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')} [Shard ${getShardId()}]`
+          : `${args} from **${user}** in **DM** [Shard ${getShardId()}]`,
         image: undefined,
       },
       [EventType.CRITICAL_ERROR]: {
         color: resolveColor("#FF0000"),
         title: `${eventType}: ${commandName}`,
         description: (isInGuild || (source === 'web' && channelNameParam))
-          ? `${args} from ${makeBold(userWithSource)} in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')} <@${adminId}>`
-          : `${args} from ${makeBold(user)} in **DM** ${adminId}`,
+          ? `${args} from ${makeBold(userWithSource)} in ${getNameString(isThread)} ${makeBold(channelNameParam)} on ${makeBold(guildName || 'Discord')} [Shard ${getShardId()}] <@${adminId}>`
+          : `${args} from ${makeBold(user)} in **DM** [Shard ${getShardId()}] <@${adminId}>`,
         image: undefined,
       },
       [EventType.GUILD_ADD]: {
