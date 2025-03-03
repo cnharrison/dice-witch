@@ -1,14 +1,13 @@
 import Canvas, { Canvas as CanvasType, Image } from "@napi-rs/canvas";
 import chroma from "chroma-js";
 import { AttachmentBuilder, ButtonInteraction, CommandInteraction, EmbedBuilder } from "discord.js";
-import { DiceRoll, Parser, RollResult, StandardDice } from "rpg-dice-roller";
+import { DiceRoll, Parser,} from "rpg-dice-roller";
 import sharp from "sharp";
 import { coinFlip, getRandomNumber, pluralPick } from "../../shared/helpers";
 import {
   DiceArray,
   DiceFaceData,
   DiceFaces,
-  DiceTypes,
   DiceTypesToDisplay,
   Die,
   GenerateEmbedMessageParams,
@@ -277,12 +276,12 @@ export class DiceService {
 
         if (value.includes('{') || value.includes('k') || value.includes('d')) {
           const dicePatterns = [];
-          const diceRegex = /(\d+)d(\d+|\%)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
+          const diceRegex = /(\d*)d(\d+|\%)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
           let match;
 
           while ((match = diceRegex.exec(value)) !== null) {
             dicePatterns.push({
-              count: parseInt(match[1]),
+              count: match[1] === "" ? 1 : parseInt(match[1]),
               sides: match[2] === '%' ? 100 : parseInt(match[2])
             });
           }
@@ -672,19 +671,17 @@ export class DiceService {
         )
       );
 
-      // Convert canvas to buffer with higher quality
       const canvasBuffer = canvas.toBuffer('image/png');
-      
-      // Use sharp to process the buffer with higher quality settings
+
       const processedBuffer = await sharp(canvasBuffer)
-        .webp({ 
-          lossless: true, 
+        .webp({
+          lossless: true,
           quality: 100,
           nearLossless: true,
           smartSubsample: true
         })
         .toBuffer();
-        
+
       const attachment = new AttachmentBuilder(
         processedBuffer,
         { name: "currentDice.png" }
@@ -788,12 +785,10 @@ export class DiceService {
     }
 
     try {
-      // Determine if we need to resize based on dice type
       const needsResize = sides === 20; // Only resize d20
 
       let sharpInstance = sharp(Buffer.from(image));
-      
-      // If this is a D20, resize it to ensure it's properly scaled
+
       if (needsResize) {
         sharpInstance = sharpInstance.resize({
           width: this.defaultDiceDimension * 2,
@@ -802,17 +797,16 @@ export class DiceService {
           background: { r: 0, g: 0, b: 0, alpha: 0 }
         });
       }
-      
-      // Apply high quality WebP conversion
+
       const attachment = await sharpInstance
-        .webp({ 
-          lossless: true, 
+        .webp({
+          lossless: true,
           quality: 100,
           nearLossless: true,
           smartSubsample: true
         })
         .toBuffer();
-      
+
       return attachment;
     } catch (err) {
       return undefined;
@@ -825,8 +819,8 @@ export class DiceService {
       if (!image) return;
 
       const attachment = await sharp(Buffer.from(image))
-        .webp({ 
-          lossless: true, 
+        .webp({
+          lossless: true,
           quality: 100,
           nearLossless: true,
           smartSubsample: true
