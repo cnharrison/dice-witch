@@ -177,7 +177,7 @@ export class RollService {
 
             try {
               const files = [{
-                name: 'currentDice.png',
+                name: 'currentDice.webp',
                 attachment: Buffer.isBuffer(diceAttachment.attachment) ? diceAttachment.attachment : null
               }].filter(file => file.attachment !== null);
 

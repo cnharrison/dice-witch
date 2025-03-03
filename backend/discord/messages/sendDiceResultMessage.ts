@@ -13,7 +13,7 @@ const sendDiceResultMessage = async ({
     const diceService = DiceService.getInstance();
     const embed = await diceService.generateEmbedMessage({
       resultArray,
-      attachment: new AttachmentBuilder(Buffer.from(''), { name: 'dummy.png' }),
+      attachment: new AttachmentBuilder(Buffer.from(''), { name: 'dummy.webp' }),
       title,
       interaction,
       source: 'discord'

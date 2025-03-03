@@ -671,7 +671,7 @@ export class DiceService {
         )
       );
 
-      const canvasBuffer = canvas.toBuffer('image/png');
+      const canvasBuffer = canvas.toBuffer('image/webp');
 
       const processedBuffer = await sharp(canvasBuffer)
         .webp({
@@ -684,7 +684,7 @@ export class DiceService {
 
       const attachment = new AttachmentBuilder(
         processedBuffer,
-        { name: "currentDice.png" }
+        { name: "currentDice.webp" }
       );
       return { attachment, canvas };
     } catch {
@@ -890,7 +890,7 @@ export class DiceService {
     }
 
     if (attachment) {
-      embed.setImage('attachment://currentDice.png');
+      embed.setImage('attachment://currentDice.webp');
     }
 
     return embed;

@@ -114,7 +114,7 @@ const sendLogEventMessage = async ({
         color: tabletopColor,
         title: title || "Dice Roll",
         description: `${resultMessage || args || ""}`,
-        image: { url: 'attachment://currentDice.png' },
+        image: { url: 'attachment://currentDice.webp' },
       },
       [EventType.SENT_ROLL_RESULT_MESSAGE]: {
         color: tabletopColor,
@@ -330,7 +330,7 @@ const sendLogEventMessage = async ({
                   if (file.name) {
                     return new AttachmentBuilder(buffer, { name: file.name });
                   }
-                  return new AttachmentBuilder(buffer, { name: 'attachment.png' });
+                  return new AttachmentBuilder(buffer, { name: 'attachment.webp' });
                 } catch (error) {
                   console.error('Error creating attachment:', error);
                   return null;
@@ -403,7 +403,7 @@ const sendLogEventMessage = async ({
                     if (file.name) {
                       return new AttachmentBuilder(buffer, { name: file.name });
                     }
-                    return new AttachmentBuilder(buffer, { name: 'attachment.png' });
+                    return new AttachmentBuilder(buffer, { name: 'attachment.webp' });
                   } catch (error) {
                     console.error('Error creating attachment:', error);
                     return null;
