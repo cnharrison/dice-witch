@@ -8,6 +8,7 @@ import guilds from "./web/routes/guilds";
 import clerkWebhook from "./web/webhooks/clerk-webhook";
 import diceRouter from "./web/routes/dice";
 import statsRouter from "./web/routes/stats";
+import healthRouter from "./web/routes/health";
 import { ChildProcess } from "child_process";
 import { DiscordService } from "./core/services/DiscordService";
 
@@ -256,6 +257,7 @@ app.use("*", cors({
   maxAge: 86400,
 }));
 
+app.route("/health", healthRouter);
 app.route("/api/guilds", guilds);
 app.route("/webhook", clerkWebhook);
 app.route("/api/dice", diceRouter);
