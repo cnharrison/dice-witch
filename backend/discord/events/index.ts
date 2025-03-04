@@ -1,6 +1,5 @@
 import {
   Client,
-  TextChannel,
   Guild,
   Collection,
 } from "discord.js";
@@ -11,7 +10,31 @@ import { Command, EventType } from "../../shared/types";
 import { sendLogEventMessage } from "../messages/sendLogEventMessage";
 import { DatabaseService } from "../../core/services/DatabaseService";
 
-const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null) => {
+const handlers = new Map<string, (...args: any[]) => void>();
+
+const registerHandler = (
+  client: Client, 
+  event: string, 
+  handler: (...args: any[]) => void
+) => {
+  const key = `${event}:${handler.name || Math.random().toString(36).substring(2, 9)}`;
+  if (handlers.has(key)) {
+    return;
+  }
+  
+  client.on(event, handler);
+  handlers.set(key, handler);
+};
+
+export const removeAllHandlers = (client: Client) => {
+  handlers.forEach((handler, key) => {
+    const [event] = key.split(':');
+    client.removeListener(event, handler);
+  });
+  handlers.clear();
+};
+
+const setupEvents = async (discord: Client) => {
   try {
     const databaseService = DatabaseService.getInstance();
     const commands = new Collection<string, Command>();
@@ -36,7 +59,7 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
       }
     }
 
-    discord.on("interactionCreate", async (interaction) => {
+    const commandInteractionHandler = async (interaction: any) => {
       if (!interaction.isCommand()) return;
 
       const interactionId = interaction.id;
@@ -58,9 +81,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
       const { commandName } = interaction;
 
       try {
-        if (discord.trackCommandStart) {
-          discord.trackCommandStart(interaction);
-        }
 
         try {
           if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
@@ -77,7 +97,7 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
           }
           
           const ephemeral = ['help', 'prefs', 'web'].includes(commandName);
-          await interaction.deferReply({ ephemeral }).catch(err => {
+          await interaction.deferReply({ ephemeral }).catch((err: any) => {
             console.error(`Error deferring reply for ${commandName}:`, err);
             
             const isInteractionTimeout = err?.code === 10062 || 
@@ -88,7 +108,7 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
                 type: 'error',
                 errorType: isInteractionTimeout ? 'INTERACTION_TIMEOUT' : 'INTERACTION_DEFER_ERROR',
                 message: err?.message || String(err),
-                stack: err?.stack,
+                stack: (err as Error)?.stack || '',
                 shardId: discord.shard?.ids[0],
                 timestamp: Date.now(),
                 context: {
@@ -114,15 +134,15 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
         } catch (deferError) {
           console.error(`Error deferring reply for ${commandName}:`, deferError);
 
-          const isInteractionTimeout = deferError?.code === 10062 || 
-            (deferError?.message && deferError.message.includes("Unknown interaction"));
+          const isInteractionTimeout = (deferError as any)?.code === 10062 || 
+            ((deferError as any)?.message && (deferError as any).message.includes("Unknown interaction"));
 
           if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
             process.send({
               type: 'error',
               errorType: isInteractionTimeout ? 'INTERACTION_TIMEOUT' : 'INTERACTION_DEFER_ERROR',
-              message: deferError?.message || String(deferError),
-              stack: deferError?.stack,
+              message: (deferError as any)?.message || String(deferError),
+              stack: (deferError as Error)?.stack || '',
               shardId: discord.shard?.ids[0],
               timestamp: Date.now(),
               context: {
@@ -153,6 +173,11 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
         const timesToRepeatAsNumber = Number(timesToRepeat);
 
         const command = commands.get(commandName);
+        
+        if (!command) {
+          console.error(`Command not found: ${commandName}`);
+          return;
+        }
 
         try {
           await command.execute({
@@ -163,9 +188,9 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
             title: titleAsString,
             timesToRepeat: timesToRepeatAsNumber,
           });
-        } catch (error) {
-          if (error.code === 429 || 
-              (error.message && (
+        } catch (error: any) {
+          if (error?.code === 429 || 
+              (error?.message && (
                 error.message.includes("rate limit") || 
                 error.message.includes("You are being rate limited") ||
                 error.message.toLowerCase().includes("ratelimit")
@@ -176,7 +201,7 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
                 type: 'error',
                 errorType: 'DISCORD_RATE_LIMIT',
                 message: error?.message || String(error),
-                stack: error?.stack,
+                stack: (error as Error)?.stack || '',
                 shardId: discord.shard?.ids[0],
                 timestamp: Date.now(),
                 context: {
@@ -197,15 +222,13 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
             
             try {
               if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({
-                  content: "Discord is currently rate limiting requests. Please try again in a few moments.",
-                  ephemeral: true
-                });
+                await interaction.editReply(
+                  "Discord is currently rate limiting requests. Please try again in a few moments."
+                );
               } else {
-                await interaction.reply({
-                  content: "Discord is currently rate limiting requests. Please try again in a few moments.",
-                  ephemeral: true
-                });
+                await interaction.reply(
+                  "Discord is currently rate limiting requests. Please try again in a few moments."
+                );
               }
             } catch (replyError) {
               console.error(`Error replying to rate limited interaction:`, replyError);
@@ -215,9 +238,6 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
           }
         }
 
-        if (discord.trackCommandEnd) {
-          discord.trackCommandEnd(interaction);
-        }
 
         sendLogEventMessage({
           eventType: EventType.RECEIVED_COMMAND,
@@ -229,7 +249,7 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
         console.error(`Error executing command ${commandName}:`, error);
 
         if (typeof discord.shard !== 'undefined' && typeof process.send === 'function') {
-          const enhancedContext = {
+          const enhancedContext: any = {
             commandName,
             guildId: interaction.guildId,
             channelId: interaction.channelId,
@@ -242,21 +262,18 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
           };
 
           if (interaction.guild) {
-            enhancedContext.guild = {
+            enhancedContext.guildInfo = {
               id: interaction.guild.id,
               name: interaction.guild.name
             };
           }
 
-          if (args && args.length > 0) {
-            enhancedContext.args = args;
-          }
 
           process.send({
             type: 'error',
             errorType: 'COMMAND_EXECUTION_ERROR',
-            message: error?.message || String(error),
-            stack: error?.stack,
+            message: (error as Error)?.message || String(error),
+            stack: (error as Error)?.stack || '',
             shardId: discord.shard?.ids[0],
             timestamp: Date.now(),
             context: enhancedContext
@@ -264,14 +281,11 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
 
           console.error(`Guild: ${interaction.guild?.name || 'Unknown'} (${interaction.guildId || 'Unknown ID'})`);
           console.error(`User: ${interaction.user.username} (${interaction.user.id})`);
-          console.error(`Args: ${JSON.stringify(args)}`);
         }
 
         try {
-          const errorResponse = {
-            content: "There was an error executing this command. The bot team has been notified.",
-            ephemeral: true
-          };
+          const errorResponse = 
+            "There was an error executing this command. The bot team has been notified.";
 
           if (interaction.deferred || interaction.replied) {
             await interaction.editReply(errorResponse);
@@ -285,21 +299,21 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
             process.send({
               type: 'error',
               errorType: 'INTERACTION_REPLY_ERROR',
-              message: replyError?.message || String(replyError),
-              stack: replyError?.stack,
+              message: (replyError as Error)?.message || String(replyError),
+              stack: (replyError as Error)?.stack || '',
               shardId: discord.shard?.ids[0],
               timestamp: Date.now(),
               context: {
                 commandName,
-                originalError: error?.message || String(error)
+                originalError: (error as Error)?.message || String(error)
               }
             });
           }
         }
       }
-    });
+    };
 
-    discord.on("interactionCreate", async (interaction) => {
+    const buttonInteractionHandler = async (interaction: any) => {
       if (!interaction.isButton()) return;
 
       try {
@@ -331,34 +345,44 @@ const setupEvents = async (discord: Client, logOutputChannel: TextChannel | null
       } catch (error) {
         console.error('Error handling button interaction:', error);
       }
-    });
+    };
 
-    discord.on("guildCreate", async (guild: Guild) => {
+    const guildCreateHandler = async (guild: Guild) => {
       try {
         await databaseService.updateGuild(databaseService.mapGuildToGuildType(guild), false);
         sendLogEventMessage({
           eventType: EventType.GUILD_ADD,
           guild,
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
       }
-    });
+    };
 
-    discord.on("guildDelete", async (guild: Guild) => {
+    const guildDeleteHandler = async (guild: Guild) => {
       try {
         await databaseService.updateGuild(databaseService.mapGuildToGuildType(guild), false, false);
         sendLogEventMessage({
           eventType: EventType.GUILD_REMOVE,
           guild
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
       }
-    });
+    };
+    
+    registerHandler(discord, "interactionCreate", commandInteractionHandler);
+    registerHandler(discord, "interactionCreate", buttonInteractionHandler);
+    registerHandler(discord, "guildCreate", guildCreateHandler);
+    registerHandler(discord, "guildDelete", guildDeleteHandler);
+    discord.once('shutdown', () => removeAllHandlers(discord));
+    discord.once('disconnect', () => removeAllHandlers(discord));
+    
   } catch (err) {
     console.error(err);
   }
+  
+  return { removeHandlers: () => removeAllHandlers(discord) };
 };
 
 export { setupEvents as default };

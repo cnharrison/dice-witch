@@ -23,6 +23,7 @@ export class DatabaseService {
     this.prisma = new PrismaClient();
     this.processedInteractions = new Set<string>();
   }
+  
 
   public static getInstance(): DatabaseService {
     if (!DatabaseService.instance) {
@@ -79,54 +80,6 @@ export class DatabaseService {
           isActive,
         },
       });
-    });
-  }
-
-  private async upsertUser(user: UserType, isARoll: boolean): Promise<void> {
-    await this.prisma.users.upsert({
-      where: { id: user.id },
-      update: {
-        username: user.username,
-        avatar: user.avatar,
-        flags: user.flags ? user.flags.bitfield : undefined,
-        discriminator: user.discriminator,
-        rollCount: isARoll ? { increment: 1 } : undefined,
-      },
-      create: {
-        id: user.id,
-        username: user.username,
-        avatar: user.avatar,
-        flags: user.flags ? user.flags.bitfield : undefined,
-        discriminator: user.discriminator,
-        rollCount: isARoll ? 1 : undefined,
-      },
-    });
-  }
-
-  private async upsertUserGuildRelationship(
-    guildId: string,
-    userId: string,
-    isAdmin: boolean = false,
-    isDiceWitchAdmin: boolean = false
-  ): Promise<void> {
-    await this.prisma.usersGuilds.upsert({
-      where: {
-        userId_guildId: {
-          userId,
-          guildId
-        }
-      },
-      update: {
-        isAdmin,
-        isDiceWitchAdmin,
-        updated_at: new Date()
-      },
-      create: {
-        userId,
-        guildId,
-        isAdmin,
-        isDiceWitchAdmin
-      }
     });
   }
 

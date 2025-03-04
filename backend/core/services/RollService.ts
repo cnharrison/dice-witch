@@ -1,27 +1,22 @@
 import { DiceService } from "./DiceService";
 import {
   DiceArray,
-  DiceTypesToDisplay,
   Result,
-  GenerateEmbedMessageParams
+  DiceTypesToDisplay
 } from "../../shared/types";
 import { AttachmentBuilder, CommandInteraction, ButtonInteraction } from "discord.js";
 import { DatabaseService } from "./DatabaseService";
 import { DiscordService } from "./DiscordService";
 import {
-  availableDice,
   maxDiceSides,
-  maxImageDice,
-  maxTextDice
+  maxImageDice
 } from "../constants";
-import { getHighestDiceSide, getTotalDiceRolled } from "../../shared/helpers";
-import { EventType } from "../../shared/types";
+import { EventType } from "../../shared/types"; 
 import { sendLogEventMessage } from "../../discord/messages/sendLogEventMessage";
 
 export interface RollOptions {
   notation: string | string[];
   timesToRepeat?: number;
-  title?: string;
 
   interaction?: CommandInteraction | ButtonInteraction;
 
@@ -83,7 +78,6 @@ export class RollService {
     const {
       notation,
       timesToRepeat,
-      title,
       interaction,
       channelId,
       username,
@@ -92,7 +86,7 @@ export class RollService {
 
     const notationArray = this.normalizeNotation(notation);
 
-    const rollResult = await this.diceService.rollDice(notationArray, availableDice, timesToRepeat);
+    const rollResult = await this.diceService.rollDice(notationArray, [4, 6, 8, 10, 12, 20, 100] as DiceTypesToDisplay[], timesToRepeat);
 
     const {
       diceArray,
@@ -139,7 +133,7 @@ export class RollService {
           if (!rollingMessageResult.success) {
             if (rollingMessageResult.error === "PERMISSION_ERROR") {
               result.message = 'Dice Witch needs permission to read message history, attach files, and embed links to show you the dice. 😊';
-              result.error = 'PERMISSION_ERROR';
+              result.errors = ['PERMISSION_ERROR'];
               return result;
             }
           } else if (rollingMessageResult?.success) {
@@ -159,7 +153,6 @@ export class RollService {
               attachment: diceAttachment.attachment,
               source: 'web',
               username,
-              title: options.title || undefined
             });
 
             const sendResult = await this.discordService.sendMessage(channelId, {
@@ -170,7 +163,7 @@ export class RollService {
             
             if (!sendResult.success && sendResult.error === "PERMISSION_ERROR") {
               result.message = 'Dice Witch needs permission to read message history, attach files, and embed links to show you the dice. 😊';
-              result.error = 'PERMISSION_ERROR';
+              result.errors = ['PERMISSION_ERROR'];
               return result;
             }
 
@@ -184,8 +177,18 @@ export class RollService {
               await sendLogEventMessage({
                 eventType: EventType.RECEIVED_COMMAND,
                 args: Array.isArray(notation) ? notation : [notation],
-                guild: channel.guild,
-                files: files.length > 0 ? files : undefined,
+                guild: channel.guild ? channel.guild : undefined,
+                files: files.length > 0 ? files.map(file => {
+                if (file.attachment && Buffer.isBuffer(file.attachment)) {
+                  return new AttachmentBuilder(file.attachment, { name: file.name || 'attachment.webp' });
+                }
+                return new AttachmentBuilder(
+                  file.attachment ? 
+                    (Buffer.isBuffer(file.attachment) ? file.attachment : Buffer.from([])) : 
+                    Buffer.from([]), 
+                  { name: file.name || 'empty.webp' }
+                );
+              }) : undefined,
                 sourceName: 'web',
                 username,
                 channelName,

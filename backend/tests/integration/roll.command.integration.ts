@@ -15,25 +15,53 @@ jest.mock('../../core/services/DiceService', () => ({
   }
 }));
 
-jest.mock('../../core/services/DiscordService', () => ({
-  DiscordService: {
-    getInstance: jest.fn().mockReturnValue({
-      checkForAttachPermission: jest.fn().mockReturnValue(true),
-      sendMessage: jest.fn().mockResolvedValue({
-        success: true,
-        messageId: 'mock-message-id'
-      })
-    })
-  }
-}));
+jest.mock('../../core/services/DiscordService', () => {
+  const mockCheckForAttachPermission = jest.fn().mockReturnValue(true);
+  mockCheckForAttachPermission.mock = { calls: [] };
+  
+  const mockSendMessage = jest.fn().mockResolvedValue({
+    success: true,
+    messageId: 'mock-message-id'
+  });
+  mockSendMessage.mock = { calls: [] };
+  
+  const mockGetInstance = jest.fn().mockReturnValue({
+    checkForAttachPermission: mockCheckForAttachPermission,
+    sendMessage: mockSendMessage
+  });
+  mockGetInstance.mock = { calls: [] };
+  
+  return {
+    DiscordService: {
+      getInstance: mockGetInstance
+    }
+  };
+});
 
-jest.mock('../../discord/messages', () => ({
-  sendHelperMessage: jest.fn().mockResolvedValue(undefined),
-  sendDiceOverMaxMessage: jest.fn().mockResolvedValue(undefined),
-  sendDiceRolledMessage: jest.fn().mockResolvedValue(undefined),
-  sendDiceResultMessageWithImage: jest.fn().mockResolvedValue(undefined),
-  sendNeedPermissionMessage: jest.fn().mockResolvedValue(undefined)
-}));
+jest.mock('../../discord/messages', () => {
+  const mockSendHelperMessage = jest.fn().mockResolvedValue(undefined);
+  mockSendHelperMessage.mock = { calls: [] };
+  
+  const mockSendDiceOverMaxMessage = jest.fn().mockResolvedValue(undefined);
+  mockSendDiceOverMaxMessage.mock = { calls: [] };
+  
+  const mockSendDiceRolledMessage = jest.fn().mockResolvedValue(undefined);
+  mockSendDiceRolledMessage.mock = { calls: [] };
+  
+  const mockSendDiceResultMessageWithImage = jest.fn().mockResolvedValue(undefined);
+  mockSendDiceResultMessageWithImage.mock = { calls: [] };
+  
+  const mockSendNeedPermissionMessage = jest.fn().mockResolvedValue(undefined);
+  mockSendNeedPermissionMessage.mock = { calls: [] };
+  
+  return {
+    sendHelperMessage: mockSendHelperMessage,
+    sendDiceOverMaxMessage: mockSendDiceOverMaxMessage,
+    sendDiceRolledMessage: mockSendDiceRolledMessage,
+    sendDiceResultMessageWithImage: mockSendDiceResultMessageWithImage,
+    sendNeedPermissionMessage: mockSendNeedPermissionMessage
+  };
+});
 
 import {
   sendHelperMessage,
@@ -43,12 +71,21 @@ import {
 } from '../../discord/messages';
 
 const createMockInteraction = () => {
+  const mockDeferReply = jest.fn().mockResolvedValue(undefined);
+  mockDeferReply.mock = { calls: [] };
+  
+  const mockEditReply = jest.fn().mockResolvedValue(undefined);
+  mockEditReply.mock = { calls: [] };
+  
+  const mockIsRepliable = jest.fn().mockReturnValue(true);
+  mockIsRepliable.mock = { calls: [] };
+  
   return {
-    deferReply: jest.fn().mockResolvedValue(undefined),
-    editReply: jest.fn().mockResolvedValue(undefined),
+    deferReply: mockDeferReply,
+    editReply: mockEditReply,
     deferred: false,
     replied: false,
-    isRepliable: jest.fn().mockReturnValue(true)
+    isRepliable: mockIsRepliable
   } as unknown as CommandInteraction;
 };
 
@@ -80,9 +117,11 @@ describe('Roll Command Integration Tests', () => {
   });
 
   test('should send help message when no arguments provided', async () => {
+    const mockClient = {} as any;
     await rollCommand.execute({
       args: [],
-      interaction: mockInteraction
+      interaction: mockInteraction,
+      discord: mockClient
     });
 
     expect(mockInteraction.deferReply).toHaveBeenCalled();
@@ -96,9 +135,11 @@ describe('Roll Command Integration Tests', () => {
       containsDice: false
     });
 
+    const mockClient = {} as any;
     await rollCommand.execute({
       args: ['8000'],
-      interaction: mockInteraction
+      interaction: mockInteraction,
+      discord: mockClient
     });
 
     expect(mockInteraction.deferReply).toHaveBeenCalled();
@@ -112,9 +153,11 @@ describe('Roll Command Integration Tests', () => {
       containsDice: false
     });
 
+    const mockClient = {} as any;
     await rollCommand.execute({
       args: ['heyheyhey'],
-      interaction: mockInteraction
+      interaction: mockInteraction,
+      discord: mockClient
     });
 
     expect(mockInteraction.deferReply).toHaveBeenCalled();
@@ -128,9 +171,11 @@ describe('Roll Command Integration Tests', () => {
       containsDice: true
     });
 
+    const mockClient = {} as any;
     await rollCommand.execute({
       args: ['100d100'],
-      interaction: mockInteraction
+      interaction: mockInteraction,
+      discord: mockClient
     });
 
     expect(mockInteraction.deferReply).toHaveBeenCalled();
@@ -142,9 +187,11 @@ describe('Roll Command Integration Tests', () => {
   });
 
   test('should roll dice and send messages for valid notation', async () => {
+    const mockClient = {} as any;
     await rollCommand.execute({
       args: ['1d20'],
-      interaction: mockInteraction
+      interaction: mockInteraction,
+      discord: mockClient
     });
 
     expect(mockInteraction.deferReply).toHaveBeenCalled();
@@ -160,10 +207,12 @@ describe('Roll Command Integration Tests', () => {
   });
 
   test('should process dice rolls with timesToRepeat parameter', async () => {
+    const mockClient = {} as any;
     await rollCommand.execute({
       args: ['1d20'],
       timesToRepeat: 3,
-      interaction: mockInteraction
+      interaction: mockInteraction,
+      discord: mockClient
     });
 
     expect(rollService.rollDice).toHaveBeenCalledWith({
@@ -176,10 +225,12 @@ describe('Roll Command Integration Tests', () => {
   });
 
   test('should process dice rolls with title parameter', async () => {
+    const mockClient = {} as any;
     await rollCommand.execute({
       args: ['1d20'],
       title: 'Attack Roll',
-      interaction: mockInteraction
+      interaction: mockInteraction,
+      discord: mockClient
     });
 
     expect(rollService.rollDice).toHaveBeenCalledWith({
@@ -200,9 +251,11 @@ describe('Roll Command Integration Tests', () => {
       resultArray: []
     });
 
+    const mockClient = {} as any;
     await rollCommand.execute({
       args: ['1d20'],
-      interaction: mockInteraction
+      interaction: mockInteraction,
+      discord: mockClient
     });
 
     expect(sendHelperMessage).toHaveBeenCalled();

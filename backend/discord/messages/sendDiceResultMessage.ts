@@ -1,8 +1,7 @@
-import { EventType, Result, SendDiceResultMessageParams } from "../../shared/types";
+import { EventType, SendDiceResultMessageParams } from "../../shared/types";
 import { DiceService } from "../../core/services/DiceService";
 import sendLogEventMessage from "./sendLogEventMessage";
 import { AttachmentBuilder } from "discord.js";
-import { makeBold } from "../../shared/helpers";
 
 const sendDiceResultMessage = async ({
   resultArray,
@@ -19,14 +18,7 @@ const sendDiceResultMessage = async ({
       source: 'discord'
     });
 
-    const userId = interaction ? interaction.user.id : "unknown user";
-    const titleText = title ? makeBold(title) : "";
     const resultsText = resultArray.map((result) => result.output).join("\n");
-    const grandTotal = resultArray.reduce(
-      (prev: number, cur: Result) => prev + cur.results,
-      0
-    );
-    const grandTotalText = resultArray.length > 1 ? `\ngrand total = \`${grandTotal}\`` : "";
 
     if (interaction?.deferred) {
       await interaction.followUp({

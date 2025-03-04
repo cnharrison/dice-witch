@@ -4,7 +4,6 @@ import { DatabaseService } from "../../core/services/DatabaseService";
 import { RollProps } from "../../shared/types";
 import {
   sendDiceOverMaxMessage,
-  sendDiceResultMessage,
   sendDiceResultMessageWithImage,
   sendDiceRolledMessage,
   sendHelperMessage,
@@ -84,7 +83,6 @@ const command = {
       const rollResult = await rollService.rollDice({
         notation: args,
         timesToRepeat,
-        title,
         interaction,
         source: 'discord'
       });

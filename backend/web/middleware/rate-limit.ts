@@ -1,11 +1,44 @@
 import { MiddlewareHandler } from 'hono';
 
-const requestCounts: Record<string, { count: number, resetTime: number }> = {};
+const requestCounts = new Map<string, { count: number, resetTime: number, timeoutId?: NodeJS.Timeout }>();
+const MAX_ENTRIES = 10000;
+const CLEANUP_INTERVAL = 5 * 60 * 1000;
 
 interface RateLimitOptions {
   limit: number;
   windowMs: number;
 }
+
+const cleanupExpiredEntries = () => {
+  const now = Date.now();
+  let deletedCount = 0;
+  
+  requestCounts.forEach((data, ip) => {
+    if (data.resetTime < now) {
+      if (data.timeoutId) {
+        clearTimeout(data.timeoutId);
+      }
+      requestCounts.delete(ip);
+      deletedCount++;
+    }
+  });
+  
+  if (requestCounts.size > MAX_ENTRIES) {
+    const entriesToRemove = [...requestCounts.entries()]
+      .sort((a, b) => a[1].resetTime - b[1].resetTime)
+      .slice(0, requestCounts.size - MAX_ENTRIES);
+      
+    for (const [ip, data] of entriesToRemove) {
+      if (data.timeoutId) {
+        clearTimeout(data.timeoutId);
+      }
+      requestCounts.delete(ip);
+      deletedCount++;
+    }
+  }
+};
+
+setInterval(cleanupExpiredEntries, CLEANUP_INTERVAL);
 
 export const rateLimit = (options: RateLimitOptions): MiddlewareHandler => {
   const { limit, windowMs } = options;
@@ -14,30 +47,45 @@ export const rateLimit = (options: RateLimitOptions): MiddlewareHandler => {
     const ip = c.req.header('x-forwarded-for') || 'unknown';
     const now = Date.now();
     
-    if (!requestCounts[ip] || requestCounts[ip].resetTime < now) {
-      requestCounts[ip] = {
-        count: 0,
-        resetTime: now + windowMs
-      };
+    const data = requestCounts.get(ip);
+    
+    if (!data || data.resetTime < now) {
+      if (data?.timeoutId) {
+        clearTimeout(data.timeoutId);
+      }
       
-      setTimeout(() => {
-        delete requestCounts[ip];
+      const timeoutId = setTimeout(() => {
+        requestCounts.delete(ip);
       }, windowMs);
+      
+      if (timeoutId.unref) {
+        timeoutId.unref();
+      }
+      
+      requestCounts.set(ip, {
+        count: 1,
+        resetTime: now + windowMs,
+        timeoutId
+      });
+    } else {
+      data.count++;
+      requestCounts.set(ip, data);
     }
     
-    requestCounts[ip].count++;
+    const currentData = requestCounts.get(ip)!;
     
-    if (requestCounts[ip].count > limit) {
+    if (currentData.count > limit) {
+      c.status(429);
       return c.json({ 
         error: 'Too many requests', 
         message: 'Rate limit exceeded'
-      }, 429);
+      });
     }
     
     c.header('X-RateLimit-Limit', limit.toString());
-    c.header('X-RateLimit-Remaining', Math.max(0, limit - requestCounts[ip].count).toString());
-    c.header('X-RateLimit-Reset', Math.ceil(requestCounts[ip].resetTime / 1000).toString());
+    c.header('X-RateLimit-Remaining', Math.max(0, limit - currentData.count).toString());
+    c.header('X-RateLimit-Reset', Math.ceil(currentData.resetTime / 1000).toString());
     
-    await next();
+    return next();
   };
 };

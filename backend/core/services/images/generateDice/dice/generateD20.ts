@@ -1,4 +1,4 @@
-import { GenerateDieProps } from "../../../../shared/types";
+import { GenerateDieProps } from "../../../../../shared/types";
 
 const getFaces = (result: number) => {
   const faces = [
@@ -237,7 +237,7 @@ const generateD20 = ({
 }: GenerateDieProps) => {
   const faces = getFaces(result);
   return `
-  <svg viewBox="0 0 ${width} ${height}" width="${width * 2}" height="${height * 2}" preserveAspectRatio="xMidYMid meet">
+  <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet">
     <defs>
  ${patternFill?.string ?? ""}
     <style>

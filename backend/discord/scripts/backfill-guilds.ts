@@ -1,8 +1,6 @@
-import { exit } from "node:process";
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { PrismaClient } from "@prisma/client";
 import { CONFIG } from "../../config";
-import { snowflakeUtils } from "../../shared/utils";
 
 const prisma = new PrismaClient();
 const { token: discordToken } = CONFIG.discord;
@@ -39,26 +37,26 @@ const startServer = () => {
         const updateChannelId = publicUpdatesChannelId ? BigInt(publicUpdatesChannelId) : null;
 
         await prisma.guilds.upsert({
-          where: { id: guildId },
+          where: { id: guildId.toString() },
           update: {
             name,
             icon,
-            ownerId: ownerBigInt,
+            ownerId: ownerBigInt.toString(),
             memberCount,
             approximateMemberCount,
             preferredLocale,
-            publicUpdatesChannelId: updateChannelId,
+            publicUpdatesChannelId: updateChannelId ? updateChannelId.toString() : null,
             joinedTimestamp,
           },
           create: {
-            id: guildId,
+            id: guildId.toString(),
             name,
             icon,
-            ownerId: ownerBigInt,
+            ownerId: ownerBigInt.toString(),
             memberCount,
             approximateMemberCount,
             preferredLocale,
-            publicUpdatesChannelId: updateChannelId,
+            publicUpdatesChannelId: updateChannelId ? updateChannelId.toString() : null,
             joinedTimestamp,
             rollCount: 0,
           },

@@ -13,7 +13,7 @@ router.post('/roll', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const { channelId, notation, source, username, timesToRepeat, title } = await c.req.json();
+  const { channelId, notation, username, timesToRepeat } = await c.req.json();
 
   if (!channelId || !notation) {
     return c.json({ error: 'Channel ID and Notation are required' }, 400);
@@ -32,11 +32,10 @@ router.post('/roll', async (c) => {
         channelId,
         username,
         source: 'web',
-        timesToRepeat: timesToRepeat || 1,
-        title
+        timesToRepeat: timesToRepeat || 1
       });
 
-      if (rollResult.error === 'PERMISSION_ERROR') {
+      if (rollResult.errors?.includes('PERMISSION_ERROR')) {
         return c.json({
           error: 'PERMISSION_ERROR',
           message: rollResult.message || 'Dice Witch needs permission to read message history, attach files, and embed links to show you the dice. 😊',

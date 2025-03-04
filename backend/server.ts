@@ -35,7 +35,7 @@ process.on('uncaughtException', (error) => {
   console.error(`[ShardManager] Uncaught Exception:`, error);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   console.error(`[ShardManager] Unhandled Rejection:`, reason);
 });
 

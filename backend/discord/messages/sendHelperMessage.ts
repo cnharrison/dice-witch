@@ -7,7 +7,6 @@ import { availableDice, footerButtonRow, maxImageDice } from "../../core/constan
 import { sendLogEventMessage } from ".";
 import { EventType } from "../../shared/types";
 import { SendHelperMessageParams } from "../../shared/types";
-import { DiscordService } from "../../core/services/DiscordService";
 
 const createButton = (id: string, label: string) =>
   new ButtonBuilder()
@@ -22,9 +21,7 @@ const createEmbed = (title: string, description: string) =>
 
 const sendHelperMessage = async ({
   interaction,
-  logOutputChannel,
 }: Omit<SendHelperMessageParams, 'discord'>) => {
-  const discordService = DiscordService.getInstance();
 
   const kbButtonRow = new ActionRowBuilder()
     .addComponents(

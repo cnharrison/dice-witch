@@ -1,3 +1,3 @@
-export const bigIntSerializer = (key: string, value: any) => {
+export const bigIntSerializer = (_: string, value: any) => {
   return typeof value === 'bigint' ? value.toString() : value;
 };

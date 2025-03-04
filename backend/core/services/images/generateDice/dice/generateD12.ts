@@ -1,4 +1,4 @@
-import { GenerateDieProps } from "../../../../shared/types";
+import { GenerateDieProps } from "../../../../../shared/types";
 
 const getFaces = (result: number) => {
   const faces = [

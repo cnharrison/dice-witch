@@ -1,17 +1,10 @@
 import {
   Client,
   GatewayIntentBits,
-  Interaction,
   Partials,
   TextChannel,
 } from "discord.js";
 
-declare module "discord.js" {
-  interface Client {
-    trackCommandStart?: (interaction: Interaction) => void;
-    trackCommandEnd?: (interaction: Interaction) => void;
-  }
-}
 import axios from "axios";
 import { ToadScheduler, SimpleIntervalJob, AsyncTask } from "toad-scheduler";
 import setupEvents from './events';
@@ -19,6 +12,7 @@ import { CONFIG } from "../config";
 import { DiscordService } from "../core/services/DiscordService";
 
 let currentShardId = 'unknown';
+let scheduler: ToadScheduler | null = null;
 
 const getShardId = () => {
   if (currentShardId !== 'unknown') {
@@ -47,7 +41,7 @@ console.error = function(...args) {
   originalConsoleError.apply(console, [`[Shard ${getShardId()}]`, ...args]);
 };
 
-function forwardErrorToManager(type, error, context = {}) {
+function forwardErrorToManager(type: string, error: any, context: Record<string, any> = {}) {
   let enhancedContext = { ...context };
 
   if (context.guildId && !enhancedContext.guild) {
@@ -112,15 +106,46 @@ process.on('uncaughtException', (error) => {
   forwardErrorToManager('UNCAUGHT_EXCEPTION', error);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   forwardErrorToManager('UNHANDLED_REJECTION', reason);
+});
+
+process.on('SIGINT', () => {
+  if (scheduler) {
+    scheduler.stop();
+    scheduler = null;
+  }
+  
+  if (discord) {
+    discord.emit('shutdown');
+  }
+  
+  setTimeout(() => {
+    process.exit(0);
+  }, 1000);
+});
+
+process.on('SIGTERM', () => {
+  if (scheduler) {
+    scheduler.stop();
+    scheduler = null;
+  }
+  
+  if (discord) {
+    discord.emit('shutdown');
+  }
+  
+  setTimeout(() => {
+    process.exit(0);
+  }, 1000);
 });
 
 const { token: discordToken, logOutputChannelId: logOutputChannelID, clientId } = CONFIG.discord;
 const { discordbotlist, topgg } = CONFIG.botListAuth;
 
-const scheduler = new ToadScheduler();
-const discordService = DiscordService.getInstance();
+if (scheduler === null) {
+  scheduler = new ToadScheduler();
+}
 
 export const discord = new Client({
   intents: [
@@ -208,8 +233,8 @@ const createBotSiteUpdateTask = (discord: Client) => {
 const startServer = () => {
   console.log(`Starting up...`);
 
-  discord.on("ready", async () => {
-    if (discord.shard?.ids?.length > 0) {
+  discord.once("ready", async () => {
+    if (discord.shard?.ids && discord.shard.ids.length > 0) {
       currentShardId = discord.shard.ids[0].toString();
     }
 
@@ -232,22 +257,24 @@ const startServer = () => {
       console.log(`Log channel not available on this shard, continuing without it`);
     }
     
-    await setupEvents(discord, logOutputChannel);
+    await setupEvents(discord);
 
-    if (discord.shard?.ids[0] === 0) {
+    if (discord.shard?.ids[0] === 0 && scheduler) {
       const task = createBotSiteUpdateTask(discord);
       const job = new SimpleIntervalJob({ hours: 4 }, task);
       scheduler.addSimpleIntervalJob(job);
       console.log(`Bot site update scheduler initialized`);
+      
+      discord.on('shutdown', () => {
+        if (scheduler) {
+          scheduler.stop();
+          scheduler = null;
+        }
+      });
     }
   });
 
 
-  discord.trackCommandStart = (interaction) => {
-  };
-
-  discord.trackCommandEnd = (interaction) => {
-  };
 
   discord.login(discordToken);
 

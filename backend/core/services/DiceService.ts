@@ -1,7 +1,15 @@
 import Canvas, { Canvas as CanvasType, Image } from "@napi-rs/canvas";
 import chroma from "chroma-js";
 import { AttachmentBuilder, ButtonInteraction, CommandInteraction, EmbedBuilder } from "discord.js";
-import { DiceRoll, Parser,} from "rpg-dice-roller";
+import { DiceRoll, Parser } from "rpg-dice-roller";
+
+interface DiceRollResult {
+  initialValue?: string;
+  modifiers?: string[];
+  rolls: any[];
+  total: number;
+  output: string;
+}
 import sharp from "sharp";
 import { coinFlip, getRandomNumber, pluralPick } from "../../shared/helpers";
 import {
@@ -27,7 +35,7 @@ import {
   generateGeneric,
 } from "./images/generateDice/dice";
 import generateLinearGradientFill from "./images/generateDice/fills/generateLinearGradientFill";
-import patternFills, { getRandomPatternFill } from "./images/generateDice/fills/generatePatternFills";
+import { getRandomPatternFill } from "./images/generateDice/fills/generatePatternFills";
 import {
   arrowThroughIcon,
   blankIcon,
@@ -44,8 +52,8 @@ import {
 export class DiceService {
   private static instance: DiceService;
   private icons: Map<Icon | null, string>;
-  private defaultDiceDimension = 150; // Increased from 100 for better resolution
-  private defaultIconDimension = 37; // Increased proportionally from 25
+  private defaultDiceDimension = 150;
+  private defaultIconDimension = 37;
   private maxRowLength = 10;
 
   private constructor() {
@@ -81,9 +89,11 @@ export class DiceService {
       : chroma("#000000");
   }
 
-  private generateIconArray(modifierSet: Set<string>): Icon[] | null {
-    if (!modifierSet || modifierSet.size === 0) return null;
-    return [...modifierSet].map((item) => {
+  private generateIconArray(modifierSet: Set<string> | string[] | undefined): Icon[] | null {
+    if (!modifierSet) return null;
+    const modifierArray = Array.isArray(modifierSet) ? modifierSet : [...modifierSet];
+    if (modifierArray.length === 0) return null;
+    return modifierArray.map((item) => {
       switch (item) {
         case "drop": return "trashcan";
         case "explode": return "explosion";
@@ -135,7 +145,7 @@ export class DiceService {
     }
 
     if (sides === undefined) {
-      return rollGroup.rolls.map((currentRoll: RollResult) => {
+      return rollGroup.rolls.map((currentRoll: DiceRollResult) => {
         if (!currentRoll) return null;
 
         const isHeads = coinFlip();
@@ -144,21 +154,26 @@ export class DiceService {
           ? this.getSecondaryColorFromColor(color)
           : chroma.random();
         const textColor = this.getTextColorFromColors(color, secondaryColor);
+        const initialValue = 
+          typeof currentRoll.initialValue === 'number' ? currentRoll.initialValue :
+          typeof currentRoll.initialValue === 'string' ? parseInt(currentRoll.initialValue, 10) || 0 : 
+          0;
+          
         return {
           sides: 6,
-          rolled: currentRoll.initialValue || 0,
+          rolled: initialValue as DiceFaces,
           icon: null,
           iconSpacing: 0,
           color,
           secondaryColor,
           textColor,
-          value: currentRoll.initialValue || 0,
+          value: initialValue,
         };
       }).filter(Boolean);
     }
 
     if (sides === 100) {
-      return rollGroup.rolls.reduce((acc: Die[], cur: RollResult) => {
+      return rollGroup.rolls.reduce((acc: Die[], cur: DiceRollResult) => {
         if (!cur) return acc;
 
         const isHeads = coinFlip();
@@ -169,7 +184,7 @@ export class DiceService {
         const textColor = this.getTextColorFromColors(color, secondaryColor);
         const icon = this.generateIconArray(cur.modifiers);
 
-        const initialValue = cur.initialValue || 0;
+        const initialValue = typeof cur.initialValue === 'string' ? parseInt(cur.initialValue, 10) : (cur.initialValue || 0);
 
         acc.push(
           {
@@ -180,7 +195,7 @@ export class DiceService {
             color,
             secondaryColor,
             textColor,
-            value: initialValue,
+            value: Number(initialValue),
           },
           {
             sides: 10,
@@ -188,13 +203,13 @@ export class DiceService {
             color,
             secondaryColor,
             textColor,
-            value: initialValue,
+            value: Number(initialValue),
           }
         );
         return acc;
       }, []);
     } else {
-      return rollGroup.rolls.map((currentRoll: RollResult) => {
+      return rollGroup.rolls.map((currentRoll: DiceRollResult) => {
         if (!currentRoll) return null;
 
         const isHeads = coinFlip();
@@ -224,7 +239,7 @@ export class DiceService {
 
   public async rollDice(
     args: string[],
-    availableDice: DiceTypesToDisplay[],
+    _availableDice: DiceTypesToDisplay[],
     timesToRepeat?: number
   ): Promise<{
     diceArray: DiceArray;
@@ -275,7 +290,7 @@ export class DiceService {
 
 
         if (value.includes('{') || value.includes('k') || value.includes('d')) {
-          const dicePatterns = [];
+          const dicePatterns: { count: number, sides: number }[] = [];
           const diceRegex = /(\d*)d(\d+|\%)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
           let match;
 
@@ -503,8 +518,8 @@ export class DiceService {
             const textColor = this.getTextColorFromColors(color, secondaryColor);
 
             groupArray.push({
-              sides: 20,
-              rolled: roll.total,
+              sides: 20 as const,
+              rolled: roll.total as DiceFaces,
               icon: null,
               iconSpacing: null,
               color,
@@ -536,8 +551,8 @@ export class DiceService {
           const textColor = this.getTextColorFromColors(color, secondaryColor);
 
           groupArray.push({
-            sides: 20,
-            rolled: roll.total,
+            sides: 20 as const,
+            rolled: roll.total as DiceFaces,
             icon: null,
             iconSpacing: null,
             color,
@@ -547,7 +562,7 @@ export class DiceService {
           });
         }
 
-        diceArray.push([...groupArray]);
+        diceArray.push([...groupArray] as Die[]);
         resultArray.push(result);
       }
 
@@ -557,7 +572,7 @@ export class DiceService {
           files = [attachment.attachment];
         }
       } catch (error) {
-        // Handle silently
+        console.error("Attachment generation error:", error);
       }
 
       if (resultArray.length === 0 && errors.length > 0) {
@@ -586,7 +601,7 @@ export class DiceService {
   private async drawIcon(
     iconArray: Icon[] | null | undefined,
     iconSpacing: number,
-    ctx,
+    ctx: any, // Canvas rendering context
     diceIndex: number,
     diceOuterIndex: number
   ): Promise<void> {
@@ -660,8 +675,10 @@ export class DiceService {
               await this.drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
             }
           } catch (imgErr) {
+            console.error("Image loading error:", imgErr);
           }
         } catch (err) {
+          console.error("Die generation error:", err);
         }
       };
 
@@ -675,9 +692,8 @@ export class DiceService {
 
       const processedBuffer = await sharp(canvasBuffer)
         .webp({
-          lossless: true,
-          quality: 100,
-          nearLossless: true,
+          lossless: false,
+          quality: 85,
           smartSubsample: true
         })
         .toBuffer();
@@ -727,6 +743,7 @@ export class DiceService {
     );
   }
 
+
   public async generateDie({
     sides,
     rolled,
@@ -748,6 +765,9 @@ export class DiceService {
     width?: string;
     height?: string;
   }): Promise<Buffer | undefined> {
+    // Since all dice have patterns/gradients, we'll just keep the SVG size fix
+    // and WebP optimization, without interfering with pattern randomization
+    
     if (!patternFill) {
       if (this.shouldUsePatternFill()) {
         patternFill = getRandomPatternFill(solidFill || '#ffffff', outlineColor || '#000000');
@@ -778,7 +798,7 @@ export class DiceService {
       "%": generateDPercent(props),
     };
 
-    let image = dice[sides];
+    let image = dice[sides as keyof DiceFaceData];
 
     if (!image) {
       image = generateGeneric(props);
@@ -791,8 +811,8 @@ export class DiceService {
 
       if (needsResize) {
         sharpInstance = sharpInstance.resize({
-          width: this.defaultDiceDimension * 2,
-          height: this.defaultDiceDimension * 2,
+          width: this.defaultDiceDimension,
+          height: this.defaultDiceDimension,
           fit: 'contain',
           background: { r: 0, g: 0, b: 0, alpha: 0 }
         });
@@ -802,7 +822,6 @@ export class DiceService {
         .webp({
           lossless: true,
           quality: 100,
-          nearLossless: true,
           smartSubsample: true
         })
         .toBuffer();
@@ -816,13 +835,12 @@ export class DiceService {
   public async generateIcon(iconType: Icon | null): Promise<Buffer | undefined> {
     try {
       const image = this.icons.get(iconType) || this.icons.get(null);
-      if (!image) return;
+      if (!image) return undefined;
 
       const attachment = await sharp(Buffer.from(image))
         .webp({
           lossless: true,
           quality: 100,
-          nearLossless: true,
           smartSubsample: true
         })
         .toBuffer();
@@ -850,7 +868,7 @@ export class DiceService {
       return {
         embeds: [embed],
         files: attachment ? [attachment] : []
-      };
+      } as { embeds: EmbedBuilder[]; files: AttachmentBuilder[] };
     } catch (error) {
       return { embeds: [], files: [] };
     }
@@ -859,7 +877,7 @@ export class DiceService {
   private createEmbed(
     resultArray: Result[],
     grandTotal: number,
-    attachment: AttachmentBuilder,
+    attachment: AttachmentBuilder | null | undefined,
     title?: string,
     interaction?: CommandInteraction | ButtonInteraction,
     source?: string,
@@ -875,9 +893,6 @@ export class DiceService {
     } else if (source === 'web') {
       sourceText = username ? `sent to ${username} via web` : 'via web';
     }
-
-    const serverName = interaction?.guild?.name;
-
     const embed = new EmbedBuilder()
       .setColor(tabletopColor)
       .setDescription(diceOutput)
@@ -926,7 +941,7 @@ export class DiceService {
 
     const minTotal = diceArray.reduce((sum, dieArray) => {
       if (Array.isArray(dieArray)) {
-        return sum + dieArray.reduce((innerSum, die) => innerSum + 1, 0);
+        return sum + dieArray.reduce((innerSum) => innerSum + 1, 0);
       } else {
         return sum + 1;
       }

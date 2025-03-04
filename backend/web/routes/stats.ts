@@ -1,11 +1,9 @@
 import { Hono } from 'hono';
 import { cache } from 'hono/cache';
 import { rateLimit } from '../middleware/rate-limit';
-import { DatabaseService } from '../../core/services/DatabaseService';
 import { DiscordService } from '../../core/services/DiscordService';
 
 const router = new Hono();
-const db = DatabaseService.getInstance();
 const discord = DiscordService.getInstance();
 
 router.get('/public', 

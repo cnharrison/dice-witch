@@ -1,4 +1,4 @@
-import { GenerateDieProps } from "../../../../shared/types";
+import { GenerateDieProps } from "../../../../../shared/types";
 
 const getFaces = (result: number) => {
   const faces = [
@@ -237,7 +237,7 @@ const generateDPercent = ({
        ${patternFill?.string ?? ""}
           <style>
               .outline{fill:${
-                `url(#${patternFill?.name})` ?? solidFill
+                patternFill?.name ? `url(#${patternFill.name})` : solidFill
               };stroke:${outlineColor};stroke-miterlimit:10;stroke-width:${borderWidth}}
         .text{fill:${textColor};stroke:${textColor}}
           </style>

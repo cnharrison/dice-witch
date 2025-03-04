@@ -13,9 +13,12 @@ jest.mock('../../config', () => ({
 import knowledgebaseCommand from '../../discord/commands/knowledgebase';
 
 const createMockInteraction = () => {
+  const mockEditReply = jest.fn().mockResolvedValue(undefined);
+  mockEditReply.mock = { calls: [] };
+  
   return {
     deferReply: jest.fn().mockResolvedValue(undefined),
-    editReply: jest.fn().mockResolvedValue(undefined),
+    editReply: mockEditReply,
     deferred: true,
   } as unknown as CommandInteraction;
 };

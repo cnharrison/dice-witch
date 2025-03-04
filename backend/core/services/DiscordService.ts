@@ -8,7 +8,7 @@ import {
   ShardingManager
 } from "discord.js";
 import { DatabaseService } from "./DatabaseService";
-import { PERMISSION_ADMINISTRATOR, ROLE_DICE_WITCH_ADMIN, tabletopColor, eventColor } from "../constants";
+import { PERMISSION_ADMINISTRATOR, ROLE_DICE_WITCH_ADMIN } from "../constants";
 
 type UserCountResult = {
   totalGuilds: number;
@@ -17,11 +17,14 @@ type UserCountResult = {
 
 export class DiscordService {
   private static instance: DiscordService;
-  private client: Client;
-  private manager: ShardingManager;
-  private handledInteractions = new Set<string>();
+  private client!: Client;
+  private manager!: ShardingManager;
+  private handledInteractions = new Map<string, NodeJS.Timeout>();
+  private readonly MAX_INTERACTIONS = 10000;
 
-  private constructor() {}
+  private constructor() {
+    setInterval(() => this.cleanupOldInteractions(), 5 * 60 * 1000);
+  }
 
   public static getInstance(): DiscordService {
     if (!DiscordService.instance) {
@@ -150,15 +153,18 @@ export class DiscordService {
           ]);
 
           const totalGuilds = Array.isArray(guildSizes)
-            ? guildSizes.reduce((acc, count) => acc + (count as number || 0), 0)
+            ? guildSizes.reduce((acc: number, count) => acc + (Number(count) || 0), 0)
             : 0;
 
           const totalMembers = Array.isArray(memberCounts)
-            ? memberCounts.reduce((acc, count) => acc + (count as number || 0), 0)
+            ? memberCounts.reduce((acc: number, count) => acc + (Number(count) || 0), 0)
             : 0;
 
-          if (totalGuilds > 0 || totalMembers > 0) {
-            return { totalGuilds, totalMembers };
+          if (Number(totalGuilds) > 0 || Number(totalMembers) > 0) {
+            return { 
+              totalGuilds: Number(totalGuilds), 
+              totalMembers: Number(totalMembers) 
+            };
           }
         } catch (error) {
           console.error("Error with client.shard method:", error);
@@ -269,9 +275,34 @@ export class DiscordService {
     }
   }
 
+  private cleanupOldInteractions() {
+    if (this.handledInteractions.size > this.MAX_INTERACTIONS) {
+      const keysToDelete = [...this.handledInteractions.keys()].slice(0, this.handledInteractions.size - this.MAX_INTERACTIONS);
+      for (const key of keysToDelete) {
+        const timeout = this.handledInteractions.get(key);
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+        this.handledInteractions.delete(key);
+      }
+    }
+  }
+
   public trackInteraction(interactionId: string) {
-    this.handledInteractions.add(interactionId);
-    setTimeout(() => this.handledInteractions.delete(interactionId), 15_000);
+    const existingTimeout = this.handledInteractions.get(interactionId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+    
+    const timeoutId = setTimeout(() => {
+      this.handledInteractions.delete(interactionId);
+    }, 15_000);
+    
+    if (timeoutId.unref) {
+      timeoutId.unref();
+    }
+    
+    this.handledInteractions.set(interactionId, timeoutId);
   }
 
   public checkAndStorePermissions(interaction: CommandInteraction | Message) {
@@ -451,7 +482,7 @@ export class DiscordService {
             return { success: false };
           }
 
-          const deserializedOptions = {
+          const deserializedOptions: any = {
             content: context.messageOptions.content,
             embeds: context.messageOptions.embeds,
             files: context.messageOptions.files?.length ? context.messageOptions.files.map((file: any) => {
@@ -475,10 +506,10 @@ export class DiscordService {
             messageId: sentMessage.id,
             channelId: sentMessage.channelId
           };
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error sending message to Discord channel:', error);
-          if (error.code === 50013 || error.code === 160002 ||
-              (error.message && (
+          if (error?.code === 50013 || error?.code === 160002 ||
+              (error?.message && (
                 error.message.includes("Missing Permissions") ||
                 error.message.includes("Missing Access") ||
                 error.message.includes("Cannot reply without permission") ||
@@ -496,11 +527,11 @@ export class DiscordService {
       }, { context: { channelId, messageOptions: serializedMessageOptions } });
 
       return result;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in sendMessage:', error);
       
-      if (error.code === 50013 || error.code === 160002 ||
-          (error.message && (
+      if (error?.code === 50013 || error?.code === 160002 ||
+          (error?.message && (
             error.message.includes("Missing Permissions") ||
             error.message.includes("Missing Access") ||
             error.message.includes("Cannot reply without permission") ||
@@ -514,8 +545,8 @@ export class DiscordService {
         };
       }
       
-      if (error.code === 429 || 
-          (error.message && (
+      if (error?.code === 429 || 
+          (error?.message && (
             error.message.includes("rate limit") || 
             error.message.includes("You are being rate limited") ||
             error.message.toLowerCase().includes("ratelimit")
@@ -530,14 +561,14 @@ export class DiscordService {
             shardId: this.client.shard?.ids[0],
             timestamp: Date.now(),
             context: {
-              code: error.code || 429,
-              method: error.method,
-              path: error.path,
-              limit: error.limit,
-              timeout: error.timeout,
-              route: error.route,
-              channelId: options.channelId,
-              global: error.global
+              code: error?.code || 429,
+              method: error?.method,
+              path: error?.path,
+              limit: error?.limit,
+              timeout: error?.timeout,
+              route: error?.route,
+              channelId: channelId,
+              global: error?.global
             }
           });
         }

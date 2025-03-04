@@ -13,7 +13,7 @@ export class DiceServiceMock {
     return DiceServiceMock.instance;
   }
 
-  public async rollDice(args: string[], availableDice: any[]): Promise<any> {
+  public rollDice = jest.fn().mockImplementation(async (args: string[], availableDice: any[]) => {
     if (args.includes('invalid')) {
       return {
         diceArray: [],
@@ -165,23 +165,23 @@ export class DiceServiceMock {
       shouldHaveImage: true,
       files: [new AttachmentBuilder(Buffer.from('test'))]
     };
-  }
+  });
 
-  public async generateDiceAttachment(diceArray: any): Promise<any> {
+  public generateDiceAttachment = jest.fn().mockImplementation(async (diceArray: any) => {
     return {
       attachment: new AttachmentBuilder(Buffer.from('test')),
       canvas: {
         toBuffer: () => Buffer.from('test')
       }
     };
-  }
+  });
 
-  public async generateEmbedMessage(params: any): Promise<any> {
+  public generateEmbedMessage = jest.fn().mockImplementation(async (params: any) => {
     return {
       embeds: [new EmbedBuilder().setDescription('Test roll')],
       files: params.attachment ? [params.attachment] : [new AttachmentBuilder(Buffer.from('test'))]
     };
-  }
+  });
 
   public generateDiceRolledMessage = jest.fn().mockReturnValue('_...the dice clatter across the table..._');
 }
@@ -201,13 +201,13 @@ export class RollServiceMock {
     return RollServiceMock.instance;
   }
 
-  public checkDiceLimits(notation: string): { isOverMax: boolean; containsDice: boolean } {
+  public checkDiceLimits = jest.fn().mockImplementation((notation: string): { isOverMax: boolean; containsDice: boolean } => {
     const isOverMax = notation.includes('100d');
     const containsDice = /\d+d\d+/i.test(notation);
     return { isOverMax, containsDice };
-  }
+  });
 
-  public async rollDice(options: any): Promise<any> {
+  public rollDice = jest.fn().mockImplementation(async (options: any) => {
     const notation = Array.isArray(options.notation) ? options.notation : [options.notation];
     const isWeb = options.source === 'web';
     const isDiscord = options.source === 'discord' || options.interaction;
@@ -293,7 +293,7 @@ export class RollServiceMock {
       guildName: isWeb && options.channelId ? 'Test Guild' : undefined,
       source: isWeb ? 'web' : 'discord'
     };
-  }
+  });
 }
 
 export class DiscordServiceMock {

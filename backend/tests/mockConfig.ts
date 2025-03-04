@@ -20,47 +20,93 @@ export const mockConfig = {
   supportServerLink: 'https://mock-support.com'
 };
 
-// Mock services as needed for dice tests
 jest.mock('../core/services/DatabaseService', () => {
+  const mockUpdateOnCommand = jest.fn().mockResolvedValue(true);
+  mockUpdateOnCommand.mock = { calls: [] };
+  
+  const mockGetGuildSettings = jest.fn().mockResolvedValue({ skipDiceDelay: true });
+  mockGetGuildSettings.mock = { calls: [] };
+  
+  const mockHandleWebLogin = jest.fn().mockResolvedValue(undefined);
+  mockHandleWebLogin.mock = { calls: [] };
+  
+  const mockGetInstance = jest.fn().mockImplementation(() => ({
+    updateOnCommand: mockUpdateOnCommand,
+    getGuildSettings: mockGetGuildSettings,
+    handleWebLogin: mockHandleWebLogin
+  }));
+  mockGetInstance.mock = { calls: [] };
+  
   return {
     DatabaseService: {
-      getInstance: jest.fn().mockImplementation(() => ({
-        updateOnCommand: jest.fn().mockResolvedValue(true),
-        getGuildSettings: jest.fn().mockResolvedValue({ skipDiceDelay: true })
-      }))
+      getInstance: mockGetInstance
     }
   };
 });
 
 jest.mock('../core/services/DiscordService', () => {
+  const mockSendMessage = jest.fn().mockResolvedValue({ success: true, messageId: 'mock-message-id' });
+  mockSendMessage.mock = { calls: [] };
+  
+  const mockGetChannel = jest.fn().mockResolvedValue({ name: 'mock-channel', guild: { name: 'mock-guild' } });
+  mockGetChannel.mock = { calls: [] };
+  
+  const mockGetInstance = jest.fn().mockImplementation(() => ({
+    sendMessage: mockSendMessage,
+    getChannel: mockGetChannel
+  }));
+  mockGetInstance.mock = { calls: [] };
+  
   return {
     DiscordService: {
-      getInstance: jest.fn().mockImplementation(() => ({
-        sendMessage: jest.fn().mockResolvedValue({ success: true, messageId: 'mock-message-id' }),
-        getChannel: jest.fn().mockResolvedValue({ name: 'mock-channel', guild: { name: 'mock-guild' } })
-      }))
+      getInstance: mockGetInstance
     }
   };
 });
 
-// Allow these modules to be used directly in tests
 jest.mock('@napi-rs/canvas', () => {
+  const mockToBuffer = jest.fn().mockReturnValue(Buffer.from('mock-buffer'));
+  mockToBuffer.mock = { calls: [] };
+  
+  const mockDrawImage = jest.fn();
+  mockDrawImage.mock = { calls: [] };
+  
+  const mockGetImageData = jest.fn().mockReturnValue({ data: new Uint8ClampedArray() });
+  mockGetImageData.mock = { calls: [] };
+  
+  const mockGetContext = jest.fn().mockReturnValue({
+    drawImage: mockDrawImage,
+    getImageData: mockGetImageData
+  });
+  mockGetContext.mock = { calls: [] };
+  
+  const mockCreateCanvas = jest.fn().mockReturnValue({
+    getContext: mockGetContext,
+    toBuffer: mockToBuffer
+  });
+  mockCreateCanvas.mock = { calls: [] };
+  
+  const mockLoadImage = jest.fn().mockResolvedValue({});
+  mockLoadImage.mock = { calls: [] };
+  
   return {
-    createCanvas: jest.fn().mockReturnValue({
-      getContext: jest.fn().mockReturnValue({
-        drawImage: jest.fn(),
-        getImageData: jest.fn().mockReturnValue({ data: new Uint8ClampedArray() })
-      }),
-      toBuffer: jest.fn().mockReturnValue(Buffer.from('mock-buffer'))
-    }),
-    loadImage: jest.fn().mockResolvedValue({})
+    createCanvas: mockCreateCanvas,
+    loadImage: mockLoadImage
   };
 }, { virtual: true });
 
-// Mock sharp
 jest.mock('sharp', () => {
-  return jest.fn().mockImplementation(() => ({
-    webp: jest.fn().mockReturnThis(),
-    toBuffer: jest.fn().mockResolvedValue(Buffer.from('mock-buffer'))
+  const mockToBuffer = jest.fn().mockResolvedValue(Buffer.from('mock-buffer'));
+  mockToBuffer.mock = { calls: [] };
+  
+  const mockWebp = jest.fn().mockImplementation(function() { return this; });
+  mockWebp.mock = { calls: [] };
+  
+  const mockSharp = jest.fn().mockImplementation(() => ({
+    webp: mockWebp,
+    toBuffer: mockToBuffer
   }));
+  mockSharp.mock = { calls: [] };
+  
+  return mockSharp;
 }, { virtual: true });

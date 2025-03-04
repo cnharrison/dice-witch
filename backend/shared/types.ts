@@ -156,13 +156,13 @@ export interface LogEventProps {
   command?: Command;
   args?: string[];
   title?: string;
-  guild?: Guild;
+  guild?: Guild | { id: string; name: string } | null;
   resultMessage?: string;
   embedParam?: EmbedObject;
   interaction?: CommandInteraction | ButtonInteraction;
   error?: Error;
   canvasString?: string;
-  files?: AttachmentBuilder[];
+  files?: AttachmentBuilder[] | { name: string; attachment: any }[];
   sourceName?: string;
   username?: string;
   channelName?: string;
@@ -268,6 +268,7 @@ export interface SendDiceRolledMessageParams {
 export interface SendHelperMessageParams {
   interaction: CommandInteraction | ButtonInteraction;
   discord: Client;
+  logOutputChannel?: TextChannel;
 }
 
 export interface SendNeedPermissionMessageParams {
@@ -286,4 +287,15 @@ export interface GenerateEmbedMessageParams {
 export interface UserCount {
   totalGuilds?: number;
   totalMembers?: number;
+}
+
+export interface RollResult {
+  diceArray: DiceArray;
+  resultArray: Result[];
+  errors?: string[];
+  files?: AttachmentBuilder[];
+  base64Image?: string; // For web response
+  message?: string; // For web response
+  channelName?: string; // For web response
+  guildName?: string; // For web response
 }

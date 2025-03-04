@@ -1,7 +1,6 @@
 import {
   ChannelType,
   Client,
-  PermissionFlagsBits,
   resolveColor,
   TextChannel,
   ThreadChannel,
@@ -153,7 +152,7 @@ const sendLogEventMessage = async ({
       },
     };
 
-    return embedMap[eventType] || {
+    return embedMap[eventType as keyof typeof embedMap] || {
       color: infoColor,
       title: `${eventType}`,
       description: `${args || ""}`,
@@ -183,13 +182,13 @@ const sendLogEventMessage = async ({
           });
 
           discord.shard?.broadcastEval(
-            async (c, { channelId, embedData, files }) => {
+            async (c: Client, { channelId, embedData, files }: { channelId: string, embedData: any, files: any }) => {
               const channel = await c.channels.fetch(channelId).catch(() => null);
               if (!channel || !channel.isTextBased()) return false;
 
               try {
                 const deserializedFiles = files
-                  .map(file => {
+                  .map((file: any) => {
                     if (!file || !file.name || !file.attachment) return null;
                     try {
                       let base64String: string;
@@ -213,7 +212,7 @@ const sendLogEventMessage = async ({
                       return null;
                     }
                   })
-                  .filter((file): file is AttachmentBuilder => file !== null);
+                  .filter((file: any): file is AttachmentBuilder => file !== null);
 
                 if ('send' in channel) {
                   await channel.send({
@@ -223,10 +222,10 @@ const sendLogEventMessage = async ({
                   return true;
                 }
                 return false;
-              } catch (err) {
+              } catch (err: any) {
                 console.error('Error sending to log channel with files:', err);
 
-                if (err.code === 50013) {
+                if (err?.code === 50013) {
                   try {
                     if ('send' in channel) {
                       await channel.send({ embeds: [embedData] });
@@ -248,7 +247,7 @@ const sendLogEventMessage = async ({
               },
               shard: shardForChannel
             }
-          ).catch(error => {
+          ).catch((error: any) => {
             console.error('Error in broadcastEval with files:', error);
 
             discord.shard?.broadcastEval(
@@ -263,6 +262,7 @@ const sendLogEventMessage = async ({
                   }
                   return false;
                 } catch (err) {
+                  console.error('Error fetching channel or sending message:', err);
                   return false;
                 }
               },
@@ -272,7 +272,7 @@ const sendLogEventMessage = async ({
                   embedData: embed
                 }
               }
-            ).catch(finalError => {
+            ).catch((finalError: any) => {
               console.error('Final fallback failed:', finalError);
             });
           });
@@ -289,6 +289,7 @@ const sendLogEventMessage = async ({
                 }
                 return false;
               } catch (err) {
+                console.error('Error fetching channel or sending message:', err);
                 return false;
               }
             },
@@ -298,7 +299,7 @@ const sendLogEventMessage = async ({
                 embedData: embed
               }
             }
-          ).catch(error => {
+          ).catch((error: any) => {
             console.error('Error sending non-image log:', error);
           });
         }
@@ -356,10 +357,10 @@ const sendLogEventMessage = async ({
           } else {
             await channel.send({ embeds: [embed] });
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error sending to log channel in non-sharded mode:', error);
 
-          if (error.code === 50013 && files && files.length > 0) {
+          if (error?.code === 50013 && files && files.length > 0) {
             try {
               await channel.send({ embeds: [embed] });
             } catch (fallbackError) {
@@ -368,7 +369,7 @@ const sendLogEventMessage = async ({
           }
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Top-level error in log event message:", error);
     }
   } else if (manager) {
@@ -392,11 +393,11 @@ const sendLogEventMessage = async ({
         await manager.broadcastEval(
           async (c, { channelId, embedData, files }) => {
             const channel = c.channels.cache.get(channelId);
-            if (!channel || !channel.isTextBased()) return;
+            if (!channel || !channel.isTextBased()) return false;
 
             try {
               const deserializedFiles = files
-                .map(file => {
+                .map((file: any) => {
                   if (!file || !file.name || !file.attachment) return null;
                   try {
                     let base64String: string;
@@ -441,7 +442,7 @@ const sendLogEventMessage = async ({
         await manager.broadcastEval(
           async (c, { channelId, embedData }) => {
             const channel = c.channels.cache.get(channelId);
-            if (!channel || !channel.isTextBased()) return;
+            if (!channel || !channel.isTextBased()) return false;
 
             try {
               if ('send' in channel) {
@@ -457,7 +458,7 @@ const sendLogEventMessage = async ({
           { context: { channelId: logChannelId, embedData: embed } }
         );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error using manager to send log event message:", error);
     }
   } else {
