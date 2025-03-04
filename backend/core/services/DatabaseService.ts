@@ -23,7 +23,7 @@ export class DatabaseService {
     this.prisma = new PrismaClient();
     this.processedInteractions = new Set<string>();
   }
-  
+
 
   public static getInstance(): DatabaseService {
     if (!DatabaseService.instance) {
@@ -225,7 +225,7 @@ export class DatabaseService {
       } : null
     }));
   }
-  
+
   public async getGuildSettings(guildId: string): Promise<{
     skipDiceDelay: boolean;
   }> {
@@ -233,7 +233,7 @@ export class DatabaseService {
       const guild = await this.prisma.guilds.findUnique({
         where: { id: guildId }
       });
-      
+
       return {
         skipDiceDelay: guild?.skipDiceDelay ?? false
       };
@@ -244,7 +244,7 @@ export class DatabaseService {
       };
     }
   }
-  
+
   public async updateGuildPreferences(guildId: string, preferences: {
     skipDiceDelay?: boolean;
   }): Promise<void> {

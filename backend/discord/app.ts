@@ -242,7 +242,7 @@ const startServer = () => {
     discordService.setClient(discord);
 
     if (discord.user) {
-      discord.user.setActivity("/help");
+      discord.user.setActivity("/roll");
     }
 
     console.log(`Ready! Logged in as ${discord.user?.tag} in ${discord.guilds.cache.size} servers`);

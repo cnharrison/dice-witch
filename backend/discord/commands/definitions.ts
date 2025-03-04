@@ -51,18 +51,6 @@ export const globalSlashCommands: ApplicationCommandDataResolvable[] = [
     ],
   },
   {
-    name: "help",
-    description: "List all commands or info about a specific command",
-    options: [
-      {
-        name: "command",
-        description: "The command to get help for",
-        type: ApplicationCommandOptionType.String,
-        required: false,
-      }
-    ],
-  },
-  {
     name: "web",
     description: "Access Dice Witch's web interface",
   },

@@ -96,7 +96,7 @@ const setupEvents = async (discord: Client) => {
             });
           }
           
-          const ephemeral = ['help', 'prefs', 'web'].includes(commandName);
+          const ephemeral = ['prefs', 'web'].includes(commandName);
           await interaction.deferReply({ ephemeral }).catch((err: any) => {
             console.error(`Error deferring reply for ${commandName}:`, err);
             

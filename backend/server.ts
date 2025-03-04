@@ -5,7 +5,6 @@ import { ShardingManager } from "discord.js";
 import { CONFIG } from "./config";
 import { logger } from "./web/middleware/logger";
 import guilds from "./web/routes/guilds";
-import clerkWebhook from "./web/webhooks/clerk-webhook";
 import diceRouter from "./web/routes/dice";
 import statsRouter from "./web/routes/stats";
 import healthRouter from "./web/routes/health";
@@ -259,7 +258,6 @@ app.use("*", cors({
 
 app.route("/health", healthRouter);
 app.route("/api/guilds", guilds);
-app.route("/webhook", clerkWebhook);
 app.route("/api/dice", diceRouter);
 app.route("/api/stats", statsRouter);
 
