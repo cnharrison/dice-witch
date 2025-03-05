@@ -21,9 +21,9 @@ export async function generateIcon(
       attachment = await sharp(imageBuffer, { limitInputPixels: 256 * 256 })
         .webp({
           lossless: false,
-          quality: 90,
+          quality: 98,
           smartSubsample: true,
-          effort: 4
+          effort: 6
         })
         .toBuffer();
     } finally {
