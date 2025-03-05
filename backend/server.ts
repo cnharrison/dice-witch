@@ -10,6 +10,7 @@ import statsRouter from "./web/routes/stats";
 import healthRouter from "./web/routes/health";
 import { ChildProcess } from "child_process";
 import { DiscordService } from "./core/services/DiscordService";
+import { DatabaseService } from "./core/services/DatabaseService";
 
 function getShardStatusText(status: number): string {
   switch (status) {
@@ -286,7 +287,29 @@ const startServer = async () => {
 
 process.on('SIGTERM', async () => {
   console.log('Received SIGTERM. Gracefully shutting down...');
+  
+  const discordService = DiscordService.getInstance();
+  discordService.destroy();
+  
+  const databaseService = DatabaseService.getInstance();
+  await databaseService.destroy();
+  
   await manager.broadcastEval(c => c.destroy());
+  
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT. Gracefully shutting down...');
+  
+  const discordService = DiscordService.getInstance();
+  discordService.destroy();
+  
+  const databaseService = DatabaseService.getInstance();
+  await databaseService.destroy();
+  
+  await manager.broadcastEval(c => c.destroy());
+  
   process.exit(0);
 });
 

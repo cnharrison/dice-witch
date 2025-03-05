@@ -21,9 +21,24 @@ export class DiscordService {
   private manager!: ShardingManager;
   private handledInteractions = new Map<string, NodeJS.Timeout>();
   private readonly MAX_INTERACTIONS = 10000;
+  private cleanupInterval: NodeJS.Timeout;
 
   private constructor() {
-    setInterval(() => this.cleanupOldInteractions(), 5 * 60 * 1000);
+    this.cleanupInterval = setInterval(() => this.cleanupOldInteractions(), 5 * 60 * 1000);
+    if (this.cleanupInterval.unref) {
+      this.cleanupInterval.unref();
+    }
+  }
+  
+  public destroy() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    
+    this.handledInteractions.forEach((timeout) => {
+      clearTimeout(timeout);
+    });
+    this.handledInteractions.clear();
   }
 
   public static getInstance(): DiscordService {

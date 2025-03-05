@@ -37,6 +37,7 @@ logs/
 .DS_Store
 
 # Misc
+CLAUDE.md
 .cache/
 .temp/
 tmp/

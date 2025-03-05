@@ -18,10 +18,33 @@ export class DatabaseService {
   private static instance: DatabaseService | null = null;
   private readonly processedInteractions: Set<string>;
   private prisma: PrismaClient;
+  private cleanupInteractionsInterval: NodeJS.Timeout;
 
   private constructor() {
     this.prisma = new PrismaClient();
     this.processedInteractions = new Set<string>();
+    
+    this.cleanupInteractionsInterval = setInterval(() => this.cleanupOldInteractions(), 10 * 60 * 1000);
+    if (this.cleanupInteractionsInterval.unref) {
+      this.cleanupInteractionsInterval.unref();
+    }
+  }
+  
+  public async destroy() {
+    if (this.cleanupInteractionsInterval) {
+      clearInterval(this.cleanupInteractionsInterval);
+    }
+    
+    this.processedInteractions.clear();
+    
+    await this.prisma.$disconnect();
+  }
+  
+  private cleanupOldInteractions() {
+    if (this.processedInteractions.size > 1000) {
+      const toRemove = Array.from(this.processedInteractions).slice(0, this.processedInteractions.size - 1000);
+      toRemove.forEach(id => this.processedInteractions.delete(id));
+    }
   }
 
 
@@ -183,11 +206,6 @@ export class DatabaseService {
       });
 
       this.processedInteractions.add(interaction.id);
-
-      if (this.processedInteractions.size > 1000) {
-        const toRemove = Array.from(this.processedInteractions).slice(0, this.processedInteractions.size - 1000);
-        toRemove.forEach(id => this.processedInteractions.delete(id));
-      }
     } catch (err) {
       console.error("Error updating on command:", err);
     }

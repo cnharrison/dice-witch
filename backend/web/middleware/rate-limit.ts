@@ -38,7 +38,10 @@ const cleanupExpiredEntries = () => {
   }
 };
 
-setInterval(cleanupExpiredEntries, CLEANUP_INTERVAL);
+const cleanupInterval = setInterval(cleanupExpiredEntries, CLEANUP_INTERVAL);
+if (cleanupInterval.unref) {
+  cleanupInterval.unref();
+}
 
 export const rateLimit = (options: RateLimitOptions): MiddlewareHandler => {
   const { limit, windowMs } = options;

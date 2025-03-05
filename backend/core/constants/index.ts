@@ -13,7 +13,7 @@ const availableDice: DiceTypesToDisplay[] = [100, 20, 12, 10, 8, 6, 4];
 
 const maxImageDice: number = 50;
 const maxTextDice: number = 50;
-const maxDiceSides: number = 100;
+const maxDiceSides: number = 999;
 
 const MAX_DELAY_MS = 5000;
 
