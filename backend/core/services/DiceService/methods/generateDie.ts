@@ -92,9 +92,9 @@ export async function generateDie(
       attachment = await sharp(imageBuffer, { limitInputPixels: 1920 * 1080 })
         .webp({
           lossless: false,
-          quality: 98,
+          quality: 90,
           smartSubsample: true,
-          effort: 6
+          effort: 4
         })
         .toBuffer();
     } finally {
