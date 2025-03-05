@@ -210,7 +210,7 @@ const command = {
     } catch (error) {
       console.error('Error in roll command:', error);
       if (interaction?.isRepliable() && !interaction.replied) {
-        await interaction.reply({ content: "Something went wrong with your dice roll. Please try again.", ephemeral: true });
+        await interaction.reply({ content: "Something went wrong with your dice roll.", ephemeral: true });
       }
     }
   },
