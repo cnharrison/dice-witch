@@ -606,23 +606,40 @@ export class DiceService {
     diceOuterIndex: number
   ): Promise<void> {
     if (!iconArray) return;
-
-    await Promise.all(iconArray.map(async (icon, index) => {
-      try {
-        const iconToLoad = await this.generateIcon(icon);
-        const iconWidth = this.getIconWidth(index, diceIndex, iconSpacing);
-        const iconHeight = this.getIconHeight(diceOuterIndex);
-        const iconImage = await Canvas.loadImage(iconToLoad as Buffer);
-        ctx.drawImage(
-          iconImage,
-          iconWidth,
-          iconHeight,
-          this.defaultIconDimension,
-          this.defaultIconDimension
-        );
-      } catch (error) {
-      }
-    }));
+    
+    const iconPromises = [];
+    
+    for (let i = 0; i < iconArray.length; i++) {
+      const icon = iconArray[i];
+      iconPromises.push(
+        (async () => {
+          try {
+            const iconToLoad = await this.generateIcon(icon);
+            if (!iconToLoad) return;
+            
+            const iconWidth = this.getIconWidth(i, diceIndex, iconSpacing);
+            const iconHeight = this.getIconHeight(diceOuterIndex);
+            const iconImage = await Canvas.loadImage(iconToLoad);
+            
+            ctx.drawImage(
+              iconImage,
+              iconWidth,
+              iconHeight,
+              this.defaultIconDimension,
+              this.defaultIconDimension
+            );
+          } catch (error) {
+            // Failed to draw this icon, but continue with others
+          }
+        })()
+      );
+    }
+    
+    try {
+      await Promise.all(iconPromises);
+    } catch (error) {
+      // Continue even if some icons failed to draw
+    }
   }
 
   public async generateDiceAttachment(
@@ -637,6 +654,7 @@ export class DiceService {
       const ctx = canvas.getContext("2d");
 
       const drawDice = async (die: Die, index: number, outerIndex: number) => {
+        let toLoad = null;
         try {
           let patternFillObj;
 
@@ -646,7 +664,7 @@ export class DiceService {
             patternFillObj = generateLinearGradientFill(die.color.hex(), die.secondaryColor.hex());
           }
 
-          const toLoad = await this.generateDie({
+          toLoad = await this.generateDie({
             sides: die.sides,
             rolled: die.rolled,
             textColor: die.textColor.hex(),
@@ -682,11 +700,18 @@ export class DiceService {
         }
       };
 
-      await Promise.all(
-        paginatedArray.map((array, outerIndex) =>
-          Promise.all(array.map((die, index) => drawDice(die, index, outerIndex)))
-        )
-      );
+      const processChunks = async (chunks: Die[][], chunkSize: number = 5) => {
+        for (let i = 0; i < chunks.length; i += chunkSize) {
+          const chunkGroup = chunks.slice(i, i + chunkSize);
+          await Promise.all(
+            chunkGroup.flatMap((array, outerIndex) => 
+              array.map((die, index) => drawDice(die, index, outerIndex + i))
+            )
+          );
+        }
+      };
+      
+      await processChunks(paginatedArray);
 
       const canvasBuffer = canvas.toBuffer('image/webp');
 
@@ -703,7 +728,7 @@ export class DiceService {
         { name: "currentDice.webp" }
       );
       return { attachment, canvas };
-    } catch {
+    } catch (error) {
       return undefined;
     }
   }
@@ -765,9 +790,6 @@ export class DiceService {
     width?: string;
     height?: string;
   }): Promise<Buffer | undefined> {
-    // Since all dice have patterns/gradients, we'll just keep the SVG size fix
-    // and WebP optimization, without interfering with pattern randomization
-    
     if (!patternFill) {
       if (this.shouldUsePatternFill()) {
         patternFill = getRandomPatternFill(solidFill || '#ffffff', outlineColor || '#000000');
@@ -805,26 +827,31 @@ export class DiceService {
     }
 
     try {
+      const imageBuffer = Buffer.from(image);
       const needsResize = sides === 20; // Only resize d20
 
-      let sharpInstance = sharp(Buffer.from(image));
+      let options = {
+        lossless: true,
+        quality: 100,
+        smartSubsample: true
+      };
 
+      let attachment;
       if (needsResize) {
-        sharpInstance = sharpInstance.resize({
-          width: this.defaultDiceDimension,
-          height: this.defaultDiceDimension,
-          fit: 'contain',
-          background: { r: 0, g: 0, b: 0, alpha: 0 }
-        });
+        attachment = await sharp(imageBuffer, { limitInputPixels: 1920 * 1080 })
+          .resize({
+            width: this.defaultDiceDimension,
+            height: this.defaultDiceDimension,
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .webp(options)
+          .toBuffer();
+      } else {
+        attachment = await sharp(imageBuffer, { limitInputPixels: 1920 * 1080 })
+          .webp(options)
+          .toBuffer();
       }
-
-      const attachment = await sharpInstance
-        .webp({
-          lossless: true,
-          quality: 100,
-          smartSubsample: true
-        })
-        .toBuffer();
 
       return attachment;
     } catch (err) {
@@ -837,7 +864,8 @@ export class DiceService {
       const image = this.icons.get(iconType) || this.icons.get(null);
       if (!image) return undefined;
 
-      const attachment = await sharp(Buffer.from(image))
+      const imageBuffer = Buffer.from(image);
+      const attachment = await sharp(imageBuffer, { limitInputPixels: 256 * 256 })
         .webp({
           lossless: true,
           quality: 100,

@@ -20,7 +20,7 @@ export class DiscordService {
   private client!: Client;
   private manager!: ShardingManager;
   private handledInteractions = new Map<string, NodeJS.Timeout>();
-  private readonly MAX_INTERACTIONS = 10000;
+  private readonly MAX_INTERACTIONS = 1000;
   private cleanupInterval: NodeJS.Timeout;
 
   private constructor() {

@@ -41,8 +41,8 @@ export class DatabaseService {
   }
   
   private cleanupOldInteractions() {
-    if (this.processedInteractions.size > 1000) {
-      const toRemove = Array.from(this.processedInteractions).slice(0, this.processedInteractions.size - 1000);
+    if (this.processedInteractions.size > 250) {
+      const toRemove = Array.from(this.processedInteractions).slice(0, this.processedInteractions.size - 250);
       toRemove.forEach(id => this.processedInteractions.delete(id));
     }
   }
