@@ -1,13 +1,25 @@
 import { PatternFillObject } from "../../../../../shared/types";
 
-const generateUniqueId = (): string => {
-  return `pattern_${Math.random().toString(36).substring(2, 9)}`;
+type PatternCacheKey = string;
+
+const patternCache = new Map<PatternCacheKey, PatternFillObject>();
+const MAX_PATTERN_CACHE_SIZE = 100;
+
+const generatePatternId = (patternType: string, color1: string, color2: string): string => {
+  return `pattern_${patternType}_${color1.replace('#', '')}_${color2.replace('#', '')}`;
 };
 
 const patternFills: Record<string, (color1: string, color2: string) => PatternFillObject> = {
   checkerboard: (color1: string, color2: string) => {
-    const id = `checkerboard_${generateUniqueId()}`;
-    return {
+    const patternType = 'checkerboard';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="20" height="20" patternTransform="scale(0.75)">
         <rect width="10" height="10" fill="${color1}"/>
@@ -16,11 +28,21 @@ const patternFills: Record<string, (color1: string, color2: string) => PatternFi
         <rect x="10" y="10" width="10" height="10" fill="${color1}"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   dots: (color1: string, color2: string) => {
-    const id = `dots_${generateUniqueId()}`;
-    return {
+    const patternType = 'dots';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="20" height="20" patternTransform="scale(0.75)">
         <rect width="20" height="20" fill="${color1}"/>
@@ -28,11 +50,21 @@ const patternFills: Record<string, (color1: string, color2: string) => PatternFi
         <circle cx="15" cy="15" r="3" fill="${color2}"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   stripes: (color1: string, color2: string) => {
-    const id = `stripes_${generateUniqueId()}`;
-    return {
+    const patternType = 'stripes';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="20" height="20" patternTransform="scale(0.75)">
         <rect width="20" height="20" fill="${color1}"/>
@@ -41,44 +73,84 @@ const patternFills: Record<string, (color1: string, color2: string) => PatternFi
         <rect y="16" width="20" height="4" fill="${color2}"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   stars: (color1: string, color2: string) => {
-    const id = `stars_${generateUniqueId()}`;
-    return {
+    const patternType = 'stars';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="60" height="60" patternTransform="scale(0.25)">
         <rect width="60" height="60" fill="${color1}"/>
         <path d="M30 10L33.66 21.17L45.31 21.17L35.82 28.09L39.49 39.27L30 32.34L20.51 39.27L24.18 28.09L14.69 21.17L26.34 21.17L30 10Z" fill="${color2}"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   zigzag: (color1: string, color2: string) => {
-    const id = `zigzag_${generateUniqueId()}`;
-    return {
+    const patternType = 'zigzag';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="40" height="20" patternTransform="scale(0.5)">
         <rect width="40" height="20" fill="${color1}"/>
         <path d="M0 0L10 10L20 0L30 10L40 0L40 5L30 15L20 5L10 15L0 5Z" fill="${color2}"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   triangles: (color1: string, color2: string) => {
-    const id = `triangles_${generateUniqueId()}`;
-    return {
+    const patternType = 'triangles';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="30" height="30" patternTransform="scale(0.5)">
         <rect width="30" height="30" fill="${color1}"/>
         <polygon points="15,5 25,25 5,25" fill="${color2}"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   honeycomb: (color1: string, color2: string) => {
-    const id = `honeycomb_${generateUniqueId()}`;
-    return {
+    const patternType = 'honeycomb';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="30" height="52" patternTransform="scale(0.3)">
         <rect width="30" height="52" fill="${color1}"/>
@@ -87,11 +159,21 @@ const patternFills: Record<string, (color1: string, color2: string) => PatternFi
         <path d="M0,-13 L15,0 L30,-13" stroke="${color2}" stroke-width="2"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   circuit: (color1: string, color2: string) => {
-    const id = `circuit_${generateUniqueId()}`;
-    return {
+    const patternType = 'circuit';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="50" height="50" patternTransform="scale(0.3)">
         <rect width="50" height="50" fill="${color1}"/>
@@ -103,22 +185,42 @@ const patternFills: Record<string, (color1: string, color2: string) => PatternFi
         <circle cx="30" cy="10" r="2" fill="${color2}"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   crosshatch: (color1: string, color2: string) => {
-    const id = `crosshatch_${generateUniqueId()}`;
-    return {
+    const patternType = 'crosshatch';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="20" height="20" patternTransform="scale(0.75)">
         <rect width="20" height="20" fill="${color1}"/>
         <path d="M0 0L20 20M20 0L0 20" stroke="${color2}" stroke-width="2"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
   },
 
   swirl: (color1: string, color2: string) => {
-    const id = `swirl_${generateUniqueId()}`;
-    return {
+    const patternType = 'swirl';
+    const cacheKey = generatePatternId(patternType, color1, color2);
+    
+    if (patternCache.has(cacheKey)) {
+      return patternCache.get(cacheKey)!;
+    }
+    
+    const id = cacheKey;
+    const pattern = {
       name: id,
       string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="50" height="50" patternTransform="scale(0.3)">
         <rect width="50" height="50" fill="${color1}"/>
@@ -126,13 +228,28 @@ const patternFills: Record<string, (color1: string, color2: string) => PatternFi
           stroke="${color2}" stroke-width="2" fill="none"/>
       </pattern>`
     };
+    
+    patternCache.set(cacheKey, pattern);
+    return pattern;
+  }
+};
+
+const cleanupPatternCache = () => {
+  if (patternCache.size > MAX_PATTERN_CACHE_SIZE) {
+    const keysToDelete = Array.from(patternCache.keys()).slice(0, patternCache.size - MAX_PATTERN_CACHE_SIZE);
+    for (const key of keysToDelete) {
+      patternCache.delete(key);
+    }
   }
 };
 
 export const getRandomPatternFill = (color1: string, color2: string): PatternFillObject => {
   const patternKeys = Object.keys(patternFills);
   const randomPattern = patternKeys[Math.floor(Math.random() * patternKeys.length)];
-  return patternFills[randomPattern](color1, color2);
+  const result = patternFills[randomPattern](color1, color2);
+  
+  cleanupPatternCache();
+  return result;
 };
 
 export default patternFills;

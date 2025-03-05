@@ -52,9 +52,13 @@ import {
 export class DiceService {
   private static instance: DiceService;
   private icons: Map<Icon | null, string>;
+  private iconCache: Map<Icon | null, Buffer>;
+  private diceCache: Map<string, Buffer>;
   private defaultDiceDimension = 150;
   private defaultIconDimension = 37;
   private maxRowLength = 10;
+  private readonly MAX_ICON_CACHE_SIZE = 20;
+  private readonly MAX_DICE_CACHE_SIZE = 100;
 
   private constructor() {
     this.icons = new Map<Icon | null, string>([
@@ -69,6 +73,8 @@ export class DiceService {
       ["penetrate", arrowThroughIcon],
       ["blank", blankIcon],
     ]);
+    this.iconCache = new Map<Icon | null, Buffer>();
+    this.diceCache = new Map<string, Buffer>();
   }
 
   public static getInstance(): DiceService {
@@ -790,6 +796,19 @@ export class DiceService {
     width?: string;
     height?: string;
   }): Promise<Buffer | undefined> {
+    // Generate a cache key based on the dice properties
+    const textColorStr = textColor || 'default';
+    const outlineColorStr = outlineColor || 'default';
+    const solidFillStr = solidFill || 'default';
+    const patternFillName = patternFill?.name || 'default';
+    
+    const cacheKey = `dice_${sides}_${rolled}_${textColorStr}_${outlineColorStr}_${solidFillStr}_${patternFillName}`;
+    
+    // Check if we already have this dice in the cache
+    if (this.diceCache.has(cacheKey)) {
+      return this.diceCache.get(cacheKey);
+    }
+    
     if (!patternFill) {
       if (this.shouldUsePatternFill()) {
         patternFill = getRandomPatternFill(solidFill || '#ffffff', outlineColor || '#000000');
@@ -852,6 +871,10 @@ export class DiceService {
           .webp(options)
           .toBuffer();
       }
+      
+      // Store in cache before returning
+      this.diceCache.set(cacheKey, attachment);
+      this.cleanupDiceCache();
 
       return attachment;
     } catch (err) {
@@ -859,8 +882,30 @@ export class DiceService {
     }
   }
 
+  private cleanupIconCache() {
+    if (this.iconCache.size > this.MAX_ICON_CACHE_SIZE) {
+      const keysToDelete = Array.from(this.iconCache.keys()).slice(0, this.iconCache.size - this.MAX_ICON_CACHE_SIZE);
+      for (const key of keysToDelete) {
+        this.iconCache.delete(key);
+      }
+    }
+  }
+  
+  private cleanupDiceCache() {
+    if (this.diceCache.size > this.MAX_DICE_CACHE_SIZE) {
+      const keysToDelete = Array.from(this.diceCache.keys()).slice(0, this.diceCache.size - this.MAX_DICE_CACHE_SIZE);
+      for (const key of keysToDelete) {
+        this.diceCache.delete(key);
+      }
+    }
+  }
+
   public async generateIcon(iconType: Icon | null): Promise<Buffer | undefined> {
     try {
+      if (this.iconCache.has(iconType)) {
+        return this.iconCache.get(iconType);
+      }
+      
       const image = this.icons.get(iconType) || this.icons.get(null);
       if (!image) return undefined;
 
@@ -872,6 +917,10 @@ export class DiceService {
           smartSubsample: true
         })
         .toBuffer();
+        
+      this.iconCache.set(iconType, attachment);
+      this.cleanupIconCache();
+      
       return attachment;
     } catch (err) {
       return undefined;
