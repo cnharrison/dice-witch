@@ -15,16 +15,28 @@ export async function generateIcon(
     if (!image) return undefined;
 
     const imageBuffer = Buffer.from(image);
-    const attachment = await sharp(imageBuffer, { limitInputPixels: 256 * 256 })
-      .webp({
-        lossless: true,
-        quality: 100,
-        smartSubsample: true
-      })
-      .toBuffer();
-      
-    this.iconCache.set(iconType, attachment);
-    this.cleanupIconCache();
+    
+    let attachment;
+    try {
+      attachment = await sharp(imageBuffer, { limitInputPixels: 256 * 256 })
+        .webp({
+          lossless: false,
+          quality: 90,
+          smartSubsample: true,
+          effort: 4
+        })
+        .toBuffer();
+    } finally {
+    }
+    
+    if (this.iconCache.size < this.MAX_ICON_CACHE_SIZE) {
+      this.iconCache.set(iconType, attachment);
+    } else {
+      this.cleanupIconCache();
+      if (this.iconCache.size < this.MAX_ICON_CACHE_SIZE) {
+        this.iconCache.set(iconType, attachment);
+      }
+    }
     
     return attachment;
   } catch (err) {

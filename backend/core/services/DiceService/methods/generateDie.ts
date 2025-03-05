@@ -86,33 +86,28 @@ export async function generateDie(
 
   try {
     const imageBuffer = Buffer.from(image);
-    const needsResize = sides === 20; // Only resize d20
-
-    let options = {
-      lossless: true,
-      quality: 100,
-      smartSubsample: true
-    };
-
+    
     let attachment;
-    if (needsResize) {
+    try {
       attachment = await sharp(imageBuffer, { limitInputPixels: 1920 * 1080 })
-        .resize({
-          width: this.defaultDiceDimension,
-          height: this.defaultDiceDimension,
-          fit: 'contain',
-          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        .webp({
+          lossless: false,
+          quality: 90,
+          smartSubsample: true,
+          effort: 4
         })
-        .webp(options)
         .toBuffer();
-    } else {
-      attachment = await sharp(imageBuffer, { limitInputPixels: 1920 * 1080 })
-        .webp(options)
-        .toBuffer();
+    } finally {
     }
     
-    this.diceCache.set(cacheKey, attachment);
-    this.cleanupDiceCache();
+    if (this.diceCache.size < this.MAX_DICE_CACHE_SIZE) {
+      this.diceCache.set(cacheKey, attachment);
+    } else {
+      this.cleanupDiceCache();
+      if (this.diceCache.size < this.MAX_DICE_CACHE_SIZE) {
+        this.diceCache.set(cacheKey, attachment);
+      }
+    }
 
     return attachment;
   } catch (err) {

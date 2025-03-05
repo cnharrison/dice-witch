@@ -232,12 +232,12 @@ const generateD20 = ({
   solidFill,
   patternFill,
   borderWidth = "3px",
-  width = "600",
-  height = "600",
+  width = "150",
+  height = "150",
 }: GenerateDieProps) => {
   const faces = getFaces(result);
   return `
-  <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet">
+  <svg viewBox="0 0 600 600" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet">
     <defs>
  ${patternFill?.string ?? ""}
     <style>

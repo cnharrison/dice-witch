@@ -1,6 +1,5 @@
 import Canvas, { Canvas as CanvasType, Image } from "@napi-rs/canvas";
 import { AttachmentBuilder } from "discord.js";
-import sharp from "sharp";
 import { DiceArray, Die } from "../../../../shared/types";
 import { DiceService } from "..";
 import generateLinearGradientFill from "../../images/generateDice/fills/generateLinearGradientFill";
@@ -57,15 +56,18 @@ export async function generateDiceAttachment(
           if (shouldHaveIcon && die.iconSpacing) {
             await this.drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
           }
+          
         } catch (imgErr) {
           console.error("Image loading error:", imgErr);
         }
       } catch (err) {
         console.error("Die generation error:", err);
+      } finally {
+        toLoad = null;
       }
     };
 
-    const processChunks = async (chunks: Die[][], chunkSize: number = 5) => {
+    const processChunks = async (chunks: Die[][], chunkSize: number = 3) => {
       for (let i = 0; i < chunks.length; i += chunkSize) {
         const chunkGroup = chunks.slice(i, i + chunkSize);
         await Promise.all(
@@ -73,25 +75,22 @@ export async function generateDiceAttachment(
             array.map((die, index) => drawDice(die, index, outerIndex + i))
           )
         );
+        
+        if (i + chunkSize < chunks.length) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
       }
     };
     
     await processChunks(paginatedArray);
 
     const canvasBuffer = canvas.toBuffer('image/webp');
-
-    const processedBuffer = await sharp(canvasBuffer)
-      .webp({
-        lossless: false,
-        quality: 85,
-        smartSubsample: true
-      })
-      .toBuffer();
-
+    
     const attachment = new AttachmentBuilder(
-      processedBuffer,
+      canvasBuffer,
       { name: "currentDice.webp" }
     );
+    
     return { attachment, canvas };
   } catch (error) {
     return undefined;

@@ -16,11 +16,16 @@ export class DiscordService {
   protected client!: Client;
   protected manager!: ShardingManager;
   protected handledInteractions = new Map<string, NodeJS.Timeout>();
-  protected readonly MAX_INTERACTIONS = 1000;
+  protected readonly MAX_INTERACTIONS = 250;
   protected cleanupInterval: NodeJS.Timeout;
+  protected readonly CLEANUP_INTERVAL_MS = 2 * 60 * 1000;
+  protected readonly INTERACTION_TIMEOUT_MS = 10_000;
+  protected lastFullCleanupTime: number;
+  protected readonly FULL_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 
   private constructor() {
-    this.cleanupInterval = setInterval(() => this.cleanupOldInteractions(), 5 * 60 * 1000);
+    this.lastFullCleanupTime = Date.now();
+    this.cleanupInterval = setInterval(() => this.cleanupOldInteractions(), this.CLEANUP_INTERVAL_MS);
     if (this.cleanupInterval.unref) {
       this.cleanupInterval.unref();
     }
@@ -71,8 +76,18 @@ export class DiscordService {
   }
 
   protected cleanupOldInteractions() {
-    if (this.handledInteractions.size > this.MAX_INTERACTIONS) {
-      const keysToDelete = [...this.handledInteractions.keys()].slice(0, this.handledInteractions.size - this.MAX_INTERACTIONS);
+    const now = Date.now();
+    let forceFullCleanup = false;
+    
+    if (now - this.lastFullCleanupTime > this.FULL_CLEANUP_INTERVAL_MS) {
+      forceFullCleanup = true;
+      this.lastFullCleanupTime = now;
+    }
+    if (this.handledInteractions.size > this.MAX_INTERACTIONS || forceFullCleanup) {
+      const keysToDelete = forceFullCleanup 
+        ? [...this.handledInteractions.keys()]
+        : [...this.handledInteractions.keys()].slice(0, this.handledInteractions.size - this.MAX_INTERACTIONS);
+        
       for (const key of keysToDelete) {
         const timeout = this.handledInteractions.get(key);
         if (timeout) {
@@ -89,9 +104,13 @@ export class DiscordService {
       clearTimeout(existingTimeout);
     }
     
+    if (this.handledInteractions.size >= this.MAX_INTERACTIONS) {
+      this.cleanupOldInteractions();
+    }
+    
     const timeoutId = setTimeout(() => {
       this.handledInteractions.delete(interactionId);
-    }, 15_000);
+    }, this.INTERACTION_TIMEOUT_MS);
     
     if (timeoutId.unref) {
       timeoutId.unref();

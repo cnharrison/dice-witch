@@ -35,8 +35,11 @@ export class DiceService {
   protected defaultDiceDimension = 150;
   protected defaultIconDimension = 37;
   protected maxRowLength = 10;
-  protected readonly MAX_ICON_CACHE_SIZE = 20;
-  protected readonly MAX_DICE_CACHE_SIZE = 100;
+  protected readonly MAX_ICON_CACHE_SIZE = 10;
+  protected readonly MAX_DICE_CACHE_SIZE = 50;
+  protected lastCleanupTime: number;
+  protected cacheCleanupInterval: NodeJS.Timeout;
+  protected readonly CACHE_TTL_MS = 10 * 60 * 1000;
 
   private constructor() {
     this.icons = new Map<Icon | null, string>([
@@ -53,6 +56,15 @@ export class DiceService {
     ]);
     this.iconCache = new Map<Icon | null, Buffer>();
     this.diceCache = new Map<string, Buffer>();
+    this.lastCleanupTime = Date.now();
+    
+    this.cacheCleanupInterval = setInterval(() => {
+      this.cleanupAllCaches();
+    }, 2 * 60 * 1000);
+    
+    if (this.cacheCleanupInterval.unref) {
+      this.cacheCleanupInterval.unref();
+    }
   }
 
   public static getInstance(): DiceService {
@@ -60,6 +72,29 @@ export class DiceService {
       DiceService.instance = new DiceService();
     }
     return DiceService.instance;
+  }
+  
+  public destroy() {
+    if (this.cacheCleanupInterval) {
+      clearInterval(this.cacheCleanupInterval);
+    }
+    this.clearAllCaches();
+  }
+  
+  protected clearAllCaches() {
+    this.iconCache.clear();
+    this.diceCache.clear();
+  }
+  
+  protected cleanupAllCaches() {
+    this.cleanupIconCache();
+    this.cleanupDiceCache();
+    
+    const now = Date.now();
+    if (now - this.lastCleanupTime > this.CACHE_TTL_MS) {
+      this.clearAllCaches();
+      this.lastCleanupTime = now;
+    }
   }
 
   protected cleanupIconCache() {
