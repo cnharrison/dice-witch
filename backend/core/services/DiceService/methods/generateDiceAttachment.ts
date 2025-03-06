@@ -91,6 +91,14 @@ export async function generateDiceAttachment(
       { name: "currentDice.webp" }
     );
     
+    try {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      canvas.width = 1;
+      canvas.height = 1;
+    } catch (err) {
+    }
+    
     return { attachment, canvas };
   } catch (error) {
     return undefined;

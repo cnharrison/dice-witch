@@ -3,7 +3,7 @@ import { PatternFillObject } from "../../../../../shared/types";
 type PatternCacheKey = string;
 
 const patternCache = new Map<PatternCacheKey, PatternFillObject>();
-const MAX_PATTERN_CACHE_SIZE = 100;
+const MAX_PATTERN_CACHE_SIZE = 50;
 
 const generatePatternId = (patternType: string, color1: string, color2: string): string => {
   return `pattern_${patternType}_${color1.replace('#', '')}_${color2.replace('#', '')}`;
@@ -240,6 +240,10 @@ const cleanupPatternCache = () => {
     for (const key of keysToDelete) {
       patternCache.delete(key);
     }
+  }
+  
+  if (Math.random() < 0.05) {
+    patternCache.clear();
   }
 };
 

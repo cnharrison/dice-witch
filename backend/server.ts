@@ -12,6 +12,65 @@ import { ChildProcess } from "child_process";
 import { DiscordService } from "./core/services/DiscordService";
 import { DatabaseService } from "./core/services/DatabaseService";
 
+class ResourceRegistry {
+  private static instance: ResourceRegistry;
+  private timers: Set<NodeJS.Timeout> = new Set();
+  private intervals: Set<NodeJS.Timeout> = new Set();
+  private shardListeners: Map<number, Set<{ event: string, handler: (...args: any[]) => void }>> = new Map();
+
+  private constructor() {}
+
+  public static getInstance(): ResourceRegistry {
+    if (!ResourceRegistry.instance) {
+      ResourceRegistry.instance = new ResourceRegistry();
+    }
+    return ResourceRegistry.instance;
+  }
+
+  public registerTimeout(timeout: NodeJS.Timeout): NodeJS.Timeout {
+    this.timers.add(timeout);
+    return timeout;
+  }
+
+  public clearTimeout(timeout: NodeJS.Timeout): void {
+    clearTimeout(timeout);
+    this.timers.delete(timeout);
+  }
+
+  public registerInterval(interval: NodeJS.Timeout): NodeJS.Timeout {
+    this.intervals.add(interval);
+    return interval;
+  }
+
+  public clearInterval(interval: NodeJS.Timeout): void {
+    clearInterval(interval);
+    this.intervals.delete(interval);
+  }
+
+  public registerShardListener(shardId: number, event: string, handler: (...args: any[]) => void): void {
+    if (!this.shardListeners.has(shardId)) {
+      this.shardListeners.set(shardId, new Set());
+    }
+    this.shardListeners.get(shardId)!.add({ event, handler });
+  }
+
+  public clearShardListeners(shardId: number): void {
+    this.shardListeners.delete(shardId);
+  }
+
+  public clearAll(): void {
+    this.timers.forEach(timer => clearTimeout(timer));
+    this.timers.clear();
+
+    this.intervals.forEach(interval => clearInterval(interval));
+    this.intervals.clear();
+
+    this.shardListeners.clear();
+  }
+}
+
+export const resourceRegistry = ResourceRegistry.getInstance();
+
 function getShardStatusText(status: number): string {
   switch (status) {
     case 0: return "Connecting";
@@ -46,24 +105,30 @@ const initializeDiscordService = async () => {
   manager.on("shardCreate", (shard) => {
     console.log(`[Manager] Launched shard ${shard.id}`);
 
-    shard.on("error", (error) => {
+    const registerShardEvent = (event: string, handler: (...args: any[]) => void) => {
+      shard.on(event as any, handler);
+      resourceRegistry.registerShardListener(shard.id, event, handler);
+    };
+
+    registerShardEvent("error", (error) => {
       console.error(`[Manager] Shard ${shard.id} Error:`, error);
     });
 
-    shard.on("death", (process) => {
+    registerShardEvent("death", (process) => {
       const exitCode = (process as ChildProcess).exitCode ?? 'unknown';
       console.error(`[Manager] Shard ${shard.id} died with exit code: ${exitCode}`);
+      resourceRegistry.clearShardListeners(shard.id);
     });
 
-    shard.on("disconnect", () => {
+    registerShardEvent("disconnect", () => {
       console.log(`[Manager] Shard ${shard.id} disconnected, attempting to reconnect...`);
     });
 
-    shard.on("reconnecting", () => {
+    registerShardEvent("reconnecting", () => {
       console.log(`[Manager] Shard ${shard.id} reconnecting...`);
     });
 
-    shard.on("ready", () => {
+    registerShardEvent("ready", () => {
       console.log(`[Manager] Shard ${shard.id} ready and operational`);
     });
 
@@ -285,32 +350,49 @@ const startServer = async () => {
   }
 };
 
-process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM. Gracefully shutting down...');
-  
-  const discordService = DiscordService.getInstance();
-  discordService.destroy();
-  
-  const databaseService = DatabaseService.getInstance();
-  await databaseService.destroy();
-  
-  await manager.broadcastEval(c => c.destroy());
-  
-  process.exit(0);
-});
+const gracefulShutdown = async (signal: string) => {
+  console.log(`Received ${signal}. Gracefully shutting down...`);
 
-process.on('SIGINT', async () => {
-  console.log('Received SIGINT. Gracefully shutting down...');
-  
-  const discordService = DiscordService.getInstance();
-  discordService.destroy();
-  
-  const databaseService = DatabaseService.getInstance();
-  await databaseService.destroy();
-  
-  await manager.broadcastEval(c => c.destroy());
-  
-  process.exit(0);
-});
+  try {
+    resourceRegistry.clearAll();
+    console.log(`Cleared all registered timeouts, intervals, and event listeners`);
+
+    if (global.gc) {
+      try {
+        global.gc();
+      } catch (e) {
+      }
+    }
+
+    const discordService = DiscordService.getInstance();
+    discordService.destroy();
+
+    const databaseService = DatabaseService.getInstance();
+    await databaseService.destroy();
+
+    manager.shards.forEach(shard => {
+      shard.removeAllListeners();
+    });
+
+    await manager.broadcastEval(c => {
+      if (global.gc) {
+        try {
+          global.gc();
+        } catch (e) {
+        }
+      }
+      return c.destroy();
+    });
+
+    console.log(`${signal} cleanup completed successfully`);
+  } catch (err) {
+    console.error(`Error during ${signal} shutdown:`, err);
+  } finally {
+    process.exit(0);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 startServer();

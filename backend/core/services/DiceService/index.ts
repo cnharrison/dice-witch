@@ -35,11 +35,11 @@ export class DiceService {
   protected defaultDiceDimension = 150;
   protected defaultIconDimension = 37;
   protected maxRowLength = 10;
-  protected readonly MAX_ICON_CACHE_SIZE = 10;
-  protected readonly MAX_DICE_CACHE_SIZE = 50;
+  protected readonly MAX_ICON_CACHE_SIZE = 8;
+  protected readonly MAX_DICE_CACHE_SIZE = 30;
   protected lastCleanupTime: number;
   protected cacheCleanupInterval: NodeJS.Timeout;
-  protected readonly CACHE_TTL_MS = 10 * 60 * 1000;
+  protected readonly CACHE_TTL_MS = 5 * 60 * 1000;
 
   private constructor() {
     this.icons = new Map<Icon | null, string>([
@@ -60,7 +60,14 @@ export class DiceService {
     
     this.cacheCleanupInterval = setInterval(() => {
       this.cleanupAllCaches();
-    }, 2 * 60 * 1000);
+      
+      if (global.gc) {
+        try {
+          global.gc();
+        } catch (e) {
+        }
+      }
+    }, 60 * 1000);
     
     if (this.cacheCleanupInterval.unref) {
       this.cacheCleanupInterval.unref();

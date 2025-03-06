@@ -1,7 +1,7 @@
 import { PatternFillObject } from "../../../../../shared/types";
 
 const gradientCache = new Map<string, PatternFillObject>();
-const MAX_GRADIENT_CACHE_SIZE = 50;
+const MAX_GRADIENT_CACHE_SIZE = 25;
 
 const generateGradientId = (color1: string, color2: string): string => {
   return `linearGradient_${color1.replace('#', '')}_${color2.replace('#', '')}`;
@@ -13,6 +13,10 @@ const cleanupGradientCache = () => {
     for (const key of keysToDelete) {
       gradientCache.delete(key);
     }
+  }
+  
+  if (Math.random() < 0.05) {
+    gradientCache.clear();
   }
 };
 

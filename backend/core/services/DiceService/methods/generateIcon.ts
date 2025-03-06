@@ -10,25 +10,31 @@ export async function generateIcon(
     if (this.iconCache.has(iconType)) {
       return this.iconCache.get(iconType);
     }
-    
+
     const image = this.icons.get(iconType) || this.icons.get(null);
     if (!image) return undefined;
 
-    const imageBuffer = Buffer.from(image);
-    
+    let imageBuffer = Buffer.from(image);
+
     let attachment;
     try {
-      attachment = await sharp(imageBuffer, { limitInputPixels: 256 * 256 })
+      const sharpInstance = sharp(imageBuffer, { limitInputPixels: 256 * 256 })
         .webp({
           lossless: false,
-          quality: 90,
+          quality: 85,
           smartSubsample: true,
-          effort: 4
-        })
-        .toBuffer();
+          effort: 3
+        });
+
+      attachment = await sharpInstance.toBuffer();
+
+      if (typeof sharpInstance.removeAllListeners === 'function') {
+        sharpInstance.removeAllListeners();
+      }
     } finally {
+      imageBuffer = Buffer.alloc(0);
     }
-    
+
     if (this.iconCache.size < this.MAX_ICON_CACHE_SIZE) {
       this.iconCache.set(iconType, attachment);
     } else {
@@ -37,7 +43,7 @@ export async function generateIcon(
         this.iconCache.set(iconType, attachment);
       }
     }
-    
+
     return attachment;
   } catch (err) {
     return undefined;

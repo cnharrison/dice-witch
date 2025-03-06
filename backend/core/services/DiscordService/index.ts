@@ -25,10 +25,23 @@ export class DiscordService {
 
   private constructor() {
     this.lastFullCleanupTime = Date.now();
+    
+    this.handledInteractions = new Map<string, NodeJS.Timeout>();
+    
     this.cleanupInterval = setInterval(() => this.cleanupOldInteractions(), this.CLEANUP_INTERVAL_MS);
+    
     if (this.cleanupInterval.unref) {
       this.cleanupInterval.unref();
     }
+    
+    setInterval(() => {
+      if (global.gc) {
+        try {
+          global.gc();
+        } catch (e) {
+        }
+      }
+    }, 5 * 60 * 1000);
   }
   
   public destroy() {

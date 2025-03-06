@@ -42,12 +42,12 @@ export async function generateDie(
   const outlineColorStr = outlineColor || 'default';
   const solidFillStr = solidFill || 'default';
   const patternFillName = patternFill?.name || 'default';
-  
+
   const cacheKey = `dice_${sides}_${rolled}_${textColorStr}_${outlineColorStr}_${solidFillStr}_${patternFillName}`;
   if (this.diceCache.has(cacheKey)) {
     return this.diceCache.get(cacheKey);
   }
-  
+
   if (!patternFill) {
     if (this.shouldUsePatternFill()) {
       patternFill = getRandomPatternFill(solidFill || '#ffffff', outlineColor || '#000000');
@@ -85,21 +85,27 @@ export async function generateDie(
   }
 
   try {
-    const imageBuffer = Buffer.from(image);
-    
+    let imageBuffer = Buffer.from(image);
+
     let attachment;
     try {
-      attachment = await sharp(imageBuffer, { limitInputPixels: 1920 * 1080 })
+      const sharpInstance = sharp(imageBuffer, { limitInputPixels: 1920 * 1080 })
         .webp({
           lossless: false,
-          quality: 90,
+          quality: 85,
           smartSubsample: true,
-          effort: 4
-        })
-        .toBuffer();
+          effort: 3
+        });
+
+      attachment = await sharpInstance.toBuffer();
+
+      if (typeof sharpInstance.removeAllListeners === 'function') {
+        sharpInstance.removeAllListeners();
+      }
     } finally {
+      imageBuffer = Buffer.alloc(0);
     }
-    
+
     if (this.diceCache.size < this.MAX_DICE_CACHE_SIZE) {
       this.diceCache.set(cacheKey, attachment);
     } else {
