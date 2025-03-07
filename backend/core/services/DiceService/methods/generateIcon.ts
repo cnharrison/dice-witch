@@ -7,14 +7,11 @@ export async function generateIcon(
   iconType: Icon | null
 ): Promise<Buffer | undefined> {
   try {
-    if (this.iconCache.has(iconType)) {
-      return this.iconCache.get(iconType);
-    }
-
     const image = this.icons.get(iconType) || this.icons.get(null);
     if (!image) return undefined;
 
-    let imageBuffer = Buffer.from(image);
+    const svgWithXmlDeclaration = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>${image}`;
+    let imageBuffer = Buffer.from(svgWithXmlDeclaration);
 
     let attachment;
     try {
@@ -35,17 +32,9 @@ export async function generateIcon(
       imageBuffer = Buffer.alloc(0);
     }
 
-    if (this.iconCache.size < this.MAX_ICON_CACHE_SIZE) {
-      this.iconCache.set(iconType, attachment);
-    } else {
-      this.cleanupIconCache();
-      if (this.iconCache.size < this.MAX_ICON_CACHE_SIZE) {
-        this.iconCache.set(iconType, attachment);
-      }
-    }
-
     return attachment;
   } catch (err) {
+    console.error(`Error generating icon for: ${iconType}`, err);
     return undefined;
   }
 }

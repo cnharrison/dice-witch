@@ -327,8 +327,27 @@ app.route("/api/guilds", guilds);
 app.route("/api/dice", diceRouter);
 app.route("/api/stats", statsRouter);
 
+const checkDatabaseConnection = async () => {
+  const databaseService = DatabaseService.getInstance();
+  try {
+    console.log(`[Database] Checking database connection...`);
+    await databaseService.testConnection();
+    console.log(`[Database] Connection successful`);
+    return true;
+  } catch (error) {
+    console.error(`[Database] Connection failed:`, error);
+    return false;
+  }
+};
+
 const startServer = async () => {
   try {
+    const dbConnected = await checkDatabaseConnection();
+    if (!dbConnected) {
+      console.error(`[Server] Database connection failed. Exiting.`);
+      process.exit(1);
+    }
+
     await manager.spawn({
       delay: 7500,
       timeout: -1,
@@ -357,13 +376,6 @@ const gracefulShutdown = async (signal: string) => {
     resourceRegistry.clearAll();
     console.log(`Cleared all registered timeouts, intervals, and event listeners`);
 
-    if (global.gc) {
-      try {
-        global.gc();
-      } catch (e) {
-      }
-    }
-
     const discordService = DiscordService.getInstance();
     discordService.destroy();
 
@@ -375,12 +387,6 @@ const gracefulShutdown = async (signal: string) => {
     });
 
     await manager.broadcastEval(c => {
-      if (global.gc) {
-        try {
-          global.gc();
-        } catch (e) {
-        }
-      }
       return c.destroy();
     });
 

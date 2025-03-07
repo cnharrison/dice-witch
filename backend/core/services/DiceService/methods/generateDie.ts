@@ -38,16 +38,6 @@ export async function generateDie(
     height?: string;
   }
 ): Promise<Buffer | undefined> {
-  const textColorStr = textColor || 'default';
-  const outlineColorStr = outlineColor || 'default';
-  const solidFillStr = solidFill || 'default';
-  const patternFillName = patternFill?.name || 'default';
-
-  const cacheKey = `dice_${sides}_${rolled}_${textColorStr}_${outlineColorStr}_${solidFillStr}_${patternFillName}`;
-  if (this.diceCache.has(cacheKey)) {
-    return this.diceCache.get(cacheKey);
-  }
-
   if (!patternFill) {
     if (this.shouldUsePatternFill()) {
       patternFill = getRandomPatternFill(solidFill || '#ffffff', outlineColor || '#000000');
@@ -104,15 +94,6 @@ export async function generateDie(
       }
     } finally {
       imageBuffer = Buffer.alloc(0);
-    }
-
-    if (this.diceCache.size < this.MAX_DICE_CACHE_SIZE) {
-      this.diceCache.set(cacheKey, attachment);
-    } else {
-      this.cleanupDiceCache();
-      if (this.diceCache.size < this.MAX_DICE_CACHE_SIZE) {
-        this.diceCache.set(cacheKey, attachment);
-      }
     }
 
     return attachment;

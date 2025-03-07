@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { cache } from 'hono/cache';
 import { rateLimit } from '../middleware/rate-limit';
 import { DiscordService } from '../../core/services/DiscordService';
 
@@ -10,10 +9,6 @@ router.get('/public',
   rateLimit({
     limit: 5,
     windowMs: 60 * 1000,
-  }),
-  cache({
-    cacheName: 'dice-witch-stats',
-    cacheControl: 'max-age=300',
   }),
   async (c) => {
     try {

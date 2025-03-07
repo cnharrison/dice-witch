@@ -30,16 +30,9 @@ import { generateDiceRolledMessage } from "./methods/generateDiceRolledMessage";
 export class DiceService {
   private static instance: DiceService;
   protected icons: Map<Icon | null, string>;
-  protected iconCache: Map<Icon | null, Buffer>;
-  protected diceCache: Map<string, Buffer>;
   protected defaultDiceDimension = 150;
   protected defaultIconDimension = 37;
   protected maxRowLength = 10;
-  protected readonly MAX_ICON_CACHE_SIZE = 8;
-  protected readonly MAX_DICE_CACHE_SIZE = 30;
-  protected lastCleanupTime: number;
-  protected cacheCleanupInterval: NodeJS.Timeout;
-  protected readonly CACHE_TTL_MS = 5 * 60 * 1000;
 
   private constructor() {
     this.icons = new Map<Icon | null, string>([
@@ -54,24 +47,6 @@ export class DiceService {
       ["penetrate", arrowThroughIcon],
       ["blank", blankIcon],
     ]);
-    this.iconCache = new Map<Icon | null, Buffer>();
-    this.diceCache = new Map<string, Buffer>();
-    this.lastCleanupTime = Date.now();
-    
-    this.cacheCleanupInterval = setInterval(() => {
-      this.cleanupAllCaches();
-      
-      if (global.gc) {
-        try {
-          global.gc();
-        } catch (e) {
-        }
-      }
-    }, 60 * 1000);
-    
-    if (this.cacheCleanupInterval.unref) {
-      this.cacheCleanupInterval.unref();
-    }
   }
 
   public static getInstance(): DiceService {
@@ -82,44 +57,6 @@ export class DiceService {
   }
   
   public destroy() {
-    if (this.cacheCleanupInterval) {
-      clearInterval(this.cacheCleanupInterval);
-    }
-    this.clearAllCaches();
-  }
-  
-  protected clearAllCaches() {
-    this.iconCache.clear();
-    this.diceCache.clear();
-  }
-  
-  protected cleanupAllCaches() {
-    this.cleanupIconCache();
-    this.cleanupDiceCache();
-    
-    const now = Date.now();
-    if (now - this.lastCleanupTime > this.CACHE_TTL_MS) {
-      this.clearAllCaches();
-      this.lastCleanupTime = now;
-    }
-  }
-
-  protected cleanupIconCache() {
-    if (this.iconCache.size > this.MAX_ICON_CACHE_SIZE) {
-      const keysToDelete = Array.from(this.iconCache.keys()).slice(0, this.iconCache.size - this.MAX_ICON_CACHE_SIZE);
-      for (const key of keysToDelete) {
-        this.iconCache.delete(key);
-      }
-    }
-  }
-
-  protected cleanupDiceCache() {
-    if (this.diceCache.size > this.MAX_DICE_CACHE_SIZE) {
-      const keysToDelete = Array.from(this.diceCache.keys()).slice(0, this.diceCache.size - this.MAX_DICE_CACHE_SIZE);
-      for (const key of keysToDelete) {
-        this.diceCache.delete(key);
-      }
-    }
   }
 
   public getSecondaryColorFromColor(color: chroma.Color) {
@@ -141,7 +78,8 @@ export class DiceService {
       switch (item) {
         case "drop": return "trashcan";
         case "explode": return "explosion";
-        case "re-roll": return "recycle";
+        case "re-roll": 
+        case "reroll": return "recycle";
         case "max": return "chevronDown";
         case "min": return "chevronUp";
         case "target-success": return "target-success";

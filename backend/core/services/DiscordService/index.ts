@@ -34,14 +34,6 @@ export class DiscordService {
       this.cleanupInterval.unref();
     }
     
-    setInterval(() => {
-      if (global.gc) {
-        try {
-          global.gc();
-        } catch (e) {
-        }
-      }
-    }, 5 * 60 * 1000);
   }
   
   public destroy() {

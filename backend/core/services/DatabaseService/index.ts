@@ -52,6 +52,15 @@ export class DatabaseService {
     }
     return DatabaseService.instance;
   }
+  
+  public async testConnection(): Promise<boolean> {
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      return true;
+    } catch (error) {
+      throw new Error(`Database connection failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   public mapGuildToGuildType(guild: Guild): GuildType {
     return {
