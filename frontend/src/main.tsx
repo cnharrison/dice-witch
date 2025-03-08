@@ -1,14 +1,13 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter as Router } from "react-router-dom";
-import { ClerkProvider } from '@clerk/clerk-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from "@/components/theme-provider"
+import { AuthProvider } from './lib/AuthProvider';
 import './index.css'
 import App from './App'
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-console.log('[Clerk] Environment:', {
+console.log('[Auth] Environment:', {
   NODE_ENV: import.meta.env.MODE,
   basePath: window.location.origin,
   currentPath: window.location.pathname
@@ -45,41 +44,16 @@ const queryClient = new QueryClient({
   },
 });
 
-if (!clerkPubKey) {
-  throw new Error("Missing Clerk Publishable Key");
-}
-
 const root = createRoot(document.getElementById('root')!);
 
 root.render(
   <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
     <QueryClientProvider client={queryClient}>
-      <ClerkProvider 
-        publishableKey={clerkPubKey}
-        navigate={(to) => {
-          console.log('[Clerk] Navigate called with:', to);
-          window.location.href = to;
-        }}
-        appearance={{
-          layout: {
-            socialButtonsVariant: 'iconButton'
-          }
-        }}
-        tokenCache={{ type: "cookie" }}
-        signInUrl="/"
-        onSignIn={(session) => {
-          console.log('[Clerk] Sign in successful:', !!session);
-          if (session) {
-            console.log('[Clerk] Session ID:', session.id);
-            console.log('[Clerk] Session status:', session.status);
-            console.log('[Clerk] User ID:', session.userId);
-          }
-        }}
-      >
+      <AuthProvider>
         <Router>
           <App />
         </Router>
-      </ClerkProvider>
+      </AuthProvider>
     </QueryClientProvider>
   </ThemeProvider>
 );

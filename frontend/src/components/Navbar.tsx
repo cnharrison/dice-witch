@@ -1,4 +1,4 @@
-import { useClerk, useUser } from "@clerk/clerk-react";
+import { useUser, useAuth } from "@/lib/AuthProvider";
 import { Button } from "./ui/button";
 import { Link } from "react-router-dom";
 import { LogOut, Settings, Box, Menu } from "lucide-react";
@@ -7,7 +7,7 @@ import { ThemeToggle } from "./ui/theme-toggle";
 import { MobileMenu } from "./MobileMenu";
 
 export function Navbar() {
-  const { signOut } = useClerk();
+  const { signOut } = useAuth();
   const { user } = useUser();
 
   const getInitials = (name: string) => {
@@ -35,20 +35,20 @@ export function Navbar() {
 
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <MobileMenu username={user?.username || user?.fullName || "User"} />
+          <MobileMenu username={user?.name || "User"} />
         </div>
       </div>
 
       <div className="hidden sm:flex items-center px-3 py-2">
         <div className="flex items-center gap-3">
           <Avatar>
-            <AvatarImage src={user?.imageUrl} alt={user?.username || user?.fullName || "User"} />
+            <AvatarImage src={user?.image} alt={user?.name || "User"} />
             <AvatarFallback>
-              {user?.fullName ? getInitials(user.fullName) : (user?.username?.[0] || "U")}
+              {user?.name ? getInitials(user.name) : (user?.name?.[0] || "U")}
             </AvatarFallback>
           </Avatar>
           <span className="font-medium">
-            {user?.username || user?.fullName || "User"}
+            {user?.name || "User"}
           </span>
         </div>
         <div className="ml-auto flex items-center space-x-4">

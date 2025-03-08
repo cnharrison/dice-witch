@@ -6,27 +6,26 @@ import { LoadingMedia } from '@/components/LoadingMedia';
 import { useDiceValidation } from '@/hooks/useDiceValidation';
 import { Guild } from "@/types/guild";
 import { RollResponse } from '@/types/dice';
-import { useUser } from '@clerk/clerk-react';
+import { useUser } from '@/lib/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { LoaderIcon } from "lucide-react";
 import * as React from 'react';
 import { Input as InputComponent } from '@/components/ui/input';
 import { Button as ButtonComponent } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { Navigate } from 'react-router-dom';
 import { useGuild } from '@/context/GuildContext';
 import { useToast } from '@/hooks/use-toast';
 import { customFetch } from '../main';
 
 export const Home = () => {
   const { user } = useUser();
-  const discordAccount = user?.externalAccounts.find(
-    account => account.provider === 'discord'
-  );
-  const { 
-    selectedGuildId: selectedGuild, 
-    selectedChannelId: selectedChannel, 
+  const discordAccount = user;
+  const {
+    selectedGuildId: selectedGuild,
+    selectedChannelId: selectedChannel,
     setSelectedGuildId: setSelectedGuild,
-    setSelectedChannelId: setSelectedChannel 
+    setSelectedChannelId: setSelectedChannel
   } = useGuild();
   const { input, setInput, isValid, diceInfo } = useDiceValidation('');
   const [isRolling, setIsRolling] = React.useState(false);
@@ -54,16 +53,16 @@ export const Home = () => {
     }
   };
 
-  const { data: mutualGuilds, isLoading } = useQuery<Guild[]>({
+  const { data: mutualGuilds, isLoading } = useQuery<any[]>({
     queryKey: ['guilds'],
     queryFn: async () => {
       const response = await customFetch('/api/guilds/mutual');
       if (!response.ok) {
         throw new Error('Failed to fetch guilds');
       }
-      return response.json().then(data => data.guilds);
+      return response.json().then(data => data.guilds || []);
     },
-    enabled: !!discordAccount?.providerUserId,
+    enabled: !!user?.id, // Using Auth.js user ID
     staleTime: 1000 * 60 * 5,
   });
 
@@ -84,7 +83,7 @@ export const Home = () => {
   const channels = channelsResponse?.channels || [];
 
   const { toast } = useToast();
-  
+
   const handleRollDice = async () => {
     if (!isValid || !selectedChannel || !input) return;
 
@@ -99,7 +98,7 @@ export const Home = () => {
         channelId: selectedChannel,
         notation: input,
         source: 'web',
-        username: user?.username || discordAccount?.username,
+        username: user?.name || user?.email,
         timesToRepeat: timesToRepeat,
         title: rollTitle || undefined
       };
@@ -112,7 +111,7 @@ export const Home = () => {
       });
 
       const data = await response.json();
-      
+
       if (data.error === 'PERMISSION_ERROR') {
         toast({
           title: "Missing Discord Permissions",
@@ -120,14 +119,14 @@ export const Home = () => {
           variant: "destructive",
         });
       }
-      
+
       setRollResults(data);
       setIsRolling(false);
 
     } catch (error) {
       console.error('Error rolling dice:', error);
       setIsRolling(false);
-      
+
       toast({
         title: "Error Rolling Dice",
         description: "Something went wrong when trying to roll. Please try again.",
@@ -144,11 +143,17 @@ export const Home = () => {
     );
   }
 
-  const hasAdminPermissions = mutualGuilds?.some(
+  const hasAdminPermissions = Array.isArray(mutualGuilds) && mutualGuilds.some(
     guild => guild.isAdmin || guild.isDiceWitchAdmin
   );
 
   if (!hasAdminPermissions) {
+    const noGuilds = !Array.isArray(mutualGuilds) || mutualGuilds.length === 0;
+
+    if (noGuilds) {
+      return <Navigate to="/app/preferences" replace />;
+    }
+
     return (
       <div className="flex items-center justify-center min-h-screen">
         <h1 className="text-2xl font-semibold text-center text-muted-foreground max-w-lg">

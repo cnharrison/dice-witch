@@ -16,7 +16,7 @@ import { updateUserGuildPermissions } from "./methods/updateUserGuildPermissions
 export class DatabaseService {
   private static instance: DatabaseService | null = null;
   protected readonly processedInteractions: Set<string>;
-  protected prisma: PrismaClient;
+  public prisma: PrismaClient;
   protected cleanupInteractionsInterval: NodeJS.Timeout;
 
   private constructor() {

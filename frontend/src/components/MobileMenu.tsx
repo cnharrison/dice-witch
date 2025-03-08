@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useClerk } from "@clerk/clerk-react";
+import { useAuth } from "@/lib/AuthProvider";
 import { Link } from "react-router-dom";
 import { LogOut, Settings, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
 import { useTheme } from "@/components/theme-provider";
 
 export function MobileMenu({ username }: { username: string }) {
-  const { signOut } = useClerk();
+  const { signOut } = useAuth();
   const { theme } = useTheme();
   const [open, setOpen] = React.useState(false);
 

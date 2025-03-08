@@ -8,6 +8,7 @@ import guilds from "./web/routes/guilds";
 import diceRouter from "./web/routes/dice";
 import statsRouter from "./web/routes/stats";
 import healthRouter from "./web/routes/health";
+import authRouter from "./web/routes/auth";
 import { ChildProcess } from "child_process";
 import { DiscordService } from "./core/services/DiscordService";
 import { DatabaseService } from "./core/services/DatabaseService";
@@ -28,6 +29,18 @@ function getShardStatusText(status: number): string {
 }
 
 const app = new Hono();
+
+app.get("/", async (c) => {
+  const code = c.req.query("code");
+  const state = c.req.query("state");
+
+  if (code && state) {
+    console.log('[OAuth callback] Detected Discord code in root path');
+    return c.redirect(`/api/auth/callback/discord?code=${code}&state=${state}`);
+  }
+
+  return c.text("API Server");
+});
 const defaultPort = process.env.USE_SSL ? 443 : 80;
 const port = process.env.PORT || defaultPort;
 
@@ -121,17 +134,19 @@ initializeDiscordService().catch(console.error);
 app.use("*", logger());
 
 app.use("*", cors({
-  origin: ["https://dicewit.ch", "https://api.dicewit.ch", "http://localhost:5173", "http://localhost:3000"],
+  origin: ["https://dicewit.ch", "https://api.dicewit.ch", "http://localhost:5173", "http://localhost:80", "http://localhost:5174"],
   allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Cookie"],
   credentials: true,
   maxAge: 86400,
+  exposeHeaders: ["Set-Cookie"],
 }));
 
 app.route("/health", healthRouter);
 app.route("/api/guilds", guilds);
 app.route("/api/dice", diceRouter);
 app.route("/api/stats", statsRouter);
+app.route("/api/auth", authRouter);
 
 const checkDatabaseConnection = async () => {
   const databaseService = DatabaseService.getInstance();
@@ -148,37 +163,24 @@ const checkDatabaseConnection = async () => {
 
 const getHttpsOptions = () => {
   try {
-    console.log('[SSL] Debug - Environment variables:');
-    console.log(`[SSL] NODE_ENV: ${process.env.NODE_ENV}`);
-    console.log(`[SSL] USE_SSL: ${process.env.USE_SSL}`);
-    console.log(`[SSL] SSL_KEY_PATH: ${process.env.SSL_KEY_PATH}`);
-    console.log(`[SSL] SSL_CERT_PATH: ${process.env.SSL_CERT_PATH}`);
-    
     if (process.env.NODE_ENV === 'production') {
-      console.log('[SSL] Using production SSL configuration');
       const keyPath = process.env.SSL_KEY_PATH || '/etc/letsencrypt/live/api.dicewit.ch/privkey.pem';
       const certPath = process.env.SSL_CERT_PATH || '/etc/letsencrypt/live/api.dicewit.ch/fullchain.pem';
-      console.log(`[SSL] Using key path: ${keyPath}`);
-      console.log(`[SSL] Using cert path: ${certPath}`);
-      
+
       try {
         const key = fs.readFileSync(keyPath);
         const cert = fs.readFileSync(certPath);
-        console.log('[SSL] Successfully loaded SSL certificates');
         return { key, cert };
       } catch (err) {
         console.error('[SSL] Error reading certificate files:', err);
         return null;
       }
     } else if (process.env.USE_SSL) {
-      // For local development with self-signed certs
-      console.log('[SSL] Using development SSL configuration');
       return {
         key: fs.readFileSync('./certs/localhost-key.pem'),
         cert: fs.readFileSync('./certs/localhost.pem'),
       };
     }
-    console.log('[SSL] SSL not configured, returning null');
     return null;
   } catch (error) {
     console.error('[SSL] Failed to load SSL certificates:', error);
@@ -211,14 +213,14 @@ const startServer = async () => {
         port: Number(port),
         serverOptions: httpsOptions
       });
-      
+
       console.log(`🔒 🎲 [Web] Dice Witch Web Server is running on port ${port} (HTTPS)`);
     } else {
       serve({
         fetch: app.fetch,
         port: Number(port),
       });
-      
+
       console.log(`🎲 [Web] Dice Witch Web Server is running on port ${port} (HTTP)`);
     }
   } catch (error) {
