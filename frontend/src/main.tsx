@@ -67,6 +67,14 @@ root.render(
         }}
         tokenCache={{ type: "cookie" }}
         signInUrl="/"
+        onSignIn={(session) => {
+          console.log('[Clerk] Sign in successful:', !!session);
+          if (session) {
+            console.log('[Clerk] Session ID:', session.id);
+            console.log('[Clerk] Session status:', session.status);
+            console.log('[Clerk] User ID:', session.userId);
+          }
+        }}
       >
         <Router>
           <App />

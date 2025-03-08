@@ -11,14 +11,35 @@ import Preferences from './pages/Preferences';
 import { GuildProvider } from './context/GuildContext';
 
 const SSOCallback = () => {
-  const [countdown, setCountdown] = React.useState(5);
+  const [countdown, setCountdown] = React.useState(8);
   
   React.useEffect(() => {
     console.log('[Auth] SSOCallback component mounted');
     
     try {
-      console.log('[Auth] Current URL:', window.location.href);
+      const url = window.location.href;
+      const hasAuthCode = url.includes("code=");
+      const searchParams = new URLSearchParams(window.location.search);
+      
+      console.log('[Auth] Current URL:', url);
+      console.log('[Auth] URL contains auth code:', hasAuthCode);
+      console.log('[Auth] Search params:', Object.fromEntries(searchParams.entries()));
       console.log('[Auth] Document referrer:', document.referrer);
+      console.log('[Auth] Document cookie exists:', !!document.cookie);
+      console.log('[Auth] Cookie length:', document.cookie.length);
+      console.log('[Auth] LocalStorage available:', typeof localStorage !== 'undefined');
+      
+      if (localStorage) {
+        try {
+          const testKey = "__clerk_test_storage__";
+          localStorage.setItem(testKey, "test");
+          const testValue = localStorage.getItem(testKey);
+          localStorage.removeItem(testKey);
+          console.log('[Auth] LocalStorage works:', testValue === "test");
+        } catch (e) {
+          console.error('[Auth] LocalStorage error:', e);
+        }
+      }
       
       const countdownInterval = setInterval(() => {
         setCountdown(prev => {

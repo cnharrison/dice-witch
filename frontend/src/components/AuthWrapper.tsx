@@ -16,10 +16,37 @@ type AuthWrapperProps = {
 };
 
 export const AuthWrapper = ({ children }: AuthWrapperProps) => {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const { user } = useUser();
   const [authAttempts, setAuthAttempts] = useState(0);
   const [authTimer, setAuthTimer] = useState<number | null>(null);
+  
+  useEffect(() => {
+    console.log('[Auth Diagnostics] Status:', { 
+      isLoaded, 
+      isSignedIn, 
+      userExists: !!user,
+      userDetails: user ? {
+        id: user.id,
+        email: user.primaryEmailAddress?.emailAddress,
+        hasDiscordAccount: user.externalAccounts.some(a => a.provider === 'discord')
+      } : null
+    });
+    
+    if (isLoaded) {
+      console.log('[Auth Diagnostics] Document cookie exists:', !!document.cookie);
+      console.log('[Auth Diagnostics] Cookie length:', document.cookie.length);
+      console.log('[Auth Diagnostics] LocalStorage available:', typeof localStorage !== 'undefined');
+      
+      if (isSignedIn) {
+        getToken().then(token => {
+          console.log('[Auth Diagnostics] Token available:', !!token);
+        }).catch(err => {
+          console.error('[Auth Diagnostics] Error getting token:', err);
+        });
+      }
+    }
+  }, [isLoaded, isSignedIn, user, getToken]);
 
   useEffect(() => {
     if (isLoaded && !isSignedIn && authAttempts < 3) {
