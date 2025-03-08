@@ -11,18 +11,19 @@ import Preferences from './pages/Preferences';
 import { GuildProvider } from './context/GuildContext';
 
 const SSOCallback = () => {
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      window.location.href = "/app";
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-black">
-      <ClerkLoading>
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#ff00ff]"></div>
-          <p className="mt-4 text-white">Authenticating...</p>
-        </div>
-      </ClerkLoading>
-      
-      <ClerkLoaded>
-        <Navigate to="/app" replace />
-      </ClerkLoaded>
+      <div className="text-center">
+        <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#ff00ff]"></div>
+        <p className="mt-4 text-white">Authenticating...</p>
+      </div>
     </div>
   );
 };
