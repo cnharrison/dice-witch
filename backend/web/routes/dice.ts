@@ -1,15 +1,30 @@
-import { clerkMiddleware, getAuth } from '@hono/clerk-auth';
 import { Hono } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { RollService } from '../../core/services/RollService';
+import { sessions } from './auth';
 
 const router = new Hono();
 const rollService = RollService.getInstance();
 
-router.use('*', clerkMiddleware());
+async function authMiddleware(c, next) {
+  const sessionId = getCookie(c, 'session_id');
+  
+  if (!sessionId || !sessions.has(sessionId)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  const session = sessions.get(sessionId);
+  c.set('session', session);
+  c.set('user', session.user);
+  
+  await next();
+}
+
+router.use('*', authMiddleware);
 
 router.post('/roll', async (c) => {
-  const auth = getAuth(c);
-  if (!auth?.userId) {
+  const user = c.get('user');
+  if (!user) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
@@ -57,7 +72,6 @@ router.post('/roll', async (c) => {
         message: rollResult.message || `Roll processed successfully`,
         diceArray: rollResult.diceArray || [],
         resultArray: rollResult.resultArray || [],
-        imageData: rollResult.base64Image,
         channelName: rollResult.channelName,
         guildName: rollResult.guildName
       };

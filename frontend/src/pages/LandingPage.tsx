@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth, useSignIn } from '@clerk/clerk-react';
+import { useAuth, useSignIn } from '@/lib/AuthProvider';
 import { Button } from "@/components/ui/button";
 import { PreviewRoller } from '@/components/PreviewRoller';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -12,31 +12,14 @@ const LandingPage = () => {
   const { signIn, isLoaded } = useSignIn();
   const { servers, users, loading, error, available } = useServerStats();
 
-  const handleSignInWithDiscord = async () => {
+  const handleSignInWithDiscord = () => {
     if (!isLoaded) return;
-    console.log('[Auth] Starting Discord authentication');
+    
     try {
-      console.log('[Auth] Redirect settings:', {
-        strategy: "oauth_discord",
-        redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/app",
-        additionalData: {
-          trace: "simple-discord-login"
-        }
-      });
-      
-      await signIn.authenticateWithRedirect({
-        strategy: "oauth_discord",
-        redirectUrl: "/sso-callback", 
-        redirectUrlComplete: "/app",
-        additionalData: {
-          trace: "simple-discord-login"
-        }
-      });
-      
-      console.log('[Auth] After authenticateWithRedirect call');
+      const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.dicewit.ch';
+      window.location.href = `${API_BASE}/api/auth/signin/discord`;
     } catch (error) {
-      console.error('[Auth] Error during authentication:', error);
+      console.error('Authentication error:', error);
     }
   };
 
@@ -143,7 +126,8 @@ const LandingPage = () => {
             ) : (
               <Button
                 onClick={handleSignInWithDiscord}
-                className="bg-[#5865F2] hover:bg-[#4752C4] text-white px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors"
+                disabled={!isLoaded}
+                className={`bg-[#5865F2] hover:bg-[#4752C4] text-white px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors ${!isLoaded ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
                 <svg
                   width="24"
@@ -158,14 +142,14 @@ const LandingPage = () => {
                 Continue with Discord
               </Button>
             )}
-            
-            <Button 
-              asChild 
+
+            <Button
+              asChild
               className="bg-[#ff00ff] hover:bg-[#cc00cc] text-white px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors border border-[#ff66ff] shadow-[0_0_15px_rgba(255,0,255,0.5)]"
             >
-              <a 
-                href="https://discord.com/oauth2/authorize?client_id=808161585876697108&permissions=0&scope=bot%20applications.commands" 
-                target="_blank" 
+              <a
+                href={`https://discord.com/oauth2/authorize?client_id=${import.meta.env.VITE_DISCORD_CLIENT_ID || '808161585876697108'}&permissions=0&scope=bot%20applications.commands`}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center"
               >

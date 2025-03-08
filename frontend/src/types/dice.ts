@@ -22,7 +22,5 @@ export interface Result {
 export interface RollResponse {
   diceArray: Die[][];
   resultArray: Result[];
-  shouldHaveImage?: boolean;
-  imageData?: string;
   message?: string;
 }

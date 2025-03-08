@@ -25,22 +25,22 @@ export class DiscordService {
 
   private constructor() {
     this.lastFullCleanupTime = Date.now();
-    
+
     this.handledInteractions = new Map<string, NodeJS.Timeout>();
-    
+
     this.cleanupInterval = setInterval(() => this.cleanupOldInteractions(), this.CLEANUP_INTERVAL_MS);
-    
+
     if (this.cleanupInterval.unref) {
       this.cleanupInterval.unref();
     }
-    
+
   }
-  
+
   public destroy() {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
     }
-    
+
     this.handledInteractions.forEach((timeout) => {
       clearTimeout(timeout);
     });
@@ -83,16 +83,16 @@ export class DiscordService {
   protected cleanupOldInteractions() {
     const now = Date.now();
     let forceFullCleanup = false;
-    
+
     if (now - this.lastFullCleanupTime > this.FULL_CLEANUP_INTERVAL_MS) {
       forceFullCleanup = true;
       this.lastFullCleanupTime = now;
     }
     if (this.handledInteractions.size > this.MAX_INTERACTIONS || forceFullCleanup) {
-      const keysToDelete = forceFullCleanup 
+      const keysToDelete = forceFullCleanup
         ? [...this.handledInteractions.keys()]
         : [...this.handledInteractions.keys()].slice(0, this.handledInteractions.size - this.MAX_INTERACTIONS);
-        
+
       for (const key of keysToDelete) {
         const timeout = this.handledInteractions.get(key);
         if (timeout) {
@@ -108,23 +108,22 @@ export class DiscordService {
     if (existingTimeout) {
       clearTimeout(existingTimeout);
     }
-    
+
     if (this.handledInteractions.size >= this.MAX_INTERACTIONS) {
       this.cleanupOldInteractions();
     }
-    
+
     const timeoutId = setTimeout(() => {
       this.handledInteractions.delete(interactionId);
     }, this.INTERACTION_TIMEOUT_MS);
-    
+
     if (timeoutId.unref) {
       timeoutId.unref();
     }
-    
+
     this.handledInteractions.set(interactionId, timeoutId);
   }
 
-  // Bind method implementations
   public checkForAttachPermission = checkForAttachPermission;
   public checkAndStorePermissions = checkAndStorePermissions;
   public getShardStatus = getShardStatus;

@@ -1,5 +1,5 @@
-import { clerkMiddleware, getAuth } from '@hono/clerk-auth';
 import { Hono } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { DatabaseService } from '../../core/services/DatabaseService';
 import { DiscordService } from '../../core/services/DiscordService';
 import { bigIntSerializer } from '../../shared/utils';
@@ -7,27 +7,37 @@ import { bigIntSerializer } from '../../shared/utils';
 const router = new Hono();
 const db = DatabaseService.getInstance();
 
-router.use('*', clerkMiddleware());
+import { sessions } from './auth';
+
+async function authMiddleware(c, next) {
+  const sessionId = getCookie(c, 'session_id');
+
+  if (!sessionId || !sessions.has(sessionId)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const session = sessions.get(sessionId);
+  c.set('session', session);
+  c.set('user', session.user);
+
+  await next();
+}
+
+router.use('*', authMiddleware);
 
 router.get('/mutual', async (c) => {
-  const auth = getAuth(c);
-  if (!auth?.userId) {
+  const user = c.get('user');
+
+  if (!user) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
   try {
-    const clerkClient = c.get('clerk');
-    const user = await clerkClient.users.getUser(auth.userId);
-
-    const discordAccount = user.externalAccounts.find(
-      account => account.provider === 'oauth_discord'
-    );
-
-    if (!discordAccount?.id) {
+    if (!user.discordId) {
       return c.json({ error: 'No Discord account connected' }, 400);
     }
 
-    const guilds = await db.getMutualGuildsWithPermissions(discordAccount.externalId);
+    const guilds = await db.getMutualGuildsWithPermissions(user.discordId);
 
     return new Response(JSON.stringify({ guilds }, bigIntSerializer), {
       headers: {
@@ -40,25 +50,20 @@ router.get('/mutual', async (c) => {
 });
 
 router.get('/:guildId/preferences', async (c) => {
-  const auth = getAuth(c);
-  if (!auth?.userId) {
+  const user = c.get('user');
+
+  if (!user) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
   const rawGuildId = c.req.param('guildId');
 
   try {
-    const clerkClient = c.get('clerk');
-    const user = await clerkClient.users.getUser(auth.userId);
-    const discordAccount = user.externalAccounts.find(
-      account => account.provider === 'oauth_discord'
-    );
-
-    if (!discordAccount?.id) {
+    if (!user.discordId) {
       return c.json({ error: 'No Discord account connected' }, 400);
     }
 
-    const guilds = await db.getMutualGuildsWithPermissions(discordAccount.externalId);
+    const guilds = await db.getMutualGuildsWithPermissions(user.discordId);
     const normalizedGuildId = rawGuildId.toString();
 
     const guild = guilds.find(g => {
@@ -78,25 +83,20 @@ router.get('/:guildId/preferences', async (c) => {
 });
 
 router.patch('/:guildId/preferences', async (c) => {
-  const auth = getAuth(c);
-  if (!auth?.userId) {
+  const user = c.get('user');
+
+  if (!user) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
   const rawGuildId = c.req.param('guildId');
-  
-  try {
-    const clerkClient = c.get('clerk');
-    const user = await clerkClient.users.getUser(auth.userId);
-    const discordAccount = user.externalAccounts.find(
-      account => account.provider === 'oauth_discord'
-    );
 
-    if (!discordAccount?.id) {
+  try {
+    if (!user.discordId) {
       return c.json({ error: 'No Discord account connected' }, 400);
     }
 
-    const guilds = await db.getMutualGuildsWithPermissions(discordAccount.externalId);
+    const guilds = await db.getMutualGuildsWithPermissions(user.discordId);
     const normalizedGuildId = rawGuildId.toString();
 
     const guild = guilds.find(g => {
@@ -107,13 +107,13 @@ router.patch('/:guildId/preferences', async (c) => {
     if (!guild || (!guild.isAdmin && !guild.isDiceWitchAdmin)) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
-    
+
     const body = await c.req.json();
-    
+
     await db.updateGuildPreferences(normalizedGuildId, {
       skipDiceDelay: body.skipDiceDelay
     });
-    
+
     return c.json({ success: true });
   } catch (err) {
     return c.json({ error: 'Failed to update guild preferences' }, 500);
@@ -121,25 +121,20 @@ router.patch('/:guildId/preferences', async (c) => {
 });
 
 router.get('/:guildId/channels', async (c) => {
-  const auth = getAuth(c);
-  if (!auth?.userId) {
+  const user = c.get('user');
+
+  if (!user) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
   const rawGuildId = c.req.param('guildId');
 
   try {
-    const clerkClient = c.get('clerk');
-    const user = await clerkClient.users.getUser(auth.userId);
-    const discordAccount = user.externalAccounts.find(
-      account => account.provider === 'oauth_discord'
-    );
-
-    if (!discordAccount?.id) {
+    if (!user.discordId) {
       return c.json({ error: 'No Discord account connected' }, 400);
     }
 
-    const guilds = await db.getMutualGuildsWithPermissions(discordAccount.externalId);
+    const guilds = await db.getMutualGuildsWithPermissions(user.discordId);
     const normalizedGuildId = BigInt(rawGuildId).toString();
 
     const guild = guilds.find(g => {
