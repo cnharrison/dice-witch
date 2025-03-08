@@ -8,6 +8,11 @@ import './index.css'
 import App from './App'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+console.log('[Clerk] Environment:', {
+  NODE_ENV: import.meta.env.MODE,
+  basePath: window.location.origin,
+  currentPath: window.location.pathname
+});
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.dicewit.ch';
 export const customFetch = async (url: string, options: RequestInit = {}) => {
@@ -49,7 +54,13 @@ const root = createRoot(document.getElementById('root')!);
 root.render(
   <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
     <QueryClientProvider client={queryClient}>
-      <ClerkProvider publishableKey={clerkPubKey}>
+      <ClerkProvider 
+        publishableKey={clerkPubKey}
+        navigate={(to) => {
+          console.log('[Clerk] Navigate called with:', to);
+          window.location.href = to;
+        }}
+      >
         <Router>
           <App />
         </Router>

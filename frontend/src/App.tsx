@@ -12,10 +12,24 @@ import { GuildProvider } from './context/GuildContext';
 
 const SSOCallback = () => {
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      window.location.href = "/app";
-    }, 1500);
-    return () => clearTimeout(timer);
+    console.log('[Auth] SSOCallback component mounted');
+    
+    try {
+      console.log('[Auth] Current URL:', window.location.href);
+      console.log('[Auth] Document referrer:', document.referrer);
+      
+      const timer = setTimeout(() => {
+        console.log('[Auth] Forcing redirection to /app');
+        window.location.href = "/app";
+      }, 2500);
+      
+      return () => {
+        console.log('[Auth] SSOCallback unmounting, clearing timeout');
+        clearTimeout(timer);
+      };
+    } catch (error) {
+      console.error('[Auth] Error in SSOCallback:', error);
+    }
   }, []);
 
   return (
@@ -23,6 +37,7 @@ const SSOCallback = () => {
       <div className="text-center">
         <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#ff00ff]"></div>
         <p className="mt-4 text-white">Authenticating...</p>
+        <p className="mt-2 text-xs text-gray-400">Redirecting to app...</p>
       </div>
     </div>
   );

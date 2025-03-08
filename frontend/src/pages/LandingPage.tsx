@@ -14,11 +14,24 @@ const LandingPage = () => {
 
   const handleSignInWithDiscord = async () => {
     if (!isLoaded) return;
-    await signIn.authenticateWithRedirect({
-      strategy: "oauth_discord",
-      redirectUrl: "/sso-callback",
-      redirectUrlComplete: "/app"
-    });
+    console.log('[Auth] Starting Discord authentication');
+    try {
+      console.log('[Auth] Redirect settings:', {
+        strategy: "oauth_discord",
+        redirectUrl: "/sso-callback",
+        redirectUrlComplete: "/app" 
+      });
+      
+      await signIn.authenticateWithRedirect({
+        strategy: "oauth_discord",
+        redirectUrl: "/sso-callback",
+        redirectUrlComplete: "/app"
+      });
+      
+      console.log('[Auth] After authenticateWithRedirect call');
+    } catch (error) {
+      console.error('[Auth] Error during authentication:', error);
+    }
   };
 
   return (
