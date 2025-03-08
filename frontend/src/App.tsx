@@ -11,7 +11,7 @@ import Preferences from './pages/Preferences';
 import { GuildProvider } from './context/GuildContext';
 
 const SSOCallback = () => {
-  const [countdown, setCountdown] = React.useState(8);
+  const [countdown, setCountdown] = React.useState(15);
   
   React.useEffect(() => {
     console.log('[Auth] SSOCallback component mounted');
@@ -19,14 +19,23 @@ const SSOCallback = () => {
     try {
       const url = window.location.href;
       const hasAuthCode = url.includes("code=");
+      const hasClerkToken = url.includes("__clerk_token=");
       const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
       
       console.log('[Auth] Current URL:', url);
       console.log('[Auth] URL contains auth code:', hasAuthCode);
+      console.log('[Auth] URL contains clerk token:', hasClerkToken);
       console.log('[Auth] Search params:', Object.fromEntries(searchParams.entries()));
+      console.log('[Auth] Hash params:', Object.fromEntries(hashParams.entries()));
       console.log('[Auth] Document referrer:', document.referrer);
       console.log('[Auth] Document cookie exists:', !!document.cookie);
       console.log('[Auth] Cookie length:', document.cookie.length);
+      
+      const cookies = document.cookie.split(';').map(c => c.trim());
+      console.log('[Auth] Cookie count:', cookies.length);
+      console.log('[Auth] Cookie names:', cookies.map(c => c.split('=')[0]));
+      
       console.log('[Auth] LocalStorage available:', typeof localStorage !== 'undefined');
       
       if (localStorage) {
@@ -36,6 +45,15 @@ const SSOCallback = () => {
           const testValue = localStorage.getItem(testKey);
           localStorage.removeItem(testKey);
           console.log('[Auth] LocalStorage works:', testValue === "test");
+          
+          const clerkKeys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.includes('clerk')) {
+              clerkKeys.push(key);
+            }
+          }
+          console.log('[Auth] Clerk localStorage keys:', clerkKeys);
         } catch (e) {
           console.error('[Auth] LocalStorage error:', e);
         }

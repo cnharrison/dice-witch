@@ -34,16 +34,45 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
     });
     
     if (isLoaded) {
+      console.log('[Auth Diagnostics] URL:', window.location.href);
+      console.log('[Auth Diagnostics] Has last_active_path param:', window.location.href.includes('last_active_path'));
       console.log('[Auth Diagnostics] Document cookie exists:', !!document.cookie);
       console.log('[Auth Diagnostics] Cookie length:', document.cookie.length);
+      
+      const cookies = document.cookie.split(';').map(c => c.trim());
+      console.log('[Auth Diagnostics] Cookie count:', cookies.length);
+      console.log('[Auth Diagnostics] Cookie names:', cookies.map(c => c.split('=')[0]));
+      
       console.log('[Auth Diagnostics] LocalStorage available:', typeof localStorage !== 'undefined');
+      
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const clerkKeys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.includes('clerk')) {
+              clerkKeys.push(key);
+            }
+          }
+          console.log('[Auth Diagnostics] Clerk localStorage keys:', clerkKeys);
+        } catch (e) {
+          console.error('[Auth Diagnostics] LocalStorage error:', e);
+        }
+      }
       
       if (isSignedIn) {
         getToken().then(token => {
           console.log('[Auth Diagnostics] Token available:', !!token);
+          if (token) {
+            console.log('[Auth Diagnostics] Token length:', token.length);
+          }
         }).catch(err => {
           console.error('[Auth Diagnostics] Error getting token:', err);
         });
+      } else {
+        console.log('[Auth Diagnostics] Not signed in, checking current URL for parameters');
+        const searchParams = new URLSearchParams(window.location.search);
+        console.log('[Auth Diagnostics] URL params:', Object.fromEntries(searchParams.entries()));
       }
     }
   }, [isLoaded, isSignedIn, user, getToken]);
