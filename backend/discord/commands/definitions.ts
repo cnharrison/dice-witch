@@ -40,6 +40,8 @@ export const globalSlashCommands: ApplicationCommandDataResolvable[] = [
         choices: [
           { name: "Exploding dice", value: "exploding" },
           { name: "Auto-reroll", value: "reroll" },
+          { name: "Unique dice", value: "unique" },
+          { name: "Min/Max", value: "minmax" },
           { name: "Keep/drop AKA advantage", value: "keepdrop" },
           { name: "Target success/failure AKA Dice pool", value: "target" },
           { name: "Critical success/failure", value: "crit" },
