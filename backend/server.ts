@@ -148,21 +148,37 @@ const checkDatabaseConnection = async () => {
 
 const getHttpsOptions = () => {
   try {
+    console.log('[SSL] Debug - Environment variables:');
+    console.log(`[SSL] NODE_ENV: ${process.env.NODE_ENV}`);
+    console.log(`[SSL] USE_SSL: ${process.env.USE_SSL}`);
+    console.log(`[SSL] SSL_KEY_PATH: ${process.env.SSL_KEY_PATH}`);
+    console.log(`[SSL] SSL_CERT_PATH: ${process.env.SSL_CERT_PATH}`);
+    
     if (process.env.NODE_ENV === 'production') {
+      console.log('[SSL] Using production SSL configuration');
       const keyPath = process.env.SSL_KEY_PATH || '/etc/letsencrypt/live/api.dicewit.ch/privkey.pem';
       const certPath = process.env.SSL_CERT_PATH || '/etc/letsencrypt/live/api.dicewit.ch/fullchain.pem';
-
-      return {
-        key: fs.readFileSync(keyPath),
-        cert: fs.readFileSync(certPath),
-      };
+      console.log(`[SSL] Using key path: ${keyPath}`);
+      console.log(`[SSL] Using cert path: ${certPath}`);
+      
+      try {
+        const key = fs.readFileSync(keyPath);
+        const cert = fs.readFileSync(certPath);
+        console.log('[SSL] Successfully loaded SSL certificates');
+        return { key, cert };
+      } catch (err) {
+        console.error('[SSL] Error reading certificate files:', err);
+        return null;
+      }
     } else if (process.env.USE_SSL) {
       // For local development with self-signed certs
+      console.log('[SSL] Using development SSL configuration');
       return {
         key: fs.readFileSync('./certs/localhost-key.pem'),
         cert: fs.readFileSync('./certs/localhost.pem'),
       };
     }
+    console.log('[SSL] SSL not configured, returning null');
     return null;
   } catch (error) {
     console.error('[SSL] Failed to load SSL certificates:', error);
