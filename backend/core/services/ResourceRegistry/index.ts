@@ -1,0 +1,1 @@
+export { ResourceRegistry } from '../ResourceRegistry';

@@ -41,3 +41,9 @@ CLAUDE.md
 .cache/
 .temp/
 tmp/
+
+# SSL Certificates
+certs/
+*.pem
+*.key
+*.crt
