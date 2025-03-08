@@ -11,6 +11,8 @@ import Preferences from './pages/Preferences';
 import { GuildProvider } from './context/GuildContext';
 
 const SSOCallback = () => {
+  const [countdown, setCountdown] = React.useState(5);
+  
   React.useEffect(() => {
     console.log('[Auth] SSOCallback component mounted');
     
@@ -18,14 +20,21 @@ const SSOCallback = () => {
       console.log('[Auth] Current URL:', window.location.href);
       console.log('[Auth] Document referrer:', document.referrer);
       
-      const timer = setTimeout(() => {
-        console.log('[Auth] Forcing redirection to /app');
-        window.location.href = "/app";
-      }, 2500);
+      const countdownInterval = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            console.log('[Auth] Forcing redirection to /app');
+            window.location.href = "/app";
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
       
       return () => {
-        console.log('[Auth] SSOCallback unmounting, clearing timeout');
-        clearTimeout(timer);
+        console.log('[Auth] SSOCallback unmounting, clearing interval');
+        clearInterval(countdownInterval);
       };
     } catch (error) {
       console.error('[Auth] Error in SSOCallback:', error);
@@ -37,7 +46,7 @@ const SSOCallback = () => {
       <div className="text-center">
         <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#ff00ff]"></div>
         <p className="mt-4 text-white">Authenticating...</p>
-        <p className="mt-2 text-xs text-gray-400">Redirecting to app...</p>
+        <p className="mt-2 text-zinc-400">Redirecting to app in {countdown}s...</p>
       </div>
     </div>
   );

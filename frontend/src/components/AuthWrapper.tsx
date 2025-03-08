@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { type ReactNode, useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
@@ -18,6 +18,21 @@ type AuthWrapperProps = {
 export const AuthWrapper = ({ children }: AuthWrapperProps) => {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
+  const [authAttempts, setAuthAttempts] = useState(0);
+  const [authTimer, setAuthTimer] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (isLoaded && !isSignedIn && authAttempts < 3) {
+      const timer = window.setTimeout(() => {
+        setAuthAttempts(prev => prev + 1);
+      }, 1000);
+      setAuthTimer(timer);
+      
+      return () => {
+        if (authTimer) window.clearTimeout(authTimer);
+      };
+    }
+  }, [isLoaded, isSignedIn, authAttempts]);
 
   const discordAccount = user?.externalAccounts.find(
     account => account.provider === 'discord'
@@ -42,19 +57,22 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
     cacheTime: 1000 * 60 * 60, // 60 minutes
   });
 
-  if (!isLoaded) {
+  if (!isLoaded || (isLoaded && !isSignedIn && authAttempts < 3)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#ff00ff]"></div>
           <p className="mt-4 text-white">Loading your profile...</p>
+          {authAttempts > 0 && (
+            <p className="mt-2 text-sm text-gray-400">Attempt {authAttempts}/3...</p>
+          )}
         </div>
       </div>
     );
   }
 
   if (!isSignedIn) {
-    console.log('[AuthWrapper] User not signed in, redirecting to sign-in');
+    console.log('[AuthWrapper] User not signed in after multiple attempts, redirecting to sign-in');
     return <Navigate to="/" replace />;
   }
 

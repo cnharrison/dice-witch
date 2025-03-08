@@ -60,6 +60,13 @@ root.render(
           console.log('[Clerk] Navigate called with:', to);
           window.location.href = to;
         }}
+        appearance={{
+          layout: {
+            socialButtonsVariant: 'iconButton'
+          }
+        }}
+        afterSignInUrl="/app" 
+        signInUrl="/"
       >
         <Router>
           <App />
