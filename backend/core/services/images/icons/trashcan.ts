@@ -1,5 +1,5 @@
 export default `
-<svg style="enable-background:new 0 0 65 65" version="1.1" xml:space="preserve">
+<svg width="65" height="65" viewBox="0 0 65 65" style="enable-background:new 0 0 65 65" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve">
   <style>
     .st1{fill:#fff}
   </style>

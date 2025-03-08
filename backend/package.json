@@ -5,6 +5,7 @@
   "main": "index.js",
   "dependencies": {
     "@auth/core": "^0.38.0",
+    "@dice-roller/rpg-dice-roller": "^5.5.1",
     "@hono/clerk-auth": "^2.0.0",
     "@hono/node-server": "^1.13.8",
     "@napi-rs/canvas": "^0.1.68",
@@ -14,7 +15,6 @@
     "discord.js": "^14.18.0",
     "hono": "^4.7.4",
     "next-auth": "^4.24.11",
-    "rpg-dice-roller": "4.5.2",
     "sharp": "0.33.5",
     "toad-scheduler": "1.6.0",
     "ts-node": "10.9.1"

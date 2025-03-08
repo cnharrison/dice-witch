@@ -1,5 +1,5 @@
 import { DiceService } from '../core/services/DiceService';
-import { DiceRoll } from 'rpg-dice-roller';
+import { DiceRoll } from '@dice-roller/rpg-dice-roller';
 
 describe('Dice Modifier Tests', () => {
   let diceService: DiceService;

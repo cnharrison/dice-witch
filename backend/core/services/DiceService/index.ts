@@ -14,6 +14,7 @@ import {
   dizzyFaceIcon,
   explosionIcon,
   recycleIcon,
+  snowflakeIcon,
   trashcanIcon
 } from "../images/icons";
 
@@ -45,6 +46,7 @@ export class DiceService {
       ["critical-success", critIcon],
       ["critical-failure", dizzyFaceIcon],
       ["penetrate", arrowThroughIcon],
+      ["unique", snowflakeIcon],
       ["blank", blankIcon],
     ]);
   }
@@ -86,6 +88,7 @@ export class DiceService {
         case "critical-success": return "critical-success";
         case "critical-failure": return "critical-failure";
         case "penetrate": return "penetrate";
+        case "unique": return "unique";
         default: return "blank";
       }
     });

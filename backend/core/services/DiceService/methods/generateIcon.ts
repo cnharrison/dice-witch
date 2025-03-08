@@ -15,7 +15,7 @@ export async function generateIcon(
 
     let attachment;
     try {
-      const sharpInstance = sharp(imageBuffer, { limitInputPixels: 256 * 256 })
+      const sharpInstance = sharp(imageBuffer, { limitInputPixels: 1024 * 1024 })
         .webp({
           lossless: false,
           quality: 85,

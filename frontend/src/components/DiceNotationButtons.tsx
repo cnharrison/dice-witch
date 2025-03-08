@@ -11,6 +11,7 @@ const KEEP_DROP = ['k', 'kl', 'd', 'dh'];
 const EXPLODING = ['!', '!!', '!p'];
 const COMPARISON = ['=', '>', '<', '>=', '<='];
 const REROLL = ['r', 'ro'];
+const UNIQUE = ['u'];
 const SUCCESS_FAILURE = ['cs', 'cf'];
 
 interface DiceNotationButtonsProps {
@@ -170,7 +171,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
       diceCounts[type] = 0;
     });
 
-    [...KEEP_DROP, ...EXPLODING, ...REROLL, ...SUCCESS_FAILURE].forEach(mod => {
+    [...KEEP_DROP, ...EXPLODING, ...REROLL, ...UNIQUE, ...SUCCESS_FAILURE].forEach(mod => {
       modifierCounts[mod] = 0;
     });
 
@@ -223,6 +224,15 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
     });
 
     REROLL.forEach(mod => {
+      const escaped = mod.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(escaped, 'g');
+      const matches = currentInput.match(pattern);
+      if (matches) {
+        modifierCounts[mod] = matches.length;
+      }
+    });
+    
+    UNIQUE.forEach(mod => {
       const escaped = mod.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const pattern = new RegExp(escaped, 'g');
       const matches = currentInput.match(pattern);
@@ -349,7 +359,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
         </div>
 
         <div className="grid grid-cols-4 gap-2 mb-2">
-          {[...EXPLODING, ...REROLL.slice(0, 1)].map((mod) => {
+          {[...EXPLODING, 'r'].map((mod) => {
             const count = modifierCounts[mod] || 0;
             return (
               <Tooltip key={`mod-desktop-${mod}`}>
@@ -376,7 +386,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
                     {mod === '!' ? 'Exploding' :
                      mod === '!!' ? 'Compounding' :
                      mod === '!p' ? 'Penetrating' :
-                     'Reroll once'}
+                     mod === 'r' ? 'Reroll once' : ''}
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -385,7 +395,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
         </div>
 
         <div className="grid grid-cols-4 gap-2 mb-2">
-          {[...SUCCESS_FAILURE, REROLL[1], COMPARISON[0]].map((mod) => {
+          {[...SUCCESS_FAILURE, REROLL[1], ...UNIQUE].map((mod) => {
             const count = modifierCounts[mod] || 0;
             return (
               <Tooltip key={`mod-desktop-${mod}`}>
@@ -412,6 +422,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
                     {mod === 'cs' ? 'Critical success' :
                      mod === 'cf' ? 'Critical failure' :
                      mod === 'ro' ? 'Reroll until no match' :
+                     mod === 'u' ? 'Unique' :
                      'Equal to'}
                   </p>
                 </TooltipContent>
@@ -643,7 +654,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
         </div>
 
         <div className="grid grid-cols-4 gap-1 mt-1">
-          {SUCCESS_FAILURE.concat([COMPARISON[0], COMPARISON[2]]).map((mod) => {
+          {SUCCESS_FAILURE.concat([COMPARISON[0], ...UNIQUE]).map((mod) => {
             const count = modifierCounts[mod] || 0;
             return (
               <div key={`mod-mobile-${mod}`} className="relative">

@@ -25,6 +25,7 @@ export type Icon =
   | "critical-success"
   | "critical-failure"
   | "penetrate"
+  | "unique"
   | "blank"
   | null;
 

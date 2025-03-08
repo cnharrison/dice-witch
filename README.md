@@ -22,6 +22,7 @@ Dice Witch is a highly advanced bot that rolls TRPG dice on Discord. It displays
             * [Compounding](#compounding)
             * [Penetrating](#penetrating)
          * [Re-roll](#re-roll)
+         * [Unique](#unique)
          * [Keep/Drop AKA Advantage](#keepdrop-aka-advantage)
          * [Target success/failure AKA Dice pool](#target-successfailure-aka-dice-pool)
          * [Critical success/failure](#critical-successfailure)
@@ -85,6 +86,13 @@ Rerolls a die that rolls the lowest possible number on that die, until a number 
 
 - `/roll notation:1d10r`: Roll 1d10 and reroll on one.
 - `/roll notation:4d10r<=3`: Roll 4d10 and reroll on any result less than or equal to three.
+
+### Unique
+Re-rolls duplicate dice values, ensuring all dice in the roll have unique values.
+
+- `/roll notation:8d6u`: Roll eight d6 and reroll any duplicates.
+- `/roll notation:8d6u=5`: Roll eight d6 and reroll only duplicates that equal 5.
+- `/roll notation:10d10u>7`: Roll ten d10 and reroll only duplicates greater than 7.
 
 ### Keep/Drop AKA Advantage
 Disregard or keep all dice above or below a certain threshold.
@@ -153,7 +161,7 @@ PRs and forks are welcome! 🙂
 If you find a bug, please open a Github Issue. You can also join the support Discord [here](https://discord.gg/BdyQG7hZZn).
 
 # Credits
-Dice Witch uses the superb [RPG Dice Roller](https://github.com/GreenImp/rpg-dice-roller) library by Lee Langley AKA GreenImp.
+Dice Witch uses the superb [@dice-roller/rpg-dice-roller](https://github.com/dice-roller/rpg-dice-roller) library by Lee Langley AKA GreenImp.
 
 
 # Roadmap

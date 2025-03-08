@@ -36,6 +36,14 @@ const kb: KnowledgeBase = {
       inline: false,
     },
   ],
+  unique: [
+    {
+      name: "Unique Dice",
+      value:
+        "Re-rolls duplicate dice values, ensuring all dice in the roll have unique values.\n\n`/roll notation:8d6u`: Roll eight d6 and reroll any duplicates.\n`/roll notation:8d6u=5`: Roll eight d6 and reroll only duplicates that equal 5.\n`/roll notation:10d10u>7`: Roll ten d10 and reroll only duplicates greater than 7.",
+      inline: false,
+    },
+  ],
   reroll: [
     {
       name: "Re-roll",

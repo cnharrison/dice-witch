@@ -7,4 +7,5 @@ export { default as bullseyeIcon } from './bullseye';
 export { default as critIcon } from './crit';
 export { default as dizzyFaceIcon } from './dizzyFace';
 export { default as arrowThroughIcon } from './arrowThrough';
+export { default as snowflakeIcon } from './snowflake';
 export { default as blankIcon } from './blank';

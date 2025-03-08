@@ -1,5 +1,5 @@
 import { AttachmentBuilder } from "discord.js";
-import { DiceRoll, Parser } from "rpg-dice-roller";
+import { DiceRoll, Parser } from "@dice-roller/rpg-dice-roller";
 import chroma from "chroma-js";
 import { DiceArray, DiceFaces, DiceTypesToDisplay, Die, Result } from "../../../../shared/types";
 import { coinFlip } from "../../../../shared/helpers";
@@ -95,6 +95,9 @@ export async function rollDice(
               const isCritFailure = /__.*$/.test(dieValueStr);
               const isTargetSuccess = dieValueStr.includes('*') && !/\*\*$/.test(dieValueStr);
               const isRerolled = dieValueStr.includes('r');
+              const isMinValue = dieValueStr.includes('^');
+              const isMaxValue = dieValueStr.includes('v');
+              const isUnique = dieValueStr.includes('u');
 
               let valueStr = dieValueStr;
               if (isDropped) valueStr = valueStr.slice(0, -1);
@@ -104,6 +107,9 @@ export async function rollDice(
               if (isCritFailure) valueStr = valueStr.replace(/__/g, '');
               if (isTargetSuccess) valueStr = valueStr.replace(/\*/g, '');
               if (isRerolled) valueStr = valueStr.replace(/r/g, '');
+              if (isMinValue) valueStr = valueStr.replace(/\^/g, '');
+              if (isMaxValue) valueStr = valueStr.replace(/v/g, '');
+              if (isUnique) valueStr = valueStr.replace(/u/g, '');
 
               const dieValue = parseInt(valueStr, 10);
 
@@ -135,6 +141,15 @@ export async function rollDice(
               }
               if (isRerolled) {
                 icons.push("recycle");
+              }
+              if (isMinValue) {
+                icons.push("chevronUp");
+              }
+              if (isMaxValue) {
+                icons.push("chevronDown");
+              }
+              if (isUnique) {
+                icons.push("unique");
               }
 
               const icon = icons.length > 0 ? icons : null;
@@ -205,6 +220,9 @@ export async function rollDice(
               const isCritFailure = /__.*$/.test(dieValue);
               const isTargetSuccess = dieValue.includes('*') && !/\*\*$/.test(dieValue);
               const isRerolled = dieValue.includes('r');
+              const isUnique = dieValue.includes('u');
+              const isMinValue = dieValue.includes('^');
+              const isMaxValue = dieValue.includes('v');
 
               let valueStr = dieValue;
               if (isDropped) valueStr = valueStr.slice(0, -1);
@@ -214,6 +232,9 @@ export async function rollDice(
               if (isCritFailure) valueStr = valueStr.replace(/__/g, '');
               if (isTargetSuccess) valueStr = valueStr.replace('*', '');
               if (isRerolled) valueStr = valueStr.replace('r', '');
+              if (isUnique) valueStr = valueStr.replace('u', '');
+              if (isMinValue) valueStr = valueStr.replace('^', '');
+              if (isMaxValue) valueStr = valueStr.replace('v', '');
 
               const value = parseInt(valueStr, 10);
               if (isNaN(value)) return;
@@ -232,6 +253,9 @@ export async function rollDice(
               if (isCritFailure) icons.push("critical-failure");
               if (isTargetSuccess) icons.push("target-success");
               if (isRerolled) icons.push("recycle");
+              if (isMinValue) icons.push("chevronUp");
+              if (isMaxValue) icons.push("chevronDown");
+              if (isUnique) icons.push("unique");
 
               const icon = icons.length > 0 ? icons : null;
               const iconSpacing = icons.length > 0 ? 0.375 : null;
