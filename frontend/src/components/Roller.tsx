@@ -31,10 +31,10 @@ interface RollerProps {
   selectedChannel: boolean;
 }
 
-export function Roller({ 
-  diceInfo, 
-  rollResults, 
-  isRolling, 
+export function Roller({
+  diceInfo,
+  rollResults,
+  isRolling,
   showAnimation = false,
   input,
   setInput,
@@ -121,7 +121,6 @@ export function Roller({
     }, 1000);
   }, [diceInfo]);
 
-  // Function to render roll results
   const renderRollResults = () => {
     if (!rollResults) return null;
 
@@ -174,10 +173,9 @@ export function Roller({
     );
   };
 
-  // Function to render 3D dice animation
   const render3DDice = () => {
     if (!showAnimation || !combinedDiceInfo) return null;
-    
+
     return (
       <DiceAnimation3D
         key="persistent-dice-animation"
@@ -206,8 +204,8 @@ export function Roller({
               {render3DDice()}
             </div>
           )}
-          
-          
+
+
           {/* Roll results */}
           {rollResults && (
             <div className="absolute inset-0 flex items-center justify-center top-4 z-30">
@@ -218,7 +216,7 @@ export function Roller({
 
         {/* Bottom section with dice input */}
         <div className="h-[55%] p-2 border-t overflow-y-auto">
-          <DiceNotationButtons 
+          <DiceNotationButtons
             input={input}
             setInput={setInput}
             isDisabled={!selectedChannel}
@@ -237,16 +235,16 @@ export function Roller({
       {/* Left panel: Dice inputs */}
       <ResizablePanel defaultSize={50}>
         <div className="flex h-full flex-col items-center justify-center p-6 overflow-auto">
-          <DiceNotationButtons 
+          <DiceNotationButtons
             input={input}
             setInput={setInput}
             isDisabled={!selectedChannel}
           />
         </div>
       </ResizablePanel>
-      
+
       <ResizableHandle />
-      
+
       {/* Right panel: Dice display */}
       <ResizablePanel defaultSize={50}>
         <div className="flex h-full flex-col items-center justify-center p-6 relative">
@@ -254,8 +252,8 @@ export function Roller({
           <div className="absolute inset-0 flex items-center justify-center z-10">
             {render3DDice()}
           </div>
-          
-          
+
+
           {/* Roll results */}
           <div className="absolute inset-0 flex items-center justify-center z-30">
             {rollResults && renderRollResults()}

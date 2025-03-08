@@ -22,23 +22,23 @@ export class DatabaseService {
   private constructor() {
     this.prisma = new PrismaClient();
     this.processedInteractions = new Set<string>();
-    
+
     this.cleanupInteractionsInterval = setInterval(() => this.cleanupOldInteractions(), 10 * 60 * 1000);
     if (this.cleanupInteractionsInterval.unref) {
       this.cleanupInteractionsInterval.unref();
     }
   }
-  
+
   public async destroy() {
     if (this.cleanupInteractionsInterval) {
       clearInterval(this.cleanupInteractionsInterval);
     }
-    
+
     this.processedInteractions.clear();
-    
+
     await this.prisma.$disconnect();
   }
-  
+
   protected cleanupOldInteractions() {
     if (this.processedInteractions.size > 250) {
       const toRemove = Array.from(this.processedInteractions).slice(0, this.processedInteractions.size - 250);
@@ -52,7 +52,7 @@ export class DatabaseService {
     }
     return DatabaseService.instance;
   }
-  
+
   public async testConnection(): Promise<boolean> {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
@@ -86,7 +86,6 @@ export class DatabaseService {
     };
   }
 
-  // Bind method implementations
   public updateOnCommand = updateOnCommand;
   public updateGuild = updateGuild;
   public getMutualGuilds = getMutualGuilds;
