@@ -46,22 +46,7 @@ function App() {
           </AuthWrapper>
         } />
 
-        <Route path="/app/profile" element={
-          <AuthWrapper>
-            <div className="min-h-screen bg-background text-foreground">
-              <Navbar />
-              <main className="container mx-auto py-6">
-                <div className="text-center">
-                  <h2 className="text-2xl font-bold">User Profile</h2>
-                  <p className="mt-4">View and manage your account information.</p>
-                </div>
-              </main>
-            </div>
-          </AuthWrapper>
-        } />
-
         <Route path="/preferences" element={<Navigate to="/app/preferences" replace />} />
-        <Route path="/profile" element={<Navigate to="/app/profile" replace />} />
       </Routes>
     </>
   );
