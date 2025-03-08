@@ -60,7 +60,7 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
       <div className="min-h-screen flex items-center justify-center bg-black">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#ff00ff]"></div>
-          <p className="mt-4 text-white">Loading your profile...</p>
+          <p className="mt-4 text-white">Summoning a nat 20...</p>
           {authAttempts > 0 && (
             <p className="mt-2 text-sm text-gray-400">Attempt {authAttempts}/3...</p>
           )}

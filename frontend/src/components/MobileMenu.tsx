@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useAuth } from "@/lib/AuthProvider";
+import { useAuth, useUser } from "@/lib/AuthProvider";
 import { Link } from "react-router-dom";
 import { LogOut, Settings, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useTheme } from "@/components/theme-provider";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 
-export function MobileMenu({ username }: { username: string }) {
+export function MobileMenu() {
   const { signOut } = useAuth();
+  const { user } = useUser();
   const { theme } = useTheme();
   const [open, setOpen] = React.useState(false);
 
@@ -60,10 +62,21 @@ export function MobileMenu({ username }: { username: string }) {
       <SheetContent side="left" className="w-64 sm:max-w-md border-r p-0">
         <SheetHeader className="text-left p-4 border-b">
           <SheetTitle className="font-['UnifrakturMaguntia'] text-[#ff00ff] text-3xl">Dice Witch</SheetTitle>
+          <div className="flex items-center gap-3 mt-4">
+            <Avatar>
+              <AvatarImage src={user?.image} alt={user?.name || "User"} />
+              <AvatarFallback>
+                {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
+              </AvatarFallback>
+            </Avatar>
+            <span className="font-medium">
+              {user?.name || "User"}
+            </span>
+          </div>
         </SheetHeader>
         <div className="py-2">
           <nav className="flex flex-col">
-            <Link to="/app" onClick={() => setOpen(false)}>
+            <Link to="/app" replace onClick={() => setOpen(false)}>
               <Button 
                 variant="ghost" 
                 className="w-full justify-start rounded-none h-12"
@@ -72,7 +85,7 @@ export function MobileMenu({ username }: { username: string }) {
                 Roll
               </Button>
             </Link>
-            <Link to="/app/preferences" onClick={() => setOpen(false)}>
+            <Link to="/app/preferences" replace onClick={() => setOpen(false)}>
               <Button 
                 variant="ghost" 
                 className="w-full justify-start rounded-none h-12"

@@ -23,19 +23,19 @@ export function Navbar() {
       <div className="sm:hidden flex items-center justify-between px-4 py-2">
         <div className="flex-1 flex items-center gap-3">
           <Avatar>
-            <AvatarImage src={user?.imageUrl} alt={user?.username || user?.fullName || "User"} />
+            <AvatarImage src={user?.image} alt={user?.name || "User"} />
             <AvatarFallback>
-              {user?.fullName ? getInitials(user.fullName) : (user?.username?.[0] || "U")}
+              {user?.name ? getInitials(user.name) : "U"}
             </AvatarFallback>
           </Avatar>
           <span className="font-medium">
-            {user?.username || user?.fullName || "User"}
+            {user?.name || "User"}
           </span>
         </div>
 
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <MobileMenu username={user?.name || "User"} />
+          <MobileMenu />
         </div>
       </div>
 
@@ -52,13 +52,13 @@ export function Navbar() {
           </span>
         </div>
         <div className="ml-auto flex items-center space-x-4">
-          <Link to="/app">
+          <Link to="/app" replace>
             <Button variant="ghost" className="flex items-center gap-2">
               <Box className="h-4 w-4" />
               Roll
             </Button>
           </Link>
-          <Link to="/app/preferences">
+          <Link to="/app/preferences" replace>
             <Button variant="ghost" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
               Preferences

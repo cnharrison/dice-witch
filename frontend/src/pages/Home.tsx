@@ -44,6 +44,22 @@ export const Home = () => {
     }
   }, [input, isValid]);
 
+  const { data: mutualGuilds, isLoading, isFetching } = useQuery<any[]>({
+    queryKey: ['guilds'],
+    queryFn: async () => {
+      const response = await customFetch('/api/guilds/mutual');
+      if (!response.ok) {
+        throw new Error('Failed to fetch guilds');
+      }
+      const data = await response.json();
+      return data.guilds || [];
+    },
+    enabled: !!user?.id,
+    staleTime: 1000 * 60 * 5,
+    refetchOnMount: 'always',
+  });
+
+  // Then define the handler
   const handleInputChange = (value: string) => {
     setInput(value);
     if (!value) {
@@ -53,19 +69,6 @@ export const Home = () => {
     }
   };
 
-  const { data: mutualGuilds, isLoading } = useQuery<any[]>({
-    queryKey: ['guilds'],
-    queryFn: async () => {
-      const response = await customFetch('/api/guilds/mutual');
-      if (!response.ok) {
-        throw new Error('Failed to fetch guilds');
-      }
-      return response.json().then(data => data.guilds || []);
-    },
-    enabled: !!user?.id, // Using Auth.js user ID
-    staleTime: 1000 * 60 * 5,
-  });
-
   const { data: channelsResponse } = useQuery({
     queryKey: ['channels', selectedGuild],
     queryFn: async () => {
@@ -74,11 +77,12 @@ export const Home = () => {
       return data;
     },
     enabled: !!selectedGuild,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
   });
+
 
   const channels = channelsResponse?.channels || [];
 
@@ -100,7 +104,7 @@ export const Home = () => {
         source: 'web',
         username: user?.name || user?.email,
         timesToRepeat: timesToRepeat,
-        title: rollTitle || undefined
+        title: rollTitle || undefined,
       };
       const response = await customFetch('/api/dice/roll', {
         method: 'POST',
@@ -120,7 +124,10 @@ export const Home = () => {
         });
       }
 
+
       setRollResults(data);
+
+
       setIsRolling(false);
 
     } catch (error) {
@@ -135,7 +142,7 @@ export const Home = () => {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isFetching) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoaderIcon className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -147,13 +154,27 @@ export const Home = () => {
     guild => guild.isAdmin || guild.isDiceWitchAdmin
   );
 
+  const hasNoGuilds = !Array.isArray(mutualGuilds) || mutualGuilds.length === 0;
+
+  if (hasNoGuilds && !isLoading && !isFetching) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <h1 className="text-2xl font-semibold text-center text-muted-foreground max-w-lg mb-6">
+          You don't have any mutual servers with Dice Witch
+        </h1>
+        <a
+          href={`https://discord.com/oauth2/authorize?client_id=${import.meta.env.VITE_DISCORD_CLIENT_ID || '808161585876697108'}&permissions=0&scope=bot%20applications.commands`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2 rounded"
+        >
+          Add Dice Witch to a server
+        </a>
+      </div>
+    );
+  }
+
   if (!hasAdminPermissions) {
-    const noGuilds = !Array.isArray(mutualGuilds) || mutualGuilds.length === 0;
-
-    if (noGuilds) {
-      return <Navigate to="/app/preferences" replace />;
-    }
-
     return (
       <div className="flex items-center justify-center min-h-screen">
         <h1 className="text-2xl font-semibold text-center text-muted-foreground max-w-lg">

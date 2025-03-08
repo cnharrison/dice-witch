@@ -72,7 +72,6 @@ router.post('/roll', async (c) => {
         message: rollResult.message || `Roll processed successfully`,
         diceArray: rollResult.diceArray || [],
         resultArray: rollResult.resultArray || [],
-        imageData: rollResult.base64Image,
         channelName: rollResult.channelName,
         guildName: rollResult.guildName
       };

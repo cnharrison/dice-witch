@@ -30,7 +30,6 @@ export interface RollResult {
   resultArray: Result[];
   errors?: string[];
   files?: AttachmentBuilder[];
-  base64Image?: string; // For web response
   message?: string; // For web response
   channelName?: string; // For web response
   guildName?: string; // For web response
@@ -145,8 +144,6 @@ export class RollService {
         try {
           diceAttachment = await this.diceService.generateDiceAttachment(diceArray);
           if (diceAttachment) {
-            const imageBuffer = diceAttachment.canvas.toBuffer('image/webp');
-            base64Image = Buffer.from(imageBuffer).toString('base64');
 
             const embedMessage = await this.diceService.generateEmbedMessage({
               resultArray,
@@ -202,7 +199,6 @@ export class RollService {
         }
       }
 
-      result.base64Image = base64Image;
       result.message = `Message sent to Discord channel ${channelName}`;
       result.channelName = channelName;
       result.guildName = guildName;

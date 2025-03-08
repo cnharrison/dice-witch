@@ -32,5 +32,6 @@ export function useGuild() {
   if (context === undefined) {
     throw new Error('useGuild must be used within a GuildProvider');
   }
+  
   return context;
 }

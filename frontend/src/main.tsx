@@ -7,11 +7,6 @@ import { AuthProvider } from './lib/AuthProvider';
 import './index.css'
 import App from './App'
 
-console.log('[Auth] Environment:', {
-  NODE_ENV: import.meta.env.MODE,
-  basePath: window.location.origin,
-  currentPath: window.location.pathname
-});
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.dicewit.ch';
 export const customFetch = async (url: string, options: RequestInit = {}) => {

@@ -9,7 +9,6 @@ import LandingPage from './pages/LandingPage';
 import Preferences from './pages/Preferences';
 import { GuildProvider } from './context/GuildContext';
 
-
 function App() {
   return (
     <>
@@ -17,36 +16,23 @@ function App() {
       <Toaster />
       <Routes>
         <Route path="/" element={<LandingPage />} />
-
         <Route path="/sign-in/*" element={<Navigate to="/" replace />} />
-
-        <Route path="/app" element={
+        <Route path="/app/*" element={
           <AuthWrapper>
             <GuildProvider>
               <div className="min-h-screen bg-background text-foreground">
                 <Navbar />
                 <main className="container mx-auto py-6">
-                  <Home />
+                  <Routes>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/preferences" element={<Preferences />} />
+                  </Routes>
                 </main>
               </div>
             </GuildProvider>
           </AuthWrapper>
         } />
-
-        <Route path="/app/preferences" element={
-          <AuthWrapper>
-            <GuildProvider>
-              <div className="min-h-screen bg-background text-foreground">
-                <Navbar />
-                <main className="container mx-auto py-6">
-                  <Preferences />
-                </main>
-              </div>
-            </GuildProvider>
-          </AuthWrapper>
-        } />
-
-        <Route path="/preferences" element={<Navigate to="/app/preferences" replace />} />
+        <Route path="*" element={<Navigate to="/app" replace />} />
       </Routes>
     </>
   );
