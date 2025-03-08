@@ -43,11 +43,19 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
   });
 
   if (!isLoaded) {
-    return <div>Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#ff00ff]"></div>
+          <p className="mt-4 text-white">Loading your profile...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!isSignedIn) {
-    return <Navigate to="/sign-in" replace />;
+    console.log('[AuthWrapper] User not signed in, redirecting to sign-in');
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
