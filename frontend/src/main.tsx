@@ -65,11 +65,7 @@ root.render(
             socialButtonsVariant: 'iconButton'
           }
         }}
-        tokenCache={{
-          type: "memory"
-        }}
-        fallbackRedirectUrl="/app"
-        forceRedirectUrl="/app"
+        tokenCache={{ type: "cookie" }}
         signInUrl="/"
       >
         <Router>
