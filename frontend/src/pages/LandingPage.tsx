@@ -19,13 +19,13 @@ const LandingPage = () => {
       console.log('[Auth] Redirect settings:', {
         strategy: "oauth_discord",
         redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/app" 
+        redirectUrlComplete: window.location.origin + "/app" 
       });
       
       await signIn.authenticateWithRedirect({
         strategy: "oauth_discord",
         redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/app"
+        redirectUrlComplete: window.location.origin + "/app"
       });
       
       console.log('[Auth] After authenticateWithRedirect call');
