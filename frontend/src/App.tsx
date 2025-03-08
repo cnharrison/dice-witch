@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { UserProfile } from '@clerk/clerk-react';
+import { UserProfile, ClerkLoading, ClerkLoaded } from '@clerk/clerk-react';
 import { AuthWrapper } from './components/AuthWrapper';
 import { Navbar } from './components/Navbar';
 import { SvgFilters } from './components/SvgFilters';
@@ -9,6 +9,23 @@ import Home from './pages/Home';
 import LandingPage from './pages/LandingPage';
 import Preferences from './pages/Preferences';
 import { GuildProvider } from './context/GuildContext';
+
+const SSOCallback = () => {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-black">
+      <ClerkLoading>
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#ff00ff]"></div>
+          <p className="mt-4 text-white">Authenticating...</p>
+        </div>
+      </ClerkLoading>
+      
+      <ClerkLoaded>
+        <Navigate to="/app" replace />
+      </ClerkLoaded>
+    </div>
+  );
+};
 
 function App() {
   return (
@@ -19,6 +36,8 @@ function App() {
         <Route path="/" element={<LandingPage />} />
 
         <Route path="/sign-in/*" element={<Navigate to="/" replace />} />
+        
+        <Route path="/sso-callback" element={<SSOCallback />} />
 
         <Route path="/app" element={
           <AuthWrapper>
