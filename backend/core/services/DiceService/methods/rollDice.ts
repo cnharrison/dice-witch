@@ -50,6 +50,11 @@ export async function rollDice(
         errors.push(`Invalid notation when rolling: ${value}`);
         continue;
       }
+
+      if (!Number.isFinite(roll.total)) {
+        errors.push(`you fool. you absolute buffoon. you think you can challenge me in my own realm? you think you can rebel against my authority? you dare come into my house and upturn my dining chairs and spill coffee grinds in my Keurig? you thought you were safe in your chain mail armor behind that screen of yours. I will take these laminate wood floor boards and destroy you. I didn't want war, but I didn't start it.`);
+        continue;
+      }
       const result: Result = {
         output: roll.output,
         results: roll.total,
