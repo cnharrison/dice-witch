@@ -42,6 +42,18 @@ console.error = function(...args) {
 };
 
 function forwardErrorToManager(type: string, error: any, context: Record<string, any> = {}) {
+  let normalizedError: Error;
+  if (error instanceof Error) {
+    normalizedError = error;
+  } else {
+    let message: string;
+    try {
+      message = typeof error === 'string' ? error : JSON.stringify(error);
+    } catch {
+      message = String(error);
+    }
+    normalizedError = new Error(message);
+  }
   let enhancedContext = { ...context };
 
   if (context.guildId && !enhancedContext.guild) {
@@ -77,8 +89,8 @@ function forwardErrorToManager(type: string, error: any, context: Record<string,
     const errorData = {
       type: 'error',
       errorType: type,
-      message: error?.message || String(error),
-      stack: error?.stack,
+      message: normalizedError.message,
+      stack: normalizedError.stack,
       shardId: currentShardId,
       timestamp: Date.now(),
       context: enhancedContext
@@ -87,7 +99,7 @@ function forwardErrorToManager(type: string, error: any, context: Record<string,
     process.send(errorData);
   }
 
-  console.error(`${type}:`, error);
+  console.error(`${type}:`, normalizedError);
 
   if (enhancedContext.guild) {
     console.error(`Guild: ${enhancedContext.guild.name || 'Unknown'} (${enhancedContext.guild.id || 'Unknown ID'})`);
