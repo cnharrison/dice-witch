@@ -13,7 +13,6 @@ import { ChildProcess } from "child_process";
 import { DiscordService } from "./core/services/DiscordService";
 import { DatabaseService } from "./core/services/DatabaseService";
 import { ResourceRegistry } from "./core/services/ResourceRegistry";
-import * as fs from "fs";
 import { handleShardMessage } from "./discord/logging/shardMessageLogger";
 
 const resourceRegistry = ResourceRegistry.getInstance();
@@ -41,8 +40,7 @@ app.get("/", async (c) => {
 
   return c.text("API Server");
 });
-const defaultPort = process.env.USE_SSL ? 443 : 80;
-const port = process.env.PORT || defaultPort;
+const port = process.env.PORT || 3000;
 
 const manager = new ShardingManager(process.env.BOT_PATH ? `${process.env.BOT_PATH}/backend/discord/app.ts` : "./discord/app.ts", {
   token: CONFIG.discord.token,
@@ -161,33 +159,6 @@ const checkDatabaseConnection = async () => {
   }
 };
 
-const getHttpsOptions = () => {
-  try {
-    if (process.env.NODE_ENV === 'production') {
-      const keyPath = process.env.SSL_KEY_PATH || '/etc/letsencrypt/live/api.dicewit.ch/privkey.pem';
-      const certPath = process.env.SSL_CERT_PATH || '/etc/letsencrypt/live/api.dicewit.ch/fullchain.pem';
-
-      try {
-        const key = fs.readFileSync(keyPath);
-        const cert = fs.readFileSync(certPath);
-        return { key, cert };
-      } catch (err) {
-        console.error('[SSL] Error reading certificate files:', err);
-        return null;
-      }
-    } else if (process.env.USE_SSL) {
-      return {
-        key: fs.readFileSync('./certs/localhost-key.pem'),
-        cert: fs.readFileSync('./certs/localhost.pem'),
-      };
-    }
-    return null;
-  } catch (error) {
-    console.error('[SSL] Failed to load SSL certificates:', error);
-    return null;
-  }
-};
-
 const startServer = async () => {
   try {
     const dbConnected = await checkDatabaseConnection();
@@ -205,24 +176,12 @@ const startServer = async () => {
       process.exit(1);
     });
 
-    const httpsOptions = getHttpsOptions();
+    serve({
+      fetch: app.fetch,
+      port: Number(port),
+    });
 
-    if (httpsOptions) {
-      serve({
-        fetch: app.fetch,
-        port: Number(port),
-        serverOptions: httpsOptions
-      });
-
-      console.log(`🔒 🎲 [Web] Dice Witch Web Server is running on port ${port} (HTTPS)`);
-    } else {
-      serve({
-        fetch: app.fetch,
-        port: Number(port),
-      });
-
-      console.log(`🎲 [Web] Dice Witch Web Server is running on port ${port} (HTTP)`);
-    }
+    console.log(`🎲 [Web] Dice Witch Web Server is running on port ${port} (HTTP behind reverse proxy)`);
   } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);
