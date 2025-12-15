@@ -9,13 +9,26 @@ export async function generateDiceAttachment(
   this: DiceService,
   diceArray: DiceArray
 ): Promise<{ attachment: AttachmentBuilder } | undefined> {
+  if (!(this as any)._canvasPool) {
+    (this as any)._canvasPool = {
+      canvas: Canvas.createCanvas(1, 1),
+      ctx: null as any
+    };
+    (this as any)._canvasPool.ctx = (this as any)._canvasPool.canvas.getContext("2d");
+  }
+
+  const pool = (this as any)._canvasPool as { canvas: CanvasType; ctx: Canvas.CanvasRenderingContext2D };
   try {
     const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
     const paginatedArray = this.paginateDiceArray(diceArray);
     const canvasHeight = this.getCanvasHeight(paginatedArray, shouldHaveIcon);
     const canvasWidth = this.getCanvasWidth(paginatedArray);
-    const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
-    const ctx = canvas.getContext("2d");
+    const canvas = pool.canvas;
+    const ctx = pool.ctx;
+
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const drawDice = async (die: Die, index: number, outerIndex: number) => {
       let toLoad = null;
