@@ -47,7 +47,9 @@ export const rateLimit = (options: RateLimitOptions): MiddlewareHandler => {
   const { limit, windowMs } = options;
 
   return async (c, next) => {
-    const ip = c.req.header('x-forwarded-for') || 'unknown';
+    cleanupExpiredEntries();
+    const forwardedFor = c.req.header('x-forwarded-for');
+    const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : 'unknown';
     const now = Date.now();
     
     const data = requestCounts.get(ip);
