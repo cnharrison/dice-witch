@@ -392,7 +392,10 @@ const sendLogEventMessage = async ({
 
         await manager.broadcastEval(
           async (c, { channelId, embedData, files }) => {
-            const channel = c.channels.cache.get(channelId);
+            let channel = c.channels.cache.get(channelId);
+            if (!channel) {
+              channel = await c.channels.fetch(channelId).catch(() => null) as any;
+            }
             if (!channel || !channel.isTextBased()) return false;
 
             try {
@@ -441,7 +444,10 @@ const sendLogEventMessage = async ({
       } else {
         await manager.broadcastEval(
           async (c, { channelId, embedData }) => {
-            const channel = c.channels.cache.get(channelId);
+            let channel = c.channels.cache.get(channelId);
+            if (!channel) {
+              channel = await c.channels.fetch(channelId).catch(() => null) as any;
+            }
             if (!channel || !channel.isTextBased()) return false;
 
             try {

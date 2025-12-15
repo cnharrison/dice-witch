@@ -1,6 +1,7 @@
 import {
   Client,
   GatewayIntentBits,
+  Options,
   Partials,
   TextChannel,
 } from "discord.js";
@@ -160,6 +161,19 @@ if (scheduler === null) {
 }
 
 export const discord = new Client({
+  makeCache: Options.cacheWithLimits({
+    MessageManager: 0,
+    ReactionManager: 0,
+    ThreadManager: 0,
+    GuildScheduledEventManager: 0,
+    StageInstanceManager: 0,
+    ChannelManager: 500,
+    GuildMemberManager: 2000,
+    RoleManager: 1000,
+    GuildEmojiManager: 500,
+    VoiceStateManager: 200,
+    GuildBanManager: 200,
+  }),
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
