@@ -23,8 +23,8 @@ const generateGeneric = (props: GenerateDieProps & {sides?: any}) => {
       <path d="M ${size/2} ${size/5} A ${size/2.5} ${size/2.5} 0 0 1 ${size*0.8} ${size/2} A ${size/2-8} ${size/2-8} 0 0 0 ${size/5} ${size/2} A ${size/2.5} ${size/2.5} 0 0 1 ${size/2} ${size/5}"
         fill="rgba(255,255,255,0.25)" stroke="none" />
     </g>
-    <text x="${size/2}" y="${size/2+8}" font-family="Arial" font-size="42" font-weight="bold" fill="${textColor}" text-anchor="middle">${props.result}</text>
-    <text x="${size/2}" y="${size-15}" font-family="Arial" font-size="16" font-weight="bold" fill="${textColor}" text-anchor="middle">d${props.sides || '?'}</text>
+    <text x="${size/2}" y="${size/2+8}" font-family="Liberation Sans, Arial, sans-serif" font-size="42" font-weight="bold" fill="${textColor}" text-anchor="middle">${props.result}</text>
+    <text x="${size/2}" y="${size-15}" font-family="Liberation Sans, Arial, sans-serif" font-size="16" font-weight="bold" fill="${textColor}" text-anchor="middle">d${props.sides || '?'}</text>
   </svg>`;
 };
 
