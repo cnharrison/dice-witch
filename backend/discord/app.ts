@@ -172,6 +172,18 @@ export const discord = new Client({
     messages: {
       interval: 300,
       lifetime: 600
+    },
+    users: {
+      interval: 3600,
+      filter: () => (user) => user.bot && user.id !== discord.user?.id
+    },
+    guildMembers: {
+      interval: 3600,
+      filter: () => (member) => member.id !== discord.user?.id
+    },
+    threads: {
+      interval: 3600,
+      lifetime: 14400
     }
   }
 });
