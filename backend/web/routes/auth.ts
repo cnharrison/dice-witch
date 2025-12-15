@@ -5,6 +5,8 @@ import { CONFIG } from "../../config";
 import { DatabaseService } from "../../core/services/DatabaseService";
 
 const isProduction = process.env.NODE_ENV === "production";
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_SESSIONS = 10000;
 
 const auth = new Hono();
 
@@ -26,7 +28,28 @@ const discordProvider = {
   },
 };
 
-export const sessions = new Map<string, any>();
+export const sessions = new Map<string, { session: any; expires: number }>();
+
+const cleanupSessions = () => {
+  const now = Date.now();
+  for (const [key, value] of sessions.entries()) {
+    if (value.expires <= now) {
+      sessions.delete(key);
+    }
+  }
+  if (sessions.size > MAX_SESSIONS) {
+    const entries = Array.from(sessions.entries()).sort((a, b) => a[1].expires - b[1].expires);
+    for (const [key] of entries) {
+      if (sessions.size <= MAX_SESSIONS) break;
+      sessions.delete(key);
+    }
+  }
+};
+
+const sessionCleanupInterval = setInterval(cleanupSessions, 10 * 60 * 1000);
+if (sessionCleanupInterval.unref) {
+  sessionCleanupInterval.unref();
+}
 
 function generateRandomString(length: number) {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -40,12 +63,15 @@ function generateRandomString(length: number) {
 auth.get("/session", async (c) => {
   const sessionId = getCookie(c, "session_id");
   
-  if (!sessionId || !sessions.has(sessionId)) {
+  const record = sessionId ? sessions.get(sessionId) : null;
+  if (!record || record.expires <= Date.now()) {
+    if (sessionId) {
+      sessions.delete(sessionId);
+    }
     return c.json({ user: null }, 401);
   }
   
-  const session = sessions.get(sessionId);
-  return c.json(session);
+  return c.json(record.session);
 });
 
 
@@ -59,9 +85,9 @@ auth.get("/signin/:provider", async (c) => {
   const authUrl = new URL(discordProvider.authorization.url);
   const reqURL = new URL(c.req.url);
   
-  const origin = isProduction ? 'https://api.dicewit.ch' : 'http://localhost:80';
+  const origin = isProduction ? 'https://dicewit.ch' : 'http://localhost:80';
   const clientId = CONFIG.discord.clientId || "809202086083428394";
-  const redirectUri = isProduction ? "https://api.dicewit.ch" : "http://localhost";
+  const redirectUri = isProduction ? "https://dicewit.ch/api/auth/callback/discord" : "http://localhost";
   
   const params = new URLSearchParams({
     client_id: clientId,
@@ -106,7 +132,7 @@ auth.get("/callback/:provider", async (c) => {
       return c.json({ error: "Discord client secret is not configured" }, 500);
     }
     
-    const redirectUri = isProduction ? "https://api.dicewit.ch" : "http://localhost";
+    const redirectUri = isProduction ? "https://dicewit.ch/api/auth/callback/discord" : "http://localhost";
     
     const tokenParams = new URLSearchParams({
       client_id: clientId,
@@ -165,7 +191,8 @@ auth.get("/callback/:provider", async (c) => {
       accessToken: tokens.access_token,
     };
     
-    sessions.set(sessionId, session);
+    const expires = Date.now() + SESSION_TTL_MS;
+    sessions.set(sessionId, { session, expires });
     
     setCookie(c, "session_id", sessionId, {
       httpOnly: false,
