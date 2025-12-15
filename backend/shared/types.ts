@@ -256,7 +256,6 @@ export interface SendDiceResultMessageParams {
 export interface SendDiceResultMessageWithImageParams {
   resultArray: Result[];
   attachment: AttachmentBuilder;
-  canvas: Canvas;
   interaction?: CommandInteraction | ButtonInteraction;
   title?: string;
 }

@@ -8,7 +8,7 @@ import { getRandomPatternFill } from "../../images/generateDice/fills/generatePa
 export async function generateDiceAttachment(
   this: DiceService,
   diceArray: DiceArray
-): Promise<{ attachment: AttachmentBuilder; canvas: CanvasType } | undefined> {
+): Promise<{ attachment: AttachmentBuilder } | undefined> {
   try {
     const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
     const paginatedArray = this.paginateDiceArray(diceArray);
@@ -99,7 +99,7 @@ export async function generateDiceAttachment(
     } catch (err) {
     }
     
-    return { attachment, canvas };
+    return { attachment };
   } catch (error) {
     return undefined;
   }

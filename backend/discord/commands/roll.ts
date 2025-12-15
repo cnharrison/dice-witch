@@ -162,7 +162,7 @@ const command = {
         });
       }
 
-      const { attachment, canvas } = attachmentResult;
+      const { attachment } = attachmentResult;
       if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
           type: 'roll_sending_result',
@@ -175,7 +175,6 @@ const command = {
       await sendDiceResultMessageWithImage({
         resultArray,
         attachment,
-        canvas,
         interaction,
         title
       }).then(() => {
