@@ -306,7 +306,7 @@ const startServer = () => {
       const job = new SimpleIntervalJob({ hours: 4 }, task);
       scheduler.addSimpleIntervalJob(job);
       console.log(`Bot site update scheduler initialized`);
-      
+
       discord.on('shutdown', () => {
         if (scheduler) {
           scheduler.stop();
@@ -314,6 +314,11 @@ const startServer = () => {
         }
       });
     }
+
+    setInterval(() => {
+      const usage = process.memoryUsage();
+      console.log(`[Memory] RSS: ${Math.round(usage.rss / 1024 / 1024)}MB, Heap: ${Math.round(usage.heapUsed / 1024 / 1024)}/${Math.round(usage.heapTotal / 1024 / 1024)}MB, External: ${Math.round(usage.external / 1024 / 1024)}MB`);
+    }, 5 * 60 * 1000);
   });
 
 
