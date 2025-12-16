@@ -31,6 +31,7 @@ import { generateDiceRolledMessage } from "./methods/generateDiceRolledMessage";
 export class DiceService {
   private static instance: DiceService;
   protected icons: Map<Icon | null, string>;
+  protected iconBufferCache: Map<Icon | null, Buffer> = new Map();
   protected defaultDiceDimension = 150;
   protected defaultIconDimension = 37;
   protected maxRowLength = 10;
