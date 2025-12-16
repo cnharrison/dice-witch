@@ -124,7 +124,7 @@ const sendLogEventMessage = async ({
         color: tabletopColor,
         title: title || "Dice Roll",
         description: `${resultMessage || args || ""}`,
-        image: { url: 'attachment://currentDice.webp' },
+        image: undefined,
       },
       [EventType.SENT_ROLL_RESULT_MESSAGE]: {
         color: tabletopColor,
@@ -169,8 +169,8 @@ const sendLogEventMessage = async ({
       if (discord.shard && discord.shard.count > 1) {
         const shardForChannel = ShardClientUtil.shardIdForGuildId(CONFIG.discord.logOutputChannelId, discord.shard.count);
 
-        if (files && files.length > 0 && eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE) {
-          const serializedFiles: SerializedFile[] = files.map(file => {
+        if (false) {
+          const serializedFiles: SerializedFile[] = files!.map(file => {
             if (!file || !file.name) return { name: null, attachment: null };
 
             return {
@@ -311,8 +311,8 @@ const sendLogEventMessage = async ({
         }
 
         try {
-          if (eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE && files && files.length > 0) {
-            const serializedFiles: SerializedFile[] = files.map(file => {
+          if (false) {
+            const serializedFiles: SerializedFile[] = files!.map(file => {
               if (!file || !file.name) return { name: null, attachment: null };
 
               return {
@@ -378,8 +378,8 @@ const sendLogEventMessage = async ({
 
       const logChannelId = logOutputChannelId;
 
-      if (files && files.length > 0 && eventType === EventType.SENT_ROLL_RESULT_MESSAGE_WITH_IMAGE) {
-        const serializedFiles: SerializedFile[] = files.map(file => {
+      if (false) {
+        const serializedFiles: SerializedFile[] = files!.map(file => {
           if (!file || !file.name) return { name: null, attachment: null };
 
           return {
