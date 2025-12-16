@@ -88,10 +88,7 @@ export async function generateDie(
         });
 
       attachment = await sharpInstance.toBuffer();
-
-      if (typeof sharpInstance.removeAllListeners === 'function') {
-        sharpInstance.removeAllListeners();
-      }
+      sharpInstance.destroy();
     } finally {
       imageBuffer = Buffer.alloc(0);
     }

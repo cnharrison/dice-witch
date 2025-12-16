@@ -7,7 +7,11 @@ import {
 } from "discord.js";
 
 import axios from "axios";
+import sharp from "sharp";
 import { ToadScheduler, SimpleIntervalJob, AsyncTask } from "toad-scheduler";
+
+sharp.cache(false);
+
 import setupEvents from './events';
 import { CONFIG } from "../config";
 import { DiscordService } from "../core/services/DiscordService";

@@ -6,6 +6,9 @@ export async function generateIcon(
   this: DiceService,
   iconType: Icon | null
 ): Promise<Buffer | undefined> {
+  const cached = this.iconBufferCache.get(iconType);
+  if (cached) return cached;
+
   try {
     const image = this.icons.get(iconType) || this.icons.get(null);
     if (!image) return undefined;
@@ -24,14 +27,12 @@ export async function generateIcon(
         });
 
       attachment = await sharpInstance.toBuffer();
-
-      if (typeof sharpInstance.removeAllListeners === 'function') {
-        sharpInstance.removeAllListeners();
-      }
+      sharpInstance.destroy();
     } finally {
       imageBuffer = Buffer.alloc(0);
     }
 
+    this.iconBufferCache.set(iconType, attachment);
     return attachment;
   } catch (err) {
     console.error(`Error generating icon for: ${iconType}`, err);
