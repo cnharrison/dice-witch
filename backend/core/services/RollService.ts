@@ -171,7 +171,7 @@ export class RollService {
                 attachment: Buffer.isBuffer(diceAttachment.attachment) ? diceAttachment.attachment : null
               }].filter(file => file.attachment !== null);
 
-              await sendLogEventMessage({
+              sendLogEventMessage({
                 eventType: EventType.RECEIVED_COMMAND,
                 args: Array.isArray(notation) ? notation : [notation],
                 guild: channel.guild ? channel.guild : undefined,
@@ -190,7 +190,7 @@ export class RollService {
                 username,
                 channelName,
                 guildName
-              });
+              }).catch(() => {});
             } catch (logError) {
             }
           }

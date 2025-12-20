@@ -37,12 +37,12 @@ const sendDiceResultMessage = async ({
     }
 
     try {
-      await sendLogEventMessage({
+      sendLogEventMessage({
         eventType: EventType.SENT_ROLL_RESULT_MESSAGE,
         resultMessage: resultsText,
         title,
         interaction
-      });
+      }).catch(() => {});
     } catch (error) {
       console.error("Error sending log event:", error);
     }
