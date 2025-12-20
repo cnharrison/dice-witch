@@ -8,7 +8,7 @@ import { getRandomPatternFill } from "../../images/generateDice/fills/generatePa
 export async function generateDiceAttachment(
   this: DiceService,
   diceArray: DiceArray
-): Promise<{ attachment: AttachmentBuilder } | undefined> {
+): Promise<{ attachment: AttachmentBuilder; errors?: string[] } | undefined> {
   if (!(this as any)._canvasPool) {
     (this as any)._canvasPool = {
       canvas: Canvas.createCanvas(1, 1),
@@ -19,6 +19,7 @@ export async function generateDiceAttachment(
 
   const pool = (this as any)._canvasPool as { canvas: CanvasType; ctx: Canvas.CanvasRenderingContext2D };
   try {
+    const errors: string[] = [];
     const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
     const paginatedArray = this.paginateDiceArray(diceArray);
     const canvasHeight = this.getCanvasHeight(paginatedArray, shouldHaveIcon);
@@ -51,6 +52,7 @@ export async function generateDiceAttachment(
         });
 
         if (!toLoad) {
+          errors.push(`die:${die.sides}:${die.rolled}`);
           return;
         }
 
@@ -67,14 +69,19 @@ export async function generateDiceAttachment(
           );
 
           if (shouldHaveIcon && die.iconSpacing) {
-            await this.drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
+            const iconErrors = await this.drawIcon(die.icon, die.iconSpacing, ctx, index, outerIndex);
+            if (iconErrors.length) {
+              errors.push(...iconErrors);
+            }
           }
           
         } catch (imgErr) {
           console.error("Image loading error:", imgErr);
+          errors.push(`image:${die.sides}:${die.rolled}`);
         }
       } catch (err) {
         console.error("Die generation error:", err);
+        errors.push(`die:${die.sides}:${die.rolled}`);
       } finally {
         toLoad = null;
       }
@@ -112,7 +119,7 @@ export async function generateDiceAttachment(
     } catch (err) {
     }
     
-    return { attachment };
+    return { attachment, errors: errors.length ? errors : undefined };
   } catch (error) {
     return undefined;
   }

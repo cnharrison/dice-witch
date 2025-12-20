@@ -1,7 +1,8 @@
 import { RollService } from "../../core/services/RollService";
 import { DiscordService } from "../../core/services/DiscordService";
 import { DatabaseService } from "../../core/services/DatabaseService";
-import { RollProps } from "../../shared/types";
+import { EventType, RollProps } from "../../shared/types";
+import sendLogEventMessage from "../messages/sendLogEventMessage";
 import {
   sendDiceOverMaxMessage,
   sendDiceResultMessageWithImage,
@@ -9,6 +10,7 @@ import {
   sendHelperMessage,
   sendNeedPermissionMessage
 } from "../messages";
+import { CONFIG } from "../../config";
 
 const command = {
   name: "roll",
@@ -133,6 +135,14 @@ const command = {
 
       if (!attachmentResult) {
         console.error("Failed to generate dice attachment");
+        sendLogEventMessage({
+          eventType: EventType.IMAGE_RENDER_ERROR,
+          command,
+          args,
+          interaction,
+          resultMessage: `Failed to generate dice attachment for: ${args.join(' ')}`,
+          logChannelId: CONFIG.discord.renderErrorChannelId
+        }).catch(() => {});
         if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
           process.send({
             type: 'error',
@@ -151,6 +161,18 @@ const command = {
           });
         }
         return;
+      }
+
+      if (attachmentResult.errors?.length) {
+        sendLogEventMessage({
+          eventType: EventType.IMAGE_RENDER_ERROR,
+          command,
+          args,
+          interaction,
+          resultMessage: `Image render errors: ${attachmentResult.errors.join(", ")}`,
+          files: [attachmentResult.attachment],
+          logChannelId: CONFIG.discord.renderErrorChannelId
+        }).catch(() => {});
       }
 
       if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {

@@ -11,6 +11,7 @@ export const CONFIG = {
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     clientId: process.env.DISCORD_CLIENT_ID,
     logOutputChannelId: process.env.LOG_OUTPUT_CHANNEL_ID!,
+    renderErrorChannelId: process.env.LOG_RENDER_ERROR_CHANNEL_ID || process.env.LOG_OUTPUT_CHANNEL_ID!,
     adminId: process.env.ADMIN_ID,
     supportServerLink: process.env.SUPPORT_SERVER_LINK!,
     inviteLink: process.env.INVITE_LINK!,

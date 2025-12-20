@@ -39,6 +39,7 @@ const { adminId, logOutputChannelId } = CONFIG.discord;
 
 const sendLogEventMessage = async ({
   eventType,
+  logChannelId: logChannelIdParam,
   command,
   args,
   title,
@@ -108,6 +109,12 @@ const sendLogEventMessage = async ({
           : `${args} from ${makeBold(user)} in **DM** [Shard ${getShardId()}] <@${adminId}>`,
         image: undefined,
       },
+      [EventType.IMAGE_RENDER_ERROR]: {
+        color: errorColor,
+        title: `${eventType}: ${commandName}`,
+        description: resultMessage || `${args || ""}`,
+        image: undefined,
+      },
       [EventType.GUILD_ADD]: {
         color: goodColor,
         title: eventType,
@@ -164,12 +171,13 @@ const sendLogEventMessage = async ({
     try {
       const embed = generateEmbed();
 
-      const logChannelId = logOutputChannelId;
+      const logChannelId = logChannelIdParam || logOutputChannelId;
+      const shouldSendFiles = !!files && files.length > 0 && eventType === EventType.IMAGE_RENDER_ERROR;
 
       if (discord.shard && discord.shard.count > 1) {
-        const shardForChannel = ShardClientUtil.shardIdForGuildId(CONFIG.discord.logOutputChannelId, discord.shard.count);
+        const shardForChannel = ShardClientUtil.shardIdForGuildId(logChannelId, discord.shard.count);
 
-        if (false) {
+        if (shouldSendFiles) {
           const serializedFiles: SerializedFile[] = files!.map(file => {
             if (!file || !file.name) return { name: null, attachment: null };
 
@@ -311,7 +319,7 @@ const sendLogEventMessage = async ({
         }
 
         try {
-          if (false) {
+          if (shouldSendFiles) {
             const serializedFiles: SerializedFile[] = files!.map(file => {
               if (!file || !file.name) return { name: null, attachment: null };
 
@@ -376,9 +384,10 @@ const sendLogEventMessage = async ({
     try {
       const embed = generateEmbed();
 
-      const logChannelId = logOutputChannelId;
+      const logChannelId = logChannelIdParam || logOutputChannelId;
+      const shouldSendFiles = !!files && files.length > 0 && eventType === EventType.IMAGE_RENDER_ERROR;
 
-      if (false) {
+      if (shouldSendFiles) {
         const serializedFiles: SerializedFile[] = files!.map(file => {
           if (!file || !file.name) return { name: null, attachment: null };
 

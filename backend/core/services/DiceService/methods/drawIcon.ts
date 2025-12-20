@@ -9,9 +9,10 @@ export async function drawIcon(
   ctx: any, // Canvas rendering context
   diceIndex: number,
   diceOuterIndex: number
-): Promise<void> {
-  if (!iconArray) return;
-  
+): Promise<string[]> {
+  if (!iconArray) return [];
+
+  const errors: string[] = [];
   const iconPromises = [];
   
   for (let i = 0; i < iconArray.length; i++) {
@@ -34,13 +35,12 @@ export async function drawIcon(
             this.defaultIconDimension
           );
         } catch (error) {
+          errors.push(`icon:${icon}`);
         }
       })()
     );
   }
   
-  try {
-    await Promise.all(iconPromises);
-  } catch (error) {
-  }
+  await Promise.all(iconPromises);
+  return errors;
 }

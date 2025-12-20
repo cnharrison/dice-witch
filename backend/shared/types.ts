@@ -42,6 +42,7 @@ export enum EventType {
   SENT_HELPER_MESSAGE = "sentHelperMessage",
   SENT_NEED_PERMISSION_MESSAGE = "sentNeedPermissionsMessage",
   SENT_DICE_OVER_MAX_MESSAGE = "sentDiceOverMaxMessage",
+  IMAGE_RENDER_ERROR = "imageRenderError",
 }
 
 export type DiceArray = Die[][];
@@ -154,6 +155,7 @@ export type EmbedObject = {
 
 export interface LogEventProps {
   eventType: EventType;
+  logChannelId?: string;
   command?: Command;
   args?: string[];
   title?: string;
