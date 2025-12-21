@@ -8,6 +8,9 @@ import { DiceTypesToDisplay } from "../../shared/types";
 import { CONFIG } from "../../config";
 
 const { inviteLink, supportServerLink } = CONFIG.discord;
+const isTest = process.env.NODE_ENV === "test";
+const inviteUrl = isTest && !inviteLink ? "https://example.com/invite" : inviteLink;
+const supportUrl = isTest && !supportServerLink ? "https://example.com/support" : supportServerLink;
 
 const availableDice: DiceTypesToDisplay[] = [100, 20, 12, 10, 8, 6, 4];
 
@@ -30,12 +33,12 @@ const panacheColor = resolveColor('#FF00FF');
 const inviteButton = new ButtonBuilder()
   .setLabel("Invite me")
   .setStyle(5)
-  .setURL(inviteLink);
+  .setURL(inviteUrl);
 
 const supportButton = new ButtonBuilder()
   .setLabel("Questions? Join the support server")
   .setStyle(5)
-  .setURL(supportServerLink);
+  .setURL(supportUrl);
 
 const footerButtonRow = new ActionRowBuilder<ButtonBuilder>()
   .addComponents(inviteButton, supportButton);
