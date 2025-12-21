@@ -1,5 +1,6 @@
-import { CommandInteraction, ButtonInteraction } from "discord.js";
+import { CommandInteraction, ButtonInteraction, GuildMember } from "discord.js";
 import { DatabaseService } from "..";
+import { DiscordService } from "../../DiscordService";
 import { PERMISSION_ADMINISTRATOR, ROLE_DICE_WITCH_ADMIN } from "../../../constants";
 
 export async function updateOnCommand(
@@ -14,6 +15,8 @@ export async function updateOnCommand(
 
   const { user, guild, member } = interaction;
   if (!guild?.id) return;
+  const discordService = DiscordService.getInstance();
+  const resolvedMember = await discordService.fetchGuildMember(member as GuildMember);
 
   try {
     await this.prisma.$transaction(async (tx) => {
@@ -70,8 +73,8 @@ export async function updateOnCommand(
         },
       });
 
-      if (member) {
-        const guildMember = member as any;
+      if (resolvedMember) {
+        const guildMember = resolvedMember as any;
         const isAdmin = guildMember.permissions.has(PERMISSION_ADMINISTRATOR);
         const isDiceWitchAdmin = guildMember.roles.cache.some((role: any) => role.name === ROLE_DICE_WITCH_ADMIN);
 

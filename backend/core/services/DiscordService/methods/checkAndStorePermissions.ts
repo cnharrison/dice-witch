@@ -3,14 +3,15 @@ import { DiscordService } from "..";
 import { DatabaseService } from "../../DatabaseService";
 import { PERMISSION_ADMINISTRATOR, ROLE_DICE_WITCH_ADMIN } from "../../../constants";
 
-export function checkAndStorePermissions(
+export async function checkAndStorePermissions(
   this: DiscordService,
   interaction: CommandInteraction | Message
-): void {
+): Promise<void> {
   if (!interaction.guild || !interaction.member || this.handledInteractions.has(interaction.id)) return;
 
   this.trackInteraction(interaction.id);
-  const member = interaction.member as GuildMember;
+  const member = await this.fetchGuildMember(interaction.member as GuildMember);
+  if (!member) return;
   const isAdmin = member.permissions.has(PERMISSION_ADMINISTRATOR);
   const isDiceWitchAdmin = member.roles.cache.some(role => role.name === ROLE_DICE_WITCH_ADMIN);
 

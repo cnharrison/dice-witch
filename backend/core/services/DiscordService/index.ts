@@ -5,6 +5,7 @@ import {
 
 import { checkForAttachPermission } from "./methods/checkForAttachPermission";
 import { checkAndStorePermissions } from "./methods/checkAndStorePermissions";
+import { fetchGuildMember } from "./methods/fetchGuildMember";
 import { getShardStatus } from "./methods/getShardStatus";
 import { getUserCount } from "./methods/getUserCount";
 import { getTextChannels } from "./methods/getTextChannels";
@@ -126,6 +127,7 @@ export class DiscordService {
 
   public checkForAttachPermission = checkForAttachPermission;
   public checkAndStorePermissions = checkAndStorePermissions;
+  public fetchGuildMember = fetchGuildMember;
   public getShardStatus = getShardStatus;
   public getUserCount = getUserCount;
   public getTextChannels = getTextChannels;
