@@ -102,7 +102,6 @@ export class RollService {
     };
 
     if (source === 'web' && channelId) {
-      let base64Image = '';
       let channelName = 'unknown channel';
       let guildName = '';
 
