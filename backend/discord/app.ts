@@ -164,16 +164,14 @@ if (scheduler === null) {
   scheduler = new ToadScheduler();
 }
 
-export const discord = new Client({
+export const discord: Client = new Client({
   makeCache: Options.cacheWithLimits({
     MessageManager: 0,
     ReactionManager: 0,
     ThreadManager: 0,
     GuildScheduledEventManager: 0,
     StageInstanceManager: 0,
-    ChannelManager: 500,
     GuildMemberManager: 2000,
-    RoleManager: 1000,
     GuildEmojiManager: 500,
     VoiceStateManager: 200,
     GuildBanManager: 200,
@@ -325,15 +323,15 @@ const startServer = () => {
 
   discord.login(discordToken);
 
-  discord.on('shardReady', (shardId) => {
+  discord.on('shardReady', (shardId: number) => {
     console.log(`Shard ${shardId} ready`);
   });
 
-  discord.on('shardError', (error, shardId) => {
+  discord.on('shardError', (error: Error, shardId: number) => {
     forwardErrorToManager('SHARD_ERROR', error, { shardId });
   });
 
-  discord.on('shardDisconnect', (event, shardId) => {
+  discord.on('shardDisconnect', (event: { code: number; reason: string }, shardId: number) => {
     console.log(`Shard ${shardId} disconnected. Code: ${event.code}`);
     forwardErrorToManager('SHARD_DISCONNECT', new Error(`Shard disconnected with code ${event.code}`), {
       shardId,
@@ -342,19 +340,19 @@ const startServer = () => {
     });
   });
 
-  discord.on('shardReconnecting', (shardId) => {
+  discord.on('shardReconnecting', (shardId: number) => {
     console.log(`Shard ${shardId} reconnecting...`);
   });
 
-  discord.on('error', (error) => {
+  discord.on('error', (error: Error) => {
     forwardErrorToManager('DISCORD_CLIENT_ERROR', error);
   });
 
-  discord.on('warn', (message) => {
+  discord.on('warn', (message: string) => {
     forwardErrorToManager('DISCORD_WARNING', new Error(message));
   });
 
-  discord.on('debug', (message) => {
+  discord.on('debug', (message: string) => {
     if (message.includes('error') || 
         message.includes('Error') || 
         message.includes('failed') || 
