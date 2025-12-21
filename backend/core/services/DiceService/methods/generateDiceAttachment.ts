@@ -1,4 +1,4 @@
-import Canvas, { Canvas as CanvasType, Image } from "@napi-rs/canvas";
+import { Canvas, Image, SKRSContext2D, createCanvas, loadImage } from "@napi-rs/canvas";
 import { AttachmentBuilder } from "discord.js";
 import { DiceArray, Die } from "../../../../shared/types";
 import { DiceService } from "..";
@@ -11,13 +11,13 @@ export async function generateDiceAttachment(
 ): Promise<{ attachment: AttachmentBuilder; errors?: string[] } | undefined> {
   if (!(this as any)._canvasPool) {
     (this as any)._canvasPool = {
-      canvas: Canvas.createCanvas(1, 1),
-      ctx: null as any
+      canvas: createCanvas(1, 1),
+      ctx: null as unknown as SKRSContext2D
     };
     (this as any)._canvasPool.ctx = (this as any)._canvasPool.canvas.getContext("2d");
   }
 
-  const pool = (this as any)._canvasPool as { canvas: CanvasType; ctx: Canvas.CanvasRenderingContext2D };
+  const pool = (this as any)._canvasPool as { canvas: Canvas; ctx: SKRSContext2D };
   try {
     const errors: string[] = [];
     const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
@@ -57,7 +57,7 @@ export async function generateDiceAttachment(
         }
 
         try {
-          const image = await Canvas.loadImage(toLoad as Buffer);
+          const image = await loadImage(toLoad as Buffer);
           const diceWidth = this.getDiceWidth(index);
           const diceHeight = this.getDiceHeight(outerIndex, shouldHaveIcon);
           ctx.drawImage(
