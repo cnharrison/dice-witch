@@ -1,7 +1,7 @@
 import { RollService } from "../../core/services/RollService";
 import { DiscordService } from "../../core/services/DiscordService";
 import { DatabaseService } from "../../core/services/DatabaseService";
-import { EventType, RollProps } from "../../shared/types";
+import { CommandProps, EventType } from "../../shared/types";
 import sendLogEventMessage from "../messages/sendLogEventMessage";
 import {
   sendDiceOverMaxMessage,
@@ -23,21 +23,25 @@ const command = {
     interaction,
     title,
     timesToRepeat,
-  }: RollProps) {
+  }: CommandProps) {
     try {
+      if (interaction && !interaction.deferred && !interaction.replied && typeof interaction.deferReply === 'function') {
+        await interaction.deferReply();
+      }
+
       if (interaction) {
         const interactionId = interaction.id;
         const timestamp = Date.now();
 
-        if (typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        if (typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
           process.send({
             type: 'roll_command_start',
             timestamp: timestamp,
             interactionId: interactionId,
-            shardId: interaction.client.shard?.ids[0],
+            shardId: interaction.client?.shard?.ids[0],
             guildId: interaction.guildId,
             channelId: interaction.channelId,
-            userId: interaction.user.id,
+            userId: interaction.user?.id,
             dice: args.join(' ')
           });
         }
@@ -72,12 +76,12 @@ const command = {
         return;
       }
 
-      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+      if (interaction && typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
           type: 'roll_processing_dice',
           timestamp: Date.now(),
           interactionId: interaction.id,
-          shardId: interaction.client.shard?.ids[0],
+          shardId: interaction.client?.shard?.ids[0],
           dice: args.join(' ')
         });
       }
@@ -85,16 +89,17 @@ const command = {
       const rollResult = await rollService.rollDice({
         notation: args,
         timesToRepeat,
+        title,
         interaction,
         source: 'discord'
       });
 
-      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+      if (interaction && typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
           type: 'roll_dice_processed',
           timestamp: Date.now(),
           interactionId: interaction.id,
-          shardId: interaction.client.shard?.ids[0],
+          shardId: interaction.client?.shard?.ids[0],
           dice: args.join(' '),
           resultCount: rollResult.resultArray.length
         });
@@ -120,12 +125,12 @@ const command = {
         await sendDiceRolledMessage({ diceArray, interaction });
       }
 
-      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+      if (interaction && typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
           type: 'roll_generating_image',
           timestamp: Date.now(),
           interactionId: interaction.id,
-          shardId: interaction.client.shard?.ids[0],
+          shardId: interaction.client?.shard?.ids[0],
           diceCount: diceArray.length
         });
       }
@@ -143,19 +148,19 @@ const command = {
           resultMessage: `Failed to generate dice attachment for: ${args.join(' ')}`,
           logChannelId: CONFIG.discord.renderErrorChannelId
         }).catch(() => {});
-        if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        if (interaction && typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
           process.send({
             type: 'error',
             errorType: 'DICE_ATTACHMENT_GENERATION_ERROR',
             message: "Failed to generate dice attachment",
-            shardId: interaction.client.shard?.ids[0],
+            shardId: interaction.client?.shard?.ids[0],
             timestamp: Date.now(),
             context: {
               commandName: 'roll',
               interactionId: interaction.id,
               guildId: interaction.guildId,
               channelId: interaction.channelId,
-              userId: interaction.user.id,
+              userId: interaction.user?.id,
               diceCount: diceArray.length
             }
           });
@@ -175,22 +180,22 @@ const command = {
         }).catch(() => {});
       }
 
-      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+      if (interaction && typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
           type: 'roll_image_generated',
           timestamp: Date.now(),
           interactionId: interaction.id,
-          shardId: interaction.client.shard?.ids[0]
+          shardId: interaction.client?.shard?.ids[0]
         });
       }
 
       const { attachment } = attachmentResult;
-      if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+      if (interaction && typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
         process.send({
           type: 'roll_sending_result',
           timestamp: Date.now(),
           interactionId: interaction.id,
-          shardId: interaction.client.shard?.ids[0]
+          shardId: interaction.client?.shard?.ids[0]
         });
       }
 
@@ -200,29 +205,29 @@ const command = {
         interaction,
         title
       }).then(() => {
-        if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        if (interaction && typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
           process.send({
             type: 'roll_result_sent',
             timestamp: Date.now(),
             interactionId: interaction.id,
-            shardId: interaction.client.shard?.ids[0]
+            shardId: interaction.client?.shard?.ids[0]
           });
         }
       }).catch(err => {
-        if (interaction && typeof interaction.client.shard !== 'undefined' && typeof process.send === 'function') {
+        if (interaction && typeof interaction.client?.shard !== 'undefined' && typeof process.send === 'function') {
           process.send({
             type: 'error',
             errorType: 'SEND_RESULT_ERROR',
             message: err?.message || String(err),
             stack: err?.stack,
-            shardId: interaction.client.shard?.ids[0],
+            shardId: interaction.client?.shard?.ids[0],
             timestamp: Date.now(),
             context: {
               commandName: 'roll',
               interactionId: interaction.id,
               guildId: interaction.guildId,
               channelId: interaction.channelId,
-              userId: interaction.user.id
+              userId: interaction.user?.id
             }
           });
         }
@@ -230,7 +235,7 @@ const command = {
 
     } catch (error) {
       console.error('Error in roll command:', error);
-      if (interaction?.isRepliable() && !interaction.replied) {
+      if (interaction?.isRepliable() && !interaction.replied && typeof interaction.reply === 'function') {
         await interaction.reply({ content: "Something went wrong with your dice roll.", ephemeral: true });
       }
     }
