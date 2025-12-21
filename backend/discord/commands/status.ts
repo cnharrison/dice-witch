@@ -1,17 +1,20 @@
 import { EmbedBuilder } from "discord.js";
 import { DiscordService } from "../../core/services/DiscordService";
-import { StatusProps, UserCount } from "../../shared/types";
+import { CommandProps, UserCount } from "../../shared/types";
 import { footerButtonRow } from "../../core/constants/index";
 
 const status = {
   name: "status",
   description: "Get ping and server info",
   aliases: ["ping"],
-  async execute({ interaction }: StatusProps) {
+  async execute({ interaction }: CommandProps) {
     const discordService = DiscordService.getInstance();
     const now = Date.now();
 
     try {
+      if (!interaction) {
+        return;
+      }
       if (interaction) {
         const interactionId = interaction.id;
         const timestamp = Date.now();

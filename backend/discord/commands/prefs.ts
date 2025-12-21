@@ -1,11 +1,15 @@
-import { CommandInteraction, EmbedBuilder } from "discord.js";
+import { EmbedBuilder } from "discord.js";
 import { panacheColor, footerButtonRow } from "../../core/constants";
+import { CommandProps } from "../../shared/types";
 
 const command = {
   name: "prefs",
   description: "Set your preferences on the web",
 
-  async execute({ interaction }: { interaction: CommandInteraction }) {
+  async execute({ interaction }: CommandProps) {
+    if (!interaction) {
+      return;
+    }
     try {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({ ephemeral: true });

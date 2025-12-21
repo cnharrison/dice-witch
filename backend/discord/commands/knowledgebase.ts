@@ -4,7 +4,7 @@ import {
   CommandInteraction,
   EmbedBuilder
 } from "discord.js";
-import { KnowledgeBase, KnowledgeBaseProps } from "../../shared/types";
+import { CommandProps, KnowledgeBase } from "../../shared/types";
 import { footerButtonRow, infoColor } from "../../core/constants/index";
 
 const kb: KnowledgeBase = {
@@ -134,7 +134,7 @@ const command = {
   async execute({
     args,
     interaction,
-  }: KnowledgeBaseProps) {
+  }: CommandProps) {
     if (!args.length || !kb[args[0]]) {
       await generateAndSendEmbed(
         [

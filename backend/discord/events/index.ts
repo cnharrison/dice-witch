@@ -332,6 +332,7 @@ const setupEvents = async (discord: Client) => {
 
         command.execute({
           args,
+          discord,
           commands,
           interaction,
         });

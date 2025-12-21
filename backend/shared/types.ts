@@ -1,4 +1,3 @@
-import { Canvas } from "@napi-rs/canvas";
 import { PrismaClient } from "@prisma/client";
 import chroma from "chroma-js";
 import {
@@ -98,7 +97,7 @@ export interface Command {
   aliases: string[];
   description: string;
   usage: string;
-  execute: (props: Partial<CommandProps>) => void;
+  execute: (props: CommandProps) => Promise<void> | void;
 }
 
 export interface CommandProps {

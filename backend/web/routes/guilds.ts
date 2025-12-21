@@ -1,26 +1,33 @@
 import { Hono } from 'hono';
+import type { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { DatabaseService } from '../../core/services/DatabaseService';
 import { DiscordService } from '../../core/services/DiscordService';
 import { bigIntSerializer } from '../../shared/utils';
 
-const router = new Hono();
+import { SessionData, SessionUser, sessions } from './auth';
+
+type AuthVariables = {
+  session: SessionData;
+  user: SessionUser;
+};
+
+const router = new Hono<{ Variables: AuthVariables }>();
 const db = DatabaseService.getInstance();
 
-import { sessions } from './auth';
-
-async function authMiddleware(c, next) {
+async function authMiddleware(c: Context, next: Next) {
   const sessionId = getCookie(c, 'session_id');
 
-  if (!sessionId || !sessions.has(sessionId)) {
+  const record = sessionId ? sessions.get(sessionId) : null;
+  if (!record) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const session = sessions.get(sessionId);
+  const session = record.session;
   c.set('session', session);
   c.set('user', session.user);
 
-  await next();
+  return await next();
 }
 
 router.use('*', authMiddleware);

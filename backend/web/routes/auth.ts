@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import Discord from "next-auth/providers/discord";
 import { CONFIG } from "../../config";
 import { DatabaseService } from "../../core/services/DatabaseService";
 
@@ -9,6 +8,40 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_SESSIONS = 10000;
 
 const auth = new Hono();
+
+type DiscordTokenResponse = {
+  access_token: string;
+  token_type?: string;
+  expires_in?: number;
+  refresh_token?: string;
+  scope?: string;
+};
+
+type DiscordUserProfile = {
+  id: string;
+  username: string;
+  email: string | null;
+  avatar: string | null;
+};
+
+export type SessionUser = {
+  id: string;
+  name: string;
+  email: string | null;
+  image: string | null;
+  discordId: string;
+};
+
+export type SessionData = {
+  user: SessionUser;
+  expires: string;
+  accessToken: string;
+};
+
+export type SessionRecord = {
+  session: SessionData;
+  expires: number;
+};
 
 const discordProvider = {
   id: "discord",
@@ -28,7 +61,7 @@ const discordProvider = {
   },
 };
 
-export const sessions = new Map<string, { session: any; expires: number }>();
+export const sessions = new Map<string, SessionRecord>();
 
 const cleanupSessions = () => {
   const now = Date.now();
@@ -83,9 +116,6 @@ auth.get("/signin/:provider", async (c) => {
   }
   
   const authUrl = new URL(discordProvider.authorization.url);
-  const reqURL = new URL(c.req.url);
-  
-  const origin = isProduction ? 'https://dicewit.ch' : 'http://localhost:80';
   const clientId = CONFIG.discord.clientId || "809202086083428394";
   const redirectUri = isProduction ? "https://dicewit.ch/api/auth/callback/discord" : "http://localhost";
   
@@ -111,7 +141,6 @@ auth.get("/signin/:provider", async (c) => {
 });
 
 auth.get("/callback/:provider", async (c) => {
-  const provider = c.req.param("provider");
   const code = c.req.query("code");
   const state = c.req.query("state");
   const savedState = getCookie(c, "auth_state");
@@ -156,7 +185,7 @@ auth.get("/callback/:provider", async (c) => {
       return c.json({ error: "Failed to exchange code for token" }, 500);
     }
     
-    const tokens = await tokenResponse.json();
+    const tokens = (await tokenResponse.json()) as DiscordTokenResponse;
     
     // Get user profile
     const userResponse = await fetch("https://discord.com/api/users/@me", {
@@ -169,13 +198,13 @@ auth.get("/callback/:provider", async (c) => {
       return c.json({ error: "Failed to fetch user profile" }, 500);
     }
     
-    const profile = await userResponse.json();
+    const profile = (await userResponse.json()) as DiscordUserProfile;
     
     // Create session
     const userId = profile.id;
     const sessionId = generateRandomString(32);
     
-    const user = {
+    const user: SessionUser = {
       id: userId,
       name: profile.username,
       email: profile.email,

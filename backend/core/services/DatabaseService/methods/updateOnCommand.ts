@@ -74,9 +74,9 @@ export async function updateOnCommand(
       });
 
       if (resolvedMember) {
-        const guildMember = resolvedMember as any;
+        const guildMember = resolvedMember;
         const isAdmin = guildMember.permissions.has(PERMISSION_ADMINISTRATOR);
-        const isDiceWitchAdmin = guildMember.roles.cache.some((role: any) => role.name === ROLE_DICE_WITCH_ADMIN);
+        const isDiceWitchAdmin = guildMember.roles.cache.some(role => role.name === ROLE_DICE_WITCH_ADMIN);
 
         await tx.usersGuilds.upsert({
           where: {
