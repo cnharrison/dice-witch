@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { DiceFaceData, DiceFaces, PatternFillObject } from "../../../../shared/types";
+import { DiceFaces, GenerateDieProps, PatternFillObject } from "../../../../shared/types";
 import { DiceService } from "..";
 import {
   generateD10,
@@ -13,6 +13,16 @@ import {
 } from "../../images/generateDice/dice";
 import generateLinearGradientFill from "../../images/generateDice/fills/generateLinearGradientFill";
 import { getRandomPatternFill } from "../../images/generateDice/fills/generatePatternFills";
+
+const diceGenerators: Record<string | number, (props: GenerateDieProps) => string> = {
+  20: generateD20,
+  12: generateD12,
+  10: generateD10,
+  8: generateD8,
+  6: generateD6,
+  4: generateD4,
+  "%": generateDPercent,
+};
 
 export async function generateDie(
   this: DiceService,
@@ -46,9 +56,9 @@ export async function generateDie(
     }
   }
 
-  const props = {
+  const props: GenerateDieProps & { sides?: any } = {
     result: rolled,
-    sides: sides,
+    sides,
     textColor,
     outlineColor,
     solidFill,
@@ -58,43 +68,30 @@ export async function generateDie(
     height,
   };
 
-  const dice: DiceFaceData = {
-    20: generateD20(props),
-    12: generateD12(props),
-    10: generateD10(props),
-    8: generateD8(props),
-    6: generateD6(props),
-    4: generateD4(props),
-    "%": generateDPercent(props),
-  };
+  const generator = diceGenerators[sides] || generateGeneric;
+  const image = generator(props);
 
-  let image = dice[sides as keyof DiceFaceData];
-
-  if (!image) {
-    image = generateGeneric(props);
-  }
+  let imageBuffer: Buffer | null = null;
+  let sharpInstance: ReturnType<typeof sharp> | null = null;
 
   try {
-    let imageBuffer = Buffer.from(image);
+    imageBuffer = Buffer.from(image);
+    sharpInstance = sharp(imageBuffer, { limitInputPixels: 1920 * 1080 });
+    sharpInstance.webp({
+      lossless: false,
+      quality: 85,
+      smartSubsample: true,
+      effort: 3
+    });
 
-    let attachment;
-    try {
-      const sharpInstance = sharp(imageBuffer, { limitInputPixels: 1920 * 1080 })
-        .webp({
-          lossless: false,
-          quality: 85,
-          smartSubsample: true,
-          effort: 3
-        });
-
-      attachment = await sharpInstance.toBuffer();
-      sharpInstance.destroy();
-    } finally {
-      imageBuffer = Buffer.alloc(0);
-    }
-
+    const attachment = await sharpInstance.toBuffer();
     return attachment;
   } catch (err) {
     return undefined;
+  } finally {
+    if (sharpInstance) {
+      sharpInstance.destroy();
+    }
+    imageBuffer = null;
   }
 }
