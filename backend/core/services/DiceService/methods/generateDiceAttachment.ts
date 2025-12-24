@@ -56,8 +56,9 @@ export async function generateDiceAttachment(
           return;
         }
 
+        let image: Image | null = null;
         try {
-          const image = await loadImage(toLoad as Buffer);
+          image = await loadImage(toLoad as Buffer);
           const diceWidth = this.getDiceWidth(index);
           const diceHeight = this.getDiceHeight(outerIndex, shouldHaveIcon);
           ctx.drawImage(
@@ -74,10 +75,12 @@ export async function generateDiceAttachment(
               errors.push(...iconErrors);
             }
           }
-          
+
         } catch (imgErr) {
           console.error("Image loading error:", imgErr);
           errors.push(`image:${die.sides}:${die.rolled}`);
+        } finally {
+          image = null;
         }
       } catch (err) {
         console.error("Die generation error:", err);
