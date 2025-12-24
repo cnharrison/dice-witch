@@ -56,8 +56,13 @@ export async function generateDie(
     }
   }
 
+  let displayValue = rolled;
+  if (typeof sides === 'number' && rolled > sides) {
+    displayValue = ((rolled - 1) % sides) + 1;
+  }
+
   const props: GenerateDieProps & { sides?: any } = {
-    result: rolled,
+    result: displayValue,
     sides,
     textColor,
     outlineColor,
