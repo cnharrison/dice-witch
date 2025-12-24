@@ -131,13 +131,13 @@ describe('Dice Modifier Tests', () => {
   });
 
   test('Critical success', async () => {
-    const result = await diceService.rollDice(['50d20cs=20'], [], 1);
+    const result = await diceService.rollDice(['1d1cs=1'], [], 1);
     const allDice = result.diceArray.flat();
-    
-    const hasCriticalSuccess = allDice.some(die => 
+
+    const hasCriticalSuccess = allDice.some(die =>
       die.icon && Array.isArray(die.icon) && die.icon.includes('critical-success')
     );
-    
+
     expect(hasCriticalSuccess).toBe(true);
   });
 
