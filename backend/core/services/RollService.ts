@@ -17,6 +17,7 @@ import { sendLogEventMessage } from "../../discord/messages/sendLogEventMessage"
 export interface RollOptions {
   notation: string | string[];
   timesToRepeat?: number;
+  title?: string;
 
   interaction?: CommandInteraction | ButtonInteraction;
 
