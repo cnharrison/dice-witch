@@ -1,9 +1,12 @@
-import { Canvas, Image, SKRSContext2D, createCanvas, loadImage } from "@napi-rs/canvas";
+import { Canvas, Image, SKRSContext2D, createCanvas, loadImage, clearAllCache } from "@napi-rs/canvas";
 import { AttachmentBuilder } from "discord.js";
 import { DiceArray, Die } from "../../../../shared/types";
 import { DiceService } from "..";
 import generateLinearGradientFill from "../../images/generateDice/fills/generateLinearGradientFill";
 import { getRandomPatternFill } from "../../images/generateDice/fills/generatePatternFills";
+
+let rollCount = 0;
+const CACHE_CLEAR_INTERVAL = 100;
 
 export async function generateDiceAttachment(
   this: DiceService,
@@ -122,6 +125,12 @@ export async function generateDiceAttachment(
     } catch (err) {
     }
     
+    rollCount++;
+    if (rollCount >= CACHE_CLEAR_INTERVAL) {
+      clearAllCache();
+      rollCount = 0;
+    }
+
     return { attachment, errors: errors.length ? errors : undefined };
   } catch (error) {
     return undefined;

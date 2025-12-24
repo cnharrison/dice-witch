@@ -1,4 +1,5 @@
 import chroma from "chroma-js";
+import { clearAllCache } from "@napi-rs/canvas";
 import {
   DiceArray,
   Die,
@@ -35,6 +36,7 @@ export class DiceService {
   protected defaultDiceDimension = 150;
   protected defaultIconDimension = 37;
   protected maxRowLength = 10;
+  private cacheCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   private constructor() {
     this.icons = new Map<Icon | null, string>([
@@ -50,6 +52,10 @@ export class DiceService {
       ["unique", snowflakeIcon],
       ["blank", blankIcon],
     ]);
+
+    this.cacheCleanupInterval = setInterval(() => {
+      clearAllCache();
+    }, 60000);
   }
 
   public static getInstance(): DiceService {
@@ -60,6 +66,12 @@ export class DiceService {
   }
   
   public destroy() {
+    clearAllCache();
+    if (this.cacheCleanupInterval) {
+      clearInterval(this.cacheCleanupInterval);
+      this.cacheCleanupInterval = null;
+    }
+    this.iconBufferCache.clear();
   }
 
   public getSecondaryColorFromColor(color: chroma.Color) {
