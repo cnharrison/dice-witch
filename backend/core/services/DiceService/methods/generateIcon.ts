@@ -9,33 +9,33 @@ export async function generateIcon(
   const cached = this.iconBufferCache.get(iconType);
   if (cached) return cached;
 
+  const image = this.icons.get(iconType) || this.icons.get(null);
+  if (!image) return undefined;
+
+  let imageBuffer: Buffer | null = null;
+  let sharpInstance: ReturnType<typeof sharp> | null = null;
+
   try {
-    const image = this.icons.get(iconType) || this.icons.get(null);
-    if (!image) return undefined;
-
     const svgWithXmlDeclaration = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>${image}`;
-    let imageBuffer = Buffer.from(svgWithXmlDeclaration);
+    imageBuffer = Buffer.from(svgWithXmlDeclaration);
+    sharpInstance = sharp(imageBuffer, { limitInputPixels: 1024 * 1024 });
+    sharpInstance.webp({
+      lossless: false,
+      quality: 85,
+      smartSubsample: true,
+      effort: 3
+    });
 
-    let attachment;
-    try {
-      const sharpInstance = sharp(imageBuffer, { limitInputPixels: 1024 * 1024 })
-        .webp({
-          lossless: false,
-          quality: 85,
-          smartSubsample: true,
-          effort: 3
-        });
-
-      attachment = await sharpInstance.toBuffer();
-      sharpInstance.destroy();
-    } finally {
-      imageBuffer = Buffer.alloc(0);
-    }
-
+    const attachment = await sharpInstance.toBuffer();
     this.iconBufferCache.set(iconType, attachment);
     return attachment;
   } catch (err) {
     console.error(`Error generating icon for: ${iconType}`, err);
     return undefined;
+  } finally {
+    if (sharpInstance) {
+      sharpInstance.destroy();
+    }
+    imageBuffer = null;
   }
 }
