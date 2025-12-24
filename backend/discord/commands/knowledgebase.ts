@@ -100,6 +100,20 @@ const kb: KnowledgeBase = {
       inline: false,
     },
   ],
+  fudge: [
+    {
+      name: "Fudge Dice",
+      value:
+        "Fudge dice (also called Fate dice) have 6 faces: 2 plus (+), 2 minus (-), and 2 blank (0). Each + adds 1, each - subtracts 1, and blanks are 0.\n\n`/roll notation:4dF`: Roll 4 fudge dice (standard for Fate/Fudge systems).\n`/roll notation:4dF+2`: Roll 4 fudge dice and add 2 to the result.",
+      inline: false,
+    },
+    {
+      name: "Reading Results",
+      value:
+        "Results range from -4 to +4 when rolling 4dF.\n\nExample: [+, -, 0, +] = +1 total\nExample: [-, -, +, 0] = -1 total",
+      inline: false,
+    },
+  ],
 };
 
 const generateAndSendEmbed = async (

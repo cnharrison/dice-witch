@@ -20,8 +20,8 @@ export async function rollDice(
   let resultArray: Result[] = [];
   let errors: string[] = [];
   let files: AttachmentBuilder[] = [];
-  const lowerCaseArgs = args.map((arg) => arg.toLowerCase());
-  const argsToMutate = this.repeatArgs(lowerCaseArgs, timesToRepeat);
+  const normalizedArgs = args.map((arg) => arg.toLowerCase().replace(/df/gi, 'dF'));
+  const argsToMutate = this.repeatArgs(normalizedArgs, timesToRepeat);
 
   try {
     for (const value of argsToMutate) {
@@ -64,14 +64,15 @@ export async function rollDice(
 
 
       if (value.includes('{') || value.includes('k') || value.includes('d')) {
-        const dicePatterns: { count: number, sides: number }[] = [];
-        const diceRegex = /(\d*)d(\d+|\%)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
+        const dicePatterns: { count: number, sides: number | string }[] = [];
+        const diceRegex = /(\d*)d(\d+|\%|F)(?:k|d|cs|cf)?(?:=|<=|>=|<|>)?(\d+)?/gi;
         let match;
 
         while ((match = diceRegex.exec(value)) !== null) {
+          const sidesStr = match[2].toUpperCase();
           dicePatterns.push({
             count: match[1] === "" ? 1 : parseInt(match[1]),
-            sides: match[2] === '%' ? 100 : parseInt(match[2])
+            sides: sidesStr === '%' ? 100 : sidesStr === 'F' ? 'F' : parseInt(match[2])
           });
         }
 
@@ -116,9 +117,16 @@ export async function rollDice(
               if (isMaxValue) valueStr = valueStr.replace(/v/g, '');
               if (isUnique) valueStr = valueStr.replace(/u/g, '');
 
-              const dieValue = parseInt(valueStr, 10);
-
-              const value = isNaN(dieValue) ? Math.floor(Math.random() * sides) + 1 : dieValue;
+              let value: number;
+              if (sides === 'F') {
+                const trimmed = valueStr.trim();
+                if (trimmed === '+' || trimmed === '1') value = 1;
+                else if (trimmed === '-' || trimmed === '-1') value = -1;
+                else value = 0;
+              } else {
+                const dieValue = parseInt(valueStr, 10);
+                value = isNaN(dieValue) ? Math.floor(Math.random() * (sides as number)) + 1 : dieValue;
+              }
 
               const isHeads = coinFlip();
               const color = chroma.random();
@@ -188,6 +196,17 @@ export async function rollDice(
                   textColor,
                   value
                 });
+              } else if (sides === 'F') {
+                groupArray.push({
+                  sides: "F",
+                  rolled: value as DiceFaces,
+                  icon,
+                  iconSpacing,
+                  color: adjustedColor,
+                  secondaryColor,
+                  textColor,
+                  value
+                });
               } else {
                 groupArray.push({
                   sides,
@@ -241,8 +260,16 @@ export async function rollDice(
               if (isMinValue) valueStr = valueStr.replace('^', '');
               if (isMaxValue) valueStr = valueStr.replace('v', '');
 
-              const value = parseInt(valueStr, 10);
-              if (isNaN(value)) return;
+              let value: number;
+              if (diceSize === 'F') {
+                const trimmed = valueStr.trim();
+                if (trimmed === '+' || trimmed === '1') value = 1;
+                else if (trimmed === '-' || trimmed === '-1') value = -1;
+                else value = 0;
+              } else {
+                value = parseInt(valueStr, 10);
+                if (isNaN(value)) return;
+              }
 
               const isHeads = coinFlip();
               const color = chroma.random();
@@ -288,6 +315,17 @@ export async function rollDice(
                 groupArray.push({
                   sides: 10,
                   rolled: this.getD10PercentRolled(value) as DiceFaces,
+                  color: adjustedColor,
+                  secondaryColor,
+                  textColor,
+                  value
+                });
+              } else if (diceSize === 'F') {
+                groupArray.push({
+                  sides: "F",
+                  rolled: value as DiceFaces,
+                  icon,
+                  iconSpacing,
                   color: adjustedColor,
                   secondaryColor,
                   textColor,

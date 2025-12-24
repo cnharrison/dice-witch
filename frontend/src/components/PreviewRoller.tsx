@@ -34,7 +34,10 @@ export function PreviewRoller() {
     }
   };
 
-  const getDiceColor = (sides: number): { color: string, secondaryColor: string, textColor: string } => {
+  const getDiceColor = (sides: number | string): { color: string, secondaryColor: string, textColor: string } => {
+    if (sides === 'F') {
+      return { color: '#6b5b95', secondaryColor: '#4a3f6b', textColor: '#ffffff' };
+    }
     switch (sides) {
       case 4:
         return { color: '#05b2dc', secondaryColor: '#0292b2', textColor: '#000000' };
@@ -84,41 +87,62 @@ export function PreviewRoller() {
                 
                 try {
                   const outputMatch = roll.output.match(/\[([^\]]+)\]/g);
-                  
+
                   if (outputMatch) {
                     if (!window.diceValues) {
                       window.diceValues = {};
-                      const dicePatterns = input.match(/\b(\d+)d(\d+|\%)/g) || [];
+                      const dicePatterns = input.match(/\b(\d+)d(\d+|\%|F)/gi) || [];
                       let currentDiceTypeIndex = 0;
-                      
+
                       dicePatterns.forEach(pattern => {
-                        const [count, size] = pattern.split('d');
-                        const diceSize = size === '%' ? 100 : parseInt(size);
-                        
+                        const [count, size] = pattern.split(/d/i);
+                        const sizeUpper = size.toUpperCase();
+                        const diceSize: number | string = sizeUpper === '%' ? 100 : sizeUpper === 'F' ? 'F' : parseInt(size);
+
                         if (currentDiceTypeIndex >= outputMatch.length) return;
-                        
+
                         const valuesStr = outputMatch[currentDiceTypeIndex]
                           .replace(/[\[\]]/g, '')
                           .replace(/d$/, '')
                           .split(',')
                           .map(s => s.trim());
-                        
-                        window.diceValues[diceSize] = valuesStr.map(v => parseInt(v));
+
+                        if (diceSize === 'F') {
+                          window.diceValues[diceSize] = valuesStr.map(v => {
+                            if (v === '+' || v === '1') return 1;
+                            if (v === '-' || v === '-1') return -1;
+                            return 0;
+                          });
+                        } else {
+                          window.diceValues[diceSize] = valuesStr.map(v => parseInt(v));
+                        }
                         currentDiceTypeIndex++;
                       });
                     }
-                    
-                    if (window.diceValues && window.diceValues[group.diceSize] && 
+
+                    if (window.diceValues && window.diceValues[group.diceSize] &&
                         window.diceValues[group.diceSize][i] !== undefined) {
                       result = window.diceValues[group.diceSize][i];
                     } else {
-                      result = Math.floor(Math.random() * group.diceSize) + 1;
+                      if (group.diceSize === 'F') {
+                        result = Math.floor(Math.random() * 3) - 1;
+                      } else {
+                        result = Math.floor(Math.random() * (group.diceSize as number)) + 1;
+                      }
                     }
                   } else {
-                    result = Math.floor(Math.random() * group.diceSize) + 1;
+                    if (group.diceSize === 'F') {
+                      result = Math.floor(Math.random() * 3) - 1;
+                    } else {
+                      result = Math.floor(Math.random() * (group.diceSize as number)) + 1;
+                    }
                   }
                 } catch (error) {
-                  result = Math.floor(Math.random() * group.diceSize) + 1;
+                  if (group.diceSize === 'F') {
+                    result = Math.floor(Math.random() * 3) - 1;
+                  } else {
+                    result = Math.floor(Math.random() * (group.diceSize as number)) + 1;
+                  }
                 }
                 
                 diceOfType.push({

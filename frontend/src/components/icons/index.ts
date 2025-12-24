@@ -4,3 +4,4 @@ export * from './D8Icon';
 export * from './D10Icon';
 export * from './D12Icon';
 export * from './D20Icon';
+export * from './DFIcon';

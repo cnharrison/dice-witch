@@ -7,8 +7,8 @@ import { useTheme } from '@/components/theme-provider';
 interface DiceAnimation3DProps {
   className?: string;
   diceInfo?: DiceInfo | null;
-  diceToRemove?: {diceSize: number, count: number}[];
-  diceColors?: Record<number, string>;
+  diceToRemove?: {diceSize: number | string, count: number}[];
+  diceColors?: Record<number | string, string>;
 }
 
 export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
@@ -442,7 +442,7 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
     return mesh;
   };
 
-  const createDie = (sides: number) => {
+  const createDie = (sides: number | string) => {
     // Use provided color or generate a random one
     const diceColor = diceColorsRef.current[sides] && typeof diceColorsRef.current[sides] === 'string'
       ? parseInt(diceColorsRef.current[sides].replace('#', '0x'), 16)
@@ -452,6 +452,7 @@ export const DiceAnimation3D: React.FC<DiceAnimation3DProps> = ({
     switch (sides) {
       case 4: dice = createD4(diceColor); break;
       case 6: dice = createD6(diceColor); break;
+      case 'F': dice = createD6(diceColor); break;
       case 8: dice = createD8(diceColor); break;
       case 10: dice = createD10(diceColor); break;
       case 12: dice = createD12(diceColor); break;

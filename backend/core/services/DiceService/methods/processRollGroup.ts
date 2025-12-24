@@ -6,10 +6,42 @@ import chroma from "chroma-js";
 export function processRollGroup(
   this: DiceService,
   rollGroup: any,
-  sides: number
+  sides: number | string
 ): Die[] {
   if (!rollGroup || !rollGroup.rolls) {
     return [];
+  }
+
+  if (sides === 'F') {
+    return rollGroup.rolls.map((currentRoll: any) => {
+      if (!currentRoll) return null;
+
+      const isHeads = coinFlip();
+      const color = chroma.random();
+      const secondaryColor = isHeads
+        ? this.getSecondaryColorFromColor(color)
+        : chroma.random();
+      const textColor = this.getTextColorFromColors(color, secondaryColor);
+      const icon = this.generateIconArray(currentRoll.modifiers);
+      const iconSpacing = this.getIconSpacing(icon);
+
+      let value: number;
+      const initialValue = currentRoll.initialValue;
+      if (initialValue === '+' || initialValue === 1) value = 1;
+      else if (initialValue === '-' || initialValue === -1) value = -1;
+      else value = 0;
+
+      return {
+        sides: "F" as const,
+        rolled: value as DiceFaces,
+        icon,
+        iconSpacing,
+        color,
+        secondaryColor,
+        textColor,
+        value,
+      };
+    }).filter(Boolean);
   }
 
   if (sides === undefined) {

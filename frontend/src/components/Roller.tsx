@@ -1,4 +1,4 @@
-import { D10Icon, D12Icon, D20Icon, D4Icon, D6Icon, D8Icon } from "@/components/icons";
+import { D10Icon, D12Icon, D20Icon, D4Icon, D6Icon, D8Icon, DFIcon } from "@/components/icons";
 import { useTheme } from "@/components/theme-provider";
 import {
   ResizableHandle,
@@ -19,6 +19,7 @@ const DiceIcons = {
   d10: D10Icon,
   d12: D12Icon,
   d20: D20Icon,
+  dF: DFIcon,
 } as const;
 
 interface RollerProps {
@@ -43,7 +44,7 @@ export function Roller({
   const previousDiceInfoRef = React.useRef<DiceInfo | null>(null);
   const combinedDiceInfoRef = React.useRef<DiceInfo | null>(null);
   const [combinedDiceInfo, setCombinedDiceInfo] = React.useState<DiceInfo | null>(null);
-  const [diceToRemove, setDiceToRemove] = React.useState<{diceSize: number, count: number}[]>([]);
+  const [diceToRemove, setDiceToRemove] = React.useState<{diceSize: number | string, count: number}[]>([]);
   const { theme } = useTheme();
 
   React.useEffect(() => {
@@ -67,7 +68,7 @@ export function Roller({
     }
 
     if (previousDiceInfoRef.current) {
-      const diceSizeToRemove: {diceSize: number, count: number}[] = [];
+      const diceSizeToRemove: {diceSize: number | string, count: number}[] = [];
 
       previousDiceInfoRef.current.diceGroups.forEach(prevGroup => {
         const newGroup = diceInfo.diceGroups.find(g => g.diceSize === prevGroup.diceSize);
@@ -184,7 +185,7 @@ export function Roller({
         diceColors={rollResults?.diceArray?.flat()?.reduce((colors, die) => {
           colors[die.sides] = die.color;
           return colors;
-        }, {} as Record<number, string>)}
+        }, {} as Record<number | string, string>)}
         className="h-full w-full"
       />
     );

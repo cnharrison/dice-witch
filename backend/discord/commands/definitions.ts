@@ -48,6 +48,7 @@ export const globalSlashCommands: ApplicationCommandDataResolvable[] = [
           { name: "Sorting", value: "sort" },
           { name: "Math", value: "math" },
           { name: "Repeating", value: "repeating" },
+          { name: "Fudge dice", value: "fudge" },
         ],
       },
     ],

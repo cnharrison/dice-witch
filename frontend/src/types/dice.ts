@@ -1,10 +1,10 @@
 export interface DiceGroup {
   numberOfDice: number;
-  diceSize: number;
+  diceSize: number | string;
 }
 
 export interface Die {
-  sides: number;
+  sides: number | string;
   rolled: number;
   icon?: string[] | null;
   iconSpacing?: number;

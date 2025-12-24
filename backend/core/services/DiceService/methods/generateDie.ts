@@ -8,6 +8,7 @@ import {
   generateD4,
   generateD6,
   generateD8,
+  generateDF,
   generateDPercent,
   generateGeneric,
 } from "../../images/generateDice/dice";
@@ -22,6 +23,7 @@ const diceGenerators: Record<string | number, (props: GenerateDieProps) => strin
   6: generateD6,
   4: generateD4,
   "%": generateDPercent,
+  "F": generateDF,
 };
 
 export async function generateDie(

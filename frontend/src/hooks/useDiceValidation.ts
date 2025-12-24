@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 
 interface DiceGroup {
   numberOfDice: number;
-  diceSize: number;
+  diceSize: number | string;
 }
 
 export interface DiceInfo {
@@ -42,13 +42,14 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
 
       let diceGroups: DiceGroup[] = [];
       
-      const diceRegex = /(\d+)d(\d+|\%)(?:k|d)?(\d+)?/gi;
+      const diceRegex = /(\d+)d(\d+|\%|F)(?:k|d)?(\d+)?/gi;
       let match;
       
       while ((match = diceRegex.exec(roll.notation)) !== null) {
         const count = parseInt(match[1]);
-        const size = match[2] === '%' ? 100 : parseInt(match[2]);
-        if (count > 0 && size > 0) {
+        const sizeStr = match[2].toUpperCase();
+        const size = sizeStr === '%' ? 100 : sizeStr === 'F' ? 'F' : parseInt(match[2]);
+        if (count > 0 && (size === 'F' || size > 0)) {
           diceGroups.push({
             numberOfDice: count,
             diceSize: size
@@ -67,9 +68,10 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
           if (rollGroup.dice && rollGroup.dice.sides) {
             const sides = rollGroup.dice.sides;
             const count = rollGroup.dice.qty || 0;
-            
+
             const key = `${count}d${sides}`;
-            if (count > 0 && sides > 0 && !processedDice.has(key)) {
+            const isValidSides = sides === 'F' || (typeof sides === 'number' && sides > 0);
+            if (count > 0 && isValidSides && !processedDice.has(key)) {
               diceGroups.push({
                 numberOfDice: count,
                 diceSize: sides
@@ -108,14 +110,15 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
         return;
       }
       
-      const groupMap = new Map<number, { count: number, size: number }>();
+      const groupMap = new Map<number | string, { count: number, size: number | string }>();
 
       if (roll.rolls) {
         roll.rolls.forEach((rollGroup) => {
           if (typeof rollGroup !== 'string' && typeof rollGroup !== 'number' && rollGroup.dice) {
             const sides = rollGroup.dice?.sides;
 
-            if (sides && typeof sides === 'number' && sides > 0) {
+            const isValidSides = sides === 'F' || (typeof sides === 'number' && sides > 0);
+            if (sides && isValidSides) {
               const count = rollGroup.dice.qty || (rollGroup.rolls?.length || 0);
 
               if (groupMap.has(sides)) {
@@ -137,23 +140,23 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
       }
 
       if (diceGroups.length === 0) {
-        const diceMatches = debouncedInput.match(/(\d+)?d(\d+|\%)/g) || [];
+        const diceMatches = debouncedInput.match(/(\d+)?d(\d+|\%|F)/gi) || [];
 
         diceGroups = diceMatches.map(match => {
-          const parts = match.match(/(\d+)?d(\d+|\%)/);
+          const parts = match.match(/(\d+)?d(\d+|\%|F)/i);
 
           const numDice = parts?.[1] || '1';
-          const dSize = parts?.[2];
+          const dSize = parts?.[2]?.toUpperCase();
 
           return {
             numberOfDice: parseInt(numDice),
-            diceSize: dSize === '%' ? 100 : parseInt(dSize)
+            diceSize: dSize === '%' ? 100 : dSize === 'F' ? 'F' : parseInt(dSize || '0')
           };
         });
       }
 
       const isValidDice = diceGroups.length > 0 &&
-        diceGroups.every(group => group.numberOfDice > 0 && group.diceSize > 0);
+        diceGroups.every(group => group.numberOfDice > 0 && (group.diceSize === 'F' || group.diceSize > 0));
 
       setIsValid(isValidDice);
 

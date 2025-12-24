@@ -45,7 +45,7 @@ export enum EventType {
 }
 
 export type DiceArray = Die[][];
-export type DiceTypes = 20 | 12 | 10 | 8 | 6 | 4 | "%";
+export type DiceTypes = 20 | 12 | 10 | 8 | 6 | 4 | "%" | "F";
 export type DiceTypesToDisplay = DiceTypes | 100;
 export type DiceFaces =
   | 90
@@ -75,7 +75,8 @@ export type DiceFaces =
   | 3
   | 2
   | 1
-  | 0;
+  | 0
+  | -1;
 
 export type DieGenerator = (
   fill: string,
@@ -193,7 +194,8 @@ export type ArticleTypes =
   | "crit"
   | "sort"
   | "math"
-  | "repeating";
+  | "repeating"
+  | "fudge";
 
 export type KnowledgeBase = {
   [key: string]: EmbedField[];

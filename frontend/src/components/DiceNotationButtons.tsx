@@ -1,11 +1,11 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { D4Icon, D6Icon, D8Icon, D10Icon, D12Icon, D20Icon } from '@/components/icons';
+import { D4Icon, D6Icon, D8Icon, D10Icon, D12Icon, D20Icon, DFIcon } from '@/components/icons';
 import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 
-const DICE_TYPES = [4, 6, 8, 10, 12, 20, 100];
+const DICE_TYPES: (number | string)[] = [4, 6, 8, 10, 12, 20, 100, 'F'];
 const OPERATORS = ['+', '-', '*', '/'];
 const KEEP_DROP = ['k', 'kl', 'd', 'dh'];
 const EXPLODING = ['!', '!!', '!p'];
@@ -24,13 +24,13 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
   const { theme } = useTheme();
   const inputRef = React.useRef(input);
   const [longPressTimer, setLongPressTimer] = React.useState<ReturnType<typeof setTimeout> | null>(null);
-  const [longPressTarget, setLongPressTarget] = React.useState<number | null>(null);
+  const [longPressTarget, setLongPressTarget] = React.useState<number | string | null>(null);
 
   React.useEffect(() => {
     inputRef.current = input;
   }, [input]);
 
-  const handleDiceClick = React.useCallback((sides: number) => {
+  const handleDiceClick = React.useCallback((sides: number | string) => {
     if (isDisabled) return;
 
     const sideNotation = sides === 100 ? '%' : sides;
@@ -41,7 +41,8 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
       return;
     }
 
-    const dicePattern = new RegExp(`(^|[+\\-*/])\\s*(\\d+)d${sideNotation}(?![\\d%])`, 'g');
+    const escapedNotation = typeof sideNotation === 'string' ? sideNotation : sideNotation.toString();
+    const dicePattern = new RegExp(`(^|[+\\-*/])\\s*(\\d+)d${escapedNotation}(?![\\d%F])`, 'gi');
     const matches = Array.from(currentInput.matchAll(dicePattern));
 
     if (matches.length > 0) {
@@ -86,7 +87,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
     const currentInput = inputRef.current;
     if (!currentInput) return;
 
-    if (!/\d+d\d+/.test(currentInput)) return;
+    if (!/\d+d(\d+|F)/i.test(currentInput)) return;
 
     if (SUCCESS_FAILURE.includes(modifier)) {
       setInput(currentInput + modifier + '=1');
@@ -106,14 +107,14 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
     setInput(currentInput + number.toString());
   }, [setInput, isDisabled]);
 
-    const handleClearDiceType = React.useCallback((sides: number) => {
+    const handleClearDiceType = React.useCallback((sides: number | string) => {
     if (isDisabled) return;
 
     const currentInput = inputRef.current;
     if (!currentInput) return;
 
     const sideNotation = sides === 100 ? '%' : sides;
-    const dicePattern = new RegExp(`(\\+|\\-|\\*|\\/|^)\\d+d${sideNotation}(d\\d+|k\\d+|kl\\d+|dh\\d+|!+|!p|r|ro|cs=\\d+|cf=\\d+|=\\d+|>\\d+|<\\d+|>=\\d+|<=\\d+)*`, 'g');
+    const dicePattern = new RegExp(`(\\+|\\-|\\*|\\/|^)\\d+d${sideNotation}(d\\d+|k\\d+|kl\\d+|dh\\d+|!+|!p|r|ro|cs=\\d+|cf=\\d+|=\\d+|>\\d+|<\\d+|>=\\d+|<=\\d+)*`, 'gi');
 
     let newInput = currentInput.replace(dicePattern, '');
 
@@ -124,11 +125,15 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
     setInput(newInput);
   }, [setInput, isDisabled]);
 
-  const getDieIcon = React.useCallback((sides: number) => {
+  const getDieIcon = React.useCallback((sides: number | string) => {
     const iconProps = {
       className: "w-5 h-5",
       darkMode: theme === 'dark',
     };
+
+    if (sides === 'F') {
+      return <DFIcon {...iconProps} />;
+    }
 
     switch (sides) {
       case 4: return <D4Icon {...iconProps} />;
@@ -142,12 +147,12 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
     }
   }, [theme]);
 
-  const handleTouchStart = React.useCallback((sides: number) => {
+  const handleTouchStart = React.useCallback((sides: number | string) => {
     if (isDisabled) return;
 
     const timer = setTimeout(() => {
       handleClearDiceType(sides);
-      setLongPressTarget(sides);
+      setLongPressTarget(sides as any);
     }, 500);
 
     setLongPressTimer(timer);
@@ -162,7 +167,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
   }, [longPressTimer]);
 
   const getTokenCounts = React.useCallback(() => {
-    const diceCounts: Record<number, number> = {};
+    const diceCounts: Record<number | string, number> = {};
     const modifierCounts: Record<string, number> = {};
     const currentInput = inputRef.current;
 
@@ -179,7 +184,7 @@ export function DiceNotationButtons({ input, setInput, isDisabled = false }: Dic
 
     DICE_TYPES.forEach(type => {
       const sideNotation = type === 100 ? '%' : type;
-      const pattern = new RegExp(`(\\d+)d${sideNotation}(?![\\d%])`, 'g');
+      const pattern = new RegExp(`(\\d+)d${sideNotation}(?![\\d%F])`, 'gi');
       const matches = Array.from(currentInput.matchAll(pattern));
 
       if (matches.length > 0) {
