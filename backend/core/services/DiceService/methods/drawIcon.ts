@@ -19,14 +19,15 @@ export async function drawIcon(
     const icon = iconArray[i];
     iconPromises.push(
       (async () => {
+        let iconImage: Awaited<ReturnType<typeof Canvas.loadImage>> | null = null;
         try {
           const iconToLoad = await this.generateIcon(icon);
           if (!iconToLoad) return;
-          
+
           const iconWidth = this.getIconWidth(i, diceIndex, iconSpacing);
           const iconHeight = this.getIconHeight(diceOuterIndex);
-          const iconImage = await Canvas.loadImage(iconToLoad);
-          
+          iconImage = await Canvas.loadImage(iconToLoad);
+
           ctx.drawImage(
             iconImage,
             iconWidth,
@@ -36,6 +37,8 @@ export async function drawIcon(
           );
         } catch (error) {
           errors.push(`icon:${icon}`);
+        } finally {
+          iconImage = null;
         }
       })()
     );
