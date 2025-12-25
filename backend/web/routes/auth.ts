@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { CONFIG } from "../../config";
 import { DatabaseService } from "../../core/services/DatabaseService";
+import { DiscordService } from "../../core/services/DiscordService";
 
 const isProduction = process.env.NODE_ENV === "production";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -22,6 +23,12 @@ type DiscordUserProfile = {
   username: string;
   email: string | null;
   avatar: string | null;
+};
+
+type DiscordGuild = {
+  id: string;
+  name: string;
+  permissions: string;
 };
 
 export type SessionUser = {
@@ -50,7 +57,7 @@ const discordProvider = {
   authorization: {
     url: "https://discord.com/api/oauth2/authorize",
     params: {
-      scope: "identify email",
+      scope: "identify email guilds",
     },
   },
   token: {
@@ -251,6 +258,53 @@ auth.get("/callback/:provider", async (c) => {
         },
       });
     } catch (error) {
+    }
+
+    try {
+      const guildsResponse = await fetch("https://discord.com/api/users/@me/guilds", {
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+        },
+      });
+
+      if (guildsResponse.ok) {
+        const guilds = (await guildsResponse.json()) as DiscordGuild[];
+        const discordService = DiscordService.getInstance();
+        const dbService = DatabaseService.getInstance();
+
+        for (const guild of guilds) {
+          const result = await discordService.getGuildMemberPermissions(guild.id, userId);
+          if (!result?.permissions || !result.guild) {
+            continue;
+          }
+
+          await dbService.updateGuild({
+            id: result.guild.id,
+            name: result.guild.name,
+            icon: result.guild.icon ?? undefined,
+            ownerId: result.guild.ownerId,
+            memberCount: result.guild.memberCount,
+            approximateMemberCount: result.guild.approximateMemberCount ?? undefined,
+            preferredLocale: result.guild.preferredLocale,
+            publicUpdatesChannelId: result.guild.publicUpdatesChannelId ?? undefined,
+            joinedTimestamp: result.guild.joinedTimestamp,
+          }, false, true);
+
+          await dbService.updateUserGuildPermissions({
+            userId,
+            guildId: result.guild.id,
+            isAdmin: result.permissions.isAdmin,
+            isDiceWitchAdmin: result.permissions.isDiceWitchAdmin,
+          });
+        }
+      } else {
+        console.warn("[Auth] Failed to fetch Discord guilds for permission sync:", {
+          status: guildsResponse.status,
+          userId,
+        });
+      }
+    } catch (error) {
+      console.warn("[Auth] Failed to sync Discord guild permissions on login:", error);
     }
     
     setCookie(c, "auth_state", "", {
