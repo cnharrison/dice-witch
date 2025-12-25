@@ -60,14 +60,15 @@ export class RollService {
   }
 
   public checkDiceLimits(notation: string): { isOverMax: boolean; containsDice: boolean } {
-    const match = notation.match(/(\d*)d(\d+)/i);
+    const match = notation.match(/(\d*)d(\d+|F)/i);
     if (!match) {
       return { isOverMax: false, containsDice: false };
     }
 
     const [_, count, sides] = match;
     const totalDiceRolled = count === "" ? 1 : parseInt(count);
-    const highestDiceSide = parseInt(sides);
+    const isFudge = sides.toUpperCase() === 'F';
+    const highestDiceSide = isFudge ? 6 : parseInt(sides);
 
     const isOverMax = totalDiceRolled > maxImageDice || highestDiceSide > maxDiceSides;
 

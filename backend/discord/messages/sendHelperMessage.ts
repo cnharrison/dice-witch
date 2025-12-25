@@ -37,7 +37,8 @@ const sendHelperMessage = async ({
       createButton("knowledgebase-math", "Math 🧮"),
       createButton("knowledgebase-sort", "Sorting ↕"),
       createButton("knowledgebase-repeating", "Repeating 👯‍♀️"),
-      createButton("knowledgebase-unique", "Unique ❄️")
+      createButton("knowledgebase-unique", "Unique ❄️"),
+      createButton("knowledgebase-fudge", "Fudge 🎲")
     ) as ActionRowBuilder<ButtonBuilder>;
 
   const embed = createEmbed(

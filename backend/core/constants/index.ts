@@ -12,7 +12,7 @@ const isTest = process.env.NODE_ENV === "test";
 const inviteUrl = isTest && !inviteLink ? "https://example.com/invite" : inviteLink;
 const supportUrl = isTest && !supportServerLink ? "https://example.com/support" : supportServerLink;
 
-const availableDice: DiceTypesToDisplay[] = [100, 20, 12, 10, 8, 6, 4];
+const availableDice: DiceTypesToDisplay[] = [100, 20, 12, 10, 8, 6, 4, 'F'];
 
 const maxImageDice: number = 50;
 const maxTextDice: number = 50;
