@@ -2,6 +2,9 @@ export const CONFIG = {
   database: {
     url: process.env.DATABASE_URL,
   },
+  dice: {
+    canvasPoolSize: Number.parseInt(process.env.DICE_CANVAS_POOL_SIZE || "3", 10),
+  },
   clerk: {
     secretKey: process.env.CLERK_SECRET_KEY,
     publishableKey: process.env.CLERK_PUBLISHABLE_KEY,

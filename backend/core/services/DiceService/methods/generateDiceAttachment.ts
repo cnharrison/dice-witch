@@ -1,35 +1,70 @@
-import { Canvas, Image, SKRSContext2D, createCanvas, loadImage, clearAllCache } from "@napi-rs/canvas";
+import { Image, createCanvas, loadImage, clearAllCache } from "@napi-rs/canvas";
 import { AttachmentBuilder } from "discord.js";
 import { DiceArray, Die } from "../../../../shared/types";
 import { DiceService } from "..";
 import generateLinearGradientFill from "../../images/generateDice/fills/generateLinearGradientFill";
 import { getRandomPatternFill } from "../../images/generateDice/fills/generatePatternFills";
+import { CONFIG } from "../../../../config";
 
 let rollCount = 0;
 const CACHE_CLEAR_INTERVAL = 100;
+
+type CanvasPoolItem = { canvas: ReturnType<typeof createCanvas>; ctx: ReturnType<ReturnType<typeof createCanvas>["getContext"]>; busy: boolean };
+type CanvasPoolState = { items: CanvasPoolItem[]; waiters: ((item: CanvasPoolItem) => void)[] };
+
+const DEFAULT_POOL_SIZE = 3;
+const POOL_SIZE = Math.max(1, Number.isFinite(CONFIG.dice.canvasPoolSize)
+  ? CONFIG.dice.canvasPoolSize
+  : DEFAULT_POOL_SIZE);
+
+const getPoolState = (service: DiceService): CanvasPoolState => {
+  if (!(service as any)._canvasPool) {
+    const items: CanvasPoolItem[] = Array.from({ length: POOL_SIZE }, () => {
+      const canvas = createCanvas(1, 1);
+      return { canvas, ctx: canvas.getContext("2d"), busy: false };
+    });
+    (service as any)._canvasPool = { items, waiters: [] };
+  }
+  return (service as any)._canvasPool as CanvasPoolState;
+};
+
+const acquireCanvas = (service: DiceService): Promise<CanvasPoolItem> => {
+  const pool = getPoolState(service);
+  const available = pool.items.find(item => !item.busy);
+  if (available) {
+    available.busy = true;
+    return Promise.resolve(available);
+  }
+
+  return new Promise((resolve) => {
+    pool.waiters.push((item) => resolve(item));
+  });
+};
+
+const releaseCanvas = (service: DiceService, item: CanvasPoolItem) => {
+  const pool = getPoolState(service);
+  const waiter = pool.waiters.shift();
+  if (waiter) {
+    waiter(item);
+    return;
+  }
+  item.busy = false;
+};
 
 export async function generateDiceAttachment(
   this: DiceService,
   diceArray: DiceArray,
   attachmentName: string = "currentDice.webp"
 ): Promise<{ attachment: AttachmentBuilder; errors?: string[] } | undefined> {
-  if (!(this as any)._canvasPool) {
-    (this as any)._canvasPool = {
-      canvas: createCanvas(1, 1),
-      ctx: null as unknown as SKRSContext2D
-    };
-    (this as any)._canvasPool.ctx = (this as any)._canvasPool.canvas.getContext("2d");
-  }
-
-  const pool = (this as any)._canvasPool as { canvas: Canvas; ctx: SKRSContext2D };
+  const poolItem = await acquireCanvas(this);
   try {
     const errors: string[] = [];
     const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
     const paginatedArray = this.paginateDiceArray(diceArray);
     const canvasHeight = this.getCanvasHeight(paginatedArray, shouldHaveIcon);
     const canvasWidth = this.getCanvasWidth(paginatedArray);
-    const canvas = pool.canvas;
-    const ctx = pool.ctx;
+    const canvas = poolItem.canvas;
+    const ctx = poolItem.ctx;
 
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
@@ -94,16 +129,13 @@ export async function generateDiceAttachment(
       }
     };
 
-    const processChunks = async (chunks: Die[][], chunkSize: number = 3) => {
-      for (let i = 0; i < chunks.length; i += chunkSize) {
-        const chunkGroup = chunks.slice(i, i + chunkSize);
-        await Promise.all(
-          chunkGroup.flatMap((array, outerIndex) => 
-            array.map((die, index) => drawDice(die, index, outerIndex + i))
-          )
-        );
-        
-        if (i + chunkSize < chunks.length) {
+    const processChunks = async (chunks: Die[][]) => {
+      for (let outerIndex = 0; outerIndex < chunks.length; outerIndex += 1) {
+        const array = chunks[outerIndex];
+        for (let index = 0; index < array.length; index += 1) {
+          await drawDice(array[index], index, outerIndex);
+        }
+        if (outerIndex + 1 < chunks.length) {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
       }
@@ -118,14 +150,6 @@ export async function generateDiceAttachment(
       { name: attachmentName }
     );
     
-    try {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      canvas.width = 1;
-      canvas.height = 1;
-    } catch (err) {
-    }
-    
     rollCount++;
     if (rollCount >= CACHE_CLEAR_INTERVAL) {
       clearAllCache();
@@ -135,5 +159,7 @@ export async function generateDiceAttachment(
     return { attachment, errors: errors.length ? errors : undefined };
   } catch (error) {
     return undefined;
+  } finally {
+    releaseCanvas(this, poolItem);
   }
 }
