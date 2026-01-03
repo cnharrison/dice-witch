@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { RollService } from "../../core/services/RollService";
 import { DiscordService } from "../../core/services/DiscordService";
 import { DatabaseService } from "../../core/services/DatabaseService";
@@ -136,7 +137,8 @@ const command = {
       }
 
       const diceService = await import("../../core/services/DiceService").then(mod => mod.DiceService.getInstance());
-      const attachmentResult = await diceService.generateDiceAttachment(diceArray);
+      const attachmentName = `dice-${interaction?.id ?? randomUUID()}.webp`;
+      const attachmentResult = await diceService.generateDiceAttachment(diceArray, attachmentName);
 
       if (!attachmentResult) {
         console.error("Failed to generate dice attachment");

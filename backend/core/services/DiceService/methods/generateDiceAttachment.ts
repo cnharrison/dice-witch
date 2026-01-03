@@ -10,7 +10,8 @@ const CACHE_CLEAR_INTERVAL = 100;
 
 export async function generateDiceAttachment(
   this: DiceService,
-  diceArray: DiceArray
+  diceArray: DiceArray,
+  attachmentName: string = "currentDice.webp"
 ): Promise<{ attachment: AttachmentBuilder; errors?: string[] } | undefined> {
   if (!(this as any)._canvasPool) {
     (this as any)._canvasPool = {
@@ -114,7 +115,7 @@ export async function generateDiceAttachment(
     
     const attachment = new AttachmentBuilder(
       canvasBuffer,
-      { name: "currentDice.webp" }
+      { name: attachmentName }
     );
     
     try {

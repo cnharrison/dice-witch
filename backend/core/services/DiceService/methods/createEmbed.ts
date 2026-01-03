@@ -35,7 +35,8 @@ export function createEmbed(
   }
 
   if (attachment) {
-    embed.setImage('attachment://currentDice.webp');
+    const attachmentName = attachment.name || 'currentDice.webp';
+    embed.setImage(`attachment://${attachmentName}`);
   }
 
   return embed;

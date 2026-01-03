@@ -1,4 +1,5 @@
 import { AttachmentBuilder } from "discord.js";
+import { randomUUID } from "crypto";
 import { DiceRoll, Parser } from "@dice-roller/rpg-dice-roller";
 import chroma from "chroma-js";
 import { DiceArray, DiceFaces, DiceTypesToDisplay, Die, Result } from "../../../../shared/types";
@@ -403,7 +404,8 @@ export async function rollDice(
     }
 
     try {
-      const attachment = await this.generateDiceAttachment(diceArray);
+      const attachmentName = `dice-${randomUUID()}.webp`;
+      const attachment = await this.generateDiceAttachment(diceArray, attachmentName);
       if (attachment) {
         files = [attachment.attachment];
       }

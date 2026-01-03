@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { DiceService } from "./DiceService";
 import {
   DiceArray,
@@ -143,7 +144,8 @@ export class RollService {
 
         let diceAttachment;
         try {
-          diceAttachment = await this.diceService.generateDiceAttachment(diceArray);
+          const attachmentName = `dice-${randomUUID()}.webp`;
+          diceAttachment = await this.diceService.generateDiceAttachment(diceArray, attachmentName);
           if (diceAttachment) {
 
             const embedMessage = await this.diceService.generateEmbedMessage({
