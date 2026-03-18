@@ -61,6 +61,7 @@ const command = {
       }
 
       const rollService = RollService.getInstance();
+      args = args.map((arg) => (/^\d+$/.test(arg) ? `${arg}d6` : arg));
       const firstArg = args[0] || '';
       const { isOverMax, containsDice } = rollService.checkDiceLimits(firstArg);
 

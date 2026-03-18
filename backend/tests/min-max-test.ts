@@ -23,4 +23,6 @@ const testMinMax = () => {
   console.log('---------------------');
 };
 
-testMinMax();
+test('min/max dice modifiers run without errors', () => {
+  testMinMax();
+});
