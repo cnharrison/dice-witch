@@ -3,17 +3,37 @@ import { Result } from "../../../../shared/types";
 import { DiceService } from "..";
 import { tabletopColor } from "../../../constants";
 
+const essenceByFace: Record<string, string> = {
+  "1": "🧙‍♀️ Authority",
+  "2": "🌿 Nature",
+  "3": "☕ Empathy",
+  "4": "🐈‍⬛ Stillness",
+  "5": "🧉 Imagination",
+  "6": "📖 Wisdom",
+};
+
+export function mapEssences(output: string): string {
+  return output.replace(/\[([^\]]+)\]/g, (_match, bracketContent: string) => {
+    const mappedResults = bracketContent
+      .split(",")
+      .map((value) => value.trim())
+      .map((value) => essenceByFace[value] ?? value);
+
+    return `[${mappedResults.join(", ")}]`;
+  });
+}
+
 export function createEmbed(
   this: DiceService,
   resultArray: Result[],
-  grandTotal: number,
+  _grandTotal: number,
   attachment: AttachmentBuilder | null | undefined,
   title?: string,
   interaction?: CommandInteraction | ButtonInteraction,
   source?: string,
   username?: string
 ): EmbedBuilder {
-  const diceOutput = `${resultArray.map((result) => result.output).join("\n")} ${resultArray.length > 1 ? `\ngrand total = ${grandTotal}` : ""}`;
+  const diceOutput = resultArray.map((result) => mapEssences(result.output)).join("\n");
 
   let sourceText = '';
 
