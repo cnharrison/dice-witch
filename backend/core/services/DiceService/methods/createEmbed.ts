@@ -8,7 +8,7 @@ const essenceByFace: Record<string, string> = {
   "2": "🌿 Nature",
   "3": "☕ Empathy",
   "4": "🐈‍⬛ Stillness",
-  "5": "🧉 Imagination",
+  "5": "🔮 Imagination",
   "6": "📖 Wisdom",
 };
 
