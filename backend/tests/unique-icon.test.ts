@@ -29,7 +29,7 @@ describe('Unique Dice Modifier Test', () => {
     }
     
     // If we get here, none of the attempts showed the icon
-    fail('No unique icon found in multiple attempts');
+    throw new Error('No unique icon found in multiple attempts');
   });
 
   test('Unique with comparison adds snowflake icon', async () => {
@@ -60,6 +60,6 @@ describe('Unique Dice Modifier Test', () => {
     }
     
     // If we get here, none of the attempts showed the icon
-    fail('No unique icon found in multiple attempts');
+    throw new Error('No unique icon found in multiple attempts');
   });
 });

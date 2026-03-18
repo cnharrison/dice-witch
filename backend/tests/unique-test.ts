@@ -32,4 +32,6 @@ const testUnique = () => {
   console.log('---------------------');
 };
 
-testUnique();
+test('unique dice modifier runs without errors', () => {
+  testUnique();
+});
