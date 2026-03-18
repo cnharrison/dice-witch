@@ -14,8 +14,8 @@ COPY prisma ./prisma/
 RUN bun install --frozen-lockfile
 
 # Apply discord.js patch for Bun/WS error handling
-COPY patches/apply-patch.js ./patches/
-RUN node patches/apply-patch.js
+# COPY patches/apply-patch.js ./patches/
+# RUN node patches/apply-patch.js
 
 # Generate Prisma client
 RUN bunx prisma generate
