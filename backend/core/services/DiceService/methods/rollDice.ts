@@ -1,5 +1,4 @@
 import { AttachmentBuilder } from "discord.js";
-import { randomUUID } from "crypto";
 import { DiceRoll, Parser } from "@dice-roller/rpg-dice-roller";
 import chroma from "chroma-js";
 import { DiceArray, DiceFaces, DiceTypesToDisplay, Die, Result } from "../../../../shared/types";
@@ -374,7 +373,7 @@ export async function rollDice(
               const processedGroup = this.processRollGroup(rollGroup, sides);
               acc.push(...processedGroup);
             } catch (err) {
-              // Handle error silently
+              console.error("Failed to process roll group:", err);
             }
           }
           return acc;
@@ -403,16 +402,6 @@ export async function rollDice(
       resultArray.push(result);
     }
 
-    try {
-      const attachmentName = `dice-${randomUUID()}.webp`;
-      const attachment = await this.generateDiceAttachment(diceArray, attachmentName);
-      if (attachment) {
-        files = [attachment.attachment];
-      }
-    } catch (error) {
-      console.error("Attachment generation error:", error);
-    }
-
     if (resultArray.length === 0 && errors.length > 0) {
       return { diceArray: [], resultArray: [], errors };
     }
@@ -423,7 +412,8 @@ export async function rollDice(
       errors: errors.length > 0 ? errors : undefined,
       files,
     };
-  } catch {
+  } catch (error) {
+    console.error("Unexpected rollDice error:", error);
     return { diceArray: [], resultArray: [], errors: ['Unexpected error occurred'] };
   }
 }
