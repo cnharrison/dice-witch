@@ -76,6 +76,12 @@ const createMockInteraction = () => {
   
   const mockEditReply = jest.fn().mockResolvedValue(undefined);
   mockEditReply.mock = { calls: [] };
+
+  const mockFollowUp = jest.fn().mockResolvedValue(undefined);
+  mockFollowUp.mock = { calls: [] };
+
+  const mockReply = jest.fn().mockResolvedValue(undefined);
+  mockReply.mock = { calls: [] };
   
   const mockIsRepliable = jest.fn().mockReturnValue(true);
   mockIsRepliable.mock = { calls: [] };
@@ -83,6 +89,8 @@ const createMockInteraction = () => {
   return {
     deferReply: mockDeferReply,
     editReply: mockEditReply,
+    followUp: mockFollowUp,
+    reply: mockReply,
     deferred: false,
     replied: false,
     isRepliable: mockIsRepliable
@@ -186,6 +194,50 @@ describe('Roll Command Integration Tests', () => {
     expect(rollService.rollDice).not.toHaveBeenCalled();
   });
 
+  test('should treat unsafe exploding notation as over max and stop before rolling', async () => {
+    rollService.checkDiceLimits = jest.fn().mockReturnValue({
+      isOverMax: true,
+      containsDice: true,
+      unsafeNotationReason: 'Expected exploded dice count exceeds the 50 dice image limit.'
+    });
+
+    const mockClient = {} as any;
+    await rollCommand.execute({
+      args: ['d100!>0'],
+      interaction: mockInteraction,
+      discord: mockClient
+    });
+
+    expect(mockInteraction.deferReply).toHaveBeenCalled();
+    expect(sendDiceOverMaxMessage).toHaveBeenCalledWith({
+      args: ['d100!>0'],
+      interaction: mockInteraction
+    });
+    expect(rollService.rollDice).not.toHaveBeenCalled();
+  });
+
+  test('should send over max message if roll result exceeds image limit after processing', async () => {
+    rollService.rollDice = jest.fn().mockResolvedValue({
+      diceArray: [],
+      resultArray: [],
+      errors: ['DICE_OVER_MAX']
+    });
+
+    const mockClient = {} as any;
+    await rollCommand.execute({
+      args: ['1d20'],
+      interaction: mockInteraction,
+      discord: mockClient
+    });
+
+    expect(sendDiceOverMaxMessage).toHaveBeenCalledWith({
+      args: ['1d20'],
+      interaction: mockInteraction
+    });
+    expect(sendDiceRolledMessage).not.toHaveBeenCalled();
+    expect(sendDiceResultMessageWithImage).not.toHaveBeenCalled();
+  });
+
   test('should roll dice and send messages for valid notation', async () => {
     const mockClient = {} as any;
     await rollCommand.execute({
@@ -215,6 +267,7 @@ describe('Roll Command Integration Tests', () => {
       discord: mockClient
     });
 
+    expect(rollService.checkDiceLimits).toHaveBeenCalledWith(['1d20'], 3);
     expect(rollService.rollDice).toHaveBeenCalledWith({
       notation: ['1d20'],
       timesToRepeat: 3,

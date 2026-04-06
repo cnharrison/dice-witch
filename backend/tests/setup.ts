@@ -7,7 +7,26 @@ jest.mock('../config', () => {
       DISCORD_CLIENT_ID: 'mock-client-id',
       DISCORD_LOG_CHANNEL_ID: 'mock-log-channel',
       DISCORD_ADMIN_ROLE: 'Dice Witch Admin',
-      DATABASE_URL: 'mock-database-url'
+      DATABASE_URL: 'mock-database-url',
+      dice: {
+        canvasPoolSize: 3,
+      },
+      discord: {
+        token: 'mock-token',
+        clientId: 'mock-client-id',
+        logOutputChannelId: 'mock-log-channel',
+        renderErrorChannelId: 'mock-log-channel',
+        adminId: 'mock-admin-id',
+        supportServerLink: 'https://example.com/support',
+        inviteLink: 'https://example.com/invite',
+        clientSecret: '',
+      },
+      botListAuth: {
+        discordbotlist: '',
+        topgg: '',
+        dbots: '',
+      },
+      botPath: '/app',
     }
   };
 });

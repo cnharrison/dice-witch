@@ -201,9 +201,13 @@ export class RollServiceMock {
     return RollServiceMock.instance;
   }
 
-  public checkDiceLimits = jest.fn().mockImplementation((notation: string): { isOverMax: boolean; containsDice: boolean } => {
-    const isOverMax = notation.includes('100d');
-    const containsDice = /\d+d\d+/i.test(notation);
+  public checkDiceLimits = jest.fn().mockImplementation((
+    notation: string | string[],
+    _timesToRepeat: number = 1
+  ): { isOverMax: boolean; containsDice: boolean; unsafeNotationReason?: string } => {
+    const notationText = Array.isArray(notation) ? notation.join(' ') : notation;
+    const isOverMax = notationText.includes('100d');
+    const containsDice = /\d+d\d+/i.test(notationText);
     return { isOverMax, containsDice };
   });
 
