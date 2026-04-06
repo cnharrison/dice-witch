@@ -281,7 +281,7 @@ auth.get("/callback/:provider", async (c) => {
           await dbService.updateGuild({
             id: result.guild.id,
             name: result.guild.name,
-            icon: result.guild.icon ?? undefined,
+            icon: result.guild.icon,
             ownerId: result.guild.ownerId,
             memberCount: result.guild.memberCount,
             approximateMemberCount: result.guild.approximateMemberCount ?? undefined,

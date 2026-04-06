@@ -230,11 +230,11 @@ export interface GuildType {
   name: string;
   icon: string | null;
   ownerId: string;
-  memberCount: number;
-  approximateMemberCount?: number;
+  memberCount: number | null;
+  approximateMemberCount?: number | null;
   preferredLocale: string;
-  publicUpdatesChannelId?: string;
-  joinedTimestamp: number;
+  publicUpdatesChannelId?: string | null;
+  joinedTimestamp: number | null;
 }
 
 export interface UserType {
