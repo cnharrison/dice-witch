@@ -1,4 +1,4 @@
-import { Image, createCanvas, loadImage, clearAllCache } from "@napi-rs/canvas";
+import { Image, createCanvas, loadImage, clearAllCache, type Canvas, type SKRSContext2D } from "@napi-rs/canvas";
 import { AttachmentBuilder } from "discord.js";
 import { DiceArray, Die } from "../../../../shared/types";
 import { DiceService } from "..";
@@ -9,13 +9,14 @@ import { CONFIG } from "../../../../config";
 let rollCount = 0;
 const CACHE_CLEAR_INTERVAL = 100;
 
-type CanvasPoolItem = { canvas: ReturnType<typeof createCanvas>; ctx: ReturnType<ReturnType<typeof createCanvas>["getContext"]>; busy: boolean };
+type CanvasPoolItem = { canvas: Canvas; ctx: SKRSContext2D; busy: boolean };
 type CanvasPoolState = { items: CanvasPoolItem[]; waiters: ((item: CanvasPoolItem) => void)[] };
 
 const DEFAULT_POOL_SIZE = 3;
 const POOL_SIZE = Math.max(1, Number.isFinite(CONFIG.dice.canvasPoolSize)
   ? CONFIG.dice.canvasPoolSize
   : DEFAULT_POOL_SIZE);
+const CANVAS_ACQUIRE_TIMEOUT_MS = 5000;
 
 const getPoolState = (service: DiceService): CanvasPoolState => {
   if (!(service as any)._canvasPool) {
@@ -28,7 +29,7 @@ const getPoolState = (service: DiceService): CanvasPoolState => {
   return (service as any)._canvasPool as CanvasPoolState;
 };
 
-const acquireCanvas = (service: DiceService): Promise<CanvasPoolItem> => {
+const acquireCanvas = (service: DiceService): Promise<CanvasPoolItem | null> => {
   const pool = getPoolState(service);
   const available = pool.items.find(item => !item.busy);
   if (available) {
@@ -37,7 +38,20 @@ const acquireCanvas = (service: DiceService): Promise<CanvasPoolItem> => {
   }
 
   return new Promise((resolve) => {
-    pool.waiters.push((item) => resolve(item));
+    const waiterCallback = (item: CanvasPoolItem) => {
+      clearTimeout(timeoutId);
+      resolve(item);
+    };
+    pool.waiters.push(waiterCallback);
+
+    const timeoutId = setTimeout(() => {
+      const index = pool.waiters.indexOf(waiterCallback);
+      if (index !== -1) {
+        pool.waiters.splice(index, 1);
+      }
+      console.error(`Canvas pool timeout: all ${POOL_SIZE} canvases busy for ${CANVAS_ACQUIRE_TIMEOUT_MS}ms`);
+      resolve(null);
+    }, CANVAS_ACQUIRE_TIMEOUT_MS);
   });
 };
 
@@ -57,6 +71,9 @@ export async function generateDiceAttachment(
   attachmentName: string = "currentDice.webp"
 ): Promise<{ attachment: AttachmentBuilder; errors?: string[] } | undefined> {
   const poolItem = await acquireCanvas(this);
+  if (!poolItem) {
+    return undefined;
+  }
   try {
     const errors: string[] = [];
     const shouldHaveIcon = diceArray.some(group => group.some(die => !!die.icon?.length));
@@ -158,6 +175,7 @@ export async function generateDiceAttachment(
 
     return { attachment, errors: errors.length ? errors : undefined };
   } catch (error) {
+    console.error("Unhandled generateDiceAttachment error:", error);
     return undefined;
   } finally {
     releaseCanvas(this, poolItem);
