@@ -9,6 +9,29 @@ import { CONFIG } from "../../config";
 import { Command, EventType } from "../../shared/types";
 import { sendLogEventMessage } from "../messages/sendLogEventMessage";
 import { DatabaseService } from "../../core/services/DatabaseService";
+import { parseNotationArgs } from "../../core/services/RollService";
+
+/**
+ * Build the args array to pass to a command from raw Discord interaction option values.
+ *
+ * Roll notation is parsed through parseNotationArgs so that single expressions
+ * (e.g. "2d20 + 5") are kept intact while space-separated multi-rolls
+ * (e.g. "2d20 1d10") are split into individual terms.
+ */
+export function buildCommandArgs(
+  diceNotation: unknown,
+  topic: unknown,
+  commandName: string
+): string[] {
+  if (diceNotation) {
+    return parseNotationArgs(diceNotation.toString().trim());
+  }
+  if (topic && commandName === "knowledgebase") {
+    return [topic.toString().toLowerCase()];
+  }
+  const unformattedArgs = topic?.toString().trim().split("-") || [];
+  return unformattedArgs[1] ? [unformattedArgs[1]] : [];
+}
 
 const handlers = new Map<string, (...args: any[]) => void>();
 
@@ -161,14 +184,7 @@ const setupEvents = async (discord: Client) => {
         const { value: topic } = interaction.options.get("topic") || {};
         const { value: timesToRepeat } = interaction.options.get("timestorepeat") || {};
 
-        const unformattedArgs = topic?.toString().trim().split("-") || [];
-        const args = diceNotation
-          ? diceNotation?.toString().trim().split(/ +/)
-          : topic && commandName === "knowledgebase"
-          ? [topic.toString().toLowerCase()]
-          : unformattedArgs[1]
-          ? [unformattedArgs[1]]
-          : [];
+        const args = buildCommandArgs(diceNotation, topic, commandName);
         const titleAsString = title?.toString();
         const timesToRepeatAsNumber = Number(timesToRepeat);
 

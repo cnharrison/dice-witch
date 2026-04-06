@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import type { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { RollService } from '../../core/services/RollService';
+import { RollService, parseNotationArgs } from '../../core/services/RollService';
+import { maxDiceSides, maxImageDice } from '../../core/constants';
 import { SessionData, SessionUser, sessions } from './auth';
 
 type AuthVariables = {
@@ -11,6 +12,7 @@ type AuthVariables = {
 
 const router = new Hono<{ Variables: AuthVariables }>();
 const rollService = RollService.getInstance();
+const overMaxMessage = `${maxImageDice} dice max and ${maxDiceSides} sides max, sorry 😅`;
 
 async function authMiddleware(c: Context, next: Next) {
   const sessionId = getCookie(c, 'session_id');
@@ -42,20 +44,31 @@ router.post('/roll', async (c) => {
   }
 
   try {
-    const { isOverMax } = rollService.checkDiceLimits(notation);
+    const timesToRepeatAsNumber = Number(timesToRepeat) || 1;
+    const parsedNotation = parseNotationArgs(notation);
+    const { isOverMax, unsafeNotationReason } = rollService.checkDiceLimits(parsedNotation, timesToRepeatAsNumber);
+
     if (isOverMax) {
-      return c.json({ error: 'Dice roll exceeds maximum limits (50 dice max, 100 sides max)' }, 400);
+      if (unsafeNotationReason) {
+        console.warn(`[web /roll] Over max due exploding notation: ${unsafeNotationReason} | notation: ${notation}`);
+      }
+      return c.json({ error: overMaxMessage, message: overMaxMessage }, 400);
     }
 
     let response;
     try {
       const rollResult = await rollService.rollDice({
-        notation,
+        notation: parsedNotation,
         channelId,
         username,
         source: 'web',
-        timesToRepeat: timesToRepeat || 1
+        timesToRepeat: timesToRepeatAsNumber
       });
+
+      if (rollResult.errors?.includes('DICE_OVER_MAX')) {
+        const message = rollResult.message || overMaxMessage;
+        return c.json({ error: message, message }, 400);
+      }
 
       if (rollResult.errors?.includes('PERMISSION_ERROR')) {
         return c.json({
