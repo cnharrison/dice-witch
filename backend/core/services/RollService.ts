@@ -257,7 +257,13 @@ export class RollService {
       highestDiceSide = Math.max(highestDiceSide, sidesForLimit);
     }
 
-    const baseLimitExceeded = totalDiceRolled * repeatMultiplier > maxImageDice || highestDiceSide > maxDiceSides;
+    // timesToRepeat is intentionally excluded from the base dice count check.
+    // Repeated rolls produce separate result groups each rendered within the
+    // per-group limit, and the post-roll DICE_OVER_MAX check in rollDice()
+    // is the enforcer for any render that actually exceeds the image limit.
+    // Explosive dice are still checked against timesToRepeat because they can
+    // hold the canvas indefinitely regardless of group count.
+    const baseLimitExceeded = totalDiceRolled > maxImageDice || highestDiceSide > maxDiceSides;
     const unsafeNotationReason = this.getUnsafeNotationReason(parsedDiceNodes, repeatMultiplier);
     const isOverMax = baseLimitExceeded || !!unsafeNotationReason;
 

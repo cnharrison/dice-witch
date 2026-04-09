@@ -66,13 +66,12 @@ describe('RollService.checkDiceLimits — real implementation', () => {
   });
 
   // timesToRepeat multiplier
-  test('blocks when timesToRepeat pushes total dice over limit', () => {
-    // 10d6 * 6 = 60 dice — over limit
-    expect(service.checkDiceLimits('10d6', 6)).toMatchObject({ isOverMax: true, containsDice: true });
+  test('allows timesToRepeat regardless of multiplied total (post-roll check is the enforcer)', () => {
+    // 10d6 × 6 = 60 dice multiplied — precheck does not block this; post-roll DICE_OVER_MAX does
+    expect(service.checkDiceLimits('10d6', 6)).toMatchObject({ isOverMax: false, containsDice: true });
   });
 
-  test('allows when timesToRepeat keeps total at limit', () => {
-    // 10d6 * 5 = 50 dice — exactly at limit
+  test('allows timesToRepeat at any multiple for base notation under limit', () => {
     expect(service.checkDiceLimits('10d6', 5)).toMatchObject({ isOverMax: false, containsDice: true });
   });
 
@@ -81,9 +80,9 @@ describe('RollService.checkDiceLimits — real implementation', () => {
     expect(service.checkDiceLimits('30d6+30d6', 1)).toMatchObject({ isOverMax: true, containsDice: true });
   });
 
-  test('applies timesToRepeat across multiple notation terms', () => {
-    // ['10d6', '10d6'] = 20 dice × 3 = 60
-    expect(service.checkDiceLimits(['10d6', '10d6'], 3)).toMatchObject({ isOverMax: true, containsDice: true });
+  test('timesToRepeat does not affect multi-term notation precheck', () => {
+    // ['10d6', '10d6'] = 20 dice base — under limit; timesToRepeat not applied in precheck
+    expect(service.checkDiceLimits(['10d6', '10d6'], 3)).toMatchObject({ isOverMax: false, containsDice: true });
   });
 
   // Explosive dice safety
