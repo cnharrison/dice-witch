@@ -6,6 +6,7 @@ import { PreviewRoller } from '@/components/PreviewRoller';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useServerStats } from '@/hooks/useServerStats';
 import { SvgFilters } from '@/components/SvgFilters';
+import { appConfig } from '@/lib/config';
 
 const LandingPage = () => {
   const { isSignedIn } = useAuth();
@@ -16,8 +17,7 @@ const LandingPage = () => {
     if (!isLoaded) return;
     
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.dicewit.ch';
-      window.location.href = `${API_BASE}/api/auth/signin/discord`;
+      signIn.authenticateWithRedirect({ strategy: 'oauth_discord' });
     } catch (error) {
       console.error('Authentication error:', error);
     }
@@ -148,7 +148,7 @@ const LandingPage = () => {
               className="bg-[#ff00ff] hover:bg-[#cc00cc] text-white px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors border border-[#ff66ff] shadow-[0_0_15px_rgba(255,0,255,0.5)]"
             >
               <a
-                href={`https://discord.com/oauth2/authorize?client_id=${import.meta.env.VITE_DISCORD_CLIENT_ID || '808161585876697108'}&permissions=0&scope=bot%20applications.commands`}
+                href={appConfig.inviteUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center"

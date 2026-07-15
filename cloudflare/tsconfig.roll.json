@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    ".generated/data.d.ts",
+    ".generated/roll.d.ts",
+    "workers/roll/**/*.ts",
+    "packages/roll-domain/**/*.ts",
+    "packages/roll-render-model/**/*.ts",
+    "packages/dice-svg/**/*.ts",
+    "packages/discord-contracts/**/*.ts",
+    "tests/roll/**/*.ts",
+    "vitest.roll.config.ts"
+  ],
+  "exclude": []
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-interactions",
+  "main": "workers/interactions/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "DISCORD_APPLICATION_ID": "100000000000000001",
+    "INVITE_LINK": "https://example.com/replace-with-discord-invite",
+    "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
+    "WEB_APP_URL": "https://example.com/app"
+  },
+  "services": [
+    {
+      "binding": "DATA_SERVICE",
+      "service": "dice-witch-data"
+    },
+    {
+      "binding": "GATEWAY_STATUS",
+      "service": "dice-witch-gateway",
+      "entrypoint": "GatewayStatusService"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROLL_WORK",
+        "class_name": "RollWork",
+        "script_name": "dice-witch-roll"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

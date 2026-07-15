@@ -1,0 +1,278 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="800" viewBox="0 120 1800 800" role="img" aria-labelledby="title desc">
+  <title id="title">Dice Witch Cloudflare architecture</title>
+  <desc id="desc">A minimal three-lane systems diagram showing the web experience, signed Discord roll delivery, and live Discord Gateway fleet. Generic code, state, and database symbols distinguish Workers, Durable Objects, and D1.</desc>
+
+  <defs>
+    <marker id="arrowWeb" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0 9 4.5 0 9Z" fill="#1686a0"/>
+    </marker>
+    <marker id="arrowRoll" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0 9 4.5 0 9Z" fill="#d45b18"/>
+    </marker>
+    <marker id="arrowGateway" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse" markerUnits="strokeWidth">
+      <path d="M0 0 9 4.5 0 9Z" fill="#6959b8"/>
+    </marker>
+    <marker id="arrowSecondary" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0 8 4 0 8Z" fill="#89939e"/>
+    </marker>
+
+    <!-- Generic infrastructure symbols; no vendor marks. -->
+    <symbol id="iconWorker" viewBox="0 0 48 48">
+      <path d="m18 13-11 11 11 11M30 13l11 11-11 11M27 9l-6 30" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="iconStateful" viewBox="0 0 48 48">
+      <path d="m24 5 16 9v20l-16 9-16-9V14zM8 14l16 9 16-9M24 23v20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
+      <circle cx="24" cy="23" r="3" fill="currentColor"/>
+    </symbol>
+    <symbol id="iconDatabase" viewBox="0 0 48 48">
+      <ellipse cx="24" cy="10" rx="16" ry="6" fill="none" stroke="currentColor" stroke-width="2.6"/>
+      <path d="M8 10v12c0 3 7 6 16 6s16-3 16-6V10M8 22v12c0 3 7 6 16 6s16-3 16-6V22" fill="none" stroke="currentColor" stroke-width="2.6"/>
+    </symbol>
+
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .boundary { fill: #d45b18; font-size: 12px; font-weight: 750; letter-spacing: 2px; }
+      .laneNumber { fill: #ffffff; font-size: 13px; font-weight: 750; }
+      .laneTitle { fill: #27313b; font-size: 17px; font-weight: 720; letter-spacing: 1.2px; }
+      .kind { fill: #d45b18; font-size: 11px; font-weight: 750; letter-spacing: 1.2px; }
+      .cardTitle { fill: #18212b; font-size: 20px; font-weight: 700; }
+      .cardBody { fill: #69747f; font-size: 15px; }
+      .externalTitle { fill: #27313b; font-size: 18px; font-weight: 700; }
+      .externalBody { fill: #76808a; font-size: 14px; }
+      .label { fill: #69747f; font-size: 13px; font-weight: 650; }
+    </style>
+  </defs>
+
+  <rect x="0" y="120" width="1800" height="800" fill="#fafaf8"/>
+
+  <!-- Cloudflare platform boundary -->
+  <rect x="280" y="154" width="1230" height="738" rx="12" fill="#ffffff" stroke="#cbd2d8" stroke-width="1.5"/>
+  <rect x="306" y="139" width="136" height="28" fill="#fafaf8"/>
+  <text x="316" y="158" class="boundary">CLOUDFLARE</text>
+  <path d="M280 392H1510M280 652H1510" stroke="#e1e5e8" stroke-width="1"/>
+
+  <!-- Lane labels -->
+  <g transform="translate(310 178)">
+    <circle cx="14" cy="14" r="14" fill="#1686a0"/>
+    <text x="14" y="19" text-anchor="middle" class="laneNumber">1</text>
+    <text x="40" y="20" class="laneTitle">WEB</text>
+  </g>
+  <g transform="translate(310 416)">
+    <circle cx="14" cy="14" r="14" fill="#d45b18"/>
+    <text x="14" y="19" text-anchor="middle" class="laneNumber">2</text>
+    <text x="40" y="20" class="laneTitle">ROLL COMMAND</text>
+  </g>
+  <g transform="translate(310 678)">
+    <circle cx="14" cy="14" r="14" fill="#6959b8"/>
+    <text x="14" y="19" text-anchor="middle" class="laneNumber">3</text>
+    <text x="40" y="20" class="laneTitle">GATEWAY</text>
+  </g>
+
+  <!-- The Roll Worker owns both entrypoints, RollWork, and rendering. -->
+  <rect x="724" y="198" width="500" height="382" rx="10" fill="none" stroke="#e2b79d" stroke-width="1" stroke-dasharray="4 6"/>
+  <rect x="742" y="188" width="116" height="22" fill="#ffffff"/>
+  <text x="750" y="203" class="kind">ROLL WORKER</text>
+
+  <!-- Primary and secondary connections -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Web -->
+    <path d="M238 274H386" stroke="#1686a0" stroke-width="2.5" marker-end="url(#arrowWeb)"/>
+    <path d="M646 274H750" stroke="#1686a0" stroke-width="2.5" marker-end="url(#arrowWeb)"/>
+    <path d="M982 274H1068" stroke="#1686a0" stroke-width="2.5" marker-end="url(#arrowWeb)"/>
+
+    <!-- Signed roll -->
+    <path d="M238 508C300 508 320 274 386 274" stroke="#d45b18" stroke-width="2.5" marker-end="url(#arrowRoll)"/>
+    <path d="M600 332V410H625V456" stroke="#d45b18" stroke-width="2.5" marker-end="url(#arrowRoll)"/>
+    <path d="M642 510H760" stroke="#d45b18" stroke-width="2.5" marker-end="url(#arrowRoll)"/>
+    <path d="M1012 510C1060 466 1080 388 1110 332" stroke="#d45b18" stroke-width="2.5" marker-end="url(#arrowRoll)"/>
+    <path d="M1012 532C1080 558 1120 640 1210 640H1495V494H1548" stroke="#d45b18" stroke-width="2.5" marker-end="url(#arrowRoll)"/>
+
+    <!-- Shared services -->
+    <path d="M646 298C820 320 1020 344 1238 360" stroke="#89939e" stroke-width="1.4" stroke-dasharray="5 6" marker-end="url(#arrowSecondary)"/>
+    <path d="M646 312C840 348 1030 530 1238 552" stroke="#89939e" stroke-width="1.4" stroke-dasharray="5 6" marker-end="url(#arrowSecondary)"/>
+    <path d="M1012 496C1098 454 1150 393 1238 382" stroke="#89939e" stroke-width="1.4" stroke-dasharray="5 6" marker-end="url(#arrowSecondary)"/>
+    <path d="M1012 540C1100 548 1150 570 1238 574" stroke="#89939e" stroke-width="1.4" stroke-dasharray="5 6" marker-end="url(#arrowSecondary)"/>
+    <path d="M642 470C680 430 700 430 730 430H1140C1180 430 1200 374 1238 374" stroke="#aab2ba" stroke-width="1.3" stroke-dasharray="3 6" marker-end="url(#arrowSecondary)"/>
+    <path d="M600 564V710C600 735 580 740 580 756" stroke="#aab2ba" stroke-width="1.3" stroke-dasharray="3 6" marker-end="url(#arrowSecondary)"/>
+    <path d="M558 756C735 622 1000 474 1238 404" stroke="#89939e" stroke-width="1.4" stroke-dasharray="5 6" marker-end="url(#arrowSecondary)"/>
+    <path d="M584 756C820 650 1020 622 1238 596" stroke="#89939e" stroke-width="1.4" stroke-dasharray="5 6" marker-end="url(#arrowSecondary)"/>
+    <path d="M1354 418V446" stroke="#89939e" stroke-width="1.8" marker-end="url(#arrowSecondary)"/>
+    <path d="M1466 592C1500 592 1510 599 1548 599" stroke="#89939e" stroke-width="2" marker-end="url(#arrowSecondary)"/>
+
+    <!-- Gateway -->
+    <path d="M354 818H392" stroke="#6959b8" stroke-width="2.5" marker-end="url(#arrowGateway)"/>
+    <path d="M610 818H674" stroke="#6959b8" stroke-width="2.5" marker-end="url(#arrowGateway)"/>
+    <path d="M904 818H966" stroke="#6959b8" stroke-width="2.5" marker-end="url(#arrowGateway)"/>
+    <path d="M1200 818H1252" stroke="#6959b8" stroke-width="2.5" marker-end="url(#arrowGateway)"/>
+    <path d="M1402 818H1548" stroke="#6959b8" stroke-width="2.5" marker-start="url(#arrowGateway)" marker-end="url(#arrowGateway)"/>
+  </g>
+
+  <!-- Connection labels -->
+  <text x="285" y="265" class="label">HTTPS</text>
+  <text x="672" y="265" class="label">service</text>
+  <text x="1000" y="265" class="label">render</text>
+  <text x="274" y="493" class="label">signed</text>
+  <text x="678" y="499" class="label">/roll only</text>
+  <text x="1320" y="631" class="label">webhook</text>
+  <text x="670" y="421" class="label">status</text>
+  <text x="1440" y="808" class="label">socket</text>
+
+  <!-- External: browser -->
+  <g transform="translate(54 229)">
+    <rect width="184" height="90" rx="8" fill="#ffffff" stroke="#b9c2ca"/>
+    <circle cx="38" cy="44" r="19" fill="none" stroke="#1686a0" stroke-width="1.7"/>
+    <path d="M19 44h38M38 25c7 6 10 12 10 19s-3 13-10 19M38 25c-7 6-10 12-10 19s3 13 10 19" fill="none" stroke="#1686a0" stroke-width="1.3"/>
+    <text x="70" y="40" class="externalTitle">Browser</text>
+    <text x="70" y="62" class="externalBody">Web app</text>
+  </g>
+
+  <!-- External: Discord interactions -->
+  <g transform="translate(54 463)">
+    <rect width="184" height="90" rx="8" fill="#ffffff" stroke="#b9c2ca"/>
+    <path d="M23 31h30a7 7 0 0 1 7 7v10a7 7 0 0 1-7 7H39l-8 7 1-7h-9a7 7 0 0 1-7-7V38a7 7 0 0 1 7-7z" fill="none" stroke="#d45b18" stroke-width="1.8"/>
+    <text x="70" y="40" class="externalTitle">Discord</text>
+    <text x="70" y="62" class="externalBody">Commands</text>
+  </g>
+
+  <!-- Web/API Worker -->
+  <g transform="translate(386 216)">
+    <rect width="260" height="116" rx="8" fill="#ffffff" stroke="#9ba6af"/>
+    <use href="#iconWorker" x="18" y="18" width="34" height="34" color="#d45b18"/>
+    <text x="66" y="31" class="kind">WORKER</text>
+    <text x="66" y="57" class="cardTitle">Web / API</text>
+    <text x="18" y="94" class="cardBody">Assets · OAuth · API</text>
+  </g>
+
+  <!-- WebRollService -->
+  <g transform="translate(750 222)">
+    <rect width="232" height="104" rx="8" fill="#ffffff" stroke="#9ba6af"/>
+    <use href="#iconWorker" x="17" y="17" width="32" height="32" color="#d45b18"/>
+    <text x="62" y="30" class="kind">WORKER ENTRYPOINT</text>
+    <text x="62" y="56" class="cardTitle">Web rolls</text>
+    <text x="17" y="84" class="cardBody">Execute + render</text>
+  </g>
+
+  <!-- Renderer -->
+  <g transform="translate(1068 222)">
+    <rect width="144" height="104" rx="8" fill="#ffffff" stroke="#9ba6af"/>
+    <path d="m38 24 19 11v22L38 68 19 57V35z" fill="none" stroke="#1686a0" stroke-width="1.5"/>
+    <circle cx="31" cy="40" r="2.4" fill="#1686a0"/><circle cx="45" cy="40" r="2.4" fill="#1686a0"/><circle cx="38" cy="51" r="2.4" fill="#1686a0"/>
+    <text x="72" y="54" class="cardTitle">Render</text>
+  </g>
+
+  <!-- Interactions Worker -->
+  <g transform="translate(390 456)">
+    <rect width="252" height="108" rx="8" fill="#ffffff" stroke="#9ba6af"/>
+    <use href="#iconWorker" x="18" y="18" width="34" height="34" color="#d45b18"/>
+    <text x="66" y="31" class="kind">WORKER</text>
+    <text x="66" y="57" class="cardTitle">Interactions</text>
+    <text x="18" y="87" class="cardBody">Verify commands</text>
+  </g>
+
+  <!-- RollWork Durable Object -->
+  <g transform="translate(760 456)">
+    <rect width="252" height="108" rx="8" fill="#ffffff" stroke="#d45b18" stroke-width="1.5"/>
+    <use href="#iconStateful" x="18" y="17" width="36" height="36" color="#d45b18"/>
+    <text x="66" y="31" class="kind">DURABLE OBJECT</text>
+    <text x="66" y="57" class="cardTitle">Roll work</text>
+    <text x="18" y="87" class="cardBody">Execute · deliver</text>
+  </g>
+
+  <!-- Data Worker -->
+  <g transform="translate(1238 314)">
+    <rect width="228" height="104" rx="8" fill="#ffffff" stroke="#9ba6af"/>
+    <use href="#iconWorker" x="17" y="17" width="32" height="32" color="#d45b18"/>
+    <text x="62" y="30" class="kind">WORKER</text>
+    <text x="62" y="56" class="cardTitle">Data API</text>
+    <text x="17" y="84" class="cardBody">Shared access</text>
+  </g>
+
+  <!-- D1 -->
+  <g transform="translate(1238 446)">
+    <rect width="228" height="92" rx="8" fill="#fffdf9" stroke="#d45b18"/>
+    <use href="#iconDatabase" x="17" y="16" width="36" height="36" color="#d45b18"/>
+    <text x="66" y="29" class="kind">DATABASE</text>
+    <text x="66" y="55" class="cardTitle">D1</text>
+    <text x="17" y="79" class="cardBody">Persistent data</text>
+  </g>
+
+  <!-- Discord REST Worker -->
+  <g transform="translate(1238 548)">
+    <rect width="228" height="88" rx="8" fill="#ffffff" stroke="#9ba6af"/>
+    <use href="#iconWorker" x="17" y="15" width="32" height="32" color="#d45b18"/>
+    <text x="62" y="28" class="kind">WORKER</text>
+    <text x="62" y="54" class="cardTitle">Discord REST</text>
+    <text x="17" y="77" class="cardBody">Reads · logs</text>
+  </g>
+
+  <!-- External Discord APIs -->
+  <g transform="translate(1548 450)">
+    <rect width="198" height="88" rx="8" fill="#ffffff" stroke="#c8845c"/>
+    <path d="M18 43h28M38 34l10 9-10 9" fill="none" stroke="#d45b18" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="62" y="29" class="externalTitle">Interaction</text>
+    <text x="62" y="50" class="externalTitle">webhook</text>
+    <text x="62" y="70" class="externalBody">Replies</text>
+  </g>
+  <g transform="translate(1548 558)">
+    <rect width="198" height="82" rx="8" fill="#ffffff" stroke="#b9c2ca"/>
+    <path d="M18 47c7-15 25-15 32 0M24 34h.1M44 34h.1" fill="none" stroke="#69747f" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="62" y="36" class="externalTitle">Discord API</text>
+    <text x="62" y="58" class="externalBody">API</text>
+  </g>
+
+  <!-- Cron -->
+  <g transform="translate(300 782)">
+    <rect width="54" height="72" rx="8" fill="#ffffff" stroke="#a89fd3"/>
+    <circle cx="27" cy="24" r="12" fill="none" stroke="#6959b8" stroke-width="1.6"/>
+    <path d="M27 17v8l5 3" fill="none" stroke="#6959b8" stroke-width="1.6" stroke-linecap="round"/>
+    <text x="27" y="59" text-anchor="middle" class="label">Cron</text>
+  </g>
+
+  <!-- Gateway Worker -->
+  <g transform="translate(392 756)">
+    <rect width="218" height="124" rx="8" fill="#ffffff" stroke="#9ba6af"/>
+    <use href="#iconWorker" x="17" y="17" width="32" height="32" color="#d45b18"/>
+    <text x="62" y="30" class="kind">WORKER</text>
+    <text x="62" y="56" class="cardTitle">Gateway</text>
+    <text x="17" y="94" class="cardBody">Presence · lifecycle</text>
+  </g>
+
+  <!-- Gateway Coordinator -->
+  <g transform="translate(674 764)">
+    <rect width="230" height="108" rx="8" fill="#ffffff" stroke="#6959b8"/>
+    <use href="#iconStateful" x="17" y="16" width="34" height="34" color="#6959b8"/>
+    <text x="64" y="29" class="kind">DURABLE OBJECT</text>
+    <text x="64" y="55" class="cardTitle">Coordinator</text>
+    <text x="17" y="84" class="cardBody">Fleet ownership</text>
+  </g>
+
+  <!-- Gateway Partitions -->
+  <g transform="translate(966 764)">
+    <rect width="234" height="108" rx="8" fill="#ffffff" stroke="#6959b8"/>
+    <use href="#iconStateful" x="17" y="16" width="34" height="34" color="#6959b8"/>
+    <text x="64" y="29" class="kind">DURABLE OBJECTS</text>
+    <text x="64" y="55" class="cardTitle">Partitions</text>
+    <text x="17" y="84" class="cardBody">Shard managers</text>
+  </g>
+
+  <!-- Shards -->
+  <g transform="translate(1252 764)">
+    <rect width="150" height="108" rx="8" fill="#ffffff" stroke="#6959b8"/>
+    <g fill="#6959b8">
+      <circle cx="46" cy="27" r="4"/><circle cx="65" cy="27" r="4"/><circle cx="84" cy="27" r="4"/><circle cx="103" cy="27" r="4"/>
+      <circle cx="55" cy="44" r="4"/><circle cx="74" cy="44" r="4"/><circle cx="93" cy="44" r="4"/>
+    </g>
+    <text x="75" y="76" text-anchor="middle" class="cardTitle">Shards</text>
+    <text x="75" y="96" text-anchor="middle" class="cardBody">Connections</text>
+  </g>
+
+  <!-- External Discord Gateway -->
+  <g transform="translate(1548 773)">
+    <rect width="198" height="90" rx="8" fill="#ffffff" stroke="#a89fd3"/>
+    <path d="M18 50c7-15 25-15 32 0M24 37h.1M44 37h.1" fill="none" stroke="#6959b8" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="62" y="39" class="externalTitle">Discord</text>
+    <text x="62" y="61" class="externalBody">Gateway sessions</text>
+  </g>
+
+
+</svg>

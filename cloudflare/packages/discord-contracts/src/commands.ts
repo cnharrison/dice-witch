@@ -1,0 +1,62 @@
+export const DISCORD_GLOBAL_COMMANDS = [
+  {
+    name: "roll",
+    description: "Throws some dice",
+    options: [
+      {
+        name: "notation",
+        description: "Dice notation, e.g. 1d6+2",
+        type: 3,
+        required: true,
+      },
+      {
+        name: "title",
+        description: "What is this roll for? e.g. attack with enchanted sword",
+        type: 3,
+      },
+      {
+        name: "timestorepeat",
+        description:
+          "If you would like to repeat this roll, enter the number of times here.",
+        type: 3,
+      },
+    ],
+  },
+  {
+    name: "status",
+    description: "Pings Dice Witch",
+  },
+  {
+    name: "knowledgebase",
+    description: "Shows the Dice Witch knowledgebase",
+    options: [
+      {
+        name: "topic",
+        description: "what you want to know about",
+        type: 3,
+        required: true,
+        choices: [
+          { name: "Exploding dice", value: "exploding" },
+          { name: "Auto-reroll", value: "reroll" },
+          { name: "Unique dice", value: "unique" },
+          { name: "Min/Max", value: "minmax" },
+          { name: "Keep/drop AKA advantage", value: "keepdrop" },
+          { name: "Target success/failure AKA Dice pool", value: "target" },
+          { name: "Critical success/failure", value: "crit" },
+          { name: "Sorting", value: "sort" },
+          { name: "Math", value: "math" },
+          { name: "Repeating", value: "repeating" },
+          { name: "Fudge dice", value: "fudge" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "web",
+    description: "Access Dice Witch's web interface",
+  },
+  {
+    name: "prefs",
+    description: "Set your preferences on the web",
+  },
+] as const;

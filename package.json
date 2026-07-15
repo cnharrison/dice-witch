@@ -1,0 +1,23 @@
+{
+  "name": "dice-witch",
+  "private": true,
+  "version": "0.0.0",
+  "license": "MIT",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": "24.13.x"
+  },
+  "workspaces": [
+    "cloudflare",
+    "frontend"
+  ],
+  "overrides": {
+    "mathjs": "15.2.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspace=@dice-witch/frontend",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspace=@dice-witch/cloudflare",
+    "type-check": "npm run type-check --workspaces --if-present"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-dice-svg-test",
+  "main": "workers/roll/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "rules": [
+    {
+      "type": "Data",
+      "globs": ["**/*.ttf"],
+      "fallthrough": true
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+.pi-subagents/
+node_modules/
+**/node_modules/
+**/dist/
+**/coverage/
+**/.wrangler/
+cloudflare/.generated/
+cloudflare/wrangler.data.jsonc
+cloudflare/wrangler.discord-rest.jsonc
+cloudflare/wrangler.gateway.jsonc
+cloudflare/wrangler.interactions.jsonc
+cloudflare/wrangler.roll.jsonc
+cloudflare/wrangler.web-api.jsonc
+frontend/.env*
+!frontend/.env.example
+*.log
+.DS_Store

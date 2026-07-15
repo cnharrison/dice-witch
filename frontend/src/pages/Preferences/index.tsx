@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { useGuild } from '@/context/GuildContext';
 import { customFetch } from '../../main';
 import { GuildDropdown } from '@/components/GuildDropdown';
+import { appConfig } from '@/lib/config';
 
 interface Guild {
   guilds: {
@@ -80,6 +81,7 @@ export default function Preferences() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'Idempotency-Key': crypto.randomUUID(),
         },
         body: JSON.stringify(data),
       });
@@ -169,7 +171,7 @@ export default function Preferences() {
                   <div className="ml-3">
                     <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">You don't have any mutual guilds with Dice Witch.</p>
                     <a
-                      href={`https://discord.com/oauth2/authorize?client_id=${import.meta.env.VITE_DISCORD_CLIENT_ID || '808161585876697108'}&permissions=0&scope=bot%20applications.commands`}
+                      href={appConfig.inviteUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-block bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2 rounded"

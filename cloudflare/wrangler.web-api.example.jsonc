@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-web-api",
+  "main": "workers/web-api/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "DISCORD_CLIENT_ID": "100000000000000001",
+    "DISCORD_REDIRECT_URI": "https://example.com/api/auth/callback/discord",
+    "FRONTEND_ORIGIN": "https://example.com"
+  },
+  "assets": {
+    "directory": "../frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/interactions"]
+  },
+  "services": [
+    {
+      "binding": "DATA_SERVICE",
+      "service": "dice-witch-data"
+    },
+    {
+      "binding": "DISCORD_REST",
+      "service": "dice-witch-discord-rest",
+      "entrypoint": "DiscordRestService"
+    },
+    {
+      "binding": "ROLL_WEB",
+      "service": "dice-witch-roll",
+      "entrypoint": "WebRollService"
+    },
+    {
+      "binding": "INTERACTIONS_SERVICE",
+      "service": "dice-witch-interactions"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

@@ -4,14 +4,14 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from './lib/AuthProvider';
+import { appConfig } from './lib/config';
 import './index.css'
 import App from './App'
 
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.dicewit.ch';
 export const customFetch = async (url: string, options: RequestInit = {}) => {
   const isApiUrl = url.startsWith('/api');
-  const fullUrl = isApiUrl ? `${API_BASE}${url}` : url;
+  const fullUrl = isApiUrl ? `${appConfig.apiBase}${url}` : url;
   return fetch(fullUrl, {
     ...options,
     credentials: 'include'

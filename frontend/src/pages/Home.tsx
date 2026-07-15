@@ -17,6 +17,7 @@ import { Navigate } from 'react-router-dom';
 import { useGuild } from '@/context/GuildContext';
 import { useToast } from '@/hooks/use-toast';
 import { customFetch } from '../main';
+import { appConfig } from '@/lib/config';
 
 export const Home = () => {
   const { user } = useUser();
@@ -99,11 +100,10 @@ export const Home = () => {
       setRollResults(null);
 
       const requestBody = {
+        guildId: selectedGuild,
         channelId: selectedChannel,
         notation: input,
-        source: 'web',
-        username: user?.name || user?.email,
-        timesToRepeat: timesToRepeat,
+        timesToRepeat,
         title: rollTitle || undefined,
       };
       const response = await customFetch('/api/dice/roll', {
@@ -163,7 +163,7 @@ export const Home = () => {
           You don't have any mutual servers with Dice Witch
         </h1>
         <a
-          href={`https://discord.com/oauth2/authorize?client_id=${import.meta.env.VITE_DISCORD_CLIENT_ID || '808161585876697108'}&permissions=0&scope=bot%20applications.commands`}
+          href={appConfig.inviteUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-block bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2 rounded"
