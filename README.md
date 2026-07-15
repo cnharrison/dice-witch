@@ -1,17 +1,14 @@
 # Dice Witch
 
-![Dice Witch banner](frontend/public/images/dice-witch-banner.webp)
+<img src="frontend/public/images/dice-witch-transparent.webp" alt="Dice Witch" width="420">
+
+[![Dice Witch guild count on Top.gg](https://top.gg/api/widget/servers/808161585876697108.svg)](https://top.gg/bot/808161585876697108)
 
 Dice Witch is a Discord dice roller with illustrated results, advanced RPG notation, a web dashboard, and durable interaction delivery.
 
 ## Architecture
 
 Dice Witch runs as six Workers. Durable Objects coordinate roll delivery and Gateway shards; D1 stores application data.
-
-![Three color-coded flows show the web experience, signed Discord roll delivery through RollWork Durable Objects, and the live Gateway fleet, with shared Data, D1, and Discord REST services.](architecture.svg)
-
-<details>
-<summary>Text architecture map</summary>
 
 ```mermaid
 flowchart TB
@@ -45,8 +42,6 @@ flowchart TB
     Gateway --> Rest --> DiscordAPI
 ```
 
-</details>
-
 - Signed HTTP interactions own commands; Gateway owns presence, sessions, shards, and guild lifecycle.
 - `RollWork` Durable Objects execute idempotent Discord deliveries.
 - The Data Worker exclusively owns D1; other Workers use service bindings.
@@ -56,14 +51,12 @@ flowchart TB
 
 - `cloudflare/` — Workers, Durable Objects, shared packages, D1 migrations, tests, and Wrangler examples.
 - `frontend/` — React and Vite web application.
-- `architecture.svg` — vendor-neutral runtime diagram.
 
 ## Requirements
 
 - Node.js 24.13 and npm 11.6
 - A Cloudflare account with Wrangler authenticated
 - A Discord application and bot
-- Six Worker names or routes under your control
 
 ## Local setup
 
@@ -118,7 +111,7 @@ npx wrangler secret put DISCORD_PUBLIC_KEY --config cloudflare/wrangler.interact
 npx wrangler secret put DISCORD_CLIENT_SECRET --config cloudflare/wrangler.web-api.jsonc
 ```
 
-## Build and deploy
+## Build and provision
 
 Build the frontend with the same public origin and Discord application ID configured in the Web/API Worker:
 
@@ -128,7 +121,7 @@ VITE_DISCORD_CLIENT_ID=YOUR_DISCORD_APPLICATION_ID \
 npm run build
 ```
 
-Deploy in dependency order:
+Deploy in dependency order. Each command provisions the Worker named in its Wrangler configuration; the Workers do not need to be created separately.
 
 ```bash
 npx wrangler deploy --config cloudflare/wrangler.data.jsonc
@@ -171,20 +164,6 @@ curl --fail-with-body \
   --header "Authorization: Bearer $GATEWAY_CONTROL_TOKEN" \
   https://YOUR_GATEWAY_WORKER/gateway/start
 ```
-
-## Verification
-
-```bash
-npm run type-check
-npm run lint
-npm test
-
-VITE_API_BASE=http://localhost:8787 \
-VITE_DISCORD_CLIENT_ID=100000000000000001 \
-npm run build
-```
-
-Each committed `wrangler.*.example.jsonc` also supports `wrangler deploy --dry-run` after the frontend build.
 
 ## License
 
