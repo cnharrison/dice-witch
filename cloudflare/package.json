@@ -1,0 +1,43 @@
+{
+  "name": "@dice-witch/cloudflare",
+  "private": true,
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "24.13.x"
+  },
+  "packageManager": "npm@11.6.2",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "npm run test:config && npm run test:dice-svg && npm run test:gateway && npm run test:discord-rest && npm run test:interactions && npm run test:roll && npm run test:data && npm run test:web-api",
+    "test:config": "node --test tools/*.test.mjs",
+    "test:dice-svg": "vitest run --config vitest.dice-svg.config.ts",
+    "test:gateway": "vitest run --config vitest.gateway.config.ts",
+    "test:discord-rest": "vitest run --config vitest.discord-rest.config.ts",
+    "test:interactions": "vitest run --config vitest.interactions.config.ts",
+    "test:roll": "vitest run --config vitest.roll.config.ts",
+    "test:data": "vitest run --config vitest.data.config.ts",
+    "test:web-api": "vitest run --config vitest.web-api.config.ts",
+    "commands:register": "node tools/register-commands.mjs",
+    "types": "rm -rf .generated && mkdir -p .generated && wrangler types .generated/data.d.ts --config wrangler.data.example.jsonc --env-interface DataBindings && wrangler types .generated/discord-rest.d.ts --config wrangler.discord-rest.example.jsonc --env-interface DiscordRestBindings --include-runtime false && wrangler types .generated/gateway.d.ts --config wrangler.gateway.example.jsonc --env-interface GatewayBindings --include-runtime false && wrangler types .generated/interactions.d.ts --config wrangler.interactions.example.jsonc --env-interface InteractionBindings --include-runtime false && wrangler types .generated/roll.d.ts --config wrangler.roll.example.jsonc --env-interface RollBindings --include-runtime false && wrangler types .generated/web-api.d.ts --config wrangler.web-api.example.jsonc --env-interface WebApiBindings --include-runtime false",
+    "type-check": "npm run types && tsc --noEmit && tsc --noEmit --project tsconfig.roll.json",
+    "build:frontend": "npm run build --workspace=@dice-witch/frontend"
+  },
+  "dependencies": {
+    "@cf-wasm/resvg": "0.3.4",
+    "@dice-roller/rpg-dice-roller": "5.5.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.18.4",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.6.0",
+    "globals": "17.7.0",
+    "node-addon-api": "8.9.0",
+    "node-gyp": "12.4.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.63.0",
+    "vitest": "4.1.10",
+    "wrangler": "4.110.0"
+  }
+}

@@ -1,0 +1,587 @@
+const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+
+export type GuildDisplayProfile = {
+  name: string;
+  icon: string | null;
+};
+
+export type GuildSettings = {
+  skipDiceDelay: boolean;
+};
+
+export type GuildSettingsResult =
+  | { status: "found"; settings: GuildSettings }
+  | { status: "missing" };
+
+export type SetSkipDiceDelayInput = {
+  guildId: string;
+  skipDiceDelay: boolean;
+  mutationId: string;
+  occurredAt: number;
+};
+
+export type SetSkipDiceDelayResult =
+  | { status: "applied" | "existing"; settings: GuildSettings }
+  | { status: "missing" | "conflict" };
+
+export type SetGuildDisplayProfileInput = {
+  guildId: string;
+  profile: GuildDisplayProfile;
+  mutationId: string;
+  occurredAt: number;
+};
+
+export type SetGuildDisplayProfileResult =
+  | { status: "applied" | "existing"; profile: GuildDisplayProfile }
+  | { status: "missing" | "conflict" };
+
+export type GuildLifecycleInput =
+  | {
+      type: "upsert";
+      mutationId: string;
+      occurredAt: number;
+      guild: {
+        id: string;
+        name: string;
+        icon: string | null;
+        ownerId: string;
+        memberCount: number;
+        approximateMemberCount: number | null;
+        preferredLocale: string;
+        joinedTimestamp: number;
+        isActive: true;
+      };
+    }
+  | {
+      type: "deactivate";
+      mutationId: string;
+      occurredAt: number;
+      guildId: string;
+    };
+
+export type GuildLifecycleResult = {
+  status: "applied" | "existing" | "missing" | "conflict";
+};
+
+export type ReconcileActiveGuildsInput = {
+  guildIds: string[];
+  runId: string;
+  occurredAt: number;
+};
+
+export type ReconcileActiveGuildsResult = {
+  status: "applied";
+  activatedCount: number;
+  deactivatedCount: number;
+};
+
+export type GuildStatusStats = {
+  totalGuilds: number;
+  totalMembers: number | null;
+  guildCounts: number[];
+};
+
+type MutationReceiptRow = {
+  entity_type: string;
+  entity_key: string;
+  operation: string;
+  payload_json: string;
+  occurred_at: number;
+};
+
+function validateGuildId(value: string): string {
+  if (!SNOWFLAKE.test(value)) throw new Error("Guild id is invalid");
+  return value;
+}
+
+function validateMutation(input: SetSkipDiceDelayInput): {
+  guildId: string;
+  skipDiceDelay: boolean;
+  mutationId: string;
+  occurredAt: number;
+  payloadJson: string;
+} {
+  const guildId = validateGuildId(input.guildId);
+  if (
+    typeof input.mutationId !== "string" ||
+    input.mutationId.length === 0 ||
+    input.mutationId.length > 255
+  ) {
+    throw new Error("Mutation id is invalid");
+  }
+  if (
+    typeof input.skipDiceDelay !== "boolean" ||
+    !Number.isSafeInteger(input.occurredAt) ||
+    input.occurredAt < 0
+  ) {
+    throw new Error("Guild preference mutation is invalid");
+  }
+  return {
+    guildId,
+    skipDiceDelay: input.skipDiceDelay,
+    mutationId: input.mutationId,
+    occurredAt: input.occurredAt,
+    payloadJson: JSON.stringify({ skipDiceDelay: input.skipDiceDelay }),
+  };
+}
+
+function validateDisplayProfile(input: SetGuildDisplayProfileInput): {
+  guildId: string;
+  profile: GuildDisplayProfile;
+  mutationId: string;
+  occurredAt: number;
+  payloadJson: string;
+} {
+  const guildId = validateGuildId(input.guildId);
+  if (
+    input.profile.name.length < 1 ||
+    input.profile.name.length > 255 ||
+    (input.profile.icon !== null && input.profile.icon.length > 255)
+  ) {
+    throw new Error("Guild display profile is invalid");
+  }
+  if (
+    input.mutationId.length < 1 ||
+    input.mutationId.length > 255 ||
+    !Number.isSafeInteger(input.occurredAt) ||
+    input.occurredAt < 0
+  ) {
+    throw new Error("Guild display mutation is invalid");
+  }
+  const profile = { name: input.profile.name, icon: input.profile.icon };
+  return {
+    guildId,
+    profile,
+    mutationId: input.mutationId,
+    occurredAt: input.occurredAt,
+    payloadJson: JSON.stringify(profile),
+  };
+}
+
+function existingDisplayResult(
+  row: MutationReceiptRow,
+  input: ReturnType<typeof validateDisplayProfile>,
+): SetGuildDisplayProfileResult {
+  return row.entity_type === "guild" &&
+    row.entity_key === input.guildId &&
+    row.operation === "upsert" &&
+    row.payload_json === input.payloadJson &&
+    row.occurred_at === input.occurredAt
+    ? { status: "existing", profile: input.profile }
+    : { status: "conflict" };
+}
+
+function existingMutationResult(
+  row: MutationReceiptRow,
+  input: ReturnType<typeof validateMutation>,
+): SetSkipDiceDelayResult {
+  if (
+    row.entity_type !== "guild" ||
+    row.entity_key !== input.guildId ||
+    row.operation !== "upsert" ||
+    row.payload_json !== input.payloadJson ||
+    row.occurred_at !== input.occurredAt
+  ) {
+    return { status: "conflict" };
+  }
+  return {
+    status: "existing",
+    settings: { skipDiceDelay: input.skipDiceDelay },
+  };
+}
+
+export class D1GuildRepository {
+  constructor(private readonly db: D1Database) {}
+
+  async applyLifecycle(
+    value: GuildLifecycleInput,
+  ): Promise<GuildLifecycleResult> {
+    if (
+      value.mutationId.length < 1 ||
+      value.mutationId.length > 255 ||
+      !Number.isSafeInteger(value.occurredAt) ||
+      value.occurredAt < 0
+    ) {
+      throw new Error("Guild lifecycle mutation is invalid");
+    }
+    const guildId = validateGuildId(
+      value.type === "upsert" ? value.guild.id : value.guildId,
+    );
+    const payload =
+      value.type === "upsert" ? value.guild : { isActive: false };
+    if (
+      value.type === "upsert" &&
+      (value.guild.name.length < 1 ||
+        value.guild.name.length > 255 ||
+        (value.guild.icon !== null && value.guild.icon.length > 255) ||
+        !SNOWFLAKE.test(value.guild.ownerId) ||
+        !Number.isSafeInteger(value.guild.memberCount) ||
+        value.guild.memberCount < 0 ||
+        (value.guild.approximateMemberCount !== null &&
+          (!Number.isSafeInteger(value.guild.approximateMemberCount) ||
+            value.guild.approximateMemberCount < 0)) ||
+        value.guild.preferredLocale.length < 1 ||
+        value.guild.preferredLocale.length > 255 ||
+        !Number.isSafeInteger(value.guild.joinedTimestamp) ||
+        value.guild.joinedTimestamp < 0)
+    ) {
+      throw new Error("Guild lifecycle mutation is invalid");
+    }
+    const payloadJson = JSON.stringify(payload);
+    const existing = await this.readMutation(value.mutationId);
+    if (existing !== null) {
+      return existing.entity_type === "guild" &&
+        existing.entity_key === guildId &&
+        existing.operation === "upsert" &&
+        existing.payload_json === payloadJson
+        ? { status: "existing" }
+        : { status: "conflict" };
+    }
+
+    const mutation =
+      value.type === "upsert"
+        ? this.db
+            .prepare(
+              `INSERT INTO guilds (
+                 id, name, icon, owner_id, member_count,
+                 approximate_member_count, preferred_locale,
+                 joined_timestamp, created_at, updated_at, is_active
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+               ON CONFLICT(id) DO UPDATE SET
+                 name = excluded.name,
+                 icon = excluded.icon,
+                 owner_id = excluded.owner_id,
+                 member_count = excluded.member_count,
+                 approximate_member_count = excluded.approximate_member_count,
+                 preferred_locale = excluded.preferred_locale,
+                 joined_timestamp = excluded.joined_timestamp,
+                 updated_at = excluded.updated_at,
+                 is_active = 1`,
+            )
+            .bind(
+              guildId,
+              value.guild.name,
+              value.guild.icon,
+              value.guild.ownerId,
+              value.guild.memberCount,
+              value.guild.approximateMemberCount,
+              value.guild.preferredLocale,
+              value.guild.joinedTimestamp,
+              value.occurredAt,
+              value.occurredAt,
+            )
+        : this.db
+            .prepare(
+              `UPDATE guilds SET is_active = 0, updated_at = ? WHERE id = ?`,
+            )
+            .bind(value.occurredAt, guildId);
+    const receipt = this.db
+      .prepare(
+        `INSERT INTO mutation_receipts (
+           mutation_id, entity_type, entity_key,
+           operation, payload_json, occurred_at
+         )
+         SELECT ?, 'guild', ?, 'upsert', ?, ?
+         WHERE EXISTS (SELECT 1 FROM guilds WHERE id = ?)`,
+      )
+      .bind(
+        value.mutationId,
+        guildId,
+        payloadJson,
+        value.occurredAt,
+        guildId,
+      );
+    try {
+      const [changed, receiptCreated] = await this.db.batch([
+        mutation,
+        receipt,
+      ]);
+      const changedCount = changed?.meta.changes ?? 0;
+      const receiptCount = receiptCreated?.meta.changes ?? 0;
+      if (changedCount === 0 && receiptCount === 0) return { status: "missing" };
+      if (changedCount !== 1 || receiptCount !== 1) {
+        throw new Error("Guild lifecycle mutation was not atomic");
+      }
+      return { status: "applied" };
+    } catch (error) {
+      const concurrent = await this.readMutation(value.mutationId);
+      if (concurrent !== null) {
+        return concurrent.entity_type === "guild" &&
+          concurrent.entity_key === guildId &&
+          concurrent.operation === "upsert" &&
+          concurrent.payload_json === payloadJson
+          ? { status: "existing" }
+          : { status: "conflict" };
+      }
+      throw error;
+    }
+  }
+
+  async reconcileActiveGuilds(
+    input: ReconcileActiveGuildsInput,
+  ): Promise<ReconcileActiveGuildsResult> {
+    if (
+      !Array.isArray(input.guildIds) ||
+      !input.guildIds.every((guildId) => SNOWFLAKE.test(guildId)) ||
+      new Set(input.guildIds).size !== input.guildIds.length ||
+      typeof input.runId !== "string" ||
+      input.runId.length < 1 ||
+      input.runId.length > 234 ||
+      !Number.isSafeInteger(input.occurredAt) ||
+      input.occurredAt < 0
+    ) {
+      throw new Error("Guild reconciliation input is invalid");
+    }
+    const guildIdsJson = JSON.stringify(input.guildIds);
+    const inactivePayloadJson = JSON.stringify({ isActive: false });
+    const activePayloadJson = JSON.stringify({ isActive: true });
+    const currentGuildIds = "SELECT value FROM json_each(?)";
+    const absentActiveGuilds =
+      `is_active = 1 AND id NOT IN (${currentGuildIds}) AND updated_at < ?`;
+    const presentInactiveGuilds =
+      `is_active = 0 AND id IN (${currentGuildIds}) AND updated_at < ?`;
+    const [deactivationReceipts, deactivated, activationReceipts, activated] =
+      await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO mutation_receipts (
+               mutation_id, entity_type, entity_key,
+               operation, payload_json, occurred_at
+             )
+             SELECT ? || ':' || id, 'guild', id, 'upsert', ?, ?
+             FROM guilds
+             WHERE ${absentActiveGuilds}`,
+          )
+          .bind(
+            input.runId,
+            inactivePayloadJson,
+            input.occurredAt,
+            guildIdsJson,
+            input.occurredAt,
+          ),
+        this.db
+          .prepare(
+            `UPDATE guilds
+             SET is_active = 0, updated_at = ?
+             WHERE ${absentActiveGuilds}`,
+          )
+          .bind(input.occurredAt, guildIdsJson, input.occurredAt),
+        this.db
+          .prepare(
+            `INSERT INTO mutation_receipts (
+               mutation_id, entity_type, entity_key,
+               operation, payload_json, occurred_at
+             )
+             SELECT ? || ':' || id, 'guild', id, 'upsert', ?, ?
+             FROM guilds
+             WHERE ${presentInactiveGuilds}`,
+          )
+          .bind(
+            input.runId,
+            activePayloadJson,
+            input.occurredAt,
+            guildIdsJson,
+            input.occurredAt,
+          ),
+        this.db
+          .prepare(
+            `UPDATE guilds
+             SET is_active = 1, updated_at = ?
+             WHERE ${presentInactiveGuilds}`,
+          )
+          .bind(input.occurredAt, guildIdsJson, input.occurredAt),
+      ]);
+    const deactivationReceiptCount = deactivationReceipts?.meta.changes ?? 0;
+    const deactivatedCount = deactivated?.meta.changes ?? 0;
+    const activationReceiptCount = activationReceipts?.meta.changes ?? 0;
+    const activatedCount = activated?.meta.changes ?? 0;
+    if (
+      deactivationReceiptCount !== deactivatedCount ||
+      activationReceiptCount !== activatedCount
+    ) {
+      throw new Error("Guild reconciliation was not atomic");
+    }
+    return { status: "applied", activatedCount, deactivatedCount };
+  }
+
+  async getStatusStats(shardCount: number): Promise<GuildStatusStats> {
+    if (!Number.isSafeInteger(shardCount) || shardCount < 1) {
+      throw new Error("Status shard count is invalid");
+    }
+    const result = await this.db
+      .prepare("SELECT id, member_count FROM guilds WHERE is_active = 1")
+      .all<{ id: string; member_count: number | null }>();
+    const guildCounts = Array.from({ length: shardCount }, () => 0);
+    let totalMembers = 0;
+    let memberCountsComplete = true;
+    for (const guild of result.results) {
+      const shardId = Number((BigInt(guild.id) >> 22n) % BigInt(shardCount));
+      const currentCount = guildCounts[shardId];
+      if (currentCount === undefined) {
+        throw new Error("Status shard calculation failed");
+      }
+      guildCounts[shardId] = currentCount + 1;
+      if (guild.member_count === null) {
+        memberCountsComplete = false;
+      } else {
+        totalMembers += guild.member_count;
+        if (!Number.isSafeInteger(totalMembers)) {
+          throw new Error("Status member total is invalid");
+        }
+      }
+    }
+    return {
+      totalGuilds: result.results.length,
+      totalMembers: memberCountsComplete ? totalMembers : null,
+      guildCounts,
+    };
+  }
+
+  async setDisplayProfile(
+    value: SetGuildDisplayProfileInput,
+  ): Promise<SetGuildDisplayProfileResult> {
+    const input = validateDisplayProfile(value);
+    const existing = await this.readMutation(input.mutationId);
+    if (existing !== null) return existingDisplayResult(existing, input);
+
+    try {
+      const [update, receipt] = await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE guilds
+             SET name = ?, icon = ?, updated_at = ?
+             WHERE id = ?`,
+          )
+          .bind(
+            input.profile.name,
+            input.profile.icon,
+            input.occurredAt,
+            input.guildId,
+          ),
+        this.db
+          .prepare(
+            `INSERT INTO mutation_receipts (
+               mutation_id, entity_type, entity_key,
+               operation, payload_json, occurred_at
+             )
+             SELECT ?, 'guild', ?, 'upsert', ?, ?
+             WHERE EXISTS (SELECT 1 FROM guilds WHERE id = ?)`,
+          )
+          .bind(
+            input.mutationId,
+            input.guildId,
+            input.payloadJson,
+            input.occurredAt,
+            input.guildId,
+          ),
+      ]);
+      const updated = update?.meta.changes ?? 0;
+      const receiptCreated = receipt?.meta.changes ?? 0;
+      if (updated === 0 && receiptCreated === 0) return { status: "missing" };
+      if (updated !== 1 || receiptCreated !== 1) {
+        throw new Error("Guild display mutation was not atomic");
+      }
+      return { status: "applied", profile: input.profile };
+    } catch (error) {
+      const concurrent = await this.readMutation(input.mutationId);
+      if (concurrent !== null) return existingDisplayResult(concurrent, input);
+      throw error;
+    }
+  }
+
+  async getDisplayProfile(guildId: string): Promise<GuildDisplayProfile | null> {
+    const id = validateGuildId(guildId);
+    return this.db
+      .withSession("first-primary")
+      .prepare("SELECT name, icon FROM guilds WHERE id = ?")
+      .bind(id)
+      .first<GuildDisplayProfile>();
+  }
+
+  async getSettings(guildId: string): Promise<GuildSettingsResult> {
+    const id = validateGuildId(guildId);
+    const row = await this.db
+      .withSession("first-primary")
+      .prepare("SELECT skip_dice_delay FROM guilds WHERE id = ?")
+      .bind(id)
+      .first<{ skip_dice_delay: number }>();
+    if (row === null) return { status: "missing" };
+    return {
+      status: "found",
+      settings: { skipDiceDelay: row.skip_dice_delay === 1 },
+    };
+  }
+
+  async setSkipDiceDelay(
+    value: SetSkipDiceDelayInput,
+  ): Promise<SetSkipDiceDelayResult> {
+    const input = validateMutation(value);
+    const existing = await this.readMutation(input.mutationId);
+    if (existing !== null) return existingMutationResult(existing, input);
+
+    try {
+      const [update, receipt] = await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE guilds
+             SET skip_dice_delay = ?, updated_at = ?
+             WHERE id = ?`,
+          )
+          .bind(
+            input.skipDiceDelay ? 1 : 0,
+            input.occurredAt,
+            input.guildId,
+          ),
+        this.db
+          .prepare(
+            `INSERT INTO mutation_receipts (
+               mutation_id, entity_type, entity_key,
+               operation, payload_json, occurred_at
+             )
+             SELECT ?, 'guild', ?, 'upsert', ?, ?
+             WHERE EXISTS (SELECT 1 FROM guilds WHERE id = ?)`,
+          )
+          .bind(
+            input.mutationId,
+            input.guildId,
+            input.payloadJson,
+            input.occurredAt,
+            input.guildId,
+          ),
+      ]);
+      if (update === undefined || receipt === undefined) {
+        throw new Error("Guild preference batch result is incomplete");
+      }
+      const updated = update.meta.changes;
+      const receiptCreated = receipt.meta.changes;
+      if (updated === 0 && receiptCreated === 0) return { status: "missing" };
+      if (updated !== 1 || receiptCreated !== 1) {
+        throw new Error("Guild preference mutation was not atomic");
+      }
+      return {
+        status: "applied",
+        settings: { skipDiceDelay: input.skipDiceDelay },
+      };
+    } catch (error) {
+      const concurrent = await this.readMutation(input.mutationId);
+      if (concurrent !== null) {
+        return existingMutationResult(concurrent, input);
+      }
+      throw error;
+    }
+  }
+
+  private async readMutation(
+    mutationId: string,
+  ): Promise<MutationReceiptRow | null> {
+    return this.db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT entity_type, entity_key, operation, payload_json, occurred_at
+         FROM mutation_receipts
+         WHERE mutation_id = ?`,
+      )
+      .bind(mutationId)
+      .first<MutationReceiptRow>();
+  }
+}

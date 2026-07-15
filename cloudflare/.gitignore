@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+coverage/
+dist/
+renderer-output/
+benchmark-results/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example

@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/vitest-pool-workers/types"],
+    "strict": true,
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    ".generated/data.d.ts",
+    ".generated/discord-rest.d.ts",
+    ".generated/gateway.d.ts",
+    ".generated/interactions.d.ts",
+    ".generated/web-api.d.ts",
+    "workers/**/*.ts",
+    "packages/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.*.config.ts"
+  ],
+  "exclude": [
+    "workers/roll/**",
+    "packages/roll-domain/**",
+    "packages/roll-render-model/**",
+    "packages/discord-contracts/**",
+    "tests/roll/**",
+    "vitest.roll.config.ts"
+  ]
+}

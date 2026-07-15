@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-discord-rest",
+  "main": "workers/discord-rest/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "DISCORD_APPLICATION_ID": "100000000000000001",
+    "INVITE_LINK": "https://example.com/replace-with-discord-invite",
+    "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
+    "LOG_OUTPUT_CHANNEL_ID": "100000000000000002"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

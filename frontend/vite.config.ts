@@ -1,25 +1,27 @@
-import path from "path"
-import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { defineConfig, loadEnv } from "vite";
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+const projectDirectory = path.dirname(fileURLToPath(import.meta.url));
+
+function requireBuildValue(name: string, value: string | undefined): void {
+  if (value === undefined || value.trim() === "") {
+    throw new Error(`${name} is required`);
+  }
+}
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, projectDirectory, "");
+  requireBuildValue("VITE_API_BASE", env.VITE_API_BASE);
+  requireBuildValue("VITE_DISCORD_CLIENT_ID", env.VITE_DISCORD_CLIENT_ID);
+
+  return {
+    plugins: [react()],
+    resolve: {
+      alias: {
+        "@": path.resolve(projectDirectory, "src"),
+      },
     },
-  },
-  define: {
-    'import.meta.env.VITE_API_PROXY_TARGET': JSON.stringify(process.env.VITE_API_PROXY_TARGET || 'http://localhost:3000')
-  },
-  server: {
-    port: parseInt(process.env.VITE_PORT || "5173"),
-    proxy: {
-      '/api': {
-        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
-        changeOrigin: true,
-        secure: false,
-      }
-    },
-  },
-})
+  };
+});

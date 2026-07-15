@@ -1,0 +1,58 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-gateway",
+  "main": "workers/gateway/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "triggers": {
+    "crons": ["0 * * * *", "30 */4 * * *"]
+  },
+  "alias": {
+    "crypto": "./packages/roll-domain/src/worker-crypto.ts"
+  },
+  "vars": {
+    "DISCORD_APPLICATION_ID": "100000000000000001",
+    "DISCORD_GATEWAY_BOT_URL": "https://discord.com/api/v10/gateway/bot",
+    "GATEWAY_MODE": "fleet",
+    "GATEWAY_ALLOWED_HOSTNAME": "gateway.discord.gg",
+    "GATEWAY_PARTITION_CAPACITY": "6",
+    "GATEWAY_FLEET_CONNECTION_CAPACITY": "6"
+  },
+  "services": [
+    {
+      "binding": "DATA_SERVICE",
+      "service": "dice-witch-data"
+    },
+    {
+      "binding": "DISCORD_REST",
+      "service": "dice-witch-discord-rest",
+      "entrypoint": "DiscordRestService"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GATEWAY_PARTITION",
+        "class_name": "GatewayPartition"
+      },
+      {
+        "name": "GATEWAY_COORDINATOR",
+        "class_name": "GatewayCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["GatewayPartition"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["GatewayCoordinator"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

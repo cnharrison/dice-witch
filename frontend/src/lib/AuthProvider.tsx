@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Session, User } from './auth';
+import { appConfig } from './config';
+import type { Session, User } from '../types/auth';
 
 interface AuthContextType {
   session: Session | null;
@@ -21,8 +22,6 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.dicewit.ch';
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   children 
 }) => {
@@ -32,7 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/auth/session`, {
+        const response = await fetch(`${appConfig.apiBase}/api/auth/session`, {
           credentials: 'include',
         });
         
@@ -42,7 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         } else {
           setSession(null);
         }
-      } catch (error) {
+      } catch {
         setSession(null);
       } finally {
         setIsLoading(false);
@@ -54,12 +53,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const signIn = (provider: string) => {
     // Redirect to auth endpoint
-    window.location.href = `${API_BASE}/api/auth/signin/${provider}`;
+    window.location.href = `${appConfig.apiBase}/api/auth/signin/${provider}`;
   };
 
   const signOut = async () => {
     try {
-      await fetch(`${API_BASE}/api/auth/signout`, {
+      await fetch(`${appConfig.apiBase}/api/auth/signout`, {
         method: 'POST',
         credentials: 'include',
       });
