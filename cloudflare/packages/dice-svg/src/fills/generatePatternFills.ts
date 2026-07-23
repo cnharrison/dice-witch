@@ -1,11 +1,11 @@
-import type { PatternFill, PatternName } from "../types";
+import type { PatternFill, PatternNameV3 } from "../types";
 
 const generatePatternId = (patternType: string, color1: string, color2: string): string => {
   return `pattern_${patternType}_${color1.replace('#', '')}_${color2.replace('#', '')}`;
 };
 
 const patternFills: Record<
-  PatternName,
+  PatternNameV3,
   (color1: string, color2: string) => PatternFill
 > = {
   checkerboard: (color1: string, color2: string) => {
@@ -147,6 +147,73 @@ const patternFills: Record<
         <rect width="50" height="50" fill="${color1}"/>
         <path d="M25,25 m-15,0 a15,15 0 1,1 30,0 a15,15 0 1,1 -30,0 M25,25 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 M25,25 m-5,0 a5,5 0 1,1 10,0 a5,5 0 1,1 -10,0"
           stroke="${color2}" stroke-width="2" fill="none"/>
+      </pattern>`
+    };
+  },
+
+  'checkerboard-v2': (color1: string, color2: string) => {
+    const patternType = 'checkerboard-v2';
+    const id = generatePatternId(patternType, color1, color2);
+
+    return {
+      name: id,
+      string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="96" height="96">
+        <rect width="96" height="96" fill="${color1}"/>
+        <rect width="48" height="48" fill="${color2}"/>
+        <rect x="48" y="48" width="48" height="48" fill="${color2}"/>
+      </pattern>`
+    };
+  },
+
+  'dots-v2': (color1: string, color2: string) => {
+    const patternType = 'dots-v2';
+    const id = generatePatternId(patternType, color1, color2);
+
+    return {
+      name: id,
+      string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="96" height="96">
+        <rect width="96" height="96" fill="${color1}"/>
+        <circle cx="24" cy="24" r="14" fill="${color2}"/>
+        <circle cx="72" cy="72" r="14" fill="${color2}"/>
+      </pattern>`
+    };
+  },
+
+  'stripes-v2': (color1: string, color2: string) => {
+    const patternType = 'stripes-v2';
+    const id = generatePatternId(patternType, color1, color2);
+
+    return {
+      name: id,
+      string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="96" height="96" patternTransform="rotate(-32)">
+        <rect width="96" height="96" fill="${color1}"/>
+        <rect width="96" height="48" fill="${color2}"/>
+      </pattern>`
+    };
+  },
+
+  'triangles-v2': (color1: string, color2: string) => {
+    const patternType = 'triangles-v2';
+    const id = generatePatternId(patternType, color1, color2);
+
+    return {
+      name: id,
+      string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="96" height="84">
+        <rect width="96" height="84" fill="${color1}"/>
+        <polygon points="48,4 92,80 4,80" fill="${color2}"/>
+      </pattern>`
+    };
+  },
+
+  'crosshatch-v2': (color1: string, color2: string) => {
+    const patternType = 'crosshatch-v2';
+    const id = generatePatternId(patternType, color1, color2);
+
+    return {
+      name: id,
+      string: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="96" height="96">
+        <rect width="96" height="96" fill="${color1}"/>
+        <path d="M-24 0L96 120 M0 -24L120 96 M120 0L0 120 M96 -24L-24 96" stroke="${color2}" stroke-width="8"/>
       </pattern>`
     };
   }

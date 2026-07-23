@@ -1,0 +1,7 @@
+# Minimal dependency set for Dice Witch's CPU-only CanvasKit build.
+# Revisions are copied from Skia 3c68f3ffd7c9bc781494cdb85e718ff1e6f49d84.
+deps = {
+  "third_party/externals/freetype": "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git@264b5fbf5b912b39f98d038bf75d39be0a73f21b",
+  "third_party/externals/libpng": "https://skia.googlesource.com/third_party/libpng.git@d5515b5b8be3901aac04e5bd8bd5c89f287bcd33",
+  "third_party/externals/zlib": "https://chromium.googlesource.com/chromium/src/third_party/zlib@646b7f569718921d7d4b5b8e22572ff6c76f2596",
+}

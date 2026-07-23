@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-interactions-staging",
+  "main": "workers/interactions/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "DISCORD_APPLICATION_ID": "100000000000000001",
+    "DISCORD_TEST_GUILD_ID": "100000000000000002",
+    "INVITE_LINK": "https://example.com/replace-with-staging-discord-invite",
+    "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
+    "WEB_APP_URL": "https://REPLACE_WITH_STAGING_HOSTNAME/app"
+  },
+  "services": [
+    {
+      "binding": "DATA_SERVICE",
+      "service": "dice-witch-data-staging"
+    },
+    {
+      "binding": "GATEWAY_STATUS",
+      "service": "dice-witch-gateway-staging",
+      "entrypoint": "GatewayStatusService"
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "DISCORD_PUBLIC_KEY",
+      "store_id": "REPLACE_WITH_STAGING_SECRETS_STORE_ID",
+      "secret_name": "DICE_WITCH_STAGING_DISCORD_PUBLIC_KEY"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROLL_WORK",
+        "class_name": "RollWork",
+        "script_name": "dice-witch-roll-staging"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": false
+    }
+  }
+}

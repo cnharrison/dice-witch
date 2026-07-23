@@ -11,6 +11,7 @@ export default defineConfig({
     cloudflareTest({
       main: "./workers/data/src/index.ts",
       miniflare: {
+        compatibilityDate: "2026-07-10",
         d1Databases: ["DATA"],
         bindings: { TEST_MIGRATIONS: migrations },
       },

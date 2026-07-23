@@ -1,0 +1,59 @@
+{
+  "version": 3,
+  "request": {
+    "notation": ["1d20"],
+    "repetitions": 1
+  },
+  "rollSeed": 305419896,
+  "renderSeed": 2596069104,
+  "outcome": {
+    "version": 1,
+    "seed": 305419896,
+    "outcomes": [
+      {
+        "notation": "1d20",
+        "output": "1d20: [7] = 7",
+        "total": 7,
+        "dice": [
+          {
+            "sides": 20,
+            "rolled": 7,
+            "modifiers": []
+          }
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "createdAt": 1721088000000,
+  "renderRequest": {
+    "version": 3,
+    "groups": [
+      [
+        {
+          "target": "d20",
+          "result": 7,
+          "appearance": {
+            "surface": {
+              "type": "gradient",
+              "colors": ["#5426a8", "#c93ee8", "#f2d95c"],
+              "scope": "die-wide",
+              "direction": "upper-left-to-lower-right"
+            },
+            "lighting": {
+              "mode": "combined",
+              "strength": "subtle",
+              "direction": "upper-left"
+            },
+            "textColor": "#111111",
+            "outlineColor": "#000000",
+            "fontId": "liberation-sans",
+            "effect": null,
+            "requiresLocalSeparation": false
+          },
+          "icons": []
+        }
+      ]
+    ]
+  }
+}

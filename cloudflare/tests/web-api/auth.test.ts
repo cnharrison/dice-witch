@@ -22,11 +22,18 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
         Promise.resolve({ status: "missing" as const }),
       ),
     },
-    ROLL_WEB: { execute: vi.fn() },
+    ROLL_WEB: {
+      prepare: vi.fn(),
+      execute: vi.fn(),
+      preview: vi.fn(),
+      previewV2: vi.fn(),
+      previewV3: vi.fn(),
+    },
     DISCORD_CLIENT_ID: clientId,
     DISCORD_CLIENT_SECRET: "test-client-secret",
     DISCORD_REDIRECT_URI: redirectUri,
     FRONTEND_ORIGIN: frontendOrigin,
+    BUILD_SHA: "abcdef0123456789abcdef0123456789abcdef01",
   };
 }
 
@@ -579,21 +586,79 @@ describe("web API Discord OAuth", () => {
       Promise.resolve({ status: "delivered" as const }),
     );
     env.DISCORD_REST.deliverWebRoll = deliverWebRoll;
-    env.ROLL_WEB.execute = vi.fn(() =>
+    const png = new Uint8Array([137, 80, 78, 71]);
+    const executeWebRoll = vi.fn(() =>
       Promise.resolve({
         status: "rolled",
         message: "Roll processed successfully",
         diceArray: [[{ sides: 20, rolled: 17, value: 17 }]],
         resultArray: [{ output: "1d20: [17] = 17", results: 17 }],
+        appearanceIdentities: [["expression:0:repeat:0:definition:20:0:die:0"]],
+        rerolledAppearanceIdentities: [],
+        renderedImage: {
+          contentType: "image/png",
+          width: 150,
+          height: 150,
+          png,
+        },
         discord: {
           payload: { embeds: [] },
           clatter: "_...the die clatters across the table..._",
           filename: "dice-witch-roll.png",
-          png: new Uint8Array([137, 80, 78, 71]),
+          png,
         },
       }),
     );
+    env.ROLL_WEB.execute = executeWebRoll;
     const response = await handleAuthRequest(
+      new Request("https://api.example.com/api/dice/roll", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: `session_id=${sessionToken}`,
+          origin: frontendOrigin,
+        },
+        body: JSON.stringify({
+          guildId: "100000000000000001",
+          channelId: "100000000000000010",
+          notation: "1d20",
+          renderSeed: 123,
+          appearanceDigest: "a".repeat(64),
+          timesToRepeat: 1,
+        }),
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(200);
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toMatchObject({
+      message: "Message sent to Discord channel",
+      resultArray: [{ results: 17 }],
+      renderedImage: {
+        contentType: "image/png",
+        width: 150,
+        height: 150,
+        base64: "iVBORw==",
+      },
+    });
+    expect(responseBody).not.toHaveProperty("renderModel");
+    expect(executeWebRoll).toHaveBeenCalledWith({
+      notation: "1d20",
+      repetitions: 1,
+      username: "fixture-user",
+      title: null,
+      userId: "100000000000000003",
+      guildId: "100000000000000001",
+      renderSeed: 123,
+      appearanceDigest: "a".repeat(64),
+    });
+    expect(deliverWebRoll).toHaveBeenCalledOnce();
+
+    executeWebRoll.mockClear();
+    const legacyResponse = await handleAuthRequest(
       new Request("https://api.example.com/api/dice/roll", {
         method: "POST",
         headers: {
@@ -613,12 +678,81 @@ describe("web API Discord OAuth", () => {
       () => now,
     );
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      message: "Message sent to Discord channel",
-      resultArray: [{ results: 17 }],
+    expect(legacyResponse.status).toBe(200);
+    expect(executeWebRoll).toHaveBeenCalledWith({
+      notation: "1d20",
+      repetitions: 1,
+      username: "fixture-user",
+      title: null,
+      userId: "100000000000000003",
+      guildId: "100000000000000001",
     });
-    expect(deliverWebRoll).toHaveBeenCalledOnce();
+    expect(deliverWebRoll).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps web preparation restricted to guild administrators", async () => {
+    const sessionToken = "T".repeat(43);
+    const dataFetch = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/internal/sessions/current") {
+        return Promise.resolve(
+          Response.json({
+            user: {
+              id: "100000000000000003",
+              username: "fixture-user",
+              email: null,
+              avatar: null,
+            },
+            createdAt: now - 1,
+            expiresAt: now + 1,
+          }),
+        );
+      }
+      if (path === "/internal/memberships/list") {
+        return Promise.resolve(
+          Response.json({
+            memberships: [
+              {
+                guild: {
+                  id: "100000000000000001",
+                  name: "Fixture guild",
+                  icon: null,
+                },
+                isAdmin: false,
+                isDiceWitchAdmin: false,
+              },
+            ],
+          }),
+        );
+      }
+      throw new Error(`Unexpected Data Worker route ${path}`);
+    });
+    const env = bindings(dataFetch);
+    const prepare = vi.fn();
+    env.ROLL_WEB.prepare = prepare;
+
+    const response = await handleAuthRequest(
+      new Request("https://api.example.com/api/dice/prepare", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: `session_id=${sessionToken}`,
+          origin: frontendOrigin,
+        },
+        body: JSON.stringify({
+          guildId: "100000000000000001",
+          notation: "1d20",
+          timesToRepeat: 1,
+        }),
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
+    expect(prepare).not.toHaveBeenCalled();
   });
 
   it("accepts same-origin session reads when browsers omit Origin on GET", async () => {
@@ -714,9 +848,16 @@ describe("web API Discord OAuth", () => {
     expect(rejected.headers.has("access-control-allow-origin")).toBe(false);
   });
 
-  it("allows frontend preflights for roll and preference mutations", async () => {
+  it("allows frontend preflights for preparation, roll, and preference mutations", async () => {
     const env = bindings(vi.fn());
-    const [roll, preferences] = await Promise.all([
+    const [prepare, roll, preferences] = await Promise.all([
+      handleAuthRequest(
+        new Request("https://api.example.com/api/dice/prepare", {
+          method: "OPTIONS",
+          headers: { origin: frontendOrigin },
+        }),
+        env,
+      ),
       handleAuthRequest(
         new Request("https://api.example.com/api/dice/roll", {
           method: "OPTIONS",
@@ -733,6 +874,11 @@ describe("web API Discord OAuth", () => {
       ),
     ]);
 
+    expect(prepare.status).toBe(204);
+    expect(prepare.headers.get("access-control-allow-methods")).toBe("POST");
+    expect(prepare.headers.get("access-control-allow-headers")).toBe(
+      "content-type",
+    );
     expect(roll.status).toBe(204);
     expect(roll.headers.get("access-control-allow-methods")).toBe("POST");
     expect(roll.headers.get("access-control-allow-headers")).toBe(

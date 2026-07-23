@@ -1,0 +1,50 @@
+{
+  "version": 4,
+  "rendererRevision": "canvaskit-v4-r3",
+  "groups": [
+    [
+      {
+        "target": "d20",
+        "result": 20,
+        "form": "standard",
+        "appearance": {
+          "material": {
+            "family": "metal",
+            "metal": "steel",
+            "finish": "brushed",
+            "patinaStrength": 8,
+            "textureScale": 100
+          },
+          "palette": [
+            "#141820",
+            "#596573",
+            "#c9d1d8"
+          ],
+          "texture": {
+            "generatorId": "metal-v1",
+            "seed": 1832976390,
+            "scale": 100,
+            "rotation": 0,
+            "offsetU": 0,
+            "offsetV": 0,
+            "scope": "die-wide"
+          },
+          "lighting": {
+            "mode": "combined",
+            "strength": "gentle",
+            "direction": "upper-left"
+          },
+          "engraving": {
+            "fontId": "new-rocker",
+            "finish": "matte-ink",
+            "color": "#fff2c7"
+          },
+          "outlineColor": "#000000",
+          "requiresLocalSeparation": false,
+          "effect": null
+        },
+        "icons": []
+      }
+    ]
+  ]
+}

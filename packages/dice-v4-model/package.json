@@ -1,0 +1,30 @@
+{
+  "name": "@dice-witch/dice-v4-model",
+  "private": true,
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "24.13.x"
+  },
+  "packageManager": "npm@11.6.2",
+  "exports": {
+    ".": "./src/index.ts",
+    "./compatibility": "./src/compatibility.ts",
+    "./limits": "./src/limits.ts",
+    "./registries": "./src/registries.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.6.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.63.0",
+    "vitest": "4.1.10"
+  }
+}

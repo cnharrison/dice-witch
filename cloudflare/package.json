@@ -10,8 +10,14 @@
   "packageManager": "npm@11.6.2",
   "scripts": {
     "lint": "eslint .",
-    "test": "npm run test:config && npm run test:dice-svg && npm run test:gateway && npm run test:discord-rest && npm run test:interactions && npm run test:roll && npm run test:data && npm run test:web-api",
+    "test": "npm run test:config && npm run test:canvaskit-runtime && npm run test:appearance && npm run test:dice-svg && npm run test:gateway && npm run test:discord-rest && npm run test:interactions && npm run test:roll && npm run test:data && npm run test:web-api",
     "test:config": "node --test tools/*.test.mjs",
+    "test:canvaskit-runtime": "npm run canvaskit:verify && vitest run --config vitest.canvaskit-runtime.config.ts && vitest run --config vitest.canvaskit-r4-resource.config.ts",
+    "canvaskit:verify": "node tools/canvaskit/verify.mjs",
+    "canvaskit:build": "node tools/canvaskit/build.mjs",
+    "canvaskit:product-benchmark": "vitest run --config vitest.canvaskit-product-benchmark.config.ts",
+    "type-check:canvaskit-runtime": "npm run canvaskit:verify && tsc --noEmit --project tsconfig.canvaskit-runtime.json",
+    "test:appearance": "vitest run --config vitest.appearance.config.ts",
     "test:dice-svg": "vitest run --config vitest.dice-svg.config.ts",
     "test:gateway": "vitest run --config vitest.gateway.config.ts",
     "test:discord-rest": "vitest run --config vitest.discord-rest.config.ts",
@@ -20,17 +26,25 @@
     "test:data": "vitest run --config vitest.data.config.ts",
     "test:web-api": "vitest run --config vitest.web-api.config.ts",
     "commands:register": "node tools/register-commands.mjs",
+    "staging:check": "node tools/staging-config.mjs --config-dir .",
+    "staging:materialize": "node tools/staging-config-bundle.mjs --config-dir .",
+    "staging:plan": "node tools/staging-plan.mjs",
+    "staging:appearance-reset": "node tools/staging-appearance-reset.mjs",
+    "staging:smoke": "node tools/staging-smoke.mjs",
     "types": "rm -rf .generated && mkdir -p .generated && wrangler types .generated/data.d.ts --config wrangler.data.example.jsonc --env-interface DataBindings && wrangler types .generated/discord-rest.d.ts --config wrangler.discord-rest.example.jsonc --env-interface DiscordRestBindings --include-runtime false && wrangler types .generated/gateway.d.ts --config wrangler.gateway.example.jsonc --env-interface GatewayBindings --include-runtime false && wrangler types .generated/interactions.d.ts --config wrangler.interactions.example.jsonc --env-interface InteractionBindings --include-runtime false && wrangler types .generated/roll.d.ts --config wrangler.roll.example.jsonc --env-interface RollBindings --include-runtime false && wrangler types .generated/web-api.d.ts --config wrangler.web-api.example.jsonc --env-interface WebApiBindings --include-runtime false",
-    "type-check": "npm run types && tsc --noEmit && tsc --noEmit --project tsconfig.roll.json",
-    "build:frontend": "npm run build --workspace=@dice-witch/frontend"
+    "type-check": "npm run types && tsc --noEmit && tsc --noEmit --project tsconfig.roll.json && npm run type-check:canvaskit-runtime",
+    "build:frontend": "npm run build --workspace=@dice-witch/frontend",
+    "benchmark:renderer": "vitest run --config vitest.renderer-benchmark.config.ts --reporter=verbose"
   },
   "dependencies": {
     "@cf-wasm/resvg": "0.3.4",
+    "@dice-witch/dice-v4-model": "0.0.0",
     "@dice-roller/rpg-dice-roller": "5.5.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",
     "@eslint/js": "10.0.1",
+    "canvaskit-wasm": "0.41.1",
     "eslint": "10.6.0",
     "globals": "17.7.0",
     "node-addon-api": "8.9.0",

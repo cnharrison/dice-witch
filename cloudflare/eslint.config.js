@@ -10,6 +10,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/coverage/**",
       "**/.wrangler/**",
+      "packages/dice-canvaskit/assets/**",
     ],
   },
   eslint.configs.recommended,
@@ -17,7 +18,11 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        project: ["./tsconfig.json", "./tsconfig.roll.json"],
+        project: [
+          "./tsconfig.json",
+          "./tsconfig.roll.json",
+          "./tsconfig.canvaskit-runtime.json",
+        ],
         tsconfigRootDir: import.meta.dirname,
       },
     },

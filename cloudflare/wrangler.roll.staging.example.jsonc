@@ -1,0 +1,58 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-roll-staging",
+  "main": "workers/roll/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "ROLL_RENDER_VERSION": "4"
+  },
+  "alias": {
+    "crypto": "./packages/roll-domain/src/worker-crypto.ts"
+  },
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": ["**/*.wasm"],
+      "fallthrough": true
+    },
+    {
+      "type": "Data",
+      "globs": ["**/*.ttf"],
+      "fallthrough": true
+    }
+  ],
+  "services": [
+    {
+      "binding": "DATA_SERVICE",
+      "service": "dice-witch-data-staging"
+    },
+    {
+      "binding": "DISCORD_REST",
+      "service": "dice-witch-discord-rest-staging",
+      "entrypoint": "DiscordRestService"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROLL_WORK",
+        "class_name": "RollWork"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RollWork"]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": true,
+      "head_sampling_rate": 1
+    }
+  }
+}

@@ -1,5 +1,17 @@
 import { DurableObject } from "cloudflare:workers";
-import { renderDiceToPng } from "../../../packages/dice-svg/src";
+import { serializeRenderRequestV4 } from "@dice-witch/dice-v4-model";
+import {
+  createCanvasKitRequestRendererV4,
+  renderV4WithSingleRetry,
+} from "../../../packages/dice-canvaskit/src";
+import {
+  renderDiceRequestV2ToPng,
+  renderDiceRequestV3ToPng,
+  renderDiceToPng,
+  type RenderResult,
+  type RenderResultV2,
+  type RenderResultV3,
+} from "../../../packages/dice-svg/src";
 import {
   executeRoll,
   selectRollDelayMs,
@@ -28,17 +40,27 @@ import {
   type AcceptRollDeliveryResult,
   type DeliverRollWorkResult,
   type PrepareRollWorkResult,
+  type RenderResultV4,
   type RenderRollWorkResult,
   type RollDeliveryDiagnostics,
+  type RollDeliveryFailurePhase,
+  type RollDeliveryRequest,
   type RollDeliveryStatus,
   type RollWorkRecord,
   type RollWorkRequest,
   type StoredDeliveryRow,
   type StoredWorkRow,
 } from "./contracts";
+import {
+  buildRollRenderRequestForVersion,
+  parseRollRenderVersion,
+} from "./render-version";
 
 export { WebRollService } from "./web-roll-service";
-export type { WebRollResult } from "./web-roll-service";
+export type {
+  WebRollPreparationResult,
+  WebRollResult,
+} from "./web-roll-service";
 
 export type RollEnv = RollBindings;
 export type {
@@ -47,6 +69,7 @@ export type {
   PrepareRollWorkResult,
   RenderRollWorkResult,
   RollDeliveryDiagnostics,
+  RollDeliveryFailurePhase,
   RollDeliveryRequest,
   RollDeliveryStatus,
   RollWorkRecord,
@@ -59,13 +82,39 @@ function randomSeed(): number {
   return seed;
 }
 
+const DELIVERY_FINALIZATION_BUFFER_MS = 60_000;
+const DELIVERY_LAST_ATTEMPT_BUFFER_MS = 1_000;
+const ROLL_DELIVERY_FAILURE_MESSAGE =
+  "This roll could not be completed. Please try again.";
+
+type RetryableDeliveryPhase =
+  | "settings"
+  | "clatter"
+  | "discord"
+  | "terminal-response";
+
+type RollDeliveryTarget = Readonly<{
+  id: string;
+  applicationId: string;
+  token: string;
+}>;
+
 function isRetryableHttpStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
+}
+
+function deliveryFinalizationAt(expiresAt: number): number {
+  return expiresAt - DELIVERY_FINALIZATION_BUFFER_MS;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+type DeliveryRecordResolution =
+  | { status: "ready"; record: RollWorkRecord }
+  | { status: "conflict" }
+  | { status: "unavailable" };
 
 export class RollWork extends DurableObject<RollEnv> {
   private activeDelivery: Promise<DeliverRollWorkResult> | null = null;
@@ -91,6 +140,9 @@ export class RollWork extends DurableObject<RollEnv> {
         delivered_at INTEGER,
         last_http_status INTEGER,
         attempts INTEGER NOT NULL DEFAULT 0,
+        failure_phase TEXT CHECK (failure_phase IN (
+          'record', 'render', 'response', 'deadline'
+        )),
         clatter_sent_at INTEGER,
         skip_dice_delay INTEGER CHECK (skip_dice_delay IN (0, 1)),
         delay_ms INTEGER CHECK (delay_ms BETWEEN 1 AND 5000),
@@ -153,6 +205,12 @@ export class RollWork extends DurableObject<RollEnv> {
         "helper_state TEXT NOT NULL DEFAULT 'not_applicable'",
       ],
       ["helper_attempts", "helper_attempts INTEGER NOT NULL DEFAULT 0"],
+      [
+        "failure_phase",
+        `failure_phase TEXT CHECK (failure_phase IN (
+          'record', 'render', 'response', 'deadline'
+        ))`,
+      ],
     ] as const;
     for (const [name, definition] of upgrades) {
       if (!deliveryColumns.some((column) => column.name === name)) {
@@ -165,7 +223,11 @@ export class RollWork extends DurableObject<RollEnv> {
 
   async deliver(value: unknown): Promise<DeliverRollWorkResult> {
     const accepted = await this.acceptDelivery(value);
-    if (accepted.status === "conflict" || accepted.status === "expired") {
+    if (
+      accepted.status === "conflict" ||
+      accepted.status === "expired" ||
+      accepted.status === "unavailable"
+    ) {
       return accepted;
     }
     if (accepted.delivery === "delivered" || accepted.delivery === "failed") {
@@ -191,12 +253,19 @@ export class RollWork extends DurableObject<RollEnv> {
     const expiresAt = interactionExpiresAt(delivery.interaction.id);
     if (expiresAt <= Date.now()) return { status: "expired" };
 
+    const resolution = await this.recordForDelivery(
+      delivery.request,
+      delivery.accounting,
+    );
+    if (resolution.status !== "ready") return resolution;
     const metadataJson = deliveryMetadata(delivery);
     const fingerprint = await tokenFingerprint(delivery.interaction.token);
-    await this.ctx.storage.setAlarm(expiresAt);
     const accepted = this.ctx.storage.transactionSync(
       (): AcceptRollDeliveryResult => {
-        const prepared = this.prepareRequest(delivery.request);
+        const prepared = this.prepareRequest(
+          delivery.request,
+          resolution.record,
+        );
         if (prepared.status === "conflict") return prepared;
 
         const existing = this.readDelivery();
@@ -259,13 +328,16 @@ export class RollWork extends DurableObject<RollEnv> {
         return { status: "created", delivery: "pending", expiresAt };
       },
     );
-    if (
-      (accepted.status === "created" || accepted.status === "existing") &&
-      accepted.delivery === "pending"
-    ) {
-      await this.ctx.storage.setAlarm(
-        Math.min(Date.now() + retryDelayMs(1), expiresAt),
-      );
+    if (accepted.status === "created" || accepted.status === "existing") {
+      await this.ctx.storage.setAlarm(expiresAt);
+      if (accepted.delivery === "pending") {
+        await this.ctx.storage.setAlarm(
+          Math.min(
+            Date.now() + retryDelayMs(1),
+            deliveryFinalizationAt(expiresAt),
+          ),
+        );
+      }
     }
     return accepted;
   }
@@ -287,6 +359,7 @@ export class RollWork extends DurableObject<RollEnv> {
     if (delivery === undefined) return { state: "missing" };
     return {
       state: delivery.state,
+      failurePhase: delivery.failure_phase,
       accountingState: delivery.accounting_state,
       accountingHttpStatus: delivery.accounting_http_status,
       accountingAttempts: delivery.accounting_attempts,
@@ -305,6 +378,16 @@ export class RollWork extends DurableObject<RollEnv> {
       return;
     }
     if (Date.now() >= delivery.expires_at) {
+      if (delivery.state === "pending") {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            message: "Roll delivery expired before a terminal response",
+            attempt: delivery.attempts,
+            failurePhase: delivery.failure_phase,
+          }),
+        );
+      }
       this.deleteStoredWork();
       await this.ctx.storage.deleteAlarm();
       return;
@@ -678,15 +761,46 @@ export class RollWork extends DurableObject<RollEnv> {
     }
 
     const metadata = parseDeliveryMetadata(delivery.metadata_json);
-    const record = this.readWork();
-    if (record === undefined) {
-      throw new Error("Pending roll delivery has no roll record");
-    }
+    const target = {
+      id: metadata.interactionId,
+      applicationId: metadata.applicationId,
+      token: delivery.token,
+    };
     const attempts = delivery.attempts + 1;
     this.ctx.storage.sql.exec(
       "UPDATE interaction_delivery SET attempts = ? WHERE singleton = 1",
       attempts,
     );
+
+    const failurePhase = delivery.failure_phase ??
+      (Date.now() >= deliveryFinalizationAt(delivery.expires_at)
+        ? "deadline"
+        : null);
+    if (failurePhase !== null) {
+      return this.attemptTerminalResponse(
+        target,
+        attempts,
+        delivery.expires_at,
+        failurePhase,
+      );
+    }
+
+    let record: RollWorkRecord;
+    try {
+      const stored = this.readWork();
+      if (stored === undefined) {
+        throw new Error("Pending roll delivery has no roll record");
+      }
+      record = stored;
+    } catch {
+      return this.terminateDelivery(
+        target,
+        attempts,
+        delivery.expires_at,
+        "record",
+      );
+    }
+
     let skipDiceDelay = false;
     let delayMs: number | null = null;
     let resultNotBefore: number | null = null;
@@ -699,23 +813,31 @@ export class RollWork extends DurableObject<RollEnv> {
           resultNotBefore = delay.resultNotBefore;
         }
       } catch {
-        return this.scheduleRetry(attempts, delivery.expires_at);
+        return this.scheduleRetry(
+          attempts,
+          delivery.expires_at,
+          "settings",
+        );
       }
     }
-    const target = {
-      id: metadata.interactionId,
-      applicationId: metadata.applicationId,
-      token: delivery.token,
-    };
 
     let clatter: string | undefined;
     if (record.outcome.outcomes.length > 0) {
-      clatter = buildRollClatterMessage(
-        record.outcome,
-        record.renderSeed,
-      ).content;
-      if (clatter === undefined) {
-        throw new Error("Roll clatter message has no content");
+      try {
+        clatter = buildRollClatterMessage(
+          record.outcome,
+          record.renderSeed,
+        ).content;
+        if (clatter === undefined) {
+          throw new Error("Roll clatter message has no content");
+        }
+      } catch {
+        return this.terminateDelivery(
+          target,
+          attempts,
+          delivery.expires_at,
+          "response",
+        );
       }
       if (!skipDiceDelay && delivery.clatter_sent_at === null) {
         let clatterResponse: Response;
@@ -724,13 +846,18 @@ export class RollWork extends DurableObject<RollEnv> {
             buildEditOriginalResponse(target, { content: clatter }),
           );
         } catch {
-          return this.scheduleRetry(attempts, delivery.expires_at);
+          return this.scheduleRetry(
+            attempts,
+            delivery.expires_at,
+            "clatter",
+          );
         }
         if (!clatterResponse.ok) {
           if (isRetryableHttpStatus(clatterResponse.status)) {
             return this.scheduleRetry(
               attempts,
               delivery.expires_at,
+              "clatter",
               retryAfterMs(clatterResponse, attempts),
               clatterResponse.status,
             );
@@ -741,7 +868,12 @@ export class RollWork extends DurableObject<RollEnv> {
           );
         }
         if (delayMs === null) {
-          throw new Error("Pending roll delivery has no randomized delay");
+          return this.terminateDelivery(
+            target,
+            attempts,
+            delivery.expires_at,
+            "response",
+          );
         }
         const clatterSentAt = Date.now();
         resultNotBefore = clatterSentAt + delayMs;
@@ -760,15 +892,18 @@ export class RollWork extends DurableObject<RollEnv> {
         resultNotBefore !== null &&
         resultNotBefore > Date.now()
       ) {
-        const retryAt = Math.min(resultNotBefore, delivery.expires_at);
+        const retryAt = Math.min(
+          resultNotBefore,
+          deliveryFinalizationAt(delivery.expires_at),
+        );
         await this.ctx.storage.setAlarm(retryAt);
         return { status: "pending", retryAt };
       }
     }
 
     let request: Request;
-    try {
-      if (record.outcome.outcomes.length === 0) {
+    if (record.outcome.outcomes.length === 0) {
+      try {
         request = buildEditOriginalResponse(
           target,
           delivery.helper_state === "pending"
@@ -780,15 +915,34 @@ export class RollWork extends DurableObject<RollEnv> {
               }
             : buildRollErrorMessage(record.outcome),
         );
-      } else {
+      } catch {
+        return this.terminateDelivery(
+          target,
+          attempts,
+          delivery.expires_at,
+          "response",
+        );
+      }
+    } else {
+      let rendered:
+        | RenderResult
+        | RenderResultV2
+        | RenderResultV3
+        | RenderResultV4;
+      try {
+        rendered = await this.renderRecord(record);
+      } catch {
+        return this.terminateDelivery(
+          target,
+          attempts,
+          delivery.expires_at,
+          "render",
+        );
+      }
+      try {
         if (clatter === undefined) {
           throw new Error("Roll clatter message was not prepared");
         }
-        const renderRequest = buildRollRenderRequest(
-          record.outcome,
-          record.renderSeed,
-        );
-        const rendered = await renderDiceToPng(renderRequest);
         const filename = `dice-${metadata.interactionId}.png`;
         request = buildEditOriginalResponseWithFile(
           target,
@@ -805,23 +959,28 @@ export class RollWork extends DurableObject<RollEnv> {
             description: "Rendered dice result",
           },
         );
+      } catch {
+        return this.terminateDelivery(
+          target,
+          attempts,
+          delivery.expires_at,
+          "response",
+        );
       }
-    } catch {
-      return this.scheduleRetry(attempts, delivery.expires_at);
     }
 
     let response: Response;
     try {
       response = await fetch(request);
     } catch {
-      return this.scheduleRetry(attempts, delivery.expires_at);
+      return this.scheduleRetry(attempts, delivery.expires_at, "discord");
     }
     if (response.ok) {
       const deliveredAt = Date.now();
       this.ctx.storage.sql.exec(
         `UPDATE interaction_delivery
          SET token = NULL, state = 'delivered', delivered_at = ?,
-             last_http_status = ?
+             last_http_status = ?, failure_phase = NULL
          WHERE singleton = 1`,
         deliveredAt,
         response.status,
@@ -833,12 +992,86 @@ export class RollWork extends DurableObject<RollEnv> {
       return this.scheduleRetry(
         attempts,
         delivery.expires_at,
+        "discord",
         retryAfterMs(response, attempts),
         response.status,
       );
     }
 
     return this.failDelivery(response.status, delivery.expires_at);
+  }
+
+  private async terminateDelivery(
+    target: RollDeliveryTarget,
+    attempts: number,
+    expiresAt: number,
+    phase: RollDeliveryFailurePhase,
+  ): Promise<DeliverRollWorkResult> {
+    this.ctx.storage.sql.exec(
+      "UPDATE interaction_delivery SET failure_phase = ? WHERE singleton = 1",
+      phase,
+    );
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "Roll delivery encountered a terminal internal failure",
+        phase,
+        attempt: attempts,
+      }),
+    );
+    return this.attemptTerminalResponse(target, attempts, expiresAt, phase);
+  }
+
+  private async attemptTerminalResponse(
+    target: RollDeliveryTarget,
+    attempts: number,
+    expiresAt: number,
+    phase: RollDeliveryFailurePhase,
+  ): Promise<DeliverRollWorkResult> {
+    this.ctx.storage.sql.exec(
+      "UPDATE interaction_delivery SET failure_phase = ? WHERE singleton = 1",
+      phase,
+    );
+    let response: Response;
+    try {
+      response = await fetch(
+        buildEditOriginalResponse(target, {
+          content: ROLL_DELIVERY_FAILURE_MESSAGE,
+        }),
+      );
+    } catch {
+      return this.scheduleRetry(
+        attempts,
+        expiresAt,
+        "terminal-response",
+        retryDelayMs(attempts),
+        null,
+        true,
+      );
+    }
+    if (response.ok) {
+      this.ctx.storage.sql.exec(
+        `UPDATE interaction_delivery
+         SET token = NULL, state = 'failed', last_http_status = ?,
+             failure_phase = ?
+         WHERE singleton = 1`,
+        response.status,
+        phase,
+      );
+      await this.ctx.storage.setAlarm(expiresAt);
+      return { status: "failed" };
+    }
+    if (isRetryableHttpStatus(response.status)) {
+      return this.scheduleRetry(
+        attempts,
+        expiresAt,
+        "terminal-response",
+        retryAfterMs(response, attempts),
+        response.status,
+        true,
+      );
+    }
+    return this.failDelivery(response.status, expiresAt);
   }
 
   private async failDelivery(
@@ -858,28 +1091,161 @@ export class RollWork extends DurableObject<RollEnv> {
   private async scheduleRetry(
     attempts: number,
     expiresAt: number,
+    phase: RetryableDeliveryPhase,
     delayMs = retryDelayMs(attempts),
     httpStatus: number | null = null,
+    finalizing = false,
   ): Promise<DeliverRollWorkResult> {
-    const retryAt = Math.min(Date.now() + delayMs, expiresAt);
+    const now = Date.now();
+    const cutoff = finalizing
+      ? expiresAt - DELIVERY_LAST_ATTEMPT_BUFFER_MS
+      : deliveryFinalizationAt(expiresAt);
+    const retryAt = Math.max(now, Math.min(now + delayMs, cutoff));
     this.ctx.storage.sql.exec(
       `UPDATE interaction_delivery
        SET state = 'pending', last_http_status = ?
        WHERE singleton = 1`,
       httpStatus,
     );
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        message: "Roll delivery will retry",
+        phase,
+        attempt: attempts,
+        httpStatus,
+        finalizing,
+        retryAt,
+      }),
+    );
     await this.ctx.storage.setAlarm(retryAt);
     return { status: "pending", retryAt };
+  }
+
+  private storedPreparation(
+    request: RollWorkRequest,
+  ): PrepareRollWorkResult | undefined {
+    const row = this.ctx.storage.sql
+      .exec<StoredWorkRow>(
+        `SELECT request_json, record_json
+         FROM roll_work
+         WHERE singleton = 1`,
+      )
+      .toArray()[0];
+    if (row === undefined) return undefined;
+    if (row.request_json !== JSON.stringify(request)) {
+      return { status: "conflict" };
+    }
+    const record = parseRecord(row.record_json);
+    if (JSON.stringify(record.request) !== row.request_json) {
+      throw new Error("Stored roll work request does not match its record");
+    }
+    return { status: "existing", record };
+  }
+
+  private async recordForDelivery(
+    request: RollWorkRequest,
+    accounting: RollDeliveryRequest["accounting"] | null,
+  ): Promise<DeliveryRecordResolution> {
+    const existing = this.storedPreparation(request);
+    if (existing?.status === "conflict") return { status: "conflict" };
+    if (existing?.status === "existing") {
+      return { status: "ready", record: existing.record };
+    }
+
+    const rollSeed = randomSeed();
+    const renderSeed = randomSeed();
+    const outcome = executeRoll({ ...request, seed: rollSeed });
+    const common = {
+      request,
+      rollSeed,
+      renderSeed,
+      outcome,
+      createdAt: Date.now(),
+    };
+    if (accounting === null) {
+      return { status: "ready", record: { version: 1, ...common } };
+    }
+    const renderVersion = parseRollRenderVersion(
+      this.env.ROLL_RENDER_VERSION,
+    );
+    if (outcome.outcomes.length === 0) {
+      return {
+        status: "ready",
+        record:
+          renderVersion === 3
+            ? { version: 3, ...common, renderRequest: null }
+            : { version: 4, ...common, renderRequest: null },
+      };
+    }
+
+    try {
+      const renderRequest = await buildRollRenderRequestForVersion(
+        this.env.DATA_SERVICE,
+        renderVersion,
+        accounting.userId,
+        accounting.guildId,
+        outcome,
+        renderSeed,
+      );
+      return {
+        status: "ready",
+        record:
+          renderRequest.version === 3
+            ? { version: 3, ...common, renderRequest }
+            : { version: 4, ...common, renderRequest },
+      };
+    } catch {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "Roll delivery preparation failed",
+          phase: "render-request",
+          renderVersion,
+        }),
+      );
+      const concurrent = this.storedPreparation(request);
+      if (concurrent?.status === "conflict") return { status: "conflict" };
+      if (concurrent?.status === "existing") {
+        return { status: "ready", record: concurrent.record };
+      }
+      return { status: "unavailable" };
+    }
+  }
+
+  private async renderRecord(
+    record: RollWorkRecord,
+  ): Promise<RenderResult | RenderResultV2 | RenderResultV3 | RenderResultV4> {
+    if (record.version === 1) {
+      return renderDiceToPng(
+        buildRollRenderRequest(record.outcome, record.renderSeed),
+      );
+    }
+    if (record.renderRequest === null) {
+      throw new Error("Roll work has no renderable outcome");
+    }
+    if (record.version === 2) {
+      return renderDiceRequestV2ToPng(record.renderRequest);
+    }
+    if (record.version === 3) {
+      return renderDiceRequestV3ToPng(record.renderRequest);
+    }
+    return {
+      version: 4,
+      ...(await renderV4WithSingleRetry(
+        serializeRenderRequestV4(record.renderRequest),
+        createCanvasKitRequestRendererV4,
+      )),
+    };
   }
 
   async render(value: unknown): Promise<RenderRollWorkResult> {
     const prepared = this.prepare(value);
     if (prepared.status === "conflict") return prepared;
-    const request = buildRollRenderRequest(
-      prepared.record.outcome,
-      prepared.record.renderSeed,
-    );
-    return { status: "rendered", ...(await renderDiceToPng(request)) };
+    return {
+      status: "rendered",
+      ...(await this.renderRecord(prepared.record)),
+    };
   }
 
   prepare(value: unknown): PrepareRollWorkResult {
@@ -888,33 +1254,29 @@ export class RollWork extends DurableObject<RollEnv> {
     );
   }
 
-  private prepareRequest(request: RollWorkRequest): PrepareRollWorkResult {
-    const requestJson = JSON.stringify(request);
-    const existing = this.ctx.storage.sql
-      .exec<StoredWorkRow>(
-        `SELECT request_json, record_json
-         FROM roll_work
-         WHERE singleton = 1`,
-      )
-      .toArray()[0];
-    if (existing !== undefined) {
-      if (existing.request_json !== requestJson) return { status: "conflict" };
-      return { status: "existing", record: parseRecord(existing.record_json) };
-    }
+  private prepareRequest(
+    request: RollWorkRequest,
+    candidate?: RollWorkRecord,
+  ): PrepareRollWorkResult {
+    const existing = this.storedPreparation(request);
+    if (existing !== undefined) return existing;
 
-    const rollSeed = randomSeed();
-    const record: RollWorkRecord = {
-      version: 1,
-      request,
-      rollSeed,
-      renderSeed: randomSeed(),
-      outcome: executeRoll({ ...request, seed: rollSeed }),
-      createdAt: Date.now(),
-    };
+    let record = candidate;
+    if (record === undefined) {
+      const rollSeed = randomSeed();
+      record = {
+        version: 1,
+        request,
+        rollSeed,
+        renderSeed: randomSeed(),
+        outcome: executeRoll({ ...request, seed: rollSeed }),
+        createdAt: Date.now(),
+      };
+    }
     this.ctx.storage.sql.exec(
       `INSERT INTO roll_work (singleton, request_json, record_json)
        VALUES (1, ?, ?)`,
-      requestJson,
+      JSON.stringify(request),
       JSON.stringify(record),
     );
     return { status: "created", record };
@@ -928,7 +1290,12 @@ export class RollWork extends DurableObject<RollEnv> {
          WHERE singleton = 1`,
       )
       .toArray()[0];
-    return row === undefined ? undefined : parseRecord(row.record_json);
+    if (row === undefined) return undefined;
+    const record = parseRecord(row.record_json);
+    if (JSON.stringify(record.request) !== row.request_json) {
+      throw new Error("Stored roll work request does not match its record");
+    }
+    return record;
   }
 
   private deleteStoredWork(): void {
@@ -947,7 +1314,7 @@ export class RollWork extends DurableObject<RollEnv> {
                 accounting_state, accounting_occurred_at,
                 accounting_http_status, accounting_attempts, logging_state,
                 logging_http_status, logging_attempts, helper_state,
-                helper_attempts
+                helper_attempts, failure_phase
          FROM interaction_delivery
          WHERE singleton = 1`,
       )
@@ -956,11 +1323,15 @@ export class RollWork extends DurableObject<RollEnv> {
 }
 
 const worker = {
-  fetch(request: Request): Response {
+  fetch(request: Request, env: RollEnv): Response {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json(
-        { ok: true, service: "dice-witch-roll" },
+        {
+          ok: true,
+          service: "dice-witch-roll",
+          renderVersion: parseRollRenderVersion(env.ROLL_RENDER_VERSION),
+        },
         { headers: { "cache-control": "no-store" } },
       );
     }

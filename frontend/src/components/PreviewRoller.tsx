@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Roller } from '@/components/Roller';
 import { DiceInput } from '@/components/DiceInput';
 import { useDiceValidation } from '@/hooks/useDiceValidation';
-import { RollResponse } from '@/types/dice';
+import type { Die, RollResponse } from '@/types/dice';
 import { DiceRoll } from '@dice-roller/rpg-dice-roller';
 
 import { ThemeProvider } from '@/components/theme-provider';
@@ -27,9 +27,9 @@ export function PreviewRoller() {
 
   const handleInputChange = (value: string) => {
     setInput(value);
+    setRollResults(null);
     if (!value) {
       setIsRolling(false);
-      setRollResults(null);
       setShowAnimation(false);
     }
   };
@@ -75,11 +75,11 @@ export function PreviewRoller() {
             results: roll.total || 0
           }];
           
-          const diceArray: any[][] = [];
+          const diceArray: Die[][] = [];
           
           if (diceInfo) {
             diceInfo.diceGroups.forEach(group => {
-              const diceOfType = [];
+              const diceOfType: Die[] = [];
               
               for (let i = 0; i < group.numberOfDice; i++) {
                 const diceColors = getDiceColor(group.diceSize);
@@ -91,18 +91,19 @@ export function PreviewRoller() {
                   if (outputMatch) {
                     if (!window.diceValues) {
                       window.diceValues = {};
-                      const dicePatterns = input.match(/\b(\d+)d(\d+|\%|F)/gi) || [];
+                      const dicePatterns = input.match(/\b(\d+)d(\d+|%|F)/gi) || [];
                       let currentDiceTypeIndex = 0;
 
                       dicePatterns.forEach(pattern => {
-                        const [count, size] = pattern.split(/d/i);
+                        const [, size] = pattern.split(/d/i);
                         const sizeUpper = size.toUpperCase();
                         const diceSize: number | string = sizeUpper === '%' ? 100 : sizeUpper === 'F' ? 'F' : parseInt(size);
 
                         if (currentDiceTypeIndex >= outputMatch.length) return;
 
                         const valuesStr = outputMatch[currentDiceTypeIndex]
-                          .replace(/[\[\]]/g, '')
+                          .replaceAll('[', '')
+                          .replaceAll(']', '')
                           .replace(/d$/, '')
                           .split(',')
                           .map(s => s.trim());
@@ -137,7 +138,7 @@ export function PreviewRoller() {
                       result = Math.floor(Math.random() * (group.diceSize as number)) + 1;
                     }
                   }
-                } catch (error) {
+                } catch {
                   if (group.diceSize === 'F') {
                     result = Math.floor(Math.random() * 3) - 1;
                   } else {
@@ -151,7 +152,8 @@ export function PreviewRoller() {
                   color: diceColors.color,
                   secondaryColor: diceColors.secondaryColor,
                   textColor: diceColors.textColor,
-                  value: result
+                  value: result,
+                  icon: []
                 });
               }
               
@@ -165,19 +167,28 @@ export function PreviewRoller() {
           
           setRollResults({
             resultArray,
-            diceArray
+            diceArray,
+            appearanceIdentities: diceArray.map((group, groupIndex) =>
+              group.map(
+                (_die, dieIndex) =>
+                  `preview:${String(groupIndex)}:${String(dieIndex)}`,
+              ),
+            ),
+            rerolledAppearanceIdentities: [],
           });
-        } catch (error) {
+        } catch {
           setRollResults({
             resultArray: [{ output: 'Error rolling dice', results: 0 }],
-            diceArray: []
+            diceArray: [],
+            appearanceIdentities: [],
+            rerolledAppearanceIdentities: []
           });
         }
         
         setIsRolling(false);
       }, 1000);
       
-    } catch (error) {
+    } catch {
       setIsRolling(false);
     }
   };

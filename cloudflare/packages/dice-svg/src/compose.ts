@@ -29,6 +29,7 @@ import type {
   GenerateDieProps,
   IconName,
   RenderDie,
+  RenderTargetV3,
 } from "./types";
 import { validateRenderRequest } from "./validate";
 
@@ -63,7 +64,13 @@ const icons: Record<IconName, string> = {
   blank: blankIcon,
 };
 
-function paginate(groups: RenderDie[][]): RenderDie[][] {
+export type RenderedDie = {
+  svg: string;
+  icons: IconName[];
+  target?: RenderTargetV3;
+};
+
+function paginate<T>(groups: T[][]): T[][] {
   return groups.flatMap((group) =>
     Array.from(
       { length: Math.ceil(group.length / MAX_DICE_PER_ROW) },
@@ -125,6 +132,7 @@ function placeSvg(
   y: number,
   width: number,
   height: number,
+  renderTarget?: string,
 ): string {
   const namespaced = namespaceSvg(source.trim(), namespace);
   const match = namespaced.match(/^<svg\b([^>]*)>([\s\S]*)<\/svg>$/i);
@@ -132,7 +140,9 @@ function placeSvg(
     throw new Error("Generated image is not a complete SVG document");
   }
 
-  return `<svg x="${x}" y="${y}" width="${width}" height="${height}" viewBox="${getSvgViewBox(match[1])}" preserveAspectRatio="xMidYMid meet">${match[2]}</svg>`;
+  const targetAttribute =
+    renderTarget === undefined ? "" : ` data-render-target="${renderTarget}"`;
+  return `<svg x="${x}" y="${y}" width="${width}" height="${height}"${targetAttribute} viewBox="${getSvgViewBox(match[1])}" preserveAspectRatio="xMidYMid meet">${match[2]}</svg>`;
 }
 
 function createFill(die: RenderDie) {
@@ -168,17 +178,15 @@ function renderDie(die: RenderDie): string {
   });
 }
 
-export function composeDiceSvg(input: unknown): ComposedSvg {
-  const request = validateRenderRequest(input);
-  const diceCount = request.groups.reduce(
+export function composeRenderedDiceGrid(groups: RenderedDie[][]): ComposedSvg {
+  const diceCount = groups.reduce(
     (total, group) => total + group.length,
     0,
   );
-  const rows = paginate(request.groups);
+  const rows = paginate(groups);
   const hasIcons = rows.some((row) => row.some((die) => die.icons.length > 0));
   const rowHeight = DICE_SIZE + (hasIcons ? ICON_SIZE : 0);
-  const width =
-    DICE_SIZE * Math.max(...rows.map((row) => row.length));
+  const width = DICE_SIZE * Math.max(...rows.map((row) => row.length));
   const height = rowHeight * rows.length;
   let nestedSvgs = "";
   let dieIndex = 0;
@@ -188,12 +196,13 @@ export function composeDiceSvg(input: unknown): ComposedSvg {
       const x = columnIndex * DICE_SIZE;
       const y = rowIndex * rowHeight;
       nestedSvgs += placeSvg(
-        renderDie(die),
+        die.svg,
         `dw-die-${dieIndex}`,
         x,
         y,
         DICE_SIZE,
         DICE_SIZE,
+        die.target,
       );
 
       const iconSpacing = getIconSpacing(die.icons.length);
@@ -218,4 +227,16 @@ export function composeDiceSvg(input: unknown): ComposedSvg {
     diceCount,
     rowCount: rows.length,
   };
+}
+
+export function composeDiceSvg(input: unknown): ComposedSvg {
+  const request = validateRenderRequest(input);
+  return composeRenderedDiceGrid(
+    request.groups.map((group) =>
+      group.map((die) => ({
+        svg: renderDie(die),
+        icons: die.icons,
+      })),
+    ),
+  );
 }

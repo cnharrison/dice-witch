@@ -1,8 +1,36 @@
+import {
+  parsePublicRenderModelV4,
+  serializeRenderRequestV4,
+  type PublicRenderModelV4,
+} from "@dice-witch/dice-v4-model";
+import {
+  APPEARANCE_CATALOG_V1,
+  APPEARANCE_CATALOG_V2,
+  APPEARANCE_CATALOG_V3,
+} from "../../../packages/dice-appearance/src";
 import { readWorkerSecret, type WorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
   generateOpaqueToken,
   hashOpaqueToken,
 } from "../../data/src/session-repository";
+import {
+  getGuildAppearance,
+  getGuildAppearanceV2,
+  getGuildAppearanceV3,
+  getPersonalAppearance,
+  getPersonalAppearanceV2,
+  getPersonalAppearanceV3,
+  previewAppearance,
+  previewAppearanceV2,
+  previewAppearanceV3,
+  putGuildAppearance,
+  putGuildAppearanceV2,
+  putGuildAppearanceV3,
+  putPersonalAppearance,
+  putPersonalAppearanceV2,
+  putPersonalAppearanceV3,
+} from "./appearance-api";
+import { bytesToBase64, json, securityHeaders } from "./responses";
 
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
@@ -12,6 +40,10 @@ const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 const STATE_TTL_MS = 10 * 60 * 1_000;
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const FULL_SHA = /^[0-9a-f]{40}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
 
 type MembershipInspection =
   | { status: "found"; isDiceWitchAdmin: boolean }
@@ -39,11 +71,18 @@ type DiscordRestService = {
 export type WebApiBindings = {
   DATA_SERVICE: Fetcher;
   DISCORD_REST: DiscordRestService;
-  ROLL_WEB: { execute(value: unknown): Promise<unknown> };
+  ROLL_WEB: {
+    prepare(value: unknown): Promise<unknown>;
+    execute(value: unknown): Promise<unknown>;
+    preview(value: unknown): Promise<unknown>;
+    previewV2(value: unknown): Promise<unknown>;
+    previewV3(value: unknown): Promise<unknown>;
+  };
   DISCORD_CLIENT_ID: string;
   DISCORD_CLIENT_SECRET: WorkerSecretSource;
   DISCORD_REDIRECT_URI: string;
   FRONTEND_ORIGIN: string;
+  BUILD_SHA: string;
 };
 
 type ValidatedConfiguration = Omit<
@@ -53,6 +92,7 @@ type ValidatedConfiguration = Omit<
     | "DISCORD_CLIENT_SECRET"
     | "DISCORD_REDIRECT_URI"
     | "FRONTEND_ORIGIN"
+    | "BUILD_SHA"
   >,
   "DISCORD_CLIENT_SECRET"
 > & {
@@ -88,17 +128,68 @@ type StoredSession = {
   expiresAt: number;
 };
 
-const securityHeaders = {
-  "cache-control": "no-store",
-  "content-security-policy": "frame-ancestors 'none'",
-  "permissions-policy": "camera=(), microphone=(), geolocation=()",
-  "referrer-policy": "no-referrer",
-  "x-content-type-options": "nosniff",
-  "x-frame-options": "DENY",
-};
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseOptionalRenderModel(
+  roll: Record<string, unknown>,
+): PublicRenderModelV4 | undefined {
+  if (!Object.hasOwn(roll, "renderModel")) return undefined;
+  const renderModel = parsePublicRenderModelV4(roll.renderModel);
+  serializeRenderRequestV4(renderModel);
+  return renderModel;
+}
+
+function parseAppearanceIdentities(
+  value: unknown,
+  groupSizes: readonly number[],
+): string[][] {
+  if (!Array.isArray(value) || value.length !== groupSizes.length) {
+    throw new Error("Roll appearance identities are invalid");
+  }
+  const identities = value.map((group, groupIndex) => {
+    const groupSize = groupSizes[groupIndex];
+    if (!Array.isArray(group) || group.length !== groupSize) {
+      throw new Error("Roll appearance identities are invalid");
+    }
+    return group.map((identity) => {
+      if (
+        typeof identity !== "string" ||
+        identity.length < 1 ||
+        identity.length > 512
+      ) {
+        throw new Error("Roll appearance identities are invalid");
+      }
+      return identity;
+    });
+  });
+  const flattened = identities.flat();
+  if (new Set(flattened).size !== flattened.length) {
+    throw new Error("Roll appearance identities are invalid");
+  }
+  return identities;
+}
+
+function parseRerolledAppearanceIdentities(
+  value: unknown,
+  appearanceIdentities: readonly (readonly string[])[],
+): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.some((identity) => typeof identity !== "string")
+  ) {
+    throw new Error("Rerolled appearance identities are invalid");
+  }
+  const identities = value as string[];
+  const validIdentities = new Set(appearanceIdentities.flat());
+  if (
+    new Set(identities).size !== identities.length ||
+    identities.some((identity) => !validIdentities.has(identity))
+  ) {
+    throw new Error("Rerolled appearance identities are invalid");
+  }
+  return [...identities];
 }
 
 function hasExactKeys(
@@ -111,10 +202,6 @@ function hasExactKeys(
     keys.length === expectedKeys.length &&
     keys.every((key, index) => key === expectedKeys[index])
   );
-}
-
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: securityHeaders });
 }
 
 function redirect(location: string): Response {
@@ -167,25 +254,51 @@ function preflight(
   if (request.headers.get("origin") !== configuration.FRONTEND_ORIGIN) {
     return json({ error: "Forbidden" }, 403);
   }
-  let method: "GET" | "POST" | "PATCH";
+  let methods: string;
   let allowedHeaders: string | null = null;
   if (pathname === "/api/auth/session") {
-    method = "GET";
+    methods = "GET";
   } else if (pathname === "/api/auth/signout") {
-    method = "POST";
-  } else if (pathname === "/api/dice/roll") {
-    method = "POST";
+    methods = "POST";
+  } else if (
+    pathname === "/api/dice/prepare" ||
+    pathname === "/api/dice/roll"
+  ) {
+    methods = "POST";
     allowedHeaders = "content-type";
   } else if (
     /^\/api\/guilds\/[1-9][0-9]{16,19}\/preferences$/.test(pathname)
   ) {
-    method = "PATCH";
+    methods = "PATCH";
     allowedHeaders = "content-type, idempotency-key";
+  } else if (
+    pathname === "/api/appearance/catalog" ||
+    pathname === "/api/appearance/v2/catalog" ||
+    pathname === "/api/appearance/v3/catalog"
+  ) {
+    methods = "GET";
+  } else if (
+    pathname === "/api/appearance/me" ||
+    pathname === "/api/appearance/v2/me" ||
+    pathname === "/api/appearance/v3/me" ||
+    /^\/api\/guilds\/[1-9][0-9]{16,19}\/appearance(?:\/v[23])?$/.test(
+      pathname,
+    )
+  ) {
+    methods = "GET, PUT";
+    allowedHeaders = "content-type, idempotency-key";
+  } else if (
+    pathname === "/api/appearance/preview" ||
+    pathname === "/api/appearance/v2/preview" ||
+    pathname === "/api/appearance/v3/preview"
+  ) {
+    methods = "POST";
+    allowedHeaders = "content-type";
   } else {
     return json({ error: "Not found" }, 404);
   }
   const response = new Response(null, { status: 204, headers: securityHeaders });
-  response.headers.set("access-control-allow-methods", method);
+  response.headers.set("access-control-allow-methods", methods);
   if (allowedHeaders !== null) {
     response.headers.set("access-control-allow-headers", allowedHeaders);
   }
@@ -213,6 +326,11 @@ function sameToken(left: string, right: string): boolean {
     difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
   }
   return difference === 0;
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  return left.every((byte, index) => byte === right[index]);
 }
 
 function exactOrigin(value: string): URL | null {
@@ -260,7 +378,8 @@ async function validateConfiguration(
     redirectUrl.search !== "" ||
     redirectUrl.hash !== "" ||
     redirectUrl.toString() !== env.DISCORD_REDIRECT_URI ||
-    frontendUrl === null
+    frontendUrl === null ||
+    !FULL_SHA.test(env.BUILD_SHA)
   ) {
     return null;
   }
@@ -269,9 +388,99 @@ async function validateConfiguration(
     DISCORD_CLIENT_SECRET: clientSecret,
     DISCORD_REDIRECT_URI: env.DISCORD_REDIRECT_URI,
     FRONTEND_ORIGIN: env.FRONTEND_ORIGIN,
+    BUILD_SHA: env.BUILD_SHA,
     apiOrigin: redirectUrl.origin,
     frontendUrl,
   };
+}
+
+function hasExactCatalogBuild(url: URL, buildSha: string): boolean {
+  return (
+    url.searchParams.size === 1 &&
+    url.searchParams.get("build") === buildSha
+  );
+}
+
+function appearanceCatalogForPath(
+  pathname: string,
+):
+  | typeof APPEARANCE_CATALOG_V1
+  | typeof APPEARANCE_CATALOG_V2
+  | typeof APPEARANCE_CATALOG_V3 {
+  if (pathname === "/api/appearance/v3/catalog") {
+    return APPEARANCE_CATALOG_V3;
+  }
+  if (pathname === "/api/appearance/v2/catalog") {
+    return APPEARANCE_CATALOG_V2;
+  }
+  return APPEARANCE_CATALOG_V1;
+}
+
+type AppearanceBrowserVersion = 1 | 2 | 3;
+
+function appearanceVersionForPath(pathname: string): AppearanceBrowserVersion {
+  if (pathname.endsWith("/v3") || pathname.includes("/v3/")) return 3;
+  if (pathname.endsWith("/v2") || pathname.includes("/v2/")) return 2;
+  return 1;
+}
+
+function getPersonalAppearanceForVersion(
+  version: AppearanceBrowserVersion,
+  dataService: Fetcher,
+  userId: string,
+): Promise<Response> {
+  if (version === 3) return getPersonalAppearanceV3(dataService, userId);
+  return version === 2
+    ? getPersonalAppearanceV2(dataService, userId)
+    : getPersonalAppearance(dataService, userId);
+}
+
+function putPersonalAppearanceForVersion(
+  version: AppearanceBrowserVersion,
+  request: Request,
+  dataService: Fetcher,
+  userId: string,
+  now: number,
+): Promise<Response> {
+  if (version === 3) {
+    return putPersonalAppearanceV3(request, dataService, userId, now);
+  }
+  return version === 2
+    ? putPersonalAppearanceV2(request, dataService, userId, now)
+    : putPersonalAppearance(request, dataService, userId, now);
+}
+
+function getGuildAppearanceForVersion(
+  version: AppearanceBrowserVersion,
+  dataService: Fetcher,
+  guildId: string,
+): Promise<Response> {
+  if (version === 3) return getGuildAppearanceV3(dataService, guildId);
+  return version === 2
+    ? getGuildAppearanceV2(dataService, guildId)
+    : getGuildAppearance(dataService, guildId);
+}
+
+function putGuildAppearanceForVersion(
+  version: AppearanceBrowserVersion,
+  request: Request,
+  dataService: Fetcher,
+  guildId: string,
+  userId: string,
+  now: number,
+): Promise<Response> {
+  if (version === 3) {
+    return putGuildAppearanceV3(
+      request,
+      dataService,
+      guildId,
+      userId,
+      now,
+    );
+  }
+  return version === 2
+    ? putGuildAppearanceV2(request, dataService, guildId, userId, now)
+    : putGuildAppearance(request, dataService, guildId, userId, now);
 }
 
 async function postData(
@@ -643,6 +852,50 @@ function parseStoredSession(value: unknown): StoredSession | null {
   return value as StoredSession;
 }
 
+type SessionAuthentication =
+  | { authenticated: true; session: StoredSession }
+  | { authenticated: false; response: Response };
+
+async function authenticateSession(
+  request: Request,
+  env: WebApiBindings,
+  now: number,
+): Promise<SessionAuthentication> {
+  const token = readCookie(request, "session_id");
+  if (token === null || !OPAQUE_TOKEN.test(token)) {
+    return {
+      authenticated: false,
+      response: json({ error: "Unauthorized" }, 401),
+    };
+  }
+  const response = await postData(env, "/internal/sessions/current", {
+    token,
+    now,
+  });
+  if (response.status === 401) {
+    return {
+      authenticated: false,
+      response: appendCookie(
+        json({ error: "Unauthorized" }, 401),
+        sessionCookie("", 0),
+      ),
+    };
+  }
+  if (!response.ok) {
+    return {
+      authenticated: false,
+      response: json({ error: "Session lookup failed" }, 502),
+    };
+  }
+  const session = parseStoredSession(await response.json());
+  return session === null
+    ? {
+        authenticated: false,
+        response: json({ error: "Session response is invalid" }, 502),
+      }
+    : { authenticated: true, session };
+}
+
 async function getSession(
   request: Request,
   env: WebApiBindings,
@@ -808,44 +1061,62 @@ async function getGuildChannels(
   return json({ channels });
 }
 
+type AppearanceAccessFailure =
+  | "authentication"
+  | "authorization"
+  | "service";
+
+function v3AppearanceAccessError(
+  reason: AppearanceAccessFailure,
+  source: Response,
+): Response {
+  let response: Response;
+  if (reason === "authentication") {
+    response = json({ error: "appearance_authentication_required" }, 401);
+  } else if (reason === "authorization") {
+    response = json({ error: "appearance_guild_forbidden" }, 403);
+  } else {
+    response = json({ error: "appearance_service_unavailable" }, 502);
+  }
+  const cookie = source.headers.get("set-cookie");
+  if (cookie !== null) response.headers.append("set-cookie", cookie);
+  return response;
+}
+
 async function authorizeGuild(
   request: Request,
   env: WebApiBindings,
   guildId: string,
   now: number,
-): Promise<{ authorized: true } | { authorized: false; response: Response }> {
-  const token = readCookie(request, "session_id");
-  if (token === null || !OPAQUE_TOKEN.test(token)) {
-    return { authorized: false, response: json({ error: "Unauthorized" }, 401) };
-  }
-  const sessionResponse = await postData(env, "/internal/sessions/current", {
-    token,
-    now,
-  });
-  if (sessionResponse.status === 401) {
-    return { authorized: false, response: json({ error: "Unauthorized" }, 401) };
-  }
-  if (!sessionResponse.ok) {
+): Promise<
+  | { authorized: true; userId: string }
+  | {
+      authorized: false;
+      reason: AppearanceAccessFailure;
+      response: Response;
+    }
+> {
+  const authentication = await authenticateSession(request, env, now);
+  if (!authentication.authenticated) {
     return {
       authorized: false,
-      response: json({ error: "Session lookup failed" }, 502),
+      reason:
+        authentication.response.status === 401
+          ? "authentication"
+          : "service",
+      response: authentication.response,
     };
   }
-  const session = parseStoredSession(await sessionResponse.json());
-  if (session === null) {
-    return {
-      authorized: false,
-      response: json({ error: "Session response is invalid" }, 502),
-    };
-  }
+  const userId = authentication.session.user.id;
   const membershipsResponse = await postData(
     env,
     "/internal/memberships/list",
-    { userId: session.user.id },
+    { userId },
   );
   if (!membershipsResponse.ok) {
     return {
       authorized: false,
+      reason: "service",
       response: json({ error: "Guild authorization failed" }, 502),
     };
   }
@@ -853,6 +1124,7 @@ async function authorizeGuild(
   if (!isRecord(memberships) || !Array.isArray(memberships.memberships)) {
     return {
       authorized: false,
+      reason: "service",
       response: json({ error: "Guild authorization response is invalid" }, 502),
     };
   }
@@ -864,8 +1136,12 @@ async function authorizeGuild(
       (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
   );
   return authorized
-    ? { authorized: true }
-    : { authorized: false, response: json({ error: "Unauthorized" }, 401) };
+    ? { authorized: true, userId }
+    : {
+        authorized: false,
+        reason: "authorization",
+        response: json({ error: "Unauthorized" }, 401),
+      };
 }
 
 async function getGuildPreferences(
@@ -893,12 +1169,7 @@ async function patchGuildPreferences(
   now: number,
 ): Promise<Response> {
   const idempotencyKey = request.headers.get("idempotency-key");
-  if (
-    idempotencyKey === null ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      idempotencyKey,
-    )
-  ) {
+  if (idempotencyKey === null || !UUID_V4.test(idempotencyKey)) {
     return json({ error: "Idempotency key is invalid" }, 400);
   }
   let value: unknown;
@@ -927,7 +1198,7 @@ async function patchGuildPreferences(
   return json({ success: true });
 }
 
-async function postWebRoll(
+async function postWebRollPreparation(
   request: Request,
   env: WebApiBindings,
   now: number,
@@ -935,23 +1206,208 @@ async function postWebRoll(
   let value: Record<string, unknown>;
   try {
     value = await request.json();
-    const requiredKeys = [
+    if (
+      !isRecord(value) ||
+      (!hasExactKeys(value, ["guildId", "notation", "timesToRepeat"]) &&
+        !hasExactKeys(value, [
+          "guildId",
+          "notation",
+          "renderSeed",
+          "timesToRepeat",
+        ])) ||
+      typeof value.guildId !== "string" ||
+      !SNOWFLAKE.test(value.guildId) ||
+      typeof value.notation !== "string" ||
+      value.notation.length < 1 ||
+      value.notation.length > 6_000 ||
+      typeof value.timesToRepeat !== "number" ||
+      !Number.isSafeInteger(value.timesToRepeat) ||
+      value.timesToRepeat < 1 ||
+      value.timesToRepeat > 50 ||
+      (value.renderSeed !== undefined &&
+        (typeof value.renderSeed !== "number" ||
+          !Number.isInteger(value.renderSeed) ||
+          value.renderSeed < 0 ||
+          value.renderSeed > 0xffff_ffff))
+    ) {
+      throw new Error("Web roll preparation request is invalid");
+    }
+  } catch {
+    return json({ error: "Web roll preparation request is invalid" }, 400);
+  }
+
+  const token = readCookie(request, "session_id");
+  if (token === null || !OPAQUE_TOKEN.test(token)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const sessionResponse = await postData(env, "/internal/sessions/current", {
+    token,
+    now,
+  });
+  if (sessionResponse.status === 401) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  if (!sessionResponse.ok) {
+    return json({ error: "Session lookup failed" }, 502);
+  }
+  const session = parseStoredSession(await sessionResponse.json());
+  if (session === null) {
+    return json({ error: "Session response is invalid" }, 502);
+  }
+
+  const membershipsResponse = await postData(
+    env,
+    "/internal/memberships/list",
+    { userId: session.user.id },
+  );
+  if (!membershipsResponse.ok) {
+    return json({ error: "Guild authorization failed" }, 502);
+  }
+  const memberships: unknown = await membershipsResponse.json();
+  if (!isRecord(memberships) || !Array.isArray(memberships.memberships)) {
+    return json({ error: "Guild authorization response is invalid" }, 502);
+  }
+  const authorized = memberships.memberships.some(
+    (membership) =>
+      isRecord(membership) &&
+      isRecord(membership.guild) &&
+      membership.guild.id === value.guildId &&
+      (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
+  );
+  if (!authorized) return json({ error: "Unauthorized" }, 401);
+
+  const preparation: unknown = await env.ROLL_WEB.prepare({
+    notation: value.notation,
+    repetitions: value.timesToRepeat,
+    userId: session.user.id,
+    guildId: value.guildId,
+    ...(value.renderSeed === undefined ? {} : { renderSeed: value.renderSeed }),
+  });
+  if (!isRecord(preparation) || typeof preparation.status !== "string") {
+    return json({ error: "Roll preparation response is invalid" }, 502);
+  }
+  if (
+    preparation.status === "invalid" &&
+    typeof preparation.message === "string"
+  ) {
+    return json(
+      { error: preparation.message, message: preparation.message },
+      400,
+    );
+  }
+  if (
+    preparation.status !== "prepared" ||
+    typeof preparation.appearanceDigest !== "string" ||
+    !SHA256.test(preparation.appearanceDigest) ||
+    typeof preparation.renderSeed !== "number" ||
+    !Number.isInteger(preparation.renderSeed) ||
+    preparation.renderSeed < 0 ||
+    preparation.renderSeed > 0xffff_ffff ||
+    !Array.isArray(preparation.groupSizes) ||
+    preparation.groupSizes.length < 1 ||
+    preparation.groupSizes.length > 50 ||
+    !preparation.groupSizes.every(
+      (size) => Number.isSafeInteger(size) && Number(size) >= 1,
+    ) ||
+    preparation.groupSizes.reduce<number>(
+      (total, size) => total + Number(size),
+      0,
+    ) > 50 ||
+    !isRecord(preparation.renderedImage) ||
+    preparation.renderedImage.contentType !== "image/png" ||
+    !Number.isSafeInteger(preparation.renderedImage.width) ||
+    Number(preparation.renderedImage.width) < 1 ||
+    !Number.isSafeInteger(preparation.renderedImage.height) ||
+    Number(preparation.renderedImage.height) < 1 ||
+    !(preparation.renderedImage.png instanceof Uint8Array)
+  ) {
+    return json({ error: "Roll preparation response is invalid" }, 502);
+  }
+  const groupSizes = preparation.groupSizes.map(Number);
+  let renderModel: PublicRenderModelV4 | undefined;
+  let appearanceIdentities: string[][];
+  try {
+    renderModel = parseOptionalRenderModel(preparation);
+    appearanceIdentities = parseAppearanceIdentities(
+      preparation.appearanceIdentities,
+      groupSizes,
+    );
+    if (
+      renderModel !== undefined &&
+      renderModel.groups.some(
+        (group, index) => group.length !== groupSizes[index],
+      )
+    ) {
+      throw new Error("Prepared render model groups are invalid");
+    }
+  } catch {
+    return json({ error: "Roll preparation response is invalid" }, 502);
+  }
+  return json({
+    renderSeed: preparation.renderSeed,
+    appearanceDigest: preparation.appearanceDigest,
+    groupSizes,
+    appearanceIdentities,
+    renderedImage: {
+      contentType: "image/png",
+      width: preparation.renderedImage.width,
+      height: preparation.renderedImage.height,
+      base64: bytesToBase64(preparation.renderedImage.png),
+    },
+    ...(renderModel === undefined ? {} : { renderModel }),
+  });
+}
+
+async function postWebRoll(
+  request: Request,
+  env: WebApiBindings,
+  now: number,
+): Promise<Response> {
+  let value: Record<string, unknown>;
+  let preparedRequest: boolean;
+  try {
+    value = await request.json();
+    const legacyKeys = [
       "channelId",
       "guildId",
       "notation",
       "timesToRepeat",
     ];
+    const isLegacyRequest =
+      isRecord(value) &&
+      (hasExactKeys(value, legacyKeys) ||
+        hasExactKeys(value, [...legacyKeys, "title"]));
+    preparedRequest =
+      isRecord(value) &&
+      (hasExactKeys(value, [
+        ...legacyKeys,
+        "appearanceDigest",
+        "renderSeed",
+      ]) ||
+        hasExactKeys(value, [
+          ...legacyKeys,
+          "appearanceDigest",
+          "renderSeed",
+          "title",
+        ]));
     if (
       !isRecord(value) ||
-      (!hasExactKeys(value, requiredKeys) &&
-        !hasExactKeys(value, [...requiredKeys, "title"])) ||
+      (!isLegacyRequest && !preparedRequest) ||
       typeof value.guildId !== "string" ||
       !SNOWFLAKE.test(value.guildId) ||
       typeof value.channelId !== "string" ||
       !SNOWFLAKE.test(value.channelId) ||
+      (preparedRequest &&
+        (typeof value.appearanceDigest !== "string" ||
+          !SHA256.test(value.appearanceDigest))) ||
       typeof value.notation !== "string" ||
       value.notation.length < 1 ||
       value.notation.length > 6_000 ||
+      (preparedRequest &&
+        (typeof value.renderSeed !== "number" ||
+          !Number.isInteger(value.renderSeed) ||
+          value.renderSeed < 0 ||
+          value.renderSeed > 0xffff_ffff)) ||
       typeof value.timesToRepeat !== "number" ||
       !Number.isSafeInteger(value.timesToRepeat) ||
       value.timesToRepeat < 1 ||
@@ -1029,9 +1485,20 @@ async function postWebRoll(
     repetitions: value.timesToRepeat,
     username: session.user.username,
     title: value.title ?? null,
+    userId: session.user.id,
+    guildId: value.guildId,
+    ...(preparedRequest
+      ? {
+          renderSeed: value.renderSeed,
+          appearanceDigest: value.appearanceDigest,
+        }
+      : {}),
   });
   if (!isRecord(roll) || typeof roll.status !== "string") {
     return json({ error: "Roll response is invalid" }, 502);
+  }
+  if (roll.status === "stale" && typeof roll.message === "string") {
+    return json({ error: roll.message }, 409);
   }
   if (roll.status === "invalid" && typeof roll.message === "string") {
     return json(
@@ -1040,6 +1507,8 @@ async function postWebRoll(
         message: roll.message,
         diceArray: [],
         resultArray: [],
+        appearanceIdentities: [],
+        rerolledAppearanceIdentities: [],
       },
       400,
     );
@@ -1049,13 +1518,62 @@ async function postWebRoll(
     typeof roll.message !== "string" ||
     !Array.isArray(roll.diceArray) ||
     !Array.isArray(roll.resultArray) ||
+    !isRecord(roll.renderedImage) ||
+    roll.renderedImage.contentType !== "image/png" ||
+    !Number.isSafeInteger(roll.renderedImage.width) ||
+    Number(roll.renderedImage.width) < 1 ||
+    !Number.isSafeInteger(roll.renderedImage.height) ||
+    Number(roll.renderedImage.height) < 1 ||
+    !(roll.renderedImage.png instanceof Uint8Array) ||
     !isRecord(roll.discord) ||
     typeof roll.discord.clatter !== "string" ||
     typeof roll.discord.filename !== "string" ||
-    !(roll.discord.png instanceof Uint8Array)
+    !(roll.discord.png instanceof Uint8Array) ||
+    !sameBytes(roll.renderedImage.png, roll.discord.png)
   ) {
     return json({ error: "Roll response is invalid" }, 502);
   }
+  let renderModel: PublicRenderModelV4 | undefined;
+  let appearanceIdentities: string[][];
+  let rerolledAppearanceIdentities: string[];
+  try {
+    const groupSizes = roll.diceArray.map((group) => {
+      if (!Array.isArray(group)) {
+        throw new Error("Roll dice groups are invalid");
+      }
+      return group.length;
+    });
+    if (roll.resultArray.length !== groupSizes.length) {
+      throw new Error("Roll result groups are invalid");
+    }
+    renderModel = parseOptionalRenderModel(roll);
+    appearanceIdentities = parseAppearanceIdentities(
+      roll.appearanceIdentities,
+      groupSizes,
+    );
+    rerolledAppearanceIdentities = parseRerolledAppearanceIdentities(
+      roll.rerolledAppearanceIdentities,
+      appearanceIdentities,
+    );
+    if (
+      renderModel !== undefined &&
+      renderModel.groups.some(
+        (group, index) => group.length !== groupSizes[index],
+      )
+    ) {
+      throw new Error("Roll render model groups are invalid");
+    }
+  } catch {
+    return json({ error: "Roll response is invalid" }, 502);
+  }
+  const renderedImage = {
+    contentType: "image/png",
+    width: roll.renderedImage.width,
+    height: roll.renderedImage.height,
+    base64: bytesToBase64(roll.renderedImage.png),
+  };
+  const renderModelResponse =
+    renderModel === undefined ? {} : { renderModel };
   const delivery = await env.DISCORD_REST.deliverWebRoll({
     guildId: value.guildId,
     channelId: value.channelId,
@@ -1073,6 +1591,10 @@ async function postWebRoll(
           "Dice Witch needs permission to read message history, attach files, and embed links to show you the dice. 😊",
         diceArray: roll.diceArray,
         resultArray: roll.resultArray,
+        appearanceIdentities,
+        rerolledAppearanceIdentities,
+        renderedImage,
+        ...renderModelResponse,
       },
       403,
     );
@@ -1081,6 +1603,10 @@ async function postWebRoll(
     message: "Message sent to Discord channel",
     diceArray: roll.diceArray,
     resultArray: roll.resultArray,
+    appearanceIdentities,
+    rerolledAppearanceIdentities,
+    renderedImage,
+    ...renderModelResponse,
   });
 }
 
@@ -1143,6 +1669,135 @@ export async function handleAuthRequest(
     }
     if (request.method === "OPTIONS") {
       return preflight(request, configuration, pathname);
+    }
+    if (
+      request.method === "GET" &&
+      (pathname === "/api/appearance/catalog" ||
+        pathname === "/api/appearance/v2/catalog" ||
+        pathname === "/api/appearance/v3/catalog")
+    ) {
+      if (!isFrontendRequest(request, configuration)) {
+        return json({ error: "Forbidden" }, 403);
+      }
+      if (
+        pathname === "/api/appearance/v3/catalog" &&
+        !hasExactCatalogBuild(requestUrl, configuration.BUILD_SHA)
+      ) {
+        const response = json(
+          { error: "appearance_catalog_build_mismatch" },
+          409,
+        );
+        return request.headers.has("origin")
+          ? withCors(response, configuration)
+          : response;
+      }
+      const catalog = appearanceCatalogForPath(pathname);
+      const response = Response.json(catalog, {
+        headers: {
+          ...securityHeaders,
+          "cache-control":
+            pathname === "/api/appearance/v3/catalog"
+              ? "public, max-age=31536000, immutable"
+              : "public, max-age=3600",
+        },
+      });
+      return request.headers.has("origin")
+        ? withCors(response, configuration)
+        : response;
+    }
+    if (
+      (pathname === "/api/appearance/me" ||
+        pathname === "/api/appearance/v2/me" ||
+        pathname === "/api/appearance/v3/me") &&
+      (request.method === "GET" || request.method === "PUT")
+    ) {
+      const exactOrigin =
+        request.headers.get("origin") === configuration.FRONTEND_ORIGIN;
+      const appearanceVersion = appearanceVersionForPath(pathname);
+      if (
+        (request.method === "GET" &&
+          !isFrontendRequest(request, configuration)) ||
+        (request.method === "PUT" && !exactOrigin)
+      ) {
+        return json(
+          {
+            error:
+              appearanceVersion === 3
+                ? "appearance_origin_forbidden"
+                : "Forbidden",
+          },
+          403,
+        );
+      }
+      const authentication = await authenticateSession(request, env, now);
+      if (!authentication.authenticated) {
+        const response =
+          appearanceVersion === 3
+            ? v3AppearanceAccessError(
+                authentication.response.status === 401
+                  ? "authentication"
+                  : "service",
+                authentication.response,
+              )
+            : authentication.response;
+        return exactOrigin ? withCors(response, configuration) : response;
+      }
+      const response =
+        request.method === "GET"
+          ? await getPersonalAppearanceForVersion(
+              appearanceVersion,
+              env.DATA_SERVICE,
+              authentication.session.user.id,
+            )
+          : await putPersonalAppearanceForVersion(
+              appearanceVersion,
+              request,
+              env.DATA_SERVICE,
+              authentication.session.user.id,
+              now,
+            );
+      return exactOrigin ? withCors(response, configuration) : response;
+    }
+    if (
+      request.method === "POST" &&
+      (pathname === "/api/appearance/preview" ||
+        pathname === "/api/appearance/v2/preview" ||
+        pathname === "/api/appearance/v3/preview")
+    ) {
+      const appearanceVersion = appearanceVersionForPath(pathname);
+      if (request.headers.get("origin") !== configuration.FRONTEND_ORIGIN) {
+        return json(
+          {
+            error:
+              appearanceVersion === 3
+                ? "appearance_origin_forbidden"
+                : "Forbidden",
+          },
+          403,
+        );
+      }
+      const authentication = await authenticateSession(request, env, now);
+      if (!authentication.authenticated) {
+        const response =
+          appearanceVersion === 3
+            ? v3AppearanceAccessError(
+                authentication.response.status === 401
+                  ? "authentication"
+                  : "service",
+                authentication.response,
+              )
+            : authentication.response;
+        return withCors(response, configuration);
+      }
+      let response: Response;
+      if (appearanceVersion === 3) {
+        response = await previewAppearanceV3(request, env.ROLL_WEB);
+      } else if (appearanceVersion === 2) {
+        response = await previewAppearanceV2(request, env.ROLL_WEB);
+      } else {
+        response = await previewAppearance(request, env.ROLL_WEB);
+      }
+      return withCors(response, configuration);
     }
     if (request.method === "GET" && pathname === "/api/stats/public") {
       const response = await env.DATA_SERVICE.fetch(
@@ -1212,6 +1867,63 @@ export async function handleAuthRequest(
         ? withCors(response, configuration)
         : response;
     }
+    const appearanceMatch = pathname.match(
+      /^\/api\/guilds\/([1-9][0-9]{16,19})\/appearance(?:\/(v[23]))?$/,
+    );
+    if (
+      appearanceMatch !== null &&
+      (request.method === "GET" || request.method === "PUT")
+    ) {
+      const guildId = appearanceMatch[1];
+      if (guildId === undefined) {
+        return json({ error: "Guild id is invalid" }, 400);
+      }
+      const exactOrigin =
+        request.headers.get("origin") === configuration.FRONTEND_ORIGIN;
+      const appearanceVersion = appearanceVersionForPath(pathname);
+      if (
+        (request.method === "GET" &&
+          !isFrontendRequest(request, configuration)) ||
+        (request.method === "PUT" && !exactOrigin)
+      ) {
+        return json(
+          {
+            error:
+              appearanceVersion === 3
+                ? "appearance_origin_forbidden"
+                : "Forbidden",
+          },
+          403,
+        );
+      }
+      const authorization = await authorizeGuild(request, env, guildId, now);
+      if (!authorization.authorized) {
+        const response =
+          appearanceVersion === 3
+            ? v3AppearanceAccessError(
+                authorization.reason,
+                authorization.response,
+              )
+            : authorization.response;
+        return exactOrigin ? withCors(response, configuration) : response;
+      }
+      const response =
+        request.method === "GET"
+          ? await getGuildAppearanceForVersion(
+              appearanceVersion,
+              env.DATA_SERVICE,
+              guildId,
+            )
+          : await putGuildAppearanceForVersion(
+              appearanceVersion,
+              request,
+              env.DATA_SERVICE,
+              guildId,
+              authorization.userId,
+              now,
+            );
+      return exactOrigin ? withCors(response, configuration) : response;
+    }
     const preferenceMatch = pathname.match(
       /^\/api\/guilds\/([1-9][0-9]{16,19})\/preferences$/,
     );
@@ -1233,18 +1945,29 @@ export async function handleAuthRequest(
         return json({ error: "Forbidden" }, 403);
       }
       const authorization = await authorizeGuild(request, env, guildId, now);
-      if (!authorization.authorized) return authorization.response;
+      if (!authorization.authorized) {
+        return exactOrigin
+          ? withCors(authorization.response, configuration)
+          : authorization.response;
+      }
       const response =
         request.method === "GET"
           ? await getGuildPreferences(env, guildId)
           : await patchGuildPreferences(request, env, guildId, now);
       return exactOrigin ? withCors(response, configuration) : response;
     }
-    if (request.method === "POST" && pathname === "/api/dice/roll") {
+    if (
+      request.method === "POST" &&
+      (pathname === "/api/dice/prepare" || pathname === "/api/dice/roll")
+    ) {
       if (request.headers.get("origin") !== configuration.FRONTEND_ORIGIN) {
         return json({ error: "Forbidden" }, 403);
       }
-      return withCors(await postWebRoll(request, env, now), configuration);
+      const response =
+        pathname === "/api/dice/prepare"
+          ? await postWebRollPreparation(request, env, now)
+          : await postWebRoll(request, env, now);
+      return withCors(response, configuration);
     }
     if (request.method === "POST" && pathname === "/api/auth/signout") {
       const response = await signOut(request, env, configuration, now);

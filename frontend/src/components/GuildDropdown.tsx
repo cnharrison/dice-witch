@@ -5,7 +5,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
 import { Guild } from "@/types/guild";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -14,15 +13,16 @@ interface GuildDropdownProps {
   guilds?: Guild[];
   value?: string;
   onValueChange?: (value: string) => void;
+  ariaLabel?: string;
 }
 
-export function GuildDropdown({ guilds = [], value, onValueChange }: GuildDropdownProps) {
+export function GuildDropdown({ guilds = [], value, onValueChange, ariaLabel }: GuildDropdownProps) {
   const adminGuilds = guilds.filter(guild => guild.isAdmin || guild.isDiceWitchAdmin);
   const selectedGuild = adminGuilds.find(guild => guild.guilds.id === value);
 
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="w-[300px]">
+      <SelectTrigger className="w-[300px]" aria-label={ariaLabel}>
         <div className="flex items-center w-full">
           {selectedGuild ? (
             <>

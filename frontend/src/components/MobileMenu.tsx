@@ -30,6 +30,7 @@ export function MobileMenu() {
     
     return (
       <svg 
+        aria-hidden="true"
         className={className}
         width="40" 
         height="40" 
@@ -54,6 +55,7 @@ export function MobileMenu() {
           variant="ghost" 
           size="icon"
           className="h-12 w-12 p-0"
+          aria-label="Open navigation menu"
           onClick={() => setOpen(true)}
         >
           <D20SVG />

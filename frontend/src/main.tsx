@@ -4,19 +4,10 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from './lib/AuthProvider';
-import { appConfig } from './lib/config';
+import { customFetch } from './lib/api';
 import './index.css'
 import App from './App'
 
-
-export const customFetch = async (url: string, options: RequestInit = {}) => {
-  const isApiUrl = url.startsWith('/api');
-  const fullUrl = isApiUrl ? `${appConfig.apiBase}${url}` : url;
-  return fetch(fullUrl, {
-    ...options,
-    credentials: 'include'
-  });
-};
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,7 +17,7 @@ const queryClient = new QueryClient({
       retry: 1,
       refetchOnWindowFocus: false,
       queryFn: async ({ queryKey }) => {
-        const [url, params] = Array.isArray(queryKey) ? queryKey : [queryKey, {}];
+        const [url] = Array.isArray(queryKey) ? queryKey : [queryKey];
         if (typeof url !== 'string') return null;
 
         const response = await customFetch(url);

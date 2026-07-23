@@ -15,6 +15,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, projectDirectory, "");
   requireBuildValue("VITE_API_BASE", env.VITE_API_BASE);
   requireBuildValue("VITE_DISCORD_CLIENT_ID", env.VITE_DISCORD_CLIENT_ID);
+  requireBuildValue("VITE_ENVIRONMENT", env.VITE_ENVIRONMENT);
+  requireBuildValue("VITE_BUILD_SHA", env.VITE_BUILD_SHA);
 
   return {
     plugins: [react()],

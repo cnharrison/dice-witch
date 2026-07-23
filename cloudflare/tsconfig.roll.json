@@ -6,6 +6,7 @@
     "workers/roll/**/*.ts",
     "packages/roll-domain/**/*.ts",
     "packages/roll-render-model/**/*.ts",
+    "packages/dice-canvaskit/src/assets.d.ts",
     "packages/dice-svg/**/*.ts",
     "packages/discord-contracts/**/*.ts",
     "tests/roll/**/*.ts",

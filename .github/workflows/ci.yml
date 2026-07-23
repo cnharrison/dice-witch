@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VITE_API_BASE: https://ci.invalid
+      VITE_DISCORD_CLIENT_ID: "100000000000000001"
+      VITE_ENVIRONMENT: development
+      VITE_BUILD_SHA: ${{ github.sha }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+          cache: npm
+
+      - name: Set up npm
+        run: npm install --global npm@11.6.2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Lint with warning budget
+        run: npm run lint:ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Dry-run all Workers
+        working-directory: cloudflare
+        run: |
+          set -euo pipefail
+          for worker in data discord-rest roll gateway interactions web-api; do
+            npx --no-install wrangler deploy \
+              --dry-run \
+              --config "wrangler.${worker}.example.jsonc"
+          done

@@ -1,9 +1,10 @@
-import type {
-  IconName,
-  PatternName,
-  RenderDie,
-  RenderFill,
-  RenderRequest,
+import {
+  PATTERN_NAMES_V1_V2,
+  type IconName,
+  type PatternNameV1V2,
+  type RenderDie,
+  type RenderFill,
+  type RenderRequest,
 } from "./types";
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -20,18 +21,7 @@ const ICON_NAMES = new Set<IconName>([
   "unique",
   "blank",
 ]);
-const PATTERN_NAMES = new Set<PatternName>([
-  "checkerboard",
-  "dots",
-  "stripes",
-  "stars",
-  "zigzag",
-  "triangles",
-  "honeycomb",
-  "circuit",
-  "crosshatch",
-  "swirl",
-]);
+const PATTERN_NAMES: ReadonlySet<string> = new Set(PATTERN_NAMES_V1_V2);
 
 function assertRecord(value: unknown, path: string): asserts value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -97,9 +87,9 @@ function parseFill(value: unknown, path: string): RenderFill {
   if (
     value.type === "pattern" &&
     typeof value.pattern === "string" &&
-    PATTERN_NAMES.has(value.pattern as PatternName)
+    PATTERN_NAMES.has(value.pattern)
   ) {
-    return { type: "pattern", pattern: value.pattern as PatternName };
+    return { type: "pattern", pattern: value.pattern as PatternNameV1V2 };
   }
   throw new Error(`${path} must select gradient or a supported pattern`);
 }

@@ -1,0 +1,152 @@
+import { describe, expect, it } from "vitest";
+import {
+  D20_STANDARD_GEOMETRY_R2_V4,
+  D20_STANDARD_GEOMETRY_V4,
+  GEOMETRY_IDS_V4,
+  getGeometryIdV4,
+  getRenderGeometryDescriptorV4,
+  getRenderGeometryIdV4,
+  type PolyhedralGeometryDescriptorV4,
+  type SphericalGeometryDescriptorV4,
+} from "../src";
+
+describe("V4 geometry contract", () => {
+  it("assigns a base geometry to every target and registers additive descriptors", () => {
+    expect(GEOMETRY_IDS_V4).toHaveLength(34);
+    expect(new Set(GEOMETRY_IDS_V4)).toHaveLength(34);
+    expect(getGeometryIdV4("d6", "standard")).toBe("d6-standard-r1");
+    expect(getGeometryIdV4("d20", "crystal-cut")).toBe(
+      "d20-crystal-cut-r1",
+    );
+    expect(getGeometryIdV4("percentile", "hollow-cage")).toBe(
+      "percentile-hollow-cage-r1",
+    );
+    expect(getGeometryIdV4("other", "sphere")).toBe("other-sphere-r1");
+    expect(GEOMETRY_IDS_V4).toContain("d20-standard-r2");
+  });
+
+  it("selects immutable geometry by renderer revision without a renderer-local rule", () => {
+    const standardD20 = { target: "d20", form: "standard" } as const;
+
+    expect(getRenderGeometryIdV4("canvaskit-v4-r1", standardD20)).toBe(
+      "d20-standard-r1",
+    );
+    expect(getRenderGeometryIdV4("canvaskit-v4-r2", standardD20)).toBe(
+      "d20-standard-r1",
+    );
+    expect(getRenderGeometryIdV4("canvaskit-v4-r3", standardD20)).toBe(
+      "d20-standard-r2",
+    );
+    expect(getRenderGeometryIdV4("canvaskit-v4-r4", standardD20)).toBe(
+      "d20-standard-r2",
+    );
+    expect(getRenderGeometryIdV4("canvaskit-v4-r5", standardD20)).toBe(
+      "d20-standard-r2",
+    );
+    expect(getRenderGeometryIdV4("canvaskit-v4-r6", standardD20)).toBe(
+      "d20-standard-r2",
+    );
+    expect(getRenderGeometryIdV4("canvaskit-v4-r7", standardD20)).toBe(
+      "d20-standard-r2",
+    );
+    expect(
+      getRenderGeometryDescriptorV4("canvaskit-v4-r3", standardD20),
+    ).toBe(D20_STANDARD_GEOMETRY_R2_V4);
+    expect(
+      getRenderGeometryDescriptorV4("canvaskit-v4-r4", standardD20),
+    ).toBe(D20_STANDARD_GEOMETRY_R2_V4);
+    expect(
+      getRenderGeometryDescriptorV4("canvaskit-v4-r5", standardD20),
+    ).toBe(D20_STANDARD_GEOMETRY_R2_V4);
+    expect(
+      getRenderGeometryDescriptorV4("canvaskit-v4-r6", standardD20),
+    ).toBe(D20_STANDARD_GEOMETRY_R2_V4);
+    expect(
+      getRenderGeometryDescriptorV4("canvaskit-v4-r7", standardD20),
+    ).toBe(D20_STANDARD_GEOMETRY_R2_V4);
+    expect(
+      getRenderGeometryDescriptorV4("canvaskit-v4-r2", standardD20),
+    ).toBe(D20_STANDARD_GEOMETRY_V4);
+    expect(
+      getRenderGeometryIdV4("canvaskit-v4-r3", {
+        target: "d20",
+        form: "sharp",
+      }),
+    ).toBe("d20-sharp-r1");
+    expect(() =>
+      getRenderGeometryIdV4(
+        "unsupported" as "canvaskit-v4-r3",
+        standardD20,
+      ),
+    ).toThrow("Render request rendererRevision is not supported");
+  });
+
+  it("expresses polyhedral and spherical descriptors without runtime objects", () => {
+    const polyhedral: PolyhedralGeometryDescriptorV4 = {
+      version: 1,
+      id: "d6-standard-r1",
+      kind: "polyhedral",
+      target: "d6",
+      form: "standard",
+      vertices: [{ position: [0, 0, 0] }],
+      faces: [
+        {
+          id: "front",
+          normal: [0, 0, 1],
+          vertexIndices: [0, 0, 0],
+          skinCoordinates: [
+            [0, 0],
+            [1, 0],
+            [0, 1],
+          ],
+          labels: [
+            {
+              value: 1,
+              alignment: "surface",
+              origin: [0, 0, 0],
+              right: [1, 0, 0],
+              up: [0, 1, 0],
+              maxWidth: 1,
+              maxHeight: 1,
+              opticalInset: 0,
+            },
+          ],
+        },
+      ],
+      skinMapping: { kind: "face-coordinates" },
+      resultOrientations: [{ result: 1, rotation: [0, 0, 0, 1] }],
+      camera: {
+        position: [0, 0, 3],
+        target: [0, 0, 0],
+        up: [0, 1, 0],
+        orthographicHeight: 2,
+      },
+    };
+    const sphere: SphericalGeometryDescriptorV4 = {
+      version: 1,
+      id: "other-sphere-r1",
+      kind: "sphere",
+      target: "other",
+      form: "sphere",
+      radius: 1,
+      skinMapping: "spherical-inverse-v1",
+      labelFrame: {
+        origin: [0, 0, 1],
+        right: [1, 0, 0],
+        up: [0, 1, 0],
+        maxWidth: 1,
+        maxHeight: 1,
+        opticalInset: 0,
+      },
+      camera: {
+        position: [0, 0, 3],
+        target: [0, 0, 0],
+        up: [0, 1, 0],
+        orthographicHeight: 2,
+      },
+    };
+
+    expect(polyhedral.faces[0]?.skinCoordinates[1]).toEqual([1, 0]);
+    expect(sphere.skinMapping).toBe("spherical-inverse-v1");
+  });
+});

@@ -1,0 +1,37 @@
+export const APPROVED_D20_R3_REVIEW_PNG_SHA256_V4 =
+  "670b822c9b83d51e95f282f9a59f29c3afbb1546deb7bbae5142e4c710438582";
+
+export const APPROVED_D20_R3_ORIENTATION_MARK_PNG_SHA256_V4 = Object.freeze({
+  6: "cea5139616716021d70182611e7d05fff8f805c64a18d73dbb564e0dc88dcac9",
+  9: "509fe928dcebf301509de6bf0b4c11af3574304a1f1c8d8d023de75cfb1d3273",
+});
+
+export const APPROVED_R5_CLASSIC_GRADIENT_PNG_SHA256_V4 =
+  "707afda1e7b9f33e6c5e93e0ed901bc8afae53cc0aab89532ec2141c3ee3cdc8";
+
+export const APPROVED_R6_PROJECTED_PATTERN_PNG_SHA256_V4 =
+  "68304e20a48cedcb35b24aafd183a37eb91a7c7a19736d543fb2f80f0cb2e687";
+
+export const APPROVED_R7_SURFACE_PATTERN_PNG_SHA256_V4 =
+  "5528175cd960657892ad8d6fc57013b49835d2e62da1a23b154ecf476376e096";
+
+export const APPROVED_R5_D4_ENGRAVING_PNG_SHA256_V4 = Object.freeze({
+  "matte-ink":
+    "12ca6a0615b0fef1344f6db0a419d9206522dce702b6a950c548a13e4c55ffb0",
+  enamel:
+    "be4bcf757fbad257c0b311953994316e12151d4e1350508ae12a778c6baf7c36",
+  metallic:
+    "fae1fb970fca6bc04939d0430ea14c116d92ece6c4e69b8ba83625371fba6b76",
+  luminous:
+    "5b03b103ef1d5b05b6d46aa33d2c16f594836d49537d8e43af76228e8a37966a",
+  void: "ec39d7142a3e2d4115a3cf57d2e5c5a53098e6708862a7ab854859e46e2b22cf",
+});
+
+export const APPROVED_GRADIENT_SCOPE_PNG_SHA256_V4 = Object.freeze({
+  "all-targets-die-wide":
+    "04a43bc639af0a7844bbf6247361d576035fe73029879da5ada19c4eed365eeb",
+  "all-targets-face-local":
+    "76a6266917b4ab68a8834bb071fac6cea21d9c6e8b56bdda34b32374be87de99",
+  "d20-face-local-directions":
+    "b2a855bf431c3c030c7c2b5b965f2b6c24fa71974fe6b4bf949c23c0f28ff08d",
+});

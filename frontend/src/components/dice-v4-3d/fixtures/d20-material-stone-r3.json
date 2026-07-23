@@ -1,0 +1,50 @@
+{
+  "version": 4,
+  "rendererRevision": "canvaskit-v4-r3",
+  "groups": [
+    [
+      {
+        "target": "d20",
+        "result": 20,
+        "form": "standard",
+        "appearance": {
+          "material": {
+            "family": "stone",
+            "stone": "marble",
+            "grainDensity": 36,
+            "finish": "honed",
+            "textureScale": 100
+          },
+          "palette": [
+            "#17161d",
+            "#66616f",
+            "#c8c0d0"
+          ],
+          "texture": {
+            "generatorId": "stone-v1",
+            "seed": 1832976389,
+            "scale": 100,
+            "rotation": 0,
+            "offsetU": 0,
+            "offsetV": 0,
+            "scope": "die-wide"
+          },
+          "lighting": {
+            "mode": "combined",
+            "strength": "gentle",
+            "direction": "upper-left"
+          },
+          "engraving": {
+            "fontId": "new-rocker",
+            "finish": "matte-ink",
+            "color": "#fff2c7"
+          },
+          "outlineColor": "#000000",
+          "requiresLocalSeparation": false,
+          "effect": null
+        },
+        "icons": []
+      }
+    ]
+  ]
+}

@@ -86,3 +86,36 @@
   background-color: rgba(68, 102, 90, 0.1) !important;
   color: #56877A !important;
 }
+
+@keyframes dice-witch-sparkle-twinkle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.68);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.dice-witch-sparkle {
+  animation: dice-witch-sparkle-twinkle 1.25s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.dice-witch-sparkle-two {
+  animation-delay: 160ms;
+}
+
+.dice-witch-sparkle-three {
+  animation-delay: 320ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dice-witch-sparkle {
+    animation: none;
+    opacity: 0.85;
+    transform: none;
+  }
+}
