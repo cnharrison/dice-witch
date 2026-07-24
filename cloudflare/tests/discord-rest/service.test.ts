@@ -176,7 +176,7 @@ describe("Discord REST service", () => {
       expect(payload.embeds).toHaveLength(1);
       expect(payload.embeds[0]?.description).toHaveLength(4_096);
       expect(payload.embeds[0]?.description).toContain("… from **roller");
-      expect(payload.embeds[0]?.footer?.text).toBe("No image for this roll");
+      expect(payload.embeds[0]?.footer).toBeUndefined();
       return Response.json({ id: "100000000000000088" });
     });
     const artifact = rollLogArtifact();

@@ -1094,17 +1094,13 @@ export async function deliverRollLogV1(
   if (description.length > 4_096) {
     throw new Error("Roll log description is invalid");
   }
-  let imagePresentation;
+  let imagePresentation = {};
   if (artifact.image.status === "available") {
     imagePresentation = {
       image: { url: `attachment://${artifact.image.filename}` },
     };
-  } else {
-    const footerText =
-      artifact.image.reason === "not-applicable"
-        ? "No image for this roll"
-        : "Image unavailable";
-    imagePresentation = { footer: { text: footerText } };
+  } else if (artifact.image.reason !== "not-applicable") {
+    imagePresentation = { footer: { text: "Image unavailable" } };
   }
   const payload = {
     embeds: [
