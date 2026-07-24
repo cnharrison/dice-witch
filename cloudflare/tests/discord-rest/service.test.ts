@@ -135,7 +135,7 @@ describe("Discord REST service", () => {
             title: "receivedCommand: /roll",
             color: 0x99_99_99,
             description:
-              "from **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 3]\n\n1d20: [20] = 20",
+              "user: **roller [from discord]**\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 3]\n\n1d20: [20] = 20",
             image: {
               url: "attachment://dice-1400000000000000001.png",
             },
@@ -183,7 +183,7 @@ describe("Discord REST service", () => {
       expect(payload.embeds[0]).toMatchObject({
         title: "receivedCommand: /roll",
         description:
-          "from **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 1]\n\n1d20: [20] = 20",
+          "user: **roller [from discord]**\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 1]\n\n**Enchanted sword**\n1d20: [20] = 20",
       });
       return Response.json({ id: "100000000000000088" });
     });
@@ -217,14 +217,26 @@ describe("Discord REST service", () => {
       const payload = await request.json<{
         attachments?: unknown;
         embeds: Array<{
+          color?: number;
+          title?: string;
           description?: string;
           footer?: { text: string };
         }>;
       }>();
       expect(payload.attachments).toBeUndefined();
       expect(payload.embeds).toHaveLength(1);
+      expect(payload.embeds[0]).toMatchObject({
+        color: 0xff_00_00,
+        title: "invalidRoll: /roll",
+      });
       expect(payload.embeds[0]?.description).toHaveLength(4_096);
-      expect(payload.embeds[0]?.description).toContain("…\nfrom **roller");
+      expect(payload.embeds[0]?.description).toMatch(
+        /^user: \*\*roller \[from discord\]\*\*\nchannel:/,
+      );
+      expect(payload.embeds[0]?.description).toContain("\nroll: ");
+      expect(payload.embeds[0]?.description).toContain(
+        "\n\n🚫🎲 Invalid dice notation!",
+      );
       expect(payload.embeds[0]?.footer).toBeUndefined();
       return Response.json({ id: "100000000000000088" });
     });
@@ -277,7 +289,7 @@ describe("Discord REST service", () => {
       };
       expect(payload.embeds).toHaveLength(1);
       expect(payload.embeds[0]?.description).toContain(
-        "channel **live\\-rolls**\non **Live Guild** [Shard 1]",
+        "channel: **live\\-rolls**\nguild: **Live Guild** [Shard 1]",
       );
       return Response.json({ id: "100000000000000088" });
     });

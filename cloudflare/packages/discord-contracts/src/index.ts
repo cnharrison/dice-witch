@@ -44,6 +44,7 @@ export {
   imageUnavailableLogArtifact,
   rollLogContextDescription,
   rollLogMetadataDescription,
+  rollLogResultDescription,
   storedLogArtifact,
   validateRollLogArtifact,
   type LogArtifactImageV1,

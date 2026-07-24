@@ -7,6 +7,7 @@ import {
   isDiscordRollChannelType,
   rollLogContextDescription,
   rollLogMetadataDescription,
+  rollLogResultDescription,
   validateRollLogArtifact,
   type DeliverRollLogInputV1,
   type DeliverRollLogResultV1,
@@ -42,6 +43,7 @@ const MAX_GUILDS_PER_STATS_RUN = 100_000;
 const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const ROLL_LOG_TITLE = "receivedCommand: /roll";
+const INVALID_ROLL_LOG_TITLE = "invalidRoll: /roll";
 const MAX_EMBED_CHARACTERS = 6_000;
 
 export type MembershipInspection =
@@ -1079,11 +1081,22 @@ function buildRollLogEmbed(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
 ) {
-  const resultDescription = artifact.payload.embeds?.[0]?.description;
+  const resultDescription = rollLogResultDescription(artifact);
+  const isInvalidRoll =
+    artifact.image.status === "unavailable" &&
+    artifact.image.reason === "not-applicable";
+  const errorDescription = isInvalidRoll ? artifact.payload.content : undefined;
+  const errorSuffix =
+    errorDescription === undefined ? "" : `\n\n${errorDescription}`;
   const description =
-    resultDescription === undefined
-      ? rollLogMetadataDescription(artifact, shard)
+    resultDescription === null
+      ? `${rollLogMetadataDescription(
+          artifact,
+          shard,
+          4_096 - errorSuffix.length,
+        )}${errorSuffix}`
       : `${rollLogContextDescription(artifact, shard)}\n\n${resultDescription}`;
+  const title = isInvalidRoll ? INVALID_ROLL_LOG_TITLE : ROLL_LOG_TITLE;
   const footer =
     artifact.image.status === "unavailable" &&
     artifact.image.reason !== "not-applicable"
@@ -1091,14 +1104,14 @@ function buildRollLogEmbed(
       : undefined;
   if (
     description.length > 4_096 ||
-    ROLL_LOG_TITLE.length + description.length + (footer?.text.length ?? 0) >
+    title.length + description.length + (footer?.text.length ?? 0) >
       MAX_EMBED_CHARACTERS
   ) {
     throw new Error("Roll log embed exceeds Discord's limits");
   }
   return {
-    color: 0x99_99_99,
-    title: ROLL_LOG_TITLE,
+    color: isInvalidRoll ? 0xff_00_00 : 0x99_99_99,
+    title,
     description,
     ...(footer === undefined ? {} : { footer }),
     ...(artifact.image.status === "available"

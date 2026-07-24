@@ -293,20 +293,6 @@ function escapeDiscordMarkdown(value: string): string {
   return escaped;
 }
 
-function rollLogLocation(artifact: RollLogArtifactV1): string {
-  if (artifact.guildId === null) return "**DM**";
-  if (artifact.context === null) {
-    return "an **unavailable channel/server**";
-  }
-  if (artifact.context.kind !== "guild") {
-    throw new Error("Roll log guild context is invalid");
-  }
-  const channelType = [10, 11, 12].includes(artifact.context.channelType)
-    ? "thread"
-    : "channel";
-  return `${channelType} **${escapeDiscordMarkdown(artifact.context.channelName)}**\non **${escapeDiscordMarkdown(artifact.context.guildName)}**`;
-}
-
 function rollLogShardLabel(shard: RollLogShardV1): string | null {
   if (shard.status === "not-applicable") return null;
   if (shard.status === "unavailable") return "[Shard unavailable]";
@@ -317,9 +303,32 @@ export function rollLogContextDescription(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
 ): string {
+  const user = `user: **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]**`;
+  if (artifact.guildId === null) return `${user}\nchannel: **DM**`;
+
   const shardLabel = rollLogShardLabel(shard);
   const shardSuffix = shardLabel === null ? "" : ` ${shardLabel}`;
-  return `from **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]**\nin ${rollLogLocation(artifact)}${shardSuffix}`;
+  if (artifact.context === null) {
+    return `${user}\nchannel: **unavailable**\nguild: **unavailable**${shardSuffix}`;
+  }
+  if (artifact.context.kind !== "guild") {
+    throw new Error("Roll log guild context is invalid");
+  }
+  return `${user}\nchannel: **${escapeDiscordMarkdown(artifact.context.channelName)}**\nguild: **${escapeDiscordMarkdown(artifact.context.guildName)}**${shardSuffix}`;
+}
+
+export function rollLogResultDescription(
+  artifact: RollLogArtifactV1,
+): string | null {
+  const result = artifact.payload.embeds?.[0];
+  if (result === undefined) return null;
+  const lines = [
+    result.title === undefined
+      ? undefined
+      : `**${escapeDiscordMarkdown(result.title)}**`,
+    result.description,
+  ].filter((line): line is string => line !== undefined);
+  return lines.length === 0 ? null : lines.join("\n");
 }
 
 export function rollLogMetadataDescription(
@@ -334,9 +343,9 @@ export function rollLogMetadataDescription(
   ) {
     throw new Error("Roll log metadata limit is invalid");
   }
-  const suffix = `\n${rollLogContextDescription(artifact, shard)}`;
+  const prefix = `${rollLogContextDescription(artifact, shard)}\nroll: `;
   const notation = escapeDiscordMarkdown(artifact.notation);
-  const notationLimit = maximumLength - suffix.length;
+  const notationLimit = maximumLength - prefix.length;
   if (notationLimit < 2) {
     throw new Error("Roll log metadata suffix is too long");
   }
@@ -344,7 +353,7 @@ export function rollLogMetadataDescription(
     notation.length <= notationLimit
       ? notation
       : `${notation.slice(0, notationLimit - 1)}…`;
-  return `${displayedNotation}${suffix}`;
+  return `${prefix}${displayedNotation}`;
 }
 
 function embedCharacters(embeds: readonly DiscordEmbed[]): number {
