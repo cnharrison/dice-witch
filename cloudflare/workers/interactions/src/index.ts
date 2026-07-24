@@ -1,5 +1,6 @@
 import { readWorkerSecret, type WorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
+  buildEditOriginalResponse,
   buildKnowledgeBaseResponse,
   buildRollDeliveryPayload,
   buildStaticCommandResponse,
@@ -62,6 +63,12 @@ type RollWorkAcceptanceStub = {
   acceptDelivery(value: unknown): Promise<unknown>;
 };
 
+type DeferredRoll = {
+  id: string;
+  applicationId: string;
+  token: string;
+};
+
 function isAcceptedRollDelivery(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -70,9 +77,52 @@ function isAcceptedRollDelivery(value: unknown): boolean {
   );
 }
 
+async function acceptDeferredRoll(
+  stub: RollWorkAcceptanceStub,
+  payload: unknown,
+  roll: DeferredRoll,
+): Promise<void> {
+  try {
+    const accepted = await stub.acceptDelivery(payload);
+    if (isAcceptedRollDelivery(accepted)) return;
+  } catch {
+    // The deferred response still needs an explicit terminal error.
+  }
+  console.error(
+    JSON.stringify({
+      level: "error",
+      message: "Deferred roll acceptance failed",
+    }),
+  );
+  try {
+    const response = await fetch(
+      buildEditOriginalResponse(roll, {
+        content: "This roll could not be accepted. Please try again.",
+      }),
+    );
+    if (!response.ok) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "Deferred roll error delivery failed",
+          httpStatus: response.status,
+        }),
+      );
+    }
+  } catch {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "Deferred roll error delivery failed",
+      }),
+    );
+  }
+}
+
 export async function handleInteractionRequest(
   request: Request,
   env: InteractionEnv,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   if (request.method !== "POST" || url.pathname !== "/interactions") {
@@ -216,9 +266,14 @@ export async function handleInteractionRequest(
   const stub = env.ROLL_WORK.getByName(
     roll.id,
   ) as unknown as RollWorkAcceptanceStub;
+  const payload = buildRollDeliveryPayload(roll);
+  if (ctx !== undefined) {
+    ctx.waitUntil(acceptDeferredRoll(stub, payload, roll));
+    return json({ type: 5 });
+  }
   let accepted: unknown;
   try {
-    accepted = await stub.acceptDelivery(buildRollDeliveryPayload(roll));
+    accepted = await stub.acceptDelivery(payload);
   } catch {
     return interactionError("This roll could not be accepted. Please try again.");
   }
@@ -229,7 +284,7 @@ export async function handleInteractionRequest(
 }
 
 export default {
-  fetch(request, env): Promise<Response> {
-    return handleInteractionRequest(request, env);
+  fetch(request, env, ctx): Promise<Response> {
+    return handleInteractionRequest(request, env, ctx);
   },
 } satisfies ExportedHandler<InteractionEnv>;
