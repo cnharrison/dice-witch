@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runStagingSmoke } from "./staging-smoke.mjs";
+import {
+  runStagingSmoke,
+  runStagingSmokeWithPropagationRetry,
+} from "./staging-smoke.mjs";
 
 const expectedSha = "a".repeat(40);
 const targets = {
@@ -90,6 +93,34 @@ test("rejects a staging Roll Worker that is not emitting V4", async () => {
     }),
     /roll health response is invalid/,
   );
+});
+
+test("retries temporary metadata propagation mismatch", async () => {
+  let metadataRequests = 0;
+  const waits = [];
+  const result = await runStagingSmokeWithPropagationRetry(
+    targets,
+    async (url) => {
+      if (url.endsWith("/api/meta")) {
+        metadataRequests += 1;
+        return Response.json({
+          environment: "staging",
+          build: {
+            sha: metadataRequests === 1 ? "b".repeat(40) : expectedSha,
+            time: "2026-07-15T12:00:00.000Z",
+          },
+        });
+      }
+      return responseFor(url);
+    },
+    async (milliseconds) => {
+      waits.push(milliseconds);
+    },
+  );
+
+  assert.equal(result.status, "passed");
+  assert.equal(metadataRequests, 2);
+  assert.deepEqual(waits, [3_000]);
 });
 
 test("rejects a different deployed SHA", async () => {

@@ -4,6 +4,8 @@ import { pathToFileURL } from "node:url";
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const CLI_USAGE =
   "Usage: node tools/staging-smoke.mjs --web-origin <url> --roll-origin <url> --gateway-origin <url> --expected-sha <full-sha>";
+const PROPAGATION_ATTEMPTS = 6;
+const PROPAGATION_RETRY_MS = 3_000;
 
 function parseHttpsOrigin(name, value) {
   if (typeof value !== "string") {
@@ -184,6 +186,28 @@ export async function runStagingSmoke(targets, fetchImplementation = fetch) {
   return { status: "passed", checks };
 }
 
+export async function runStagingSmokeWithPropagationRetry(
+  targets,
+  fetchImplementation = fetch,
+  wait = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+) {
+  for (let attempt = 1; attempt <= PROPAGATION_ATTEMPTS; attempt += 1) {
+    try {
+      return await runStagingSmoke(targets, fetchImplementation);
+    } catch (error) {
+      const isPropagationMismatch =
+        error instanceof Error &&
+        error.message === "metadata SHA does not match the expected source SHA";
+      if (!isPropagationMismatch || attempt === PROPAGATION_ATTEMPTS) {
+        throw error;
+      }
+      await wait(PROPAGATION_RETRY_MS);
+    }
+  }
+  throw new Error("Staging smoke retry state is invalid");
+}
+
 function parseArguments(arguments_) {
   const values = {};
   for (let index = 0; index < arguments_.length; index += 2) {
@@ -214,7 +238,9 @@ function parseArguments(arguments_) {
 }
 
 async function main() {
-  const result = await runStagingSmoke(parseArguments(process.argv.slice(2)));
+  const result = await runStagingSmokeWithPropagationRetry(
+    parseArguments(process.argv.slice(2)),
+  );
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
