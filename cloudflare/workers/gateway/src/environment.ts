@@ -22,6 +22,9 @@ export type GatewayEnv = Omit<
   GATEWAY_ALLOWED_HOSTNAME: string;
   GATEWAY_FLEET_CONNECTION_CAPACITY: string;
   DISCORD_REST: {
+    captureAudienceSnapshotV1(input: {
+      shardCount: number;
+    }): Promise<DiscordAudienceCaptureV1>;
     listCurrentGuildIdsPage(after: string | null): Promise<unknown>;
     logGuildLifecycle(input: unknown): Promise<unknown>;
     reportBotListStats(): Promise<{

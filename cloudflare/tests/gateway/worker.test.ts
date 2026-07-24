@@ -5,6 +5,7 @@ import {
 } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 import gatewayWorker, {
+  AUDIENCE_SNAPSHOT_CRON,
   BOT_LIST_STATS_CRON,
   type GatewayEnv,
   type GatewayFaultResult,
@@ -201,6 +202,18 @@ function environment() {
   const guildCountsByShard = Array.from({ length: 24 }, (_, index) =>
     index === 0 ? 1 : 0,
   );
+  const captureAudienceSnapshot = vi.fn<
+    GatewayEnv["DISCORD_REST"]["captureAudienceSnapshotV1"]
+  >(() =>
+    Promise.resolve({
+      version: 1 as const,
+      capturedAt: 1_720_000_000_000,
+      liveGuilds: 1,
+      estimatedGuildMemberships: 42,
+      shardCount: 24,
+      guildCountsByShard,
+    }),
+  );
   const reportBotListStats = vi.fn<
     GatewayEnv["DISCORD_REST"]["reportBotListStatsV1"]
   >(() =>
@@ -253,6 +266,7 @@ function environment() {
       getByName: vi.fn(),
     },
     DISCORD_REST: {
+      captureAudienceSnapshotV1: captureAudienceSnapshot,
       listCurrentGuildIdsPage,
       logGuildLifecycle: vi.fn(() =>
         Promise.resolve({ status: "delivered" }),
@@ -271,6 +285,7 @@ function environment() {
     DATA_SERVICE: { fetch: dataServiceFetch },
   } as unknown as GatewayEnv;
   return {
+    captureAudienceSnapshot,
     coordinator,
     dataServiceFetch,
     env,
@@ -449,6 +464,33 @@ describe("Gateway control Worker", () => {
     expect(stub.initializeControlPlane).toHaveBeenCalledOnce();
     expect(coordinator.checkRecommendation).toHaveBeenCalledWith(2);
     expect(stub.applyGenerationPlan).not.toHaveBeenCalled();
+  });
+
+  it("captures and persists staging audience snapshots without bot-list posts", async () => {
+    const {
+      captureAudienceSnapshot,
+      coordinator,
+      dataServiceFetch,
+      env,
+      reportBotListStats,
+    } = environment();
+    env.GATEWAY_MODE = "fleet";
+    const ctx = createExecutionContext();
+
+    gatewayWorker.scheduled(
+      createScheduledController({
+        cron: AUDIENCE_SNAPSHOT_CRON,
+        scheduledTime: new Date(1_720_000_000_000),
+      }),
+      env,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(captureAudienceSnapshot).toHaveBeenCalledWith({ shardCount: 24 });
+    expect(reportBotListStats).not.toHaveBeenCalled();
+    expect(dataServiceFetch).toHaveBeenCalledOnce();
+    expect(coordinator.checkRecommendation).not.toHaveBeenCalled();
   });
 
   it("reports bot-list statistics and persists the same audience capture", async () => {

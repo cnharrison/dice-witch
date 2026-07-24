@@ -5,6 +5,7 @@ import {
   type RollLogArtifactV1,
 } from "../../packages/discord-contracts/src";
 import {
+  captureAudienceSnapshot,
   deliverRollLogV1,
   deliverWebRoll,
   fetchPublicStats,
@@ -247,6 +248,29 @@ describe("Discord REST service", () => {
       guildCountsByShard: [1, 0],
     });
     expect(wait).toHaveBeenCalledWith(10);
+  });
+
+  it("captures an audience snapshot without calling bot-list APIs", async () => {
+    const discordFetch = vi.fn<(request: Request) => Promise<Response>>(() =>
+      Promise.resolve(
+        Response.json([{ id: guildId, approximate_member_count: 42 }]),
+      ),
+    );
+
+    await expect(
+      captureAudienceSnapshot(env, 2, discordFetch, audienceCapturedAt),
+    ).resolves.toEqual({
+      version: 1,
+      capturedAt: audienceCapturedAt,
+      liveGuilds: 1,
+      estimatedGuildMemberships: 42,
+      shardCount: 2,
+      guildCountsByShard: [1, 0],
+    });
+    expect(discordFetch).toHaveBeenCalledOnce();
+    expect(new URL(discordFetch.mock.calls[0]?.[0].url ?? "").hostname).toBe(
+      "discord.com",
+    );
   });
 
   it("reports the live guild total to both legacy bot listings", async () => {

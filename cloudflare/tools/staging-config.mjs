@@ -36,6 +36,7 @@ const WORKER_CONFIG_KEYS = {
   ],
   gateway: [
     ...COMMON_CONFIG_KEYS,
+    "triggers",
     "alias",
     "vars",
     "services",
@@ -274,6 +275,13 @@ function validateStaticWorkerConfiguration(errors, configs) {
   ];
   if (JSON.stringify(rules) !== JSON.stringify(expectedRules)) {
     errors.push("Roll asset rules are invalid");
+  }
+
+  if (
+    JSON.stringify(configs.gateway?.triggers) !==
+    JSON.stringify({ crons: ["*/5 * * * *"] })
+  ) {
+    errors.push("Gateway audience snapshot schedule is invalid");
   }
 
   const expectedGatewayMigrations = [

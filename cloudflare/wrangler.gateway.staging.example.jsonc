@@ -5,6 +5,9 @@
   "compatibility_date": "2026-07-10",
   "workers_dev": true,
   "preview_urls": false,
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
   "alias": {
     "crypto": "./packages/roll-domain/src/worker-crypto.ts"
   },

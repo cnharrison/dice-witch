@@ -386,6 +386,22 @@ async function postBotListStat(
   }
 }
 
+export async function captureAudienceSnapshot(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
+  shardCount: number,
+  discordFetch: RequestFetch = (request) => fetch(request),
+  capturedAt = Date.now(),
+): Promise<DiscordAudienceCaptureV1> {
+  if (!Number.isSafeInteger(capturedAt) || capturedAt < 0) {
+    throw new Error("Audience snapshot timestamp is invalid");
+  }
+  return {
+    version: DISCORD_AUDIENCE_SNAPSHOT_VERSION,
+    capturedAt,
+    ...(await fetchPublicStats(env, shardCount, discordFetch)),
+  };
+}
+
 export async function reportBotListStats(
   env: Pick<
     DiscordRestEnv,
@@ -407,15 +423,12 @@ export async function reportBotListStats(
   ) {
     throw new Error("Bot list reporting configuration is invalid");
   }
-  if (!Number.isSafeInteger(capturedAt) || capturedAt < 0) {
-    throw new Error("Bot list reporting timestamp is invalid");
-  }
-  const stats = await fetchPublicStats(env, shardCount, externalFetch);
-  const capture = {
-    version: DISCORD_AUDIENCE_SNAPSHOT_VERSION,
+  const capture = await captureAudienceSnapshot(
+    env,
+    shardCount,
+    externalFetch,
     capturedAt,
-    ...stats,
-  } satisfies DiscordAudienceCaptureV1;
+  );
   if (capture.liveGuilds === 0) {
     return {
       status: "skipped",
@@ -1294,6 +1307,15 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
       topggHttpStatus: result.topggHttpStatus,
       discordBotListHttpStatus: result.discordBotListHttpStatus,
     };
+  }
+
+  async captureAudienceSnapshotV1(
+    input: unknown,
+  ): Promise<DiscordAudienceCaptureV1> {
+    return captureAudienceSnapshot(
+      await this.botEnv(),
+      parseShardCountInput(input),
+    );
   }
 
   async reportBotListStatsV1(input: unknown): Promise<BotListReportResult> {

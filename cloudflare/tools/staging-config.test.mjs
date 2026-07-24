@@ -89,6 +89,7 @@ function validConfigs() {
     gateway: {
       ...baseConfig(gatewayName, "workers/gateway/src/index.ts"),
       workers_dev: true,
+      triggers: { crons: ["*/5 * * * *"] },
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
       vars: {
         DISCORD_APPLICATION_ID: applicationId,
@@ -199,7 +200,7 @@ test("allows only the staging suffix or an adopted poc suffix", () => {
   );
 });
 
-test("rejects routes, Crons, and undeclared bindings outside the staging contract", () => {
+test("rejects routes, unsafe Crons, and undeclared bindings outside the staging contract", () => {
   const routed = validConfigs();
   routed["web-api"].routes = [
     { pattern: "www.example.com", custom_domain: true },
@@ -213,7 +214,7 @@ test("rejects routes, Crons, and undeclared bindings outside the staging contrac
   scheduled.gateway.triggers = { crons: ["0 * * * *"] };
   assert.throws(
     () => validateStagingConfigs(scheduled),
-    /gateway contains unsupported configuration key: triggers/,
+    /Gateway audience snapshot schedule is invalid/,
   );
 
   const extraBinding = validConfigs();

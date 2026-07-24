@@ -26,6 +26,7 @@ import {
 } from "./environment";
 
 export const BOT_LIST_STATS_CRON = "30 */4 * * *";
+export const AUDIENCE_SNAPSHOT_CRON = "*/5 * * * *";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 
@@ -161,7 +162,9 @@ function isValidEnvironment(env: GatewayEnv): boolean {
     "reportBotListStats" in discordRest &&
     typeof discordRest.reportBotListStats === "function" &&
     "reportBotListStatsV1" in discordRest &&
-    typeof discordRest.reportBotListStatsV1 === "function"
+    typeof discordRest.reportBotListStatsV1 === "function" &&
+    "captureAudienceSnapshotV1" in discordRest &&
+    typeof discordRest.captureAudienceSnapshotV1 === "function"
   );
 }
 
@@ -187,6 +190,42 @@ async function persistAudienceSnapshot(
     throw new Error("Audience snapshot persistence failed");
   }
   parseDiscordAudienceSnapshotV1(value.snapshot);
+}
+
+async function captureAudienceSnapshot(env: GatewayEnv): Promise<void> {
+  const fleet = await env.GATEWAY_COORDINATOR.getByName(
+    GATEWAY_COORDINATOR_NAME,
+  ).fleetStatus();
+  if (
+    fleet.activeGeneration === null ||
+    fleet.activeShardCount === 0 ||
+    fleet.readyShardCount !== fleet.activeShardCount
+  ) {
+    console.log(
+      JSON.stringify({
+        level: "info",
+        message: "Audience snapshot capture skipped",
+        reason: "inactive-fleet",
+        phase: fleet.phase,
+        activeShardCount: fleet.activeShardCount,
+        readyShardCount: fleet.readyShardCount,
+      }),
+    );
+    return;
+  }
+  const capture = await env.DISCORD_REST.captureAudienceSnapshotV1({
+    shardCount: fleet.activeShardCount,
+  });
+  await persistAudienceSnapshot(env, capture);
+  console.log(
+    JSON.stringify({
+      level: "info",
+      message: "Audience snapshot capture completed",
+      liveGuilds: capture.liveGuilds,
+      estimatedGuildMemberships: capture.estimatedGuildMemberships,
+      shardCount: capture.shardCount,
+    }),
+  );
 }
 
 async function reportBotListStats(env: GatewayEnv): Promise<void> {
@@ -492,6 +531,10 @@ const gatewayWorker = {
     }
     if (controller.cron === BOT_LIST_STATS_CRON) {
       ctx.waitUntil(reportBotListStats(env));
+      return;
+    }
+    if (controller.cron === AUDIENCE_SNAPSHOT_CRON) {
+      ctx.waitUntil(captureAudienceSnapshot(env));
       return;
     }
     ctx.waitUntil(
