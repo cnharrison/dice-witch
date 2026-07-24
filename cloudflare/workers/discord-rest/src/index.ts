@@ -1059,10 +1059,22 @@ export async function deliverRollLogV1(
   let response: Response;
   if (artifact.image.status === "available") {
     const form = new FormData();
-    form.set("payload_json", JSON.stringify(payload));
+    form.set(
+      "payload_json",
+      JSON.stringify({
+        ...payload,
+        attachments: [
+          {
+            id: 0,
+            filename: artifact.image.filename,
+            description: "Rendered dice result",
+          },
+        ],
+      }),
+    );
     form.set(
       "files[0]",
-      new Blob([artifact.image.png], { type: "image/png" }),
+      new Blob([artifact.image.png.slice().buffer], { type: "image/png" }),
       artifact.image.filename,
     );
     response = await discordFetch(

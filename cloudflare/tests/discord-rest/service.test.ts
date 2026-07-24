@@ -105,6 +105,11 @@ describe("Discord REST service", () => {
         nonce: string;
         enforce_nonce: boolean;
         allowed_mentions: { parse: string[] };
+        attachments: Array<{
+          id: number;
+          filename: string;
+          description: string;
+        }>;
         embeds: Array<{ title?: string; description?: string }>;
       };
       expect(payload).toMatchObject({
@@ -112,6 +117,13 @@ describe("Discord REST service", () => {
         nonce: "log:1400000000000000001",
         enforce_nonce: true,
         allowed_mentions: { parse: [] },
+        attachments: [
+          {
+            id: 0,
+            filename: "dice-1400000000000000001.png",
+            description: "Rendered dice result",
+          },
+        ],
         embeds: [
           { title: "receivedCommand: /roll" },
           { description: "[20] = 20" },
