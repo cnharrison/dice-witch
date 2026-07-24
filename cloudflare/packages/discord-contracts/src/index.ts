@@ -42,6 +42,7 @@ export {
   LOG_WORK_RETRY_WINDOW_MS,
   MAX_LOG_ARTIFACT_PNG_BYTES,
   imageUnavailableLogArtifact,
+  rollLogContextDescription,
   rollLogMetadataDescription,
   storedLogArtifact,
   validateRollLogArtifact,

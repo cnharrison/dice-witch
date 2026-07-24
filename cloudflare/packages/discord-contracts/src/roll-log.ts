@@ -313,6 +313,15 @@ function rollLogShardLabel(shard: RollLogShardV1): string | null {
   return `[Shard ${String(shard.shardId + 1)}]`;
 }
 
+export function rollLogContextDescription(
+  artifact: RollLogArtifactV1,
+  shard: RollLogShardV1,
+): string {
+  const shardLabel = rollLogShardLabel(shard);
+  const shardSuffix = shardLabel === null ? "" : ` ${shardLabel}`;
+  return `from **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]**\nin ${rollLogLocation(artifact)}${shardSuffix}`;
+}
+
 export function rollLogMetadataDescription(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
@@ -325,9 +334,7 @@ export function rollLogMetadataDescription(
   ) {
     throw new Error("Roll log metadata limit is invalid");
   }
-  const shardLabel = rollLogShardLabel(shard);
-  const shardSuffix = shardLabel === null ? "" : ` ${shardLabel}`;
-  const suffix = `\nfrom **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]**\nin ${rollLogLocation(artifact)}${shardSuffix}`;
+  const suffix = `\n${rollLogContextDescription(artifact, shard)}`;
   const notation = escapeDiscordMarkdown(artifact.notation);
   const notationLimit = maximumLength - suffix.length;
   if (notationLimit < 2) {

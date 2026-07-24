@@ -133,17 +133,15 @@ describe("Discord REST service", () => {
         embeds: [
           {
             title: "receivedCommand: /roll",
-            color: 0x96_6f_33,
-            footer: { text: "sent to roller via discord" },
+            color: 0x99_99_99,
+            description:
+              "from **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 3]\n\n1d20: [20] = 20",
             image: {
               url: "attachment://dice-1400000000000000001.png",
             },
           },
         ],
       });
-      expect(payload.embeds[0]?.description).toBe(
-        "1d20: [20] = 20\n\n1d20\nfrom **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 3]",
-      );
       expect(payload.embeds).toHaveLength(1);
       expect(payload).not.toHaveProperty("content");
       expect(JSON.stringify(payload)).not.toContain("[HTTP]");
@@ -168,7 +166,7 @@ describe("Discord REST service", () => {
     ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
   });
 
-  it("preserves an optional result title inside the single log embed", async () => {
+  it("keeps one log embed when the result has an optional title", async () => {
     const artifact = rollLogArtifact();
     const resultEmbed = artifact.payload.embeds?.[0];
     if (resultEmbed === undefined) throw new Error("Result embed fixture is missing");
@@ -183,9 +181,9 @@ describe("Discord REST service", () => {
       };
       expect(payload.embeds).toHaveLength(1);
       expect(payload.embeds[0]).toMatchObject({
-        title: "Enchanted sword",
+        title: "receivedCommand: /roll",
         description:
-          "1d20: [20] = 20\n\nreceivedCommand: /roll\n1d20\nfrom **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 1]",
+          "from **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 1]\n\n1d20: [20] = 20",
       });
       return Response.json({ id: "100000000000000088" });
     });

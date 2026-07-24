@@ -5,6 +5,7 @@ import {
   DISCORD_AUDIENCE_SNAPSHOT_VERSION,
   DISCORD_GLOBAL_COMMANDS,
   isDiscordRollChannelType,
+  rollLogContextDescription,
   rollLogMetadataDescription,
   validateRollLogArtifact,
   type DeliverRollLogInputV1,
@@ -41,7 +42,6 @@ const MAX_GUILDS_PER_STATS_RUN = 100_000;
 const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const ROLL_LOG_TITLE = "receivedCommand: /roll";
-const MAX_EMBED_DESCRIPTION_LENGTH = 4_096;
 const MAX_EMBED_CHARACTERS = 6_000;
 
 export type MembershipInspection =
@@ -1079,34 +1079,26 @@ function buildRollLogEmbed(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
 ) {
-  const resultEmbed = artifact.payload.embeds?.[0];
-  const title = resultEmbed?.title ?? ROLL_LOG_TITLE;
-  const resultDescription = resultEmbed?.description;
-  let descriptionPrefix =
-    resultDescription === undefined ? "" : `${resultDescription}\n\n`;
-  if (resultEmbed?.title !== undefined) {
-    descriptionPrefix += `${ROLL_LOG_TITLE}\n`;
-  }
+  const resultDescription = artifact.payload.embeds?.[0]?.description;
+  const description =
+    resultDescription === undefined
+      ? rollLogMetadataDescription(artifact, shard)
+      : `${rollLogContextDescription(artifact, shard)}\n\n${resultDescription}`;
   const footer =
     artifact.image.status === "unavailable" &&
     artifact.image.reason !== "not-applicable"
       ? { text: "Image unavailable" }
-      : resultEmbed?.footer;
-  const fixedCharacters =
-    title.length + descriptionPrefix.length + (footer?.text.length ?? 0);
-  const metadataLimit = Math.min(
-    MAX_EMBED_DESCRIPTION_LENGTH - descriptionPrefix.length,
-    MAX_EMBED_CHARACTERS - fixedCharacters,
-  );
-  const description = `${descriptionPrefix}${rollLogMetadataDescription(
-    artifact,
-    shard,
-    metadataLimit,
-  )}`;
-
+      : undefined;
+  if (
+    description.length > 4_096 ||
+    ROLL_LOG_TITLE.length + description.length + (footer?.text.length ?? 0) >
+      MAX_EMBED_CHARACTERS
+  ) {
+    throw new Error("Roll log embed exceeds Discord's limits");
+  }
   return {
-    color: resultEmbed?.color ?? 0x99_99_99,
-    title,
+    color: 0x99_99_99,
+    title: ROLL_LOG_TITLE,
     description,
     ...(footer === undefined ? {} : { footer }),
     ...(artifact.image.status === "available"
