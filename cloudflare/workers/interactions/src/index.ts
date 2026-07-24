@@ -40,6 +40,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function invalidInteraction(reason: string): Response {
+  console.warn(
+    JSON.stringify({ level: "warn", message: "Invalid interaction", reason }),
+  );
+  return json({ error: "Invalid interaction" }, 400);
+}
+
 function interactionError(content: string): Response {
   return json({
     type: 4,
@@ -94,14 +101,14 @@ export async function handleInteractionRequest(
   try {
     interaction = JSON.parse(new TextDecoder().decode(body));
   } catch {
-    return json({ error: "Invalid interaction" }, 400);
+    return invalidInteraction("invalid-json");
   }
   if (!isRecord(interaction)) {
-    return json({ error: "Invalid interaction" }, 400);
+    return invalidInteraction("invalid-payload");
   }
   if (interaction.type === 1) return json({ type: 1 });
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID) {
-    return json({ error: "Invalid interaction" }, 400);
+    return invalidInteraction("application-mismatch");
   }
   let roll;
   try {
@@ -111,8 +118,10 @@ export async function handleInteractionRequest(
         ? {}
         : { guildId: env.DISCORD_TEST_GUILD_ID }),
     });
-  } catch {
-    return json({ error: "Invalid interaction" }, 400);
+  } catch (error) {
+    return invalidInteraction(
+      error instanceof Error ? error.message : "roll-parse-failed",
+    );
   }
   if (roll === null) {
     let knowledgebase;
@@ -122,8 +131,10 @@ export async function handleInteractionRequest(
         env.DISCORD_APPLICATION_ID,
         env.DISCORD_TEST_GUILD_ID,
       );
-    } catch {
-      return json({ error: "Invalid interaction" }, 400);
+    } catch (error) {
+      return invalidInteraction(
+        error instanceof Error ? error.message : "knowledgebase-parse-failed",
+      );
     }
     const links = {
       inviteUrl: env.INVITE_LINK,
@@ -139,8 +150,10 @@ export async function handleInteractionRequest(
         env.DISCORD_APPLICATION_ID,
         env.DISCORD_TEST_GUILD_ID,
       );
-    } catch {
-      return json({ error: "Invalid interaction" }, 400);
+    } catch (error) {
+      return invalidInteraction(
+        error instanceof Error ? error.message : "static-parse-failed",
+      );
     }
     if (staticCommand !== null) {
       return json(
@@ -154,8 +167,10 @@ export async function handleInteractionRequest(
         env.DISCORD_APPLICATION_ID,
         env.DISCORD_TEST_GUILD_ID,
       );
-    } catch {
-      return json({ error: "Invalid interaction" }, 400);
+    } catch (error) {
+      return invalidInteraction(
+        error instanceof Error ? error.message : "status-parse-failed",
+      );
     }
     if (statusInteraction === null) {
       return interactionError("This command is not available yet.");
