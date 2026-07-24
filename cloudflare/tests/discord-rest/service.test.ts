@@ -135,7 +135,7 @@ describe("Discord REST service", () => {
             title: "receivedCommand: /roll",
             color: 0x99_99_99,
             description:
-              "user: **roller [from discord]**\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 3]\n\n1d20: [20] = 20",
+              "user: **roller** [Discord]\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 3]\n\n1d20: [20] = 20",
             image: {
               url: "attachment://dice-1400000000000000001.png",
             },
@@ -166,8 +166,8 @@ describe("Discord REST service", () => {
     ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
   });
 
-  it("keeps one log embed when the result has an optional title", async () => {
-    const artifact = rollLogArtifact();
+  it("keeps one log embed when a web result has an optional title", async () => {
+    const artifact: RollLogArtifactV1 = { ...rollLogArtifact(), source: "web" };
     const resultEmbed = artifact.payload.embeds?.[0];
     if (resultEmbed === undefined) throw new Error("Result embed fixture is missing");
     const discordFetch = vi.fn(async (request: Request) => {
@@ -183,7 +183,7 @@ describe("Discord REST service", () => {
       expect(payload.embeds[0]).toMatchObject({
         title: "receivedCommand: /roll",
         description:
-          "user: **roller [from discord]**\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 1]\n\n**Enchanted sword**\n1d20: [20] = 20",
+          "user: **roller** [Web]\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 1]\n\n**Enchanted sword**\n1d20: [20] = 20",
       });
       return Response.json({ id: "100000000000000088" });
     });
@@ -231,7 +231,7 @@ describe("Discord REST service", () => {
       });
       expect(payload.embeds[0]?.description).toHaveLength(4_096);
       expect(payload.embeds[0]?.description).toMatch(
-        /^user: \*\*roller \[from discord\]\*\*\nchannel:/,
+        /^user: \*\*roller\*\* \[Discord\]\nchannel:/,
       );
       expect(payload.embeds[0]?.description).toContain("\nroll: ");
       expect(payload.embeds[0]?.description).toContain(
@@ -731,7 +731,7 @@ describe("Discord REST service", () => {
               color: 10066329,
               title: "receivedCommand: /roll",
               description:
-                "2d20 + 5 from **alice [from discord]** in channel **general** on **Test Guild** [HTTP]",
+                "2d20 + 5 from **alice** [Discord] in channel **general** on **Test Guild** [HTTP]",
             },
           ],
           allowed_mentions: { parse: [] },
@@ -775,7 +775,7 @@ describe("Discord REST service", () => {
         embeds: Array<{ description: string }>;
       }>();
       expect(payload.embeds[0]?.description).toBe(
-        "1d20 from **alice [from discord]** in thread **rules\\_\\*** on **Guild \\[One\\]** [HTTP]",
+        "1d20 from **alice** [Discord] in thread **rules\\_\\*** on **Guild \\[One\\]** [HTTP]",
       );
       return Response.json({ id: "100000000000000021" });
     });
@@ -812,7 +812,7 @@ describe("Discord REST service", () => {
         embeds: Array<{ description: string }>;
       }>();
       expect(payload.embeds[0]?.description).toBe(
-        "1d20 from **alice [from discord]** in **DM** [HTTP]",
+        "1d20 from **alice** [Discord] in **DM** [HTTP]",
       );
       return Response.json({ id: "100000000000000021" });
     });
@@ -915,7 +915,7 @@ describe("Discord REST service", () => {
             {
               title: "receivedCommand: /roll",
               description:
-                "1d20 from **alice [from discord]** in an **inaccessible channel/server** [HTTP]",
+                "1d20 from **alice** [Discord] in an **inaccessible channel/server** [HTTP]",
             },
           ],
         });

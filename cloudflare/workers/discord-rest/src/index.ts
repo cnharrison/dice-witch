@@ -919,7 +919,8 @@ export async function logRoll(
     }
   }
 
-  const description = `${input.notation} from **${input.username} [from ${input.source}]** in ${location}`;
+  const source = input.source === "web" ? "Web" : "Discord";
+  const description = `${input.notation} from **${input.username}** [${source}] in ${location}`;
   if (description.length > 4_096) {
     throw new Error("Roll log description is invalid");
   }

@@ -303,7 +303,8 @@ export function rollLogContextDescription(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
 ): string {
-  const user = `user: **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]**`;
+  const source = artifact.source === "web" ? "Web" : "Discord";
+  const user = `user: **${escapeDiscordMarkdown(artifact.user.username)}** [${source}]`;
   if (artifact.guildId === null) return `${user}\nchannel: **DM**`;
 
   const shardLabel = rollLogShardLabel(shard);
