@@ -49,6 +49,7 @@ test("creates an exact-SHA deployment plan in dependency order", () => {
   assert.equal(plan.steps[0].kind, "quality-gate");
   assert.equal(plan.steps[1].kind, "migration-list");
   assert.equal(plan.steps[2].kind, "migration-apply");
+  assert.equal(plan.steps[3].kind, "audience-snapshot-gate");
   assert.equal(plan.steps.at(-1).kind, "smoke-test");
 });
 
@@ -85,6 +86,35 @@ test("requires a separate acknowledgement for Gateway deployment", () => {
     }),
   );
   assert.deepEqual(plan.workers, ["gateway", "web-api"]);
+});
+
+test("creates a producer-only plan that waits for a real snapshot", () => {
+  const plan = createStagingPlan(
+    input({
+      workers: ["gateway", "discord-rest", "data"],
+      allowGatewayDeploy: true,
+      audienceProducerOnly: true,
+    }),
+  );
+
+  assert.deepEqual(plan.workers, ["data", "discord-rest", "gateway"]);
+  assert.equal(plan.audienceProducerOnly, true);
+  assert.equal(plan.steps.at(-1).kind, "await-audience-snapshot");
+  assert.equal(
+    plan.steps.some(({ kind }) => kind === "smoke-test"),
+    false,
+  );
+  assert.throws(
+    () =>
+      createStagingPlan(
+        input({
+          workers: ["data", "gateway"],
+          allowGatewayDeploy: true,
+          audienceProducerOnly: true,
+        }),
+      ),
+    /requires exactly data, discord-rest, and gateway/,
+  );
 });
 
 test("requires verified production isolation", () => {

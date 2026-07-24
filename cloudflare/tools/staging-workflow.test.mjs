@@ -32,6 +32,16 @@ test("does not expose deployment credentials to dependency or quality steps", as
   assert.doesNotMatch(workflow.slice(0, stepsIndex), /STAGING_CONFIG_B64|CLOUDFLARE_API_TOKEN/);
 });
 
+test("enforces producer-only rollout before snapshot consumers", async () => {
+  const workflow = await readFile(workflowUrl, "utf8");
+
+  assert.match(workflow, /audience_producer_only:/);
+  assert.match(workflow, /--audience-producer-only/);
+  assert.match(workflow, /Verify audience snapshot before consumer deployment/);
+  assert.match(workflow, /verify-audience-snapshot\.mjs/);
+  assert.match(workflow, /inputs\.audience_producer_only == false/);
+});
+
 test("requires exact-SHA planning and explicit Gateway acknowledgement", async () => {
   const workflow = await readFile(workflowUrl, "utf8");
 

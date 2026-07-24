@@ -93,7 +93,7 @@ describe("Data Worker membership service", () => {
     await expect(response.json()).resolves.toEqual({ guildIds: knownGuildIds });
   });
 
-  it("returns active guild status totals partitioned by Discord shard", async () => {
+  it("keeps the legacy status contract during the snapshot rollout", async () => {
     const response = await post("/internal/status-stats", { shardCount: 2 });
     const expectedCounts = [0, 0];
     const shardId = Number((BigInt(activeGuildId) >> 22n) % 2n);

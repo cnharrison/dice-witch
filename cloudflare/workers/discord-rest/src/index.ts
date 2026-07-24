@@ -2,8 +2,10 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { readWorkerSecret, type WorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
   buildRollHelperMessage,
+  DISCORD_AUDIENCE_SNAPSHOT_VERSION,
   DISCORD_GLOBAL_COMMANDS,
   isDiscordRollChannelType,
+  type DiscordAudienceCaptureV1,
   type RollLoggingContext,
 } from "../../../packages/discord-contracts/src";
 
@@ -29,6 +31,8 @@ export type DiscordRestBindings = Omit<
 
 const DISCORD_API = "https://discord.com/api/v10";
 const DICE_WITCH_ADMIN_ROLE = "Dice Witch Admin";
+const MAX_GUILDS_PER_STATS_RUN = 100_000;
+const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 
 export type MembershipInspection =
@@ -45,12 +49,24 @@ export type WebRollDeliveryResult =
   | { status: "delivered" }
   | { status: "permission_error" };
 
-export type PublicDiscordStats = { servers: number; users: number };
+type LegacyPublicDiscordStats = { servers: number; users: number };
 
-export type BotListReportResult = {
+type LegacyBotListReportResult = LegacyPublicDiscordStats & {
   status: "reported" | "failed" | "skipped";
-  servers: number;
-  users: number;
+  topggHttpStatus: number | null;
+  discordBotListHttpStatus: number | null;
+};
+
+export type PublicDiscordStats = Pick<
+  DiscordAudienceCaptureV1,
+  | "estimatedGuildMemberships"
+  | "guildCountsByShard"
+  | "liveGuilds"
+  | "shardCount"
+>;
+
+export type BotListReportResult = DiscordAudienceCaptureV1 & {
+  status: "reported" | "failed" | "skipped";
   topggHttpStatus: number | null;
   discordBotListHttpStatus: number | null;
 };
@@ -263,12 +279,21 @@ export function registerDevelopmentGuildCommands(
 
 export async function fetchPublicStats(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
+  shardCount: number,
   discordFetch: RequestFetch = (request) => fetch(request),
   wait: Sleep = sleep,
 ): Promise<PublicDiscordStats> {
+  if (
+    !Number.isSafeInteger(shardCount) ||
+    shardCount < 1 ||
+    shardCount > MAX_SHARDS_PER_STATS_RUN
+  ) {
+    throw new Error("Discord guild stats shard count is invalid");
+  }
   const seen = new Set<string>();
+  const guildCountsByShard = Array.from({ length: shardCount }, () => 0);
   let after: string | null = null;
-  let users = 0;
+  let estimatedGuildMemberships = 0;
   for (;;) {
     const url = new URL(`${DISCORD_API}/users/@me/guilds`);
     url.searchParams.set("limit", "200");
@@ -297,8 +322,17 @@ export async function fetchPublicStats(
         throw new Error("Discord guild stats response is invalid");
       }
       seen.add(guild.id);
-      users += Number(guild.approximate_member_count);
-      if (!Number.isSafeInteger(users)) {
+      if (seen.size > MAX_GUILDS_PER_STATS_RUN) {
+        throw new Error("Discord guild stats limit exceeded");
+      }
+      const shardId = Number((BigInt(guild.id) >> 22n) % BigInt(shardCount));
+      const shardGuilds = guildCountsByShard[shardId];
+      if (shardGuilds === undefined) {
+        throw new Error("Discord guild stats shard calculation failed");
+      }
+      guildCountsByShard[shardId] = shardGuilds + 1;
+      estimatedGuildMemberships += Number(guild.approximate_member_count);
+      if (!Number.isSafeInteger(estimatedGuildMemberships)) {
         throw new Error("Discord guild stats total is invalid");
       }
     }
@@ -309,7 +343,12 @@ export async function fetchPublicStats(
     }
     after = last.id;
   }
-  return { servers: seen.size, users };
+  return {
+    liveGuilds: seen.size,
+    estimatedGuildMemberships,
+    shardCount,
+    guildCountsByShard,
+  };
 }
 
 async function postBotListStat(
@@ -344,7 +383,9 @@ export async function reportBotListStats(
     | "TOPGG_KEY"
     | "DISCORD_BOT_LIST_KEY"
   >,
+  shardCount: number,
   externalFetch: RequestFetch = (request) => fetch(request),
+  capturedAt = Date.now(),
 ): Promise<BotListReportResult> {
   if (
     !SNOWFLAKE.test(env.DISCORD_APPLICATION_ID) ||
@@ -355,11 +396,19 @@ export async function reportBotListStats(
   ) {
     throw new Error("Bot list reporting configuration is invalid");
   }
-  const stats = await fetchPublicStats(env, externalFetch);
-  if (stats.servers === 0) {
+  if (!Number.isSafeInteger(capturedAt) || capturedAt < 0) {
+    throw new Error("Bot list reporting timestamp is invalid");
+  }
+  const stats = await fetchPublicStats(env, shardCount, externalFetch);
+  const capture = {
+    version: DISCORD_AUDIENCE_SNAPSHOT_VERSION,
+    capturedAt,
+    ...stats,
+  } satisfies DiscordAudienceCaptureV1;
+  if (capture.liveGuilds === 0) {
     return {
       status: "skipped",
-      ...stats,
+      ...capture,
       topggHttpStatus: null,
       discordBotListHttpStatus: null,
     };
@@ -368,19 +417,19 @@ export async function reportBotListStats(
     postBotListStat(
       `https://top.gg/api/bots/${env.DISCORD_APPLICATION_ID}/stats`,
       env.TOPGG_KEY,
-      { server_count: stats.servers },
+      { server_count: capture.liveGuilds },
       externalFetch,
     ),
     postBotListStat(
       `https://discordbotlist.com/api/v1/bots/${env.DISCORD_APPLICATION_ID}/stats`,
       env.DISCORD_BOT_LIST_KEY,
-      { guilds: stats.servers },
+      { guilds: capture.liveGuilds },
       externalFetch,
     ),
   ]);
   return {
     status: topgg.delivered && discordBotList.delivered ? "reported" : "failed",
-    ...stats,
+    ...capture,
     topggHttpStatus: topgg.httpStatus,
     discordBotListHttpStatus: discordBotList.httpStatus,
   };
@@ -397,6 +446,19 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function sleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function parseShardCountInput(value: unknown): number {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 1 ||
+    !Number.isSafeInteger(value.shardCount) ||
+    Number(value.shardCount) < 1 ||
+    Number(value.shardCount) > MAX_SHARDS_PER_STATS_RUN
+  ) {
+    throw new Error("Discord guild stats request is invalid");
+  }
+  return Number(value.shardCount);
 }
 
 async function fetchGuildPageResponse(
@@ -1015,20 +1077,38 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     return registerDevelopmentGuildCommands(await this.botEnv());
   }
 
-  async getPublicStats(): Promise<PublicDiscordStats> {
-    return fetchPublicStats(await this.botEnv());
+  async getPublicStats(): Promise<LegacyPublicDiscordStats> {
+    const stats = await fetchPublicStats(await this.botEnv(), 1);
+    return {
+      servers: stats.liveGuilds,
+      users: stats.estimatedGuildMemberships,
+    };
   }
 
-  async reportBotListStats(): Promise<BotListReportResult> {
+  async reportBotListStats(): Promise<LegacyBotListReportResult> {
+    const result = await this.reportBotListStatsV1({ shardCount: 1 });
+    return {
+      status: result.status,
+      servers: result.liveGuilds,
+      users: result.estimatedGuildMemberships,
+      topggHttpStatus: result.topggHttpStatus,
+      discordBotListHttpStatus: result.discordBotListHttpStatus,
+    };
+  }
+
+  async reportBotListStatsV1(input: unknown): Promise<BotListReportResult> {
     const env = await this.botEnv();
-    return reportBotListStats({
-      ...env,
-      TOPGG_KEY: await readWorkerSecret(this.env.TOPGG_KEY, "TOPGG_KEY"),
-      DISCORD_BOT_LIST_KEY: await readWorkerSecret(
-        this.env.DISCORD_BOT_LIST_KEY,
-        "DISCORD_BOT_LIST_KEY",
-      ),
-    });
+    return reportBotListStats(
+      {
+        ...env,
+        TOPGG_KEY: await readWorkerSecret(this.env.TOPGG_KEY, "TOPGG_KEY"),
+        DISCORD_BOT_LIST_KEY: await readWorkerSecret(
+          this.env.DISCORD_BOT_LIST_KEY,
+          "DISCORD_BOT_LIST_KEY",
+        ),
+      },
+      parseShardCountInput(input),
+    );
   }
 
   async listCurrentGuildIds(): Promise<string[]> {

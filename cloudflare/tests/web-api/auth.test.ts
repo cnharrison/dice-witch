@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS } from "../../packages/discord-contracts/src";
 import {
   handleAuthRequest,
   type WebApiBindings,
@@ -258,15 +259,22 @@ describe("web API Discord OAuth", () => {
     expect(dataFetch).not.toHaveBeenCalled();
   });
 
-  it("returns cacheable public stats from the durable data source", async () => {
-    const dataFetch = vi.fn(async (request: Request) => {
-      expect(new URL(request.url).pathname).toBe("/internal/status-stats");
-      await expect(request.json()).resolves.toEqual({ shardCount: 1 });
-      return Response.json({
-        totalGuilds: 1,
-        totalMembers: 42,
-        guildCounts: [1],
-      });
+  it("returns the cacheable versioned Discord audience snapshot", async () => {
+    const snapshot = {
+      version: 1,
+      capturedAt: now - 1_000,
+      liveGuilds: 1,
+      estimatedGuildMemberships: 42,
+      knownDiceWitchUsers: 7,
+      shardCount: 1,
+      guildCountsByShard: [1],
+    };
+    const dataFetch = vi.fn((request: Request) => {
+      expect(new URL(request.url).pathname).toBe(
+        "/internal/audience-snapshot",
+      );
+      expect(request.method).toBe("GET");
+      return Promise.resolve(Response.json({ status: "found", snapshot }));
     });
     const response = await handleAuthRequest(
       new Request("https://api.example.com/api/stats/public"),
@@ -279,7 +287,37 @@ describe("web API Discord OAuth", () => {
     expect(response.headers.get("cache-control")).toBe(
       "public, max-age=3600",
     );
-    await expect(response.json()).resolves.toEqual({ servers: 1, users: 42 });
+    await expect(response.json()).resolves.toEqual(snapshot);
+  });
+
+  it("rejects a stale public audience snapshot", async () => {
+    const dataFetch = vi.fn(() =>
+      Promise.resolve(
+        Response.json({
+          status: "found",
+          snapshot: {
+            version: 1,
+            capturedAt: now - DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS - 1,
+            liveGuilds: 1,
+            estimatedGuildMemberships: 42,
+            knownDiceWitchUsers: 7,
+            shardCount: 1,
+            guildCountsByShard: [1],
+          },
+        }),
+      ),
+    );
+    const response = await handleAuthRequest(
+      new Request("https://api.example.com/api/stats/public"),
+      bindings(dataFetch),
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "Public stats are stale",
+    });
   });
 
   it("returns a session without an OAuth access token", async () => {

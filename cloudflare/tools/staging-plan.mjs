@@ -17,9 +17,10 @@ const DEPLOYMENT_ORDER = [
   "interactions",
   "web-api",
 ];
+const AUDIENCE_SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1_000;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const CLI_USAGE =
-  "Usage: node tools/staging-plan.mjs --sha <full-sha> --workers <comma-list> --roll-origin <url> --gateway-origin <url> [--allow-gateway-deploy]";
+  "Usage: node tools/staging-plan.mjs --sha <full-sha> --workers <comma-list> --roll-origin <url> --gateway-origin <url> [--allow-gateway-deploy] [--audience-producer-only]";
 
 function configFile(worker) {
   return `wrangler.${worker}.jsonc`;
@@ -54,6 +55,16 @@ function smokeOrigins(configSummary, targets) {
     roll: requireHttpsOrigin("roll smoke origin", targets?.rollOrigin),
     gateway: requireHttpsOrigin("gateway smoke origin", targets?.gatewayOrigin),
   };
+}
+
+function audienceSnapshotGateCommand() {
+  return command("node", [
+    "tools/verify-audience-snapshot.mjs",
+    "--config",
+    configFile("data"),
+    "--max-age-ms",
+    String(AUDIENCE_SNAPSHOT_MAX_AGE_MS),
+  ]);
 }
 
 function qualityGateCommands(configSummary) {
@@ -108,7 +119,18 @@ export function createStagingPlan(input) {
       throw new Error(`Unknown staging Worker: ${worker}`);
     }
   }
-  if (!selected.has("web-api")) {
+  const audienceProducerOnly = input.audienceProducerOnly === true;
+  if (audienceProducerOnly) {
+    const expected = ["data", "discord-rest", "gateway"];
+    if (
+      selected.size !== expected.length ||
+      !expected.every((worker) => selected.has(worker))
+    ) {
+      throw new Error(
+        "Audience producer rollout requires exactly data, discord-rest, and gateway",
+      );
+    }
+  } else if (!selected.has("web-api")) {
     throw new Error("Every staging deployment must include web-api for exact-SHA metadata");
   }
   if (selected.has("gateway") && input.allowGatewayDeploy !== true) {
@@ -125,7 +147,9 @@ export function createStagingPlan(input) {
   }
 
   const workers = DEPLOYMENT_ORDER.filter((worker) => selected.has(worker));
-  const origins = smokeOrigins(input.configSummary, input.smokeTargets);
+  const origins = audienceProducerOnly
+    ? null
+    : smokeOrigins(input.configSummary, input.smokeTargets);
   const steps = [
     {
       kind: "quality-gate",
@@ -162,6 +186,12 @@ export function createStagingPlan(input) {
       ]),
     },
   ];
+  if (!audienceProducerOnly) {
+    steps.push({
+      kind: "audience-snapshot-gate",
+      command: audienceSnapshotGateCommand(),
+    });
+  }
   for (const worker of workers) {
     steps.push({
       kind: "deploy",
@@ -177,28 +207,33 @@ export function createStagingPlan(input) {
       ]),
     });
   }
-  steps.push({
-    kind: "smoke-test",
-    command: command("node", [
-      "tools/staging-smoke.mjs",
-      "--web-origin",
-      origins.web,
-      "--roll-origin",
-      origins.roll,
-      "--gateway-origin",
-      origins.gateway,
-      "--expected-sha",
-      input.requestedSha,
-    ]),
-  });
+  if (audienceProducerOnly) {
+    steps.push({ kind: "await-audience-snapshot" });
+  } else {
+    steps.push({
+      kind: "smoke-test",
+      command: command("node", [
+        "tools/staging-smoke.mjs",
+        "--web-origin",
+        origins.web,
+        "--roll-origin",
+        origins.roll,
+        "--gateway-origin",
+        origins.gateway,
+        "--expected-sha",
+        input.requestedSha,
+      ]),
+    });
+  }
 
   return {
-    version: 1,
+    version: 2,
     environmentSuffix: input.configSummary.suffix,
     sourceSha: input.requestedSha,
     d1DatabaseName: input.configSummary.d1DatabaseName,
     workers,
     gatewayDeploymentAcknowledged: selected.has("gateway"),
+    audienceProducerOnly,
     steps,
   };
 }
@@ -209,10 +244,15 @@ function parseArguments(arguments_) {
   let rollOrigin;
   let gatewayOrigin;
   let allowGatewayDeploy = false;
+  let audienceProducerOnly = false;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--allow-gateway-deploy") {
       allowGatewayDeploy = true;
+      continue;
+    }
+    if (argument === "--audience-producer-only") {
+      audienceProducerOnly = true;
       continue;
     }
     const value = arguments_[index + 1];
@@ -244,6 +284,7 @@ function parseArguments(arguments_) {
     requestedSha,
     workers,
     allowGatewayDeploy,
+    audienceProducerOnly,
     smokeTargets: { rollOrigin, gatewayOrigin },
   };
 }

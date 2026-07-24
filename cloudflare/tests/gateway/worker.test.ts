@@ -127,7 +127,14 @@ function environment() {
             acquiredAt: 1_720_000_000_000,
           },
         ],
-        identify: null,
+        identify: {
+          total: 1_000,
+          remaining: 990,
+          resetAt: 1_720_086_400_000,
+          maxConcurrency: 1,
+          recommendedShards: 24,
+          observedAt: 1_720_000_000_000,
+        },
       }),
     ),
     checkRecommendation: vi.fn<() => Promise<RecommendationCheckResult>>(() =>
@@ -191,26 +198,39 @@ function environment() {
   const listCurrentGuildIdsPage = vi.fn(() =>
     Promise.resolve({ guildIds: [], nextAfter: null }),
   );
+  const guildCountsByShard = Array.from({ length: 24 }, (_, index) =>
+    index === 0 ? 1 : 0,
+  );
   const reportBotListStats = vi.fn<
-    GatewayEnv["DISCORD_REST"]["reportBotListStats"]
+    GatewayEnv["DISCORD_REST"]["reportBotListStatsV1"]
   >(() =>
     Promise.resolve({
       status: "reported" as const,
-      servers: 1,
-      users: 42,
+      version: 1 as const,
+      capturedAt: 1_720_000_000_000,
+      liveGuilds: 1,
+      estimatedGuildMemberships: 42,
+      shardCount: 24,
+      guildCountsByShard,
       topggHttpStatus: 200,
       discordBotListHttpStatus: 200,
     }),
   );
-  const dataServiceFetch = vi.fn((request: Request) => {
-    void request;
-    return Promise.resolve(
-      Response.json({
+  const dataServiceFetch = vi.fn(async (request: Request) => {
+    if (new URL(request.url).pathname === "/internal/audience-snapshot") {
+      const capture = await request
+        .clone()
+        .json<Record<string, unknown>>();
+      return Response.json({
         status: "applied",
-        activatedCount: 0,
-        deactivatedCount: 0,
-      }),
-    );
+        snapshot: { ...capture, knownDiceWitchUsers: 7 },
+      });
+    }
+    return Response.json({
+      status: "applied",
+      activatedCount: 0,
+      deactivatedCount: 0,
+    });
   });
   const env = {
     DISCORD_APPLICATION_ID: "100000000000000001",
@@ -237,7 +257,16 @@ function environment() {
       logGuildLifecycle: vi.fn(() =>
         Promise.resolve({ status: "delivered" }),
       ),
-      reportBotListStats,
+      reportBotListStats: vi.fn(() =>
+        Promise.resolve({
+          status: "reported" as const,
+          servers: 1,
+          users: 42,
+          topggHttpStatus: 200,
+          discordBotListHttpStatus: 200,
+        }),
+      ),
+      reportBotListStatsV1: reportBotListStats,
     },
     DATA_SERVICE: { fetch: dataServiceFetch },
   } as unknown as GatewayEnv;
@@ -331,7 +360,7 @@ describe("Gateway control Worker", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       ownerships: [{ shardId: 0, ownerId: "development-shard-0" }],
-      identify: null,
+      identify: { recommendedShards: 24, remaining: 990 },
     });
     expect(coordinator.status).toHaveBeenCalledOnce();
   });
@@ -422,8 +451,14 @@ describe("Gateway control Worker", () => {
     expect(stub.applyGenerationPlan).not.toHaveBeenCalled();
   });
 
-  it("reports bot-list statistics only from the four-hour scheduler", async () => {
-    const { coordinator, env, reportBotListStats, stub } = environment();
+  it("reports bot-list statistics and persists the same audience capture", async () => {
+    const {
+      coordinator,
+      dataServiceFetch,
+      env,
+      reportBotListStats,
+      stub,
+    } = environment();
     env.GATEWAY_MODE = "fleet";
     const ctx = createExecutionContext();
 
@@ -437,10 +472,56 @@ describe("Gateway control Worker", () => {
     );
     await waitOnExecutionContext(ctx);
 
-    expect(reportBotListStats).toHaveBeenCalledOnce();
+    expect(reportBotListStats).toHaveBeenCalledWith({ shardCount: 24 });
+    expect(dataServiceFetch).toHaveBeenCalledOnce();
+    const audienceRequest = dataServiceFetch.mock.calls[0]?.[0];
+    expect(audienceRequest).toBeInstanceOf(Request);
+    expect(new URL(audienceRequest?.url ?? "").pathname).toBe(
+      "/internal/audience-snapshot",
+    );
+    await expect(audienceRequest?.json()).resolves.toMatchObject({
+      version: 1,
+      capturedAt: 1_720_000_000_000,
+      liveGuilds: 1,
+      estimatedGuildMemberships: 42,
+      shardCount: 24,
+    });
     expect(coordinator.checkRecommendation).not.toHaveBeenCalled();
     expect(coordinator.reconcileFleetRecommendation).not.toHaveBeenCalled();
     expect(stub.initializeControlPlane).not.toHaveBeenCalled();
+  });
+
+  it("persists a successfully captured zero-guild snapshot", async () => {
+    const { dataServiceFetch, env, reportBotListStats } = environment();
+    env.GATEWAY_MODE = "fleet";
+    reportBotListStats.mockResolvedValue({
+      status: "skipped",
+      version: 1,
+      capturedAt: 1_720_000_000_000,
+      liveGuilds: 0,
+      estimatedGuildMemberships: 0,
+      shardCount: 24,
+      guildCountsByShard: Array.from({ length: 24 }, () => 0),
+      topggHttpStatus: null,
+      discordBotListHttpStatus: null,
+    });
+    const infoLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const ctx = createExecutionContext();
+
+    gatewayWorker.scheduled(
+      createScheduledController({
+        cron: BOT_LIST_STATS_CRON,
+        scheduledTime: new Date(1_720_000_000_000),
+      }),
+      env,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(dataServiceFetch).toHaveBeenCalledOnce();
+    const request = dataServiceFetch.mock.calls[0]?.[0];
+    await expect(request?.json()).resolves.toMatchObject({ liveGuilds: 0 });
+    infoLog.mockRestore();
   });
 
   it("does not report bot-list statistics while fleet ownership is stopped", async () => {
@@ -476,8 +557,14 @@ describe("Gateway control Worker", () => {
     env.GATEWAY_MODE = "fleet";
     reportBotListStats.mockResolvedValue({
       status: "failed",
-      servers: 1,
-      users: 42,
+      version: 1,
+      capturedAt: 1_720_000_000_000,
+      liveGuilds: 1,
+      estimatedGuildMemberships: 42,
+      shardCount: 24,
+      guildCountsByShard: Array.from({ length: 24 }, (_, index) =>
+        index === 0 ? 1 : 0,
+      ),
       topggHttpStatus: 429,
       discordBotListHttpStatus: null,
     });
@@ -539,6 +626,7 @@ describe("Gateway control Worker", () => {
       stub,
     } = environment();
     env.GATEWAY_MODE = "fleet";
+    const infoLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const ctx = createExecutionContext();
 
     gatewayWorker.scheduled(
@@ -552,6 +640,13 @@ describe("Gateway control Worker", () => {
     expect(listCurrentGuildIdsPage).not.toHaveBeenCalled();
     expect(dataServiceFetch).not.toHaveBeenCalled();
     expect(stub.initializeControlPlane).not.toHaveBeenCalled();
+    expect(infoLog).toHaveBeenCalledWith(
+      expect.stringContaining('"recommendedShardCount":24'),
+    );
+    expect(infoLog).toHaveBeenCalledWith(
+      expect.stringContaining('"activeShardCount":24'),
+    );
+    infoLog.mockRestore();
   });
 
   it("routes authenticated fleet lifecycle controls without using the single partition", async () => {

@@ -11,7 +11,12 @@ import { appConfig } from '@/lib/config';
 const LandingPage = () => {
   const { isSignedIn } = useAuth();
   const { signIn, isLoaded } = useSignIn();
-  const { servers, users, loading, error, available } = useServerStats();
+  const {
+    liveGuilds,
+    estimatedGuildMemberships,
+    knownDiceWitchUsers,
+    available
+  } = useServerStats();
 
   const handleSignInWithDiscord = () => {
     if (!isLoaded) return;
@@ -197,7 +202,7 @@ const LandingPage = () => {
               <div className="flex flex-col items-start">
                 <h3 className="text-2xl font-mono mb-2">Popular</h3>
                 <p className="text-zinc-400">
-                  Dice Witch is used in {servers.toLocaleString()} Discord servers by a total of {users.toLocaleString()} people
+                  Dice Witch is active in {liveGuilds.toLocaleString()} Discord servers, representing approximately {estimatedGuildMemberships.toLocaleString()} guild memberships. {knownDiceWitchUsers.toLocaleString()} known users have interacted with Dice Witch.
                 </p>
               </div>
             )}

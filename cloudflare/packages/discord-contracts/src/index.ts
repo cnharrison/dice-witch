@@ -1,3 +1,11 @@
+export {
+  DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS,
+  DISCORD_AUDIENCE_SNAPSHOT_VERSION,
+  parseDiscordAudienceCaptureV1,
+  parseDiscordAudienceSnapshotV1,
+  type DiscordAudienceCaptureV1,
+  type DiscordAudienceSnapshotV1,
+} from "./audience-snapshot";
 export { DISCORD_GLOBAL_COMMANDS } from "./commands";
 export {
   buildDeferredResponse,

@@ -10,7 +10,6 @@ import {
   parseStaticInteractionCommand,
   parseStatusCommandInteraction,
   verifyDiscordRequestSignature,
-  type StatusDiscordStats,
   type StatusGatewaySnapshot,
 } from "../../../packages/discord-contracts/src";
 
@@ -167,18 +166,22 @@ export async function handleInteractionRequest(
         throw new Error("Gateway status response is invalid");
       }
       const statsResponse = await env.DATA_SERVICE.fetch(
-        new Request("https://data.internal/internal/status-stats", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ shardCount: gateway.shardCount }),
-        }),
+        new Request("https://data.internal/internal/audience-snapshot"),
       );
       if (!statsResponse.ok) throw new Error("Status stats lookup failed");
+      const stats: unknown = await statsResponse.json();
+      if (
+        !isRecord(stats) ||
+        stats.status !== "found" ||
+        !isRecord(stats.snapshot)
+      ) {
+        throw new Error("Status stats response is invalid");
+      }
       return json(
         buildStatusCommandResponse(
           statusInteraction,
           gateway as unknown as StatusGatewaySnapshot,
-          await statsResponse.json<StatusDiscordStats>(),
+          stats.snapshot,
           links,
         ),
       );

@@ -1,4 +1,9 @@
 import {
+  DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS,
+  parseDiscordAudienceSnapshotV1,
+  type DiscordAudienceSnapshotV1,
+} from "./audience-snapshot";
+import {
   buildFooterComponents,
   type DiscordFooterLinks,
 } from "./footer-links";
@@ -18,11 +23,7 @@ export type StatusGatewaySnapshot = {
   shards: Array<{ id: number; state: string; ping: number }>;
 };
 
-export type StatusDiscordStats = {
-  totalGuilds: number;
-  totalMembers: number | null;
-  guildCounts: number[];
-};
+export type StatusDiscordStats = DiscordAudienceSnapshotV1;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -90,28 +91,32 @@ function shardStatusEmoji(status: string): string {
 export function buildStatusCommandResponse(
   interaction: StatusCommandInteraction,
   gateway: StatusGatewaySnapshot,
-  stats: StatusDiscordStats,
+  stats: unknown,
   links: DiscordFooterLinks,
   now = Date.now(),
 ): Record<string, unknown> {
+  let snapshot: DiscordAudienceSnapshotV1;
+  try {
+    snapshot = parseDiscordAudienceSnapshotV1(stats);
+  } catch {
+    throw new Error("Status response input is invalid");
+  }
   if (
     !Number.isSafeInteger(now) ||
     now < interaction.createdAt ||
+    snapshot.capturedAt > now ||
+    now - snapshot.capturedAt > DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS ||
     !Number.isSafeInteger(gateway.shardCount) ||
     gateway.shardCount < 1 ||
     gateway.shards.length !== gateway.shardCount ||
-    stats.guildCounts.length !== gateway.shardCount ||
-    !Number.isSafeInteger(stats.totalGuilds) ||
-    stats.totalGuilds < 0 ||
-    (stats.totalMembers !== null &&
-      (!Number.isSafeInteger(stats.totalMembers) || stats.totalMembers < 0))
+    snapshot.shardCount !== gateway.shardCount
   ) {
     throw new Error("Status response input is invalid");
   }
   let shardStatusText = "\n\n__Shard Status:__\n";
   for (let index = 0; index < gateway.shards.length; index += 1) {
     const shard = gateway.shards[index];
-    const guildCount = stats.guildCounts[index];
+    const guildCount = snapshot.guildCountsByShard[index];
     if (
       shard === undefined ||
       shard.id !== index ||
@@ -128,8 +133,6 @@ export function buildStatusCommandResponse(
     const ping = shard.ping >= 0 ? `${shard.ping}ms` : "unknown";
     shardStatusText += `${emoji} Shard ${shard.id}: ${status} (${guildCount} servers, ${ping})\n`;
   }
-  const totalGuilds = stats.totalGuilds || "unknown";
-  const totalMembers = stats.totalMembers || "unknown";
   return {
     type: 4,
     data: {
@@ -137,7 +140,7 @@ export function buildStatusCommandResponse(
         {
           color: STATUS_COLOR,
           title: "Status",
-          description: `Latency: **${now - interaction.createdAt}ms**\nI'm in **${totalGuilds}** discord servers with **${totalMembers}** users 😈${shardStatusText}`,
+          description: `Latency: **${now - interaction.createdAt}ms**\nDiscord servers: **${snapshot.liveGuilds}**\nEstimated guild memberships: **${snapshot.estimatedGuildMemberships}**\nKnown Dice Witch users: **${snapshot.knownDiceWitchUsers}** 😈${shardStatusText}`,
         },
       ],
       components: buildFooterComponents(links),

@@ -1,3 +1,7 @@
+import {
+  parseDiscordAudienceSnapshotV1,
+  type DiscordAudienceCaptureV1,
+} from "../../../packages/discord-contracts/src";
 import { gatewayPartitionAssignments } from "../../../packages/gateway-protocol/src";
 import { isWorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
@@ -26,6 +30,10 @@ export const BOT_LIST_STATS_CRON = "30 */4 * * *";
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 
 class GatewayControlInputError extends Error {}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export function classifyGatewayControlError(value: unknown): string {
   if (!(value instanceof Error)) return "non-error";
@@ -151,8 +159,34 @@ function isValidEnvironment(env: GatewayEnv): boolean {
     "logGuildLifecycle" in discordRest &&
     typeof discordRest.logGuildLifecycle === "function" &&
     "reportBotListStats" in discordRest &&
-    typeof discordRest.reportBotListStats === "function"
+    typeof discordRest.reportBotListStats === "function" &&
+    "reportBotListStatsV1" in discordRest &&
+    typeof discordRest.reportBotListStatsV1 === "function"
   );
+}
+
+async function persistAudienceSnapshot(
+  env: GatewayEnv,
+  capture: DiscordAudienceCaptureV1,
+): Promise<void> {
+  const response = await env.DATA_SERVICE.fetch(
+    new Request("https://data.internal/internal/audience-snapshot", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(capture),
+    }),
+  );
+  const value: unknown = await response.json();
+  if (
+    !isRecord(value) ||
+    (value.status !== "applied" &&
+      value.status !== "existing" &&
+      value.status !== "stale") ||
+    !isRecord(value.snapshot)
+  ) {
+    throw new Error("Audience snapshot persistence failed");
+  }
+  parseDiscordAudienceSnapshotV1(value.snapshot);
 }
 
 async function reportBotListStats(env: GatewayEnv): Promise<void> {
@@ -199,10 +233,12 @@ async function reportBotListStats(env: GatewayEnv): Promise<void> {
   }
 
   let result: Awaited<
-    ReturnType<GatewayEnv["DISCORD_REST"]["reportBotListStats"]>
+    ReturnType<GatewayEnv["DISCORD_REST"]["reportBotListStatsV1"]>
   >;
   try {
-    result = await env.DISCORD_REST.reportBotListStats();
+    result = await env.DISCORD_REST.reportBotListStatsV1({
+      shardCount: fleet.activeShardCount,
+    });
   } catch {
     console.error(
       JSON.stringify({
@@ -212,16 +248,34 @@ async function reportBotListStats(env: GatewayEnv): Promise<void> {
     );
     throw new Error("Bot list statistics report failed");
   }
+  const {
+    status,
+    topggHttpStatus,
+    discordBotListHttpStatus,
+    ...capture
+  } = result;
+  try {
+    await persistAudienceSnapshot(env, capture);
+  } catch {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "Audience snapshot persistence failed",
+      }),
+    );
+    throw new Error("Audience snapshot persistence failed");
+  }
   const log = {
-    level: result.status === "failed" ? "error" : "info",
+    level: status === "failed" ? "error" : "info",
     message: "Bot list statistics report completed",
-    status: result.status,
-    servers: result.servers,
-    users: result.users,
-    topggHttpStatus: result.topggHttpStatus,
-    discordBotListHttpStatus: result.discordBotListHttpStatus,
+    status,
+    liveGuilds: capture.liveGuilds,
+    estimatedGuildMemberships: capture.estimatedGuildMemberships,
+    shardCount: capture.shardCount,
+    topggHttpStatus,
+    discordBotListHttpStatus,
   };
-  if (result.status === "failed") {
+  if (status === "failed") {
     console.error(JSON.stringify(log));
     throw new Error("Bot list statistics report failed");
   }
@@ -395,6 +449,38 @@ async function applyRecommendation(
   return { recommendation, gateway };
 }
 
+async function runScheduledRecommendation(env: GatewayEnv): Promise<void> {
+  if (gatewayMode(env) !== "fleet") {
+    await applyRecommendation(env, null);
+    return;
+  }
+  const coordinator = env.GATEWAY_COORDINATOR.getByName(
+    GATEWAY_COORDINATOR_NAME,
+  );
+  const result = await coordinator.reconcileFleetRecommendation(
+    fleetConnectionCapacity(env),
+  );
+  const status = await coordinator.status();
+  console.log(
+    JSON.stringify({
+      level: "info",
+      message: "Scheduled Gateway recommendation check completed",
+      outcome: result.outcome,
+      phase: result.fleet.phase,
+      activeGeneration: result.fleet.activeGeneration,
+      activeShardCount: result.fleet.activeShardCount,
+      readyShardCount: result.fleet.readyShardCount,
+      targetGeneration: result.fleet.targetGeneration,
+      targetShardCount: result.fleet.targetShardCount,
+      recommendedShardCount: status.identify?.recommendedShards ?? null,
+      recommendationObservedAt: status.identify?.observedAt ?? null,
+      identifyRemaining: status.identify?.remaining ?? null,
+      identifyResetAt: status.identify?.resetAt ?? null,
+      identifyMaxConcurrency: status.identify?.maxConcurrency ?? null,
+    }),
+  );
+}
+
 const gatewayWorker = {
   scheduled(
     controller: ScheduledController,
@@ -408,14 +494,8 @@ const gatewayWorker = {
       ctx.waitUntil(reportBotListStats(env));
       return;
     }
-    const operation =
-      gatewayMode(env) === "fleet"
-        ? env.GATEWAY_COORDINATOR.getByName(
-            GATEWAY_COORDINATOR_NAME,
-          ).reconcileFleetRecommendation(fleetConnectionCapacity(env))
-        : applyRecommendation(env, null);
     ctx.waitUntil(
-      operation.catch(() => {
+      runScheduledRecommendation(env).catch(() => {
         console.error(
           JSON.stringify({
             level: "error",

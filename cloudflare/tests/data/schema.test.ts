@@ -14,6 +14,7 @@ const timestamp = 1_767_225_600_123;
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM discord_audience_snapshot"),
     dataEnv.DATA.prepare("DELETE FROM guild_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM user_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM mutation_receipts"),
@@ -83,6 +84,7 @@ describe("D1 business schema migration", () => {
   it("creates the business and idempotency tables as STRICT tables", async () => {
     expect(await tableNames()).toEqual(
       expect.arrayContaining([
+        "discord_audience_snapshot",
         "guild_appearance_profiles",
         "guilds",
         "mutation_receipts",
@@ -101,6 +103,7 @@ describe("D1 business schema migration", () => {
       strict: number;
     }>();
     for (const name of [
+      "discord_audience_snapshot",
       "guild_appearance_profiles",
       "guilds",
       "mutation_receipts",
@@ -126,6 +129,16 @@ describe("D1 business schema migration", () => {
       return result.results.map((row) => row.name);
     }
 
+    await expect(columns("discord_audience_snapshot")).resolves.toEqual([
+      "singleton",
+      "version",
+      "captured_at",
+      "live_guilds",
+      "estimated_guild_memberships",
+      "known_dice_witch_users",
+      "shard_count",
+      "guild_counts_by_shard_json",
+    ]);
     await expect(columns("guilds")).resolves.toEqual([
       "id",
       "name",
@@ -247,6 +260,7 @@ describe("D1 business schema migration", () => {
       { name: "0002_web_sessions.sql" },
       { name: "0003_mutation_receipts.sql" },
       { name: "0004_appearance_profiles.sql" },
+      { name: "0005_discord_audience_snapshot.sql" },
     ]);
   });
 

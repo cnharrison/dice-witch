@@ -1,3 +1,4 @@
+import type { DiscordAudienceCaptureV1 } from "../../../packages/discord-contracts/src";
 import {
   readWorkerSecret,
   type WorkerSecretSource,
@@ -30,6 +31,13 @@ export type GatewayEnv = Omit<
       topggHttpStatus: number | null;
       discordBotListHttpStatus: number | null;
     }>;
+    reportBotListStatsV1(input: { shardCount: number }): Promise<
+      DiscordAudienceCaptureV1 & {
+        status: "reported" | "failed" | "skipped";
+        topggHttpStatus: number | null;
+        discordBotListHttpStatus: number | null;
+      }
+    >;
   };
 };
 

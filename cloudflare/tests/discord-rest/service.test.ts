@@ -17,6 +17,7 @@ import {
 } from "../../workers/discord-rest/src";
 
 const guildId = "100000000000000001";
+const audienceCapturedAt = 1_767_225_600_123;
 const userId = "100000000000000003";
 const adminRoleId = "100000000000000005";
 const env = {
@@ -98,10 +99,21 @@ describe("Discord REST service", () => {
       );
     });
 
-    await expect(fetchPublicStats(env, discordFetch)).resolves.toEqual({
-      servers: 2,
-      users: 50,
+    await expect(fetchPublicStats(env, 2, discordFetch)).resolves.toEqual({
+      liveGuilds: 2,
+      estimatedGuildMemberships: 50,
+      shardCount: 2,
+      guildCountsByShard: [2, 0],
     });
+  });
+
+  it("rejects a shard count above Discord's coordinated maximum", async () => {
+    const discordFetch = vi.fn();
+
+    await expect(fetchPublicStats(env, 1_001, discordFetch)).rejects.toThrow(
+      "Discord guild stats shard count is invalid",
+    );
+    expect(discordFetch).not.toHaveBeenCalled();
   });
 
   it("honors Discord retry_after while collecting public stats", async () => {
@@ -115,9 +127,11 @@ describe("Discord REST service", () => {
       );
     const wait = vi.fn(() => Promise.resolve());
 
-    await expect(fetchPublicStats(env, discordFetch, wait)).resolves.toEqual({
-      servers: 1,
-      users: 42,
+    await expect(fetchPublicStats(env, 2, discordFetch, wait)).resolves.toEqual({
+      liveGuilds: 1,
+      estimatedGuildMemberships: 42,
+      shardCount: 2,
+      guildCountsByShard: [1, 0],
     });
     expect(wait).toHaveBeenCalledWith(10);
   });
@@ -137,10 +151,16 @@ describe("Discord REST service", () => {
       );
     });
 
-    await expect(reportBotListStats(env, externalFetch)).resolves.toEqual({
+    await expect(
+      reportBotListStats(env, 2, externalFetch, audienceCapturedAt),
+    ).resolves.toEqual({
       status: "reported",
-      servers: 2,
-      users: 50,
+      version: 1,
+      capturedAt: audienceCapturedAt,
+      liveGuilds: 2,
+      estimatedGuildMemberships: 50,
+      shardCount: 2,
+      guildCountsByShard: [2, 0],
       topggHttpStatus: 200,
       discordBotListHttpStatus: 200,
     });
@@ -167,10 +187,16 @@ describe("Discord REST service", () => {
   it("preserves the legacy no-guild skip without calling bot listings", async () => {
     const externalFetch = vi.fn(() => Promise.resolve(Response.json([])));
 
-    await expect(reportBotListStats(env, externalFetch)).resolves.toEqual({
+    await expect(
+      reportBotListStats(env, 2, externalFetch, audienceCapturedAt),
+    ).resolves.toEqual({
       status: "skipped",
-      servers: 0,
-      users: 0,
+      version: 1,
+      capturedAt: audienceCapturedAt,
+      liveGuilds: 0,
+      estimatedGuildMemberships: 0,
+      shardCount: 2,
+      guildCountsByShard: [0, 0],
       topggHttpStatus: null,
       discordBotListHttpStatus: null,
     });
@@ -191,10 +217,16 @@ describe("Discord REST service", () => {
       return Promise.reject(new Error("fixture network failure with secret"));
     });
 
-    await expect(reportBotListStats(env, externalFetch)).resolves.toEqual({
+    await expect(
+      reportBotListStats(env, 2, externalFetch, audienceCapturedAt),
+    ).resolves.toEqual({
       status: "failed",
-      servers: 1,
-      users: 42,
+      version: 1,
+      capturedAt: audienceCapturedAt,
+      liveGuilds: 1,
+      estimatedGuildMemberships: 42,
+      shardCount: 2,
+      guildCountsByShard: [1, 0],
       topggHttpStatus: 429,
       discordBotListHttpStatus: null,
     });
@@ -205,7 +237,12 @@ describe("Discord REST service", () => {
     const externalFetch = vi.fn();
 
     await expect(
-      reportBotListStats({ ...env, TOPGG_KEY: "" }, externalFetch),
+      reportBotListStats(
+        { ...env, TOPGG_KEY: "" },
+        2,
+        externalFetch,
+        audienceCapturedAt,
+      ),
     ).rejects.toThrow("Bot list reporting configuration is invalid");
     expect(externalFetch).not.toHaveBeenCalled();
   });

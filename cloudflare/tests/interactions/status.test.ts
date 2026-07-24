@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   buildStatusCommandResponse,
+  DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS,
   parseStatusCommandInteraction,
 } from "../../packages/discord-contracts/src";
 
 const applicationId = "100000000000000001";
 const guildId = "100000000000000002";
 const createdAt = 1_783_800_000_000;
+const snapshotCapturedAt = createdAt - 1_000;
 const interactionId = String(
   (BigInt(createdAt) - 1_420_070_400_000n) << 22n,
 );
@@ -36,7 +38,7 @@ describe("HTTP status command contract", () => {
     }
   });
 
-  it("builds the legacy public status embed from private snapshots", () => {
+  it("builds public status from one versioned audience snapshot", () => {
     expect(
       buildStatusCommandResponse(
         { createdAt },
@@ -49,9 +51,13 @@ describe("HTTP status command contract", () => {
           ],
         },
         {
-          totalGuilds: 3,
-          totalMembers: 50,
-          guildCounts: [2, 1],
+          version: 1,
+          capturedAt: snapshotCapturedAt,
+          liveGuilds: 3,
+          estimatedGuildMemberships: 50,
+          knownDiceWitchUsers: 7,
+          shardCount: 2,
+          guildCountsByShard: [2, 1],
         },
         links,
         createdAt + 30,
@@ -64,11 +70,36 @@ describe("HTTP status command contract", () => {
             color: 10066329,
             title: "Status",
             description:
-              "Latency: **30ms**\nI'm in **3** discord servers with **50** users 😈\n\n__Shard Status:__\n🟢 Shard 0: Online (2 servers, 25ms)\n🟢 Shard 1: Online (1 servers, unknown)\n",
+              "Latency: **30ms**\nDiscord servers: **3**\nEstimated guild memberships: **50**\nKnown Dice Witch users: **7** 😈\n\n__Shard Status:__\n🟢 Shard 0: Online (2 servers, 25ms)\n🟢 Shard 1: Online (1 servers, unknown)\n",
           },
         ],
       },
     });
+  });
+
+  it("rejects audience snapshots beyond the freshness window", () => {
+    expect(() =>
+      buildStatusCommandResponse(
+        { createdAt },
+        {
+          phase: "idle",
+          shardCount: 1,
+          shards: [{ id: 0, state: "ready", ping: 25 }],
+        },
+        {
+          version: 1,
+          capturedAt:
+            createdAt - DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS - 1,
+          liveGuilds: 1,
+          estimatedGuildMemberships: 42,
+          knownDiceWitchUsers: 7,
+          shardCount: 1,
+          guildCountsByShard: [1],
+        },
+        links,
+        createdAt,
+      ),
+    ).toThrow("Status response input is invalid");
   });
 
   it("fails closed on an incomplete shard snapshot", () => {
@@ -76,7 +107,15 @@ describe("HTTP status command contract", () => {
       buildStatusCommandResponse(
         { createdAt },
         { phase: "idle", shardCount: 2, shards: [] },
-        { totalGuilds: 0, totalMembers: 0, guildCounts: [0, 0] },
+        {
+          version: 1,
+          capturedAt: snapshotCapturedAt,
+          liveGuilds: 0,
+          estimatedGuildMemberships: 0,
+          knownDiceWitchUsers: 0,
+          shardCount: 2,
+          guildCountsByShard: [0, 0],
+        },
         links,
         createdAt,
       ),

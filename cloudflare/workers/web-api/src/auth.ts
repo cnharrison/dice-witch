@@ -8,6 +8,10 @@ import {
   APPEARANCE_CATALOG_V2,
   APPEARANCE_CATALOG_V3,
 } from "../../../packages/dice-appearance/src";
+import {
+  DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS,
+  parseDiscordAudienceSnapshotV1,
+} from "../../../packages/discord-contracts/src";
 import { readWorkerSecret, type WorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
   generateOpaqueToken,
@@ -1801,37 +1805,36 @@ export async function handleAuthRequest(
     }
     if (request.method === "GET" && pathname === "/api/stats/public") {
       const response = await env.DATA_SERVICE.fetch(
-        new Request("https://data.internal/internal/status-stats", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ shardCount: 1 }),
-        }),
+        new Request("https://data.internal/internal/audience-snapshot"),
       );
       if (!response.ok) {
         return json({ error: "Public stats are unavailable" }, 502);
       }
-      const stats: unknown = await response.json();
+      const result: unknown = await response.json();
       if (
-        !isRecord(stats) ||
-        !Number.isSafeInteger(stats.totalGuilds) ||
-        Number(stats.totalGuilds) < 0 ||
-        !Number.isSafeInteger(stats.totalMembers) ||
-        Number(stats.totalMembers) < 0
+        !isRecord(result) ||
+        result.status !== "found" ||
+        !isRecord(result.snapshot)
       ) {
         return json({ error: "Public stats response is invalid" }, 502);
       }
-      return Response.json(
-        {
-          servers: Number(stats.totalGuilds),
-          users: Number(stats.totalMembers),
-        },
-        {
+      try {
+        const snapshot = parseDiscordAudienceSnapshotV1(result.snapshot);
+        if (
+          snapshot.capturedAt > now ||
+          now - snapshot.capturedAt > DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS
+        ) {
+          return json({ error: "Public stats are stale" }, 503);
+        }
+        return Response.json(snapshot, {
           headers: {
             ...securityHeaders,
             "cache-control": "public, max-age=3600",
           },
-        },
-      );
+        });
+      } catch {
+        return json({ error: "Public stats response is invalid" }, 502);
+      }
     }
     if (request.method === "GET" && pathname === "/api/auth/session") {
       if (!isFrontendRequest(request, configuration)) {

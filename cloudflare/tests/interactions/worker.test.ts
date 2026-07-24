@@ -46,9 +46,16 @@ async function signedRequest(
         fetch: () =>
           Promise.resolve(
             Response.json({
-              totalGuilds: 1,
-              totalMembers: 42,
-              guildCounts: [1],
+              status: "found",
+              snapshot: {
+                version: 1,
+                capturedAt: Date.now() - 1_000,
+                liveGuilds: 1,
+                estimatedGuildMemberships: 42,
+                knownDiceWitchUsers: 7,
+                shardCount: 1,
+                guildCountsByShard: [1],
+              },
             }),
           ),
       } as unknown as Fetcher,
