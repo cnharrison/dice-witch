@@ -11,6 +11,7 @@ import {
   type DeliverRollLogResultV1,
   type DiscordAudienceCaptureV1,
   type RollLoggingContext,
+  type RollLogArtifactV1,
   type RollLogShardV1,
 } from "../../../packages/discord-contracts/src";
 
@@ -1021,6 +1022,56 @@ async function isImageSpecificDiscordRejection(
   }
 }
 
+async function resolveRollLogContext(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
+  artifact: RollLogArtifactV1,
+  discordFetch: RequestFetch,
+): Promise<RollLogArtifactV1> {
+  if (artifact.guildId === null || artifact.context !== null) return artifact;
+  const headers = {
+    authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+    "user-agent": "Dice-Witch",
+  };
+  const [channelResponse, guildResponse] = await Promise.all([
+    discordFetch(
+      new Request(`${DISCORD_API}/channels/${artifact.channelId}`, { headers }),
+    ),
+    discordFetch(
+      new Request(`${DISCORD_API}/guilds/${artifact.guildId}`, { headers }),
+    ),
+  ]);
+  if (!channelResponse.ok || !guildResponse.ok) {
+    throw new Error("Discord roll log context is unavailable");
+  }
+  const channel: unknown = await channelResponse.json();
+  const guild: unknown = await guildResponse.json();
+  if (
+    !isRecord(channel) ||
+    channel.id !== artifact.channelId ||
+    channel.guild_id !== artifact.guildId ||
+    typeof channel.name !== "string" ||
+    channel.name.length < 1 ||
+    !isDiscordRollChannelType(channel.type) ||
+    !isRecord(guild) ||
+    guild.id !== artifact.guildId ||
+    typeof guild.name !== "string" ||
+    guild.name.length < 1
+  ) {
+    throw new Error("Discord roll log context response is invalid");
+  }
+  return {
+    ...artifact,
+    context: {
+      kind: "guild",
+      guildId: artifact.guildId,
+      guildName: guild.name,
+      channelId: artifact.channelId,
+      channelName: channel.name,
+      channelType: channel.type,
+    },
+  };
+}
+
 export async function deliverRollLogV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "LOG_OUTPUT_CHANNEL_ID">,
   input: DeliverRollLogInputV1,
@@ -1033,23 +1084,26 @@ export async function deliverRollLogV1(
   ) {
     throw new Error("Roll log delivery request is invalid");
   }
-  const artifact = validateRollLogArtifact(input.artifact);
+  const artifact = await resolveRollLogContext(
+    env,
+    validateRollLogArtifact(input.artifact),
+    discordFetch,
+  );
   const shard = validateRollLogShard(input.logicalShard, artifact.guildId);
   const description = rollLogMetadataDescription(artifact, shard);
   if (description.length > 4_096) {
     throw new Error("Roll log description is invalid");
   }
   const payload = {
-    ...(artifact.payload.content === undefined
-      ? {}
-      : { content: artifact.payload.content }),
     embeds: [
       {
         color: 0x99_99_99,
         title: "receivedCommand: /roll",
         description,
+        ...(artifact.image.status === "available"
+          ? { image: { url: `attachment://${artifact.image.filename}` } }
+          : { footer: { text: "Image unavailable" } }),
       },
-      ...(artifact.payload.embeds ?? []),
     ],
     nonce: `log:${artifact.rollId}`,
     enforce_nonce: true,

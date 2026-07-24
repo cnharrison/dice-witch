@@ -295,7 +295,7 @@ function escapeDiscordMarkdown(value: string): string {
 function rollLogLocation(artifact: RollLogArtifactV1): string {
   if (artifact.guildId === null) return "**DM**";
   if (artifact.context === null) {
-    return `guild \`${artifact.guildId}\`, channel \`${artifact.channelId}\` (**display metadata unavailable**)`;
+    return "an **unavailable channel/server**";
   }
   if (artifact.context.kind !== "guild") {
     throw new Error("Roll log guild context is invalid");
@@ -308,20 +308,17 @@ function rollLogLocation(artifact: RollLogArtifactV1): string {
 
 function rollLogShardLabel(shard: RollLogShardV1): string | null {
   if (shard.status === "not-applicable") return null;
-  if (shard.status === "unavailable") return "[Guild shard unavailable]";
-  return `[Guild shard ${String(shard.shardId)}/${String(shard.shardCount)} · generation ${String(shard.generation)}]`;
+  if (shard.status === "unavailable") return "[Shard unavailable]";
+  return `[Shard ${String(shard.shardId)}/${String(shard.shardCount)}]`;
 }
 
 export function rollLogMetadataDescription(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
 ): string {
+  const description = `${escapeDiscordMarkdown(artifact.notation)} from **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]** in ${rollLogLocation(artifact)}`;
   const shardLabel = rollLogShardLabel(shard);
-  return [
-    `${escapeDiscordMarkdown(artifact.notation)} from **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]** in ${rollLogLocation(artifact)}`,
-    `User \`${artifact.user.id}\` · Roll \`${artifact.rollId}\``,
-    ...(shardLabel === null ? [] : [shardLabel]),
-  ].join("\n");
+  return shardLabel === null ? description : `${description} ${shardLabel}`;
 }
 
 function embedCharacters(embeds: readonly DiscordEmbed[]): number {

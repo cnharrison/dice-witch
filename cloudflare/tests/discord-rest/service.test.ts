@@ -101,7 +101,6 @@ describe("Discord REST service", () => {
         throw new Error("Multipart log fixture is invalid");
       }
       const payload = JSON.parse(payloadValue) as {
-        content: string;
         nonce: string;
         enforce_nonce: boolean;
         allowed_mentions: { parse: string[] };
@@ -110,10 +109,13 @@ describe("Discord REST service", () => {
           filename: string;
           description: string;
         }>;
-        embeds: Array<{ title?: string; description?: string }>;
+        embeds: Array<{
+          title?: string;
+          description?: string;
+          image?: { url: string };
+        }>;
       };
       expect(payload).toMatchObject({
-        content: "_...clatter..._",
         nonce: "log:1400000000000000001",
         enforce_nonce: true,
         allowed_mentions: { parse: [] },
@@ -125,13 +127,19 @@ describe("Discord REST service", () => {
           },
         ],
         embeds: [
-          { title: "receivedCommand: /roll" },
-          { description: "[20] = 20" },
+          {
+            title: "receivedCommand: /roll",
+            image: {
+              url: "attachment://dice-1400000000000000001.png",
+            },
+          },
         ],
       });
-      expect(payload.embeds[0]?.description).toContain(
-        "[Guild shard 2/4 · generation 16]",
+      expect(payload.embeds[0]?.description).toBe(
+        "1d20 from **roller [from discord]** in channel **dice\\-rolls** on **Fixture Guild** [Shard 2/4]",
       );
+      expect(payload.embeds).toHaveLength(1);
+      expect(payload).not.toHaveProperty("content");
       expect(JSON.stringify(payload)).not.toContain("[HTTP]");
       expect(new Uint8Array(await file.arrayBuffer())).toEqual(logPng);
       return Response.json({ id: "100000000000000088" });
@@ -152,6 +160,54 @@ describe("Discord REST service", () => {
         discordFetch,
       ),
     ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
+  });
+
+  it("resolves missing HTTP interaction names before logging", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname.endsWith("/channels/100000000000000010")) {
+        return Response.json({
+          id: "100000000000000010",
+          guild_id: guildId,
+          name: "live-rolls",
+          type: 0,
+        });
+      }
+      if (pathname.endsWith(`/guilds/${guildId}`)) {
+        return Response.json({ id: guildId, name: "Live Guild" });
+      }
+      const form = await request.formData();
+      const payloadValue = form.get("payload_json");
+      if (typeof payloadValue !== "string") {
+        throw new Error("Multipart log fixture is invalid");
+      }
+      const payload = JSON.parse(payloadValue) as {
+        embeds: Array<{ description: string }>;
+      };
+      expect(payload.embeds).toHaveLength(1);
+      expect(payload.embeds[0]?.description).toContain(
+        "channel **live\\-rolls** on **Live Guild** [Shard 0/1]",
+      );
+      return Response.json({ id: "100000000000000088" });
+    });
+    const artifact = rollLogArtifact();
+
+    await expect(
+      deliverRollLogV1(
+        env,
+        {
+          artifact: { ...artifact, context: null },
+          logicalShard: {
+            status: "available",
+            shardId: 0,
+            shardCount: 1,
+            generation: 16,
+          },
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
+    expect(discordFetch).toHaveBeenCalledTimes(3);
   });
 
   it("classifies an explicit image rejection for text fallback", async () => {
