@@ -249,6 +249,10 @@ function validateSecretsStoreBindings(errors, worker, config) {
 }
 
 function validateStaticWorkerConfiguration(errors, configs) {
+  if (configs.interactions?.workers_dev !== true) {
+    errors.push("Staging Interactions Worker must enable workers_dev");
+  }
+
   for (const worker of ["gateway", "roll"]) {
     const alias = configs[worker]?.alias;
     if (

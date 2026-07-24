@@ -117,6 +117,7 @@ function validConfigs() {
     },
     interactions: {
       ...baseConfig(interactionsName, "workers/interactions/src/index.ts"),
+      workers_dev: true,
       vars: {
         DISCORD_APPLICATION_ID: applicationId,
         DISCORD_TEST_GUILD_ID: testGuildId,

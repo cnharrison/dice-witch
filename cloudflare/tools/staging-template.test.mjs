@@ -45,6 +45,7 @@ test("keeps staging Data private and schedules only audience capture", async () 
   const configs = await loadTemplates();
 
   assert.equal(configs.data.workers_dev, false);
+  assert.equal(configs.interactions.workers_dev, true);
   assert.equal("route" in configs.data, false);
   assert.equal("routes" in configs.data, false);
   assert.deepEqual(configs.gateway.triggers, { crons: ["*/5 * * * *"] });

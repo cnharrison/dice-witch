@@ -3,7 +3,7 @@
   "name": "dice-witch-interactions-staging",
   "main": "workers/interactions/src/index.ts",
   "compatibility_date": "2026-07-10",
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
   "vars": {
     "DISCORD_APPLICATION_ID": "100000000000000001",
