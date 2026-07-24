@@ -1,0 +1,51 @@
+{
+  "version": 4,
+  "rendererRevision": "canvaskit-v4-r3",
+  "groups": [
+    [
+      {
+        "target": "d20",
+        "result": 20,
+        "form": "standard",
+        "appearance": {
+          "material": {
+            "family": "glass",
+            "style": "prismatic",
+            "clarity": 88,
+            "finish": "polished",
+            "textureScale": 100
+          },
+          "palette": [
+            "#071932",
+            "#00bde3",
+            "#e94fbe",
+            "#ffe17a"
+          ],
+          "texture": {
+            "generatorId": "glass-v1",
+            "seed": 1832976388,
+            "scale": 100,
+            "rotation": 0,
+            "offsetU": 0,
+            "offsetV": 0,
+            "scope": "die-wide"
+          },
+          "lighting": {
+            "mode": "combined",
+            "strength": "gentle",
+            "direction": "upper-left"
+          },
+          "engraving": {
+            "fontId": "new-rocker",
+            "finish": "matte-ink",
+            "color": "#fff2c7"
+          },
+          "outlineColor": "#000000",
+          "requiresLocalSeparation": false,
+          "effect": null
+        },
+        "icons": []
+      }
+    ]
+  ]
+}

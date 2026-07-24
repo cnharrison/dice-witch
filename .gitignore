@@ -11,6 +11,10 @@ cloudflare/wrangler.gateway.jsonc
 cloudflare/wrangler.interactions.jsonc
 cloudflare/wrangler.roll.jsonc
 cloudflare/wrangler.web-api.jsonc
+cloudflare/wrangler.renderer-v4-boundary-control.jsonc
+cloudflare/wrangler.renderer-v4-boundary-in-process.jsonc
+cloudflare/wrangler.renderer-v4-boundary-private.jsonc
+cloudflare/wrangler.renderer-v4-boundary-rpc.jsonc
 frontend/.env*
 !frontend/.env.example
 *.log

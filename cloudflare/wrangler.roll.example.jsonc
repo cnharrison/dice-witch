@@ -5,10 +5,18 @@
   "compatibility_date": "2026-07-10",
   "workers_dev": true,
   "preview_urls": false,
+  "vars": {
+    "ROLL_RENDER_VERSION": "3"
+  },
   "alias": {
     "crypto": "./packages/roll-domain/src/worker-crypto.ts"
   },
   "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": ["**/*.wasm"],
+      "fallthrough": true
+    },
     {
       "type": "Data",
       "globs": ["**/*.ttf"],

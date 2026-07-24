@@ -2,7 +2,7 @@ import React, { type ReactNode, useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth, useUser } from '../lib/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
-import { customFetch } from '../main';
+import { customFetch } from '../lib/api';
 
 type Guild = {
   id: string;

@@ -7,6 +7,7 @@ export {
 } from "./constants";
 export {
   executeRoll,
+  prepareRollAppearance,
   type RollDie,
   type RollExecutionError,
   type RollExecutionRequest,

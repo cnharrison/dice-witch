@@ -1,18 +1,56 @@
-import * as React from 'react';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { D4Icon, D6Icon, D8Icon, D10Icon, D12Icon, D20Icon, DFIcon } from '@/components/icons';
-import { useTheme } from '@/components/theme-provider';
-import { cn } from '@/lib/utils';
+import * as React from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  D4Icon,
+  D6Icon,
+  D8Icon,
+  D10Icon,
+  D12Icon,
+  D20Icon,
+  DFIcon,
+} from "@/components/icons";
+import { useTheme } from "@/components/theme-provider";
+import { cn } from "@/lib/utils";
+import { ChevronDown, X } from "lucide-react";
+import { useBrowserMediaQueryV4 } from "./dice-v4-3d/browser-media";
 
-const DICE_TYPES: (number | string)[] = [4, 6, 8, 10, 12, 20, 100, 'F'];
-const OPERATORS = ['+', '-', '*', '/'];
-const KEEP_DROP = ['k', 'kl', 'd', 'dh'];
-const EXPLODING = ['!', '!!', '!p'];
-const COMPARISON = ['=', '>', '<', '>=', '<='];
-const REROLL = ['r', 'ro'];
-const UNIQUE = ['u'];
-const SUCCESS_FAILURE = ['cs', 'cf'];
+const MOBILE_QUERY = "(max-width: 639px)";
+const COMMON_DICE = [4, 6, 8, 10, 12, 20] as const;
+const ADVANCED_DICE = [100, "F"] as const;
+const OPERATORS = ["+", "-", "*", "/"] as const;
+const KEEP_DROP = ["k", "kl", "d", "dh"] as const;
+const EXPLODING = ["!", "!!", "!p"] as const;
+const COMPARISON = ["=", ">", "<", ">=", "<="] as const;
+const REROLL = ["r", "ro"] as const;
+const UNIQUE = ["u"] as const;
+const SUCCESS_FAILURE = ["cs", "cf"] as const;
+const MODIFIERS = [
+  ...KEEP_DROP,
+  ...EXPLODING,
+  ...REROLL,
+  ...UNIQUE,
+  ...SUCCESS_FAILURE,
+  ...COMPARISON,
+] as const;
+const ADVANCED_TABS = ["dice", "modifiers", "numbers"] as const;
+type AdvancedTab = (typeof ADVANCED_TABS)[number];
+const ADVANCED_TAB_LABELS: Readonly<Record<AdvancedTab, string>> = {
+  dice: "Dice",
+  modifiers: "Modifiers",
+  numbers: "Numbers",
+};
+const MODIFIER_SUFFIX =
+  "(?:k(?:l)?\\d+|d(?:h)?\\d+|!!|!p|!|ro|r|u|cs=\\d+|cf=\\d+|>=\\d+|<=\\d+|=\\d+|>\\d+|<\\d+)*";
+
+export type QuickDie =
+  | (typeof COMMON_DICE)[number]
+  | (typeof ADVANCED_DICE)[number];
 
 interface DiceNotationButtonsProps {
   input: string;
@@ -20,677 +58,512 @@ interface DiceNotationButtonsProps {
   isDisabled?: boolean;
 }
 
-export function DiceNotationButtons({ input, setInput, isDisabled = false }: DiceNotationButtonsProps) {
+function dieToken(sides: QuickDie): string {
+  return sides === 100 ? "%" : String(sides);
+}
+
+function dieLabel(sides: QuickDie): string {
+  return `d${dieToken(sides)}`;
+}
+
+function escapedDieToken(sides: QuickDie): string {
+  return dieToken(sides).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function cleanNotationAfterRemoval(value: string): string {
+  return value
+    .replace(/\s+/g, "")
+    .replace(/^[+\-*/]/, "")
+    .replace(/[+\-*/]$/, "");
+}
+
+export function incrementDiceNotation(
+  currentInput: string,
+  sides: QuickDie,
+): string {
+  const token = dieToken(sides);
+  if (currentInput === "") return `1d${token}`;
+  const pattern = new RegExp(
+    `(^|[+\\-*/])\\s*(\\d+)d${escapedDieToken(sides)}(?![\\d%F])`,
+    "gi",
+  );
+  const matches = [...currentInput.matchAll(pattern)];
+  const match = matches.at(-1);
+  if (match !== undefined && match.index !== undefined) {
+    const operator = match[1] ?? "";
+    const count = Number.parseInt(match[2] ?? "", 10);
+    const replacement = `${operator}${String(count + 1)}d${token}`;
+    return `${currentInput.slice(0, match.index)}${replacement}${currentInput.slice(
+      match.index + match[0].length,
+    )}`;
+  }
+  const separator = /[+\-*/]$/.test(currentInput) ? "" : "+";
+  return `${currentInput}${separator}1d${token}`;
+}
+
+export function decrementDiceNotation(
+  currentInput: string,
+  sides: QuickDie,
+): string {
+  const pattern = new RegExp(
+    `(^|[+\\-*/])\\s*(\\d+)d${escapedDieToken(sides)}(?![\\d%F])${MODIFIER_SUFFIX}`,
+    "gi",
+  );
+  const matches = [...currentInput.matchAll(pattern)];
+  const match = matches.at(-1);
+  if (match === undefined || match.index === undefined) return currentInput;
+  const count = Number.parseInt(match[2] ?? "", 10);
+  if (count > 1) {
+    const replacement = match[0].replace(
+      new RegExp(`\\d+(?=d${escapedDieToken(sides)})`, "i"),
+      String(count - 1),
+    );
+    return `${currentInput.slice(0, match.index)}${replacement}${currentInput.slice(
+      match.index + match[0].length,
+    )}`;
+  }
+  return cleanNotationAfterRemoval(
+    `${currentInput.slice(0, match.index)}${currentInput.slice(
+      match.index + match[0].length,
+    )}`,
+  );
+}
+
+export function countDiceNotation(
+  input: string,
+  sides: QuickDie,
+): number {
+  const pattern = new RegExp(
+    `(\\d+)d${escapedDieToken(sides)}(?![\\d%F])`,
+    "gi",
+  );
+  return [...input.matchAll(pattern)].reduce(
+    (total, match) => total + Number.parseInt(match[1] ?? "0", 10),
+    0,
+  );
+}
+
+function appendOperator(currentInput: string, operator: string): string {
+  if (currentInput === "") return currentInput;
+  if (/[+\-*/]$/.test(currentInput)) {
+    return `${currentInput.slice(0, -1)}${operator}`;
+  }
+  return /\d$/.test(currentInput) ? `${currentInput}${operator}` : currentInput;
+}
+
+function appendModifier(currentInput: string, modifier: string): string {
+  if (currentInput === "" || !/\d+d(?:\d+|%|F)/i.test(currentInput)) {
+    return currentInput;
+  }
+  if (SUCCESS_FAILURE.includes(modifier as (typeof SUCCESS_FAILURE)[number])) {
+    return `${currentInput}${modifier}=1`;
+  }
+  if (KEEP_DROP.includes(modifier as (typeof KEEP_DROP)[number])) {
+    return `${currentInput}${modifier}1`;
+  }
+  return `${currentInput}${modifier}`;
+}
+
+function modifierLabel(modifier: string): string {
+  const labels: Record<string, string> = {
+    k: "Keep highest",
+    kl: "Keep lowest",
+    d: "Drop lowest",
+    dh: "Drop highest",
+    "!": "Explode",
+    "!!": "Compound explosion",
+    "!p": "Penetrating explosion",
+    r: "Reroll until no match",
+    ro: "Reroll once",
+    u: "Unique",
+    cs: "Critical success",
+    cf: "Critical failure",
+  };
+  return labels[modifier] ?? `Comparison ${modifier}`;
+}
+
+function DieIcon({ sides }: { sides: QuickDie }) {
   const { theme } = useTheme();
+  const props = { className: "h-5 w-5", darkMode: theme === "dark" };
+  if (sides === "F") return <DFIcon {...props} />;
+  if (sides === 100) {
+    return <span className="flex h-5 w-5 items-center justify-center text-xs font-bold">d%</span>;
+  }
+  const Icon = {
+    4: D4Icon,
+    6: D6Icon,
+    8: D8Icon,
+    10: D10Icon,
+    12: D12Icon,
+    20: D20Icon,
+  }[sides];
+  return <Icon {...props} />;
+}
+
+function DesktopDieControl({
+  sides,
+  count,
+  disabled,
+  onAdd,
+  onRemove,
+}: {
+  sides: QuickDie;
+  count: number;
+  disabled: boolean;
+  onAdd: () => void;
+  onRemove: () => void;
+}) {
+  const label = dieLabel(sides);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          aria-label={`Add ${label}`}
+          onClick={onAdd}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            onRemove();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "-") {
+              event.preventDefault();
+              onRemove();
+            } else if (event.key === "ArrowUp" || event.key === "+") {
+              event.preventDefault();
+              onAdd();
+            }
+          }}
+          className="relative h-12 min-w-12 flex-1 flex-col gap-0 p-1"
+        >
+          <DieIcon sides={sides} />
+          <span className="text-[11px]">{label}</span>
+          {count > 0 && (
+            <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ff00ff] px-1 text-[10px] font-bold text-white shadow-md">
+              {count}
+            </span>
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <p>Click to add {label}</p>
+        <p className="text-xs text-muted-foreground">
+          Right-click, Down Arrow, or Minus to subtract
+        </p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function MobileDieControl({
+  sides,
+  count,
+  disabled,
+  onAdd,
+  onRemove,
+}: {
+  sides: QuickDie;
+  count: number;
+  disabled: boolean;
+  onAdd: () => void;
+  onRemove: () => void;
+}) {
+  const label = dieLabel(sides);
+  return (
+    <div className="flex w-full min-w-0 items-center rounded-md border bg-background">
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={disabled || count === 0}
+        aria-label={`Remove ${label}`}
+        onClick={onRemove}
+        className="h-11 w-11 shrink-0 rounded-r-none p-0 text-lg"
+      >
+        −
+      </Button>
+      <div className="flex h-11 min-w-0 flex-1 flex-col items-center justify-center border-x text-xs">
+        <span className="font-semibold">{label}</span>
+        <span aria-label={`${String(count)} ${label} selected`}>{count}</span>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={disabled}
+        aria-label={`Add ${label}`}
+        onClick={onAdd}
+        className="h-11 w-11 shrink-0 rounded-l-none p-0 text-lg"
+      >
+        +
+      </Button>
+    </div>
+  );
+}
+
+export function DiceNotationButtons({
+  input,
+  setInput,
+  isDisabled = false,
+}: DiceNotationButtonsProps) {
+  const mobile = useBrowserMediaQueryV4(MOBILE_QUERY);
   const inputRef = React.useRef(input);
-  const [longPressTimer, setLongPressTimer] = React.useState<ReturnType<typeof setTimeout> | null>(null);
-  const [longPressTarget, setLongPressTarget] = React.useState<number | string | null>(null);
+  const advancedId = React.useId();
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  const [advancedTab, setAdvancedTab] = React.useState<AdvancedTab>("dice");
 
   React.useEffect(() => {
     inputRef.current = input;
   }, [input]);
 
-  const handleDiceClick = React.useCallback((sides: number | string) => {
-    if (isDisabled) return;
-
-    const sideNotation = sides === 100 ? '%' : sides;
-    const currentInput = inputRef.current;
-
-    if (!currentInput) {
-      setInput(`1d${sideNotation}`);
-      return;
-    }
-
-    const escapedNotation = typeof sideNotation === 'string' ? sideNotation : sideNotation.toString();
-    const dicePattern = new RegExp(`(^|[+\\-*/])\\s*(\\d+)d${escapedNotation}(?![\\d%F])`, 'gi');
-    const matches = Array.from(currentInput.matchAll(dicePattern));
-
-    if (matches.length > 0) {
-      const lastMatch = matches[matches.length - 1];
-      const fullMatch = lastMatch[0];
-      const operator = lastMatch[1] || '';
-      const count = parseInt(lastMatch[2], 10);
-      const newCount = count + 1;
-
-      const position = lastMatch.index;
-      const newDiceStr = `${operator}${newCount}d${sideNotation}`;
-      const newInput = currentInput.substring(0, position) +
-                      newDiceStr +
-                      currentInput.substring(position + fullMatch.length);
-
-      setInput(newInput);
-    } else {
-      const newInput = currentInput === '' || /[\+\-\*\/]$/.test(currentInput)
-        ? `${currentInput}1d${sideNotation}`
-        : `${currentInput}+1d${sideNotation}`;
-
-      setInput(newInput);
-    }
-  }, [setInput, isDisabled]);
-
-  const handleOperatorClick = React.useCallback((operator: string) => {
-    if (isDisabled) return;
-
-    const currentInput = inputRef.current;
-    if (!currentInput) return;
-
-    if (/[\+\-\*\/]$/.test(currentInput)) {
-      setInput(currentInput.slice(0, -1) + operator);
-    } else if (currentInput && /\d$/.test(currentInput)) {
-      setInput(currentInput + operator);
-    }
-  }, [setInput, isDisabled]);
-
-  const handleModifierClick = React.useCallback((modifier: string) => {
-    if (isDisabled) return;
-
-    const currentInput = inputRef.current;
-    if (!currentInput) return;
-
-    if (!/\d+d(\d+|F)/i.test(currentInput)) return;
-
-    if (SUCCESS_FAILURE.includes(modifier)) {
-      setInput(currentInput + modifier + '=1');
-    } else if (KEEP_DROP.includes(modifier)) {
-      setInput(currentInput + modifier + '1');
-    } else {
-      setInput(currentInput + modifier);
-    }
-  }, [setInput, isDisabled]);
-
-    const handleNumberClick = React.useCallback((number: number) => {
-    if (isDisabled) return;
-
-    const currentInput = inputRef.current;
-    if (currentInput === undefined) return;
-
-    setInput(currentInput + number.toString());
-  }, [setInput, isDisabled]);
-
-    const handleClearDiceType = React.useCallback((sides: number | string) => {
-    if (isDisabled) return;
-
-    const currentInput = inputRef.current;
-    if (!currentInput) return;
-
-    const sideNotation = sides === 100 ? '%' : sides;
-    const dicePattern = new RegExp(`(\\+|\\-|\\*|\\/|^)\\d+d${sideNotation}(d\\d+|k\\d+|kl\\d+|dh\\d+|!+|!p|r|ro|cs=\\d+|cf=\\d+|=\\d+|>\\d+|<\\d+|>=\\d+|<=\\d+)*`, 'gi');
-
-    let newInput = currentInput.replace(dicePattern, '');
-
-    newInput = newInput.replace(/[\+\-\*\/]{2,}/g, '+');
-    newInput = newInput.replace(/^[\+\-\*\/]/, '');
-    newInput = newInput.replace(/[\+\-\*\/]$/, '');
-
-    setInput(newInput);
-  }, [setInput, isDisabled]);
-
-  const getDieIcon = React.useCallback((sides: number | string) => {
-    const iconProps = {
-      className: "w-5 h-5",
-      darkMode: theme === 'dark',
+  React.useEffect(() => {
+    if (!mobile || !advancedOpen) return;
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setAdvancedOpen(false);
     };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [advancedOpen, mobile]);
 
-    if (sides === 'F') {
-      return <DFIcon {...iconProps} />;
-    }
+  const commit = React.useCallback(
+    (next: string) => {
+      inputRef.current = next;
+      setInput(next);
+    },
+    [setInput],
+  );
+  const addDie = React.useCallback(
+    (sides: QuickDie) => {
+      if (!isDisabled) commit(incrementDiceNotation(inputRef.current, sides));
+    },
+    [commit, isDisabled],
+  );
+  const removeDie = React.useCallback(
+    (sides: QuickDie) => {
+      if (!isDisabled) commit(decrementDiceNotation(inputRef.current, sides));
+    },
+    [commit, isDisabled],
+  );
+  const addOperator = (operator: string) => {
+    if (!isDisabled) commit(appendOperator(inputRef.current, operator));
+  };
+  const addModifier = (modifier: string) => {
+    if (!isDisabled) commit(appendModifier(inputRef.current, modifier));
+  };
+  const addNumber = (number: number) => {
+    if (!isDisabled) commit(`${inputRef.current}${String(number)}`);
+  };
 
-    switch (sides) {
-      case 4: return <D4Icon {...iconProps} />;
-      case 6: return <D6Icon {...iconProps} />;
-      case 8: return <D8Icon {...iconProps} />;
-      case 10: return <D10Icon {...iconProps} />;
-      case 12: return <D12Icon {...iconProps} />;
-      case 20: return <D20Icon {...iconProps} />;
-      case 100: return <div className="w-5 h-5 flex items-center justify-center font-bold">d%</div>;
-      default: return null;
-    }
-  }, [theme]);
-
-  const handleTouchStart = React.useCallback((sides: number | string) => {
-    if (isDisabled) return;
-
-    const timer = setTimeout(() => {
-      handleClearDiceType(sides);
-      setLongPressTarget(sides as any);
-    }, 500);
-
-    setLongPressTimer(timer);
-  }, [isDisabled, handleClearDiceType]);
-
-  const handleTouchEnd = React.useCallback(() => {
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      setLongPressTimer(null);
-    }
-    setLongPressTarget(null);
-  }, [longPressTimer]);
-
-  const getTokenCounts = React.useCallback(() => {
-    const diceCounts: Record<number | string, number> = {};
-    const modifierCounts: Record<string, number> = {};
-    const currentInput = inputRef.current;
-
-
-    DICE_TYPES.forEach(type => {
-      diceCounts[type] = 0;
-    });
-
-    [...KEEP_DROP, ...EXPLODING, ...REROLL, ...UNIQUE, ...SUCCESS_FAILURE].forEach(mod => {
-      modifierCounts[mod] = 0;
-    });
-
-    if (!currentInput) return { diceCounts, modifierCounts };
-
-    DICE_TYPES.forEach(type => {
-      const sideNotation = type === 100 ? '%' : type;
-      const pattern = new RegExp(`(\\d+)d${sideNotation}(?![\\d%F])`, 'gi');
-      const matches = Array.from(currentInput.matchAll(pattern));
-
-      if (matches.length > 0) {
-        matches.forEach(match => {
-          const count = parseInt(match[1], 10);
-          diceCounts[type] += count;
-        });
-      }
-    });
-
-    [...KEEP_DROP].forEach(mod => {
-      if (mod === 'd') {
-        const diceNotations = Array.from(currentInput.matchAll(/\d+d\d+/g));
-        let dropCount = 0;
-
-        diceNotations.forEach(diceMatch => {
-          const diceEnd = diceMatch.index + diceMatch[0].length;
-          if (diceEnd < currentInput.length &&
-              currentInput[diceEnd] === 'd' &&
-              /\d/.test(currentInput[diceEnd + 1])) {
-            dropCount++;
-          }
-        });
-
-        modifierCounts[mod] = dropCount;
-      } else {
-        const pattern = new RegExp(`${mod}(\\d+)`, 'g');
-        const matches = currentInput.match(pattern);
-        if (matches) {
-          modifierCounts[mod] = matches.length;
-        }
-      }
-    });
-
-    EXPLODING.forEach(mod => {
-      const escaped = mod.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(escaped, 'g');
-      const matches = currentInput.match(pattern);
-      if (matches) {
-        modifierCounts[mod] = matches.length;
-      }
-    });
-
-    REROLL.forEach(mod => {
-      const escaped = mod.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(escaped, 'g');
-      const matches = currentInput.match(pattern);
-      if (matches) {
-        modifierCounts[mod] = matches.length;
-      }
-    });
-    
-    UNIQUE.forEach(mod => {
-      const escaped = mod.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(escaped, 'g');
-      const matches = currentInput.match(pattern);
-      if (matches) {
-        modifierCounts[mod] = matches.length;
-      }
-    });
-
-    SUCCESS_FAILURE.forEach(mod => {
-      const pattern = new RegExp(`${mod}=\\d+`, 'g');
-      const matches = currentInput.match(pattern);
-      if (matches) {
-        modifierCounts[mod] = matches.length;
-      }
-    });
-
-    return { diceCounts, modifierCounts };
-  }, []);
-
-  // Desktop layout
-  const renderDesktopLayout = React.useMemo(() => {
-    const { diceCounts, modifierCounts } = getTokenCounts();
-
-    return (
-      <div className="h-full flex flex-col">
-        <div className="grid grid-cols-7 gap-2 mb-2">
-          {DICE_TYPES.map((sides) => {
-            const count = diceCounts[sides] || 0;
-            return (
-              <div key={`dice-${sides}`} className="relative flex justify-center">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="lg"
-                      onClick={() => handleDiceClick(sides)}
-                      disabled={isDisabled}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        handleClearDiceType(sides);
-                      }}
-                      className={cn(
-                        "h-14 w-14 flex flex-col items-center justify-center p-0",
-                        longPressTarget === sides && "bg-red-100"
-                      )}
-                    >
-                      {getDieIcon(sides)}
-                      <span className="text-xs mt-1">d{sides === 100 ? '%' : sides}</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    <p>Click to add d{sides === 100 ? '%' : sides}</p>
-                    <p className="text-xs text-muted-foreground">Right-click to reset</p>
-                  </TooltipContent>
-                </Tooltip>
-                {count > 0 && (
-                  <span className="absolute -top-2 -right-2 h-6 w-6 flex items-center justify-center bg-[#ff00ff] text-white text-xs font-bold rounded-full shadow-md">
-                    {count}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-4 gap-2 mb-2">
-          {OPERATORS.map((op) => (
-            <Tooltip key={`op-${op}`}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => handleOperatorClick(op)}
-                  disabled={isDisabled}
-                  className="h-10"
-                >
-                  {op}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{op === '+' ? 'Add' : op === '-' ? 'Subtract' : op === '*' ? 'Multiply' : 'Divide'}</p>
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-4 gap-2 mb-2">
-          {KEEP_DROP.map((mod) => {
-            const count = modifierCounts[mod] || 0;
-            return (
-              <Tooltip key={`mod-desktop-${mod}`}>
-                <TooltipTrigger asChild>
-                  <div className="relative">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleModifierClick(mod)}
-                      disabled={isDisabled}
-                      className="h-10 w-full"
-                    >
-                      {mod === 'k' ? 'keep' :
-                      mod === 'kl' ? 'keepL' :
-                      mod === 'd' ? 'drop' :
-                      'dropH'}
-                    </Button>
-                    {count > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-xs font-bold rounded-full shadow-md">
-                        {count}
-                      </span>
-                    )}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {mod === 'k' ? 'Keep highest' :
-                    mod === 'kl' ? 'Keep lowest' :
-                    mod === 'd' ? 'Drop lowest' :
-                    'Drop highest'}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-4 gap-2 mb-2">
-          {[...EXPLODING, 'r'].map((mod) => {
-            const count = modifierCounts[mod] || 0;
-            return (
-              <Tooltip key={`mod-desktop-${mod}`}>
-                <TooltipTrigger asChild>
-                  <div className="relative">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleModifierClick(mod)}
-                      disabled={isDisabled}
-                      className="h-10 w-full"
-                    >
-                      {mod}
-                    </Button>
-                    {count > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-xs font-bold rounded-full shadow-md">
-                        {count}
-                      </span>
-                    )}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {mod === '!' ? 'Exploding' :
-                     mod === '!!' ? 'Compounding' :
-                     mod === '!p' ? 'Penetrating' :
-                     mod === 'r' ? 'Reroll once' : ''}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-4 gap-2 mb-2">
-          {[...SUCCESS_FAILURE, REROLL[1], ...UNIQUE].map((mod) => {
-            const count = modifierCounts[mod] || 0;
-            return (
-              <Tooltip key={`mod-desktop-${mod}`}>
-                <TooltipTrigger asChild>
-                  <div className="relative">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleModifierClick(mod)}
-                      disabled={isDisabled}
-                      className="h-10 w-full"
-                    >
-                      {mod}
-                    </Button>
-                    {count > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-xs font-bold rounded-full shadow-md">
-                        {count}
-                      </span>
-                    )}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {mod === 'cs' ? 'Critical success' :
-                     mod === 'cf' ? 'Critical failure' :
-                     mod === 'ro' ? 'Reroll until no match' :
-                     mod === 'u' ? 'Unique' :
-                     'Equal to'}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-4 gap-2 mb-2">
-          {COMPARISON.slice(1).map((mod) => (
-            <Tooltip key={`mod-desktop-${mod}`}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleModifierClick(mod)}
-                  disabled={isDisabled}
-                  className="h-10 w-full"
-                >
-                  {mod}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Comparison operator</p>
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-
-        <div className="flex-1 grid grid-cols-3 gap-2">
-          {[7, 8, 9, 4, 5, 6, 1, 2, 3].map((num) => (
-            <Button
-              key={`num-${num}`}
-              variant="outline"
-              size="lg"
-              onClick={() => handleNumberClick(num)}
-              disabled={isDisabled}
-              className="h-10"
-            >
-              {num}
-            </Button>
-          ))}
-          <Button
-            key="num-0"
-            variant="outline"
-            size="lg"
-            onClick={() => handleNumberClick(0)}
-            disabled={isDisabled}
-            className="col-span-3 h-10"
-          >
-            0
-          </Button>
-        </div>
-      </div>
+  const quickControls = COMMON_DICE.map((sides) => {
+    const props = {
+      sides,
+      count: countDiceNotation(input, sides),
+      disabled: isDisabled,
+      onAdd: () => addDie(sides),
+      onRemove: () => removeDie(sides),
+    };
+    return mobile ? (
+      <MobileDieControl key={String(sides)} {...props} />
+    ) : (
+      <DesktopDieControl key={String(sides)} {...props} />
     );
-  }, [getTokenCounts, getDieIcon, handleDiceClick, handleClearDiceType, handleModifierClick, handleNumberClick, handleOperatorClick, isDisabled, longPressTarget]);
-
-  const renderMobileLayout = React.useMemo(() => {
-    const { diceCounts, modifierCounts } = getTokenCounts();
-
-    return (
-      <>
-        <div className="grid grid-cols-7 gap-1 mb-2">
-          {DICE_TYPES.map((sides) => {
-            const count = diceCounts[sides] || 0;
-            return (
-              <Tooltip key={`dice-mobile-${sides}`}>
-                <TooltipTrigger asChild>
-                  <div className="relative flex justify-center">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDiceClick(sides)}
-                      disabled={isDisabled}
-                      onTouchStart={() => handleTouchStart(sides)}
-                      onTouchEnd={handleTouchEnd}
-                      onTouchCancel={handleTouchEnd}
-                      className={cn(
-                        "h-10 w-10 flex flex-col items-center justify-center p-0",
-                        longPressTarget === sides && "bg-red-100"
-                      )}
-                    >
-                      <span className="text-xs font-semibold">d{sides === 100 ? '%' : sides}</span>
-                    </Button>
-                    {count > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-[10px] font-bold rounded-full shadow-md">
-                        {count}
-                      </span>
-                    )}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Tap to add d{sides === 100 ? '%' : sides}</p>
-                  <p className="text-xs text-muted-foreground">Long-press to remove</p>
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-4 gap-1 mb-1">
-          {OPERATORS.map((op) => (
-            <Button
-              key={`op-mobile-${op}`}
-              variant="outline"
-              size="sm"
-              onClick={() => handleOperatorClick(op)}
-              disabled={isDisabled}
-              className="h-9"
-            >
-              {op}
-            </Button>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-12 gap-1 mb-1">
-          <div className="col-span-9">
-            <div className="grid grid-cols-3 gap-1">
-              {[7, 8, 9, 4, 5, 6, 1, 2, 3].map((num) => (
-                <Button
-                  key={`num-mobile-${num}`}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleNumberClick(num)}
-                  disabled={isDisabled}
-                  className="h-9"
-                >
-                  {num}
-                </Button>
-              ))}
-            </div>
-            <div className="grid grid-cols-3 gap-1 mt-1">
-              <Button
-                key="num-mobile-0"
-                variant="outline"
-                size="sm"
-                onClick={() => handleNumberClick(0)}
-                disabled={isDisabled}
-                className="col-span-3 h-9"
-              >
-                0
-              </Button>
-            </div>
-          </div>
-          <div className="col-span-3">
-            <div className="grid grid-rows-2 h-full gap-1">
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleModifierClick('k')}
-                  disabled={isDisabled}
-                  className="h-full w-full"
-                >
-                  keep
-                </Button>
-                {modifierCounts['k'] > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-[10px] font-bold rounded-full shadow-md">
-                    {modifierCounts['k']}
-                  </span>
-                )}
-              </div>
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleModifierClick('!')}
-                  disabled={isDisabled}
-                  className="h-full w-full"
-                >
-                  !
-                </Button>
-                {modifierCounts['!'] > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-[10px] font-bold rounded-full shadow-md">
-                    {modifierCounts['!']}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-1">
-          {KEEP_DROP.filter(m => m !== 'k').map((mod) => {
-            const count = modifierCounts[mod] || 0;
-            return (
-              <div key={`mod-mobile-${mod}`} className="relative">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleModifierClick(mod)}
-                  disabled={isDisabled}
-                  className="h-9 w-full"
-                >
-                  {mod}
-                </Button>
-                {count > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-[10px] font-bold rounded-full shadow-md">
-                    {count}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-4 gap-1 mt-1">
-          {EXPLODING.filter(m => m !== '!').concat(REROLL).map((mod) => {
-            const count = modifierCounts[mod] || 0;
-            return (
-              <div key={`mod-mobile-${mod}`} className="relative">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleModifierClick(mod)}
-                  disabled={isDisabled}
-                  className="h-9 w-full"
-                >
-                  {mod}
-                </Button>
-                {count > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-[10px] font-bold rounded-full shadow-md">
-                    {count}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-4 gap-1 mt-1">
-          {SUCCESS_FAILURE.concat([COMPARISON[0], ...UNIQUE]).map((mod) => {
-            const count = modifierCounts[mod] || 0;
-            return (
-              <div key={`mod-mobile-${mod}`} className="relative">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleModifierClick(mod)}
-                  disabled={isDisabled}
-                  className="h-9 w-full"
-                >
-                  {mod}
-                </Button>
-                {count > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center bg-[#ff00ff] text-white text-[10px] font-bold rounded-full shadow-md">
-                    {count}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </>
-    );
-  }, [getTokenCounts, handleDiceClick, handleModifierClick, handleNumberClick, handleOperatorClick, handleTouchEnd, handleTouchStart, isDisabled, longPressTarget]);
+  });
 
   return (
     <TooltipProvider>
-      <div className="dice-notation-buttons p-2 h-full flex flex-col">
-        {typeof window !== 'undefined' && window.innerWidth < 640
-          ? renderMobileLayout
-          : renderDesktopLayout}
+      <div className="relative flex h-full min-h-0 w-full flex-col gap-2 p-2">
+        <div
+          aria-label="Common dice"
+          className={
+            mobile
+              ? "grid grid-cols-2 gap-2"
+              : "grid grid-cols-3 gap-2 xl:grid-cols-6"
+          }
+        >
+          {quickControls}
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isDisabled}
+          aria-expanded={advancedOpen}
+          aria-controls={`${advancedId}-controls`}
+          onClick={() => {
+            if (!advancedOpen) setAdvancedTab("dice");
+            setAdvancedOpen((open) => !open);
+          }}
+          className={cn(
+            "w-full justify-between px-3",
+            mobile ? "h-11" : "h-9",
+          )}
+        >
+          <span>Advanced</span>
+          <ChevronDown
+            data-advanced-indicator
+            aria-hidden="true"
+            className={cn(
+              "h-4 w-4 transition-transform",
+              advancedOpen && "rotate-180",
+            )}
+          />
+        </Button>
+
+        {advancedOpen && (
+          <div
+            id={`${advancedId}-controls`}
+            role={mobile ? "dialog" : "region"}
+            aria-label="Advanced dice notation"
+            className={cn(
+              "flex min-h-0 flex-col overflow-hidden rounded-lg border bg-background p-3",
+              mobile
+                ? "fixed inset-x-2 bottom-2 top-16 z-50 pt-14 shadow-xl"
+                : "flex-none shadow-sm",
+            )}
+          >
+            {mobile && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setAdvancedOpen(false)}
+                aria-label="Close advanced notation"
+                className="absolute right-3 top-3 h-11 w-11"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </Button>
+            )}
+
+            <div
+              role="tablist"
+              aria-label="Advanced notation categories"
+              className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1"
+            >
+              {ADVANCED_TABS.map((tab, index) => (
+                <button
+                  key={tab}
+                  id={`${advancedId}-${tab}-tab`}
+                  type="button"
+                  role="tab"
+                  aria-selected={advancedTab === tab}
+                  aria-controls={`${advancedId}-${tab}-panel`}
+                  tabIndex={advancedTab === tab ? 0 : -1}
+                  onClick={() => setAdvancedTab(tab)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+                      return;
+                    }
+                    event.preventDefault();
+                    const offset = event.key === "ArrowRight" ? 1 : -1;
+                    const next = ADVANCED_TABS[
+                      (index + offset + ADVANCED_TABS.length) %
+                        ADVANCED_TABS.length
+                    ] as AdvancedTab;
+                    setAdvancedTab(next);
+                    document.getElementById(`${advancedId}-${next}-tab`)?.focus();
+                  }}
+                  className={cn(
+                    "rounded px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    mobile ? "h-11" : "h-9",
+                    advancedTab === tab
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {ADVANCED_TAB_LABELS[tab]}
+                </button>
+              ))}
+            </div>
+
+            <div
+              id={`${advancedId}-${advancedTab}-panel`}
+              role="tabpanel"
+              aria-labelledby={`${advancedId}-${advancedTab}-tab`}
+              className="grid min-h-0 flex-1 items-start justify-items-center overflow-y-auto py-3"
+            >
+              {advancedTab === "dice" && (
+                <div className="w-full max-w-xl space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {ADVANCED_DICE.map((sides) => {
+                      const props = {
+                        sides,
+                        count: countDiceNotation(input, sides),
+                        disabled: isDisabled,
+                        onAdd: () => addDie(sides),
+                        onRemove: () => removeDie(sides),
+                      };
+                      return mobile ? (
+                        <MobileDieControl key={String(sides)} {...props} />
+                      ) : (
+                        <DesktopDieControl key={String(sides)} {...props} />
+                      );
+                    })}
+                  </div>
+                  {mobile && (
+                    <div className="grid grid-cols-4 gap-2" aria-label="Operators">
+                      {OPERATORS.map((operator) => (
+                        <Button
+                          type="button"
+                          key={operator}
+                          variant="outline"
+                          onClick={() => addOperator(operator)}
+                          disabled={isDisabled}
+                          className="h-11"
+                        >
+                          {operator}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {advancedTab === "modifiers" && (
+                <div
+                  className="grid w-full max-w-xl grid-cols-4 gap-2"
+                  aria-label="Modifiers"
+                >
+                  {MODIFIERS.map((modifier) => (
+                    <Button
+                      type="button"
+                      key={modifier}
+                      variant="outline"
+                      onClick={() => addModifier(modifier)}
+                      disabled={isDisabled}
+                      aria-label={modifierLabel(modifier)}
+                      className={cn(mobile ? "h-11" : "h-9", "px-1 text-xs")}
+                    >
+                      {modifier}
+                    </Button>
+                  ))}
+                </div>
+              )}
+
+              {advancedTab === "numbers" && (
+                <div
+                  className="grid w-full max-w-sm grid-cols-3 gap-2"
+                  aria-label="Number keypad"
+                >
+                  {[7, 8, 9, 4, 5, 6, 1, 2, 3, 0].map((number) => (
+                    <Button
+                      type="button"
+                      key={number}
+                      variant="outline"
+                      onClick={() => addNumber(number)}
+                      disabled={isDisabled}
+                      className={cn(
+                        mobile ? "h-11" : "h-10",
+                        number === 0 && "col-span-3",
+                      )}
+                    >
+                      {number}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </TooltipProvider>
   );

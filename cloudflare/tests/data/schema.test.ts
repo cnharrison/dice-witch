@@ -14,6 +14,8 @@ const timestamp = 1_767_225_600_123;
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM guild_appearance_profiles"),
+    dataEnv.DATA.prepare("DELETE FROM user_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM mutation_receipts"),
     dataEnv.DATA.prepare("DELETE FROM interaction_receipts"),
     dataEnv.DATA.prepare("DELETE FROM users_guilds"),
@@ -81,11 +83,13 @@ describe("D1 business schema migration", () => {
   it("creates the business and idempotency tables as STRICT tables", async () => {
     expect(await tableNames()).toEqual(
       expect.arrayContaining([
+        "guild_appearance_profiles",
         "guilds",
         "mutation_receipts",
         "interaction_receipts",
         "oauth_states",
         "stats",
+        "user_appearance_profiles",
         "users",
         "users_guilds",
         "web_sessions",
@@ -97,11 +101,13 @@ describe("D1 business schema migration", () => {
       strict: number;
     }>();
     for (const name of [
+      "guild_appearance_profiles",
       "guilds",
       "mutation_receipts",
       "interaction_receipts",
       "oauth_states",
       "stats",
+      "user_appearance_profiles",
       "users",
       "users_guilds",
       "web_sessions",
@@ -178,6 +184,56 @@ describe("D1 business schema migration", () => {
       "expires_at",
       "consumed_at",
     ]);
+    await expect(columns("user_appearance_profiles")).resolves.toEqual([
+      "user_id",
+      "revision",
+      "profile_json",
+      "updated_at",
+    ]);
+    await expect(columns("guild_appearance_profiles")).resolves.toEqual([
+      "guild_id",
+      "revision",
+      "profile_json",
+      "updated_by_user_id",
+      "updated_at",
+    ]);
+  });
+
+  it("stores V1 and V2 appearance documents in the existing JSON columns", async () => {
+    await insertUser();
+    await insertGuild();
+    await dataEnv.DATA.batch([
+      dataEnv.DATA.prepare(
+        `INSERT INTO user_appearance_profiles (
+           user_id, revision, profile_json, updated_at
+         ) VALUES (?, 1, ?, ?)`,
+      ).bind(userId, JSON.stringify({ version: 1 }), timestamp),
+      dataEnv.DATA.prepare(
+        `INSERT INTO guild_appearance_profiles (
+           guild_id, revision, profile_json, updated_by_user_id, updated_at
+         ) VALUES (?, 1, ?, ?, ?)`,
+      ).bind(
+        guildId,
+        JSON.stringify({ version: 2 }),
+        userId,
+        timestamp,
+      ),
+    ]);
+
+    const versions = await dataEnv.DATA.prepare(
+      `SELECT 'personal' AS owner,
+              json_extract(profile_json, '$.version') AS version
+       FROM user_appearance_profiles
+       UNION ALL
+       SELECT 'guild' AS owner,
+              json_extract(profile_json, '$.version') AS version
+       FROM guild_appearance_profiles
+       ORDER BY owner DESC`,
+    ).all<{ owner: string; version: number }>();
+    expect(versions.results).toEqual([
+      { owner: "personal", version: 1 },
+      { owner: "guild", version: 2 },
+    ]);
   });
 
   it("applies the versioned migration idempotently", async () => {
@@ -190,6 +246,7 @@ describe("D1 business schema migration", () => {
       { name: "0001_initial_business_schema.sql" },
       { name: "0002_web_sessions.sql" },
       { name: "0003_mutation_receipts.sql" },
+      { name: "0004_appearance_profiles.sql" },
     ]);
   });
 

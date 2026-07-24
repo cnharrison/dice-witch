@@ -4,12 +4,27 @@ import {
   runDurableObjectAlarm,
   runInDurableObject,
 } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
-import { buildRollRenderRequest } from "../../packages/roll-render-model/src";
+import { describe, expect, it, vi } from "vitest";
+import {
+  APPEARANCE_TARGETS,
+  BUILTIN_APPEARANCE_RECIPES_V3,
+  CHAOTIC_APPEARANCE_STYLE_ID,
+} from "../../packages/dice-appearance/src";
+import {
+  buildRollRenderRequest,
+  buildRollRenderRequestV4,
+} from "../../packages/roll-render-model/src";
+import { executeRoll } from "../../packages/roll-domain/src";
+import rollWorkV2Fixture from "./fixtures/roll-work-v2.json";
+import rollWorkV3Fixture from "./fixtures/roll-work-v3.json";
+import rollWorkV4Fixture from "./fixtures/roll-work-v4.json";
 import rollWorker, {
   type RollDeliveryRequest,
 } from "../../workers/roll/src";
-import { validateDeliveryRequest } from "../../workers/roll/src/contracts";
+import {
+  parseRecord,
+  validateDeliveryRequest,
+} from "../../workers/roll/src/contracts";
 
 const rollEnv = env;
 
@@ -112,6 +127,7 @@ describe("RollWork Durable Object", () => {
           "logging_attempts",
           "helper_state",
           "helper_attempts",
+          "failure_phase",
         ]),
       );
     });
@@ -148,6 +164,395 @@ describe("RollWork Durable Object", () => {
     expect(first.record.renderSeed).toBeLessThanOrEqual(0xffff_ffff);
   });
 
+  it("stores a fully resolved renderer-v4 snapshot at staging delivery acceptance", async () => {
+    const id = snowflakeAt(Date.now(), 40);
+    const stub = work(id);
+
+    await expect(
+      stub.acceptDelivery(deliveryRequest(id, "delivery-success")),
+    ).resolves.toMatchObject({ status: "created" });
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      const record: unknown = JSON.parse(row.record_json);
+      expect(record).toMatchObject({
+        version: 4,
+        renderRequest: {
+          version: 4,
+          rendererRevision: "canvaskit-v4-r7",
+          groups: [[{ target: "d20" }]],
+        },
+      });
+    });
+  });
+
+  it("reuses the exact renderer-v4 snapshot without another profile lookup", async () => {
+    const id = snowflakeAt(Date.now(), 41);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-success");
+    input.accounting.userId = "100000000000000088";
+    const request = { notation: ["1d20"], repetitions: 1 };
+
+    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+      status: "created",
+    });
+    const first = await stub.render(request);
+    expect(first).toMatchObject({ status: "rendered", version: 4 });
+    let snapshot = "";
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      const record = JSON.parse(row.record_json) as {
+        renderRequest: {
+          groups: Array<
+            Array<{
+              appearance: { palette: string[] };
+            }>
+          >;
+        };
+      };
+      expect(
+        record.renderRequest.groups[0]?.[0]?.appearance.palette,
+      ).toContain("#aa0000");
+      snapshot = JSON.stringify(record.renderRequest);
+    });
+
+    await evictDurableObject(stub);
+    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+      status: "existing",
+    });
+    const retry = await stub.render(request);
+    expect(retry).toEqual(first);
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      const record = JSON.parse(row.record_json) as { renderRequest: unknown };
+      expect(JSON.stringify(record.renderRequest)).toBe(snapshot);
+    });
+  });
+
+  it("continues to render a serialized V2 snapshot after V3 activation", async () => {
+    const stub = work("1400000000000000045");
+    const serialized = JSON.stringify(rollWorkV2Fixture);
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO roll_work (singleton, request_json, record_json)
+         VALUES (1, ?, ?)`,
+        JSON.stringify(rollWorkV2Fixture.request),
+        serialized,
+      );
+    });
+
+    const first = await stub.render(rollWorkV2Fixture.request);
+    expect(first).toMatchObject({
+      status: "rendered",
+      version: 2,
+      diceCount: 1,
+    });
+    await evictDurableObject(stub);
+    const retry = await stub.render(rollWorkV2Fixture.request);
+    expect(retry).toEqual(first);
+    await runInDurableObject(stub, (_instance, state) => {
+      const stored = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(stored.record_json).toBe(serialized);
+    });
+  });
+
+  it("parses and renders a serialized V3 snapshot as the compatibility floor", async () => {
+    const stub = work("1400000000000000043");
+    const requestJson = JSON.stringify(rollWorkV3Fixture.request);
+    const serialized = JSON.stringify(rollWorkV3Fixture);
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO roll_work (singleton, request_json, record_json)
+         VALUES (1, ?, ?)`,
+        requestJson,
+        serialized,
+      );
+    });
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    const dataFetch = vi.fn((): Promise<Response> =>
+      Promise.reject(new Error("V3 retries must not query Data")),
+    );
+    dataService.fetch = dataFetch;
+
+    try {
+      const first = await stub.render(rollWorkV3Fixture.request);
+      expect(first).toMatchObject({
+        status: "rendered",
+        version: 3,
+        diceCount: 1,
+        width: 150,
+        height: 150,
+      });
+      await evictDurableObject(stub);
+      const retry = await stub.render(rollWorkV3Fixture.request);
+      expect(retry).toEqual(first);
+      expect(dataFetch).not.toHaveBeenCalled();
+    } finally {
+      dataService.fetch = originalFetch;
+    }
+
+    await runInDurableObject(stub, (_instance, state) => {
+      const stored = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(stored.record_json).toBe(serialized);
+    });
+  });
+
+  it("parses and renders a serialized V4 snapshot independently of emission", async () => {
+    const stub = work("1400000000000000044");
+    const requestJson = JSON.stringify(rollWorkV4Fixture.request);
+    const serialized = JSON.stringify(rollWorkV4Fixture);
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO roll_work (singleton, request_json, record_json)
+         VALUES (1, ?, ?)`,
+        requestJson,
+        serialized,
+      );
+    });
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    const dataFetch = vi.fn((): Promise<Response> =>
+      Promise.reject(new Error("V4 retries must not query Data")),
+    );
+    dataService.fetch = dataFetch;
+
+    try {
+      const first = await stub.render(rollWorkV4Fixture.request);
+      expect(first).toMatchObject({
+        status: "rendered",
+        version: 4,
+        rendererRevision: "canvaskit-v4-r1",
+        diceCount: 1,
+        width: 150,
+        height: 150,
+      });
+      if (first.status !== "rendered") {
+        throw new Error("V4 fixture unexpectedly conflicted");
+      }
+      expect(first.png.slice(0, 8)).toEqual(
+        new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      );
+      await evictDurableObject(stub);
+      const retry = await stub.render(rollWorkV4Fixture.request);
+      expect(retry).toEqual(first);
+      expect(dataFetch).not.toHaveBeenCalled();
+    } finally {
+      dataService.fetch = originalFetch;
+    }
+
+    await runInDurableObject(stub, (_instance, state) => {
+      const stored = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(stored.record_json).toBe(serialized);
+    });
+  });
+
+  it("renders a persisted maximum 50-die V4 request in the combined Worker", async () => {
+    const fixture = structuredClone(rollWorkV4Fixture);
+    const outcomeGroup = fixture.outcome.outcomes[0];
+    const renderGroup = fixture.renderRequest.groups[0];
+    const templateOutcome = outcomeGroup?.dice[0];
+    const templateDie = renderGroup?.[0];
+    if (
+      outcomeGroup === undefined ||
+      renderGroup === undefined ||
+      templateOutcome === undefined ||
+      templateDie === undefined
+    ) {
+      throw new Error("V4 fixture is incomplete");
+    }
+    fixture.request.notation = ["50d20"];
+    outcomeGroup.notation = "50d20";
+    outcomeGroup.output = "50d20 fixture = 475";
+    outcomeGroup.total = 475;
+    outcomeGroup.dice = Array.from({ length: 50 }, (_, index) => ({
+      ...templateOutcome,
+      rolled: (index % 20) + 1,
+    }));
+    fixture.renderRequest.groups[0] = Array.from(
+      { length: 50 },
+      (_, index) => ({
+        ...structuredClone(templateDie),
+        result: (index % 20) + 1,
+        appearance: {
+          ...structuredClone(templateDie.appearance),
+          texture: {
+            ...templateDie.appearance.texture,
+            seed: (fixture.renderSeed + index) >>> 0,
+          },
+        },
+      }),
+    );
+
+    const stub = work("1400000000000000046");
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO roll_work (singleton, request_json, record_json)
+         VALUES (1, ?, ?)`,
+        JSON.stringify(fixture.request),
+        JSON.stringify(fixture),
+      );
+    });
+
+    const first = await stub.render(fixture.request);
+    expect(first).toMatchObject({
+      status: "rendered",
+      version: 4,
+      rendererRevision: "canvaskit-v4-r1",
+      diceCount: 50,
+      rowCount: 5,
+      width: 1_500,
+      height: 750,
+    });
+    await expect(stub.render(fixture.request)).resolves.toEqual(first);
+  });
+
+  it("rejects V3 and V4 records with incompatible render data", () => {
+    const wrongVersion = structuredClone(rollWorkV3Fixture) as {
+      renderRequest: { version: number };
+    };
+    wrongVersion.renderRequest.version = 2;
+    expect(() => parseRecord(JSON.stringify(wrongVersion))).toThrow(
+      "Render request version must be 3",
+    );
+
+    const groupMismatch = structuredClone(rollWorkV3Fixture) as {
+      renderRequest: { groups: unknown[][] };
+    };
+    const storedGroup = groupMismatch.renderRequest.groups[0];
+    if (storedGroup === undefined) throw new Error("V3 fixture group is missing");
+    groupMismatch.renderRequest.groups.push(structuredClone(storedGroup));
+    expect(() => parseRecord(JSON.stringify(groupMismatch))).toThrow(
+      "Stored roll work render snapshot does not match outcome",
+    );
+
+    const dieMismatch = structuredClone(rollWorkV3Fixture) as {
+      renderRequest: { groups: unknown[][] };
+    };
+    const firstGroup = dieMismatch.renderRequest.groups[0];
+    const storedDie = firstGroup?.[0];
+    if (firstGroup === undefined || storedDie === undefined) {
+      throw new Error("V3 fixture die is missing");
+    }
+    firstGroup.push(structuredClone(storedDie));
+    expect(() => parseRecord(JSON.stringify(dieMismatch))).toThrow(
+      "Stored roll work render snapshot does not match outcome",
+    );
+
+    const wrongRevision = structuredClone(rollWorkV4Fixture) as {
+      renderRequest: { rendererRevision: string };
+    };
+    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r8";
+    expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
+      "Render request rendererRevision is not supported",
+    );
+
+    const v4GroupMismatch = structuredClone(rollWorkV4Fixture) as {
+      renderRequest: { groups: unknown[][] };
+    };
+    const v4Group = v4GroupMismatch.renderRequest.groups[0];
+    if (v4Group === undefined) throw new Error("V4 fixture group is missing");
+    v4GroupMismatch.renderRequest.groups.push(structuredClone(v4Group));
+    expect(() => parseRecord(JSON.stringify(v4GroupMismatch))).toThrow(
+      "Stored roll work render snapshot does not match outcome",
+    );
+
+    const v4ResultMismatch = structuredClone(rollWorkV4Fixture);
+    const mismatchedDie = v4ResultMismatch.renderRequest.groups[0]?.[0];
+    if (mismatchedDie === undefined) throw new Error("V4 fixture die is missing");
+    mismatchedDie.result = 20;
+    expect(() => parseRecord(JSON.stringify(v4ResultMismatch))).toThrow(
+      "Stored roll work render snapshot does not match outcome",
+    );
+
+    const v4TargetMismatch = structuredClone(rollWorkV4Fixture) as {
+      renderRequest: { groups: Array<Array<{ target: string }>> };
+    };
+    const targetDie = v4TargetMismatch.renderRequest.groups[0]?.[0];
+    if (targetDie === undefined) throw new Error("V4 fixture die is missing");
+    targetDie.target = "d12";
+    expect(() => parseRecord(JSON.stringify(v4TargetMismatch))).toThrow(
+      "Stored roll work render snapshot does not match outcome",
+    );
+
+    const v4IconMismatch = structuredClone(rollWorkV4Fixture);
+    const iconDie = v4IconMismatch.renderRequest.groups[0]?.[0];
+    if (iconDie === undefined) throw new Error("V4 fixture die is missing");
+    (iconDie.icons as string[]).push("explosion");
+    expect(() => parseRecord(JSON.stringify(v4IconMismatch))).toThrow(
+      "Stored roll work render snapshot does not match outcome",
+    );
+
+    const invalidV4Request = structuredClone(rollWorkV4Fixture);
+    invalidV4Request.request.repetitions = 0;
+    expect(() => parseRecord(JSON.stringify(invalidV4Request))).toThrow(
+      "Stored roll work is invalid",
+    );
+
+    const incompleteV4Outcome = structuredClone(rollWorkV4Fixture);
+    incompleteV4Outcome.request.notation.push("1d12");
+    expect(() => parseRecord(JSON.stringify(incompleteV4Outcome))).toThrow(
+      "Stored roll work is invalid",
+    );
+
+    const invalidV4Outcome = structuredClone(rollWorkV4Fixture) as {
+      outcome: { outcomes: Array<{ dice: Array<{ modifiers: unknown }> }> };
+    };
+    const outcomeDie = invalidV4Outcome.outcome.outcomes[0]?.dice[0];
+    if (outcomeDie === undefined) throw new Error("V4 outcome die is missing");
+    outcomeDie.modifiers = "critical-success";
+    expect(() => parseRecord(JSON.stringify(invalidV4Outcome))).toThrow(
+      "Stored roll work is invalid",
+    );
+  });
+
+  it.each([
+    ["fails", "100000000000000099", 42],
+    ["returns malformed data", "100000000000000098", 43],
+  ])(
+    "does not persist work when the required appearance lookup %s",
+    async (_case, userId, sequence) => {
+      const id = snowflakeAt(Date.now(), sequence);
+      const stub = work(id);
+      const input = deliveryRequest(id, "delivery-success");
+      input.accounting.userId = userId;
+
+      await expect(stub.acceptDelivery(input)).resolves.toEqual({
+        status: "unavailable",
+      });
+      await runInDurableObject(stub, async (_instance, state) => {
+        expect(
+          state.storage.sql
+            .exec<{ count: number }>("SELECT COUNT(*) AS count FROM roll_work")
+            .one().count,
+        ).toBe(0);
+        expect(
+          state.storage.sql
+            .exec<{ count: number }>(
+              "SELECT COUNT(*) AS count FROM interaction_delivery",
+            )
+            .one().count,
+        ).toBe(0);
+        expect(await state.storage.getAlarm()).toBeNull();
+      });
+    },
+  );
+
   it("renders byte-identical PNG output from durable seeds across retries", async () => {
     const stub = work("1400000000000000005");
     const request = { notation: ["1d20", "4d6k3"], repetitions: 1 };
@@ -179,6 +584,66 @@ describe("RollWork Durable Object", () => {
       throw new Error("Maximum roll rendering unexpectedly conflicted");
     }
     expect(result.diceCount).toBe(50);
+    expect(result.png.byteLength).toBeGreaterThan(0);
+  });
+
+  it("renders and delivers 30d2ro=1 through the combined Worker", async () => {
+    const id = snowflakeAt(Date.now(), 49);
+    const input = deliveryRequest(id, "delivery-success");
+    input.request.notation = "30d2ro=1";
+    input.logging.notation = "30d2ro=1";
+    const stub = work(id);
+
+    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+      status: "created",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(() => parseRecord(row.record_json)).not.toThrow();
+    });
+    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+  });
+
+  it("renders zero-valued penetrating d2 results from a persisted V4 snapshot", async () => {
+    const request = { notation: ["15d2!p"], repetitions: 1 };
+    const outcome = executeRoll({ ...request, seed: 0 });
+    const builtin =
+      BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID];
+    if (builtin === undefined) throw new Error("Chaotic V3 recipe is missing");
+    const recipes = Object.fromEntries(
+      APPEARANCE_TARGETS.map((target) => [target, builtin.recipe]),
+    );
+    const record = {
+      version: 4 as const,
+      request,
+      rollSeed: 0,
+      renderSeed: 1,
+      outcome,
+      createdAt: Date.now(),
+      renderRequest: buildRollRenderRequestV4(outcome, 1, recipes),
+    };
+    const stub = work("1400000000000000047");
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO roll_work (singleton, request_json, record_json)
+         VALUES (1, ?, ?)`,
+        JSON.stringify(request),
+        JSON.stringify(record),
+      );
+    });
+
+    const result = await stub.render(request);
+
+    expect(result).toMatchObject({
+      status: "rendered",
+      version: 4,
+      diceCount: outcome.outcomes[0]?.dice.length,
+    });
+    if (result.status !== "rendered") {
+      throw new Error("Penetrating roll rendering unexpectedly conflicted");
+    }
     expect(result.png.byteLength).toBeGreaterThan(0);
   });
 
@@ -416,6 +881,10 @@ describe("RollWork Durable Object", () => {
         accounting_state: "not_applicable",
         accounting_attempts: 0,
       });
+      const workRow = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(JSON.parse(workRow.record_json)).toMatchObject({ version: 1 });
     });
   });
 
@@ -643,6 +1112,7 @@ describe("RollWork Durable Object", () => {
     });
     await expect(stub.deliveryDiagnostics()).resolves.toEqual({
       state: "delivered",
+      failurePhase: null,
       accountingState: "accounted",
       accountingHttpStatus: 200,
       accountingAttempts: 1,
@@ -748,6 +1218,39 @@ describe("RollWork Durable Object", () => {
       state: "delivered",
       lastHttpStatus: 200,
       attempts: 2,
+    });
+  });
+
+  it("replaces a pending interaction with an explicit error before expiry", async () => {
+    const id = snowflakeAt(Date.now(), 42);
+    const stub = work(id);
+    await stub.acceptDelivery(deliveryRequest(id, "delivery-deadline"));
+
+    await runInDurableObject(stub, async (instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE interaction_delivery SET expires_at = ?",
+        Date.now() + 30_000,
+      );
+      await callAlarm(instance);
+    });
+
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "failed",
+      lastHttpStatus: 200,
+      attempts: 1,
+    });
+    await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
+      state: "failed",
+      failurePhase: "deadline",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ token: string | null }>(
+            "SELECT token FROM interaction_delivery",
+          )
+          .one().token,
+      ).toBeNull();
     });
   });
 
@@ -890,15 +1393,20 @@ describe("RollWork Durable Object", () => {
 
 describe("Roll Worker HTTP surface", () => {
   it("exposes health without exposing roll creation", async () => {
-    const health = rollWorker.fetch(new Request("https://roll.test/health"));
+    const health = rollWorker.fetch(
+      new Request("https://roll.test/health"),
+      rollEnv,
+    );
     const missing = rollWorker.fetch(
       new Request("https://roll.test/roll", { method: "POST" }),
+      rollEnv,
     );
 
     expect(health.status).toBe(200);
     await expect(health.json()).resolves.toEqual({
       ok: true,
       service: "dice-witch-roll",
+      renderVersion: 4,
     });
     expect(missing.status).toBe(404);
   });

@@ -1,222 +1,306 @@
-import { D10Icon, D12Icon, D20Icon, D4Icon, D6Icon, D8Icon, DFIcon } from "@/components/icons";
-import { useTheme } from "@/components/theme-provider";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { type DiceInfo } from "@/hooks/useDiceValidation";
-import { RollResponse } from "@/types/dice";
+import { Button } from "@/components/ui/button";
+import type { RollPreparation, RollResponse } from "@/types/dice";
+import { SparkleLoadingIndicator } from "./SparkleLoadingIndicator";
 import * as React from "react";
-import { DiceAnimation3D } from "./DiceAnimation3D";
+import { AuthoritativeDiceImageGrid } from "./AuthoritativeDiceImageGrid";
 import { DiceNotationButtons } from "./DiceNotationButtons";
+import { useBrowserMediaQueryV4 } from "./dice-v4-3d/browser-media";
+import {
+  readRollDisplayModeV4,
+  writeRollDisplayModeV4,
+  type RollDisplayModeV4,
+} from "./dice-v4-3d/roll-display-mode";
+import { ThreeRendererErrorBoundaryV4 } from "./dice-v4-3d/renderer-error-boundary";
 
+const DiceAnimation3D = React.lazy(async () => {
+  const module = await import("./DiceAnimation3D");
+  return { default: module.DiceAnimation3D };
+});
 
-const DiceIcons = {
-  d4: D4Icon,
-  d6: D6Icon,
-  d8: D8Icon,
-  d10: D10Icon,
-  d12: D12Icon,
-  d20: D20Icon,
-  dF: DFIcon,
-} as const;
+const MOBILE_QUERY_V4 = "(max-width: 639px)";
+const WEBGL_NOTICE_V4 =
+  "This browser could not continue displaying 3D dice. Showing the authoritative 2D result instead.";
+const PREVIEW_NOTICE_V4 =
+  "The 3D dice preview is unavailable. A completed roll will still use its authoritative 2D result.";
 
 interface RollerProps {
-  diceInfo: DiceInfo | null;
+  rollPreparation: RollPreparation | null;
   rollResults: RollResponse | null;
+  isPreparing: boolean;
   isRolling: boolean;
-  showAnimation?: boolean;
+  isResultStale?: boolean;
   input: string;
   setInput: (value: string) => void;
   selectedChannel: boolean;
 }
 
-export function Roller({
-  diceInfo,
+function initialRollDisplayModeV4(): RollDisplayModeV4 {
+  const mobile =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(MOBILE_QUERY_V4).matches;
+  try {
+    return readRollDisplayModeV4(window.localStorage, mobile);
+  } catch {
+    return mobile ? "2d" : "3d";
+  }
+}
+
+function RollResultText({ results }: { results: RollResponse }) {
+  return (
+    <div className="flex flex-col items-center px-4 text-center">
+      <div className="text-4xl font-extrabold text-white [text-shadow:-2px_-2px_0_#000,2px_-2px_0_#000,-2px_2px_0_#000,2px_2px_0_#000,0_0_12px_rgba(0,0,0,0.8)] sm:text-5xl">
+        {results.resultArray.length > 0 &&
+        results.resultArray[0]?.results !== undefined
+          ? results.resultArray[0].results
+          : "Error"}
+      </div>
+      <div className="mt-2 text-base text-white [text-shadow:-1px_-1px_0_#000,1px_-1px_0_#000,-1px_1px_0_#000,1px_1px_0_#000,0_0_8px_rgba(0,0,0,0.8)] sm:text-xl">
+        {results.resultArray.length > 0
+          ? results.resultArray.map((result, index) => (
+              <span key={`${String(index)}-${result.output}`} className="mx-1">
+                {index > 0 ? " + " : ""}
+                {result.output}
+              </span>
+            ))
+          : results.message || "Invalid notation"}
+      </div>
+    </div>
+  );
+}
+
+function DiceDisplayModeToggle({
+  mode,
+  threeDimensionalAvailable,
+  onChange,
+}: {
+  mode: RollDisplayModeV4;
+  threeDimensionalAvailable: boolean;
+  onChange: (mode: RollDisplayModeV4) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Dice display mode"
+      className="flex rounded-md border border-border/80 bg-background/90 p-0.5 shadow-sm backdrop-blur-sm"
+    >
+      <Button
+        type="button"
+        size="sm"
+        variant={mode === "2d" ? "default" : "ghost"}
+        className="h-11 px-2 text-xs sm:h-7"
+        aria-pressed={mode === "2d"}
+        onClick={() => onChange("2d")}
+      >
+        Show 2D dice
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant={mode === "3d" ? "default" : "ghost"}
+        className="h-11 px-2 text-xs sm:h-7"
+        aria-pressed={mode === "3d"}
+        disabled={!threeDimensionalAvailable}
+        onClick={() => onChange("3d")}
+      >
+        Show 3D dice
+      </Button>
+    </div>
+  );
+}
+
+function DiceResultDisplay({
+  rollPreparation,
   rollResults,
+  isPreparing,
   isRolling,
-  showAnimation = false,
-  input,
-  setInput,
-  selectedChannel
-}: RollerProps) {
-  const previousDiceInfoRef = React.useRef<DiceInfo | null>(null);
-  const combinedDiceInfoRef = React.useRef<DiceInfo | null>(null);
-  const [combinedDiceInfo, setCombinedDiceInfo] = React.useState<DiceInfo | null>(null);
-  const [diceToRemove, setDiceToRemove] = React.useState<{diceSize: number | string, count: number}[]>([]);
-  const { theme } = useTheme();
+  isResultStale,
+  displayMode,
+  onDisplayModeChange,
+}: {
+  rollPreparation: RollPreparation | null;
+  rollResults: RollResponse | null;
+  isPreparing: boolean;
+  isRolling: boolean;
+  isResultStale: boolean;
+  displayMode: RollDisplayModeV4;
+  onDisplayModeChange: (mode: RollDisplayModeV4) => void;
+}) {
+  const [threeStarted, setThreeStarted] = React.useState(false);
+  const [runtimeUnavailable, setRuntimeUnavailable] = React.useState(false);
+  const currentRollResults = isResultStale ? null : rollResults;
+  const hasResult = currentRollResults !== null;
+  const activeRenderModel =
+    currentRollResults?.renderModel ?? rollPreparation?.renderModel;
+  const activeImage =
+    currentRollResults?.renderedImage ?? rollPreparation?.renderedImage;
+  const activeAppearanceIdentities =
+    currentRollResults?.appearanceIdentities ?? rollPreparation?.appearanceIdentities;
+  const rerolledAppearanceIdentities =
+    currentRollResults?.rerolledAppearanceIdentities;
+  const groupSizes = hasResult
+    ? currentRollResults.diceArray.map((group) => group.length)
+    : (rollPreparation?.groupSizes ?? []);
+  const iconsByGroup = hasResult
+    ? currentRollResults.diceArray.map((group) => group.map((die) => die.icon))
+    : undefined;
+  const hasAuthoritativeThree = activeRenderModel !== undefined;
+  const showThree =
+    displayMode === "3d" &&
+    !runtimeUnavailable &&
+    hasAuthoritativeThree;
+  const effectiveMode: RollDisplayModeV4 = showThree ? "3d" : "2d";
+  const showImage = activeImage !== undefined && effectiveMode === "2d";
+  const showLoader =
+    displayMode === "3d" &&
+    !runtimeUnavailable &&
+    !threeStarted &&
+    (isPreparing || showThree);
+  let notice: string | null = null;
 
   React.useEffect(() => {
-    if (!diceInfo) {
-      if (previousDiceInfoRef.current) {
-        const allDiceToRemove = previousDiceInfoRef.current.diceGroups.map(group => ({
-          diceSize: group.diceSize,
-          count: group.numberOfDice
-        }));
-        setDiceToRemove(allDiceToRemove);
-      }
+    if (!hasAuthoritativeThree) setThreeStarted(false);
+  }, [hasAuthoritativeThree]);
 
-      setTimeout(() => {
-        previousDiceInfoRef.current = null;
-        combinedDiceInfoRef.current = null;
-        setCombinedDiceInfo(null);
-        setDiceToRemove([]);
-      }, 1000);
+  if (runtimeUnavailable) {
+    notice =
+      activeImage === undefined ? PREVIEW_NOTICE_V4 : WEBGL_NOTICE_V4;
+  }
 
-      return;
-    }
+  const handleReadyChange = React.useCallback((ready: boolean): void => {
+    if (ready) setThreeStarted(true);
+  }, []);
 
-    if (previousDiceInfoRef.current) {
-      const diceSizeToRemove: {diceSize: number | string, count: number}[] = [];
+  const handleUnavailable = React.useCallback(() => {
+    setThreeStarted(false);
+    setRuntimeUnavailable(true);
+  }, []);
 
-      previousDiceInfoRef.current.diceGroups.forEach(prevGroup => {
-        const newGroup = diceInfo.diceGroups.find(g => g.diceSize === prevGroup.diceSize);
+  const handleModeChange = (mode: RollDisplayModeV4): void => {
+    setThreeStarted(false);
+    setRuntimeUnavailable(false);
+    onDisplayModeChange(mode);
+  };
 
-        if (!newGroup) {
-          diceSizeToRemove.push({
-            diceSize: prevGroup.diceSize,
-            count: prevGroup.numberOfDice
-          });
-        } else if (newGroup.numberOfDice < prevGroup.numberOfDice) {
-          diceSizeToRemove.push({
-            diceSize: prevGroup.diceSize,
-            count: prevGroup.numberOfDice - newGroup.numberOfDice
-          });
-        }
-      });
-
-      setDiceToRemove(diceSizeToRemove);
-
-      const existingGroups = [...previousDiceInfoRef.current.diceGroups];
-
-      diceInfo.diceGroups.forEach(newGroup => {
-        const existingGroupIndex = existingGroups.findIndex(g => g.diceSize === newGroup.diceSize);
-
-        if (existingGroupIndex >= 0) {
-          existingGroups[existingGroupIndex].numberOfDice = newGroup.numberOfDice;
-        } else {
-          existingGroups.push(newGroup);
-        }
-      });
-
-      const filteredGroups = existingGroups.filter(group => group.numberOfDice > 0);
-
-      const combined = {
-        diceGroups: filteredGroups,
-        modifier: diceInfo.modifier
-      };
-
-      combinedDiceInfoRef.current = combined;
-      setCombinedDiceInfo(combined);
-    } else {
-      previousDiceInfoRef.current = diceInfo;
-      combinedDiceInfoRef.current = diceInfo;
-      setCombinedDiceInfo(diceInfo);
-    }
-
-    previousDiceInfoRef.current = { ...diceInfo };
-
-    setTimeout(() => {
-      setDiceToRemove([]);
-    }, 1000);
-  }, [diceInfo]);
-
-  const renderRollResults = () => {
-    if (!rollResults) return null;
-
-    return (
-      <div className="flex flex-col items-center">
-        <div className="text-5xl sm:text-7xl font-extrabold text-white [text-shadow:-2px_-2px_0_#000,2px_-2px_0_#000,-2px_2px_0_#000,2px_2px_0_#000,0_0_12px_rgba(0,0,0,0.8)]">
-          {rollResults.resultArray && rollResults.resultArray.length > 0 && rollResults.resultArray[0].results !== undefined
-            ? rollResults.resultArray[0].results
-            : 'Error'}
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+      {currentRollResults !== null && (
+        <div className="z-30 flex max-h-[35%] flex-none justify-center overflow-x-hidden overflow-y-auto border-b bg-background/90 py-2">
+          <RollResultText results={currentRollResults} />
         </div>
-        <div className="mt-2 text-base sm:text-xl text-white [text-shadow:-1px_-1px_0_#000,1px_-1px_0_#000,-1px_1px_0_#000,1px_1px_0_#000,0_0_8px_rgba(0,0,0,0.8)]">
-          {rollResults.resultArray && rollResults.resultArray.length > 0
-            ? rollResults.resultArray.map((result, i) => (
-                <span key={i} className="mx-1">
-                  {i > 0 ? ' + ' : ''}
-                  {result.output}
-                </span>
-              ))
-            : rollResults.message || 'Invalid notation'}
-        </div>
-
-        {rollResults.diceArray && rollResults.diceArray.length > 0 && (
-          <div className="flex flex-wrap gap-2 sm:gap-4 justify-center mt-4">
-            {rollResults.diceArray.flat().map((die, index) => {
-              const DiceIcon = DiceIcons[`d${die.sides}` as keyof typeof DiceIcons];
-
-              return (
-                <div
-                  key={index}
-                  className="flex flex-col items-center p-2 sm:p-3 border rounded-lg relative pointer-events-auto"
-                  style={{
-                    background: `linear-gradient(135deg, ${die.color}, ${die.secondaryColor})`,
-                    color: die.textColor
-                  }}
-                >
-                  <div className="text-base sm:text-xl font-bold mb-1">{die.value}</div>
-                  {DiceIcon ? (
-                    <DiceIcon className="w-6 h-6 sm:w-8 sm:h-8" darkMode={theme === 'dark'} />
-                  ) : (
-                    <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-xs font-bold">
-                      d{die.sides}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+      )}
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/15">
+        {showThree && (
+          <div className="absolute inset-0 z-10">
+            <ThreeRendererErrorBoundaryV4 onUnavailable={handleUnavailable}>
+              <React.Suspense fallback={null}>
+                <DiceAnimation3D
+                  renderModel={activeRenderModel ?? null}
+                  appearanceIdentities={activeAppearanceIdentities}
+                  rerolledAppearanceIdentities={rerolledAppearanceIdentities}
+                  isRolling={isRolling}
+                  blankFaces={!hasResult}
+                  onReadyChange={handleReadyChange}
+                  onUnavailable={handleUnavailable}
+                />
+              </React.Suspense>
+            </ThreeRendererErrorBoundaryV4>
           </div>
         )}
+
+        {showImage && activeImage !== undefined && (
+          <div className="absolute inset-0 z-20 overflow-x-hidden overflow-y-auto p-4 pb-12">
+            <AuthoritativeDiceImageGrid
+              image={activeImage}
+              groupSizes={groupSizes}
+              iconsByGroup={iconsByGroup}
+              blankFaces={!hasResult}
+            />
+          </div>
+        )}
+
+        {showLoader && (
+          <SparkleLoadingIndicator
+            label="Loading 3D dice"
+            className="pointer-events-none absolute inset-0 z-30 bg-background/45"
+          />
+        )}
+
+        {activeImage !== undefined && (
+          <div className="absolute bottom-2 right-2 z-40">
+            <DiceDisplayModeToggle
+              mode={effectiveMode}
+              threeDimensionalAvailable={hasAuthoritativeThree}
+              onChange={handleModeChange}
+            />
+          </div>
+        )}
+
+        {notice !== null && (
+          <p
+            role="alert"
+            className="absolute bottom-12 left-2 right-2 z-40 rounded-md border border-amber-500/60 bg-background/95 px-3 py-2 text-sm text-foreground shadow-sm"
+          >
+            {notice}
+          </p>
+        )}
       </div>
-    );
-  };
+    </div>
+  );
+}
 
-  const render3DDice = () => {
-    if (!showAnimation || !combinedDiceInfo) return null;
+export function Roller({
+  rollPreparation,
+  rollResults,
+  isPreparing,
+  isRolling,
+  isResultStale = false,
+  input,
+  setInput,
+  selectedChannel,
+}: RollerProps) {
+  const isMobile = useBrowserMediaQueryV4(MOBILE_QUERY_V4);
+  const [displayMode, setDisplayMode] = React.useState<RollDisplayModeV4>(
+    initialRollDisplayModeV4,
+  );
 
+  const handleDisplayModeChange = React.useCallback(
+    (mode: RollDisplayModeV4): void => {
+      setDisplayMode(mode);
+      try {
+        writeRollDisplayModeV4(window.localStorage, mode);
+      } catch {
+        // The current browser session still retains the explicit choice.
+      }
+    },
+    [],
+  );
+
+  const display = (
+    <DiceResultDisplay
+      rollPreparation={rollPreparation}
+      rollResults={rollResults}
+      isPreparing={isPreparing}
+      isRolling={isRolling}
+      isResultStale={isResultStale}
+      displayMode={displayMode}
+      onDisplayModeChange={handleDisplayModeChange}
+    />
+  );
+
+  if (isMobile) {
     return (
-      <DiceAnimation3D
-        key="persistent-dice-animation"
-        diceInfo={combinedDiceInfo}
-        diceToRemove={diceToRemove}
-        diceColors={rollResults?.diceArray?.flat()?.reduce((colors, die) => {
-          colors[die.sides] = die.color;
-          return colors;
-        }, {} as Record<number | string, string>)}
-        className="h-full w-full"
-      />
-    );
-  };
-
-
-  // Mobile view
-  const isMobileView = typeof window !== 'undefined' && window.innerWidth < 640;
-  if (isMobileView) {
-    return (
-      <div className="flex flex-col min-h-[500px] h-[90vh] rounded-lg border">
-        {/* Top section with dice display */}
-        <div className="h-[45%] relative">
-          {/* Background 3D dice */}
-          {showAnimation && combinedDiceInfo && (
-            <div className="absolute inset-0 z-10">
-              {render3DDice()}
-            </div>
-          )}
-
-
-          {/* Roll results */}
-          {rollResults && (
-            <div className="absolute inset-0 flex items-center justify-center top-4 z-30">
-              {renderRollResults()}
-            </div>
-          )}
-        </div>
-
-        {/* Bottom section with dice input */}
-        <div className="h-[55%] p-2 border-t overflow-y-auto">
+      <div
+        className="flex h-full min-h-0 flex-col rounded-lg border"
+        aria-busy={isPreparing || isRolling}
+      >
+        <div className="relative min-h-0 flex-1">{display}</div>
+        <div className="flex-none border-t p-2">
           <DiceNotationButtons
             input={input}
             setInput={setInput}
@@ -227,15 +311,14 @@ export function Roller({
     );
   }
 
-  // Desktop view
   return (
     <ResizablePanelGroup
       direction="horizontal"
-      className="min-h-[600px] h-[70vh] rounded-lg border"
+      className="h-full min-h-0 rounded-lg border"
+      aria-busy={isPreparing || isRolling}
     >
-      {/* Left panel: Dice inputs */}
-      <ResizablePanel defaultSize={50}>
-        <div className="flex h-full flex-col items-center justify-center p-6 overflow-auto">
+      <ResizablePanel defaultSize={34} minSize={25}>
+        <div className="flex h-full min-h-0 flex-col items-center justify-center overflow-hidden p-2">
           <DiceNotationButtons
             input={input}
             setInput={setInput}
@@ -243,23 +326,9 @@ export function Roller({
           />
         </div>
       </ResizablePanel>
-
       <ResizableHandle />
-
-      {/* Right panel: Dice display */}
-      <ResizablePanel defaultSize={50}>
-        <div className="flex h-full flex-col items-center justify-center p-6 relative">
-          {/* Background 3D dice */}
-          <div className="absolute inset-0 flex items-center justify-center z-10">
-            {render3DDice()}
-          </div>
-
-
-          {/* Roll results */}
-          <div className="absolute inset-0 flex items-center justify-center z-30">
-            {rollResults && renderRollResults()}
-          </div>
-        </div>
+      <ResizablePanel defaultSize={66} minSize={45}>
+        {display}
       </ResizablePanel>
     </ResizablePanelGroup>
   );

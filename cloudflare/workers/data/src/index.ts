@@ -3,6 +3,7 @@ import {
   parseAccountRollInput,
   type AccountRollInput,
 } from "./roll-accounting-repository";
+import { handleAppearanceRequest } from "./appearance-service";
 import { handleMembershipRequest } from "./membership-service";
 import { handleSessionRequest } from "./session-service";
 
@@ -70,6 +71,8 @@ const worker = {
     ) {
       return accountRoll(request, env);
     }
+    const appearanceResponse = handleAppearanceRequest(request, env.DATA);
+    if (appearanceResponse !== null) return appearanceResponse;
     const sessionResponse = handleSessionRequest(request, env.DATA);
     if (sessionResponse !== null) return sessionResponse;
     const membershipResponse = handleMembershipRequest(request, env.DATA);

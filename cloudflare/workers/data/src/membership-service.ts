@@ -2,6 +2,8 @@ import { D1GuildRepository } from "./guild-repository";
 import { D1MembershipRepository } from "./membership-repository";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const MAX_GUILD_FILTER_IDS = 200;
+const GUILD_FILTER_BATCH_SIZE = 100;
 const responseHeaders = {
   "cache-control": "no-store",
   "x-content-type-options": "nosniff",
@@ -48,7 +50,7 @@ async function filterGuilds(
     const value = await parseBody(request, ["guildIds"]);
     if (
       !Array.isArray(value.guildIds) ||
-      value.guildIds.length > 200 ||
+      value.guildIds.length > MAX_GUILD_FILTER_IDS ||
       !value.guildIds.every(
         (guildId): guildId is string =>
           typeof guildId === "string" && SNOWFLAKE.test(guildId),
@@ -66,18 +68,26 @@ async function filterGuilds(
     return Response.json({ guildIds: [] }, { headers: responseHeaders });
   }
   try {
-    const placeholders = guildIds.map(() => "?").join(", ");
-    const result = await db
-      .withSession("first-primary")
-      .prepare(
-        `SELECT id FROM guilds
-         WHERE id IN (${placeholders})${activeOnly ? " AND is_active = 1" : ""}`,
-      )
-      .bind(...guildIds)
-      .all<{ id: string }>();
-    const active = new Set(result.results.map(({ id }) => id));
+    const matchingIds = new Set<string>();
+    const session = db.withSession("first-primary");
+    for (
+      let offset = 0;
+      offset < guildIds.length;
+      offset += GUILD_FILTER_BATCH_SIZE
+    ) {
+      const batch = guildIds.slice(offset, offset + GUILD_FILTER_BATCH_SIZE);
+      const placeholders = batch.map(() => "?").join(", ");
+      const result = await session
+        .prepare(
+          `SELECT id FROM guilds
+           WHERE id IN (${placeholders})${activeOnly ? " AND is_active = 1" : ""}`,
+        )
+        .bind(...batch)
+        .all<{ id: string }>();
+      for (const { id } of result.results) matchingIds.add(id);
+    }
     return Response.json(
-      { guildIds: guildIds.filter((id) => active.has(id)) },
+      { guildIds: guildIds.filter((id) => matchingIds.has(id)) },
       { headers: responseHeaders },
     );
   } catch {

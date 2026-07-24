@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { executeRoll } from "../../packages/roll-domain/src";
+import {
+  executeRoll,
+  prepareRollAppearance,
+} from "../../packages/roll-domain/src";
 
 const seed = 0x1234_abcd;
 
@@ -25,6 +28,151 @@ describe("executeRoll", () => {
         { notation: "4dF" },
       ],
     });
+  });
+
+  it("prepares stable physical dice without consuming roll outcomes", () => {
+    const preview = prepareRollAppearance({
+      notation: ["2d6 + 1d20", "d%"],
+      repetitions: 2,
+      seed,
+    });
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.outcomes.map(({ dice }) => dice.map(({ sides }) => sides))).toEqual([
+      [6, 6, 20],
+      ["%", 10],
+      [6, 6, 20],
+      ["%", 10],
+    ]);
+    expect(
+      preview.outcomes.flatMap(({ dice }) =>
+        dice.map(({ appearanceDieIdentity }) => appearanceDieIdentity),
+      ),
+    ).toEqual([
+      "expression:0:repeat:0:definition:6:0:die:0",
+      "expression:0:repeat:0:definition:6:0:die:1",
+      "expression:0:repeat:0:definition:20:0:die:0",
+      "expression:1:repeat:0:definition:percentile:0:die:0:percentile",
+      "expression:1:repeat:0:definition:percentile:0:die:0:ones",
+      "expression:0:repeat:1:definition:6:0:die:0",
+      "expression:0:repeat:1:definition:6:0:die:1",
+      "expression:0:repeat:1:definition:20:0:die:0",
+      "expression:1:repeat:1:definition:percentile:0:die:0:percentile",
+      "expression:1:repeat:1:definition:percentile:0:die:0:ones",
+    ]);
+  });
+
+  it("keeps existing die identities when a notation quantity changes", () => {
+    const first = executeRoll({
+      notation: ["2d6 + 1d20"],
+      seed,
+      stableAppearanceIdentities: true,
+    });
+    const expanded = executeRoll({
+      notation: ["3d6 + 1d20"],
+      seed,
+      stableAppearanceIdentities: true,
+    });
+
+    expect(first.outcomes[0]?.dice.map(({ appearanceDieIdentity }) => appearanceDieIdentity)).toEqual([
+      expanded.outcomes[0]?.dice[0]?.appearanceDieIdentity,
+      expanded.outcomes[0]?.dice[1]?.appearanceDieIdentity,
+      expanded.outcomes[0]?.dice[3]?.appearanceDieIdentity,
+    ]);
+  });
+
+  it("keeps definition identities stable when compound notation is reordered", () => {
+    const first = prepareRollAppearance({
+      notation: ["1d6 + 1d20"],
+      seed,
+    });
+    const reordered = prepareRollAppearance({
+      notation: ["1d20 + 1d6"],
+      seed,
+    });
+    const identityBySides = (result: typeof first) =>
+      new Map(
+        result.outcomes[0]?.dice.map(({ sides, appearanceDieIdentity }) => [
+          sides,
+          appearanceDieIdentity,
+        ]),
+      );
+
+    expect(identityBySides(reordered)).toEqual(identityBySides(first));
+  });
+
+  it("keeps same-sided identities stable across separate definition insertions", () => {
+    const first = prepareRollAppearance({
+      notation: ["1d6 + 2d6"],
+      seed,
+    });
+    const expanded = prepareRollAppearance({
+      notation: ["1d6 + 1d6 + 2d6"],
+      seed,
+    });
+
+    expect(
+      first.outcomes[0]?.dice.map(({ appearanceDieIdentity }) =>
+        appearanceDieIdentity,
+      ),
+    ).toEqual(
+      expanded.outcomes[0]?.dice
+        .slice(0, 3)
+        .map(({ appearanceDieIdentity }) => appearanceDieIdentity),
+    );
+  });
+
+  it("keeps original explode identities and marks generated dice separately", () => {
+    const result = executeRoll({
+      notation: ["10d6!"],
+      seed: 0,
+      stableAppearanceIdentities: true,
+    });
+    const identities = result.outcomes[0]?.dice.map(
+      ({ appearanceDieIdentity }) => appearanceDieIdentity,
+    );
+
+    expect(identities).toBeDefined();
+    expect(identities?.filter((identity) => !identity?.includes(":generated:"))).toHaveLength(10);
+    expect(identities?.some((identity) => identity?.includes(":generated:"))).toBe(true);
+    expect(identities?.filter((identity) => identity?.includes(":generated:"))).toEqual([
+      "expression:0:repeat:0:definition:6:0:die:5:generated:0",
+      "expression:0:repeat:0:definition:6:0:die:6:generated:0",
+    ]);
+  });
+
+  it("assigns ordered identities across multiple explosion generations", () => {
+    const result = executeRoll({
+      notation: ["1d2!"],
+      seed: 1,
+      stableAppearanceIdentities: true,
+    });
+
+    expect(
+      result.outcomes[0]?.dice.map(
+        ({ appearanceDieIdentity }) => appearanceDieIdentity,
+      ),
+    ).toEqual([
+      "expression:0:repeat:0:definition:2:0:die:0",
+      "expression:0:repeat:0:definition:2:0:die:0:generated:0",
+      "expression:0:repeat:0:definition:2:0:die:0:generated:1",
+      "expression:0:repeat:0:definition:2:0:die:0:generated:2",
+      "expression:0:repeat:0:definition:2:0:die:0:generated:3",
+      "expression:0:repeat:0:definition:2:0:die:0:generated:4",
+    ]);
+  });
+
+  it("preserves a physical face for zero-valued penetrating dice", () => {
+    const result = executeRoll({
+      notation: ["15d2!p"],
+      seed: 0,
+      stableAppearanceIdentities: true,
+    });
+    const zeroDice = result.outcomes[0]?.dice.filter(({ rolled }) => rolled === 0);
+
+    expect(zeroDice?.length).toBeGreaterThan(0);
+    expect(zeroDice?.every(({ physicalFace }) => physicalFace === 1)).toBe(true);
+    expect(result.outcomes[0]?.output).toContain("0");
   });
 
   it("produces a different deterministic sequence for a different seed", () => {

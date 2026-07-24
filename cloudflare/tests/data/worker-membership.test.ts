@@ -66,6 +66,33 @@ describe("Data Worker membership service", () => {
     });
   });
 
+  it("filters the maximum 200 OAuth guild IDs within D1 query limits", async () => {
+    const guildIds = Array.from({ length: 200 }, (_, index) =>
+      String(200000000000000000n + BigInt(index)),
+    );
+    const knownGuildIds = [
+      guildIds[0],
+      guildIds[99],
+      guildIds[100],
+      guildIds[199],
+    ];
+    await dataEnv.DATA.batch(
+      knownGuildIds.map((guildId) =>
+        dataEnv.DATA
+          .prepare(
+            `INSERT INTO guilds (id, name, is_active, created_at, updated_at)
+             VALUES (?, 'known', 1, ?, ?)`,
+          )
+          .bind(guildId, occurredAt, occurredAt),
+      ),
+    );
+
+    const response = await post("/internal/guilds/filter", { guildIds });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ guildIds: knownGuildIds });
+  });
+
   it("returns active guild status totals partitioned by Discord shard", async () => {
     const response = await post("/internal/status-stats", { shardCount: 2 });
     const expectedCounts = [0, 0];

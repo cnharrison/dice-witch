@@ -1,0 +1,47 @@
+diff --git a/modules/canvaskit/BUILD.gn b/modules/canvaskit/BUILD.gn
+index e54983ef1c..8c19239c38 100644
+--- a/modules/canvaskit/BUILD.gn
++++ b/modules/canvaskit/BUILD.gn
+@@ -346,14 +346,18 @@ skia_wasm_lib("canvaskit") {
+     "-sFILESYSTEM=0",
+     "-sMODULARIZE",
+     "-sNO_EXIT_RUNTIME=1",
+-    "-sINITIAL_MEMORY=128MB",
++    "-sINITIAL_MEMORY=32MB",
++    "-sMAXIMUM_MEMORY=64MB",
++    "-sABORTING_MALLOC=1",
++    "-sEXPORT_ES6=1",
++    "-sENVIRONMENT=worker",
+     "-sWASM",
+     "-sSTRICT=1",
+     "-sEXPORTED_RUNTIME_METHODS=HEAP32,HEAPU8,HEAPU16,HEAPU32,HEAPF32",
+ 
+     # INCOMING_MODULE_JS_API is set to empty by default.
+     # https://github.com/emscripten-core/emscripten/blob/8dc91db45bf96c174531006839472a3924d105aa/src/settings.js#L1204
+-    "-sINCOMING_MODULE_JS_API=onRuntimeInitialized,locateFile",
++    "-sINCOMING_MODULE_JS_API=onRuntimeInitialized,instantiateWasm",
+   ]
+ 
+   defines = [
+diff --git a/modules/canvaskit/compile.sh b/modules/canvaskit/compile.sh
+index c56d1d08ce..e29eaa0002 100755
+--- a/modules/canvaskit/compile.sh
++++ b/modules/canvaskit/compile.sh
+@@ -164,7 +164,7 @@ if [[ $@ == *no_paragraph* ]] || [[ $@ == *primitive_shaper* ]] || [[ $@ == *no_
+   ENABLE_PARAGRAPH="false"
+ fi
+ 
+-DO_DECODE="true"
++DO_DECODE="false"
+ if [[ $@ == *no_codecs* ]]; then
+   echo "Omitting codecs"
+   DO_DECODE="false"
+@@ -238,7 +238,7 @@ echo "Compiling"
+   skia_use_system_libwebp=false \
+   skia_use_system_zlib=false\
+   skia_use_vulkan=false \
+-  skia_use_wuffs=true \
++  skia_use_wuffs=false \
+   skia_use_zlib=true \
+   skia_enable_ganesh=${ENABLE_GANESH} \
+   skia_enable_graphite=${ENABLE_GRAPHITE} \

@@ -1,0 +1,55 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-web-api-staging",
+  "main": "workers/web-api/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "DISCORD_CLIENT_ID": "100000000000000001",
+    "DISCORD_REDIRECT_URI": "https://REPLACE_WITH_STAGING_HOSTNAME/api/auth/callback/discord",
+    "FRONTEND_ORIGIN": "https://REPLACE_WITH_STAGING_HOSTNAME",
+    "ENVIRONMENT": "staging",
+    "BUILD_SHA": "REPLACE_WITH_FULL_STAGING_BUILD_SHA",
+    "BUILD_TIME": "REPLACE_WITH_STAGING_BUILD_TIME"
+  },
+  "assets": {
+    "directory": "../frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/interactions"]
+  },
+  "services": [
+    {
+      "binding": "DATA_SERVICE",
+      "service": "dice-witch-data-staging"
+    },
+    {
+      "binding": "DISCORD_REST",
+      "service": "dice-witch-discord-rest-staging",
+      "entrypoint": "DiscordRestService"
+    },
+    {
+      "binding": "ROLL_WEB",
+      "service": "dice-witch-roll-staging",
+      "entrypoint": "WebRollService"
+    },
+    {
+      "binding": "INTERACTIONS_SERVICE",
+      "service": "dice-witch-interactions-staging"
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "DISCORD_CLIENT_SECRET",
+      "store_id": "REPLACE_WITH_STAGING_SECRETS_STORE_ID",
+      "secret_name": "DICE_WITCH_STAGING_DISCORD_CLIENT_SECRET"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": false
+    }
+  }
+}

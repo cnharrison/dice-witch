@@ -176,6 +176,7 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
     setInput,
     isValid,
     total,
-    diceInfo
+    diceInfo,
+    validatedInput: debouncedInput,
   };
 }

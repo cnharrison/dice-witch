@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-discord-rest-staging",
+  "main": "workers/discord-rest/src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "DISCORD_APPLICATION_ID": "100000000000000001",
+    "DISCORD_TEST_GUILD_ID": "100000000000000002",
+    "INVITE_LINK": "https://example.com/replace-with-staging-discord-invite",
+    "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
+    "LOG_OUTPUT_CHANNEL_ID": "100000000000000003"
+  },
+  "secrets_store_secrets": [
+    {
+      "binding": "DISCORD_BOT_TOKEN",
+      "store_id": "REPLACE_WITH_STAGING_SECRETS_STORE_ID",
+      "secret_name": "DICE_WITCH_STAGING_DISCORD_BOT_TOKEN"
+    },
+    {
+      "binding": "TOPGG_KEY",
+      "store_id": "REPLACE_WITH_STAGING_SECRETS_STORE_ID",
+      "secret_name": "DICE_WITCH_STAGING_TOPGG_KEY"
+    },
+    {
+      "binding": "DISCORD_BOT_LIST_KEY",
+      "store_id": "REPLACE_WITH_STAGING_SECRETS_STORE_ID",
+      "secret_name": "DICE_WITCH_STAGING_DISCORD_BOT_LIST_KEY"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": false
+    }
+  }
+}

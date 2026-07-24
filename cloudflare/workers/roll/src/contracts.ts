@@ -1,11 +1,30 @@
-import type { RenderResult } from "../../../packages/dice-svg/src";
+import {
+  validateRenderRequestV4,
+  type IconNameV4,
+  type RenderDieV4,
+  type RenderRequestV4,
+} from "@dice-witch/dice-v4-model";
+import {
+  validateRenderRequestV2,
+  validateRenderRequestV3,
+  type RenderRequestV2,
+  type RenderRequestV3,
+  type RenderResult,
+  type RenderResultV2,
+  type RenderResultV3,
+} from "../../../packages/dice-svg/src";
+import type { RenderedDiceRequestV4 } from "../../../packages/dice-canvaskit/src";
 import {
   isDiscordRollChannelType,
   type RollLoggingContext,
 } from "../../../packages/discord-contracts/src";
 import {
+  MAX_DIE_SIDES,
+  MAX_NOTATION_EXPRESSIONS,
   MAX_NOTATION_LENGTH,
+  MAX_REPETITIONS,
   parseNotationArgs,
+  type RollDie,
   type RollExecutionResult,
 } from "../../../packages/roll-domain/src";
 
@@ -22,14 +41,40 @@ export type RollWorkRequest = {
   repetitions: number;
 };
 
-export type RollWorkRecord = {
-  version: 1;
+type RollWorkRecordBase = {
   request: RollWorkRequest;
   rollSeed: number;
   renderSeed: number;
   outcome: RollExecutionResult;
   createdAt: number;
 };
+
+export type RollWorkRecordV1 = RollWorkRecordBase & {
+  version: 1;
+};
+
+export type RollWorkRecordV2 = RollWorkRecordBase & {
+  version: 2;
+  renderRequest: RenderRequestV2 | null;
+};
+
+export type RollWorkRecordV3 = RollWorkRecordBase & {
+  version: 3;
+  renderRequest: RenderRequestV3 | null;
+};
+
+export type RollWorkRecordV4 = RollWorkRecordBase & {
+  version: 4;
+  renderRequest: RenderRequestV4 | null;
+};
+
+export type RollWorkRecord =
+  | RollWorkRecordV1
+  | RollWorkRecordV2
+  | RollWorkRecordV3
+  | RollWorkRecordV4;
+
+export type RenderResultV4 = RenderedDiceRequestV4 & { version: 4 };
 
 export type RollDeliveryRequest = {
   interaction: {
@@ -63,11 +108,19 @@ export type PrepareRollWorkResult =
   | { status: "conflict" };
 
 export type RenderRollWorkResult =
-  | ({ status: "rendered" } & RenderResult)
+  | ({ status: "rendered" } &
+      (RenderResult | RenderResultV2 | RenderResultV3 | RenderResultV4))
   | { status: "conflict" };
 
 export type DeliverRollWorkResult =
-  | { status: "delivered" | "failed" | "expired" | "conflict" }
+  | {
+      status:
+        | "delivered"
+        | "failed"
+        | "expired"
+        | "conflict"
+        | "unavailable";
+    }
   | { status: "pending"; retryAt: number };
 
 export type AcceptRollDeliveryResult =
@@ -77,6 +130,7 @@ export type AcceptRollDeliveryResult =
       expiresAt: number;
     }
   | { status: "conflict" }
+  | { status: "unavailable" }
   | { status: "expired" };
 
 export type RollDeliveryStatus =
@@ -89,10 +143,17 @@ export type RollDeliveryStatus =
       attempts: number;
     };
 
+export type RollDeliveryFailurePhase =
+  | "record"
+  | "render"
+  | "response"
+  | "deadline";
+
 export type RollDeliveryDiagnostics =
   | { state: "missing" }
   | {
       state: "pending" | "delivered" | "failed";
+      failurePhase: RollDeliveryFailurePhase | null;
       accountingState: StoredDeliveryRow["accounting_state"];
       accountingHttpStatus: number | null;
       accountingAttempts: number;
@@ -138,6 +199,7 @@ export type StoredDeliveryRow = {
   logging_attempts: number;
   helper_state: "pending" | "not_applicable" | "delivered" | "failed";
   helper_attempts: number;
+  failure_phase: RollDeliveryFailurePhase | null;
 };
 
 type ValidatedRollDeliveryRequest = Omit<
@@ -345,22 +407,329 @@ export function validateDeliveryRequest(
   };
 }
 
+function validateRenderSnapshotShape(
+  renderRequest: RenderRequestV2 | RenderRequestV3 | RenderRequestV4,
+  outcome: RollExecutionResult,
+): void {
+  if (
+    renderRequest.groups.length !== outcome.outcomes.length ||
+    renderRequest.groups.some(
+      (group, index) =>
+        group.length !== outcome.outcomes[index]?.dice.length,
+    )
+  ) {
+    throw new Error("Stored roll work render snapshot does not match outcome");
+  }
+}
+
+function validateStoredRequestV4(request: RollWorkRequest): void {
+  const notationLength = request.notation.reduce(
+    (length, value) => length + value.length,
+    Math.max(0, request.notation.length - 1),
+  );
+  if (
+    request.notation.length > MAX_NOTATION_EXPRESSIONS ||
+    notationLength > MAX_NOTATION_LENGTH ||
+    !Number.isSafeInteger(request.repetitions) ||
+    request.repetitions <= 0 ||
+    request.repetitions > MAX_REPETITIONS
+  ) {
+    throw new Error("Stored roll work is invalid");
+  }
+}
+
+function isStoredRollDieV4(value: unknown): value is RollDie {
+  if (
+    !isRecord(value) ||
+    (!hasExactKeys(value, ["modifiers", "rolled", "sides"]) &&
+      !hasExactKeys(value, [
+        "modifiers",
+        "physicalFace",
+        "rolled",
+        "sides",
+      ])) ||
+    typeof value.rolled !== "number" ||
+    !Number.isSafeInteger(value.rolled) ||
+    !Array.isArray(value.modifiers) ||
+    !value.modifiers.every((modifier) => typeof modifier === "string")
+  ) {
+    return false;
+  }
+  const rolled = value.rolled;
+  if (value.sides === "F") return rolled >= -1 && rolled <= 1;
+  if (value.sides === "%") {
+    return rolled >= 0 && rolled <= 90 && rolled % 10 === 0;
+  }
+  if (
+    typeof value.sides !== "number" ||
+    !Number.isSafeInteger(value.sides) ||
+    value.sides < 1 ||
+    value.sides > MAX_DIE_SIDES
+  ) {
+    return false;
+  }
+  const physicalFace = value.physicalFace;
+  if (
+    physicalFace !== undefined &&
+    (typeof physicalFace !== "number" ||
+      !Number.isSafeInteger(physicalFace) ||
+      physicalFace < 1 ||
+      physicalFace > value.sides)
+  ) {
+    return false;
+  }
+  return (
+    (rolled >= (value.sides === 10 ? 0 : 1) && rolled <= value.sides) ||
+    (physicalFace !== undefined && rolled === physicalFace - 1)
+  );
+}
+
+function normalizedStoredNotation(value: string): string {
+  return value.toLowerCase().replace(/df/g, "dF");
+}
+
+function validateStoredOutcomeV4(
+  value: unknown,
+  request: RollWorkRequest,
+  rollSeed: number,
+): asserts value is RollExecutionResult {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["errors", "outcomes", "seed", "version"]) ||
+    value.version !== 1 ||
+    value.seed !== rollSeed ||
+    !Array.isArray(value.outcomes) ||
+    !Array.isArray(value.errors)
+  ) {
+    throw new Error("Stored roll work is invalid");
+  }
+
+  const remainingNotation = new Map<string, number>();
+  for (const notation of request.notation) {
+    const normalized = normalizedStoredNotation(notation);
+    remainingNotation.set(
+      normalized,
+      (remainingNotation.get(normalized) ?? 0) + request.repetitions,
+    );
+  }
+  const consumeNotation = (notation: string): void => {
+    const remaining = remainingNotation.get(notation) ?? 0;
+    if (remaining === 0) throw new Error("Stored roll work is invalid");
+    remainingNotation.set(notation, remaining - 1);
+  };
+
+  for (const outcome of value.outcomes) {
+    if (
+      !isRecord(outcome) ||
+      !hasExactKeys(outcome, ["dice", "notation", "output", "total"]) ||
+      typeof outcome.notation !== "string" ||
+      typeof outcome.output !== "string" ||
+      typeof outcome.total !== "number" ||
+      !Number.isFinite(outcome.total) ||
+      !Array.isArray(outcome.dice) ||
+      !outcome.dice.every(isStoredRollDieV4)
+    ) {
+      throw new Error("Stored roll work is invalid");
+    }
+    consumeNotation(outcome.notation);
+  }
+
+  let terminalErrorCount = 0;
+  for (const error of value.errors) {
+    if (!isRecord(error) || typeof error.code !== "string") {
+      throw new Error("Stored roll work is invalid");
+    }
+    if (error.code === "INVALID_NOTATION" || error.code === "NON_FINITE_TOTAL") {
+      if (
+        !hasExactKeys(error, ["code", "notation"]) ||
+        typeof error.notation !== "string"
+      ) {
+        throw new Error("Stored roll work is invalid");
+      }
+      consumeNotation(error.notation);
+      continue;
+    }
+    if (
+      (error.code !== "TOO_MANY_DICE" &&
+        error.code !== "TOO_MANY_SIDES" &&
+        error.code !== "UNSAFE_EXPLOSION" &&
+        error.code !== "NO_DICE") ||
+      !hasExactKeys(error, ["code", "message"]) ||
+      typeof error.message !== "string"
+    ) {
+      throw new Error("Stored roll work is invalid");
+    }
+    terminalErrorCount += 1;
+  }
+
+  const hasUnconsumedNotation = [...remainingNotation.values()].some(
+    (remaining) => remaining !== 0,
+  );
+  if (
+    terminalErrorCount > 1 ||
+    (terminalErrorCount === 1
+      ? value.outcomes.length !== 0 || value.errors.length !== 1
+      : hasUnconsumedNotation)
+  ) {
+    throw new Error("Stored roll work is invalid");
+  }
+}
+
+const TARGET_BY_SIDES_V4: Readonly<
+  Partial<Record<number, RenderDieV4["target"]>>
+> = Object.freeze({
+  4: "d4",
+  6: "d6",
+  8: "d8",
+  10: "d10",
+  12: "d12",
+  20: "d20",
+});
+
+function renderTargetForRollDieV4(die: RollDie): RenderDieV4["target"] {
+  if (die.sides === "%") return "percentile";
+  if (die.sides === "F") return "fudge";
+  return TARGET_BY_SIDES_V4[die.sides] ?? "other";
+}
+
+function renderedResultForRollDieV4(die: RollDie): number {
+  const face = die.physicalFace ?? die.rolled;
+  if (die.sides === "F" || die.sides === "%") return face;
+  if (die.sides === 10 && face === 0) return 0;
+  return ((face - 1) % die.sides) + 1;
+}
+
+function modifierIconsForRollDieV4(
+  modifiers: readonly string[],
+): IconNameV4[] {
+  const modifierSet = new Set(modifiers);
+  const icons: IconNameV4[] = [];
+  if (modifierSet.has("drop")) icons.push("trashcan");
+  if (modifierSet.has("penetrate")) icons.push("penetrate");
+  else if (modifierSet.has("explode")) icons.push("explosion");
+  if (modifierSet.has("critical-success")) icons.push("critical-success");
+  if (modifierSet.has("critical-failure")) icons.push("critical-failure");
+  if (modifierSet.has("target-success")) icons.push("target-success");
+  if (
+    modifierSet.has("re-roll") ||
+    modifierSet.has("re-roll-once") ||
+    modifierSet.has("reroll")
+  ) {
+    icons.push("recycle");
+  }
+  if (modifierSet.has("min")) icons.push("chevronUp");
+  if (modifierSet.has("max")) icons.push("chevronDown");
+  if (modifierSet.has("unique")) icons.push("unique");
+  return icons.length <= 3 ? icons : [];
+}
+
+function validateRenderSnapshotV4(
+  renderRequest: RenderRequestV4,
+  outcome: RollExecutionResult,
+): void {
+  validateRenderSnapshotShape(renderRequest, outcome);
+  for (const [groupIndex, group] of renderRequest.groups.entries()) {
+    const rollGroup = outcome.outcomes[groupIndex];
+    if (rollGroup === undefined) {
+      throw new Error("Stored roll work render snapshot does not match outcome");
+    }
+    for (const [dieIndex, renderDie] of group.entries()) {
+      const rollDie = rollGroup.dice[dieIndex];
+      if (rollDie === undefined) {
+        throw new Error("Stored roll work render snapshot does not match outcome");
+      }
+      const target = renderTargetForRollDieV4(rollDie);
+      const expectedIcons = modifierIconsForRollDieV4(rollDie.modifiers);
+      if (
+        renderDie.target !== target ||
+        renderDie.result !== renderedResultForRollDieV4(rollDie) ||
+        (target === "other" &&
+          (renderDie.target !== "other" || renderDie.sides !== rollDie.sides)) ||
+        renderDie.icons.length !== expectedIcons.length ||
+        renderDie.icons.some((icon, index) => icon !== expectedIcons[index])
+      ) {
+        throw new Error("Stored roll work render snapshot does not match outcome");
+      }
+    }
+  }
+}
+
 export function parseRecord(value: string): RollWorkRecord {
   const parsed: unknown = JSON.parse(value);
   if (
     !isRecord(parsed) ||
-    parsed.version !== 1 ||
+    (parsed.version !== 1 &&
+      parsed.version !== 2 &&
+      parsed.version !== 3 &&
+      parsed.version !== 4) ||
     !isRecord(parsed.request) ||
-    typeof parsed.rollSeed !== "number" ||
-    typeof parsed.renderSeed !== "number" ||
+    !Number.isInteger(parsed.rollSeed) ||
+    Number(parsed.rollSeed) < 0 ||
+    Number(parsed.rollSeed) > 0xffff_ffff ||
+    !Number.isInteger(parsed.renderSeed) ||
+    Number(parsed.renderSeed) < 0 ||
+    Number(parsed.renderSeed) > 0xffff_ffff ||
     !isRecord(parsed.outcome) ||
     parsed.outcome.version !== 1 ||
     parsed.outcome.seed !== parsed.rollSeed ||
-    typeof parsed.createdAt !== "number"
+    !Array.isArray(parsed.outcome.outcomes) ||
+    !Array.isArray(parsed.outcome.errors) ||
+    !Number.isSafeInteger(parsed.createdAt) ||
+    Number(parsed.createdAt) < 0
   ) {
     throw new Error("Stored roll work is invalid");
   }
-  return parsed as RollWorkRecord;
+  const request = validateRequest(parsed.request);
+  const common = {
+    request,
+    rollSeed: Number(parsed.rollSeed),
+    renderSeed: Number(parsed.renderSeed),
+    outcome: parsed.outcome as RollExecutionResult,
+    createdAt: Number(parsed.createdAt),
+  };
+  if (parsed.version === 1) return { version: 1, ...common };
+  if (
+    !hasExactKeys(parsed, [
+      "createdAt",
+      "outcome",
+      "renderRequest",
+      "renderSeed",
+      "request",
+      "rollSeed",
+      "version",
+    ])
+  ) {
+    throw new Error("Stored roll work is invalid");
+  }
+  const snapshotVersion = parsed.version;
+  if (snapshotVersion === 4) {
+    validateStoredRequestV4(request);
+    validateStoredOutcomeV4(parsed.outcome, request, common.rollSeed);
+  }
+  if (common.outcome.outcomes.length === 0) {
+    if (parsed.renderRequest !== null) {
+      throw new Error("Stored roll work is invalid");
+    }
+    if (snapshotVersion === 2) {
+      return { version: 2, ...common, renderRequest: null };
+    }
+    return snapshotVersion === 3
+      ? { version: 3, ...common, renderRequest: null }
+      : { version: 4, ...common, renderRequest: null };
+  }
+  if (snapshotVersion === 2) {
+    const renderRequest = validateRenderRequestV2(parsed.renderRequest);
+    validateRenderSnapshotShape(renderRequest, common.outcome);
+    return { version: 2, ...common, renderRequest };
+  }
+  if (snapshotVersion === 3) {
+    const renderRequest = validateRenderRequestV3(parsed.renderRequest);
+    validateRenderSnapshotShape(renderRequest, common.outcome);
+    return { version: 3, ...common, renderRequest };
+  }
+  const renderRequest = validateRenderRequestV4(parsed.renderRequest);
+  validateRenderSnapshotV4(renderRequest, common.outcome);
+  return { version: 4, ...common, renderRequest };
 }
 
 export function interactionCreatedAt(interactionId: string): number {

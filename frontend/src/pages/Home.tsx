@@ -4,48 +4,66 @@ import { ChannelDropdown } from '@/components/ChannelDropdown';
 import { Roller } from '@/components/Roller';
 import { LoadingMedia } from '@/components/LoadingMedia';
 import { useDiceValidation } from '@/hooks/useDiceValidation';
-import { Guild } from "@/types/guild";
-import { RollResponse } from '@/types/dice';
+import type { Guild } from "@/types/guild";
+import type { RollPreparation, RollResponse } from '@/types/dice';
 import { useUser } from '@/lib/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { LoaderIcon } from "lucide-react";
 import * as React from 'react';
-import { Input as InputComponent } from '@/components/ui/input';
-import { Button as ButtonComponent } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Navigate } from 'react-router-dom';
 import { useGuild } from '@/context/GuildContext';
 import { useToast } from '@/hooks/use-toast';
-import { customFetch } from '../main';
+import { customFetch } from '../lib/api';
 import { appConfig } from '@/lib/config';
+import {
+  parseWebRollPreparation,
+  parseWebRollResponse,
+} from '@/lib/roll-response';
+
+type RollPreparationState =
+  | { status: "idle" | "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; value: RollPreparation };
 
 export const Home = () => {
   const { user } = useUser();
-  const discordAccount = user;
   const {
     selectedGuildId: selectedGuild,
     selectedChannelId: selectedChannel,
     setSelectedGuildId: setSelectedGuild,
     setSelectedChannelId: setSelectedChannel
   } = useGuild();
-  const { input, setInput, isValid, diceInfo } = useDiceValidation('');
+  const { input, setInput, isValid, diceInfo, validatedInput } = useDiceValidation('');
   const [isRolling, setIsRolling] = React.useState(false);
   const [rollResults, setRollResults] = React.useState<RollResponse | null>(null);
-  const [showAnimation, setShowAnimation] = React.useState(false);
   const [timesToRepeat, setTimesToRepeat] = React.useState<number>(1);
   const [rollTitle, setRollTitle] = React.useState<string>('');
+  const [preparation, setPreparation] = React.useState<RollPreparationState>({
+    status: "idle",
+  });
+  const [visiblePreparation, setVisiblePreparation] =
+    React.useState<RollPreparation | null>(null);
+  const [preparationRetry, setPreparationRetry] = React.useState(0);
+  const stableRenderSeed = React.useRef<number | undefined>(undefined);
+  const rollRequestRevision = React.useRef(0);
+  const activeRollController = React.useRef<AbortController | null>(null);
 
-  React.useEffect(() => {
-    if (!input) {
-      setIsRolling(false);
-      setRollResults(null);
-      setShowAnimation(false);
-    } else {
-      setShowAnimation(isValid);
-    }
-  }, [input, isValid]);
+  const cancelActiveRoll = React.useCallback(() => {
+    rollRequestRevision.current += 1;
+    activeRollController.current?.abort();
+    activeRollController.current = null;
+    setIsRolling(false);
+  }, []);
 
-  const { data: mutualGuilds, isLoading, isFetching } = useQuery<any[]>({
+  React.useEffect(
+    () => () => {
+      rollRequestRevision.current += 1;
+      activeRollController.current?.abort();
+    },
+    [],
+  );
+
+  const { data: mutualGuilds, isLoading, isFetching } = useQuery<Guild[]>({
     queryKey: ['guilds'],
     queryFn: async () => {
       const response = await customFetch('/api/guilds/mutual');
@@ -60,13 +78,14 @@ export const Home = () => {
     refetchOnMount: 'always',
   });
 
-  // Then define the handler
   const handleInputChange = (value: string) => {
+    cancelActiveRoll();
     setInput(value);
+    setPreparation({ status: "idle" });
     if (!value) {
       setIsRolling(false);
-      setRollResults(null);
-      setShowAnimation(false);
+      setVisiblePreparation(null);
+      stableRenderSeed.current = undefined;
     }
   };
 
@@ -89,71 +108,177 @@ export const Home = () => {
 
   const { toast } = useToast();
 
-  const handleRollDice = async () => {
-    if (!isValid || !selectedChannel || !input) return;
+  React.useEffect(() => {
+    if (
+      !selectedGuild ||
+      !input ||
+      validatedInput !== input ||
+      !isValid ||
+      diceInfo === null
+    ) {
+      setPreparation({ status: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    setPreparation({ status: "loading" });
+    void customFetch('/api/dice/prepare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        guildId: selectedGuild,
+        notation: input,
+        timesToRepeat,
+        ...(stableRenderSeed.current === undefined
+          ? {}
+          : { renderSeed: stableRenderSeed.current }),
+      }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const value: unknown = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            typeof value === "object" &&
+              value !== null &&
+              "error" in value &&
+              typeof value.error === "string"
+              ? value.error
+              : "Exact dice preparation failed",
+          );
+        }
+        return parseWebRollPreparation(value);
+      })
+      .then((value) => {
+        if (!controller.signal.aborted) {
+          stableRenderSeed.current = value.renderSeed;
+          setRollResults(null);
+          setVisiblePreparation(value);
+          setPreparation({ status: "ready", value });
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setPreparation({
+          status: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Exact dice preparation failed",
+        });
+      });
+    return () => controller.abort();
+  }, [
+    diceInfo,
+    input,
+    isValid,
+    preparationRetry,
+    selectedGuild,
+    timesToRepeat,
+    validatedInput,
+  ]);
 
-    const selectedChannelObj = channels.find(c => c.id === selectedChannel);
+  const handleRollDice = async () => {
+    if (
+      !isValid ||
+      !selectedGuild ||
+      !selectedChannel ||
+      !input ||
+      preparation.status !== "ready"
+    ) {
+      return;
+    }
+
+    activeRollController.current?.abort();
+    const controller = new AbortController();
+    activeRollController.current = controller;
+    const revision = ++rollRequestRevision.current;
+    const isCurrent = () =>
+      !controller.signal.aborted && revision === rollRequestRevision.current;
 
     try {
       setIsRolling(true);
-      setShowAnimation(true);
-      setRollResults(null);
 
-      const requestBody = {
-        guildId: selectedGuild,
-        channelId: selectedChannel,
-        notation: input,
-        timesToRepeat,
-        title: rollTitle || undefined,
-      };
-      const response = await customFetch('/api/dice/roll', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+      const response = await customFetch("/api/dice/roll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guildId: selectedGuild,
+          channelId: selectedChannel,
+          notation: input,
+          renderSeed: preparation.value.renderSeed,
+          appearanceDigest: preparation.value.appearanceDigest,
+          timesToRepeat,
+          title: rollTitle || undefined,
+        }),
+        signal: controller.signal,
       });
+      const responseBody: unknown = await response.json();
+      if (!isCurrent()) return;
 
-      const data = await response.json();
-
-      if (data.error === 'PERMISSION_ERROR') {
+      if (response.status === 409) {
+        setPreparation({
+          status: "error",
+          message: "Prepared appearance has changed; prepare the roll again",
+        });
+        throw new Error("Prepared appearance has changed; prepare the roll again");
+      }
+      const data = parseWebRollResponse(responseBody);
+      if (data.error === "PERMISSION_ERROR") {
         toast({
           title: "Missing Discord Permissions",
-          description: "I need permission to read message history, attach files, and embed links to show you the dice 😊",
+          description:
+            "I need permission to read message history, attach files, and embed links to show you the dice 😊",
           variant: "destructive",
         });
       }
-
-
       setRollResults(data);
-
-
-      setIsRolling(false);
-
+      if (data.error === undefined) {
+        setInput("");
+        setRollTitle("");
+        setTimesToRepeat(1);
+        setPreparation({ status: "idle" });
+        stableRenderSeed.current = undefined;
+      }
     } catch (error) {
-      console.error('Error rolling dice:', error);
-      setIsRolling(false);
-
+      if (!isCurrent()) return;
+      console.error("Error rolling dice:", error);
       toast({
         title: "Error Rolling Dice",
         description: "Something went wrong when trying to roll. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      if (revision === rollRequestRevision.current) {
+        activeRollController.current = null;
+        setIsRolling(false);
+      }
     }
+  };
+
+  const handleTimesToRepeatChange = (value: number) => {
+    cancelActiveRoll();
+    setTimesToRepeat(value);
+    setPreparation({ status: "idle" });
   };
 
   if (isLoading || isFetching) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <LoaderIcon className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div
+        role="status"
+        className="flex min-h-screen items-center justify-center"
+      >
+        <LoaderIcon className="h-8 w-8 text-muted-foreground motion-safe:animate-spin" />
+        <span className="sr-only">Loading servers</span>
       </div>
     );
   }
 
-  const hasAdminPermissions = Array.isArray(mutualGuilds) && mutualGuilds.some(
-    guild => guild.isAdmin || guild.isDiceWitchAdmin
-  );
-
+  const authorizedGuilds = Array.isArray(mutualGuilds)
+    ? mutualGuilds.filter(
+        ({ isAdmin, isDiceWitchAdmin }) => isAdmin || isDiceWitchAdmin,
+      )
+    : [];
+  const hasAdminPermissions = authorizedGuilds.length > 0;
   const hasNoGuilds = !Array.isArray(mutualGuilds) || mutualGuilds.length === 0;
 
   if (hasNoGuilds && !isLoading && !isFetching) {
@@ -186,66 +311,92 @@ export const Home = () => {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col items-center mt-8">
-        <div className="relative w-full max-w-md mb-8 overflow-visible hidden sm:block">
-          <LoadingMedia
-            staticImage="/images/dice-witch-banner.webp"
-            loadingVideo="/videos/dice-witch-loading.mp4"
-            className="w-full h-auto rounded-full"
-            isLoading={isRolling}
-            alt="Dice Witch"
-            blendMode="normal"
-            hideText
-          />
+      <div className="flex h-full min-h-0 flex-col overflow-hidden px-2 py-2 sm:px-4">
+        <header className="mx-auto flex w-full max-w-6xl flex-none items-center justify-center gap-4 pb-2">
+          <div className="hidden w-[clamp(7.5rem,16dvh,9rem)] shrink-0 overflow-visible sm:block">
+            <LoadingMedia
+              staticImage="/images/dice-witch-banner.webp"
+              loadingVideo="/videos/dice-witch-loading.mp4"
+              className="h-auto w-full rounded-full"
+              isLoading={isRolling}
+              alt="Dice Witch"
+              blendMode="normal"
+              hideText
+            />
+          </div>
 
-        </div>
-
-        <div className="w-[300px] mb-4">
-          <GuildDropdown
-            guilds={mutualGuilds}
-            value={selectedGuild}
-            onValueChange={(value) => {
-              setSelectedGuild(value);
-              setSelectedChannel(undefined);
-              setRollResults(null);
-            }}
-          />
-        </div>
-        {selectedGuild && Array.isArray(channels) && channels.length > 0 && (
-          <div className="w-[300px] mb-8">
-            <ChannelDropdown
-              channels={channels}
-              value={selectedChannel}
+          <div className="grid w-[300px] gap-2">
+            <GuildDropdown
+              guilds={authorizedGuilds}
+              value={selectedGuild}
               onValueChange={(value) => {
-                setSelectedChannel(value);
+                cancelActiveRoll();
+                setSelectedGuild(value);
+                setSelectedChannel(undefined);
                 setRollResults(null);
+                setVisiblePreparation(null);
+                stableRenderSeed.current = undefined;
+                setPreparation({ status: "idle" });
               }}
             />
+            {selectedGuild && Array.isArray(channels) && channels.length > 0 && (
+              <ChannelDropdown
+                channels={channels}
+                value={selectedChannel}
+                onValueChange={(value) => {
+                  cancelActiveRoll();
+                  setSelectedChannel(value);
+                  setRollResults(null);
+                }}
+              />
+            )}
           </div>
-        )}
+        </header>
+
         {selectedGuild && (
-          <div className="w-full max-w-6xl px-4">
-            <Roller
-              diceInfo={diceInfo}
-              rollResults={rollResults}
-              isRolling={isRolling}
-              showAnimation={showAnimation || isRolling}
-              input={input}
-              setInput={handleInputChange}
-              selectedChannel={!!selectedChannel}
-            />
-            <DiceInput
-              input={input}
-              setInput={handleInputChange}
-              isValid={isValid}
-              onRoll={handleRollDice}
-              timesToRepeat={timesToRepeat}
-              onTimesToRepeatChange={setTimesToRepeat}
-              selectedChannel={!!selectedChannel}
-              rollTitle={rollTitle}
-              onRollTitleChange={setRollTitle}
-            />
-          </div>
+          <section className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-2">
+            <div className="min-h-0 flex-1">
+              <Roller
+                rollPreparation={visiblePreparation}
+                rollResults={rollResults}
+                isPreparing={preparation.status === "loading"}
+                isRolling={isRolling}
+                isResultStale={rollResults !== null && input.trim() !== ""}
+                input={input}
+                setInput={handleInputChange}
+                selectedChannel={!!selectedChannel}
+              />
+            </div>
+            {preparation.status === "error" && (
+              <div
+                role="alert"
+                className="flex flex-none items-center justify-center gap-3 rounded-md border border-amber-500/60 px-3 py-2 text-sm"
+              >
+                <span>{preparation.message}</span>
+                <button
+                  type="button"
+                  className="font-semibold underline"
+                  onClick={() => setPreparationRetry((value) => value + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            <div className="flex-none">
+              <DiceInput
+                input={input}
+                setInput={handleInputChange}
+                isValid={isValid}
+                onRoll={handleRollDice}
+                timesToRepeat={timesToRepeat}
+                onTimesToRepeatChange={handleTimesToRepeatChange}
+                selectedChannel={!!selectedChannel}
+                isRollReady={preparation.status === "ready"}
+                rollTitle={rollTitle}
+                onRollTitleChange={setRollTitle}
+              />
+            </div>
+          </section>
         )}
       </div>
     </TooltipProvider>

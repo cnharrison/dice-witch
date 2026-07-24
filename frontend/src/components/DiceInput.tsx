@@ -15,6 +15,7 @@ interface DiceInputProps {
   timesToRepeat?: number;
   onTimesToRepeatChange?: (value: number) => void;
   selectedChannel: boolean;
+  isRollReady?: boolean;
   rollTitle?: string;
   onRollTitleChange?: (value: string) => void;
 }
@@ -27,12 +28,14 @@ export function DiceInput({
   timesToRepeat = 1,
   onTimesToRepeatChange,
   selectedChannel,
+  isRollReady = true,
   rollTitle = '',
   onRollTitleChange
 }: DiceInputProps) {
   const diceInputRef = React.useRef<HTMLInputElement>(null);
-  const timesToRepeatRef = React.useRef<HTMLInputElement>(null);
   const { theme } = useTheme();
+  const canRoll =
+    isValid && selectedChannel && isRollReady && input.trim().length > 0;
 
   const handleInputChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
@@ -71,39 +74,22 @@ export function DiceInput({
   }, [setInput, onRollTitleChange, onTimesToRepeatChange]);
 
   const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && isValid && selectedChannel && input.trim()) {
-      if (onRoll) onRoll();
-    }
-  }, [isValid, selectedChannel, input, onRoll]);
+    if (e.key === 'Enter' && canRoll) onRoll?.();
+  }, [canRoll, onRoll]);
 
   const handleDiceInputKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     handleKeyDown(e);
   }, [handleKeyDown]);
 
-  const handleTimesToRepeatChange = React.useCallback((newValue: number) => {
-    if (onTimesToRepeatChange) {
-      onTimesToRepeatChange(Math.max(1, newValue));
-    }
-  }, [onTimesToRepeatChange]);
-
-  const handleTimesToRepeatKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      onTimesToRepeatChange(Math.max(1, timesToRepeat + 1));
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      onTimesToRepeatChange(Math.max(1, timesToRepeat - 1));
-    }
-  }, [timesToRepeat, onTimesToRepeatChange]);
-
   return (
     <TooltipProvider>
       {/* Mobile layout */}
-      <div className="sm:hidden flex flex-col space-y-2 mt-4">
+      <div className="flex flex-col space-y-1 sm:hidden">
         {/* Row 1: Dice Input (full width) */}
         <div className="relative w-full">
           <Input
             ref={diceInputRef}
+            aria-label="Dice notation"
             type="text"
             value={input}
             onChange={handleInputChange}
@@ -130,26 +116,24 @@ export function DiceInput({
                 ✕
               </Button>
             )}
-            <div
-              onClick={() => isValid && selectedChannel && input.trim() && onRoll && onRoll()}
+            <button
+              type="button"
+              aria-label="Roll dice"
+              disabled={!canRoll}
+              onClick={onRoll}
               className={cn(
-                "cursor-pointer transition-opacity duration-300",
-                (!isValid || !selectedChannel || !input.trim()) && "opacity-50 cursor-not-allowed"
+                "rounded-sm transition-opacity duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                !canRoll && "cursor-not-allowed opacity-50",
               )}
             >
               <D20Icon
-                className={cn(
-                  "h-5 w-5",
-                  (!isValid || !selectedChannel || !input.trim())
-                    ? "text-white"
-                    : ""
-                )}
+                className={cn("h-5 w-5", !canRoll && "text-white")}
                 darkMode={theme === 'dark'}
-                disabled={!isValid || !selectedChannel || !input.trim()}
-                shouldGlow={isValid && selectedChannel && input.trim()}
+                disabled={!canRoll}
+                shouldGlow={canRoll}
                 glowColor="#ff00ff"
               />
-            </div>
+            </button>
           </div>
         </div>
 
@@ -158,6 +142,7 @@ export function DiceInput({
           <div className="flex-grow">
             <Input
               id="mobile-roll-title"
+              aria-label="Roll title"
               type="text"
               value={rollTitle}
               onChange={(e) => onRollTitleChange?.(e.target.value)}
@@ -178,6 +163,7 @@ export function DiceInput({
                     <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">x</div>
                     <Input
                       id="mobile-repeat"
+                      aria-label="Times to repeat roll"
                       type="tel"
                       min="1"
                       max="20"
@@ -203,24 +189,28 @@ export function DiceInput({
                     />
                     <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col">
                       <Button
+                        type="button"
                         variant="ghost"
                         size="icon"
+                        aria-label="Increase times to repeat roll"
                         onClick={() => onTimesToRepeatChange?.(Math.min(20, timesToRepeat + 1))}
                         className="h-4 w-4 p-0"
                         tabIndex={-1}
                         disabled={!selectedChannel}
                       >
-                        <ChevronUp className="h-4 w-4" />
+                        <ChevronUp className="h-4 w-4" aria-hidden="true" />
                       </Button>
                       <Button
+                        type="button"
                         variant="ghost"
                         size="icon"
+                        aria-label="Decrease times to repeat roll"
                         onClick={() => onTimesToRepeatChange?.(Math.max(1, timesToRepeat - 1))}
                         className="h-4 w-4 p-0"
                         tabIndex={-1}
                         disabled={!selectedChannel}
                       >
-                        <ChevronDown className="h-4 w-4" />
+                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </div>
                   </div>
@@ -234,10 +224,11 @@ export function DiceInput({
         </div>
       </div>
 
-      <div className="hidden sm:flex items-center space-x-2 mt-4">
+      <div className="hidden items-center space-x-2 sm:flex">
         <div className="relative flex-grow">
           <Input
             ref={diceInputRef}
+            aria-label="Dice notation"
             type="text"
             value={input}
             onChange={handleInputChange}
@@ -264,31 +255,30 @@ export function DiceInput({
                 ✕
               </Button>
             )}
-            <div
-              onClick={() => isValid && selectedChannel && input.trim() && onRoll && onRoll()}
+            <button
+              type="button"
+              aria-label="Roll dice"
+              disabled={!canRoll}
+              onClick={onRoll}
               className={cn(
-                "cursor-pointer transition-opacity duration-300",
-                (!isValid || !selectedChannel || !input.trim()) && "opacity-50 cursor-not-allowed"
+                "rounded-sm transition-opacity duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                !canRoll && "cursor-not-allowed opacity-50",
               )}
             >
               <D20Icon
-                className={cn(
-                  "h-5 w-5",
-                  (!isValid || !selectedChannel || !input.trim())
-                    ? "text-white"
-                    : ""
-                )}
+                className={cn("h-5 w-5", !canRoll && "text-white")}
                 darkMode={theme === 'dark'}
-                disabled={!isValid || !selectedChannel || !input.trim()}
-                shouldGlow={isValid && selectedChannel && input.trim()}
+                disabled={!canRoll}
+                shouldGlow={canRoll}
                 glowColor="#ff00ff"
               />
-            </div>
+            </button>
           </div>
         </div>
         <div className="flex items-center space-x-2">
           <Input
             id="roll-title"
+            aria-label="Roll title"
             type="text"
             value={rollTitle}
             onChange={(e) => onRollTitleChange?.(e.target.value)}
@@ -308,6 +298,7 @@ export function DiceInput({
                   <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">x</div>
                   <Input
                     id="repeat"
+                    aria-label="Times to repeat roll"
                     type="tel"
                     min="1"
                     max="20"
@@ -333,24 +324,28 @@ export function DiceInput({
                   />
                   <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col">
                     <Button
+                      type="button"
                       variant="ghost"
                       size="icon"
+                      aria-label="Increase times to repeat roll"
                       onClick={() => onTimesToRepeatChange?.(Math.min(20, timesToRepeat + 1))}
                       className="h-4 w-4 p-0"
                       tabIndex={-1}
                       disabled={!selectedChannel}
                     >
-                      <ChevronUp className="h-4 w-4" />
+                      <ChevronUp className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     <Button
+                      type="button"
                       variant="ghost"
                       size="icon"
+                      aria-label="Decrease times to repeat roll"
                       onClick={() => onTimesToRepeatChange?.(Math.max(1, timesToRepeat - 1))}
                       className="h-4 w-4 p-0"
                       tabIndex={-1}
                       disabled={!selectedChannel}
                     >
-                      <ChevronDown className="h-4 w-4" />
+                      <ChevronDown className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
                 </div>

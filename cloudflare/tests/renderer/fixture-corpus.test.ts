@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   renderDiceToPng,
   type IconName,
-  type PatternName,
+  type PatternNameV1V2,
   type RenderDie,
 } from "../../packages/dice-svg/src";
 
@@ -20,7 +20,7 @@ const iconNames: IconName[] = [
   "blank",
 ];
 
-const patternNames: PatternName[] = [
+const patternNames: PatternNameV1V2[] = [
   "checkerboard",
   "dots",
   "stripes",

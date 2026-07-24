@@ -8,7 +8,10 @@
   "vars": {
     "DISCORD_CLIENT_ID": "100000000000000001",
     "DISCORD_REDIRECT_URI": "https://example.com/api/auth/callback/discord",
-    "FRONTEND_ORIGIN": "https://example.com"
+    "FRONTEND_ORIGIN": "https://example.com",
+    "ENVIRONMENT": "REPLACE_WITH_ENVIRONMENT",
+    "BUILD_SHA": "REPLACE_WITH_FULL_BUILD_SHA",
+    "BUILD_TIME": "REPLACE_WITH_BUILD_TIME"
   },
   "assets": {
     "directory": "../frontend/dist",

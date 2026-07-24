@@ -1,0 +1,75 @@
+{
+  "version": 4,
+  "request": {
+    "notation": ["1d20"],
+    "repetitions": 1
+  },
+  "rollSeed": 305419896,
+  "renderSeed": 2596069104,
+  "outcome": {
+    "version": 1,
+    "seed": 305419896,
+    "outcomes": [
+      {
+        "notation": "1d20",
+        "output": "1d20: [7] = 7",
+        "total": 7,
+        "dice": [
+          {
+            "sides": 20,
+            "rolled": 7,
+            "modifiers": []
+          }
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "createdAt": 1721088000000,
+  "renderRequest": {
+    "version": 4,
+    "rendererRevision": "canvaskit-v4-r1",
+    "groups": [
+      [
+        {
+          "target": "d20",
+          "result": 7,
+          "form": "standard",
+          "appearance": {
+            "material": {
+              "family": "classic",
+              "treatment": "pattern",
+              "patternId": "checkerboard",
+              "opacity": "opaque",
+              "finish": "satin",
+              "textureScale": 100
+            },
+            "palette": ["#5426a8", "#f2d95c"],
+            "texture": {
+              "generatorId": "classic-v1",
+              "seed": 2596069104,
+              "scale": 100,
+              "rotation": 0,
+              "offsetU": 0,
+              "offsetV": 0
+            },
+            "lighting": {
+              "mode": "combined",
+              "strength": "gentle",
+              "direction": "upper-left"
+            },
+            "engraving": {
+              "fontId": "liberation-sans",
+              "finish": "matte-ink",
+              "color": "#faf2db"
+            },
+            "outlineColor": "#000000",
+            "requiresLocalSeparation": false,
+            "effect": null
+          },
+          "icons": []
+        }
+      ]
+    ]
+  }
+}

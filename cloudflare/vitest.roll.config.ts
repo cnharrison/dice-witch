@@ -1,15 +1,100 @@
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
+import {
+  BUILTIN_APPEARANCE_RECIPES_V2,
+  BUILTIN_APPEARANCE_RECIPES_V3,
+  CHAOTIC_APPEARANCE_STYLE_ID,
+} from "./packages/dice-appearance/src/catalog";
+import { APPEARANCE_TARGETS } from "./packages/dice-appearance/src/types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const accountingAttempts = new Map<string, number>();
+const appearanceAttempts = new Map<string, number>();
+
+function effectiveRecipesV2(primary: string | null): Record<string, unknown> {
+  const recipe =
+    primary === null
+      ? BUILTIN_APPEARANCE_RECIPES_V2[CHAOTIC_APPEARANCE_STYLE_ID]
+      : {
+          version: 2,
+          compatibility: "native-v2",
+          variation: "fixed",
+          varyBy: "roll",
+          colors: { mode: "tonal", primary },
+          fill: { mode: "fixed", value: { type: "gradient" } },
+          font: { mode: "fixed", fontId: "liberation-sans" },
+          gradient: {
+            colorSource: "full-palette",
+            scope: { mode: "fixed", value: "die-wide" },
+            direction: {
+              mode: "fixed",
+              value: "upper-left-to-lower-right",
+            },
+          },
+          lighting: {
+            mode: { mode: "fixed", value: "combined" },
+            strength: { mode: "fixed", value: "subtle" },
+            direction: { mode: "fixed", value: "upper-left" },
+          },
+        };
+  if (recipe === undefined) throw new Error("Chaotic test recipe is missing");
+  return Object.fromEntries(APPEARANCE_TARGETS.map((target) => [target, recipe]));
+}
+
+function effectiveRecipesV3(primary: string | null): Record<string, unknown> {
+  const builtin = BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID];
+  if (builtin === undefined) throw new Error("Chaotic V3 test recipe is missing");
+  const recipe = structuredClone(builtin.recipe);
+  if (primary !== null) {
+    delete recipe.randomization;
+    recipe.colors = { mode: "palette", colors: [primary, "#550000"] };
+  }
+  return Object.fromEntries(
+    APPEARANCE_TARGETS.map((target) => [target, recipe]),
+  );
+}
 
 async function dataTestResponse(request: Request): Promise<Response> {
   const path = new URL(request.url).pathname;
   const value: unknown = await request.json();
+  if (
+    path === "/internal/appearance/v2/effective" ||
+    path === "/internal/appearance/v3/effective"
+  ) {
+    if (
+      !isRecord(value) ||
+      typeof value.userId !== "string" ||
+      (value.guildId !== null && typeof value.guildId !== "string")
+    ) {
+      return Response.json({ error: "invalid" }, { status: 400 });
+    }
+    const attempts = (appearanceAttempts.get(value.userId) ?? 0) + 1;
+    appearanceAttempts.set(value.userId, attempts);
+    if (value.userId === "100000000000000099") {
+      return Response.json({ error: "temporary" }, { status: 503 });
+    }
+    if (value.userId === "100000000000000098") {
+      return Response.json({
+        version: path.includes("/v3/") ? 3 : 2,
+        recipes: {},
+      });
+    }
+    if (value.userId === "100000000000000088" && attempts > 1) {
+      return Response.json({ error: "changed" }, { status: 503 });
+    }
+    const version = path.includes("/v3/") ? 3 : 2;
+    const primary = value.userId === "100000000000000088" ? "#aa0000" : null;
+    return Response.json({
+      version,
+      recipes:
+        version === 3
+          ? effectiveRecipesV3(primary)
+          : effectiveRecipesV2(primary),
+    });
+  }
   if (path === "/internal/guilds/settings") {
     if (!isRecord(value) || typeof value.guildId !== "string") {
       return Response.json({ error: "invalid" }, { status: 400 });
@@ -68,6 +153,19 @@ async function discordTestResponse(request: Request): Promise<Response> {
     return Response.json({ id: "development-message" });
   }
   if (token === "delivery-temporary") {
+    return Response.json({ message: "temporary" }, { status: 503 });
+  }
+  if (token === "delivery-deadline") {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (contentType.startsWith("application/json")) {
+      const payload: unknown = await request.json();
+      if (
+        isRecord(payload) &&
+        payload.content === "This roll could not be completed. Please try again."
+      ) {
+        return Response.json({ id: "development-message" });
+      }
+    }
     return Response.json({ message: "temporary" }, { status: 503 });
   }
   if (token === "delivery-terminal-failure") {
@@ -131,6 +229,7 @@ export default defineConfig({
         ],
         outboundService: discordTestResponse,
         serviceBindings: { DATA_SERVICE: dataTestResponse },
+        bindings: { ROLL_RENDER_VERSION: "4" },
       },
       wrangler: {
         configPath: "./wrangler.roll.example.jsonc",
@@ -138,6 +237,8 @@ export default defineConfig({
     }),
   ],
   test: {
+    fileParallelism: false,
     include: ["tests/roll/**/*.test.ts"],
+    maxWorkers: 1,
   },
 });

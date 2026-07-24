@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import * as React from 'react';
-import { customFetch } from '../main';
+import { customFetch } from '../lib/api';
 
 interface ServerStatsResponse {
   servers: number;

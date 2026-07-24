@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["ES2022", "WebWorker"]
+  },
+  "include": [
+    "packages/dice-canvaskit/assets/canvaskit.d.mts",
+    "packages/dice-canvaskit/benchmark.node.test.ts",
+    "packages/dice-canvaskit/src/**/*.ts",
+    "packages/dice-canvaskit/tests/**/*.ts",
+    "tools/canvaskit/load-node-font-data.d.mts",
+    "tools/canvaskit/load-node-runtime.d.mts",
+    "vitest.canvaskit-product-benchmark.config.ts",
+    "vitest.canvaskit-runtime.config.ts"
+  ],
+  "exclude": []
+}

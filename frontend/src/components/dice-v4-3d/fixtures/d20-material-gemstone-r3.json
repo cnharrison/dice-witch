@@ -1,0 +1,50 @@
+{
+  "version": 4,
+  "rendererRevision": "canvaskit-v4-r3",
+  "groups": [
+    [
+      {
+        "target": "d20",
+        "result": 20,
+        "form": "standard",
+        "appearance": {
+          "material": {
+            "family": "gemstone",
+            "stone": "quartz",
+            "veinDensity": 36,
+            "finish": "polished",
+            "textureScale": 100
+          },
+          "palette": [
+            "#15112b",
+            "#735caa",
+            "#ddd2ff"
+          ],
+          "texture": {
+            "generatorId": "gemstone-v1",
+            "seed": 1832976387,
+            "scale": 100,
+            "rotation": 0,
+            "offsetU": 0,
+            "offsetV": 0,
+            "scope": "die-wide"
+          },
+          "lighting": {
+            "mode": "combined",
+            "strength": "gentle",
+            "direction": "upper-left"
+          },
+          "engraving": {
+            "fontId": "new-rocker",
+            "finish": "matte-ink",
+            "color": "#fff2c7"
+          },
+          "outlineColor": "#000000",
+          "requiresLocalSeparation": false,
+          "effect": null
+        },
+        "icons": []
+      }
+    ]
+  ]
+}

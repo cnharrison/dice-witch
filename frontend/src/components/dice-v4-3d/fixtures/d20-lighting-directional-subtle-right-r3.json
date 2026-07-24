@@ -1,0 +1,49 @@
+{
+  "version": 4,
+  "rendererRevision": "canvaskit-v4-r3",
+  "groups": [
+    [
+      {
+        "target": "d20",
+        "result": 20,
+        "form": "standard",
+        "appearance": {
+          "material": {
+            "family": "classic",
+            "opacity": "opaque",
+            "finish": "satin",
+            "textureScale": 100,
+            "treatment": "solid"
+          },
+          "palette": [
+            "#ff00ff",
+            "#111111"
+          ],
+          "texture": {
+            "generatorId": "classic-v1",
+            "seed": 145529789,
+            "scale": 100,
+            "rotation": 0,
+            "offsetU": 0,
+            "offsetV": 0,
+            "scope": "die-wide"
+          },
+          "lighting": {
+            "mode": "directional",
+            "strength": "subtle",
+            "direction": "right"
+          },
+          "engraving": {
+            "fontId": "new-rocker",
+            "finish": "matte-ink",
+            "color": "#111111"
+          },
+          "outlineColor": "#000000",
+          "requiresLocalSeparation": false,
+          "effect": null
+        },
+        "icons": []
+      }
+    ]
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "version": 4,
+  "rendererRevision": "canvaskit-v4-r3",
+  "groups": [
+    [
+      {
+        "target": "d20",
+        "result": 20,
+        "form": "hollow-cage",
+        "appearance": {
+          "material": {
+            "family": "hollow-metal",
+            "construction": "filigree",
+            "metal": "brass",
+            "finish": "polished",
+            "openness": 58,
+            "textureScale": 100
+          },
+          "palette": [
+            "#080609",
+            "#72501e",
+            "#e7b957"
+          ],
+          "texture": {
+            "generatorId": "hollow-metal-v1",
+            "seed": 1832976391,
+            "scale": 100,
+            "rotation": 0,
+            "offsetU": 0,
+            "offsetV": 0,
+            "scope": "die-wide"
+          },
+          "lighting": {
+            "mode": "combined",
+            "strength": "gentle",
+            "direction": "upper-left"
+          },
+          "engraving": {
+            "fontId": "new-rocker",
+            "finish": "matte-ink",
+            "color": "#fff2c7"
+          },
+          "outlineColor": "#000000",
+          "requiresLocalSeparation": false,
+          "effect": null
+        },
+        "icons": []
+      }
+    ]
+  ]
+}
