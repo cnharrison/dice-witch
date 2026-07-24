@@ -309,7 +309,7 @@ function rollLogLocation(artifact: RollLogArtifactV1): string {
 function rollLogShardLabel(shard: RollLogShardV1): string | null {
   if (shard.status === "not-applicable") return null;
   if (shard.status === "unavailable") return "[Shard unavailable]";
-  return `[Shard ${String(shard.shardId)}/${String(shard.shardCount)}]`;
+  return `[Shard ${String(shard.shardId + 1)}]`;
 }
 
 export function rollLogMetadataDescription(

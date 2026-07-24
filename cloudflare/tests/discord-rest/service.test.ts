@@ -136,7 +136,7 @@ describe("Discord REST service", () => {
         ],
       });
       expect(payload.embeds[0]?.description).toBe(
-        "1d20 from **roller [from discord]** in channel **dice\\-rolls** on **Fixture Guild** [Shard 2/4]",
+        "1d20 from **roller [from discord]** in channel **dice\\-rolls** on **Fixture Guild** [Shard 3]",
       );
       expect(payload.embeds).toHaveLength(1);
       expect(payload).not.toHaveProperty("content");
@@ -186,7 +186,7 @@ describe("Discord REST service", () => {
       };
       expect(payload.embeds).toHaveLength(1);
       expect(payload.embeds[0]?.description).toContain(
-        "channel **live\\-rolls** on **Live Guild** [Shard 0/1]",
+        "channel **live\\-rolls** on **Live Guild** [Shard 1]",
       );
       return Response.json({ id: "100000000000000088" });
     });
