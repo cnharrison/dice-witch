@@ -92,7 +92,7 @@ jobs:
       - name: Run quality gates without deployment credentials
         run: |
           set -euo pipefail
-          npm audit --audit-level=high
+          npm run audit:ci
           npm run type-check
           npm run lint:ci
           npm test
