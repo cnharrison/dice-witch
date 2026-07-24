@@ -1,3 +1,4 @@
+import { MAX_NOTATION_LENGTH } from "../../roll-domain/src/constants";
 import type { DiscordEmbed, DiscordMessage } from "./responses";
 import {
   isDiscordRollChannelType,
@@ -8,7 +9,6 @@ const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const PNG_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/i;
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
 const MAX_USERNAME_LENGTH = 32;
-const MAX_NOTATION_LENGTH = 1_000;
 const MAX_MESSAGE_CONTENT_LENGTH = 2_000;
 const MAX_EMBED_COUNT = 2;
 const MAX_EMBED_TITLE_LENGTH = 256;
@@ -27,6 +27,7 @@ export type LogArtifactUnavailableReasonV1 =
   | "corrupt"
   | "discord-rejected"
   | "missing"
+  | "not-applicable"
   | "oversized";
 
 export type LogArtifactImageV1 =
@@ -316,9 +317,19 @@ export function rollLogMetadataDescription(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
 ): string {
-  const description = `${escapeDiscordMarkdown(artifact.notation)} from **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]** in ${rollLogLocation(artifact)}`;
   const shardLabel = rollLogShardLabel(shard);
-  return shardLabel === null ? description : `${description} ${shardLabel}`;
+  const shardSuffix = shardLabel === null ? "" : ` ${shardLabel}`;
+  const suffix = ` from **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]** in ${rollLogLocation(artifact)}${shardSuffix}`;
+  const notation = escapeDiscordMarkdown(artifact.notation);
+  const notationLimit = MAX_EMBED_DESCRIPTION_LENGTH - suffix.length;
+  if (notationLimit < 2) {
+    throw new Error("Roll log metadata suffix is too long");
+  }
+  const displayedNotation =
+    notation.length <= notationLimit
+      ? notation
+      : `${notation.slice(0, notationLimit - 1)}…`;
+  return `${displayedNotation}${suffix}`;
 }
 
 function embedCharacters(embeds: readonly DiscordEmbed[]): number {
@@ -356,6 +367,7 @@ function validateImage(value: unknown): LogArtifactImageV1 {
     (value.reason === "corrupt" ||
       value.reason === "discord-rejected" ||
       value.reason === "missing" ||
+      value.reason === "not-applicable" ||
       value.reason === "oversized")
   ) {
     return { status: "unavailable", reason: value.reason };
@@ -433,7 +445,8 @@ export function validateRollLogArtifact(
         attachmentUrls[0] !== `attachment://${image.filename}`)) ||
     (image.status === "unavailable" &&
       (attachmentUrls.length !== 0 ||
-        !visibleText.some((text) => text.includes("**image unavailable**"))))
+        (image.reason !== "not-applicable" &&
+          !visibleText.some((text) => text.includes("**image unavailable**")))))
   ) {
     throw new Error("Roll log artifact payload does not match its image");
   }
@@ -464,11 +477,11 @@ export function validateRollLogArtifact(
   const fallbackReserve =
     image.status === "available" ? IMAGE_UNAVAILABLE_MARKER.length : 0;
   if (
+    embedCharacters(payload.embeds ?? []) > MAX_DISCORD_EMBED_CHARACTERS ||
     LOG_METADATA_TITLE.length +
       rollLogMetadataDescription(artifact, maximumShard).length +
-      embedCharacters(payload.embeds ?? []) +
       fallbackReserve >
-    MAX_DISCORD_EMBED_CHARACTERS
+      MAX_DISCORD_EMBED_CHARACTERS
   ) {
     throw new Error("Roll log artifact embeds exceed Discord's aggregate limit");
   }

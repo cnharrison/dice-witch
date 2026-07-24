@@ -162,6 +162,48 @@ describe("Discord REST service", () => {
     ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
   });
 
+  it("delivers a durable invalid-roll log without an attachment", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      expect(request.headers.get("content-type")).toBe("application/json");
+      const payload = await request.json<{
+        attachments?: unknown;
+        embeds: Array<{
+          description?: string;
+          footer?: { text: string };
+        }>;
+      }>();
+      expect(payload.attachments).toBeUndefined();
+      expect(payload.embeds).toHaveLength(1);
+      expect(payload.embeds[0]?.description).toHaveLength(4_096);
+      expect(payload.embeds[0]?.description).toContain("… from **roller");
+      expect(payload.embeds[0]?.footer?.text).toBe("No image for this roll");
+      return Response.json({ id: "100000000000000088" });
+    });
+    const artifact = rollLogArtifact();
+
+    await expect(
+      deliverRollLogV1(
+        env,
+        {
+          artifact: {
+            ...artifact,
+            notation: "x".repeat(6_000),
+            payload: { content: "🚫🎲 Invalid dice notation!" },
+            image: { status: "unavailable", reason: "not-applicable" },
+          },
+          logicalShard: {
+            status: "available",
+            shardId: 0,
+            shardCount: 1,
+            generation: 16,
+          },
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
+    expect(discordFetch).toHaveBeenCalledOnce();
+  });
+
   it("resolves missing HTTP interaction names before logging", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
       const pathname = new URL(request.url).pathname;

@@ -743,72 +743,14 @@ export class RollWork extends DurableObject<RollEnv> {
     const attempts = delivery.logging_attempts + 1;
     this.ctx.storage.sql.exec(
       `UPDATE interaction_delivery
-       SET logging_attempts = ?
+       SET logging_state = 'failed', logging_attempts = ?
        WHERE singleton = 1`,
       attempts,
     );
-    let result: unknown;
-    try {
-      const service = this.env.DISCORD_REST as unknown as {
-        logRoll(value: unknown): Promise<unknown>;
-      };
-      result = await service.logRoll({
-        rollId: metadata.interactionId,
-        source: logging.source,
-        notation: logging.notation,
-        username: metadata.message.username,
-        guildId: metadata.accounting?.guildId ?? null,
-        channelId: logging.channelId,
-        ...(logging.context === undefined
-          ? {}
-          : { context: logging.context }),
-      });
-    } catch {
-      console.error(
-        JSON.stringify({
-          level: "error",
-          message: "Roll logging RPC failed",
-          attempt: attempts,
-        }),
-      );
-      return;
-    }
-    if (isRecord(result) && result.status === "delivered") {
-      this.ctx.storage.sql.exec(
-        `UPDATE interaction_delivery
-         SET logging_state = 'delivered', logging_http_status = 200
-         WHERE singleton = 1`,
-      );
-      return;
-    }
-    if (
-      isRecord(result) &&
-      (result.status === "retryable" || result.status === "failed") &&
-      Number.isInteger(result.httpStatus)
-    ) {
-      this.ctx.storage.sql.exec(
-        `UPDATE interaction_delivery
-         SET logging_state = ?, logging_http_status = ?
-         WHERE singleton = 1`,
-        result.status === "failed" ? "failed" : "pending",
-        result.httpStatus,
-      );
-      console.error(
-        JSON.stringify({
-          level: "error",
-          message: "Discord rejected roll logging request",
-          attempt: attempts,
-          outcome: result.status,
-          stage: result.stage,
-          httpStatus: result.httpStatus,
-        }),
-      );
-      return;
-    }
     console.error(
       JSON.stringify({
         level: "error",
-        message: "Roll logging RPC returned an invalid response",
+        message: "Roll log source artifact is unavailable",
         attempt: attempts,
       }),
     );
@@ -924,26 +866,29 @@ export class RollWork extends DurableObject<RollEnv> {
     if (row === undefined) return undefined;
     const stored = JSON.parse(row.artifact_json) as Record<string, unknown>;
     const image = stored.image;
-    if (
-      !isRecord(image) ||
-      image.status !== "available" ||
-      typeof image.filename !== "string"
-    ) {
+    const imageBytes = new Uint8Array(row.image_bytes);
+    if (!isRecord(image)) {
       throw new Error("Stored source roll log artifact is invalid");
     }
-    if (
-      (await sha256Hex(new Uint8Array(row.image_bytes))) !== row.image_sha256
-    ) {
-      throw new Error("Stored source roll log PNG hash is invalid");
+    if ((await sha256Hex(imageBytes)) !== row.image_sha256) {
+      throw new Error("Stored source roll log image hash is invalid");
+    }
+    let restoredImage: unknown;
+    if (image.status === "available" && typeof image.filename === "string") {
+      restoredImage = {
+        status: "available",
+        filename: image.filename,
+        png: imageBytes,
+      };
+    } else if (image.status === "unavailable" && imageBytes.byteLength === 0) {
+      restoredImage = image;
+    } else {
+      throw new Error("Stored source roll log artifact is invalid");
     }
     const artifact = rollLogArtifact({
       ...stored,
       destinationDeliveredAt: row.destination_delivered_at ?? 0,
-      image: {
-        status: "available",
-        filename: image.filename,
-        png: new Uint8Array(row.image_bytes),
-      },
+      image: restoredImage,
     });
     return { artifact };
   }
@@ -952,9 +897,17 @@ export class RollWork extends DurableObject<RollEnv> {
     artifact: RollLogArtifactV1,
   ): Promise<SourceLogArtifact> {
     const validated = rollLogArtifact(artifact);
-    if (validated.image.status !== "available") {
-      throw new Error("Source roll log artifact must contain a PNG");
-    }
+    const image =
+      validated.image.status === "available"
+        ? {
+            status: "available" as const,
+            filename: validated.image.filename,
+          }
+        : validated.image;
+    const imageBytes =
+      validated.image.status === "available"
+        ? validated.image.png
+        : new Uint8Array();
     const artifactJson = JSON.stringify({
       version: validated.version,
       rollId: validated.rollId,
@@ -965,12 +918,9 @@ export class RollWork extends DurableObject<RollEnv> {
       channelId: validated.channelId,
       context: validated.context,
       payload: validated.payload,
-      image: {
-        status: "available",
-        filename: validated.image.filename,
-      },
+      image,
     });
-    const imageSha256 = await sha256Hex(validated.image.png);
+    const imageSha256 = await sha256Hex(imageBytes);
     const existing = this.readSourceLogRow();
     if (existing !== undefined) {
       if (
@@ -990,7 +940,7 @@ export class RollWork extends DurableObject<RollEnv> {
          singleton, artifact_json, image_bytes, image_sha256
        ) VALUES (1, ?, ?, ?)`,
       artifactJson,
-      validated.image.png,
+      imageBytes,
       imageSha256,
     );
     return { artifact: validated };
@@ -999,8 +949,7 @@ export class RollWork extends DurableObject<RollEnv> {
   private async prepareSourceLogArtifact(
     metadata: ReturnType<typeof parseDeliveryMetadata>,
     payload: DiscordMessage,
-    filename: string,
-    png: Uint8Array,
+    image: RollLogArtifactV1["image"],
   ): Promise<SourceLogArtifact | undefined> {
     if (metadata.logging === null || metadata.accounting === null) {
       return undefined;
@@ -1020,7 +969,7 @@ export class RollWork extends DurableObject<RollEnv> {
         context: metadata.logging.context ?? null,
         destinationDeliveredAt: 0,
         payload,
-        image: { status: "available", filename, png },
+        image,
       });
     } catch (error) {
       this.ctx.storage.sql.exec(
@@ -1196,8 +1145,7 @@ export class RollWork extends DurableObject<RollEnv> {
     let request: Request;
     if (record.outcome.outcomes.length === 0) {
       try {
-        request = buildEditOriginalResponse(
-          target,
+        const payload =
           delivery.helper_state === "pending"
             ? {
                 content:
@@ -1205,8 +1153,12 @@ export class RollWork extends DurableObject<RollEnv> {
                     ? ROLL_HELPER_DM_ANNOUNCEMENT
                     : ROLL_HELPER_ANNOUNCEMENT,
               }
-            : buildRollErrorMessage(record.outcome),
-        );
+            : buildRollErrorMessage(record.outcome);
+        await this.prepareSourceLogArtifact(metadata, payload, {
+          status: "unavailable",
+          reason: "not-applicable",
+        });
+        request = buildEditOriginalResponse(target, payload);
       } catch {
         return this.terminateDelivery(
           target,
@@ -1272,8 +1224,7 @@ export class RollWork extends DurableObject<RollEnv> {
           sourceArtifact = await this.prepareSourceLogArtifact(
             metadata,
             payload,
-            filename,
-            png,
+            { status: "available", filename, png },
           );
           if (sourceArtifact !== undefined) {
             payload = sourceArtifact.artifact.payload;

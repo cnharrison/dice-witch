@@ -277,24 +277,6 @@ export default defineConfig({
                       }
                       return { status: "delivered", httpStatus: 200 };
                     }
-                    logRoll(value) {
-                      if (value.username === "logging-context") {
-                        const context = value.context;
-                        return context?.kind === "guild" &&
-                          context.guildName === "Fixture Guild" &&
-                          context.channelName === "dice-rolls" &&
-                          context.channelType === 0
-                          ? { status: "delivered" }
-                          : { status: "failed", stage: "context", httpStatus: 400 };
-                      }
-                      if (value.username === "logging-temporary") {
-                        return { status: "retryable", stage: "context", httpStatus: 503 };
-                      }
-                      if (value.username === "logging-forbidden") {
-                        return { status: "failed", stage: "context", httpStatus: 403 };
-                      }
-                      return { status: "delivered" };
-                    }
                   }
                 `,
               },

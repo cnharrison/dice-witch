@@ -10,6 +10,7 @@ import {
   BUILTIN_APPEARANCE_RECIPES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
 } from "../../packages/dice-appearance/src";
+import { ROLL_HELPER_ANNOUNCEMENT } from "../../packages/discord-contracts/src";
 import {
   buildRollRenderRequest,
   buildRollRenderRequestV4,
@@ -1061,20 +1062,49 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("delivers the invalid-roll helper once after the public response", async () => {
+  it("durably logs an invalid roll without an image and delivers its helper once", async () => {
     const id = snowflakeAt(Date.now(), 31);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");
-    input.request.notation = "not-dice";
+    const notation = "x".repeat(6_000);
+    input.request.notation = notation;
+    input.logging.notation = notation;
 
     await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
     await runInDurableObject(stub, (_instance, state) => {
-      const row = state.storage.sql
+      const delivery = state.storage.sql
         .exec<{ helper_state: string; helper_attempts: number }>(
           "SELECT helper_state, helper_attempts FROM interaction_delivery",
         )
         .one();
-      expect(row).toEqual({ helper_state: "delivered", helper_attempts: 1 });
+      expect(delivery).toEqual({
+        helper_state: "delivered",
+        helper_attempts: 1,
+      });
+      const outbox = state.storage.sql
+        .exec<{ artifact_json: string; image_bytes: ArrayBuffer }>(
+          "SELECT artifact_json, image_bytes FROM roll_log_outbox",
+        )
+        .one();
+      expect(JSON.parse(outbox.artifact_json)).toMatchObject({
+        rollId: id,
+        notation,
+        payload: { content: ROLL_HELPER_ANNOUNCEMENT },
+        image: { status: "unavailable", reason: "not-applicable" },
+      });
+      expect(new Uint8Array(outbox.image_bytes)).toHaveLength(0);
+    });
+
+    await runDurableObjectAlarm(stub);
+    await expect(logWork(id).artifactStatus()).resolves.toMatchObject({
+      state: "pending",
+      imageStatus: "unavailable",
+      imageBytes: 0,
+    });
+    await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
+      loggingState: "delivered",
+      loggingHttpStatus: 200,
+      loggingAttempts: 1,
     });
   });
 
@@ -1315,7 +1345,7 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("forwards persisted signed context to Discord roll logging", async () => {
+  it("hands persisted signed context to durable roll logging", async () => {
     const id = snowflakeAt(Date.now(), 32);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");
@@ -1326,6 +1356,28 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
       loggingState: "delivered",
       loggingAttempts: 1,
+    });
+  });
+
+  it("fails closed instead of using legacy logging when the source artifact is missing", async () => {
+    const id = snowflakeAt(Date.now(), 34);
+    const stub = work(id);
+
+    await expect(
+      stub.deliver(deliveryRequest(id, "delivery-success")),
+    ).resolves.toEqual({ status: "delivered" });
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec("DELETE FROM roll_log_outbox");
+    });
+    await runDurableObjectAlarm(stub);
+
+    await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
+      state: "delivered",
+      loggingState: "failed",
+      loggingAttempts: 1,
+    });
+    await expect(logWork(id).artifactStatus()).resolves.toEqual({
+      state: "missing",
     });
   });
 
