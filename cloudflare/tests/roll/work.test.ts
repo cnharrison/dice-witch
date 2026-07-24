@@ -32,6 +32,10 @@ function work(name: string) {
   return rollEnv.ROLL_WORK.getByName(name);
 }
 
+function logWork(name: string) {
+  return rollEnv.LOG_WORK.getByName(name);
+}
+
 async function callAlarm(instance: {
   alarm?: () => void | Promise<void>;
 }): Promise<void> {
@@ -851,7 +855,9 @@ describe("RollWork Durable Object", () => {
         accounting_attempts: 1,
       });
       expect(row.accounting_occurred_at).toBeTypeOf("number");
-      expect(await state.storage.getAlarm()).toBe(interactionExpiresAt(id));
+      expect(await state.storage.getAlarm()).toBeLessThan(
+        interactionExpiresAt(id),
+      );
     });
   });
 
@@ -980,7 +986,9 @@ describe("RollWork Durable Object", () => {
         accounting_http_status: 409,
         accounting_attempts: 1,
       });
-      expect(await state.storage.getAlarm()).toBe(interactionExpiresAt(id));
+      expect(await state.storage.getAlarm()).toBeLessThan(
+        interactionExpiresAt(id),
+      );
     });
   });
 
@@ -1080,6 +1088,7 @@ describe("RollWork Durable Object", () => {
     await expect(
       stub.deliver(deliveryRequest(id, "changed-after-delivery")),
     ).resolves.toEqual({ status: "conflict" });
+    await runDurableObjectAlarm(stub);
     const status = await stub.deliveryStatus();
     expect(status).toMatchObject({
       state: "delivered",
@@ -1124,6 +1133,188 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("reuses one exact durable result artifact after eviction", async () => {
+    const id = snowflakeAt(Date.now(), 50);
+    const stub = work(id);
+    const input = deliveryRequest(
+      id,
+      `delivery-result-temporary-${id}`,
+    );
+
+    await expect(stub.deliver(input)).resolves.toMatchObject({
+      status: "pending",
+    });
+    let sourcePng = new Uint8Array();
+    let sourceArtifact: Record<string, unknown> = {};
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{
+          artifact_json: string;
+          image_bytes: ArrayBuffer;
+          destination_delivered_at: number | null;
+        }>(
+          `SELECT artifact_json, image_bytes, destination_delivered_at
+           FROM roll_log_outbox`,
+        )
+        .one();
+      sourcePng = new Uint8Array(row.image_bytes).slice();
+      sourceArtifact = JSON.parse(row.artifact_json) as Record<string, unknown>;
+      expect(row.destination_delivered_at).toBeNull();
+      expect(sourceArtifact).toMatchObject({
+        version: 1,
+        rollId: id,
+        user: { id: input.accounting.userId },
+        context: input.logging.context,
+        image: {
+          status: "available",
+          filename: `dice-${id}.png`,
+        },
+      });
+      expect(sourcePng.byteLength).toBeGreaterThan(0);
+    });
+
+    await evictDurableObject(stub);
+    await expect(stub.deliver(input)).resolves.toEqual({
+      status: "delivered",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ destination_delivered_at: number | null }>(
+          "SELECT destination_delivered_at FROM roll_log_outbox",
+        )
+        .one();
+      expect(row.destination_delivered_at).toBeTypeOf("number");
+    });
+    await runDurableObjectAlarm(stub);
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM roll_log_outbox",
+          )
+          .one().count,
+      ).toBe(0);
+    });
+
+    const acceptedLog = logWork(id);
+    await expect(acceptedLog.artifactStatus()).resolves.toMatchObject({
+      state: "pending",
+      imageBytes: sourcePng.byteLength,
+    });
+    await runInDurableObject(acceptedLog, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ artifact_json: string; image_bytes: ArrayBuffer }>(
+          "SELECT artifact_json, image_bytes FROM log_artifact",
+        )
+        .one();
+      expect(JSON.parse(row.artifact_json)).toMatchObject(sourceArtifact);
+      expect(new Uint8Array(row.image_bytes)).toEqual(sourcePng);
+    });
+  });
+
+  it("recovers a durable log handoff after destination success and interaction expiry", async () => {
+    const id = snowflakeAt(Date.now(), 51);
+    const stub = work(id);
+    const input = deliveryRequest(
+      id,
+      `delivery-result-temporary-${id}`,
+    );
+    await expect(stub.deliver(input)).resolves.toMatchObject({
+      status: "pending",
+    });
+
+    const deliveredAt = Date.now() - 1_000;
+    let sourcePng = new Uint8Array();
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ image_bytes: ArrayBuffer }>(
+          "SELECT image_bytes FROM roll_log_outbox",
+        )
+        .one();
+      sourcePng = new Uint8Array(row.image_bytes).slice();
+      state.storage.sql.exec(
+        `UPDATE interaction_delivery
+         SET token = NULL, state = 'delivered', delivered_at = ?, expires_at = ?
+         WHERE singleton = 1`,
+        deliveredAt,
+        deliveredAt,
+      );
+      state.storage.sql.exec(
+        `UPDATE roll_log_outbox
+         SET destination_delivered_at = ?, handoff_until = ?
+         WHERE singleton = 1`,
+        deliveredAt,
+        Date.now() + 60_000,
+      );
+    });
+
+    await evictDurableObject(stub);
+    await runDurableObjectAlarm(stub);
+    await expect(stub.deliveryStatus()).resolves.toEqual({ state: "missing" });
+    await expect(logWork(id).artifactStatus()).resolves.toMatchObject({
+      state: "pending",
+      imageBytes: sourcePng.byteLength,
+    });
+  });
+
+  it("atomically replays a LogWork acknowledgement after a source commit failure", async () => {
+    const id = snowflakeAt(Date.now(), 52);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-success");
+    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(`
+        CREATE TRIGGER fail_log_ack
+        BEFORE UPDATE OF logging_state ON interaction_delivery
+        WHEN NEW.logging_state = 'delivered'
+        BEGIN
+          SELECT RAISE(ABORT, 'simulated source acknowledgement failure');
+        END;
+      `);
+    });
+
+    await expect(runDurableObjectAlarm(stub)).rejects.toThrow(
+      "simulated source acknowledgement failure",
+    );
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM roll_log_outbox",
+          )
+          .one().count,
+      ).toBe(1);
+      expect(
+        state.storage.sql
+          .exec<{ logging_state: string }>(
+            "SELECT logging_state FROM interaction_delivery",
+          )
+          .one().logging_state,
+      ).toBe("pending");
+      state.storage.sql.exec("DROP TRIGGER fail_log_ack");
+    });
+    await expect(logWork(id).artifactStatus()).resolves.toMatchObject({
+      state: "pending",
+    });
+
+    await runInDurableObject(stub, async (instance) => {
+      await callAlarm(instance);
+    });
+    await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
+      loggingState: "delivered",
+      loggingAttempts: 2,
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM roll_log_outbox",
+          )
+          .one().count,
+      ).toBe(0);
+    });
+  });
+
   it("forwards persisted signed context to Discord roll logging", async () => {
     const id = snowflakeAt(Date.now(), 32);
     const stub = work(id);
@@ -1131,65 +1322,68 @@ describe("RollWork Durable Object", () => {
     input.message.username = "logging-context";
 
     await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+    await runDurableObjectAlarm(stub);
     await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
       loggingState: "delivered",
       loggingAttempts: 1,
     });
   });
 
-  it("persists a retryable roll-log response for the next alarm", async () => {
+  it("hands retryable private delivery to LogWork without delaying the result", async () => {
     const id = snowflakeAt(Date.now(), 28);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");
-    input.message.username = "logging-temporary";
+    input.message.username = "log-retry";
 
     await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
-    await runInDurableObject(stub, async (_instance, state) => {
-      const row = state.storage.sql
-        .exec<{
-          logging_state: string;
-          logging_http_status: number | null;
-          logging_attempts: number;
-        }>(
-          `SELECT logging_state, logging_http_status, logging_attempts
-           FROM interaction_delivery`,
-        )
-        .one();
-      expect(row).toEqual({
-        logging_state: "pending",
-        logging_http_status: 503,
-        logging_attempts: 1,
-      });
-      expect(await state.storage.getAlarm()).toBeLessThan(
-        interactionExpiresAt(id),
-      );
+    await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
+      loggingState: "pending",
+      loggingHttpStatus: null,
+      loggingAttempts: 0,
+    });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
+      loggingState: "delivered",
+      loggingHttpStatus: 200,
+      loggingAttempts: 1,
+    });
+
+    const acceptedLog = logWork(id);
+    await expect(acceptedLog.artifactStatus()).resolves.toMatchObject({
+      state: "pending",
+      attempts: 0,
+    });
+    await runDurableObjectAlarm(acceptedLog);
+    await expect(acceptedLog.artifactStatus()).resolves.toMatchObject({
+      state: "pending",
+      attempts: 1,
+      lastHttpStatus: 429,
+    });
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
     });
   });
 
-  it("stops retrying a terminal roll-log response", async () => {
+  it("keeps destination success authoritative during a private log outage", async () => {
     const id = snowflakeAt(Date.now(), 29);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");
-    input.message.username = "logging-forbidden";
+    input.message.username = "log-outage";
 
     await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
-    await runInDurableObject(stub, async (_instance, state) => {
-      const row = state.storage.sql
-        .exec<{
-          logging_state: string;
-          logging_http_status: number | null;
-          logging_attempts: number;
-        }>(
-          `SELECT logging_state, logging_http_status, logging_attempts
-           FROM interaction_delivery`,
-        )
-        .one();
-      expect(row).toEqual({
-        logging_state: "failed",
-        logging_http_status: 403,
-        logging_attempts: 1,
-      });
-      expect(await state.storage.getAlarm()).toBe(interactionExpiresAt(id));
+    await runDurableObjectAlarm(stub);
+    const acceptedLog = logWork(id);
+    await runDurableObjectAlarm(acceptedLog);
+    await expect(acceptedLog.artifactStatus()).resolves.toMatchObject({
+      state: "pending",
+      attempts: 1,
+      lastHttpStatus: 503,
+    });
+    await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
+      state: "delivered",
+      loggingState: "delivered",
+      loggingHttpStatus: 200,
+      loggingAttempts: 1,
     });
   });
 

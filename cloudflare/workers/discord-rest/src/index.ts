@@ -5,8 +5,13 @@ import {
   DISCORD_AUDIENCE_SNAPSHOT_VERSION,
   DISCORD_GLOBAL_COMMANDS,
   isDiscordRollChannelType,
+  rollLogMetadataDescription,
+  validateRollLogArtifact,
+  type DeliverRollLogInputV1,
+  type DeliverRollLogResultV1,
   type DiscordAudienceCaptureV1,
   type RollLoggingContext,
+  type RollLogShardV1,
 } from "../../../packages/discord-contracts/src";
 
 export type DiscordRestEnv = {
@@ -47,7 +52,13 @@ export type TextChannel = {
 
 export type WebRollDeliveryResult =
   | { status: "delivered" }
-  | { status: "permission_error" };
+  | { status: "permission_error" }
+  | { status: "failed"; httpStatus: number }
+  | {
+      status: "retryable";
+      httpStatus: number;
+      retryAfterMs: number | null;
+    };
 
 type LegacyPublicDiscordStats = { servers: number; users: number };
 
@@ -937,9 +948,159 @@ export async function logRoll(
   return { status: "delivered" };
 }
 
+function validateRollLogShard(
+  value: unknown,
+  guildId: string | null,
+): RollLogShardV1 {
+  if (!isRecord(value)) throw new Error("Roll log shard is invalid");
+  if (
+    value.status === "not-applicable" &&
+    guildId === null &&
+    Object.keys(value).length === 1
+  ) {
+    return { status: "not-applicable" };
+  }
+  if (
+    value.status === "unavailable" &&
+    guildId !== null &&
+    Object.keys(value).length === 1
+  ) {
+    return { status: "unavailable" };
+  }
+  if (
+    value.status !== "available" ||
+    guildId === null ||
+    Object.keys(value).sort().join(",") !==
+      "generation,shardCount,shardId,status" ||
+    !Number.isSafeInteger(value.generation) ||
+    Number(value.generation) < 1 ||
+    !Number.isSafeInteger(value.shardCount) ||
+    Number(value.shardCount) < 1 ||
+    !Number.isSafeInteger(value.shardId) ||
+    Number(value.shardId) < 0 ||
+    Number(value.shardId) >= Number(value.shardCount)
+  ) {
+    throw new Error("Roll log shard is invalid");
+  }
+  return {
+    status: "available",
+    shardId: Number(value.shardId),
+    shardCount: Number(value.shardCount),
+    generation: Number(value.generation),
+  };
+}
+
+async function isImageSpecificDiscordRejection(
+  response: Response,
+): Promise<boolean> {
+  if (response.status === 413) return true;
+  if (response.status !== 400) return false;
+  const code = await discordErrorCode(response);
+  if (code === 40_005 || code === 50_045) return true;
+  try {
+    const body: unknown = await response.clone().json();
+    if (!isRecord(body) || !isRecord(body.errors)) return false;
+    return Object.keys(body.errors).some(
+      (key) => key === "attachments" || key === "files",
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function deliverRollLogV1(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "LOG_OUTPUT_CHANNEL_ID">,
+  input: DeliverRollLogInputV1,
+  discordFetch: RequestFetch = (request) => fetch(request),
+): Promise<DeliverRollLogResultV1> {
+  if (
+    !SNOWFLAKE.test(env.LOG_OUTPUT_CHANNEL_ID) ||
+    !isRecord(input) ||
+    Object.keys(input).sort().join(",") !== "artifact,logicalShard"
+  ) {
+    throw new Error("Roll log delivery request is invalid");
+  }
+  const artifact = validateRollLogArtifact(input.artifact);
+  const shard = validateRollLogShard(input.logicalShard, artifact.guildId);
+  const description = rollLogMetadataDescription(artifact, shard);
+  if (description.length > 4_096) {
+    throw new Error("Roll log description is invalid");
+  }
+  const payload = {
+    ...(artifact.payload.content === undefined
+      ? {}
+      : { content: artifact.payload.content }),
+    embeds: [
+      {
+        color: 0x99_99_99,
+        title: "receivedCommand: /roll",
+        description,
+      },
+      ...(artifact.payload.embeds ?? []),
+    ],
+    nonce: `log:${artifact.rollId}`,
+    enforce_nonce: true,
+    allowed_mentions: { parse: [] },
+  };
+  const messagesUrl = `${DISCORD_API}/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`;
+  let response: Response;
+  if (artifact.image.status === "available") {
+    const form = new FormData();
+    form.set("payload_json", JSON.stringify(payload));
+    form.set(
+      "files[0]",
+      new Blob([artifact.image.png], { type: "image/png" }),
+      artifact.image.filename,
+    );
+    response = await discordFetch(
+      new Request(messagesUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+          "user-agent": "Dice-Witch",
+        },
+        body: form,
+      }),
+    );
+  } else {
+    response = await discordJson(
+      messagesUrl,
+      env.DISCORD_BOT_TOKEN,
+      payload,
+      discordFetch,
+    );
+  }
+  if (!response.ok) {
+    if (isRetryableDiscordStatus(response.status) || response.status === 404) {
+      const retryAfterSeconds = numericResponseHeader(response, "retry-after");
+      return {
+        status: "retryable",
+        httpStatus: response.status,
+        retryAfterMs:
+          retryAfterSeconds === null
+            ? null
+            : Math.ceil(retryAfterSeconds * 1_000),
+      };
+    }
+    if (
+      artifact.image.status === "available" &&
+      (await isImageSpecificDiscordRejection(response))
+    ) {
+      return { status: "image-rejected", httpStatus: response.status };
+    }
+    return { status: "failed", httpStatus: response.status };
+  }
+  const value: unknown = await response.json();
+  if (!isRecord(value) || typeof value.id !== "string" || !SNOWFLAKE.test(value.id)) {
+    throw new Error("Discord roll log response is invalid");
+  }
+  return { status: "delivered", httpStatus: response.status };
+}
+
 export async function deliverWebRoll(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
   input: {
+    rollId?: string;
     guildId: string;
     channelId: string;
     payload: unknown;
@@ -951,6 +1112,7 @@ export async function deliverWebRoll(
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<WebRollDeliveryResult> {
   if (
+    (input.rollId !== undefined && !SNOWFLAKE.test(input.rollId)) ||
     !SNOWFLAKE.test(input.guildId) ||
     !SNOWFLAKE.test(input.channelId) ||
     !isRecord(input.payload) ||
@@ -965,7 +1127,7 @@ export async function deliverWebRoll(
   }
   const channels = await listTextChannels(env, input.guildId, discordFetch);
   if (!channels.some(({ id }) => id === input.channelId)) {
-    throw new Error("Web roll channel is not in the authorized guild");
+    return { status: "failed", httpStatus: 404 };
   }
 
   let referenceId: string | null = null;
@@ -974,11 +1136,32 @@ export async function deliverWebRoll(
     const clatterResponse = await discordJson(
       messagesUrl,
       env.DISCORD_BOT_TOKEN,
-      { content: input.clatter },
+      {
+        content: input.clatter,
+        ...(input.rollId === undefined
+          ? {}
+          : { nonce: `c${input.rollId}`, enforce_nonce: true }),
+      },
       discordFetch,
     );
     if (clatterResponse.status === 403) return { status: "permission_error" };
-    if (!clatterResponse.ok) throw new Error("Discord clatter delivery failed");
+    if (!clatterResponse.ok) {
+      if (isRetryableDiscordStatus(clatterResponse.status)) {
+        const retryAfterSeconds = numericResponseHeader(
+          clatterResponse,
+          "retry-after",
+        );
+        return {
+          status: "retryable",
+          httpStatus: clatterResponse.status,
+          retryAfterMs:
+            retryAfterSeconds === null
+              ? null
+              : Math.ceil(retryAfterSeconds * 1_000),
+        };
+      }
+      return { status: "failed", httpStatus: clatterResponse.status };
+    }
     const clatterMessage: unknown = await clatterResponse.json();
     if (
       !isRecord(clatterMessage) ||
@@ -992,6 +1175,10 @@ export async function deliverWebRoll(
 
   const payload = {
     ...input.payload,
+    ...(input.rollId === undefined
+      ? {}
+      : { nonce: input.rollId, enforce_nonce: true }),
+    allowed_mentions: { parse: [] },
     ...(referenceId === null
       ? {}
       : { message_reference: { message_id: referenceId } }),
@@ -1014,7 +1201,20 @@ export async function deliverWebRoll(
     }),
   );
   if (response.status === 403) return { status: "permission_error" };
-  if (!response.ok) throw new Error("Discord roll delivery failed");
+  if (!response.ok) {
+    if (isRetryableDiscordStatus(response.status)) {
+      const retryAfterSeconds = numericResponseHeader(response, "retry-after");
+      return {
+        status: "retryable",
+        httpStatus: response.status,
+        retryAfterMs:
+          retryAfterSeconds === null
+            ? null
+            : Math.ceil(retryAfterSeconds * 1_000),
+      };
+    }
+    return { status: "failed", httpStatus: response.status };
+  }
   return { status: "delivered" };
 }
 
@@ -1131,6 +1331,12 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
 
   async logRoll(input: unknown): Promise<RollLogResult> {
     return logRoll(await this.botEnv(), input);
+  }
+
+  async deliverRollLogV1(
+    input: DeliverRollLogInputV1,
+  ): Promise<DeliverRollLogResultV1> {
+    return deliverRollLogV1(await this.botEnv(), input);
   }
 
   async deliverWebRoll(input: Parameters<typeof deliverWebRoll>[1]) {

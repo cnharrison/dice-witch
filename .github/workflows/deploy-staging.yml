@@ -10,7 +10,7 @@ on:
       workers:
         description: Comma-separated Workers
         required: true
-        default: data,roll,web-api
+        default: data,discord-rest,roll,gateway,web-api
         type: string
       apply_migrations:
         description: Authorize remote staging D1 migration application

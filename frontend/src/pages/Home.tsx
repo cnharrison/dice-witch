@@ -47,11 +47,16 @@ export const Home = () => {
   const stableRenderSeed = React.useRef<number | undefined>(undefined);
   const rollRequestRevision = React.useRef(0);
   const activeRollController = React.useRef<AbortController | null>(null);
+  const pendingDelivery = React.useRef<{
+    id: string;
+    requestKey: string;
+  } | null>(null);
 
   const cancelActiveRoll = React.useCallback(() => {
     rollRequestRevision.current += 1;
     activeRollController.current?.abort();
     activeRollController.current = null;
+    pendingDelivery.current = null;
     setIsRolling(false);
   }, []);
 
@@ -197,11 +202,26 @@ export const Home = () => {
 
     try {
       setIsRolling(true);
+      const requestKey = JSON.stringify({
+        guildId: selectedGuild,
+        channelId: selectedChannel,
+        notation: input,
+        renderSeed: preparation.value.renderSeed,
+        appearanceDigest: preparation.value.appearanceDigest,
+        timesToRepeat,
+        title: rollTitle || null,
+      });
+      const deliveryId =
+        pendingDelivery.current?.requestKey === requestKey
+          ? pendingDelivery.current.id
+          : crypto.randomUUID();
+      pendingDelivery.current = { id: deliveryId, requestKey };
 
       const response = await customFetch("/api/dice/roll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          deliveryId,
           guildId: selectedGuild,
           channelId: selectedChannel,
           notation: input,
@@ -214,6 +234,7 @@ export const Home = () => {
       });
       const responseBody: unknown = await response.json();
       if (!isCurrent()) return;
+      if (response.status !== 503) pendingDelivery.current = null;
 
       if (response.status === 409) {
         setPreparation({

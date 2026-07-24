@@ -625,7 +625,8 @@ describe("web API Discord OAuth", () => {
     );
     env.DISCORD_REST.deliverWebRoll = deliverWebRoll;
     const png = new Uint8Array([137, 80, 78, 71]);
-    const executeWebRoll = vi.fn(() =>
+    const deliveryId = "11111111-1111-4111-8111-111111111111";
+    const executeWebRoll = vi.fn((input: { deliveryId?: string }) =>
       Promise.resolve({
         status: "rolled",
         message: "Roll processed successfully",
@@ -633,6 +634,9 @@ describe("web API Discord OAuth", () => {
         resultArray: [{ output: "1d20: [17] = 17", results: 17 }],
         appearanceIdentities: [["expression:0:repeat:0:definition:20:0:die:0"]],
         rerolledAppearanceIdentities: [],
+        ...(input.deliveryId === deliveryId
+          ? { deliveryStatus: "delivered" }
+          : {}),
         renderedImage: {
           contentType: "image/png",
           width: 150,
@@ -657,6 +661,7 @@ describe("web API Discord OAuth", () => {
           origin: frontendOrigin,
         },
         body: JSON.stringify({
+          deliveryId,
           guildId: "100000000000000001",
           channelId: "100000000000000010",
           notation: "1d20",
@@ -690,10 +695,13 @@ describe("web API Discord OAuth", () => {
       title: null,
       userId: "100000000000000003",
       guildId: "100000000000000001",
+      deliveryId,
+      channelId: "100000000000000010",
+      skipDelay: false,
       renderSeed: 123,
       appearanceDigest: "a".repeat(64),
     });
-    expect(deliverWebRoll).toHaveBeenCalledOnce();
+    expect(deliverWebRoll).not.toHaveBeenCalled();
 
     executeWebRoll.mockClear();
     const legacyResponse = await handleAuthRequest(
@@ -725,7 +733,7 @@ describe("web API Discord OAuth", () => {
       userId: "100000000000000003",
       guildId: "100000000000000001",
     });
-    expect(deliverWebRoll).toHaveBeenCalledTimes(2);
+    expect(deliverWebRoll).toHaveBeenCalledOnce();
   });
 
   it("keeps web preparation restricted to guild administrators", async () => {

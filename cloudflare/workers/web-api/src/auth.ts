@@ -48,6 +48,8 @@ const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+const DELIVERY_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type MembershipInspection =
   | { status: "found"; isDiceWitchAdmin: boolean }
@@ -1223,7 +1225,7 @@ async function postWebRollPreparation(
       !SNOWFLAKE.test(value.guildId) ||
       typeof value.notation !== "string" ||
       value.notation.length < 1 ||
-      value.notation.length > 6_000 ||
+      value.notation.length > 1_000 ||
       typeof value.timesToRepeat !== "number" ||
       !Number.isSafeInteger(value.timesToRepeat) ||
       value.timesToRepeat < 1 ||
@@ -1377,19 +1379,24 @@ async function postWebRoll(
       "notation",
       "timesToRepeat",
     ];
+    const hasDeliveryId =
+      isRecord(value) && typeof value.deliveryId === "string";
+    const requestKeys = hasDeliveryId
+      ? [...legacyKeys, "deliveryId"]
+      : legacyKeys;
     const isLegacyRequest =
       isRecord(value) &&
-      (hasExactKeys(value, legacyKeys) ||
-        hasExactKeys(value, [...legacyKeys, "title"]));
+      (hasExactKeys(value, requestKeys) ||
+        hasExactKeys(value, [...requestKeys, "title"]));
     preparedRequest =
       isRecord(value) &&
       (hasExactKeys(value, [
-        ...legacyKeys,
+        ...requestKeys,
         "appearanceDigest",
         "renderSeed",
       ]) ||
         hasExactKeys(value, [
-          ...legacyKeys,
+          ...requestKeys,
           "appearanceDigest",
           "renderSeed",
           "title",
@@ -1397,6 +1404,9 @@ async function postWebRoll(
     if (
       !isRecord(value) ||
       (!isLegacyRequest && !preparedRequest) ||
+      (value.deliveryId !== undefined &&
+        (typeof value.deliveryId !== "string" ||
+          !DELIVERY_ID.test(value.deliveryId))) ||
       typeof value.guildId !== "string" ||
       !SNOWFLAKE.test(value.guildId) ||
       typeof value.channelId !== "string" ||
@@ -1406,7 +1416,7 @@ async function postWebRoll(
           !SHA256.test(value.appearanceDigest))) ||
       typeof value.notation !== "string" ||
       value.notation.length < 1 ||
-      value.notation.length > 6_000 ||
+      value.notation.length > 1_000 ||
       (preparedRequest &&
         (typeof value.renderSeed !== "number" ||
           !Number.isInteger(value.renderSeed) ||
@@ -1491,6 +1501,13 @@ async function postWebRoll(
     title: value.title ?? null,
     userId: session.user.id,
     guildId: value.guildId,
+    ...(value.deliveryId === undefined
+      ? {}
+      : {
+          deliveryId: value.deliveryId,
+          channelId: value.channelId,
+          skipDelay: settings.settings.skipDiceDelay,
+        }),
     ...(preparedRequest
       ? {
           renderSeed: value.renderSeed,
@@ -1500,6 +1517,12 @@ async function postWebRoll(
   });
   if (!isRecord(roll) || typeof roll.status !== "string") {
     return json({ error: "Roll response is invalid" }, 502);
+  }
+  if (
+    (roll.status === "conflict" || roll.status === "expired") &&
+    typeof roll.message === "string"
+  ) {
+    return json({ error: roll.message }, 409);
   }
   if (roll.status === "stale" && typeof roll.message === "string") {
     return json({ error: roll.message }, 409);
@@ -1533,7 +1556,12 @@ async function postWebRoll(
     typeof roll.discord.clatter !== "string" ||
     typeof roll.discord.filename !== "string" ||
     !(roll.discord.png instanceof Uint8Array) ||
-    !sameBytes(roll.renderedImage.png, roll.discord.png)
+    !sameBytes(roll.renderedImage.png, roll.discord.png) ||
+    (roll.deliveryStatus !== undefined &&
+      roll.deliveryStatus !== "delivered" &&
+      roll.deliveryStatus !== "failed" &&
+      roll.deliveryStatus !== "pending" &&
+      roll.deliveryStatus !== "permission_error")
   ) {
     return json({ error: "Roll response is invalid" }, 502);
   }
@@ -1578,15 +1606,24 @@ async function postWebRoll(
   };
   const renderModelResponse =
     renderModel === undefined ? {} : { renderModel };
-  const delivery = await env.DISCORD_REST.deliverWebRoll({
-    guildId: value.guildId,
-    channelId: value.channelId,
-    payload: roll.discord.payload,
-    clatter: roll.discord.clatter,
-    filename: roll.discord.filename,
-    png: roll.discord.png,
-    skipDelay: settings.settings.skipDiceDelay,
-  });
+  const delivery =
+    roll.deliveryStatus === undefined
+      ? await env.DISCORD_REST.deliverWebRoll({
+          guildId: value.guildId,
+          channelId: value.channelId,
+          payload: roll.discord.payload,
+          clatter: roll.discord.clatter,
+          filename: roll.discord.filename,
+          png: roll.discord.png,
+          skipDelay: settings.settings.skipDiceDelay,
+        })
+      : { status: roll.deliveryStatus };
+  if (delivery.status === "pending" || delivery.status === "retryable") {
+    return json({ error: "Discord delivery is pending" }, 503);
+  }
+  if (delivery.status === "failed") {
+    return json({ error: "Discord delivery failed" }, 502);
+  }
   if (delivery.status === "permission_error") {
     return json(
       {

@@ -59,6 +59,7 @@ import {
   parseRollRenderVersion,
   type RollRenderVersion,
 } from "./render-version";
+import type { WebDeliveryExecutionResult } from "./web-delivery-work";
 type WebRollEnv = RollBindings;
 
 type WebRollDie = {
@@ -71,8 +72,14 @@ type WebRollDie = {
   textColor: string;
 };
 
+export type WebRollDeliveryStatus =
+  | "delivered"
+  | "failed"
+  | "pending"
+  | "permission_error";
+
 export type WebRollResult =
-  | { status: "invalid" | "stale"; message: string }
+  | { status: "conflict" | "expired" | "invalid" | "stale"; message: string }
   | {
       status: "rolled";
       message: string;
@@ -87,6 +94,7 @@ export type WebRollResult =
       renderModel?: PublicRenderModelV4;
       appearanceIdentities: string[][];
       rerolledAppearanceIdentities: string[];
+      deliveryStatus?: WebRollDeliveryStatus;
       discord: {
         payload: unknown;
         clatter: string;
@@ -701,9 +709,10 @@ export async function executeWebRoll(
   dataService: AppearanceDataService,
   configuredRenderVersion: unknown,
   createRollSeed: () => number = randomSeed,
+  createRenderSeed: () => number = randomSeed,
 ): Promise<WebRollResult> {
   const request = validateRequest(value);
-  const renderSeed = request.renderSeed ?? randomSeed();
+  const renderSeed = request.renderSeed ?? createRenderSeed();
   const validation = prepareRollAppearance({
     notation: parseNotationArgs(request.notation),
     repetitions: request.repetitions,
@@ -802,7 +811,32 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
     );
   }
 
-  execute(value: unknown): Promise<WebRollResult> {
+  async execute(value: unknown): Promise<WebRollResult> {
+    if (isRecord(value) && typeof value.deliveryId === "string") {
+      if (typeof value.userId !== "string") {
+        throw new Error("Web delivery user identity is missing");
+      }
+      const delivery = (await this.env.WEB_DELIVERY_WORK
+        .getByName(`${value.userId}:${value.deliveryId}`)
+        .execute(value)) as unknown as WebDeliveryExecutionResult;
+      switch (delivery.status) {
+        case "conflict":
+          return {
+            status: "conflict",
+            message: "Web delivery identity conflicts with an existing roll",
+          };
+        case "expired":
+          return {
+            status: "expired",
+            message: "Web delivery result has expired",
+          };
+        case "invalid":
+        case "stale":
+          return delivery.roll;
+        default:
+          return { ...delivery.roll, deliveryStatus: delivery.status };
+      }
+    }
     return executeWebRoll(
       value,
       this.env.DATA_SERVICE,

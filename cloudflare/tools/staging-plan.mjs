@@ -133,6 +133,23 @@ export function createStagingPlan(input) {
   } else if (!selected.has("web-api")) {
     throw new Error("Every staging deployment must include web-api for exact-SHA metadata");
   }
+  if (selected.has("roll") && !selected.has("discord-rest")) {
+    throw new Error(
+      "Roll deployment requires the compatible Discord REST Worker",
+    );
+  }
+  if (selected.has("roll") && !selected.has("gateway")) {
+    throw new Error("Roll deployment requires the compatible Gateway Worker");
+  }
+  if (
+    !audienceProducerOnly &&
+    selected.has("web-api") &&
+    (!selected.has("roll") || !selected.has("discord-rest"))
+  ) {
+    throw new Error(
+      "Web API deployment requires compatible Roll and Discord REST Workers",
+    );
+  }
   if (selected.has("gateway") && input.allowGatewayDeploy !== true) {
     throw new Error("Gateway deployment requires --allow-gateway-deploy");
   }

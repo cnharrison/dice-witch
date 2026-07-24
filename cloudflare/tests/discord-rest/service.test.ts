@@ -1,7 +1,11 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
-import { DISCORD_GLOBAL_COMMANDS } from "../../packages/discord-contracts/src";
 import {
+  DISCORD_GLOBAL_COMMANDS,
+  type RollLogArtifactV1,
+} from "../../packages/discord-contracts/src";
+import {
+  deliverRollLogV1,
   deliverWebRoll,
   fetchPublicStats,
   inspectMembership,
@@ -20,6 +24,48 @@ const guildId = "100000000000000001";
 const audienceCapturedAt = 1_767_225_600_123;
 const userId = "100000000000000003";
 const adminRoleId = "100000000000000005";
+const logPng = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  ),
+  (character) => character.charCodeAt(0),
+);
+
+function rollLogArtifact(): RollLogArtifactV1 {
+  return {
+    version: 1,
+    rollId: "1400000000000000001",
+    source: "discord",
+    notation: "1d20",
+    user: { id: userId, username: "roller" },
+    guildId,
+    channelId: "100000000000000010",
+    context: {
+      kind: "guild",
+      guildId,
+      guildName: "Fixture Guild",
+      channelId: "100000000000000010",
+      channelName: "dice-rolls",
+      channelType: 0,
+    },
+    destinationDeliveredAt: 1_750_000_000_000,
+    payload: {
+      content: "_...clatter..._",
+      embeds: [
+        {
+          description: "[20] = 20",
+          image: { url: "attachment://dice-1400000000000000001.png" },
+        },
+      ],
+    },
+    image: {
+      status: "available",
+      filename: "dice-1400000000000000001.png",
+      png: logPng,
+    },
+  };
+}
+
 const env = {
   DISCORD_APPLICATION_ID: "100000000000000001",
   DISCORD_BOT_TOKEN: "fixture.bot.token",
@@ -39,6 +85,73 @@ describe("Discord REST service", () => {
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: "Not found" });
+  });
+
+  it("delivers one complete multipart roll log with honest shard provenance", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe(
+        `/api/v10/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`,
+      );
+      const form = await request.formData();
+      const payloadValue = form.get("payload_json");
+      const file = form.get("files[0]");
+      expect(typeof payloadValue).toBe("string");
+      if (typeof payloadValue !== "string" || !(file instanceof File)) {
+        throw new Error("Multipart log fixture is invalid");
+      }
+      const payload = JSON.parse(payloadValue) as {
+        content: string;
+        nonce: string;
+        enforce_nonce: boolean;
+        allowed_mentions: { parse: string[] };
+        embeds: Array<{ title?: string; description?: string }>;
+      };
+      expect(payload).toMatchObject({
+        content: "_...clatter..._",
+        nonce: "log:1400000000000000001",
+        enforce_nonce: true,
+        allowed_mentions: { parse: [] },
+        embeds: [
+          { title: "receivedCommand: /roll" },
+          { description: "[20] = 20" },
+        ],
+      });
+      expect(payload.embeds[0]?.description).toContain(
+        "[Guild shard 2/4 · generation 16]",
+      );
+      expect(JSON.stringify(payload)).not.toContain("[HTTP]");
+      expect(new Uint8Array(await file.arrayBuffer())).toEqual(logPng);
+      return Response.json({ id: "100000000000000088" });
+    });
+
+    await expect(
+      deliverRollLogV1(
+        env,
+        {
+          artifact: rollLogArtifact(),
+          logicalShard: {
+            status: "available",
+            shardId: 2,
+            shardCount: 4,
+            generation: 16,
+          },
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
+  });
+
+  it("classifies an explicit image rejection for text fallback", async () => {
+    await expect(
+      deliverRollLogV1(
+        env,
+        {
+          artifact: rollLogArtifact(),
+          logicalShard: { status: "unavailable" },
+        },
+        () => Promise.resolve(Response.json({ code: 50_045 }, { status: 400 })),
+      ),
+    ).resolves.toEqual({ status: "image-rejected", httpStatus: 400 });
   });
 
   it("registers the canonical global command schema", async () => {
@@ -325,7 +438,12 @@ describe("Discord REST service", () => {
       if (typeof payloadJson !== "string") {
         throw new Error("Discord payload is missing");
       }
-      expect(JSON.parse(payloadJson)).toEqual({ embeds: [] });
+      expect(JSON.parse(payloadJson)).toEqual({
+        embeds: [],
+        nonce: "1400000000000000001",
+        enforce_nonce: true,
+        allowed_mentions: { parse: [] },
+      });
       expect(form.get("files[0]")).toBeInstanceOf(File);
       return Response.json({ id: "100000000000000020" });
     });
@@ -334,6 +452,7 @@ describe("Discord REST service", () => {
       deliverWebRoll(
         env,
         {
+          rollId: "1400000000000000001",
           guildId,
           channelId,
           payload: { embeds: [] },

@@ -38,6 +38,23 @@ export {
   ROLL_HELPER_DM_ANNOUNCEMENT,
 } from "./roll-helper";
 export {
+  LOG_WORK_RETENTION_MS,
+  LOG_WORK_RETRY_WINDOW_MS,
+  MAX_LOG_ARTIFACT_PNG_BYTES,
+  imageUnavailableLogArtifact,
+  rollLogMetadataDescription,
+  storedLogArtifact,
+  validateRollLogArtifact,
+  type LogArtifactImageV1,
+  type DeliverRollLogInputV1,
+  type DeliverRollLogResultV1,
+  type LogArtifactUnavailableReasonV1,
+  type RollLogArtifactV1,
+  type RollLogShardV1,
+  type StoredLogArtifactV1,
+  type ValidatedRollLogArtifactV1,
+} from "./roll-log";
+export {
   buildRollClatterMessage,
   buildRollErrorMessage,
   buildRollResultMessage,

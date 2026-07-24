@@ -63,11 +63,20 @@ function validConfigs() {
       services: [
         service("DATA_SERVICE", dataName),
         service("DISCORD_REST", restName, "DiscordRestService"),
+        service("GATEWAY_STATUS", gatewayName, "GatewayStatusService"),
       ],
       durable_objects: {
-        bindings: [{ name: "ROLL_WORK", class_name: "RollWork" }],
+        bindings: [
+          { name: "ROLL_WORK", class_name: "RollWork" },
+          { name: "LOG_WORK", class_name: "LogWork" },
+          { name: "WEB_DELIVERY_WORK", class_name: "WebDeliveryWork" },
+        ],
       },
-      migrations: [{ tag: "v1", new_sqlite_classes: ["RollWork"] }],
+      migrations: [
+        { tag: "v1", new_sqlite_classes: ["RollWork"] },
+        { tag: "v2", new_sqlite_classes: ["LogWork"] },
+        { tag: "v3", new_sqlite_classes: ["WebDeliveryWork"] },
+      ],
       rules: [
         {
           type: "CompiledWasm",
@@ -214,7 +223,7 @@ test("rejects routes, Crons, and undeclared bindings outside the staging contrac
   });
   assert.throws(
     () => validateStagingConfigs(extraBinding),
-    /roll service bindings must be exactly DATA_SERVICE, DISCORD_REST/,
+    /roll service bindings must be exactly DATA_SERVICE, DISCORD_REST, GATEWAY_STATUS/,
   );
 
   const legacyRollEmission = validConfigs();

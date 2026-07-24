@@ -22,8 +22,12 @@ import {
   buildRollClatterMessage,
   buildRollErrorMessage,
   buildRollResultMessage,
+  LOG_WORK_RETRY_WINDOW_MS,
   ROLL_HELPER_ANNOUNCEMENT,
   ROLL_HELPER_DM_ANNOUNCEMENT,
+  validateRollLogArtifact,
+  type DiscordMessage,
+  type RollLogArtifactV1,
 } from "../../../packages/discord-contracts/src";
 import { buildRollRenderRequest } from "../../../packages/roll-render-model/src";
 import {
@@ -56,6 +60,17 @@ import {
   parseRollRenderVersion,
 } from "./render-version";
 
+export { LogWork } from "./log-work";
+export type {
+  AcceptLogArtifactResult,
+  LogArtifactStatus,
+} from "./log-work";
+export type {
+  LogArtifactImageV1,
+  RollLogArtifactV1,
+} from "../../../packages/discord-contracts/src";
+export { WebDeliveryWork } from "./web-delivery-work";
+export type { WebDeliveryExecutionResult } from "./web-delivery-work";
 export { WebRollService } from "./web-roll-service";
 export type {
   WebRollPreparationResult,
@@ -116,6 +131,40 @@ type DeliveryRecordResolution =
   | { status: "conflict" }
   | { status: "unavailable" };
 
+type StoredSourceLogRow = {
+  artifact_json: string;
+  image_bytes: ArrayBuffer;
+  image_sha256: string;
+  destination_delivered_at: number | null;
+  handoff_until: number | null;
+};
+
+type SourceLogArtifact = { artifact: RollLogArtifactV1 };
+
+async function sha256Hex(value: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", value);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function rollLogArtifact(value: unknown): RollLogArtifactV1 {
+  const validated = validateRollLogArtifact(value);
+  return {
+    version: validated.version,
+    rollId: validated.rollId,
+    source: validated.source,
+    notation: validated.notation,
+    user: validated.user,
+    guildId: validated.guildId,
+    channelId: validated.channelId,
+    context: validated.context,
+    destinationDeliveredAt: validated.destinationDeliveredAt,
+    payload: validated.payload,
+    image: validated.image,
+  };
+}
+
 export class RollWork extends DurableObject<RollEnv> {
   private activeDelivery: Promise<DeliverRollWorkResult> | null = null;
   private activeAccounting: Promise<void> | null = null;
@@ -165,6 +214,14 @@ export class RollWork extends DurableObject<RollEnv> {
             'pending', 'not_applicable', 'delivered', 'failed'
           )),
         helper_attempts INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS roll_log_outbox (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        artifact_json TEXT NOT NULL,
+        image_bytes BLOB NOT NULL,
+        image_sha256 TEXT NOT NULL,
+        destination_delivered_at INTEGER,
+        handoff_until INTEGER
       );
     `);
     const deliveryColumns = this.ctx.storage.sql
@@ -233,14 +290,12 @@ export class RollWork extends DurableObject<RollEnv> {
     if (accepted.delivery === "delivered" || accepted.delivery === "failed") {
       await this.runAccounting();
       await this.runHelper();
-      await this.runLogging();
       await this.scheduleAfterAttempts(accepted.expiresAt);
       return { status: accepted.delivery };
     }
     await this.runAccounting();
     const result = await this.runDelivery();
     await this.runHelper();
-    await this.runLogging();
     await this.scheduleAfterAttempts(accepted.expiresAt);
     return result;
   }
@@ -378,6 +433,29 @@ export class RollWork extends DurableObject<RollEnv> {
       return;
     }
     if (Date.now() >= delivery.expires_at) {
+      if (
+        delivery.state === "delivered" &&
+        delivery.logging_state === "pending" &&
+        this.readSourceLogRow() !== undefined
+      ) {
+        await this.runLogging();
+        const current = this.readDelivery();
+        const source = this.readSourceLogRow();
+        if (
+          current?.logging_state === "pending" &&
+          source?.handoff_until !== null &&
+          source?.handoff_until !== undefined &&
+          Date.now() < source.handoff_until
+        ) {
+          await this.ctx.storage.setAlarm(
+            Math.min(
+              Date.now() + retryDelayMs(current.logging_attempts),
+              source.handoff_until,
+            ),
+          );
+          return;
+        }
+      }
       if (delivery.state === "pending") {
         console.error(
           JSON.stringify({
@@ -581,6 +659,87 @@ export class RollWork extends DurableObject<RollEnv> {
       );
       return;
     }
+
+    const sourceRow = this.readSourceLogRow();
+    if (sourceRow !== undefined) {
+      const attempts = delivery.logging_attempts + 1;
+      this.ctx.storage.sql.exec(
+        `UPDATE interaction_delivery
+         SET logging_attempts = ?
+         WHERE singleton = 1`,
+        attempts,
+      );
+      if (
+        sourceRow.destination_delivered_at === null ||
+        sourceRow.handoff_until === null
+      ) {
+        return;
+      }
+      if (Date.now() >= sourceRow.handoff_until) {
+        this.ctx.storage.transactionSync(() => {
+          this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
+          this.ctx.storage.sql.exec(
+            `UPDATE interaction_delivery
+             SET logging_state = 'failed'
+             WHERE singleton = 1`,
+          );
+        });
+        return;
+      }
+      let result: unknown;
+      try {
+        const source = await this.readSourceLogArtifact();
+        if (source === undefined) {
+          throw new Error("Source roll log artifact is missing");
+        }
+        result = await this.env.LOG_WORK
+          .getByName(metadata.interactionId)
+          .accept(source.artifact);
+      } catch {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            message: "Roll log durable handoff failed",
+            attempt: attempts,
+          }),
+        );
+        return;
+      }
+      if (
+        isRecord(result) &&
+        (result.status === "created" || result.status === "existing")
+      ) {
+        this.ctx.storage.transactionSync(() => {
+          this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
+          this.ctx.storage.sql.exec(
+            `UPDATE interaction_delivery
+             SET logging_state = 'delivered', logging_http_status = 200
+             WHERE singleton = 1`,
+          );
+        });
+        return;
+      }
+      if (isRecord(result) && result.status === "conflict") {
+        this.ctx.storage.transactionSync(() => {
+          this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
+          this.ctx.storage.sql.exec(
+            `UPDATE interaction_delivery
+             SET logging_state = 'failed', logging_http_status = 409
+             WHERE singleton = 1`,
+          );
+        });
+        return;
+      }
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "Roll log durable handoff returned an invalid response",
+          attempt: attempts,
+        }),
+      );
+      return;
+    }
+
     const attempts = delivery.logging_attempts + 1;
     this.ctx.storage.sql.exec(
       `UPDATE interaction_delivery
@@ -745,6 +904,139 @@ export class RollWork extends DurableObject<RollEnv> {
       );
     }
     return { delayMs, resultNotBefore };
+  }
+
+  private readSourceLogRow(): StoredSourceLogRow | undefined {
+    return this.ctx.storage.sql
+      .exec<StoredSourceLogRow>(
+        `SELECT artifact_json, image_bytes, image_sha256,
+                destination_delivered_at, handoff_until
+         FROM roll_log_outbox
+         WHERE singleton = 1`,
+      )
+      .toArray()[0];
+  }
+
+  private async readSourceLogArtifact(): Promise<
+    SourceLogArtifact | undefined
+  > {
+    const row = this.readSourceLogRow();
+    if (row === undefined) return undefined;
+    const stored = JSON.parse(row.artifact_json) as Record<string, unknown>;
+    const image = stored.image;
+    if (
+      !isRecord(image) ||
+      image.status !== "available" ||
+      typeof image.filename !== "string"
+    ) {
+      throw new Error("Stored source roll log artifact is invalid");
+    }
+    if (
+      (await sha256Hex(new Uint8Array(row.image_bytes))) !== row.image_sha256
+    ) {
+      throw new Error("Stored source roll log PNG hash is invalid");
+    }
+    const artifact = rollLogArtifact({
+      ...stored,
+      destinationDeliveredAt: row.destination_delivered_at ?? 0,
+      image: {
+        status: "available",
+        filename: image.filename,
+        png: new Uint8Array(row.image_bytes),
+      },
+    });
+    return { artifact };
+  }
+
+  private async ensureSourceLogArtifact(
+    artifact: RollLogArtifactV1,
+  ): Promise<SourceLogArtifact> {
+    const validated = rollLogArtifact(artifact);
+    if (validated.image.status !== "available") {
+      throw new Error("Source roll log artifact must contain a PNG");
+    }
+    const artifactJson = JSON.stringify({
+      version: validated.version,
+      rollId: validated.rollId,
+      source: validated.source,
+      notation: validated.notation,
+      user: validated.user,
+      guildId: validated.guildId,
+      channelId: validated.channelId,
+      context: validated.context,
+      payload: validated.payload,
+      image: {
+        status: "available",
+        filename: validated.image.filename,
+      },
+    });
+    const imageSha256 = await sha256Hex(validated.image.png);
+    const existing = this.readSourceLogRow();
+    if (existing !== undefined) {
+      if (
+        existing.artifact_json !== artifactJson ||
+        existing.image_sha256 !== imageSha256
+      ) {
+        throw new Error("Source roll log artifact conflicts with stored work");
+      }
+      const restored = await this.readSourceLogArtifact();
+      if (restored === undefined) {
+        throw new Error("Stored source roll log artifact is missing");
+      }
+      return restored;
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO roll_log_outbox (
+         singleton, artifact_json, image_bytes, image_sha256
+       ) VALUES (1, ?, ?, ?)`,
+      artifactJson,
+      validated.image.png,
+      imageSha256,
+    );
+    return { artifact: validated };
+  }
+
+  private async prepareSourceLogArtifact(
+    metadata: ReturnType<typeof parseDeliveryMetadata>,
+    payload: DiscordMessage,
+    filename: string,
+    png: Uint8Array,
+  ): Promise<SourceLogArtifact | undefined> {
+    if (metadata.logging === null || metadata.accounting === null) {
+      return undefined;
+    }
+    try {
+      return await this.ensureSourceLogArtifact({
+        version: 1,
+        rollId: metadata.interactionId,
+        source: metadata.logging.source,
+        notation: metadata.logging.notation,
+        user: {
+          id: metadata.accounting.userId,
+          username: metadata.message.username,
+        },
+        guildId: metadata.accounting.guildId,
+        channelId: metadata.logging.channelId,
+        context: metadata.logging.context ?? null,
+        destinationDeliveredAt: 0,
+        payload,
+        image: { status: "available", filename, png },
+      });
+    } catch (error) {
+      this.ctx.storage.sql.exec(
+        `UPDATE interaction_delivery
+         SET logging_state = 'failed'
+         WHERE singleton = 1`,
+      );
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "Roll log source artifact could not be persisted",
+          reason: error instanceof Error ? error.message : "unknown",
+        }),
+      );
+      return undefined;
+    }
   }
 
   private async attemptDelivery(): Promise<DeliverRollWorkResult> {
@@ -924,49 +1216,87 @@ export class RollWork extends DurableObject<RollEnv> {
         );
       }
     } else {
-      let rendered:
-        | RenderResult
-        | RenderResultV2
-        | RenderResultV3
-        | RenderResultV4;
+      let sourceArtifact: SourceLogArtifact | undefined;
       try {
-        rendered = await this.renderRecord(record);
+        sourceArtifact = await this.readSourceLogArtifact();
       } catch {
-        return this.terminateDelivery(
-          target,
-          attempts,
-          delivery.expires_at,
-          "render",
-        );
+        this.ctx.storage.transactionSync(() => {
+          this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
+          this.ctx.storage.sql.exec(
+            `UPDATE interaction_delivery
+             SET logging_state = 'failed'
+             WHERE singleton = 1`,
+          );
+        });
       }
-      try {
-        if (clatter === undefined) {
-          throw new Error("Roll clatter message was not prepared");
+
+      let payload: DiscordMessage;
+      let filename: string;
+      let png: Uint8Array;
+      if (sourceArtifact !== undefined) {
+        payload = sourceArtifact.artifact.payload;
+        filename = sourceArtifact.artifact.image.status === "available"
+          ? sourceArtifact.artifact.image.filename
+          : "";
+        png = sourceArtifact.artifact.image.status === "available"
+          ? sourceArtifact.artifact.image.png
+          : new Uint8Array();
+      } else {
+        let rendered:
+          | RenderResult
+          | RenderResultV2
+          | RenderResultV3
+          | RenderResultV4;
+        try {
+          rendered = await this.renderRecord(record);
+        } catch {
+          return this.terminateDelivery(
+            target,
+            attempts,
+            delivery.expires_at,
+            "render",
+          );
         }
-        const filename = `dice-${metadata.interactionId}.png`;
-        request = buildEditOriginalResponseWithFile(
-          target,
-          buildRollResultMessage(record.outcome, {
+        try {
+          if (clatter === undefined) {
+            throw new Error("Roll clatter message was not prepared");
+          }
+          filename = `dice-${metadata.interactionId}.png`;
+          png = rendered.png;
+          payload = buildRollResultMessage(record.outcome, {
             ...metadata.message,
             source: "discord",
             filename,
             ...(skipDiceDelay ? {} : { clatter }),
-          }),
-          {
+          });
+          sourceArtifact = await this.prepareSourceLogArtifact(
+            metadata,
+            payload,
             filename,
-            contentType: "image/png",
-            bytes: rendered.png,
-            description: "Rendered dice result",
-          },
-        );
-      } catch {
-        return this.terminateDelivery(
-          target,
-          attempts,
-          delivery.expires_at,
-          "response",
-        );
+            png,
+          );
+          if (sourceArtifact !== undefined) {
+            payload = sourceArtifact.artifact.payload;
+            if (sourceArtifact.artifact.image.status === "available") {
+              filename = sourceArtifact.artifact.image.filename;
+              png = sourceArtifact.artifact.image.png;
+            }
+          }
+        } catch {
+          return this.terminateDelivery(
+            target,
+            attempts,
+            delivery.expires_at,
+            "response",
+          );
+        }
       }
+      request = buildEditOriginalResponseWithFile(target, payload, {
+        filename,
+        contentType: "image/png",
+        bytes: png,
+        description: "Rendered dice result",
+      });
     }
 
     let response: Response;
@@ -977,14 +1307,23 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     if (response.ok) {
       const deliveredAt = Date.now();
-      this.ctx.storage.sql.exec(
-        `UPDATE interaction_delivery
-         SET token = NULL, state = 'delivered', delivered_at = ?,
-             last_http_status = ?, failure_phase = NULL
-         WHERE singleton = 1`,
-        deliveredAt,
-        response.status,
-      );
+      this.ctx.storage.transactionSync(() => {
+        this.ctx.storage.sql.exec(
+          `UPDATE interaction_delivery
+           SET token = NULL, state = 'delivered', delivered_at = ?,
+               last_http_status = ?, failure_phase = NULL
+           WHERE singleton = 1`,
+          deliveredAt,
+          response.status,
+        );
+        this.ctx.storage.sql.exec(
+          `UPDATE roll_log_outbox
+           SET destination_delivered_at = ?, handoff_until = ?
+           WHERE singleton = 1`,
+          deliveredAt,
+          deliveredAt + LOG_WORK_RETRY_WINDOW_MS,
+        );
+      });
       await this.ctx.storage.setAlarm(delivery.expires_at);
       return { status: "delivered" };
     }
@@ -1300,6 +1639,7 @@ export class RollWork extends DurableObject<RollEnv> {
 
   private deleteStoredWork(): void {
     this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
       this.ctx.storage.sql.exec("DELETE FROM interaction_delivery");
       this.ctx.storage.sql.exec("DELETE FROM roll_work");
     });

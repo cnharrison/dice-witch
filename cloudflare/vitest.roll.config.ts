@@ -13,6 +13,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const accountingAttempts = new Map<string, number>();
 const appearanceAttempts = new Map<string, number>();
+const resultDeliveryAttempts = new Map<string, number>();
 
 function effectiveRecipesV2(primary: string | null): Record<string, unknown> {
   const recipe =
@@ -152,6 +153,14 @@ async function discordTestResponse(request: Request): Promise<Response> {
   if (token === "delivery-success") {
     return Response.json({ id: "development-message" });
   }
+  if (token.startsWith("delivery-result-temporary-")) {
+    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
+    resultDeliveryAttempts.set(token, attempts);
+    if (attempts === 1) {
+      return Response.json({ message: "temporary" }, { status: 503 });
+    }
+    return Response.json({ id: "development-message" });
+  }
   if (token === "delivery-temporary") {
     return Response.json({ message: "temporary" }, { status: 503 });
   }
@@ -194,6 +203,31 @@ export default defineConfig({
       miniflare: {
         workers: [
           {
+            name: "dice-witch-gateway",
+            modules: [
+              {
+                type: "ESModule",
+                path: "gateway-status-mock.mjs",
+                contents: `
+                  import { WorkerEntrypoint } from "cloudflare:workers";
+                  export class GatewayStatusService extends WorkerEntrypoint {
+                    getLogicalGuildShard(guildId) {
+                      if (guildId === "100000000000000099") {
+                        return { status: "unavailable" };
+                      }
+                      return {
+                        status: "available",
+                        shardId: 2,
+                        shardCount: 4,
+                        generation: 16
+                      };
+                    }
+                  }
+                `,
+              },
+            ],
+          },
+          {
             name: "dice-witch-discord-rest",
             modules: [
               {
@@ -201,8 +235,48 @@ export default defineConfig({
                 path: "discord-rest-mock.mjs",
                 contents: `
                   import { WorkerEntrypoint } from "cloudflare:workers";
+                  const logAttempts = new Map();
                   export class DiscordRestService extends WorkerEntrypoint {
                     sendRollHelper() { return { status: "delivered" }; }
+                    deliverWebRoll(value) {
+                      const key = "web:" + value.rollId;
+                      const attempts = (logAttempts.get(key) ?? 0) + 1;
+                      logAttempts.set(key, attempts);
+                      if (value.payload?.embeds?.[0]?.title === "web-retry" && attempts === 1) {
+                        return { status: "retryable", httpStatus: 503, retryAfterMs: 1000 };
+                      }
+                      if (value.payload?.embeds?.[0]?.title === "web-permission") {
+                        return { status: "permission_error" };
+                      }
+                      if (value.payload?.embeds?.[0]?.title === "web-failed") {
+                        return { status: "failed", httpStatus: 400 };
+                      }
+                      return { status: "delivered" };
+                    }
+                    deliverRollLogV1(value) {
+                      const artifact = value.artifact;
+                      const attempts = (logAttempts.get(artifact.rollId) ?? 0) + 1;
+                      logAttempts.set(artifact.rollId, attempts);
+                      if (artifact.user.username === "log-retry" && attempts === 1) {
+                        return { status: "retryable", httpStatus: 429, retryAfterMs: 1000 };
+                      }
+                      if (artifact.user.username === "log-outage") {
+                        return { status: "retryable", httpStatus: 503, retryAfterMs: null };
+                      }
+                      if (artifact.user.username === "log-image-rejected") {
+                        if (artifact.image.status === "available") {
+                          return { status: "image-rejected", httpStatus: 400 };
+                        }
+                        if (!JSON.stringify(artifact.payload).includes("**image unavailable**")) {
+                          return { status: "failed", httpStatus: 400 };
+                        }
+                      }
+                      if (artifact.user.username === "log-shard-unavailable" &&
+                          value.logicalShard.status !== "unavailable") {
+                        return { status: "failed", httpStatus: 400 };
+                      }
+                      return { status: "delivered", httpStatus: 200 };
+                    }
                     logRoll(value) {
                       if (value.username === "logging-context") {
                         const context = value.context;

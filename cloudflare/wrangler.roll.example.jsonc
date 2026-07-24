@@ -32,6 +32,11 @@
       "binding": "DISCORD_REST",
       "service": "dice-witch-discord-rest",
       "entrypoint": "DiscordRestService"
+    },
+    {
+      "binding": "GATEWAY_STATUS",
+      "service": "dice-witch-gateway",
+      "entrypoint": "GatewayStatusService"
     }
   ],
   "durable_objects": {
@@ -39,6 +44,14 @@
       {
         "name": "ROLL_WORK",
         "class_name": "RollWork"
+      },
+      {
+        "name": "LOG_WORK",
+        "class_name": "LogWork"
+      },
+      {
+        "name": "WEB_DELIVERY_WORK",
+        "class_name": "WebDeliveryWork"
       }
     ]
   },
@@ -46,6 +59,14 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["RollWork"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["LogWork"]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["WebDeliveryWork"]
     }
   ],
   "observability": {

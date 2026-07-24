@@ -288,6 +288,8 @@ function validateStaticWorkerConfiguration(errors, configs) {
   }
   const expectedRollMigrations = [
     { tag: "v1", new_sqlite_classes: ["RollWork"] },
+    { tag: "v2", new_sqlite_classes: ["LogWork"] },
+    { tag: "v3", new_sqlite_classes: ["WebDeliveryWork"] },
   ];
   if (
     JSON.stringify(configs.roll?.migrations) !==
@@ -391,6 +393,7 @@ function validateTopology(errors, configs, suffix) {
   requireExactBindings(errors, "roll", configs.roll?.services, [
     "DATA_SERVICE",
     "DISCORD_REST",
+    "GATEWAY_STATUS",
   ]);
   requireExactBindings(errors, "gateway", configs.gateway?.services, [
     "DATA_SERVICE",
@@ -415,7 +418,11 @@ function validateTopology(errors, configs, suffix) {
   requireExactDurableObjects(errors, "interactions", configs.interactions, [
     "ROLL_WORK",
   ]);
-  requireExactDurableObjects(errors, "roll", configs.roll, ["ROLL_WORK"]);
+  requireExactDurableObjects(errors, "roll", configs.roll, [
+    "LOG_WORK",
+    "ROLL_WORK",
+    "WEB_DELIVERY_WORK",
+  ]);
 
   requireService(
     errors,
@@ -431,6 +438,14 @@ function validateTopology(errors, configs, suffix) {
     "DISCORD_REST",
     names["discord-rest"],
     "DiscordRestService",
+  );
+  requireService(
+    errors,
+    configs.roll,
+    "roll",
+    "GATEWAY_STATUS",
+    names.gateway,
+    "GatewayStatusService",
   );
   requireService(
     errors,
@@ -516,6 +531,20 @@ function validateTopology(errors, configs, suffix) {
     rollWork?.script_name !== undefined
   ) {
     errors.push("Roll ROLL_WORK binding is invalid");
+  }
+  const logWork = durableBinding(configs.roll, "LOG_WORK");
+  if (
+    logWork?.class_name !== "LogWork" ||
+    logWork?.script_name !== undefined
+  ) {
+    errors.push("Roll LOG_WORK binding is invalid");
+  }
+  const webDeliveryWork = durableBinding(configs.roll, "WEB_DELIVERY_WORK");
+  if (
+    webDeliveryWork?.class_name !== "WebDeliveryWork" ||
+    webDeliveryWork?.script_name !== undefined
+  ) {
+    errors.push("Roll WEB_DELIVERY_WORK binding is invalid");
   }
 }
 

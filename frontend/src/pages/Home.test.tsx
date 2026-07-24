@@ -456,6 +456,49 @@ describe("Home roll preparation lifecycle", () => {
     });
   });
 
+  it("reuses one delivery identity while durable Discord delivery is pending", async () => {
+    const rollBodies: Array<Record<string, unknown>> = [];
+    let rollAttempts = 0;
+    mocks.customFetch.mockImplementation(
+      (path: string, init?: RequestInit) => {
+        if (path === "/api/dice/prepare") {
+          return Promise.resolve(response(preparation));
+        }
+        if (path === "/api/dice/roll") {
+          rollBodies.push(
+            JSON.parse(String(init?.body)) as Record<string, unknown>,
+          );
+          rollAttempts += 1;
+          return Promise.resolve(
+            rollAttempts === 1
+              ? response({ error: "Discord delivery is pending" }, 503)
+              : response(rollResult),
+          );
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    );
+    const user = userEvent.setup();
+    render(<Home />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Set valid notation" }),
+    );
+    const rollButton = screen.getByRole("button", { name: "Roll now" });
+    await waitFor(() =>
+      expect((rollButton as HTMLButtonElement).disabled).toBe(false),
+    );
+    await user.click(rollButton);
+    await waitFor(() => expect(rollBodies).toHaveLength(1));
+    await user.click(rollButton);
+    await waitFor(() => expect(rollBodies).toHaveLength(2));
+
+    expect(rollBodies[0]?.deliveryId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(rollBodies[1]?.deliveryId).toBe(rollBodies[0]?.deliveryId);
+  });
+
   it("ignores a completed roll after notation invalidates its request", async () => {
     let resolveRoll: ((value: Response) => void) | undefined;
     mocks.customFetch.mockImplementation((path: string) => {

@@ -25,8 +25,8 @@ function input(overrides = {}) {
     requestedSha: sha,
     headSha: sha,
     gitStatus: "",
-    workers: ["web-api", "data", "roll"],
-    allowGatewayDeploy: false,
+    workers: ["web-api", "data", "discord-rest", "roll", "gateway"],
+    allowGatewayDeploy: true,
     productionIsolationVerified: true,
     smokeTargets: {
       rollOrigin: "https://roll.example.com",
@@ -41,10 +41,16 @@ test("creates an exact-SHA deployment plan in dependency order", () => {
   const plan = createStagingPlan(input());
 
   assert.equal(plan.sourceSha, sha);
-  assert.deepEqual(plan.workers, ["data", "roll", "web-api"]);
+  assert.deepEqual(plan.workers, [
+    "data",
+    "discord-rest",
+    "roll",
+    "gateway",
+    "web-api",
+  ]);
   assert.deepEqual(
     plan.steps.filter(({ kind }) => kind === "deploy").map(({ worker }) => worker),
-    ["data", "roll", "web-api"],
+    ["data", "discord-rest", "roll", "gateway", "web-api"],
   );
   assert.equal(plan.steps[0].kind, "quality-gate");
   assert.equal(plan.steps[1].kind, "migration-list");
@@ -73,19 +79,57 @@ test("rejects a dirty worktree or a different requested SHA", () => {
   );
 });
 
+test("requires compatible Discord REST when Roll is selected", () => {
+  assert.throws(
+    () => createStagingPlan(input({ workers: ["data", "roll", "web-api"] })),
+    /requires the compatible Discord REST Worker/,
+  );
+});
+
+test("requires compatible Gateway when Roll is selected", () => {
+  assert.throws(
+    () =>
+      createStagingPlan(
+        input({
+          workers: ["data", "discord-rest", "roll", "web-api"],
+          allowGatewayDeploy: false,
+        }),
+      ),
+    /requires the compatible Gateway Worker/,
+  );
+});
+
+test("requires compatible Roll and Discord REST for Web API deployment", () => {
+  assert.throws(
+    () => createStagingPlan(input({ workers: ["data", "web-api"] })),
+    /requires compatible Roll and Discord REST Workers/,
+  );
+});
+
 test("requires a separate acknowledgement for Gateway deployment", () => {
   assert.throws(
-    () => createStagingPlan(input({ workers: ["gateway", "web-api"] })),
+    () =>
+      createStagingPlan(
+        input({
+          workers: ["discord-rest", "roll", "gateway", "web-api"],
+          allowGatewayDeploy: false,
+        }),
+      ),
     /Gateway deployment requires --allow-gateway-deploy/,
   );
 
   const plan = createStagingPlan(
     input({
-      workers: ["gateway", "web-api"],
+      workers: ["discord-rest", "roll", "gateway", "web-api"],
       allowGatewayDeploy: true,
     }),
   );
-  assert.deepEqual(plan.workers, ["gateway", "web-api"]);
+  assert.deepEqual(plan.workers, [
+    "discord-rest",
+    "roll",
+    "gateway",
+    "web-api",
+  ]);
 });
 
 test("creates a producer-only plan that waits for a real snapshot", () => {
