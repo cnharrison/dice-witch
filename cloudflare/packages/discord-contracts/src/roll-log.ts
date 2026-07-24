@@ -304,7 +304,7 @@ function rollLogLocation(artifact: RollLogArtifactV1): string {
   const channelType = [10, 11, 12].includes(artifact.context.channelType)
     ? "thread"
     : "channel";
-  return `${channelType} **${escapeDiscordMarkdown(artifact.context.channelName)}** on **${escapeDiscordMarkdown(artifact.context.guildName)}**`;
+  return `${channelType} **${escapeDiscordMarkdown(artifact.context.channelName)}**\non **${escapeDiscordMarkdown(artifact.context.guildName)}**`;
 }
 
 function rollLogShardLabel(shard: RollLogShardV1): string | null {
@@ -319,7 +319,7 @@ export function rollLogMetadataDescription(
 ): string {
   const shardLabel = rollLogShardLabel(shard);
   const shardSuffix = shardLabel === null ? "" : ` ${shardLabel}`;
-  const suffix = ` from **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]** in ${rollLogLocation(artifact)}${shardSuffix}`;
+  const suffix = `\nfrom **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]**\nin ${rollLogLocation(artifact)}${shardSuffix}`;
   const notation = escapeDiscordMarkdown(artifact.notation);
   const notationLimit = MAX_EMBED_DESCRIPTION_LENGTH - suffix.length;
   if (notationLimit < 2) {

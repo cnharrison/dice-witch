@@ -136,7 +136,7 @@ describe("Discord REST service", () => {
         ],
       });
       expect(payload.embeds[0]?.description).toBe(
-        "1d20 from **roller [from discord]** in channel **dice\\-rolls** on **Fixture Guild** [Shard 3]",
+        "1d20\nfrom **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 3]",
       );
       expect(payload.embeds).toHaveLength(1);
       expect(payload).not.toHaveProperty("content");
@@ -175,7 +175,7 @@ describe("Discord REST service", () => {
       expect(payload.attachments).toBeUndefined();
       expect(payload.embeds).toHaveLength(1);
       expect(payload.embeds[0]?.description).toHaveLength(4_096);
-      expect(payload.embeds[0]?.description).toContain("… from **roller");
+      expect(payload.embeds[0]?.description).toContain("…\nfrom **roller");
       expect(payload.embeds[0]?.footer).toBeUndefined();
       return Response.json({ id: "100000000000000088" });
     });
@@ -228,7 +228,7 @@ describe("Discord REST service", () => {
       };
       expect(payload.embeds).toHaveLength(1);
       expect(payload.embeds[0]?.description).toContain(
-        "channel **live\\-rolls** on **Live Guild** [Shard 1]",
+        "channel **live\\-rolls**\non **Live Guild** [Shard 1]",
       );
       return Response.json({ id: "100000000000000088" });
     });
