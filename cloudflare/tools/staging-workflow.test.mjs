@@ -19,6 +19,16 @@ test("keeps staging deployment manual, serialized, and approval-gated", async ()
   assert.doesNotMatch(workflow, /^\s+schedule:/m);
 });
 
+test("requires migration authorization only when Data is selected", async () => {
+  const workflow = await readFile(workflowUrl, "utf8");
+
+  assert.match(
+    workflow,
+    /if \[\[ ",\$\{SELECTED_WORKERS\}," == \*",data,"\* \]\]; then/,
+  );
+  assert.match(workflow, /if: \$\{\{ inputs\.apply_migrations == true \}\}/);
+});
+
 test("does not expose deployment credentials to dependency or quality steps", async () => {
   const workflow = await readFile(workflowUrl, "utf8");
   const qualityIndex = workflow.indexOf("Run quality gates without deployment credentials");

@@ -61,7 +61,9 @@ jobs:
           set -euo pipefail
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$DEPLOY_CONFIRMATION" == "deploy-staging" ]]
-          [[ "$APPLY_MIGRATIONS" == "true" ]]
+          if [[ ",${SELECTED_WORKERS}," == *",data,"* ]]; then
+            [[ "$APPLY_MIGRATIONS" == "true" ]]
+          fi
 
       - name: Check out exact source
         uses: actions/checkout@v4
@@ -171,6 +173,7 @@ jobs:
           done
 
       - name: Apply staging D1 migrations
+        if: ${{ inputs.apply_migrations == true }}
         working-directory: cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
