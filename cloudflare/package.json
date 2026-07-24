@@ -45,12 +45,12 @@
     "@cloudflare/vitest-pool-workers": "0.18.4",
     "@eslint/js": "10.0.1",
     "canvaskit-wasm": "0.41.1",
-    "eslint": "10.6.0",
+    "eslint": "10.8.0",
     "globals": "17.7.0",
     "node-addon-api": "8.9.0",
     "node-gyp": "12.4.0",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.63.0",
+    "typescript-eslint": "8.65.0",
     "vitest": "4.1.10",
     "wrangler": "4.110.0"
   }
