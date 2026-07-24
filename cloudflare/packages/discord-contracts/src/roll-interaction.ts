@@ -106,7 +106,11 @@ function parseLoggingContext(
   const guild = interaction.guild;
   if (
     requireSnowflake(guild.id, "Interaction guild id") !== guildId ||
-    (channel.guild_id !== undefined && channel.guild_id !== guildId) ||
+    (channel.guild_id !== undefined && channel.guild_id !== guildId)
+  ) {
+    throw new Error("Interaction guild channel identity is invalid");
+  }
+  if (
     typeof guild.name !== "string" ||
     guild.name.length < 2 ||
     guild.name.length > 100 ||
@@ -115,7 +119,7 @@ function parseLoggingContext(
     channel.name.length > 100 ||
     !isDiscordRollChannelType(channel.type)
   ) {
-    throw new Error("Interaction guild channel context is invalid");
+    return null;
   }
   return {
     kind: "guild",

@@ -131,22 +131,25 @@ describe("parseRollInteraction", () => {
     ).toBeNull();
   });
 
-  it.each(["0", null, false])(
-    "rejects malformed Discord channel type %j",
-    (channelType) => {
-      expect(() =>
-        parseRollInteraction(
-          interaction({
-            channel: {
-              id: "1400000000000000002",
-              guild_id: guildId,
-              name: "dice-rolls",
-              type: channelType,
-            },
-          }),
-          { applicationId, guildId },
-        ),
-      ).toThrow();
+  it.each([
+    { guild: { id: guildId } },
+    {
+      channel: {
+        id: "1400000000000000002",
+        guild_id: guildId,
+        name: "dice-rolls",
+        type: "0",
+      },
+    },
+  ])(
+    "accepts a roll without optional logging metadata",
+    (overrides) => {
+      expect(
+        parseRollInteraction(interaction(overrides), {
+          applicationId,
+          guildId,
+        })?.loggingContext,
+      ).toBeNull();
     },
   );
 
