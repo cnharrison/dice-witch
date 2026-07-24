@@ -54,7 +54,9 @@ function rollLogArtifact(): RollLogArtifactV1 {
       content: "_...clatter..._",
       embeds: [
         {
-          description: "[20] = 20",
+          description: "1d20: [20] = 20",
+          color: 0x96_6f_33,
+          footer: { text: "sent to roller via discord" },
           image: { url: "attachment://dice-1400000000000000001.png" },
         },
       ],
@@ -111,7 +113,9 @@ describe("Discord REST service", () => {
         }>;
         embeds: Array<{
           title?: string;
+          color?: number;
           description?: string;
+          footer?: { text: string };
           image?: { url: string };
         }>;
       };
@@ -129,6 +133,8 @@ describe("Discord REST service", () => {
         embeds: [
           {
             title: "receivedCommand: /roll",
+            color: 0x96_6f_33,
+            footer: { text: "sent to roller via discord" },
             image: {
               url: "attachment://dice-1400000000000000001.png",
             },
@@ -136,7 +142,7 @@ describe("Discord REST service", () => {
         ],
       });
       expect(payload.embeds[0]?.description).toBe(
-        "1d20\nfrom **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 3]",
+        "1d20: [20] = 20\n\n1d20\nfrom **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 3]",
       );
       expect(payload.embeds).toHaveLength(1);
       expect(payload).not.toHaveProperty("content");
@@ -154,6 +160,51 @@ describe("Discord REST service", () => {
             status: "available",
             shardId: 2,
             shardCount: 4,
+            generation: 16,
+          },
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
+  });
+
+  it("preserves an optional result title inside the single log embed", async () => {
+    const artifact = rollLogArtifact();
+    const resultEmbed = artifact.payload.embeds?.[0];
+    if (resultEmbed === undefined) throw new Error("Result embed fixture is missing");
+    const discordFetch = vi.fn(async (request: Request) => {
+      const form = await request.formData();
+      const payloadValue = form.get("payload_json");
+      if (typeof payloadValue !== "string") {
+        throw new Error("Multipart log fixture is invalid");
+      }
+      const payload = JSON.parse(payloadValue) as {
+        embeds: Array<{ title?: string; description?: string }>;
+      };
+      expect(payload.embeds).toHaveLength(1);
+      expect(payload.embeds[0]).toMatchObject({
+        title: "Enchanted sword",
+        description:
+          "1d20: [20] = 20\n\nreceivedCommand: /roll\n1d20\nfrom **roller [from discord]**\nin channel **dice\\-rolls**\non **Fixture Guild** [Shard 1]",
+      });
+      return Response.json({ id: "100000000000000088" });
+    });
+
+    await expect(
+      deliverRollLogV1(
+        env,
+        {
+          artifact: {
+            ...artifact,
+            payload: {
+              ...artifact.payload,
+              embeds: [{ ...resultEmbed, title: "Enchanted sword" }],
+            },
+          },
+          logicalShard: {
+            status: "available",
+            shardId: 0,
+            shardCount: 1,
             generation: 16,
           },
         },

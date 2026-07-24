@@ -40,6 +40,9 @@ const DICE_WITCH_ADMIN_ROLE = "Dice Witch Admin";
 const MAX_GUILDS_PER_STATS_RUN = 100_000;
 const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const ROLL_LOG_TITLE = "receivedCommand: /roll";
+const MAX_EMBED_DESCRIPTION_LENGTH = 4_096;
+const MAX_EMBED_CHARACTERS = 6_000;
 
 export type MembershipInspection =
   | { status: "found"; isDiceWitchAdmin: boolean }
@@ -1072,6 +1075,46 @@ async function resolveRollLogContext(
   };
 }
 
+function buildRollLogEmbed(
+  artifact: RollLogArtifactV1,
+  shard: RollLogShardV1,
+) {
+  const resultEmbed = artifact.payload.embeds?.[0];
+  const title = resultEmbed?.title ?? ROLL_LOG_TITLE;
+  const resultDescription = resultEmbed?.description;
+  let descriptionPrefix =
+    resultDescription === undefined ? "" : `${resultDescription}\n\n`;
+  if (resultEmbed?.title !== undefined) {
+    descriptionPrefix += `${ROLL_LOG_TITLE}\n`;
+  }
+  const footer =
+    artifact.image.status === "unavailable" &&
+    artifact.image.reason !== "not-applicable"
+      ? { text: "Image unavailable" }
+      : resultEmbed?.footer;
+  const fixedCharacters =
+    title.length + descriptionPrefix.length + (footer?.text.length ?? 0);
+  const metadataLimit = Math.min(
+    MAX_EMBED_DESCRIPTION_LENGTH - descriptionPrefix.length,
+    MAX_EMBED_CHARACTERS - fixedCharacters,
+  );
+  const description = `${descriptionPrefix}${rollLogMetadataDescription(
+    artifact,
+    shard,
+    metadataLimit,
+  )}`;
+
+  return {
+    color: resultEmbed?.color ?? 0x99_99_99,
+    title,
+    description,
+    ...(footer === undefined ? {} : { footer }),
+    ...(artifact.image.status === "available"
+      ? { image: { url: `attachment://${artifact.image.filename}` } }
+      : {}),
+  };
+}
+
 export async function deliverRollLogV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "LOG_OUTPUT_CHANNEL_ID">,
   input: DeliverRollLogInputV1,
@@ -1090,27 +1133,8 @@ export async function deliverRollLogV1(
     discordFetch,
   );
   const shard = validateRollLogShard(input.logicalShard, artifact.guildId);
-  const description = rollLogMetadataDescription(artifact, shard);
-  if (description.length > 4_096) {
-    throw new Error("Roll log description is invalid");
-  }
-  let imagePresentation = {};
-  if (artifact.image.status === "available") {
-    imagePresentation = {
-      image: { url: `attachment://${artifact.image.filename}` },
-    };
-  } else if (artifact.image.reason !== "not-applicable") {
-    imagePresentation = { footer: { text: "Image unavailable" } };
-  }
   const payload = {
-    embeds: [
-      {
-        color: 0x99_99_99,
-        title: "receivedCommand: /roll",
-        description,
-        ...imagePresentation,
-      },
-    ],
+    embeds: [buildRollLogEmbed(artifact, shard)],
     nonce: `log:${artifact.rollId}`,
     enforce_nonce: true,
     allowed_mentions: { parse: [] },

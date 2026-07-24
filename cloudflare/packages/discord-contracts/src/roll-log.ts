@@ -316,12 +316,20 @@ function rollLogShardLabel(shard: RollLogShardV1): string | null {
 export function rollLogMetadataDescription(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
+  maximumLength = MAX_EMBED_DESCRIPTION_LENGTH,
 ): string {
+  if (
+    !Number.isSafeInteger(maximumLength) ||
+    maximumLength < 1 ||
+    maximumLength > MAX_EMBED_DESCRIPTION_LENGTH
+  ) {
+    throw new Error("Roll log metadata limit is invalid");
+  }
   const shardLabel = rollLogShardLabel(shard);
   const shardSuffix = shardLabel === null ? "" : ` ${shardLabel}`;
   const suffix = `\nfrom **${escapeDiscordMarkdown(artifact.user.username)} [from ${artifact.source}]**\nin ${rollLogLocation(artifact)}${shardSuffix}`;
   const notation = escapeDiscordMarkdown(artifact.notation);
-  const notationLimit = MAX_EMBED_DESCRIPTION_LENGTH - suffix.length;
+  const notationLimit = maximumLength - suffix.length;
   if (notationLimit < 2) {
     throw new Error("Roll log metadata suffix is too long");
   }
