@@ -1098,6 +1098,13 @@ export async function deliverRollLogV1(
   if (!response.ok) {
     if (isRetryableDiscordStatus(response.status) || response.status === 404) {
       const retryAfterSeconds = numericResponseHeader(response, "retry-after");
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          message: "Private roll log delivery is retryable",
+          httpStatus: response.status,
+        }),
+      );
       return {
         status: "retryable",
         httpStatus: response.status,
@@ -1111,14 +1118,31 @@ export async function deliverRollLogV1(
       artifact.image.status === "available" &&
       (await isImageSpecificDiscordRejection(response))
     ) {
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          message: "Private roll log image was rejected",
+          httpStatus: response.status,
+        }),
+      );
       return { status: "image-rejected", httpStatus: response.status };
     }
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "Private roll log delivery failed",
+        httpStatus: response.status,
+      }),
+    );
     return { status: "failed", httpStatus: response.status };
   }
   const value: unknown = await response.json();
   if (!isRecord(value) || typeof value.id !== "string" || !SNOWFLAKE.test(value.id)) {
     throw new Error("Discord roll log response is invalid");
   }
+  console.info(
+    JSON.stringify({ level: "info", message: "Private roll log delivered" }),
+  );
   return { status: "delivered", httpStatus: response.status };
 }
 
