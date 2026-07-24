@@ -377,10 +377,14 @@ describe("Discord REST service", () => {
       expect(url.searchParams.get("limit")).toBe("200");
       expect(url.searchParams.get("with_counts")).toBe("true");
       return Promise.resolve(
-        Response.json([
-          { id: guildId, approximate_member_count: 42 },
-          { id: "100000000000000002", approximate_member_count: 8 },
-        ]),
+        Response.json(
+          url.searchParams.has("after")
+            ? []
+            : [
+                { id: guildId, approximate_member_count: 42 },
+                { id: "100000000000000002", approximate_member_count: 8 },
+              ],
+        ),
       );
     });
 
@@ -390,6 +394,53 @@ describe("Discord REST service", () => {
       shardCount: 2,
       guildCountsByShard: [2, 0],
     });
+  });
+
+  it("continues after Discord returns a short non-empty bot guild page", async () => {
+    const firstPage = Array.from({ length: 199 }, (_, index) => ({
+      id: (100000000000000001n + BigInt(index)).toString(),
+      approximate_member_count: 1,
+    }));
+    const finalGuild = {
+      id: "100000000000000500",
+      approximate_member_count: 1,
+    };
+    const discordFetch = vi.fn((request: Request) => {
+      const after = new URL(request.url).searchParams.get("after");
+      if (after === null) return Promise.resolve(Response.json(firstPage));
+      if (after === firstPage.at(-1)?.id) {
+        return Promise.resolve(Response.json([finalGuild]));
+      }
+      expect(after).toBe(finalGuild.id);
+      return Promise.resolve(Response.json([]));
+    });
+
+    await expect(fetchPublicStats(env, 1, discordFetch)).resolves.toEqual({
+      liveGuilds: 200,
+      estimatedGuildMemberships: 200,
+      shardCount: 1,
+      guildCountsByShard: [200],
+    });
+    expect(discordFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects a non-advancing public-stats cursor", async () => {
+    const discordFetch = vi
+      .fn<(request: Request) => Promise<Response>>()
+      .mockResolvedValueOnce(
+        Response.json([
+          { id: "100000000000000500", approximate_member_count: 1 },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        Response.json([
+          { id: "100000000000000400", approximate_member_count: 1 },
+        ]),
+      );
+
+    await expect(fetchPublicStats(env, 1, discordFetch)).rejects.toThrow(
+      "Discord guild stats response is invalid",
+    );
   });
 
   it("rejects a shard count above Discord's coordinated maximum", async () => {
@@ -409,7 +460,8 @@ describe("Discord REST service", () => {
       )
       .mockResolvedValueOnce(
         Response.json([{ id: guildId, approximate_member_count: 42 }]),
-      );
+      )
+      .mockResolvedValueOnce(Response.json([]));
     const wait = vi.fn(() => Promise.resolve());
 
     await expect(fetchPublicStats(env, 2, discordFetch, wait)).resolves.toEqual({
@@ -422,10 +474,15 @@ describe("Discord REST service", () => {
   });
 
   it("captures an audience snapshot without calling bot-list APIs", async () => {
-    const discordFetch = vi.fn<(request: Request) => Promise<Response>>(() =>
-      Promise.resolve(
-        Response.json([{ id: guildId, approximate_member_count: 42 }]),
-      ),
+    const discordFetch = vi.fn<(request: Request) => Promise<Response>>(
+      (request) =>
+        Promise.resolve(
+          Response.json(
+            new URL(request.url).searchParams.has("after")
+              ? []
+              : [{ id: guildId, approximate_member_count: 42 }],
+          ),
+        ),
     );
 
     await expect(
@@ -438,7 +495,7 @@ describe("Discord REST service", () => {
       shardCount: 2,
       guildCountsByShard: [1, 0],
     });
-    expect(discordFetch).toHaveBeenCalledOnce();
+    expect(discordFetch).toHaveBeenCalledTimes(2);
     expect(new URL(discordFetch.mock.calls[0]?.[0].url ?? "").hostname).toBe(
       "discord.com",
     );
@@ -451,10 +508,17 @@ describe("Discord REST service", () => {
       const url = new URL(request.url);
       return Promise.resolve(
         url.hostname === "discord.com"
-          ? Response.json([
-              { id: guildId, approximate_member_count: 42 },
-              { id: "100000000000000002", approximate_member_count: 8 },
-            ])
+          ? Response.json(
+              url.searchParams.has("after")
+                ? []
+                : [
+                    { id: guildId, approximate_member_count: 42 },
+                    {
+                      id: "100000000000000002",
+                      approximate_member_count: 8,
+                    },
+                  ],
+            )
           : new Response(null, { status: 200 }),
       );
     });
@@ -513,13 +577,17 @@ describe("Discord REST service", () => {
 
   it("attempts both bot listings and returns sanitized failure statuses", async () => {
     const externalFetch = vi.fn((request: Request) => {
-      const hostname = new URL(request.url).hostname;
-      if (hostname === "discord.com") {
+      const url = new URL(request.url);
+      if (url.hostname === "discord.com") {
         return Promise.resolve(
-          Response.json([{ id: guildId, approximate_member_count: 42 }]),
+          Response.json(
+            url.searchParams.has("after")
+              ? []
+              : [{ id: guildId, approximate_member_count: 42 }],
+          ),
         );
       }
-      if (hostname === "top.gg") {
+      if (url.hostname === "top.gg") {
         return Promise.resolve(new Response(null, { status: 429 }));
       }
       return Promise.reject(new Error("fixture network failure with secret"));
@@ -538,7 +606,7 @@ describe("Discord REST service", () => {
       topggHttpStatus: 429,
       discordBotListHttpStatus: null,
     });
-    expect(externalFetch).toHaveBeenCalledTimes(3);
+    expect(externalFetch).toHaveBeenCalledTimes(4);
   });
 
   it("requires explicit bot-list credentials before any request", async () => {
@@ -566,19 +634,33 @@ describe("Discord REST service", () => {
 
     await expect(
       listCurrentGuildIdsPage(env, null, discordFetch, sleep),
-    ).resolves.toEqual({ guildIds: [guildId], nextAfter: null });
+    ).resolves.toEqual({ guildIds: [guildId], nextAfter: guildId });
     expect(sleep).toHaveBeenCalledWith(10);
     expect(discordFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("returns one bounded guild page for service-binding pagination", async () => {
+  it("returns a cursor for every non-empty service-binding page", async () => {
     const guilds = [{ id: guildId }];
     const discordFetch = vi.fn(() => Promise.resolve(Response.json(guilds)));
 
     await expect(
       listCurrentGuildIdsPage(env, null, discordFetch),
-    ).resolves.toEqual({ guildIds: [guildId], nextAfter: null });
+    ).resolves.toEqual({ guildIds: [guildId], nextAfter: guildId });
     expect(discordFetch).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a non-advancing service-binding cursor", async () => {
+    const discordFetch = vi.fn(() =>
+      Promise.resolve(Response.json([{ id: "100000000000000400" }])),
+    );
+
+    await expect(
+      listCurrentGuildIdsPage(
+        env,
+        "100000000000000500",
+        discordFetch,
+      ),
+    ).rejects.toThrow("Discord guild list response is invalid");
   });
 
   it("lists the complete current guild set with validated pagination", async () => {
@@ -592,15 +674,18 @@ describe("Discord REST service", () => {
       expect(url.searchParams.get("limit")).toBe("200");
       const after = url.searchParams.get("after");
       if (after === null) return Promise.resolve(Response.json(firstPage));
-      expect(after).toBe(firstPage.at(-1)?.id);
-      return Promise.resolve(Response.json([{ id: finalGuildId }]));
+      if (after === firstPage.at(-1)?.id) {
+        return Promise.resolve(Response.json([{ id: finalGuildId }]));
+      }
+      expect(after).toBe(finalGuildId);
+      return Promise.resolve(Response.json([]));
     });
 
     await expect(listCurrentGuildIds(env, discordFetch)).resolves.toEqual([
       ...firstPage.map(({ id }) => id),
       finalGuildId,
     ]);
-    expect(discordFetch).toHaveBeenCalledTimes(2);
+    expect(discordFetch).toHaveBeenCalledTimes(3);
   });
 
   it("returns only text and announcement channels", async () => {

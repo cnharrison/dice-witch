@@ -140,7 +140,7 @@ export function buildStatusCommandResponse(
         {
           color: STATUS_COLOR,
           title: "Status",
-          description: `Latency: **${now - interaction.createdAt}ms**\nDiscord servers: **${snapshot.liveGuilds}**\nEstimated guild memberships: **${snapshot.estimatedGuildMemberships}**\nKnown Dice Witch users: **${snapshot.knownDiceWitchUsers}** 😈${shardStatusText}`,
+          description: `Latency: **${now - interaction.createdAt}ms**\nI'm in **${snapshot.liveGuilds}** discord servers with **${snapshot.knownDiceWitchUsers}** users 😈${shardStatusText}`,
         },
       ],
       components: buildFooterComponents(links),

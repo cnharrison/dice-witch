@@ -70,7 +70,7 @@ describe("HTTP status command contract", () => {
             color: 10066329,
             title: "Status",
             description:
-              "Latency: **30ms**\nDiscord servers: **3**\nEstimated guild memberships: **50**\nKnown Dice Witch users: **7** 😈\n\n__Shard Status:__\n🟢 Shard 0: Online (2 servers, 25ms)\n🟢 Shard 1: Online (1 servers, unknown)\n",
+              "Latency: **30ms**\nI'm in **3** discord servers with **7** users 😈\n\n__Shard Status:__\n🟢 Shard 0: Online (2 servers, 25ms)\n🟢 Shard 1: Online (1 servers, unknown)\n",
           },
         ],
       },

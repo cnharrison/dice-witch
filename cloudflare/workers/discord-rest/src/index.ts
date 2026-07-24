@@ -120,6 +120,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isAdvancingGuildCursor(
+  after: string | null,
+  nextAfter: string,
+): boolean {
+  return after === null || BigInt(nextAfter) > BigInt(after);
+}
+
 function isRollLoggingContext(
   value: unknown,
   guildId: string | null,
@@ -327,6 +334,7 @@ export async function fetchPublicStats(
     if (!Array.isArray(page) || page.length > 200) {
       throw new Error("Discord guild stats response is invalid");
     }
+    if (page.length === 0) break;
     for (const guild of page) {
       if (
         !isRecord(guild) ||
@@ -353,9 +361,12 @@ export async function fetchPublicStats(
         throw new Error("Discord guild stats total is invalid");
       }
     }
-    if (page.length < 200) break;
     const last: unknown = page[page.length - 1];
-    if (!isRecord(last) || typeof last.id !== "string") {
+    if (
+      !isRecord(last) ||
+      typeof last.id !== "string" ||
+      !isAdvancingGuildCursor(after, last.id)
+    ) {
       throw new Error("Discord guild stats response is invalid");
     }
     after = last.id;
@@ -566,10 +577,11 @@ export async function listCurrentGuildIdsPage(
   if (new Set(guildIds).size !== guildIds.length) {
     throw new Error("Discord guild list response is invalid");
   }
-  return {
-    guildIds,
-    nextAfter: page.length === 200 ? (guildIds.at(-1) ?? null) : null,
-  };
+  const nextAfter = guildIds.at(-1) ?? null;
+  if (nextAfter !== null && !isAdvancingGuildCursor(after, nextAfter)) {
+    throw new Error("Discord guild list response is invalid");
+  }
+  return { guildIds, nextAfter };
 }
 
 export async function listCurrentGuildIds(
