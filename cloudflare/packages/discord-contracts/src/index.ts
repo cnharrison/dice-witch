@@ -45,6 +45,7 @@ export {
   rollLogContextDescription,
   rollLogMetadataDescription,
   rollLogResultDescription,
+  rollLogTelemetryContext,
   storedLogArtifact,
   validateRollLogArtifact,
   type LogArtifactImageV1,

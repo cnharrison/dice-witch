@@ -82,6 +82,55 @@ export type StoredLogArtifactV1 = Omit<
     | { status: "unavailable"; reason: LogArtifactUnavailableReasonV1 };
 };
 
+type RollLogTelemetryArtifactV1 = Pick<
+  RollLogArtifactV1,
+  | "channelId"
+  | "context"
+  | "destinationDeliveredAt"
+  | "guildId"
+  | "notation"
+  | "payload"
+  | "rollId"
+  | "source"
+  | "user"
+> & {
+  image:
+    | { status: "available"; filename: string }
+    | { status: "unavailable"; reason: LogArtifactUnavailableReasonV1 };
+};
+
+export function rollLogTelemetryContext(
+  artifact: RollLogTelemetryArtifactV1,
+  logicalShard: RollLogShardV1 | null,
+) {
+  const guildContext = artifact.context?.kind === "guild"
+    ? artifact.context
+    : null;
+  return {
+    rollId: artifact.rollId,
+    interactionId: artifact.rollId,
+    source: artifact.source,
+    notation: artifact.notation,
+    userId: artifact.user.id,
+    username: artifact.user.username,
+    guildId: artifact.guildId,
+    channelId: artifact.channelId,
+    context: artifact.context,
+    guildName: guildContext?.guildName ?? null,
+    channelName: guildContext?.channelName ?? null,
+    channelType: guildContext?.channelType ?? null,
+    title: artifact.payload.embeds?.[0]?.title ?? null,
+    destinationPayload: artifact.payload,
+    destinationDeliveredAt: artifact.destinationDeliveredAt,
+    imageStatus: artifact.image.status,
+    imageFilename:
+      artifact.image.status === "available" ? artifact.image.filename : null,
+    imageUnavailableReason:
+      artifact.image.status === "unavailable" ? artifact.image.reason : null,
+    logicalShard,
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

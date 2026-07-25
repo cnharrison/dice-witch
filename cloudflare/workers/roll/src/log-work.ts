@@ -3,6 +3,7 @@ import {
   LOG_WORK_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   imageUnavailableLogArtifact,
+  rollLogTelemetryContext,
   storedLogArtifact,
   validateRollLogArtifact,
   type DeliverRollLogInputV1,
@@ -196,6 +197,7 @@ export class LogWork extends DurableObject<RollBindings> {
         artifact: stored,
         attempts: row.attempts,
         acceptedAt: row.accepted_at,
+        logicalShard: null,
       });
       return;
     }
@@ -205,9 +207,10 @@ export class LogWork extends DurableObject<RollBindings> {
       Math.min(row.retry_until, Date.now() + retryDelayMs(attempts)),
     );
     let result: DeliverRollLogResultV1;
+    let logicalShard: RollLogShardV1 | null = null;
     try {
       const artifact = await this.deliveryArtifact(row);
-      const logicalShard = await this.resolveLogicalShard(artifact);
+      logicalShard = await this.resolveLogicalShard(artifact);
       const service = this.env.DISCORD_REST as unknown as RollLogDeliveryService;
       result = await service.deliverRollLogV1({ artifact, logicalShard });
     } catch (error) {
@@ -217,11 +220,11 @@ export class LogWork extends DurableObject<RollBindings> {
       );
       console.error(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "error",
           message: "Private roll log delivery attempt failed",
           subsystem: "private-roll-log",
-          rollId: stored.rollId,
+          ...rollLogTelemetryContext(stored, logicalShard),
           state: "pending",
           userImpact: "none",
           failureKind: "exception",
@@ -255,6 +258,7 @@ export class LogWork extends DurableObject<RollBindings> {
         artifact: stored,
         attempts,
         acceptedAt: row.accepted_at,
+        logicalShard,
       });
       return;
     }
@@ -266,16 +270,17 @@ export class LogWork extends DurableObject<RollBindings> {
         artifact: stored,
         attempts,
         acceptedAt: row.accepted_at,
+        logicalShard,
       });
       return;
     }
     console.warn(
       JSON.stringify({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         level: "warn",
         message: "Private roll log delivery will retry",
         subsystem: "private-roll-log",
-        rollId: stored.rollId,
+        ...rollLogTelemetryContext(stored, logicalShard),
         state: "pending",
         userImpact: "none",
         failureKind: "discord-retryable",
@@ -342,11 +347,11 @@ export class LogWork extends DurableObject<RollBindings> {
     } catch {
       console.warn(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "warn",
           message: "Logical guild shard is unavailable for private roll log",
           subsystem: "private-roll-log",
-          rollId: artifact.rollId,
+          ...rollLogTelemetryContext(artifact, { status: "unavailable" }),
           state: "pending",
           userImpact: "none",
           failureKind: "shard-unavailable",
@@ -387,9 +392,17 @@ export class LogWork extends DurableObject<RollBindings> {
     artifact: StoredLogArtifactV1;
     attempts: number;
     acceptedAt: number;
+    logicalShard: RollLogShardV1 | null;
   }): Promise<void> {
-    const { state, httpStatus, completedAt, artifact, attempts, acceptedAt } =
-      input;
+    const {
+      state,
+      httpStatus,
+      completedAt,
+      artifact,
+      attempts,
+      acceptedAt,
+      logicalShard,
+    } = input;
     const expiresAt = completedAt + LOG_WORK_RETENTION_MS;
     this.ctx.storage.sql.exec(
       `UPDATE log_artifact
@@ -402,11 +415,11 @@ export class LogWork extends DurableObject<RollBindings> {
       httpStatus,
     );
     const event = JSON.stringify({
-      telemetryVersion: 1,
+      telemetryVersion: 2,
       level: state === "delivered" ? "info" : "error",
       message: "Private roll log delivery completed",
       subsystem: "private-roll-log",
-      rollId: artifact.rollId,
+      ...rollLogTelemetryContext(artifact, logicalShard),
       state,
       userImpact: "none",
       attempts,

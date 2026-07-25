@@ -43,12 +43,12 @@ import {
   validateRequest,
   type AcceptRollDeliveryResult,
   type DeliverRollWorkResult,
+  type DeliveryMetadata,
   type PrepareRollWorkResult,
   type RenderResultV4,
   type RenderRollWorkResult,
   type RollDeliveryDiagnostics,
   type RollDeliveryFailurePhase,
-  type RollDeliveryRequest,
   type RollDeliveryStatus,
   type RollWorkRecord,
   type RollWorkRequest,
@@ -135,6 +135,39 @@ type DeliveryRecordResolution =
   | { status: "ready"; record: RollWorkRecord }
   | { status: "conflict" }
   | { status: "unavailable" };
+
+function deliveryTelemetryContext(
+  metadata: DeliveryMetadata | null,
+  record: RollWorkRecord | undefined,
+  destinationPayload: unknown,
+  destinationDeliveredAt: number | null,
+) {
+  const logging = metadata?.logging ?? null;
+  const accounting = metadata?.accounting ?? null;
+  const context = logging?.context ?? null;
+  const guildContext = context?.kind === "guild" ? context : null;
+  return {
+    interactionId: metadata?.interactionId ?? null,
+    applicationId: metadata?.applicationId ?? null,
+    source: logging?.source ?? null,
+    notation: logging?.notation ?? null,
+    request: record?.request ?? null,
+    outcome: record?.outcome ?? null,
+    rollSeed: record?.rollSeed ?? null,
+    renderSeed: record?.renderSeed ?? null,
+    title: metadata?.message.title ?? null,
+    userId: accounting?.userId ?? null,
+    username: metadata?.message.username ?? null,
+    guildId: accounting?.guildId ?? null,
+    channelId: logging?.channelId ?? null,
+    context,
+    guildName: guildContext?.guildName ?? null,
+    channelName: guildContext?.channelName ?? null,
+    channelType: guildContext?.channelType ?? null,
+    destinationPayload,
+    destinationDeliveredAt,
+  };
+}
 
 type StoredSourceLogRow = {
   artifact_json: string;
@@ -313,11 +346,7 @@ export class RollWork extends DurableObject<RollEnv> {
     const expiresAt = interactionExpiresAt(delivery.interaction.id);
     if (expiresAt <= Date.now()) return { status: "expired" };
 
-    const resolution = await this.recordForDelivery(
-      delivery.request,
-      delivery.accounting,
-      delivery.interaction.id,
-    );
+    const resolution = await this.recordForDelivery(delivery);
     if (resolution.status !== "ready") return resolution;
     const metadataJson = deliveryMetadata(delivery);
     const fingerprint = await tokenFingerprint(delivery.interaction.token);
@@ -432,6 +461,27 @@ export class RollWork extends DurableObject<RollEnv> {
     };
   }
 
+  private destinationTelemetryContext(record: RollWorkRecord | undefined) {
+    const delivery = this.readDelivery();
+    const metadata = delivery === undefined
+      ? null
+      : parseDeliveryMetadata(delivery.metadata_json);
+    const source = this.readSourceLogRow();
+    let destinationPayload: unknown = null;
+    if (source !== undefined) {
+      const artifact: unknown = JSON.parse(source.artifact_json);
+      if (isRecord(artifact) && artifact.payload !== undefined) {
+        destinationPayload = artifact.payload;
+      }
+    }
+    return deliveryTelemetryContext(
+      metadata,
+      record,
+      destinationPayload,
+      delivery?.delivered_at ?? null,
+    );
+  }
+
   private logDestinationCompletion(input: {
     rollId: string;
     state: "delivered" | "failed";
@@ -442,32 +492,34 @@ export class RollWork extends DurableObject<RollEnv> {
     record?: RollWorkRecord;
     delayMs?: number | null;
   }): void {
+    const record = input.record ?? this.readWork();
     const source = this.readSourceLogRow();
     const rendererRevision =
-      input.record?.version === 4 && input.record.renderRequest !== null
-        ? input.record.renderRequest.rendererRevision
+      record?.version === 4 && record.renderRequest !== null
+        ? record.renderRequest.rendererRevision
         : null;
     const imageSha256 =
       source !== undefined && source.image_bytes.byteLength > 0
         ? source.image_sha256
         : null;
     const event = JSON.stringify({
-      telemetryVersion: 1,
+      telemetryVersion: 2,
       level: input.state === "delivered" ? "info" : "error",
       message: "Roll destination delivery completed",
       subsystem: "roll-destination",
       rollId: input.rollId,
+      ...this.destinationTelemetryContext(record),
       state: input.state,
       userImpact: input.state === "delivered" ? "none" : "failed",
       attempts: input.attempts,
       httpStatus: input.httpStatus,
       failurePhase: input.failurePhase,
       elapsedMs:
-        input.record === undefined
+        record === undefined
           ? null
-          : Math.max(0, input.completedAt - input.record.createdAt),
+          : Math.max(0, input.completedAt - record.createdAt),
       delayMs: input.delayMs ?? null,
-      renderVersion: input.record?.version ?? null,
+      renderVersion: record?.version ?? null,
       rendererRevision,
       imageSha256,
     });
@@ -751,11 +803,12 @@ export class RollWork extends DurableObject<RollEnv> {
       } catch {
         console.error(
           JSON.stringify({
-            telemetryVersion: 1,
+            telemetryVersion: 2,
             level: "error",
             message: "Roll log durable handoff failed",
             subsystem: "private-roll-log",
             rollId: metadata.interactionId,
+            ...this.destinationTelemetryContext(this.readWork()),
             userImpact: "none",
             attempt: attempts,
           }),
@@ -789,11 +842,12 @@ export class RollWork extends DurableObject<RollEnv> {
       }
       console.error(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "error",
           message: "Roll log durable handoff returned an invalid response",
           subsystem: "private-roll-log",
           rollId: metadata.interactionId,
+          ...this.destinationTelemetryContext(this.readWork()),
           userImpact: "none",
           attempt: attempts,
         }),
@@ -810,11 +864,12 @@ export class RollWork extends DurableObject<RollEnv> {
     );
     console.error(
       JSON.stringify({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         level: "error",
         message: "Roll log source artifact is unavailable",
         subsystem: "private-roll-log",
         rollId: metadata.interactionId,
+        ...this.destinationTelemetryContext(this.readWork()),
         userImpact: "none",
         attempt: attempts,
       }),
@@ -1044,11 +1099,12 @@ export class RollWork extends DurableObject<RollEnv> {
       );
       console.error(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "error",
           message: "Roll log source artifact could not be persisted",
           subsystem: "private-roll-log",
           rollId: metadata.interactionId,
+          ...this.destinationTelemetryContext(this.readWork()),
           userImpact: "none",
           reason: error instanceof Error ? error.message : "unknown",
         }),
@@ -1400,11 +1456,12 @@ export class RollWork extends DurableObject<RollEnv> {
     );
     console.error(
       JSON.stringify({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         level: "error",
         message: "Roll delivery encountered a terminal internal failure",
         subsystem: "roll-destination",
         rollId: target.id,
+        ...this.destinationTelemetryContext(this.readWork()),
         userImpact: "failed",
         phase,
         attempt: attempts,
@@ -1528,11 +1585,12 @@ export class RollWork extends DurableObject<RollEnv> {
     );
     console.warn(
       JSON.stringify({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         level: "warn",
         message: "Roll delivery will retry",
         subsystem: "roll-destination",
         rollId,
+        ...this.destinationTelemetryContext(this.readWork()),
         state: "pending",
         userImpact: "delayed",
         phase,
@@ -1568,10 +1626,10 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private async recordForDelivery(
-    request: RollWorkRequest,
-    accounting: RollDeliveryRequest["accounting"] | null,
-    rollId: string,
+    delivery: ReturnType<typeof validateDeliveryRequest>,
   ): Promise<DeliveryRecordResolution> {
+    const { request, accounting } = delivery;
+    const rollId = delivery.interaction.id;
     const existing = this.storedPreparation(request);
     if (existing?.status === "conflict") return { status: "conflict" };
     if (existing?.status === "existing") {
@@ -1623,11 +1681,23 @@ export class RollWork extends DurableObject<RollEnv> {
     } catch {
       console.error(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "error",
           message: "Roll delivery preparation failed",
           subsystem: "roll-destination",
           rollId,
+          ...deliveryTelemetryContext(
+            {
+              interactionId: rollId,
+              applicationId: delivery.interaction.applicationId,
+              message: delivery.message,
+              accounting,
+              logging: delivery.logging,
+            },
+            undefined,
+            null,
+            null,
+          ),
           userImpact: "failed",
           phase: "render-request",
           renderVersion,

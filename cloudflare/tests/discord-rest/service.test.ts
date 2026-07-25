@@ -313,7 +313,7 @@ describe("Discord REST service", () => {
     expect(discordFetch).toHaveBeenCalledTimes(3);
   });
 
-  it("emits roll-correlated telemetry without logging roll contents", async () => {
+  it("emits complete roll-log telemetry without credentials or PNG bytes", async () => {
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const artifact = rollLogArtifact();
@@ -350,26 +350,51 @@ describe("Discord REST service", () => {
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(({ message }) => message === "Discord roll log context is inaccessible");
       expect(inaccessible).toMatchObject({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         subsystem: "private-roll-log",
         rollId: artifact.rollId,
+        source: "discord",
+        notation: "1d20",
+        userId,
+        username: "roller",
+        guildId,
+        channelId: "100000000000000010",
+        guildName: null,
+        channelName: null,
         userImpact: "none",
         channelHttpStatus: 403,
         guildHttpStatus: 200,
       });
+      expect(inaccessible?.destinationPayload).toEqual(artifact.payload);
       const delivered = consoleInfo.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(({ message }) => message === "Private roll log delivered");
       expect(delivered).toMatchObject({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         subsystem: "private-roll-log",
         rollId: artifact.rollId,
+        source: "discord",
+        notation: "1d20",
+        userId,
+        username: "roller",
+        guildId,
+        channelId: "100000000000000010",
+        guildName: null,
+        channelName: null,
+        title: null,
+        destinationDeliveredAt: 1_750_000_000_000,
+        logicalShard: { status: "unavailable" },
+        imageStatus: "available",
+        imageFilename: "dice-1400000000000000001.png",
+        logMessageId: "100000000000000088",
         userImpact: "none",
         httpStatus: 200,
       });
+      expect(delivered?.destinationPayload).toEqual(artifact.payload);
       expect(JSON.stringify([inaccessible, delivered])).not.toMatch(
-        /roller|Fixture Guild|dice-rolls|1d20/,
+        /fixture\.bot\.token|fixture-topgg-token|fixture-discord-bot-list-token|image_bytes/i,
       );
+      expect(delivered).not.toHaveProperty("imageBytes");
     } finally {
       consoleWarn.mockRestore();
       consoleInfo.mockRestore();

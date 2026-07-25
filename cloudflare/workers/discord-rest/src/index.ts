@@ -8,6 +8,7 @@ import {
   rollLogContextDescription,
   rollLogMetadataDescription,
   rollLogResultDescription,
+  rollLogTelemetryContext,
   validateRollLogArtifact,
   type DeliverRollLogInputV1,
   type DeliverRollLogResultV1,
@@ -1082,11 +1083,11 @@ async function resolveRollLogContext(
           : Math.ceil(retryAfterSeconds * 1_000);
       console.warn(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "warn",
           message: "Discord roll log context lookup will retry",
           subsystem: "private-roll-log",
-          rollId: artifact.rollId,
+          ...rollLogTelemetryContext(artifact, null),
           userImpact: "none",
           failureKind: "context-retryable",
           channelHttpStatus: channelResponse.status,
@@ -1107,11 +1108,11 @@ async function resolveRollLogContext(
     if (rejectedResponse !== undefined) {
       console.error(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "error",
           message: "Discord roll log context lookup failed",
           subsystem: "private-roll-log",
-          rollId: artifact.rollId,
+          ...rollLogTelemetryContext(artifact, null),
           userImpact: "none",
           failureKind: "context-rejected",
           channelHttpStatus: channelResponse.status,
@@ -1123,11 +1124,11 @@ async function resolveRollLogContext(
     }
     console.warn(
       JSON.stringify({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         level: "warn",
         message: "Discord roll log context is inaccessible",
         subsystem: "private-roll-log",
-        rollId: artifact.rollId,
+        ...rollLogTelemetryContext(artifact, null),
         userImpact: "none",
         failureKind: "context-inaccessible",
         channelHttpStatus: channelResponse.status,
@@ -1283,11 +1284,11 @@ export async function deliverRollLogV1(
       const retryAfterSeconds = numericResponseHeader(response, "retry-after");
       console.warn(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "warn",
           message: "Private roll log delivery is retryable",
           subsystem: "private-roll-log",
-          rollId: artifact.rollId,
+          ...rollLogTelemetryContext(artifact, shard),
           userImpact: "none",
           failureKind: "delivery-retryable",
           httpStatus: response.status,
@@ -1308,11 +1309,11 @@ export async function deliverRollLogV1(
     ) {
       console.warn(
         JSON.stringify({
-          telemetryVersion: 1,
+          telemetryVersion: 2,
           level: "warn",
           message: "Private roll log image was rejected",
           subsystem: "private-roll-log",
-          rollId: artifact.rollId,
+          ...rollLogTelemetryContext(artifact, shard),
           userImpact: "none",
           failureKind: "image-rejected",
           httpStatus: response.status,
@@ -1322,11 +1323,11 @@ export async function deliverRollLogV1(
     }
     console.error(
       JSON.stringify({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         level: "error",
         message: "Private roll log delivery failed",
         subsystem: "private-roll-log",
-        rollId: artifact.rollId,
+        ...rollLogTelemetryContext(artifact, shard),
         userImpact: "none",
         failureKind: "delivery-rejected",
         httpStatus: response.status,
@@ -1340,11 +1341,12 @@ export async function deliverRollLogV1(
   }
   console.info(
     JSON.stringify({
-      telemetryVersion: 1,
+      telemetryVersion: 2,
       level: "info",
       message: "Private roll log delivered",
       subsystem: "private-roll-log",
-      rollId: artifact.rollId,
+      ...rollLogTelemetryContext(artifact, shard),
+      logMessageId: value.id,
       userImpact: "none",
       httpStatus: response.status,
     }),

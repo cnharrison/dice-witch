@@ -293,28 +293,71 @@ describe("LogWork Durable Object", () => {
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(({ message }) => message === "Private roll log delivery will retry");
       expect(retry).toMatchObject({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         subsystem: "private-roll-log",
         rollId,
+        source: "discord",
+        notation: "1d20",
+        userId: "100000000000000002",
+        username: "log-retry",
+        guildId: "100000000000000003",
+        channelId: "100000000000000010",
+        guildName: "Fixture Guild",
+        channelName: "dice-rolls",
+        channelType: 0,
+        title: null,
+        destinationDeliveredAt: 1_750_000_000_000,
+        logicalShard: {
+          status: "available",
+          shardId: 2,
+          shardCount: 4,
+          generation: 16,
+        },
         state: "pending",
         userImpact: "none",
         attempt: 1,
         httpStatus: 429,
       });
+      expect(retry?.destinationPayload).toEqual({
+        embeds: [
+          {
+            description: "[20] = 20",
+            image: {
+              url: "attachment://dice-1400000000000000001.png",
+            },
+          },
+        ],
+      });
       const completed = consoleInfo.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(({ message }) => message === "Private roll log delivery completed");
       expect(completed).toMatchObject({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         subsystem: "private-roll-log",
         rollId,
+        source: "discord",
+        notation: "1d20",
+        userId: "100000000000000002",
+        username: "log-retry",
+        guildName: "Fixture Guild",
+        channelName: "dice-rolls",
+        logicalShard: {
+          status: "available",
+          shardId: 2,
+          shardCount: 4,
+          generation: 16,
+        },
         state: "delivered",
         userImpact: "none",
         attempts: 2,
         httpStatus: 200,
       });
+      expect(completed?.destinationPayload).toEqual(retry?.destinationPayload);
       expect(completed?.imageSha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(JSON.stringify([retry, completed])).not.toMatch(/log-retry|1d20/);
+      expect(JSON.stringify([retry, completed])).not.toMatch(
+        /fixture\.bot\.token|interaction-token|image_bytes/i,
+      );
+      expect(completed).not.toHaveProperty("imageBytes");
     } finally {
       consoleWarn.mockRestore();
       consoleInfo.mockRestore();
@@ -473,9 +516,13 @@ describe("LogWork Durable Object", () => {
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(({ message }) => message === "Private roll log delivery completed");
       expect(completed).toMatchObject({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         subsystem: "private-roll-log",
         rollId,
+        notation: "1d20",
+        username: "log-outage",
+        guildName: "Fixture Guild",
+        channelName: "dice-rolls",
         state: "failed",
         userImpact: "none",
         attempts: 12,

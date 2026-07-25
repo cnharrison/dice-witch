@@ -1163,7 +1163,7 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("emits correlation-safe terminal destination telemetry", async () => {
+  it("emits complete terminal destination telemetry without credentials", async () => {
     const deliveredId = snowflakeAt(Date.now(), 61);
     const failedId = snowflakeAt(Date.now(), 62);
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -1185,9 +1185,22 @@ describe("RollWork Durable Object", () => {
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(({ message }) => message === "Roll destination delivery completed");
       expect(delivered).toMatchObject({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         subsystem: "roll-destination",
         rollId: deliveredId,
+        interactionId: deliveredId,
+        applicationId: "100000000000000001",
+        source: "discord",
+        notation: "1d20",
+        request: { notation: ["1d20"], repetitions: 1 },
+        title: "Initiative",
+        userId: "100000000000000003",
+        username: "roller",
+        guildId: "100000000000000003",
+        channelId: "100000000000000010",
+        guildName: "Fixture Guild",
+        channelName: "dice-rolls",
+        channelType: 0,
         state: "delivered",
         userImpact: "none",
         attempts: 1,
@@ -1196,6 +1209,21 @@ describe("RollWork Durable Object", () => {
         renderVersion: 4,
         rendererRevision: "canvaskit-v4-r8",
       });
+      expect(delivered?.outcome).toMatchObject({
+        version: 1,
+        outcomes: [{ notation: "1d20" }],
+        errors: [],
+      });
+      expect(delivered?.destinationPayload).toMatchObject({
+        embeds: [
+          {
+            title: "Initiative",
+            footer: { text: "sent to roller via discord" },
+          },
+        ],
+      });
+      expect(delivered?.rollSeed).toBeTypeOf("number");
+      expect(delivered?.renderSeed).toBeTypeOf("number");
       expect(delivered?.elapsedMs).toBeTypeOf("number");
       expect(delivered?.imageSha256).toMatch(/^[0-9a-f]{64}$/);
 
@@ -1203,21 +1231,61 @@ describe("RollWork Durable Object", () => {
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(({ message }) => message === "Roll destination delivery completed");
       expect(failed).toMatchObject({
-        telemetryVersion: 1,
+        telemetryVersion: 2,
         subsystem: "roll-destination",
         rollId: failedId,
+        interactionId: failedId,
+        source: "discord",
+        notation: "1d20",
+        username: "roller",
+        guildName: "Fixture Guild",
+        channelName: "dice-rolls",
         state: "failed",
         userImpact: "failed",
         attempts: 1,
         httpStatus: 404,
         failurePhase: "discord",
       });
+      expect(failed?.outcome).toMatchObject({
+        version: 1,
+        outcomes: [{ notation: "1d20" }],
+      });
+      expect(failed?.destinationPayload).toBeDefined();
       expect(JSON.stringify([delivered, failed])).not.toMatch(
-        /roller|interaction-token|1d20/,
+        /delivery-success|delivery-terminal-failure|token_fingerprint|image_bytes/i,
       );
+      expect(delivered).not.toHaveProperty("token");
+      expect(delivered).not.toHaveProperty("imageBytes");
     } finally {
       consoleInfo.mockRestore();
       consoleError.mockRestore();
+    }
+  });
+
+  it("keeps a maximum-dice diagnostic event below the Workers Logs limit", async () => {
+    const id = snowflakeAt(Date.now(), 63);
+    const input = deliveryRequest(id, "delivery-success");
+    input.request.notation = "50d20";
+    input.logging.notation = "50d20";
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    try {
+      await expect(work(id).deliver(input)).resolves.toEqual({
+        status: "delivered",
+      });
+      const entry = consoleInfo.mock.calls
+        .map(([value]) => String(value))
+        .find((value) => value.includes("Roll destination delivery completed"));
+      expect(entry).toBeDefined();
+      if (entry === undefined) throw new Error("Destination telemetry is missing");
+      expect(new TextEncoder().encode(entry).byteLength).toBeLessThan(256 * 1_024);
+
+      const event = JSON.parse(entry) as {
+        outcome?: { outcomes?: Array<{ dice?: unknown[] }> };
+      };
+      expect(event.outcome?.outcomes?.[0]?.dice).toHaveLength(50);
+    } finally {
+      consoleInfo.mockRestore();
     }
   });
 
