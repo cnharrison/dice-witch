@@ -53,6 +53,7 @@ export {
   type DeliverRollLogResultV1,
   type LogArtifactUnavailableReasonV1,
   type RollLogArtifactV1,
+  type RollLogDisplayContextV1,
   type RollLogShardV1,
   type StoredLogArtifactV1,
   type ValidatedRollLogArtifactV1,

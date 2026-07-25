@@ -13,8 +13,10 @@ import {
   type DeliverRollLogInputV1,
   type DeliverRollLogResultV1,
   type DiscordAudienceCaptureV1,
+  type DiscordRollChannelType,
   type RollLoggingContext,
   type RollLogArtifactV1,
+  type RollLogDisplayContextV1,
   type RollLogShardV1,
 } from "../../../packages/discord-contracts/src";
 
@@ -1041,9 +1043,74 @@ async function isImageSpecificDiscordRejection(
   }
 }
 
+type ResolvedRollLogDisplayContext = RollLogDisplayContextV1 & {
+  channelType: DiscordRollChannelType | null;
+};
+
 type RollLogContextResolution =
-  | { status: "resolved"; artifact: RollLogArtifactV1 }
+  | {
+      status: "resolved";
+      artifact: RollLogArtifactV1;
+      displayContext: ResolvedRollLogDisplayContext | null;
+    }
   | Extract<DeliverRollLogResultV1, { status: "retryable" | "failed" }>;
+
+function rollLogDisplayTelemetry(
+  artifact: RollLogArtifactV1,
+  displayContext: ResolvedRollLogDisplayContext | null,
+) {
+  if (displayContext === null) return {};
+  if (artifact.guildId === null) {
+    throw new Error("Roll log display context requires a guild");
+  }
+  return {
+    context: {
+      kind: "guild-partial",
+      guildId: artifact.guildId,
+      guildName: displayContext.guildName,
+      channelId: artifact.channelId,
+      channelName: displayContext.channelName,
+      channelType: displayContext.channelType,
+    },
+    guildName: displayContext.guildName,
+    channelName: displayContext.channelName,
+    channelType: displayContext.channelType,
+  };
+}
+
+async function rollLogChannelContext(
+  response: Response,
+  artifact: RollLogArtifactV1,
+): Promise<{ name: string; type: DiscordRollChannelType }> {
+  const channel: unknown = await response.json();
+  if (
+    !isRecord(channel) ||
+    channel.id !== artifact.channelId ||
+    channel.guild_id !== artifact.guildId ||
+    typeof channel.name !== "string" ||
+    channel.name.length < 1 ||
+    !isDiscordRollChannelType(channel.type)
+  ) {
+    throw new Error("Discord roll log channel response is invalid");
+  }
+  return { name: channel.name, type: channel.type };
+}
+
+async function rollLogGuildName(
+  response: Response,
+  guildId: string,
+): Promise<string> {
+  const guild: unknown = await response.json();
+  if (
+    !isRecord(guild) ||
+    guild.id !== guildId ||
+    typeof guild.name !== "string" ||
+    guild.name.length < 1
+  ) {
+    throw new Error("Discord roll log guild response is invalid");
+  }
+  return guild.name;
+}
 
 async function resolveRollLogContext(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
@@ -1051,7 +1118,7 @@ async function resolveRollLogContext(
   discordFetch: RequestFetch,
 ): Promise<RollLogContextResolution> {
   if (artifact.guildId === null || artifact.context !== null) {
-    return { status: "resolved", artifact };
+    return { status: "resolved", artifact, displayContext: null };
   }
   const headers = {
     authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
@@ -1065,10 +1132,10 @@ async function resolveRollLogContext(
       new Request(`${DISCORD_API}/guilds/${artifact.guildId}`, { headers }),
     ),
   ]);
-  if (!channelResponse.ok || !guildResponse.ok) {
-    const failedResponses = [channelResponse, guildResponse].filter(
-      (response) => !response.ok,
-    );
+  const failedResponses = [channelResponse, guildResponse].filter(
+    (response) => !response.ok,
+  );
+  if (failedResponses.length > 0) {
     const retryableResponse = failedResponses.find(({ status }) =>
       isRetryableDiscordStatus(status),
     );
@@ -1122,6 +1189,17 @@ async function resolveRollLogContext(
       );
       return { status: "failed", httpStatus: rejectedResponse.status };
     }
+    const channel = channelResponse.ok
+      ? await rollLogChannelContext(channelResponse, artifact)
+      : null;
+    const guildName = guildResponse.ok
+      ? await rollLogGuildName(guildResponse, artifact.guildId)
+      : null;
+    const displayContext: ResolvedRollLogDisplayContext = {
+      guildName,
+      channelName: channel?.name ?? null,
+      channelType: channel?.type ?? null,
+    };
     console.warn(
       JSON.stringify({
         telemetryVersion: 2,
@@ -1129,30 +1207,17 @@ async function resolveRollLogContext(
         message: "Discord roll log context is inaccessible",
         subsystem: "private-roll-log",
         ...rollLogTelemetryContext(artifact, null),
+        ...rollLogDisplayTelemetry(artifact, displayContext),
         userImpact: "none",
         failureKind: "context-inaccessible",
         channelHttpStatus: channelResponse.status,
         guildHttpStatus: guildResponse.status,
       }),
     );
-    return { status: "resolved", artifact };
+    return { status: "resolved", artifact, displayContext };
   }
-  const channel: unknown = await channelResponse.json();
-  const guild: unknown = await guildResponse.json();
-  if (
-    !isRecord(channel) ||
-    channel.id !== artifact.channelId ||
-    channel.guild_id !== artifact.guildId ||
-    typeof channel.name !== "string" ||
-    channel.name.length < 1 ||
-    !isDiscordRollChannelType(channel.type) ||
-    !isRecord(guild) ||
-    guild.id !== artifact.guildId ||
-    typeof guild.name !== "string" ||
-    guild.name.length < 1
-  ) {
-    throw new Error("Discord roll log context response is invalid");
-  }
+  const channel = await rollLogChannelContext(channelResponse, artifact);
+  const guildName = await rollLogGuildName(guildResponse, artifact.guildId);
   return {
     status: "resolved",
     artifact: {
@@ -1160,18 +1225,20 @@ async function resolveRollLogContext(
       context: {
         kind: "guild",
         guildId: artifact.guildId,
-        guildName: guild.name,
+        guildName,
         channelId: artifact.channelId,
         channelName: channel.name,
         channelType: channel.type,
       },
     },
+    displayContext: null,
   };
 }
 
 function buildRollLogEmbed(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
+  displayContext: RollLogDisplayContextV1 | undefined,
 ) {
   const resultDescription = rollLogResultDescription(artifact);
   const isInvalidRoll =
@@ -1186,8 +1253,9 @@ function buildRollLogEmbed(
           artifact,
           shard,
           4_096 - errorSuffix.length,
+          displayContext,
         )}${errorSuffix}`
-      : `${rollLogContextDescription(artifact, shard)}\n\n${resultDescription}`;
+      : `${rollLogContextDescription(artifact, shard, displayContext)}\n\n${resultDescription}`;
   const title = isInvalidRoll ? INVALID_ROLL_LOG_TITLE : ROLL_LOG_TITLE;
   const footer =
     artifact.image.status === "unavailable" &&
@@ -1233,8 +1301,18 @@ export async function deliverRollLogV1(
   if (context.status !== "resolved") return context;
   const artifact = context.artifact;
   const shard = validateRollLogShard(input.logicalShard, artifact.guildId);
+  const telemetryContext = {
+    ...rollLogTelemetryContext(artifact, shard),
+    ...rollLogDisplayTelemetry(artifact, context.displayContext),
+  };
   const payload = {
-    embeds: [buildRollLogEmbed(artifact, shard)],
+    embeds: [
+      buildRollLogEmbed(
+        artifact,
+        shard,
+        context.displayContext ?? undefined,
+      ),
+    ],
     nonce: `log:${artifact.rollId}`,
     enforce_nonce: true,
     allowed_mentions: { parse: [] },
@@ -1288,7 +1366,7 @@ export async function deliverRollLogV1(
           level: "warn",
           message: "Private roll log delivery is retryable",
           subsystem: "private-roll-log",
-          ...rollLogTelemetryContext(artifact, shard),
+          ...telemetryContext,
           userImpact: "none",
           failureKind: "delivery-retryable",
           httpStatus: response.status,
@@ -1313,7 +1391,7 @@ export async function deliverRollLogV1(
           level: "warn",
           message: "Private roll log image was rejected",
           subsystem: "private-roll-log",
-          ...rollLogTelemetryContext(artifact, shard),
+          ...telemetryContext,
           userImpact: "none",
           failureKind: "image-rejected",
           httpStatus: response.status,
@@ -1327,7 +1405,7 @@ export async function deliverRollLogV1(
         level: "error",
         message: "Private roll log delivery failed",
         subsystem: "private-roll-log",
-        ...rollLogTelemetryContext(artifact, shard),
+        ...telemetryContext,
         userImpact: "none",
         failureKind: "delivery-rejected",
         httpStatus: response.status,
@@ -1345,7 +1423,7 @@ export async function deliverRollLogV1(
       level: "info",
       message: "Private roll log delivered",
       subsystem: "private-roll-log",
-      ...rollLogTelemetryContext(artifact, shard),
+      ...telemetryContext,
       logMessageId: value.id,
       userImpact: "none",
       httpStatus: response.status,

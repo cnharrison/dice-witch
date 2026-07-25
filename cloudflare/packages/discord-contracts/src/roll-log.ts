@@ -348,9 +348,19 @@ function rollLogShardLabel(shard: RollLogShardV1): string | null {
   return `[Shard ${String(shard.shardId + 1)}]`;
 }
 
+export type RollLogDisplayContextV1 = {
+  guildName: string | null;
+  channelName: string | null;
+};
+
+function rollLogDisplayName(value: string | null): string {
+  return value === null ? "unavailable" : escapeDiscordMarkdown(value);
+}
+
 export function rollLogContextDescription(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
+  displayContext?: RollLogDisplayContextV1,
 ): string {
   const source = artifact.source === "web" ? "Web" : "Discord";
   const user = `user: **${escapeDiscordMarkdown(artifact.user.username)}** [${source}]`;
@@ -358,13 +368,20 @@ export function rollLogContextDescription(
 
   const shardLabel = rollLogShardLabel(shard);
   const shardSuffix = shardLabel === null ? "" : ` ${shardLabel}`;
-  if (artifact.context === null) {
-    return `${user}\nchannel: **unavailable**\nguild: **unavailable**${shardSuffix}`;
-  }
-  if (artifact.context.kind !== "guild") {
+  let context: RollLogDisplayContextV1 | null;
+  if (displayContext !== undefined) {
+    context = displayContext;
+  } else if (artifact.context === null) {
+    context = null;
+  } else if (artifact.context.kind === "guild") {
+    context = artifact.context;
+  } else {
     throw new Error("Roll log guild context is invalid");
   }
-  return `${user}\nchannel: **${escapeDiscordMarkdown(artifact.context.channelName)}**\nguild: **${escapeDiscordMarkdown(artifact.context.guildName)}**${shardSuffix}`;
+  if (context === null) {
+    return `${user}\nchannel: **unavailable**\nguild: **unavailable**${shardSuffix}`;
+  }
+  return `${user}\nchannel: **${rollLogDisplayName(context.channelName)}**\nguild: **${rollLogDisplayName(context.guildName)}**${shardSuffix}`;
 }
 
 export function rollLogResultDescription(
@@ -385,6 +402,7 @@ export function rollLogMetadataDescription(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
   maximumLength = MAX_EMBED_DESCRIPTION_LENGTH,
+  displayContext?: RollLogDisplayContextV1,
 ): string {
   if (
     !Number.isSafeInteger(maximumLength) ||
@@ -393,7 +411,7 @@ export function rollLogMetadataDescription(
   ) {
     throw new Error("Roll log metadata limit is invalid");
   }
-  const prefix = `${rollLogContextDescription(artifact, shard)}\nroll: `;
+  const prefix = `${rollLogContextDescription(artifact, shard, displayContext)}\nroll: `;
   const notation = escapeDiscordMarkdown(artifact.notation);
   const notationLimit = maximumLength - prefix.length;
   if (notationLimit < 2) {

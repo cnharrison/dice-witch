@@ -359,8 +359,16 @@ describe("Discord REST service", () => {
         username: "roller",
         guildId,
         channelId: "100000000000000010",
-        guildName: null,
+        guildName: "Fixture Guild",
         channelName: null,
+        context: {
+          kind: "guild-partial",
+          guildId,
+          guildName: "Fixture Guild",
+          channelId: "100000000000000010",
+          channelName: null,
+          channelType: null,
+        },
         userImpact: "none",
         channelHttpStatus: 403,
         guildHttpStatus: 200,
@@ -379,8 +387,16 @@ describe("Discord REST service", () => {
         username: "roller",
         guildId,
         channelId: "100000000000000010",
-        guildName: null,
+        guildName: "Fixture Guild",
         channelName: null,
+        context: {
+          kind: "guild-partial",
+          guildId,
+          guildName: "Fixture Guild",
+          channelId: "100000000000000010",
+          channelName: null,
+          channelType: null,
+        },
         title: null,
         destinationDeliveredAt: 1_750_000_000_000,
         logicalShard: { status: "unavailable" },
@@ -424,7 +440,7 @@ describe("Discord REST service", () => {
           embeds: Array<{ description: string }>;
         };
         expect(payload.embeds[0]?.description).toContain(
-          "channel: **unavailable**\nguild: **unavailable** [Shard 1]",
+          "channel: **unavailable**\nguild: **Fixture Guild** [Shard 1]",
         );
         return Response.json({ id: "100000000000000088" });
       });
