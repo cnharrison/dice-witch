@@ -128,7 +128,7 @@ describe("dice notation quick controls", () => {
     );
   });
 
-  it("uses a compact desktop disclosure without touch-oriented operators", async () => {
+  it("uses available desktop height to expose every advanced group", async () => {
     const user = userEvent.setup();
     render(<Harness initial="1d20+" />);
 
@@ -142,24 +142,18 @@ describe("dice notation quick controls", () => {
       name: "Advanced dice notation",
     });
     expect(region.className).toContain("min-h-0");
-    expect(region.className).toContain("flex-none");
+    expect(region.className).toContain("flex-1");
     expect(region.className).not.toContain("absolute");
     expect(screen.queryByRole("dialog", { name: "Advanced dice notation" })).toBeNull();
-    expect(screen.queryByText("Advanced notation")).toBeNull();
-    expect(screen.queryByText("Close")).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.queryByRole("tab")).toBeNull();
     expect(screen.queryByLabelText("Operators")).toBeNull();
     expect(indicator?.getAttribute("class")).toContain("rotate-180");
     expect(screen.getByRole("button", { name: "Add d%" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Add dF" })).toBeDefined();
-    await user.click(screen.getByRole("tab", { name: "Numbers" }));
+    expect(screen.getByRole("button", { name: "Keep highest" })).toBeDefined();
     await user.click(screen.getByRole("button", { name: "7" }));
     expect(screen.getByTestId("notation").textContent).toBe("1d20+7");
-
-    const numbers = screen.getByRole("tab", { name: "Numbers" });
-    numbers.focus();
-    fireEvent.keyDown(numbers, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "Dice" }).getAttribute("aria-selected"))
-      .toBe("true");
 
     await user.click(advanced);
     expect(screen.queryByRole("region", { name: "Advanced dice notation" })).toBeNull();
@@ -171,7 +165,6 @@ describe("dice notation quick controls", () => {
     render(<Harness initial="1d20" />);
 
     await user.click(screen.getByRole("button", { name: "Advanced" }));
-    await user.click(screen.getByRole("tab", { name: "Modifiers" }));
     await user.click(screen.getByRole("button", { name: "Reroll once" }));
 
     expect(screen.getByTestId("notation").textContent).toBe("1d20ro");

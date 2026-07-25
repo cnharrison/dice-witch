@@ -368,6 +368,84 @@ export function DiceNotationButtons({
       <DesktopDieControl key={String(sides)} {...props} />
     );
   });
+  const advancedDiceControls = (
+    <div className="mx-auto w-full max-w-xl space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        {ADVANCED_DICE.map((sides) => {
+          const props = {
+            sides,
+            count: countDiceNotation(input, sides),
+            disabled: isDisabled,
+            onAdd: () => addDie(sides),
+            onRemove: () => removeDie(sides),
+          };
+          return mobile ? (
+            <MobileDieControl key={String(sides)} {...props} />
+          ) : (
+            <DesktopDieControl key={String(sides)} {...props} />
+          );
+        })}
+      </div>
+      {mobile && (
+        <div className="grid grid-cols-4 gap-2" aria-label="Operators">
+          {OPERATORS.map((operator) => (
+            <Button
+              type="button"
+              key={operator}
+              variant="outline"
+              onClick={() => addOperator(operator)}
+              disabled={isDisabled}
+              className="h-11"
+            >
+              {operator}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+  const modifierControls = (
+    <div
+      className="mx-auto grid w-full max-w-xl grid-cols-4 gap-2"
+      aria-label="Modifiers"
+    >
+      {MODIFIERS.map((modifier) => (
+        <Button
+          type="button"
+          key={modifier}
+          variant="outline"
+          onClick={() => addModifier(modifier)}
+          disabled={isDisabled}
+          aria-label={modifierLabel(modifier)}
+          className={cn(mobile ? "h-11" : "h-9", "px-1 text-xs")}
+        >
+          {modifier}
+        </Button>
+      ))}
+    </div>
+  );
+  const numberControls = (
+    <div
+      className="mx-auto grid w-full max-w-sm grid-cols-3 gap-2"
+      aria-label="Number keypad"
+    >
+      {[7, 8, 9, 4, 5, 6, 1, 2, 3, 0].map((number) => (
+        <Button
+          type="button"
+          key={number}
+          variant="outline"
+          onClick={() => addNumber(number)}
+          disabled={isDisabled}
+          className={cn(
+            mobile ? "h-11" : "h-10",
+            number === 0 && "col-span-3",
+          )}
+        >
+          {number}
+        </Button>
+      ))}
+    </div>
+  );
 
   return (
     <TooltipProvider>
@@ -418,7 +496,7 @@ export function DiceNotationButtons({
               "flex min-h-0 flex-col overflow-hidden rounded-lg border bg-background p-3",
               mobile
                 ? "fixed inset-x-2 bottom-2 top-16 z-50 pt-14 shadow-xl"
-                : "flex-none shadow-sm",
+                : "flex-1 shadow-sm",
             )}
           >
             {mobile && (
@@ -434,134 +512,95 @@ export function DiceNotationButtons({
               </Button>
             )}
 
-            <div
-              role="tablist"
-              aria-label="Advanced notation categories"
-              className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1"
-            >
-              {ADVANCED_TABS.map((tab, index) => (
-                <button
-                  key={tab}
-                  id={`${advancedId}-${tab}-tab`}
-                  type="button"
-                  role="tab"
-                  aria-selected={advancedTab === tab}
-                  aria-controls={`${advancedId}-${tab}-panel`}
-                  tabIndex={advancedTab === tab ? 0 : -1}
-                  onClick={() => setAdvancedTab(tab)}
-                  onKeyDown={(event) => {
-                    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-                      return;
-                    }
-                    event.preventDefault();
-                    const offset = event.key === "ArrowRight" ? 1 : -1;
-                    const next = ADVANCED_TABS[
-                      (index + offset + ADVANCED_TABS.length) %
-                        ADVANCED_TABS.length
-                    ] as AdvancedTab;
-                    setAdvancedTab(next);
-                    document.getElementById(`${advancedId}-${next}-tab`)?.focus();
-                  }}
-                  className={cn(
-                    "rounded px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    mobile ? "h-11" : "h-9",
-                    advancedTab === tab
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {ADVANCED_TAB_LABELS[tab]}
-                </button>
-              ))}
-            </div>
-
-            <div
-              id={`${advancedId}-${advancedTab}-panel`}
-              role="tabpanel"
-              aria-labelledby={`${advancedId}-${advancedTab}-tab`}
-              className="grid min-h-0 flex-1 items-start justify-items-center overflow-y-auto py-3"
-            >
-              {advancedTab === "dice" && (
-                <div className="w-full max-w-xl space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {ADVANCED_DICE.map((sides) => {
-                      const props = {
-                        sides,
-                        count: countDiceNotation(input, sides),
-                        disabled: isDisabled,
-                        onAdd: () => addDie(sides),
-                        onRemove: () => removeDie(sides),
-                      };
-                      return mobile ? (
-                        <MobileDieControl key={String(sides)} {...props} />
-                      ) : (
-                        <DesktopDieControl key={String(sides)} {...props} />
-                      );
-                    })}
-                  </div>
-                  {mobile && (
-                    <div className="grid grid-cols-4 gap-2" aria-label="Operators">
-                      {OPERATORS.map((operator) => (
-                        <Button
-                          type="button"
-                          key={operator}
-                          variant="outline"
-                          onClick={() => addOperator(operator)}
-                          disabled={isDisabled}
-                          className="h-11"
-                        >
-                          {operator}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {advancedTab === "modifiers" && (
+            {mobile ? (
+              <>
                 <div
-                  className="grid w-full max-w-xl grid-cols-4 gap-2"
-                  aria-label="Modifiers"
+                  role="tablist"
+                  aria-label="Advanced notation categories"
+                  className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1"
                 >
-                  {MODIFIERS.map((modifier) => (
-                    <Button
+                  {ADVANCED_TABS.map((tab, index) => (
+                    <button
+                      key={tab}
+                      id={`${advancedId}-${tab}-tab`}
                       type="button"
-                      key={modifier}
-                      variant="outline"
-                      onClick={() => addModifier(modifier)}
-                      disabled={isDisabled}
-                      aria-label={modifierLabel(modifier)}
-                      className={cn(mobile ? "h-11" : "h-9", "px-1 text-xs")}
-                    >
-                      {modifier}
-                    </Button>
-                  ))}
-                </div>
-              )}
-
-              {advancedTab === "numbers" && (
-                <div
-                  className="grid w-full max-w-sm grid-cols-3 gap-2"
-                  aria-label="Number keypad"
-                >
-                  {[7, 8, 9, 4, 5, 6, 1, 2, 3, 0].map((number) => (
-                    <Button
-                      type="button"
-                      key={number}
-                      variant="outline"
-                      onClick={() => addNumber(number)}
-                      disabled={isDisabled}
+                      role="tab"
+                      aria-selected={advancedTab === tab}
+                      aria-controls={`${advancedId}-${tab}-panel`}
+                      tabIndex={advancedTab === tab ? 0 : -1}
+                      onClick={() => setAdvancedTab(tab)}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key !== "ArrowLeft" &&
+                          event.key !== "ArrowRight"
+                        ) {
+                          return;
+                        }
+                        event.preventDefault();
+                        const offset = event.key === "ArrowRight" ? 1 : -1;
+                        const next = ADVANCED_TABS[
+                          (index + offset + ADVANCED_TABS.length) %
+                            ADVANCED_TABS.length
+                        ] as AdvancedTab;
+                        setAdvancedTab(next);
+                        document
+                          .getElementById(`${advancedId}-${next}-tab`)
+                          ?.focus();
+                      }}
                       className={cn(
-                        mobile ? "h-11" : "h-10",
-                        number === 0 && "col-span-3",
+                        "h-11 rounded px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        advancedTab === tab
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
                       )}
                     >
-                      {number}
-                    </Button>
+                      {ADVANCED_TAB_LABELS[tab]}
+                    </button>
                   ))}
                 </div>
-              )}
-            </div>
+
+                <div
+                  id={`${advancedId}-${advancedTab}-panel`}
+                  role="tabpanel"
+                  aria-labelledby={`${advancedId}-${advancedTab}-tab`}
+                  className="grid min-h-0 flex-1 items-start justify-items-center overflow-y-auto py-3"
+                >
+                  {advancedTab === "dice" && advancedDiceControls}
+                  {advancedTab === "modifiers" && modifierControls}
+                  {advancedTab === "numbers" && numberControls}
+                </div>
+              </>
+            ) : (
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-3">
+                <section aria-labelledby={`${advancedId}-dice-heading`}>
+                  <h3
+                    id={`${advancedId}-dice-heading`}
+                    className="mb-2 text-xs font-semibold text-muted-foreground"
+                  >
+                    Dice
+                  </h3>
+                  {advancedDiceControls}
+                </section>
+                <section aria-labelledby={`${advancedId}-modifiers-heading`}>
+                  <h3
+                    id={`${advancedId}-modifiers-heading`}
+                    className="mb-2 text-xs font-semibold text-muted-foreground"
+                  >
+                    Modifiers
+                  </h3>
+                  {modifierControls}
+                </section>
+                <section aria-labelledby={`${advancedId}-numbers-heading`}>
+                  <h3
+                    id={`${advancedId}-numbers-heading`}
+                    className="mb-2 text-xs font-semibold text-muted-foreground"
+                  >
+                    Numbers
+                  </h3>
+                  {numberControls}
+                </section>
+              </div>
+            )}
           </div>
         )}
       </div>

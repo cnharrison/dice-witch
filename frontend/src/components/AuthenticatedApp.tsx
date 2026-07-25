@@ -13,7 +13,7 @@ export default function AuthenticatedApp() {
       <GuildProvider>
         <div className="flex h-full min-h-0 flex-col bg-background text-foreground">
           <Navbar />
-          <main className="container mx-auto min-h-0 flex-1 overflow-y-auto">
+          <main className="min-h-0 w-full flex-1 overflow-y-auto">
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/preferences" element={<Preferences />} />
