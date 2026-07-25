@@ -313,6 +313,69 @@ describe("Discord REST service", () => {
     expect(discordFetch).toHaveBeenCalledTimes(3);
   });
 
+  it("emits roll-correlated telemetry without logging roll contents", async () => {
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const artifact = rollLogArtifact();
+    const discordFetch = vi.fn((request: Request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname.endsWith(`/channels/${artifact.channelId}`)) {
+        return Promise.resolve(
+          Response.json({ message: "forbidden" }, { status: 403 }),
+        );
+      }
+      if (pathname.endsWith(`/guilds/${artifact.guildId}`)) {
+        return Promise.resolve(
+          Response.json({ id: guildId, name: "Fixture Guild" }),
+        );
+      }
+      return Promise.resolve(
+        Response.json({ id: "100000000000000088" }),
+      );
+    });
+
+    try {
+      await expect(
+        deliverRollLogV1(
+          env,
+          {
+            artifact: { ...artifact, context: null },
+            logicalShard: { status: "unavailable" },
+          },
+          discordFetch,
+        ),
+      ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
+
+      const inaccessible = consoleWarn.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Discord roll log context is inaccessible");
+      expect(inaccessible).toMatchObject({
+        telemetryVersion: 1,
+        subsystem: "private-roll-log",
+        rollId: artifact.rollId,
+        userImpact: "none",
+        channelHttpStatus: 403,
+        guildHttpStatus: 200,
+      });
+      const delivered = consoleInfo.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Private roll log delivered");
+      expect(delivered).toMatchObject({
+        telemetryVersion: 1,
+        subsystem: "private-roll-log",
+        rollId: artifact.rollId,
+        userImpact: "none",
+        httpStatus: 200,
+      });
+      expect(JSON.stringify([inaccessible, delivered])).not.toMatch(
+        /roller|Fixture Guild|dice-rolls|1d20/,
+      );
+    } finally {
+      consoleWarn.mockRestore();
+      consoleInfo.mockRestore();
+    }
+  });
+
   it.each([403, 404])(
     "delivers a durable roll log when Discord context returns %i",
     async (contextStatus) => {

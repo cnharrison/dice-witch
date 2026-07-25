@@ -108,6 +108,11 @@ type RetryableDeliveryPhase =
   | "discord"
   | "terminal-response";
 
+type DestinationCompletionPhase =
+  | RetryableDeliveryPhase
+  | RollDeliveryFailurePhase
+  | "expired";
+
 type RollDeliveryTarget = Readonly<{
   id: string;
   applicationId: string;
@@ -311,6 +316,7 @@ export class RollWork extends DurableObject<RollEnv> {
     const resolution = await this.recordForDelivery(
       delivery.request,
       delivery.accounting,
+      delivery.interaction.id,
     );
     if (resolution.status !== "ready") return resolution;
     const metadataJson = deliveryMetadata(delivery);
@@ -426,6 +432,49 @@ export class RollWork extends DurableObject<RollEnv> {
     };
   }
 
+  private logDestinationCompletion(input: {
+    rollId: string;
+    state: "delivered" | "failed";
+    attempts: number;
+    httpStatus: number | null;
+    failurePhase: DestinationCompletionPhase | null;
+    completedAt: number;
+    record?: RollWorkRecord;
+    delayMs?: number | null;
+  }): void {
+    const source = this.readSourceLogRow();
+    const rendererRevision =
+      input.record?.version === 4 && input.record.renderRequest !== null
+        ? input.record.renderRequest.rendererRevision
+        : null;
+    const imageSha256 =
+      source !== undefined && source.image_bytes.byteLength > 0
+        ? source.image_sha256
+        : null;
+    const event = JSON.stringify({
+      telemetryVersion: 1,
+      level: input.state === "delivered" ? "info" : "error",
+      message: "Roll destination delivery completed",
+      subsystem: "roll-destination",
+      rollId: input.rollId,
+      state: input.state,
+      userImpact: input.state === "delivered" ? "none" : "failed",
+      attempts: input.attempts,
+      httpStatus: input.httpStatus,
+      failurePhase: input.failurePhase,
+      elapsedMs:
+        input.record === undefined
+          ? null
+          : Math.max(0, input.completedAt - input.record.createdAt),
+      delayMs: input.delayMs ?? null,
+      renderVersion: input.record?.version ?? null,
+      rendererRevision,
+      imageSha256,
+    });
+    if (input.state === "delivered") console.info(event);
+    else console.error(event);
+  }
+
   async alarm(): Promise<void> {
     const delivery = this.readDelivery();
     if (delivery === undefined) {
@@ -457,14 +506,14 @@ export class RollWork extends DurableObject<RollEnv> {
         }
       }
       if (delivery.state === "pending") {
-        console.error(
-          JSON.stringify({
-            level: "error",
-            message: "Roll delivery expired before a terminal response",
-            attempt: delivery.attempts,
-            failurePhase: delivery.failure_phase,
-          }),
-        );
+        this.logDestinationCompletion({
+          rollId: parseDeliveryMetadata(delivery.metadata_json).interactionId,
+          state: "failed",
+          attempts: delivery.attempts,
+          httpStatus: delivery.last_http_status,
+          failurePhase: delivery.failure_phase ?? "expired",
+          completedAt: Date.now(),
+        });
       }
       this.deleteStoredWork();
       await this.ctx.storage.deleteAlarm();
@@ -622,8 +671,12 @@ export class RollWork extends DurableObject<RollEnv> {
     } catch {
       console.error(
         JSON.stringify({
+          telemetryVersion: 1,
           level: "error",
           message: "Roll helper delivery failed",
+          subsystem: "roll-helper",
+          rollId: metadata.interactionId,
+          userImpact: "none",
           attempt: attempts,
         }),
       );
@@ -698,8 +751,12 @@ export class RollWork extends DurableObject<RollEnv> {
       } catch {
         console.error(
           JSON.stringify({
+            telemetryVersion: 1,
             level: "error",
             message: "Roll log durable handoff failed",
+            subsystem: "private-roll-log",
+            rollId: metadata.interactionId,
+            userImpact: "none",
             attempt: attempts,
           }),
         );
@@ -732,8 +789,12 @@ export class RollWork extends DurableObject<RollEnv> {
       }
       console.error(
         JSON.stringify({
+          telemetryVersion: 1,
           level: "error",
           message: "Roll log durable handoff returned an invalid response",
+          subsystem: "private-roll-log",
+          rollId: metadata.interactionId,
+          userImpact: "none",
           attempt: attempts,
         }),
       );
@@ -749,8 +810,12 @@ export class RollWork extends DurableObject<RollEnv> {
     );
     console.error(
       JSON.stringify({
+        telemetryVersion: 1,
         level: "error",
         message: "Roll log source artifact is unavailable",
+        subsystem: "private-roll-log",
+        rollId: metadata.interactionId,
+        userImpact: "none",
         attempt: attempts,
       }),
     );
@@ -979,8 +1044,12 @@ export class RollWork extends DurableObject<RollEnv> {
       );
       console.error(
         JSON.stringify({
+          telemetryVersion: 1,
           level: "error",
           message: "Roll log source artifact could not be persisted",
+          subsystem: "private-roll-log",
+          rollId: metadata.interactionId,
+          userImpact: "none",
           reason: error instanceof Error ? error.message : "unknown",
         }),
       );
@@ -1055,6 +1124,7 @@ export class RollWork extends DurableObject<RollEnv> {
         }
       } catch {
         return this.scheduleRetry(
+          target.id,
           attempts,
           delivery.expires_at,
           "settings",
@@ -1088,6 +1158,7 @@ export class RollWork extends DurableObject<RollEnv> {
           );
         } catch {
           return this.scheduleRetry(
+            target.id,
             attempts,
             delivery.expires_at,
             "clatter",
@@ -1096,6 +1167,7 @@ export class RollWork extends DurableObject<RollEnv> {
         if (!clatterResponse.ok) {
           if (isRetryableHttpStatus(clatterResponse.status)) {
             return this.scheduleRetry(
+              target.id,
               attempts,
               delivery.expires_at,
               "clatter",
@@ -1104,8 +1176,11 @@ export class RollWork extends DurableObject<RollEnv> {
             );
           }
           return this.failDelivery(
+            target.id,
+            attempts,
             clatterResponse.status,
             delivery.expires_at,
+            "clatter",
           );
         }
         if (delayMs === null) {
@@ -1254,7 +1329,12 @@ export class RollWork extends DurableObject<RollEnv> {
     try {
       response = await fetch(request);
     } catch {
-      return this.scheduleRetry(attempts, delivery.expires_at, "discord");
+      return this.scheduleRetry(
+        target.id,
+        attempts,
+        delivery.expires_at,
+        "discord",
+      );
     }
     if (response.ok) {
       const deliveredAt = Date.now();
@@ -1275,11 +1355,22 @@ export class RollWork extends DurableObject<RollEnv> {
           deliveredAt + LOG_WORK_RETRY_WINDOW_MS,
         );
       });
+      this.logDestinationCompletion({
+        rollId: target.id,
+        state: "delivered",
+        attempts,
+        httpStatus: response.status,
+        failurePhase: null,
+        completedAt: deliveredAt,
+        record,
+        delayMs: skipDiceDelay ? 0 : delayMs,
+      });
       await this.ctx.storage.setAlarm(delivery.expires_at);
       return { status: "delivered" };
     }
     if (isRetryableHttpStatus(response.status)) {
       return this.scheduleRetry(
+        target.id,
         attempts,
         delivery.expires_at,
         "discord",
@@ -1288,7 +1379,13 @@ export class RollWork extends DurableObject<RollEnv> {
       );
     }
 
-    return this.failDelivery(response.status, delivery.expires_at);
+    return this.failDelivery(
+      target.id,
+      attempts,
+      response.status,
+      delivery.expires_at,
+      "discord",
+    );
   }
 
   private async terminateDelivery(
@@ -1303,8 +1400,12 @@ export class RollWork extends DurableObject<RollEnv> {
     );
     console.error(
       JSON.stringify({
+        telemetryVersion: 1,
         level: "error",
         message: "Roll delivery encountered a terminal internal failure",
+        subsystem: "roll-destination",
+        rollId: target.id,
+        userImpact: "failed",
         phase,
         attempt: attempts,
       }),
@@ -1331,6 +1432,7 @@ export class RollWork extends DurableObject<RollEnv> {
       );
     } catch {
       return this.scheduleRetry(
+        target.id,
         attempts,
         expiresAt,
         "terminal-response",
@@ -1348,11 +1450,20 @@ export class RollWork extends DurableObject<RollEnv> {
         response.status,
         phase,
       );
+      this.logDestinationCompletion({
+        rollId: target.id,
+        state: "failed",
+        attempts,
+        httpStatus: response.status,
+        failurePhase: phase,
+        completedAt: Date.now(),
+      });
       await this.ctx.storage.setAlarm(expiresAt);
       return { status: "failed" };
     }
     if (isRetryableHttpStatus(response.status)) {
       return this.scheduleRetry(
+        target.id,
         attempts,
         expiresAt,
         "terminal-response",
@@ -1361,12 +1472,21 @@ export class RollWork extends DurableObject<RollEnv> {
         true,
       );
     }
-    return this.failDelivery(response.status, expiresAt);
+    return this.failDelivery(
+      target.id,
+      attempts,
+      response.status,
+      expiresAt,
+      "terminal-response",
+    );
   }
 
   private async failDelivery(
+    rollId: string,
+    attempts: number,
     httpStatus: number,
     expiresAt: number,
+    failurePhase: DestinationCompletionPhase,
   ): Promise<DeliverRollWorkResult> {
     this.ctx.storage.sql.exec(
       `UPDATE interaction_delivery
@@ -1374,11 +1494,20 @@ export class RollWork extends DurableObject<RollEnv> {
        WHERE singleton = 1`,
       httpStatus,
     );
+    this.logDestinationCompletion({
+      rollId,
+      state: "failed",
+      attempts,
+      httpStatus,
+      failurePhase,
+      completedAt: Date.now(),
+    });
     await this.ctx.storage.setAlarm(expiresAt);
     return { status: "failed" };
   }
 
   private async scheduleRetry(
+    rollId: string,
     attempts: number,
     expiresAt: number,
     phase: RetryableDeliveryPhase,
@@ -1399,8 +1528,13 @@ export class RollWork extends DurableObject<RollEnv> {
     );
     console.warn(
       JSON.stringify({
+        telemetryVersion: 1,
         level: "warn",
         message: "Roll delivery will retry",
+        subsystem: "roll-destination",
+        rollId,
+        state: "pending",
+        userImpact: "delayed",
         phase,
         attempt: attempts,
         httpStatus,
@@ -1436,6 +1570,7 @@ export class RollWork extends DurableObject<RollEnv> {
   private async recordForDelivery(
     request: RollWorkRequest,
     accounting: RollDeliveryRequest["accounting"] | null,
+    rollId: string,
   ): Promise<DeliveryRecordResolution> {
     const existing = this.storedPreparation(request);
     if (existing?.status === "conflict") return { status: "conflict" };
@@ -1488,8 +1623,12 @@ export class RollWork extends DurableObject<RollEnv> {
     } catch {
       console.error(
         JSON.stringify({
+          telemetryVersion: 1,
           level: "error",
           message: "Roll delivery preparation failed",
+          subsystem: "roll-destination",
+          rollId,
+          userImpact: "failed",
           phase: "render-request",
           renderVersion,
         }),

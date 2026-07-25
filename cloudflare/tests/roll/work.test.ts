@@ -1163,6 +1163,64 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("emits correlation-safe terminal destination telemetry", async () => {
+    const deliveredId = snowflakeAt(Date.now(), 61);
+    const failedId = snowflakeAt(Date.now(), 62);
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      await expect(
+        work(deliveredId).deliver(
+          deliveryRequest(deliveredId, "delivery-success"),
+        ),
+      ).resolves.toEqual({ status: "delivered" });
+      await expect(
+        work(failedId).deliver(
+          deliveryRequest(failedId, "delivery-terminal-failure"),
+        ),
+      ).resolves.toEqual({ status: "failed" });
+
+      const delivered = consoleInfo.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Roll destination delivery completed");
+      expect(delivered).toMatchObject({
+        telemetryVersion: 1,
+        subsystem: "roll-destination",
+        rollId: deliveredId,
+        state: "delivered",
+        userImpact: "none",
+        attempts: 1,
+        httpStatus: 200,
+        failurePhase: null,
+        renderVersion: 4,
+        rendererRevision: "canvaskit-v4-r8",
+      });
+      expect(delivered?.elapsedMs).toBeTypeOf("number");
+      expect(delivered?.imageSha256).toMatch(/^[0-9a-f]{64}$/);
+
+      const failed = consoleError.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Roll destination delivery completed");
+      expect(failed).toMatchObject({
+        telemetryVersion: 1,
+        subsystem: "roll-destination",
+        rollId: failedId,
+        state: "failed",
+        userImpact: "failed",
+        attempts: 1,
+        httpStatus: 404,
+        failurePhase: "discord",
+      });
+      expect(JSON.stringify([delivered, failed])).not.toMatch(
+        /roller|interaction-token|1d20/,
+      );
+    } finally {
+      consoleInfo.mockRestore();
+      consoleError.mockRestore();
+    }
+  });
+
   it("reuses one exact durable result artifact after eviction", async () => {
     const id = snowflakeAt(Date.now(), 50);
     const stub = work(id);

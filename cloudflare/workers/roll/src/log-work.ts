@@ -189,7 +189,14 @@ export class LogWork extends DurableObject<RollBindings> {
       (row.attempts >= MAX_PRIMARY_DELIVERY_ATTEMPTS &&
         !finalImageFallbackPending)
     ) {
-      await this.finish("failed", row.last_http_status, now);
+      await this.finish({
+        state: "failed",
+        httpStatus: row.last_http_status,
+        completedAt: now,
+        artifact: stored,
+        attempts: row.attempts,
+        acceptedAt: row.accepted_at,
+      });
       return;
     }
 
@@ -210,8 +217,14 @@ export class LogWork extends DurableObject<RollBindings> {
       );
       console.error(
         JSON.stringify({
+          telemetryVersion: 1,
           level: "error",
           message: "Private roll log delivery attempt failed",
+          subsystem: "private-roll-log",
+          rollId: stored.rollId,
+          state: "pending",
+          userImpact: "none",
+          failureKind: "exception",
           attempt: attempts,
           error: error instanceof Error ? error.message : "Unknown error",
         }),
@@ -235,13 +248,42 @@ export class LogWork extends DurableObject<RollBindings> {
       attempts,
     );
     if (result.status === "delivered") {
-      await this.finish("delivered", result.httpStatus, Date.now());
+      await this.finish({
+        state: "delivered",
+        httpStatus: result.httpStatus,
+        completedAt: Date.now(),
+        artifact: stored,
+        attempts,
+        acceptedAt: row.accepted_at,
+      });
       return;
     }
     if (result.status === "failed") {
-      await this.finish("failed", result.httpStatus, Date.now());
+      await this.finish({
+        state: "failed",
+        httpStatus: result.httpStatus,
+        completedAt: Date.now(),
+        artifact: stored,
+        attempts,
+        acceptedAt: row.accepted_at,
+      });
       return;
     }
+    console.warn(
+      JSON.stringify({
+        telemetryVersion: 1,
+        level: "warn",
+        message: "Private roll log delivery will retry",
+        subsystem: "private-roll-log",
+        rollId: stored.rollId,
+        state: "pending",
+        userImpact: "none",
+        failureKind: "discord-retryable",
+        attempt: attempts,
+        httpStatus: result.httpStatus,
+        retryAfterMs: result.retryAfterMs,
+      }),
+    );
     await this.scheduleRetry(
       row.retry_until,
       attempts,
@@ -300,8 +342,14 @@ export class LogWork extends DurableObject<RollBindings> {
     } catch {
       console.warn(
         JSON.stringify({
+          telemetryVersion: 1,
           level: "warn",
           message: "Logical guild shard is unavailable for private roll log",
+          subsystem: "private-roll-log",
+          rollId: artifact.rollId,
+          state: "pending",
+          userImpact: "none",
+          failureKind: "shard-unavailable",
         }),
       );
       return { status: "unavailable" };
@@ -332,11 +380,16 @@ export class LogWork extends DurableObject<RollBindings> {
     );
   }
 
-  private async finish(
-    state: "delivered" | "failed",
-    httpStatus: number | null,
-    completedAt: number,
-  ): Promise<void> {
+  private async finish(input: {
+    state: "delivered" | "failed";
+    httpStatus: number | null;
+    completedAt: number;
+    artifact: StoredLogArtifactV1;
+    attempts: number;
+    acceptedAt: number;
+  }): Promise<void> {
+    const { state, httpStatus, completedAt, artifact, attempts, acceptedAt } =
+      input;
     const expiresAt = completedAt + LOG_WORK_RETENTION_MS;
     this.ctx.storage.sql.exec(
       `UPDATE log_artifact
@@ -348,6 +401,22 @@ export class LogWork extends DurableObject<RollBindings> {
       expiresAt,
       httpStatus,
     );
+    const event = JSON.stringify({
+      telemetryVersion: 1,
+      level: state === "delivered" ? "info" : "error",
+      message: "Private roll log delivery completed",
+      subsystem: "private-roll-log",
+      rollId: artifact.rollId,
+      state,
+      userImpact: "none",
+      attempts,
+      httpStatus,
+      elapsedMs: Math.max(0, completedAt - acceptedAt),
+      imageSha256:
+        artifact.image.status === "available" ? artifact.image.sha256 : null,
+    });
+    if (state === "delivered") console.info(event);
+    else console.error(event);
     await this.ctx.storage.setAlarm(expiresAt);
   }
 

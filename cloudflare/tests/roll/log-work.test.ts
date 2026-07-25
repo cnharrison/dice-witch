@@ -4,7 +4,7 @@ import {
   runDurableObjectAlarm,
   runInDurableObject,
 } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   LOG_WORK_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
@@ -266,25 +266,59 @@ describe("LogWork Durable Object", () => {
   it("honors a retryable Discord result without duplicating acceptance", async () => {
     const rollId = "1400000000000000009";
     const stub = logWork(rollId);
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
-    await stub.accept(
-      artifact({
+    try {
+      await stub.accept(
+        artifact({
+          rollId,
+          user: { id: "100000000000000002", username: "log-retry" },
+        }),
+      );
+      await runDurableObjectAlarm(stub);
+      await expect(stub.artifactStatus()).resolves.toMatchObject({
+        state: "pending",
+        attempts: 1,
+        lastHttpStatus: 429,
+      });
+      await runDurableObjectAlarm(stub);
+      await expect(stub.artifactStatus()).resolves.toMatchObject({
+        state: "delivered",
+        attempts: 2,
+        lastHttpStatus: 200,
+      });
+
+      const retry = consoleWarn.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Private roll log delivery will retry");
+      expect(retry).toMatchObject({
+        telemetryVersion: 1,
+        subsystem: "private-roll-log",
         rollId,
-        user: { id: "100000000000000002", username: "log-retry" },
-      }),
-    );
-    await runDurableObjectAlarm(stub);
-    await expect(stub.artifactStatus()).resolves.toMatchObject({
-      state: "pending",
-      attempts: 1,
-      lastHttpStatus: 429,
-    });
-    await runDurableObjectAlarm(stub);
-    await expect(stub.artifactStatus()).resolves.toMatchObject({
-      state: "delivered",
-      attempts: 2,
-      lastHttpStatus: 200,
-    });
+        state: "pending",
+        userImpact: "none",
+        attempt: 1,
+        httpStatus: 429,
+      });
+      const completed = consoleInfo.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Private roll log delivery completed");
+      expect(completed).toMatchObject({
+        telemetryVersion: 1,
+        subsystem: "private-roll-log",
+        rollId,
+        state: "delivered",
+        userImpact: "none",
+        attempts: 2,
+        httpStatus: 200,
+      });
+      expect(completed?.imageSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(JSON.stringify([retry, completed])).not.toMatch(/log-retry|1d20/);
+    } finally {
+      consoleWarn.mockRestore();
+      consoleInfo.mockRestore();
+    }
   });
 
   it("retries an image-specific rejection as explicit full text", async () => {
@@ -416,22 +450,40 @@ describe("LogWork Durable Object", () => {
   it("stops a general Discord outage after twelve delivery attempts", async () => {
     const rollId = "1400000000000000013";
     const stub = logWork(rollId);
-    await stub.accept(
-      artifact({
-        rollId,
-        user: { id: "100000000000000002", username: "log-outage" },
-      }),
-    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    for (let attempt = 0; attempt < 13; attempt += 1) {
-      await runDurableObjectAlarm(stub);
+    try {
+      await stub.accept(
+        artifact({
+          rollId,
+          user: { id: "100000000000000002", username: "log-outage" },
+        }),
+      );
+
+      for (let attempt = 0; attempt < 13; attempt += 1) {
+        await runDurableObjectAlarm(stub);
+      }
+      await expect(stub.artifactStatus()).resolves.toMatchObject({
+        state: "failed",
+        attempts: 12,
+        lastHttpStatus: 503,
+        imageBytes: 0,
+      });
+      const completed = consoleError.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Private roll log delivery completed");
+      expect(completed).toMatchObject({
+        telemetryVersion: 1,
+        subsystem: "private-roll-log",
+        rollId,
+        state: "failed",
+        userImpact: "none",
+        attempts: 12,
+        httpStatus: 503,
+      });
+    } finally {
+      consoleError.mockRestore();
     }
-    await expect(stub.artifactStatus()).resolves.toMatchObject({
-      state: "failed",
-      attempts: 12,
-      lastHttpStatus: 503,
-      imageBytes: 0,
-    });
   });
 
   it("fails pending delivery when its six-hour retry window expires", async () => {

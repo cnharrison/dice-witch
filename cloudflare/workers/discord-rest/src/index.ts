@@ -1076,25 +1076,60 @@ async function resolveRollLogContext(
         retryableResponse,
         "retry-after",
       );
+      const retryAfterMs =
+        retryAfterSeconds === null
+          ? null
+          : Math.ceil(retryAfterSeconds * 1_000);
+      console.warn(
+        JSON.stringify({
+          telemetryVersion: 1,
+          level: "warn",
+          message: "Discord roll log context lookup will retry",
+          subsystem: "private-roll-log",
+          rollId: artifact.rollId,
+          userImpact: "none",
+          failureKind: "context-retryable",
+          channelHttpStatus: channelResponse.status,
+          guildHttpStatus: guildResponse.status,
+          httpStatus: retryableResponse.status,
+          retryAfterMs,
+        }),
+      );
       return {
         status: "retryable",
         httpStatus: retryableResponse.status,
-        retryAfterMs:
-          retryAfterSeconds === null
-            ? null
-            : Math.ceil(retryAfterSeconds * 1_000),
+        retryAfterMs,
       };
     }
     const rejectedResponse = failedResponses.find(
       ({ status }) => status !== 403 && status !== 404,
     );
     if (rejectedResponse !== undefined) {
+      console.error(
+        JSON.stringify({
+          telemetryVersion: 1,
+          level: "error",
+          message: "Discord roll log context lookup failed",
+          subsystem: "private-roll-log",
+          rollId: artifact.rollId,
+          userImpact: "none",
+          failureKind: "context-rejected",
+          channelHttpStatus: channelResponse.status,
+          guildHttpStatus: guildResponse.status,
+          httpStatus: rejectedResponse.status,
+        }),
+      );
       return { status: "failed", httpStatus: rejectedResponse.status };
     }
     console.warn(
       JSON.stringify({
+        telemetryVersion: 1,
         level: "warn",
         message: "Discord roll log context is inaccessible",
+        subsystem: "private-roll-log",
+        rollId: artifact.rollId,
+        userImpact: "none",
+        failureKind: "context-inaccessible",
         channelHttpStatus: channelResponse.status,
         guildHttpStatus: guildResponse.status,
       }),
@@ -1188,9 +1223,10 @@ export async function deliverRollLogV1(
   ) {
     throw new Error("Roll log delivery request is invalid");
   }
+  const inputArtifact = validateRollLogArtifact(input.artifact);
   const context = await resolveRollLogContext(
     env,
-    validateRollLogArtifact(input.artifact),
+    inputArtifact,
     discordFetch,
   );
   if (context.status !== "resolved") return context;
@@ -1247,8 +1283,13 @@ export async function deliverRollLogV1(
       const retryAfterSeconds = numericResponseHeader(response, "retry-after");
       console.warn(
         JSON.stringify({
+          telemetryVersion: 1,
           level: "warn",
           message: "Private roll log delivery is retryable",
+          subsystem: "private-roll-log",
+          rollId: artifact.rollId,
+          userImpact: "none",
+          failureKind: "delivery-retryable",
           httpStatus: response.status,
         }),
       );
@@ -1267,8 +1308,13 @@ export async function deliverRollLogV1(
     ) {
       console.warn(
         JSON.stringify({
+          telemetryVersion: 1,
           level: "warn",
           message: "Private roll log image was rejected",
+          subsystem: "private-roll-log",
+          rollId: artifact.rollId,
+          userImpact: "none",
+          failureKind: "image-rejected",
           httpStatus: response.status,
         }),
       );
@@ -1276,8 +1322,13 @@ export async function deliverRollLogV1(
     }
     console.error(
       JSON.stringify({
+        telemetryVersion: 1,
         level: "error",
         message: "Private roll log delivery failed",
+        subsystem: "private-roll-log",
+        rollId: artifact.rollId,
+        userImpact: "none",
+        failureKind: "delivery-rejected",
         httpStatus: response.status,
       }),
     );
@@ -1288,7 +1339,15 @@ export async function deliverRollLogV1(
     throw new Error("Discord roll log response is invalid");
   }
   console.info(
-    JSON.stringify({ level: "info", message: "Private roll log delivered" }),
+    JSON.stringify({
+      telemetryVersion: 1,
+      level: "info",
+      message: "Private roll log delivered",
+      subsystem: "private-roll-log",
+      rollId: artifact.rollId,
+      userImpact: "none",
+      httpStatus: response.status,
+    }),
   );
   return { status: "delivered", httpStatus: response.status };
 }
