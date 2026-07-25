@@ -43,12 +43,14 @@ export class CanvasKitModifierIconPainterV4 {
     color: string,
     style: PaintStyleV4 = "fill",
     strokeWidth = 0,
+    antiAlias = false,
   ): Paint {
-    const key = `${color}|${style}|${String(strokeWidth)}`;
+    const key = `${color}|${style}|${String(strokeWidth)}|${String(antiAlias)}`;
     let paint = this.#paints.get(key);
     if (paint !== undefined) return paint;
     const [red, green, blue] = colorComponents(color);
     paint = this.#scope.own(new this.#canvasKit.Paint(), "modifier icon paint");
+    paint.setAntiAlias(antiAlias);
     paint.setColor(this.#canvasKit.Color4f(red, green, blue, 1));
     if (style === "stroke") {
       paint.setStyle(this.#canvasKit.PaintStyle.Stroke);
@@ -58,6 +60,14 @@ export class CanvasKitModifierIconPainterV4 {
     }
     this.#paints.set(key, paint);
     return paint;
+  }
+
+  #signalPaint(
+    color: string,
+    style: PaintStyleV4 = "fill",
+    strokeWidth = 0,
+  ): Paint {
+    return this.#paint(color, style, strokeWidth, true);
   }
 
   #polygon(
@@ -243,7 +253,7 @@ export class CanvasKitModifierIconPainterV4 {
         command.x,
         command.y,
         command.radius,
-        this.#paint(command.fill),
+        this.#signalPaint(command.fill),
       );
       return;
     }
@@ -255,7 +265,7 @@ export class CanvasKitModifierIconPainterV4 {
           command.x + command.radiusX,
           command.y + command.radiusY,
         ),
-        this.#paint(command.stroke, "stroke", command.strokeWidth),
+        this.#signalPaint(command.stroke, "stroke", command.strokeWidth),
       );
       return;
     }
@@ -291,12 +301,12 @@ export class CanvasKitModifierIconPainterV4 {
         "modifier icon vector path",
       );
       if (command.fill !== undefined) {
-        canvas.drawPath(path, this.#paint(command.fill));
+        canvas.drawPath(path, this.#signalPaint(command.fill));
       }
       if (command.stroke !== undefined && command.strokeWidth !== undefined) {
         canvas.drawPath(
           path,
-          this.#paint(command.stroke, "stroke", command.strokeWidth),
+          this.#signalPaint(command.stroke, "stroke", command.strokeWidth),
         );
       }
       this.#scope.delete(path);

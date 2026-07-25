@@ -347,6 +347,19 @@ function transparentPixelCount(pixels: Uint8Array): number {
   return count;
 }
 
+function partialAlphaPixelCount(
+  pixels: Uint8Array,
+  width: number,
+  startY: number,
+): number {
+  let count = 0;
+  for (let alpha = (startY * width * 4) + 3; alpha < pixels.length; alpha += 4) {
+    const value = pixels[alpha] as number;
+    if (value > 0 && value < 255) count += 1;
+  }
+  return count;
+}
+
 function pixelAlpha(
   pixels: Uint8Array,
   width: number,
@@ -1159,8 +1172,12 @@ describe("CanvasKit Render Request V4", () => {
     });
     expect(iconsR8.png).toEqual(repeatedR8.png);
     expect(iconsR8.png).not.toEqual(iconsR7.png);
+    const decodedR8 = await decodePngRgba8(iconsR8.png);
+    expect(
+      partialAlphaPixelCount(decodedR8.pixels, decodedR8.width, 150),
+    ).toBeGreaterThan(0);
     expect(sha256(iconsR8.png)).toBe(
-      "17cc7baab4bd4030ccb30c0abb7e73956995672e51945763c6e49c7c4dbf387f",
+      "7bcc307619b12a9bc58b1e01642d3b79e2a5c926405d04da5dc7a9b46ac95c1e",
     );
   });
 
