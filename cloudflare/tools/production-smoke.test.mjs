@@ -85,3 +85,23 @@ test("retries only bounded metadata propagation mismatches", async () => {
   assert.equal(result.status, "passed");
   assert.equal(waits, 1);
 });
+
+test("allows the public production route time to converge after deployment", async () => {
+  let metadataRequests = 0;
+  const fetchImplementation = (url, init) => {
+    if (new URL(url).pathname === "/api/meta") metadataRequests += 1;
+    if (new URL(url).pathname === "/interactions" && init.method === "POST") {
+      return Promise.resolve(Response.json({}, { status: 401 }));
+    }
+    return Promise.resolve(response(url, metadataRequests < 35 ? "b".repeat(40) : sha));
+  };
+
+  const result = await runProductionSmokeWithPropagationRetry(
+    { webOrigin: "https://dicewit.ch", expectedSha: sha },
+    fetchImplementation,
+    () => Promise.resolve(),
+  );
+
+  assert.equal(result.status, "passed");
+  assert.equal(metadataRequests, 35);
+});
