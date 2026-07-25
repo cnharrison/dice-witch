@@ -73,7 +73,10 @@ describe("CanvasKit V4 font rendering", () => {
     try {
       const hashes = new Set<string>();
       for (const fontId of FONT_IDS_V4) {
-        const options = { groups: [representativeFontGroup(fontId)] };
+        const options = {
+          rendererRevision: "canvaskit-v4-r1" as const,
+          groups: [representativeFontGroup(fontId)],
+        };
         const first = await renderer.renderGeometryGrid(options);
         const second = await renderer.renderGeometryGrid(options);
         const firstHash = await sha256(first.png);

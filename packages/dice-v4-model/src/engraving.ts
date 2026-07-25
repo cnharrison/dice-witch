@@ -1,3 +1,4 @@
+import { rendererRevisionPolicyV4 } from "./renderer-revision";
 import type {
   AppearanceTargetV4,
   EngravingFinishV4,
@@ -46,8 +47,8 @@ export function engravingFontScaleV4(
   target: AppearanceTargetV4,
   fontId: FontIdV4,
 ): number {
-  return (rendererRevision === "canvaskit-v4-r6" ||
-    rendererRevision === "canvaskit-v4-r7") &&
+  return rendererRevision !== undefined &&
+    rendererRevisionPolicyV4(rendererRevision).d20LiberationSansScale &&
     target === "d20" &&
     fontId === "liberation-sans"
     ? D20_LIBERATION_SANS_FONT_SCALE_R6_V4

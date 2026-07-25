@@ -9,6 +9,7 @@ import {
   projectPolyhedralGeometryV4,
   requiresOrientationMarkV4,
   SOURCE_TEXTURE_SIZE_V4,
+  modifierIconSizeV4,
   isIdentityTexturePlacementV4,
   texturePlacementKeyV4,
   texturePlacementUniformsV4,
@@ -25,6 +26,7 @@ import {
   type ProjectedPolyhedralGeometryV4,
   type RenderCriticalEffectV4,
   type RenderLightingV4,
+  type RendererRevisionV4,
   type SphericalGeometryDescriptorV4,
   type TexturePlacementV4,
   type TextureRasterV4,
@@ -61,10 +63,7 @@ import {
   usesClassicBaselineSphereShaderV4,
   type SphereLightingParametersV4,
 } from "./lighting";
-import {
-  CanvasKitModifierIconPainterV4,
-  MODIFIER_ICON_SIZE_V4,
-} from "./modifier-icons";
+import { CanvasKitModifierIconPainterV4 } from "./modifier-icons";
 import type { CanvasKitRuntimeV4 } from "./runtime";
 import type { SphericalMaterialRasterV4 } from "./spherical-material-raster";
 
@@ -398,6 +397,7 @@ export type RenderGeometryGridDieV4 =
     });
 
 export type RenderGeometryGridV4Options = {
+  rendererRevision: RendererRevisionV4;
   groups: readonly (readonly RenderGeometryGridDieV4[])[];
 };
 
@@ -453,6 +453,7 @@ function geometryGridLayout<Die>(
   groups: readonly (readonly Die[])[],
   name: "geometry grid" | "polyhedral grid",
   hasIcons: boolean,
+  iconSize: number,
 ): {
   rows: readonly (readonly Die[])[];
   diceCount: number;
@@ -484,8 +485,7 @@ function geometryGridLayout<Die>(
         ),
     ),
   );
-  const rowHeight =
-    GRID_DIE_SIZE_V4 + (hasIcons ? MODIFIER_ICON_SIZE_V4 : 0);
+  const rowHeight = GRID_DIE_SIZE_V4 + (hasIcons ? iconSize : 0);
   return {
     rows,
     diceCount,
@@ -1964,6 +1964,7 @@ async function renderGeometryGridSurface<Die>(
   canvasKit: CanvasKitRuntimeV4,
   groups: readonly (readonly Die[])[],
   name: "geometry grid" | "polyhedral grid",
+  rendererRevision: RendererRevisionV4,
   drawDie: (
     canvas: Canvas,
     scope: CanvasKitResourceScopeV4,
@@ -1979,6 +1980,7 @@ async function renderGeometryGridSurface<Die>(
     groups,
     name,
     hasIcons,
+    modifierIconSizeV4(rendererRevision),
   );
   const rendered = withCanvasKitResourcesSyncV4((scope) => {
     const surface = scope.own(
@@ -2006,7 +2008,7 @@ async function renderGeometryGridSurface<Die>(
             drawDie(canvas, dieScope, scope, die),
           );
           if (iconPainter !== undefined && iconsForDie !== undefined) {
-            iconPainter.draw(canvas, iconsForDie(die));
+            iconPainter.draw(canvas, iconsForDie(die), rendererRevision);
           }
         } finally {
           canvas.restore();
@@ -2037,6 +2039,7 @@ function renderPolyhedralGridWithGeometryRenderer(
     canvasKit,
     groups,
     "polyhedral grid",
+    "canvaskit-v4-r1",
     (canvas, scope, _sharedScope, die) => {
       const usesOctahedralMapping =
         die.geometry.skinMapping.kind === "view-octahedral";
@@ -3388,7 +3391,7 @@ function sphereBackgroundUses(
 function renderGeometryGridWithGeometryRenderer(
   canvasKit: CanvasKitRuntimeV4,
   resources: GeometryRendererResourcesV4,
-  { groups }: RenderGeometryGridV4Options,
+  { groups, rendererRevision }: RenderGeometryGridV4Options,
 ): Promise<RenderedGeometryGridV4> {
   const shaderCache: GeometryGridShaderCacheV4 = {
     atlasedOctahedralTextures: atlasedOctahedralTextures(groups),
@@ -3403,6 +3406,7 @@ function renderGeometryGridWithGeometryRenderer(
     canvasKit,
     groups,
     "geometry grid",
+    rendererRevision,
     (canvas, scope, sharedScope, die) =>
       drawGeometryGridDie(
         canvasKit,

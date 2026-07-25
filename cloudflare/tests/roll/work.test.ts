@@ -185,7 +185,7 @@ describe("RollWork Durable Object", () => {
         version: 4,
         renderRequest: {
           version: 4,
-          rendererRevision: "canvaskit-v4-r7",
+          rendererRevision: "canvaskit-v4-r8",
           groups: [[{ target: "d20" }]],
         },
       });
@@ -462,7 +462,7 @@ describe("RollWork Durable Object", () => {
     const wrongRevision = structuredClone(rollWorkV4Fixture) as {
       renderRequest: { rendererRevision: string };
     };
-    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r8";
+    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r9";
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
       "Render request rendererRevision is not supported",
     );

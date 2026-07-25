@@ -71,6 +71,7 @@ describe("V4 Three.js grid resource ownership", () => {
     const modifierIcons = createThreeModifierIconResourcesV4(
       layout,
       { width: 660, height: 66 } as HTMLCanvasElement,
+      "canvaskit-v4-r7",
     );
     if (modifierIcons === null) {
       throw new Error("Grid modifier-icon resources are missing");

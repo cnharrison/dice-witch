@@ -196,6 +196,7 @@ describe("RenderRequestV4", () => {
       "canvaskit-v4-r5",
       "canvaskit-v4-r6",
       "canvaskit-v4-r7",
+      "canvaskit-v4-r8",
     ] as const) {
       expect(() =>
         validateRenderRequestV4({
@@ -227,6 +228,9 @@ describe("RenderRequestV4", () => {
     const revision7 = revision2Request();
     revision7.rendererRevision = "canvaskit-v4-r7";
     const dieWideR7 = validateRenderRequestV4(revision7);
+    const revision8 = revision2Request();
+    revision8.rendererRevision = "canvaskit-v4-r8";
+    const dieWideR8 = validateRenderRequestV4(revision8);
     const faceLocal = validateRenderRequestV4(
       revision2Request(
         die({
@@ -253,6 +257,9 @@ describe("RenderRequestV4", () => {
       "die-wide",
     );
     expect(dieWideR7.groups[0]?.[0]?.appearance.texture.scope).toBe(
+      "die-wide",
+    );
+    expect(dieWideR8.groups[0]?.[0]?.appearance.texture.scope).toBe(
       "die-wide",
     );
     expect(faceLocal.groups[0]?.[0]?.appearance.texture.scope).toBe(

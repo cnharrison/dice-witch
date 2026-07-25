@@ -1,4 +1,5 @@
 import { canonicalJsonV4 } from "./random";
+import { rendererRevisionPolicyV4 } from "./renderer-revision";
 import type {
   AppearanceMaterialV4,
   RenderAppearanceV4,
@@ -37,20 +38,12 @@ export function usesProjectedTextureMappingV4(
   ) {
     return false;
   }
+  const policy = rendererRevisionPolicyV4(rendererRevision);
   if (appearance.material.treatment === "gradient") {
-    return (
-      rendererRevision === "canvaskit-v4-r4" ||
-      rendererRevision === "canvaskit-v4-r5" ||
-      rendererRevision === "canvaskit-v4-r6" ||
-      rendererRevision === "canvaskit-v4-r7"
-    );
+    return policy.gradientMapping === "projected";
   }
-  return (
-    appearance.material.treatment === "pattern" &&
-    (rendererRevision === "canvaskit-v4-r4" ||
-      rendererRevision === "canvaskit-v4-r5" ||
-      rendererRevision === "canvaskit-v4-r6")
-  );
+  return appearance.material.treatment === "pattern" &&
+    policy.patternMapping === "projected";
 }
 
 export function createTextureGenerationInputV4(

@@ -37,7 +37,9 @@ describe("V4 Three.js modifier-icon composition", () => {
     );
 
     expect(THREE_MODIFIER_ICON_SIZE_V4).toBe(37);
-    expect(createThreeModifierIconPlacementsV4(layout)).toEqual([
+    expect(
+      createThreeModifierIconPlacementsV4(layout, "canvaskit-v4-r7"),
+    ).toEqual([
       {
         icon: "critical-success",
         groupIndex: 0,
@@ -99,11 +101,14 @@ describe("V4 Three.js modifier-icon composition", () => {
 
     expect(layout.height).toBe(337);
     expect(layout.rows.map(({ height }) => height)).toEqual([187, 150]);
-    expect(createThreeModifierIconPlacementsV4(layout)).toEqual([]);
+    expect(
+      createThreeModifierIconPlacementsV4(layout, "canvaskit-v4-r7"),
+    ).toEqual([]);
     expect(() =>
       createThreeModifierIconResourcesV4(
         layout,
         { width: 660, height: 66 } as HTMLCanvasElement,
+        "canvaskit-v4-r7",
       ),
     ).toThrow("Three.js V4 modifier-icon atlas is unexpected");
   });
@@ -114,15 +119,62 @@ describe("V4 Three.js modifier-icon composition", () => {
       ({ icons }) => icons,
     );
 
-    expect(() => createThreeModifierIconResourcesV4(layout, null)).toThrow(
-      "Three.js V4 modifier-icon atlas is missing",
-    );
+    expect(() =>
+      createThreeModifierIconResourcesV4(
+        layout,
+        null,
+        "canvaskit-v4-r7",
+      ),
+    ).toThrow("Three.js V4 modifier-icon atlas is missing");
     expect(() =>
       createThreeModifierIconResourcesV4(
         layout,
         { width: 64, height: 64 } as HTMLCanvasElement,
+        "canvaskit-v4-r7",
       ),
     ).toThrow("Three.js V4 modifier-icon atlas dimensions are invalid");
+  });
+
+  it("uses approved 42px r8 icons with preserved legacy slot centers", () => {
+    const layout = createThreeDiceGridLayoutV4(
+      [[die(["trashcan", "blank", "unique"])]],
+      ({ icons }) => icons,
+      undefined,
+      42,
+    );
+
+    expect(layout.height).toBe(192);
+    expect(
+      createThreeModifierIconPlacementsV4(layout, "canvaskit-v4-r8"),
+    ).toEqual([
+      {
+        icon: "trashcan",
+        groupIndex: 0,
+        groupDieIndex: 0,
+        slotIndex: 0,
+        x: 26,
+        y: 150,
+        width: 42,
+        height: 42,
+      },
+      {
+        icon: "unique",
+        groupIndex: 0,
+        groupDieIndex: 0,
+        slotIndex: 2,
+        x: 83,
+        y: 150,
+        width: 42,
+        height: 42,
+      },
+    ]);
+    const resources = createThreeModifierIconResourcesV4(
+      layout,
+      { width: 1_320, height: 132 } as HTMLCanvasElement,
+      "canvaskit-v4-r8",
+    );
+    expect(resources?.iconCount).toBe(2);
+    disposeThreeModifierIconResourcesV4(resources);
   });
 
   it("removes and disposes each modifier-icon GPU resource exactly once", () => {
@@ -133,6 +185,7 @@ describe("V4 Three.js modifier-icon composition", () => {
     const resources = createThreeModifierIconResourcesV4(
       layout,
       { width: 660, height: 66 } as HTMLCanvasElement,
+      "canvaskit-v4-r7",
     );
     if (resources === null) {
       throw new Error("Modifier-icon resources are missing");

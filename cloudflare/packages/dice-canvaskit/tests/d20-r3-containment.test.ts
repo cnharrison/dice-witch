@@ -189,6 +189,7 @@ describe("CanvasKit V4 r3 d20 containment", () => {
 
     try {
       const rendered = await renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
         groups: [
           [
             resultDie("new-rocker", "matte-ink", 7),
@@ -269,6 +270,7 @@ describe("CanvasKit V4 r3 d20 containment", () => {
       for (const fontId of FONT_IDS_V4) {
         for (const engravingFinish of ENGRAVING_FINISHES_V4) {
           const options = {
+            rendererRevision: "canvaskit-v4-r1" as const,
             groups: [
               resultGroup(fontId, engravingFinish, 1),
               resultGroup(fontId, engravingFinish, 11),
@@ -287,6 +289,7 @@ describe("CanvasKit V4 r3 d20 containment", () => {
         }
       }
       const maximumOptions = {
+        rendererRevision: "canvaskit-v4-r1" as const,
         groups: Array.from({ length: 5 }, (_, row) =>
           Array.from({ length: 10 }, (_, column) =>
             resultDie(

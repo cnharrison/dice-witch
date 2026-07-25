@@ -7,6 +7,7 @@ import {
   formatFaceLabelV4,
   minimumConvexPolygonClearanceV4,
   projectGeometryVectorV4,
+  rendererRevisionPolicyV4,
   requiresOrientationMarkV4,
   type EngravingContrastEdgeV4,
   type EngravingLayerColorV4,
@@ -773,10 +774,12 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
   canvas.width = layout.width;
   canvas.height = layout.height;
   const context = requireCanvasContextV4(canvas);
+  const revisionPolicy = rendererRevision === undefined
+    ? null
+    : rendererRevisionPolicyV4(rendererRevision);
   const engraving = engravingLayerRecipeV4(
     appearance,
-    (rendererRevision === "canvaskit-v4-r6" ||
-      rendererRevision === "canvaskit-v4-r7") &&
+    revisionPolicy?.d4EngravingFinishEnhancement === true &&
       physical.target === "d4",
   );
   const fontScale = engravingFontScaleV4(
@@ -785,11 +788,7 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
     appearance.engraving.fontId,
   );
   const uniformInkDimensions =
-    (rendererRevision === "canvaskit-v4-r4" ||
-      rendererRevision === "canvaskit-v4-r5" ||
-      rendererRevision === "canvaskit-v4-r6" ||
-      rendererRevision === "canvaskit-v4-r7") &&
-    physical.target === "d20"
+    revisionPolicy?.uniformD20Ink === true && physical.target === "d20"
       ? d20UniformInkDimensionsV4(context, fontFamily)
       : null;
   physical.labels.forEach((label, labelIndex) => {

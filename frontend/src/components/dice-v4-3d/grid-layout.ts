@@ -1,8 +1,13 @@
-import type { IconNameV4 } from "@dice-witch/dice-v4-model";
+import {
+  LEGACY_MODIFIER_ICON_SIZE_V4,
+  type IconNameV4,
+} from "@dice-witch/dice-v4-model";
 
 export const THREE_DICE_GRID_CELL_SIZE_V4 = 150;
-export const THREE_DICE_GRID_ICON_AREA_HEIGHT_V4 = 37;
-export const THREE_DICE_GRID_ICON_ROW_HEIGHT_V4 = 187;
+export const THREE_DICE_GRID_ICON_AREA_HEIGHT_V4 =
+  LEGACY_MODIFIER_ICON_SIZE_V4;
+export const THREE_DICE_GRID_ICON_ROW_HEIGHT_V4 =
+  THREE_DICE_GRID_CELL_SIZE_V4 + THREE_DICE_GRID_ICON_AREA_HEIGHT_V4;
 export const THREE_DICE_GRID_MAX_COLUMNS_V4 = 10;
 export const THREE_DICE_GRID_MAX_DICE_V4 = 50;
 
@@ -43,6 +48,7 @@ export function createThreeDiceGridLayoutV4<Die>(
   groups: readonly (readonly Die[])[],
   iconsForDie: (die: Die) => readonly IconNameV4[],
   maximumColumns = THREE_DICE_GRID_MAX_COLUMNS_V4,
+  iconAreaHeight = THREE_DICE_GRID_ICON_AREA_HEIGHT_V4,
 ): ThreeDiceGridLayoutV4<Die> {
   if (
     !Number.isSafeInteger(maximumColumns) ||
@@ -50,6 +56,15 @@ export function createThreeDiceGridLayoutV4<Die>(
     maximumColumns > THREE_DICE_GRID_MAX_COLUMNS_V4
   ) {
     throw new Error("Three.js V4 grid maximum columns must be from 1 through 10");
+  }
+  if (
+    !Number.isSafeInteger(iconAreaHeight) ||
+    iconAreaHeight < THREE_DICE_GRID_ICON_AREA_HEIGHT_V4 ||
+    iconAreaHeight > THREE_DICE_GRID_CELL_SIZE_V4
+  ) {
+    throw new Error(
+      "Three.js V4 grid icon area must be from 37 through 150",
+    );
   }
   if (groups.length === 0) {
     throw new Error("Three.js V4 grid groups must be a non-empty array");
@@ -87,9 +102,7 @@ export function createThreeDiceGridLayoutV4<Die>(
   );
   const columnCount = Math.max(...rowInputs.map(({ dice }) => dice.length));
   const rowHeights = rowInputs.map(({ hasIconArea }) =>
-    hasIconArea
-      ? THREE_DICE_GRID_ICON_ROW_HEIGHT_V4
-      : THREE_DICE_GRID_CELL_SIZE_V4,
+    THREE_DICE_GRID_CELL_SIZE_V4 + (hasIconArea ? iconAreaHeight : 0),
   );
   const height = rowHeights.reduce((total, rowHeight) => total + rowHeight, 0);
   let top = 0;
@@ -124,7 +137,7 @@ export function createThreeDiceGridLayoutV4<Die>(
                 x: columnIndex * THREE_DICE_GRID_CELL_SIZE_V4,
                 y: iconViewportY,
                 width: THREE_DICE_GRID_CELL_SIZE_V4,
-                height: THREE_DICE_GRID_ICON_AREA_HEIGHT_V4,
+                height: iconAreaHeight,
               }
             : null,
         })),

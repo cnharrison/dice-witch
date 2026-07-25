@@ -3,6 +3,7 @@ import {
   createOctahedralTextureAtlasV4,
   createTextureGenerationInputV4,
   generateMaterialTextureV4,
+  rendererRevisionPolicyV4,
   transformTextureSampleCoordinateV4,
   usesProjectedTextureMappingV4,
   type PolyhedralGeometryDescriptorV4,
@@ -63,15 +64,9 @@ export function createRasterDataTextureV4(
 function textureColorPolicyV4(
   rendererRevision?: RendererRevisionV4,
 ): TextureColorPolicyV4 {
-  if (
-    rendererRevision === "canvaskit-v4-r5" ||
-    rendererRevision === "canvaskit-v4-r6" ||
-    rendererRevision === "canvaskit-v4-r7"
-  ) {
-    return "exact-gradient-r5";
-  }
-  if (rendererRevision === "canvaskit-v4-r4") return "vivid-r4";
-  return "legacy";
+  return rendererRevision === undefined
+    ? "legacy"
+    : rendererRevisionPolicyV4(rendererRevision).textureColors;
 }
 
 export function createMaterialRasterV4(

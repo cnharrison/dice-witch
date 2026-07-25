@@ -1,18 +1,17 @@
-import type { IconNameV4 } from "@dice-witch/dice-v4-model";
+import {
+  MODIFIER_ICON_VIEWBOX_SIZE_V4,
+  SIGNAL_DISK_MODIFIER_ICONS_V4,
+  modifierIconDesignV4,
+  modifierIconLeftV4,
+  modifierIconSizeV4,
+  type IconNameV4,
+  type ModifierIconCommandV4,
+  type RendererRevisionV4,
+} from "@dice-witch/dice-v4-model";
 import type { Canvas, Paint, PathBuilder } from "canvaskit-wasm";
 import type { CanvasKitResourceScopeV4 } from "./resources";
 import type { CanvasKitRuntimeV4 } from "./runtime";
 
-const ICON_VIEWBOX_V4 = 64;
-const ICON_SIZE_V4 = 37;
-const DIE_SIZE_V4 = 150;
-
-const ICON_SPACING_V4 = Object.freeze({
-  0: 0,
-  1: 0.375,
-  2: 0.26,
-  3: 0.19,
-} as const);
 
 type PointV4 = readonly [x: number, y: number];
 
@@ -235,6 +234,85 @@ export class CanvasKitModifierIconPainterV4 {
     });
   }
 
+  #drawVectorCommand(
+    canvas: Canvas,
+    command: ModifierIconCommandV4,
+  ): void {
+    if (command.kind === "circle") {
+      canvas.drawCircle(
+        command.x,
+        command.y,
+        command.radius,
+        this.#paint(command.fill),
+      );
+      return;
+    }
+    if (command.kind === "ellipse") {
+      canvas.drawOval(
+        this.#canvasKit.LTRBRect(
+          command.x - command.radiusX,
+          command.y - command.radiusY,
+          command.x + command.radiusX,
+          command.y + command.radiusY,
+        ),
+        this.#paint(command.stroke, "stroke", command.strokeWidth),
+      );
+      return;
+    }
+
+    const builder: PathBuilder = new this.#canvasKit.PathBuilder();
+    let path;
+    try {
+      for (const segment of command.segments) {
+        switch (segment[0]) {
+          case "M":
+            builder.moveTo(segment[1], segment[2]);
+            break;
+          case "L":
+            builder.lineTo(segment[1], segment[2]);
+            break;
+          case "C":
+            builder.cubicTo(
+              segment[1],
+              segment[2],
+              segment[3],
+              segment[4],
+              segment[5],
+              segment[6],
+            );
+            break;
+          case "Z":
+            builder.close();
+            break;
+        }
+      }
+      path = this.#scope.own(
+        builder.detachAndDelete(),
+        "modifier icon vector path",
+      );
+      if (command.fill !== undefined) {
+        canvas.drawPath(path, this.#paint(command.fill));
+      }
+      if (command.stroke !== undefined && command.strokeWidth !== undefined) {
+        canvas.drawPath(
+          path,
+          this.#paint(command.stroke, "stroke", command.strokeWidth),
+        );
+      }
+      this.#scope.delete(path);
+    } catch (error) {
+      if (path === undefined) builder.delete();
+      throw error;
+    }
+  }
+
+  #drawSignalDisk(canvas: Canvas, icon: IconNameV4): void {
+    if (icon === "blank") return;
+    for (const command of SIGNAL_DISK_MODIFIER_ICONS_V4[icon]) {
+      this.#drawVectorCommand(canvas, command);
+    }
+  }
+
   #drawIcon(canvas: Canvas, icon: IconNameV4): void {
     switch (icon) {
       case "trashcan":
@@ -274,28 +352,36 @@ export class CanvasKitModifierIconPainterV4 {
     }
   }
 
-  draw(canvas: Canvas, icons: readonly IconNameV4[]): void {
+  draw(
+    canvas: Canvas,
+    icons: readonly IconNameV4[],
+    rendererRevision: RendererRevisionV4,
+  ): void {
     if (icons.length > 3) {
       throw new Error("CanvasKit V4 supports at most three modifier icons");
     }
-    const spacing = ICON_SPACING_V4[icons.length as 0 | 1 | 2 | 3];
+    const iconCount = icons.length as 0 | 1 | 2 | 3;
+    const iconSize = modifierIconSizeV4(rendererRevision);
+    const design = modifierIconDesignV4(rendererRevision);
     icons.forEach((icon, index) => {
       canvas.save();
       try {
         canvas.translate(
-          DIE_SIZE_V4 * spacing * (index + 1),
-          DIE_SIZE_V4,
+          modifierIconLeftV4(iconCount, index, rendererRevision),
+          150,
         );
         canvas.scale(
-          ICON_SIZE_V4 / ICON_VIEWBOX_V4,
-          ICON_SIZE_V4 / ICON_VIEWBOX_V4,
+          iconSize / MODIFIER_ICON_VIEWBOX_SIZE_V4,
+          iconSize / MODIFIER_ICON_VIEWBOX_SIZE_V4,
         );
-        this.#drawIcon(canvas, icon);
+        if (design === "signal-disks-r8") {
+          this.#drawSignalDisk(canvas, icon);
+        } else {
+          this.#drawIcon(canvas, icon);
+        }
       } finally {
         canvas.restore();
       }
     });
   }
 }
-
-export const MODIFIER_ICON_SIZE_V4 = ICON_SIZE_V4;

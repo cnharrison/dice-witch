@@ -1,7 +1,15 @@
 import {
   ICON_NAMES_V4,
+  LEGACY_MODIFIER_ICON_SIZE_V4,
+  MODIFIER_ICON_VIEWBOX_SIZE_V4,
+  SIGNAL_DISK_MODIFIER_ICONS_V4,
+  modifierIconDesignV4,
+  modifierIconLeftV4,
+  modifierIconSizeV4,
   type IconNameV4,
+  type ModifierIconCommandV4,
   type RenderDieV4,
+  type RendererRevisionV4,
 } from "@dice-witch/dice-v4-model";
 import {
   BufferGeometry,
@@ -15,26 +23,13 @@ import {
   SRGBColorSpace,
   Uint16BufferAttribute,
 } from "three";
-import {
-  THREE_DICE_GRID_CELL_SIZE_V4,
-  THREE_DICE_GRID_ICON_AREA_HEIGHT_V4,
-  type ThreeDiceGridLayoutV4,
-} from "./grid-layout";
+import type { ThreeDiceGridLayoutV4 } from "./grid-layout";
 
-export const THREE_MODIFIER_ICON_SIZE_V4 = 37;
-const ICON_VIEWBOX_SIZE_V4 = 64;
-const ICON_ATLAS_GUTTER_V4 = 1;
-const ICON_ATLAS_CELL_SIZE_V4 =
-  ICON_VIEWBOX_SIZE_V4 + ICON_ATLAS_GUTTER_V4 * 2;
+export const THREE_MODIFIER_ICON_SIZE_V4 = LEGACY_MODIFIER_ICON_SIZE_V4;
+const ICON_ATLAS_SCALE_R8_V4 = 2;
 const DRAWABLE_ICON_NAMES_V4 = ICON_NAMES_V4.filter(
   (icon): icon is Exclude<IconNameV4, "blank"> => icon !== "blank",
 );
-const ICON_SPACING_V4 = Object.freeze({
-  0: 0,
-  1: 0.375,
-  2: 0.26,
-  3: 0.19,
-} as const);
 
 type PointV4 = readonly [x: number, y: number];
 
@@ -116,6 +111,79 @@ function circleV4(
   context.arc(x, y, radius, 0, Math.PI * 2);
   context.fillStyle = color;
   context.fill();
+}
+
+function drawVectorCommandV4(
+  context: CanvasRenderingContext2D,
+  command: ModifierIconCommandV4,
+): void {
+  context.beginPath();
+  if (command.kind === "circle") {
+    context.arc(command.x, command.y, command.radius, 0, Math.PI * 2);
+    context.fillStyle = command.fill;
+    context.fill();
+    return;
+  }
+  if (command.kind === "ellipse") {
+    context.ellipse(
+      command.x,
+      command.y,
+      command.radiusX,
+      command.radiusY,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    context.lineWidth = command.strokeWidth;
+    context.strokeStyle = command.stroke;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.stroke();
+    return;
+  }
+  for (const segment of command.segments) {
+    switch (segment[0]) {
+      case "M":
+        context.moveTo(segment[1], segment[2]);
+        break;
+      case "L":
+        context.lineTo(segment[1], segment[2]);
+        break;
+      case "C":
+        context.bezierCurveTo(
+          segment[1],
+          segment[2],
+          segment[3],
+          segment[4],
+          segment[5],
+          segment[6],
+        );
+        break;
+      case "Z":
+        context.closePath();
+        break;
+    }
+  }
+  if (command.fill !== undefined) {
+    context.fillStyle = command.fill;
+    context.fill();
+  }
+  if (command.stroke !== undefined && command.strokeWidth !== undefined) {
+    context.lineWidth = command.strokeWidth;
+    context.strokeStyle = command.stroke;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.stroke();
+  }
+}
+
+function drawSignalDiskV4(
+  context: CanvasRenderingContext2D,
+  icon: Exclude<IconNameV4, "blank">,
+): void {
+  for (const command of SIGNAL_DISK_MODIFIER_ICONS_V4[icon]) {
+    drawVectorCommandV4(context, command);
+  }
 }
 
 function starV4(
@@ -293,6 +361,7 @@ function drawIconV4(
 
 export function createThreeModifierIconPlacementsV4(
   layout: ThreeDiceGridLayoutV4<RenderDieV4>,
+  rendererRevision: RendererRevisionV4,
 ): readonly ThreeModifierIconPlacementV4[] {
   return layout.rows.flatMap((row) =>
     row.cells.flatMap((cell) => {
@@ -304,11 +373,10 @@ export function createThreeModifierIconPlacementsV4(
       if (cell.iconViewport === null) {
         throw new Error("Three.js V4 modifier-icon viewport is missing");
       }
-      const spacing = ICON_SPACING_V4[icons.length as 1 | 2 | 3];
+      const iconCount = icons.length as 1 | 2 | 3;
+      const iconSize = modifierIconSizeV4(rendererRevision);
       const y =
-        layout.height -
-        cell.iconViewport.y -
-        THREE_DICE_GRID_ICON_AREA_HEIGHT_V4;
+        layout.height - cell.iconViewport.y - cell.iconViewport.height;
       return icons.flatMap((icon, slotIndex) =>
         icon === "blank"
           ? []
@@ -320,10 +388,10 @@ export function createThreeModifierIconPlacementsV4(
                 slotIndex,
                 x:
                   cell.iconViewport.x +
-                  THREE_DICE_GRID_CELL_SIZE_V4 * spacing * (slotIndex + 1),
+                  modifierIconLeftV4(iconCount, slotIndex, rendererRevision),
                 y,
-                width: THREE_MODIFIER_ICON_SIZE_V4,
-                height: THREE_MODIFIER_ICON_SIZE_V4,
+                width: iconSize,
+                height: iconSize,
               },
             ],
       );
@@ -331,20 +399,44 @@ export function createThreeModifierIconPlacementsV4(
   );
 }
 
-export function createThreeModifierIconAtlasSourceV4(): HTMLCanvasElement {
+function iconAtlasScaleV4(rendererRevision: RendererRevisionV4): number {
+  return modifierIconDesignV4(rendererRevision) === "signal-disks-r8"
+    ? ICON_ATLAS_SCALE_R8_V4
+    : 1;
+}
+
+function iconAtlasCellSizeV4(rendererRevision: RendererRevisionV4): number {
+  return (
+    (MODIFIER_ICON_VIEWBOX_SIZE_V4 + 2) *
+    iconAtlasScaleV4(rendererRevision)
+  );
+}
+
+export function createThreeModifierIconAtlasSourceV4(
+  rendererRevision: RendererRevisionV4,
+): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
-  canvas.width = DRAWABLE_ICON_NAMES_V4.length * ICON_ATLAS_CELL_SIZE_V4;
-  canvas.height = ICON_ATLAS_CELL_SIZE_V4;
+  const scale = iconAtlasScaleV4(rendererRevision);
+  const gutter = scale;
+  const cellSize = iconAtlasCellSizeV4(rendererRevision);
+  const design = modifierIconDesignV4(rendererRevision);
+  canvas.width = DRAWABLE_ICON_NAMES_V4.length * cellSize;
+  canvas.height = cellSize;
   const context = requireCanvasContextV4(canvas);
   context.clearRect(0, 0, canvas.width, canvas.height);
   DRAWABLE_ICON_NAMES_V4.forEach((icon, index) => {
     context.save();
     try {
       context.translate(
-        index * ICON_ATLAS_CELL_SIZE_V4 + ICON_ATLAS_GUTTER_V4,
-        ICON_ATLAS_GUTTER_V4,
+        index * cellSize + gutter,
+        gutter,
       );
-      drawIconV4(context, icon);
+      context.scale(scale, scale);
+      if (design === "signal-disks-r8") {
+        drawSignalDiskV4(context, icon);
+      } else {
+        drawIconV4(context, icon);
+      }
     } finally {
       context.restore();
     }
@@ -355,35 +447,46 @@ export function createThreeModifierIconAtlasSourceV4(): HTMLCanvasElement {
 function iconAtlasUvV4(
   icon: Exclude<IconNameV4, "blank">,
   canvas: HTMLCanvasElement,
+  rendererRevision: RendererRevisionV4,
 ): readonly [left: number, right: number, top: number, bottom: number] {
   const index = DRAWABLE_ICON_NAMES_V4.indexOf(icon);
   if (index < 0) {
     throw new Error(`Three.js V4 modifier icon is invalid: ${String(icon)}`);
   }
-  const start = index * ICON_ATLAS_CELL_SIZE_V4 + ICON_ATLAS_GUTTER_V4;
+  const scale = iconAtlasScaleV4(rendererRevision);
+  const gutter = scale;
+  const start = index * iconAtlasCellSizeV4(rendererRevision) + gutter;
+  const iconPixels = MODIFIER_ICON_VIEWBOX_SIZE_V4 * scale;
   return [
     (start + 0.5) / canvas.width,
-    (start + ICON_VIEWBOX_SIZE_V4 - 0.5) / canvas.width,
-    1 - (ICON_ATLAS_GUTTER_V4 + 0.5) / canvas.height,
-    1 -
-      (ICON_ATLAS_GUTTER_V4 + ICON_VIEWBOX_SIZE_V4 - 0.5) /
-        canvas.height,
+    (start + iconPixels - 0.5) / canvas.width,
+    1 - (gutter + 0.5) / canvas.height,
+    1 - (gutter + iconPixels - 0.5) / canvas.height,
   ];
 }
 
 export function prepareThreeModifierIconAtlasV4(
   layout: ThreeDiceGridLayoutV4<RenderDieV4>,
+  rendererRevision: RendererRevisionV4,
 ): HTMLCanvasElement | null {
-  return createThreeModifierIconPlacementsV4(layout).length === 0
+  const placements = createThreeModifierIconPlacementsV4(
+    layout,
+    rendererRevision,
+  );
+  return placements.length === 0
     ? null
-    : createThreeModifierIconAtlasSourceV4();
+    : createThreeModifierIconAtlasSourceV4(rendererRevision);
 }
 
 export function createThreeModifierIconResourcesV4(
   layout: ThreeDiceGridLayoutV4<RenderDieV4>,
   canvas: HTMLCanvasElement | null,
+  rendererRevision: RendererRevisionV4,
 ): ThreeModifierIconResourcesV4 | null {
-  const placements = createThreeModifierIconPlacementsV4(layout);
+  const placements = createThreeModifierIconPlacementsV4(
+    layout,
+    rendererRevision,
+  );
   if (placements.length === 0) {
     if (canvas !== null) {
       throw new Error("Three.js V4 modifier-icon atlas is unexpected");
@@ -394,8 +497,9 @@ export function createThreeModifierIconResourcesV4(
     throw new Error("Three.js V4 modifier-icon atlas is missing");
   }
   if (
-    canvas.width !== DRAWABLE_ICON_NAMES_V4.length * ICON_ATLAS_CELL_SIZE_V4 ||
-    canvas.height !== ICON_ATLAS_CELL_SIZE_V4
+    canvas.width !==
+      DRAWABLE_ICON_NAMES_V4.length * iconAtlasCellSizeV4(rendererRevision) ||
+    canvas.height !== iconAtlasCellSizeV4(rendererRevision)
   ) {
     throw new Error("Three.js V4 modifier-icon atlas dimensions are invalid");
   }
@@ -407,6 +511,7 @@ export function createThreeModifierIconResourcesV4(
     const [left, right, top, bottom] = iconAtlasUvV4(
       placement.icon,
       canvas,
+      rendererRevision,
     );
     positions.push(
       x, y, 0,

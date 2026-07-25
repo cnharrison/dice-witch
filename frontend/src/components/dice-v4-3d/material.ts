@@ -1,8 +1,9 @@
-import type {
-  AppearanceMaterialV4,
-  MaterialFamilyV4,
-  RenderAppearanceV4,
-  RendererRevisionV4,
+import {
+  rendererRevisionPolicyV4,
+  type AppearanceMaterialV4,
+  type MaterialFamilyV4,
+  type RenderAppearanceV4,
+  type RendererRevisionV4,
 } from "@dice-witch/dice-v4-model";
 import {
   MeshPhysicalMaterial,
@@ -278,18 +279,16 @@ export function createThreeMaterialResourcesV4(
         })
       : new MeshStandardMaterial(common);
   material.name = `dice-v4-${appearance.material.family}-${policy.shader}`;
+  const revisionPolicy = rendererRevision === undefined
+    ? null
+    : rendererRevisionPolicyV4(rendererRevision);
   const usesR5ClassicGradientLift =
-    (rendererRevision === "canvaskit-v4-r5" ||
-      rendererRevision === "canvaskit-v4-r6" ||
-      rendererRevision === "canvaskit-v4-r7") &&
+    revisionPolicy?.materialGradientLift === true &&
     appearance.material.family === "classic" &&
     appearance.material.treatment === "gradient";
   const parityEmissiveIntensity =
-    rendererRevision === "canvaskit-v4-r6" ||
-    rendererRevision === "canvaskit-v4-r7"
-      ? R6_PARITY_EMISSIVE_INTENSITY_BY_FAMILY_V4[
-          appearance.material.family
-        ]
+    revisionPolicy?.materialParityEmissive === true
+      ? R6_PARITY_EMISSIVE_INTENSITY_BY_FAMILY_V4[appearance.material.family]
       : 0;
   const emissiveIntensity = Math.max(
     policy.emissiveIntensity,

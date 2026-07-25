@@ -1,6 +1,7 @@
-import type {
-  PublicRenderModelV4,
-  RenderDieV4,
+import {
+  modifierIconSizeV4,
+  type PublicRenderModelV4,
+  type RenderDieV4,
 } from "@dice-witch/dice-v4-model";
 import type { Group, OrthographicCamera } from "three";
 import { createThreeOrthographicCameraV4 } from "./camera";
@@ -95,6 +96,7 @@ export async function prepareThreeDiceGridV4(
     model.groups,
     ({ icons }) => icons,
     maximumColumns,
+    modifierIconSizeV4(model.rendererRevision),
   );
   const assets = new Map<string, PreparedGridAssetV4>();
   const sourceMaterialRasters = new Map<
@@ -157,7 +159,10 @@ export async function prepareThreeDiceGridV4(
     rendererRevision: model.rendererRevision,
     layout,
     assets,
-    modifierIconAtlas: prepareThreeModifierIconAtlasV4(layout),
+    modifierIconAtlas: prepareThreeModifierIconAtlasV4(
+      layout,
+      model.rendererRevision,
+    ),
   };
 }
 
@@ -222,6 +227,7 @@ export function createThreeDiceGridResourcesV4(
     resources.modifierIcons = createThreeModifierIconResourcesV4(
       preparation.layout,
       preparation.modifierIconAtlas,
+      preparation.rendererRevision,
     );
     return resources;
   } catch (error) {

@@ -43,6 +43,7 @@ import {
   WOOD_FINISHES_V4,
   WOOD_STYLES_V4,
 } from "./registries";
+import { rendererRevisionPolicyV4 } from "./renderer-revision";
 import type {
   AppearanceMaterialV4,
   AppearanceTargetV4,
@@ -541,7 +542,7 @@ function parsePalette(value: unknown, path: string): [string, string, ...string[
 function usesExplicitTextureScope(
   rendererRevision: RendererRevisionV4,
 ): boolean {
-  return rendererRevision !== "canvaskit-v4-r1";
+  return rendererRevisionPolicyV4(rendererRevision).explicitTextureScope;
 }
 
 function parseTexture(

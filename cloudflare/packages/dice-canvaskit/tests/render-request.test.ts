@@ -190,7 +190,8 @@ function gradientScopeRequest(
     | "canvaskit-v4-r4"
     | "canvaskit-v4-r5"
     | "canvaskit-v4-r6"
-    | "canvaskit-v4-r7",
+    | "canvaskit-v4-r7"
+    | "canvaskit-v4-r8",
   scope?: "die-wide" | "face-local",
 ): RenderRequestV4 {
   return {
@@ -1051,6 +1052,118 @@ describe("CanvasKit Render Request V4", () => {
     expect(canvasKit.HEAPU8.buffer.byteLength).toBe(33_554_432);
   });
 
+  it("adds r8 signal disks without changing icon-free r7 pixels", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const patternAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" },
+      lighting: { mode: "none" },
+    } satisfies RenderAppearanceV4;
+    const iconFreeR7: RenderRequestV4[] = [
+      {
+        ...allTargetGradientScopeRequest("die-wide"),
+        rendererRevision: "canvaskit-v4-r7",
+      },
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r7",
+        groups: [[
+          ...GRADIENT_SCOPE_TARGETS_V4.map(([target, result]) => ({
+            ...die(target, result),
+            appearance: patternAppearance,
+          })),
+          { ...die("other", 999), appearance: patternAppearance },
+        ]],
+      },
+      specialD20Request("sharp", sharpAppearance, "canvaskit-v4-r7"),
+      specialD20Request("crystal-cut", crystalAppearance, "canvaskit-v4-r7"),
+      specialD20Request("hollow-cage", hollowAppearance, "canvaskit-v4-r7"),
+    ];
+    for (const revision7 of iconFreeR7) {
+      const revision8 = structuredClone(revision7);
+      revision8.rendererRevision = "canvaskit-v4-r8";
+      const [rendered7, rendered8] = await Promise.all([
+        renderDiceRequestV4ToPng(revision7, createRenderer),
+        renderDiceRequestV4ToPng(revision8, createRenderer),
+      ]);
+      expect(rendered8.png).toEqual(rendered7.png);
+    }
+
+    const iconAppearance: RenderAppearanceV4 = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" },
+      engraving: { ...appearance.engraving, color: "#faf9f6" },
+    };
+    const criticalAppearance = (
+      state: "critical-success" | "critical-failure",
+    ): RenderAppearanceV4 => ({
+      ...iconAppearance,
+      effect: {
+        state,
+        treatment: "classic-glow",
+        color: state === "critical-success" ? "#ffd447" : "#ff4967",
+        intensity: 72,
+      },
+    });
+    const iconDice = [
+      {
+        ...die("d20", 20),
+        appearance: iconAppearance,
+        icons: ["trashcan", "explosion", "recycle"],
+      },
+      {
+        ...die("d20", 20),
+        appearance: iconAppearance,
+        icons: ["chevronUp", "chevronDown", "target-success"],
+      },
+      {
+        ...die("d20", 20),
+        appearance: criticalAppearance("critical-success"),
+        icons: ["critical-success", "penetrate", "unique"],
+      },
+      {
+        ...die("d20", 1),
+        appearance: criticalAppearance("critical-failure"),
+        icons: ["critical-failure"],
+      },
+    ] as RenderDieV4[];
+    const iconRequest = (
+      rendererRevision: "canvaskit-v4-r7" | "canvaskit-v4-r8",
+    ) => ({
+      version: 4 as const,
+      rendererRevision,
+      groups: [iconDice],
+    });
+
+    const [iconsR7, iconsR8, repeatedR8] = await Promise.all([
+      renderDiceRequestV4ToPng(
+        iconRequest("canvaskit-v4-r7"),
+        createRenderer,
+      ),
+      renderDiceRequestV4ToPng(
+        iconRequest("canvaskit-v4-r8"),
+        createRenderer,
+      ),
+      renderDiceRequestV4ToPng(
+        iconRequest("canvaskit-v4-r8"),
+        createRenderer,
+      ),
+    ]);
+
+    expect(iconsR8).toMatchObject({
+      rendererRevision: "canvaskit-v4-r8",
+      width: 600,
+      height: 192,
+      diceCount: 4,
+      rowCount: 1,
+    });
+    expect(iconsR8.png).toEqual(repeatedR8.png);
+    expect(iconsR8.png).not.toEqual(iconsR7.png);
+    expect(sha256(iconsR8.png)).toBe(
+      "17cc7baab4bd4030ccb30c0abb7e73956995672e51945763c6e49c7c4dbf387f",
+    );
+  });
+
   it("renders every lighting treatment deterministically with physical directions", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
     const hashes = new Map<string, string>();
@@ -1486,7 +1599,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r8" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r9" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

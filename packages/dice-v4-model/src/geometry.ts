@@ -15,8 +15,8 @@ import { OTHER_SPHERE_GEOMETRY_V4 } from "./geometry-other";
 import {
   APPEARANCE_TARGETS_V4,
   POLYHEDRAL_FORMS_V4,
-  RENDERER_REVISIONS_V4,
 } from "./registries";
+import { rendererRevisionPolicyV4 } from "./renderer-revision";
 import type {
   AppearanceTargetV4,
   PolyhedralFormV4,
@@ -174,16 +174,9 @@ export function getRenderGeometryIdV4(
   rendererRevision: RendererRevisionV4,
   die: RenderGeometrySelectionV4,
 ): GeometryIdV4 {
-  if (!RENDERER_REVISIONS_V4.includes(rendererRevision)) {
-    throw new Error("Render request rendererRevision is not supported");
-  }
+  const policy = rendererRevisionPolicyV4(rendererRevision);
   const geometryId = getGeometryIdV4(die.target, die.form);
-  return (rendererRevision === "canvaskit-v4-r3" ||
-    rendererRevision === "canvaskit-v4-r4" ||
-    rendererRevision === "canvaskit-v4-r5" ||
-    rendererRevision === "canvaskit-v4-r6" ||
-    rendererRevision === "canvaskit-v4-r7") &&
-    geometryId === "d20-standard-r1"
+  return policy.d20Geometry === "r2" && geometryId === "d20-standard-r1"
     ? "d20-standard-r2"
     : geometryId;
 }

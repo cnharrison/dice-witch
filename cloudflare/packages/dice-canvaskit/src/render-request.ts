@@ -6,6 +6,7 @@ import {
   generateMaterialTextureV4,
   getRenderGeometryDescriptorV4,
   parseRenderRequestV4Json,
+  rendererRevisionPolicyV4,
   resolveEngravingContrastEdgeV4,
   serializeRenderRequestV4,
   texturePlacementKeyV4,
@@ -95,32 +96,18 @@ type TextureCachesV4 = {
 function textureColorPolicyV4(
   rendererRevision: RendererRevisionV4,
 ): TextureColorPolicyV4 {
-  if (
-    rendererRevision === "canvaskit-v4-r5" ||
-    rendererRevision === "canvaskit-v4-r6" ||
-    rendererRevision === "canvaskit-v4-r7"
-  ) {
-    return "exact-gradient-r5";
-  }
-  if (rendererRevision === "canvaskit-v4-r4") return "vivid-r4";
-  return "legacy";
+  return rendererRevisionPolicyV4(rendererRevision).textureColors;
 }
 
 function renderPolicyV4(
   rendererRevision: RendererRevisionV4,
   geometryId: string,
 ): PolyhedralRenderPolicyV4 {
-  if (rendererRevision === "canvaskit-v4-r7") return "standard-r7";
-  if (rendererRevision === "canvaskit-v4-r6") return "standard-r6";
-  if (rendererRevision === "canvaskit-v4-r5") return "standard-r5";
-  if (rendererRevision === "canvaskit-v4-r4") return "standard-r4";
-  if (
-    rendererRevision === "canvaskit-v4-r3" &&
-    geometryId === "d20-standard-r2"
-  ) {
-    return "d20-r3";
-  }
-  return "legacy";
+  const policy = rendererRevisionPolicyV4(rendererRevision);
+  if (policy.presentation !== "legacy") return policy.presentation;
+  return policy.d20Geometry === "r2" && geometryId === "d20-standard-r2"
+    ? "d20-r3"
+    : "legacy";
 }
 
 function lightingForDieV4(
@@ -129,9 +116,8 @@ function lightingForDieV4(
 ): RenderLightingV4 {
   const { lighting, material } = die.appearance;
   if (
-    (rendererRevision === "canvaskit-v4-r5" ||
-      rendererRevision === "canvaskit-v4-r6" ||
-      rendererRevision === "canvaskit-v4-r7") &&
+    rendererRevisionPolicyV4(rendererRevision)
+      .restrainedClassicGradientLighting &&
     material.family === "classic" &&
     material.treatment === "gradient" &&
     lighting.mode === "combined" &&
@@ -217,9 +203,8 @@ function geometryGridDie(
     usesOctahedralAtlas,
     rendererRevision,
   );
-  const engravingContrastEdge =
-    rendererRevision === "canvaskit-v4-r6" ||
-    rendererRevision === "canvaskit-v4-r7"
+  const engravingContrastEdge = rendererRevisionPolicyV4(rendererRevision)
+    .engravingContrastEdge
       ? resolveEngravingContrastEdgeV4(
           die.appearance,
           sourceTexture,
@@ -317,6 +302,7 @@ async function renderCanvasKit(
     sphericalMaterials: new Map(),
   };
   const rendered = await renderer.renderGeometryGrid({
+    rendererRevision: request.rendererRevision,
     groups: request.groups.map((group) =>
       group.map((die) =>
         geometryGridDie(
@@ -348,6 +334,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r5": renderCanvasKit,
   "canvaskit-v4-r6": renderCanvasKit,
   "canvaskit-v4-r7": renderCanvasKit,
+  "canvaskit-v4-r8": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {

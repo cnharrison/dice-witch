@@ -1,6 +1,7 @@
 import {
   buildPhysicalPolyhedralMeshV4,
   projectPolyhedralGeometryV4,
+  rendererRevisionPolicyV4,
   resolveEngravingContrastEdgeV4,
   usesProjectedTextureMappingV4,
   type CriticalTreatmentV4,
@@ -207,9 +208,11 @@ export function prepareThreeDiceV4(
   ) {
     throw new Error("Three.js V4 label atlas policy is not implemented");
   }
+  const revisionPolicy = rendererRevision === undefined
+    ? null
+    : rendererRevisionPolicyV4(rendererRevision);
   const contrastEdge =
-    rendererRevision === "canvaskit-v4-r6" ||
-    rendererRevision === "canvaskit-v4-r7"
+    revisionPolicy?.engravingContrastEdge === true
       ? resolveEngravingContrastEdgeV4(
           die.appearance,
           contrastRaster ??
@@ -261,6 +264,9 @@ export function createThreeDiceResourcesV4(
   const geometries: BufferGeometry[] = [];
   const materials: Material[] = [];
   const textures: Texture[] = [];
+  const revisionPolicy = rendererRevision === undefined
+    ? null
+    : rendererRevisionPolicyV4(rendererRevision);
   try {
     const { descriptor } = prepared;
     const materialTexture = createRasterDataTextureV4(
@@ -318,10 +324,7 @@ export function createThreeDiceResourcesV4(
     const base = new Mesh(baseGeometry, baseMaterial);
     if (
       prepared.kind === "sphere" &&
-      (rendererRevision === "canvaskit-v4-r4" ||
-        rendererRevision === "canvaskit-v4-r5" ||
-        rendererRevision === "canvaskit-v4-r6" ||
-        rendererRevision === "canvaskit-v4-r7")
+      revisionPolicy?.sphereOutline === true
     ) {
       const outlineMaterial = new MeshBasicMaterial({
         color: die.appearance.outlineColor,
@@ -361,13 +364,7 @@ export function createThreeDiceResourcesV4(
       edgeMaterial = new LineBasicMaterial({
         color: vertexColors ? 0xff_ff_ff : die.appearance.outlineColor,
         transparent: true,
-        opacity:
-          rendererRevision === "canvaskit-v4-r4" ||
-          rendererRevision === "canvaskit-v4-r5" ||
-          rendererRevision === "canvaskit-v4-r6" ||
-          rendererRevision === "canvaskit-v4-r7"
-            ? 0.82
-            : 0.64,
+        opacity: revisionPolicy?.strongPhysicalEdges === true ? 0.82 : 0.64,
         vertexColors,
       });
       materials.push(edgeMaterial);

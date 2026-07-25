@@ -465,6 +465,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
         texturePlacement,
       });
       const preprojected = await renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
         groups: [
           [
             {
@@ -543,6 +544,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
               texturePlacement,
             );
             const preprojected = await renderer.renderGeometryGrid({
+              rendererRevision: "canvaskit-v4-r1",
               groups: [
                 [
                   {
@@ -672,8 +674,12 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
           },
         ],
       ];
-      const rendered = await renderer.renderGeometryGrid({ groups });
-      const repeated = await renderer.renderGeometryGrid({ groups });
+      const options = {
+        rendererRevision: "canvaskit-v4-r1" as const,
+        groups,
+      };
+      const rendered = await renderer.renderGeometryGrid(options);
+      const repeated = await renderer.renderGeometryGrid(options);
       expect(rendered).toMatchObject({
         width: 300,
         height: 300,
@@ -697,6 +703,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
     const texture = createMaterialDirectionTextureV4(3, material, palette);
     try {
       const rendered = await renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
         groups: [
           Array.from({ length: 4 }, () => ({
             kind: "polyhedral" as const,
@@ -740,6 +747,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
     };
     try {
       const rendered = await renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
         groups: [[die, die, die]],
       });
       expect(rendered).toMatchObject({
@@ -770,7 +778,10 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
         "CanvasKit V4 polyhedral grid groups must be a non-empty array",
       );
       await expect(
-        renderer.renderGeometryGrid({ groups: [] }),
+        renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
+          groups: [],
+        }),
       ).rejects.toThrow(
         "CanvasKit V4 geometry grid groups must be a non-empty array",
       );
@@ -793,6 +804,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       const texture = createMaterialDirectionTextureV4(3, material, palette);
       await expect(
         renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
           groups: [[{
             kind: "polyhedral",
             geometry: D6_STANDARD_GEOMETRY_V4,
@@ -807,6 +819,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       );
       await expect(
         renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
           groups: [[{
             kind: "polyhedral",
             geometry: D20_STANDARD_GEOMETRY_V4,
@@ -825,6 +838,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       };
       await expect(
         renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
           groups: [[{
             kind: "sphere",
             geometry: OTHER_SPHERE_GEOMETRY_V4,
@@ -840,6 +854,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       );
       await expect(
         renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
           groups: [[{
             kind: "sphere",
             geometry: OTHER_SPHERE_GEOMETRY_V4,
@@ -852,6 +867,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       ).rejects.toThrow("CanvasKit V4 spherical material raster is invalid");
       await expect(
         renderer.renderGeometryGrid({
+          rendererRevision: "canvaskit-v4-r1",
           groups: [[{
             kind: "sphere",
             geometry: OTHER_SPHERE_GEOMETRY_V4,
