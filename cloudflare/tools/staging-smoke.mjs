@@ -4,8 +4,8 @@ import { pathToFileURL } from "node:url";
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const CLI_USAGE =
   "Usage: node tools/staging-smoke.mjs --web-origin <url> --roll-origin <url> --gateway-origin <url> --expected-sha <full-sha>";
-const PROPAGATION_ATTEMPTS = 6;
-const PROPAGATION_RETRY_MS = 3_000;
+const PROPAGATION_ATTEMPTS = 12;
+const PROPAGATION_RETRY_MS = 5_000;
 
 function parseHttpsOrigin(name, value) {
   if (typeof value !== "string") {

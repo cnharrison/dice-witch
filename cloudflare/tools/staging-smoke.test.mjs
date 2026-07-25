@@ -95,7 +95,7 @@ test("rejects a staging Roll Worker that is not emitting V4", async () => {
   );
 });
 
-test("retries temporary metadata propagation mismatch", async () => {
+test("retries delayed metadata propagation without weakening SHA validation", async () => {
   let metadataRequests = 0;
   const waits = [];
   const result = await runStagingSmokeWithPropagationRetry(
@@ -106,7 +106,7 @@ test("retries temporary metadata propagation mismatch", async () => {
         return Response.json({
           environment: "staging",
           build: {
-            sha: metadataRequests === 1 ? "b".repeat(40) : expectedSha,
+            sha: metadataRequests < 8 ? "b".repeat(40) : expectedSha,
             time: "2026-07-15T12:00:00.000Z",
           },
         });
@@ -119,8 +119,8 @@ test("retries temporary metadata propagation mismatch", async () => {
   );
 
   assert.equal(result.status, "passed");
-  assert.equal(metadataRequests, 2);
-  assert.deepEqual(waits, [3_000]);
+  assert.equal(metadataRequests, 8);
+  assert.deepEqual(waits, Array(7).fill(5_000));
 });
 
 test("rejects a different deployed SHA", async () => {
