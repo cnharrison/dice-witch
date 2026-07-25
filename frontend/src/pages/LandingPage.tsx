@@ -2,11 +2,13 @@ import * as React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth, useSignIn } from '@/lib/AuthProvider';
 import { Button } from "@/components/ui/button";
-import { PreviewRoller } from '@/components/PreviewRoller';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { useServerStats } from '@/hooks/useServerStats';
 import { SvgFilters } from '@/components/SvgFilters';
 import { appConfig } from '@/lib/config';
+
+const DeferredPreviewRoller = React.lazy(
+  () => import('@/components/DeferredPreviewRoller'),
+);
 
 const LandingPage = () => {
   const { isSignedIn } = useAuth();
@@ -17,6 +19,23 @@ const LandingPage = () => {
     knownDiceWitchUsers,
     available
   } = useServerStats();
+  const previewSectionRef = React.useRef<HTMLElement>(null);
+  const [previewActive, setPreviewActive] = React.useState(false);
+
+  React.useEffect(() => {
+    const section = previewSectionRef.current;
+    if (section === null) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some(({ isIntersecting }) => isIntersecting)) return;
+        setPreviewActive(true);
+        observer.disconnect();
+      },
+      { rootMargin: '0px' },
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
 
   const handleSignInWithDiscord = () => {
     if (!isLoaded) return;
@@ -38,6 +57,10 @@ const LandingPage = () => {
               <img
                 src="/images/dice-witch-banner.webp"
                 alt="Dice Witch"
+                width="320"
+                height="320"
+                fetchPriority="high"
+                decoding="async"
                 className="w-full h-full object-cover"
                 style={{
                   filter: 'grayscale(100%)',
@@ -210,15 +233,20 @@ const LandingPage = () => {
         </div>
       </section>
 
-      <section className="py-24 border-t border-zinc-900 bg-[#1a1a1a]">
+      <section
+        ref={previewSectionRef}
+        className="py-24 border-t border-zinc-900 bg-[#1a1a1a]"
+      >
         <div className="container mx-auto px-4">
           <h2 className="text-3xl font-mono mb-8 text-center border-b border-zinc-800 pb-2 text-[#9933ff]">Roll</h2>
           <p className="text-xl text-center mb-8 text-zinc-300 max-w-2xl mx-auto">You came here to roll, didn't you? Roll. (Note that these results won't be sent to Discord or anywhere else)</p>
           <div className="max-w-5xl mx-auto">
             <div className="preview-section rounded-lg p-6 shadow-lg bg-[#121212] border border-[#333333]">
-              <TooltipProvider>
-                <PreviewRoller />
-              </TooltipProvider>
+              {previewActive && (
+                <React.Suspense fallback={<div className="min-h-96" aria-hidden="true" />}>
+                  <DeferredPreviewRoller />
+                </React.Suspense>
+              )}
             </div>
           </div>
         </div>

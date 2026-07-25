@@ -18,11 +18,12 @@
   },
   "scripts": {
     "audit:ci": "node tools/audit-policy.mjs",
-    "build": "npm run build --workspace=@dice-witch/frontend",
+    "build": "npm run build --workspace=@dice-witch/frontend && npm run performance:budget",
     "staging:check": "npm run staging:check --workspace=@dice-witch/cloudflare",
     "lint": "npm run lint --workspaces --if-present",
     "lint:ci": "npm run lint --workspace=@dice-witch/dice-v4-model -- --max-warnings=0 && npm run lint --workspace=@dice-witch/cloudflare -- --max-warnings=0 && npm run lint --workspace=@dice-witch/frontend -- --max-warnings=65",
-    "test": "node --test tools/audit-policy.test.mjs && npm run test --workspaces --if-present",
+    "performance:budget": "node tools/frontend-performance-budget.mjs",
+    "test": "node --test tools/*.test.mjs && npm run test --workspaces --if-present",
     "type-check": "npm run type-check --workspaces --if-present"
   }
 }
