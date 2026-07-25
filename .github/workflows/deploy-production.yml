@@ -1,0 +1,307 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full commit SHA to deploy
+        required: true
+        type: string
+      workers:
+        description: Comma-separated Workers; every deployment must include web-api
+        required: true
+        type: string
+      apply_migrations:
+        description: Authorize production D1 migrations; must match Data selection
+        required: true
+        default: false
+        type: boolean
+      allow_gateway_deploy:
+        description: Acknowledge that Gateway deployment reconnects the production bot
+        required: true
+        default: false
+        type: boolean
+      allow_existing_dependencies:
+        description: Acknowledge compatible active dependencies omitted from this deployment
+        required: true
+        default: false
+        type: boolean
+      confirmation:
+        description: Type deploy-production
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dice-witch-production-deployment
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REQUESTED_SHA: ${{ inputs.sha }}
+      SELECTED_WORKERS: ${{ inputs.workers }}
+      APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
+      ALLOW_GATEWAY_DEPLOY: ${{ inputs.allow_gateway_deploy }}
+      ALLOW_EXISTING_DEPENDENCIES: ${{ inputs.allow_existing_dependencies }}
+      DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
+      VITE_API_BASE: https://ci.invalid
+      VITE_DISCORD_CLIENT_ID: "100000000000000001"
+      VITE_ENVIRONMENT: development
+      VITE_BUILD_SHA: ${{ inputs.sha }}
+    steps:
+      - name: Validate dispatch authorization
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$DEPLOY_CONFIRMATION" == "deploy-production" ]]
+          [[ -n "$SELECTED_WORKERS" ]]
+          if [[ ",${SELECTED_WORKERS}," == *",data,"* ]]; then
+            [[ "$APPLY_MIGRATIONS" == "true" ]]
+          else
+            [[ "$APPLY_MIGRATIONS" == "false" ]]
+          fi
+          if [[ ",${SELECTED_WORKERS}," == *",gateway,"* ]]; then
+            [[ "$ALLOW_GATEWAY_DEPLOY" == "true" ]]
+          fi
+
+      - name: Check out exact source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact source
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$REQUESTED_SHA" ]]
+          [[ -z "$(git status --porcelain)" ]]
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.13.0
+          cache: npm
+
+      - name: Set up npm
+        run: npm install --global npm@11.6.2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run quality gates without production credentials
+        run: |
+          set -euo pipefail
+          npm run audit:ci
+          npm run type-check
+          npm run lint:ci
+          npm test
+          npm run build
+
+      - name: Dry-run public Worker examples
+        working-directory: cloudflare
+        run: |
+          set -euo pipefail
+          for worker in data discord-rest roll gateway interactions web-api; do
+            npx --no-install wrangler deploy \
+              --dry-run \
+              --config "wrangler.${worker}.example.jsonc" > /dev/null
+          done
+
+  deploy:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: https://dicewit.ch
+    env:
+      REQUESTED_SHA: ${{ inputs.sha }}
+      SELECTED_WORKERS: ${{ inputs.workers }}
+      APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
+      ALLOW_GATEWAY_DEPLOY: ${{ inputs.allow_gateway_deploy }}
+      ALLOW_EXISTING_DEPENDENCIES: ${{ inputs.allow_existing_dependencies }}
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact source
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$REQUESTED_SHA" ]]
+          [[ -z "$(git status --porcelain)" ]]
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.13.0
+          cache: npm
+
+      - name: Set up npm
+        run: npm install --global npm@11.6.2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Materialize source-derived production configuration
+        working-directory: cloudflare
+        env:
+          PRODUCTION_VALUES_B64: ${{ secrets.PRODUCTION_VALUES_B64 }}
+        run: |
+          set -euo pipefail
+          build_time="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+          echo "PRODUCTION_BUILD_TIME=$build_time" >> "$GITHUB_ENV"
+          PRODUCTION_BUILD_SHA="$REQUESTED_SHA" \
+          PRODUCTION_BUILD_TIME="$build_time" \
+            npm run production:materialize
+
+      - name: Export validated production frontend settings
+        working-directory: cloudflare
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile } from 'node:fs/promises';
+          const config = JSON.parse(await readFile('wrangler.web-api.jsonc', 'utf8'));
+          await appendFile(process.env.GITHUB_ENV, [
+            `VITE_API_BASE=${config.vars.FRONTEND_ORIGIN}`,
+            `VITE_DISCORD_CLIENT_ID=${config.vars.DISCORD_CLIENT_ID}`,
+            'VITE_ENVIRONMENT=production',
+            `VITE_BUILD_SHA=${process.env.REQUESTED_SHA}`,
+            '',
+          ].join('\n'));
+          NODE
+
+      - name: Build exact production frontend
+        run: npm run build
+
+      - name: Validate production plan
+        working-directory: cloudflare
+        run: |
+          set -euo pipefail
+          flags=()
+          [[ "$APPLY_MIGRATIONS" == "true" ]] && flags+=(--apply-migrations)
+          [[ "$ALLOW_GATEWAY_DEPLOY" == "true" ]] && flags+=(--allow-gateway-deploy)
+          [[ "$ALLOW_EXISTING_DEPENDENCIES" == "true" ]] && flags+=(--allow-existing-dependencies)
+          node tools/production-plan.mjs \
+            --sha "$REQUESTED_SHA" \
+            --workers "$SELECTED_WORKERS" \
+            "${flags[@]}" > "$RUNNER_TEMP/production-plan.json"
+
+      - name: Dry-run complete production configuration
+        working-directory: cloudflare
+        run: |
+          set -euo pipefail
+          for worker in data discord-rest roll gateway interactions web-api; do
+            npx --no-install wrangler deploy \
+              --dry-run \
+              --config "wrangler.${worker}.jsonc" > /dev/null
+          done
+
+      - name: Verify production account and credential scope
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [[ "$CLOUDFLARE_ACCOUNT_ID" == "dfe6c3ddb987a22c7f17955d1973490e" ]]
+          npx --no-install wrangler deployments list \
+            --name dice-witch-data-production \
+            --json > /dev/null
+
+      - name: Apply authorized production D1 migrations
+        if: ${{ inputs.apply_migrations == true }}
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 migrations list DATA \
+            --remote --config wrangler.data.jsonc
+          npx --no-install wrangler d1 migrations apply DATA \
+            --remote --config wrangler.data.jsonc
+
+      - name: Verify authoritative audience snapshot
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node tools/verify-audience-snapshot.mjs \
+            --config wrangler.data.jsonc \
+            --max-age-ms 43200000
+
+      - name: Deploy selected production Workers
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE' > "$RUNNER_TEMP/production-workers"
+          import { readFile } from 'node:fs/promises';
+          const plan = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/production-plan.json', 'utf8'));
+          process.stdout.write(plan.workers.join('\n') + '\n');
+          NODE
+          while IFS= read -r worker; do
+            npx --no-install wrangler deploy \
+              --strict \
+              --tag "production-${REQUESTED_SHA:0:12}" \
+              --message "Production ${REQUESTED_SHA}" \
+              --config "wrangler.${worker}.jsonc" > /dev/null
+            printf 'Deployed %s\n' "$worker"
+          done < "$RUNNER_TEMP/production-workers"
+
+      - name: Verify active production version settings
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/production-active"
+          while IFS= read -r worker; do
+            deployments="$RUNNER_TEMP/production-active/${worker}-deployments.json"
+            version_json="$RUNNER_TEMP/production-active/${worker}-version.json"
+            npx --no-install wrangler deployments list \
+              --name "dice-witch-${worker}-production" \
+              --json > "$deployments"
+            version_id="$(node --input-type=module - "$deployments" <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const deployments = JSON.parse(await readFile(process.argv[2], 'utf8'));
+          const latest = deployments.sort((left, right) =>
+            left.created_on.localeCompare(right.created_on),
+          ).at(-1);
+          const active = latest?.versions.filter((version) => version.percentage === 100) ?? [];
+          if (active.length !== 1) throw new Error('Expected exactly one active production version');
+          process.stdout.write(active[0].version_id);
+          NODE
+            )"
+            npx --no-install wrangler versions view "$version_id" \
+              --name "dice-witch-${worker}-production" \
+              --json > "$version_json"
+            node tools/production-active-settings.mjs \
+              --worker "$worker" \
+              --config "wrangler.${worker}.jsonc" \
+              --version-json "$version_json" \
+              --sha "$REQUESTED_SHA"
+          done < "$RUNNER_TEMP/production-workers"
+
+      - name: Smoke-test exact production build
+        working-directory: cloudflare
+        run: |
+          node tools/production-smoke.mjs \
+            --web-origin https://dicewit.ch \
+            --expected-sha "$REQUESTED_SHA"
+
+      - name: Remove production configuration
+        if: always()
+        working-directory: cloudflare
+        run: rm -f wrangler.{data,discord-rest,gateway,interactions,roll,web-api}.jsonc
