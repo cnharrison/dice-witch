@@ -313,6 +313,85 @@ describe("Discord REST service", () => {
     expect(discordFetch).toHaveBeenCalledTimes(3);
   });
 
+  it.each([403, 404])(
+    "delivers a durable roll log when Discord context returns %i",
+    async (contextStatus) => {
+      const discordFetch = vi.fn(async (request: Request) => {
+        const pathname = new URL(request.url).pathname;
+        if (pathname.endsWith("/channels/100000000000000010")) {
+          return Response.json(
+            { message: "unavailable" },
+            { status: contextStatus },
+          );
+        }
+        if (pathname.endsWith(`/guilds/${guildId}`)) {
+          return Response.json({ id: guildId, name: "Fixture Guild" });
+        }
+        const form = await request.formData();
+        const payloadValue = form.get("payload_json");
+        if (typeof payloadValue !== "string") {
+          throw new Error("Multipart log fixture is invalid");
+        }
+        const payload = JSON.parse(payloadValue) as {
+          embeds: Array<{ description: string }>;
+        };
+        expect(payload.embeds[0]?.description).toContain(
+          "channel: **unavailable**\nguild: **unavailable** [Shard 1]",
+        );
+        return Response.json({ id: "100000000000000088" });
+      });
+      const artifact = rollLogArtifact();
+
+      await expect(
+        deliverRollLogV1(
+          env,
+          {
+            artifact: { ...artifact, context: null },
+            logicalShard: {
+              status: "available",
+              shardId: 0,
+              shardCount: 1,
+              generation: 16,
+            },
+          },
+          discordFetch,
+        ),
+      ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
+      expect(discordFetch).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it("retries a durable roll log when missing context is rate limited", async () => {
+    const discordFetch = vi
+      .fn<(request: Request) => Promise<Response>>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { message: "rate limited" },
+          { status: 429, headers: { "retry-after": "2.5" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ id: guildId, name: "Fixture Guild" }),
+      );
+    const artifact = rollLogArtifact();
+
+    await expect(
+      deliverRollLogV1(
+        env,
+        {
+          artifact: { ...artifact, context: null },
+          logicalShard: { status: "unavailable" },
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({
+      status: "retryable",
+      httpStatus: 429,
+      retryAfterMs: 2_500,
+    });
+    expect(discordFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("classifies an explicit image rejection for text fallback", async () => {
     await expect(
       deliverRollLogV1(

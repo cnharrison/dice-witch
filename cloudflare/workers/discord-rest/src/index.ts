@@ -1040,12 +1040,18 @@ async function isImageSpecificDiscordRejection(
   }
 }
 
+type RollLogContextResolution =
+  | { status: "resolved"; artifact: RollLogArtifactV1 }
+  | Extract<DeliverRollLogResultV1, { status: "retryable" | "failed" }>;
+
 async function resolveRollLogContext(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
   artifact: RollLogArtifactV1,
   discordFetch: RequestFetch,
-): Promise<RollLogArtifactV1> {
-  if (artifact.guildId === null || artifact.context !== null) return artifact;
+): Promise<RollLogContextResolution> {
+  if (artifact.guildId === null || artifact.context !== null) {
+    return { status: "resolved", artifact };
+  }
   const headers = {
     authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
     "user-agent": "Dice-Witch",
@@ -1059,7 +1065,41 @@ async function resolveRollLogContext(
     ),
   ]);
   if (!channelResponse.ok || !guildResponse.ok) {
-    throw new Error("Discord roll log context is unavailable");
+    const failedResponses = [channelResponse, guildResponse].filter(
+      (response) => !response.ok,
+    );
+    const retryableResponse = failedResponses.find(({ status }) =>
+      isRetryableDiscordStatus(status),
+    );
+    if (retryableResponse !== undefined) {
+      const retryAfterSeconds = numericResponseHeader(
+        retryableResponse,
+        "retry-after",
+      );
+      return {
+        status: "retryable",
+        httpStatus: retryableResponse.status,
+        retryAfterMs:
+          retryAfterSeconds === null
+            ? null
+            : Math.ceil(retryAfterSeconds * 1_000),
+      };
+    }
+    const rejectedResponse = failedResponses.find(
+      ({ status }) => status !== 403 && status !== 404,
+    );
+    if (rejectedResponse !== undefined) {
+      return { status: "failed", httpStatus: rejectedResponse.status };
+    }
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        message: "Discord roll log context is inaccessible",
+        channelHttpStatus: channelResponse.status,
+        guildHttpStatus: guildResponse.status,
+      }),
+    );
+    return { status: "resolved", artifact };
   }
   const channel: unknown = await channelResponse.json();
   const guild: unknown = await guildResponse.json();
@@ -1078,14 +1118,17 @@ async function resolveRollLogContext(
     throw new Error("Discord roll log context response is invalid");
   }
   return {
-    ...artifact,
-    context: {
-      kind: "guild",
-      guildId: artifact.guildId,
-      guildName: guild.name,
-      channelId: artifact.channelId,
-      channelName: channel.name,
-      channelType: channel.type,
+    status: "resolved",
+    artifact: {
+      ...artifact,
+      context: {
+        kind: "guild",
+        guildId: artifact.guildId,
+        guildName: guild.name,
+        channelId: artifact.channelId,
+        channelName: channel.name,
+        channelType: channel.type,
+      },
     },
   };
 }
@@ -1145,11 +1188,13 @@ export async function deliverRollLogV1(
   ) {
     throw new Error("Roll log delivery request is invalid");
   }
-  const artifact = await resolveRollLogContext(
+  const context = await resolveRollLogContext(
     env,
     validateRollLogArtifact(input.artifact),
     discordFetch,
   );
+  if (context.status !== "resolved") return context;
+  const artifact = context.artifact;
   const shard = validateRollLogShard(input.logicalShard, artifact.guildId);
   const payload = {
     embeds: [buildRollLogEmbed(artifact, shard)],
