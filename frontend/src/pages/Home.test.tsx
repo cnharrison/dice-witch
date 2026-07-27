@@ -55,28 +55,7 @@ vi.mock("@tanstack/react-query", () => ({
           isLoading: mocks.guildsLoading,
           isFetching: false,
         }
-      : queryKey[0] === "saved-roll-libraries"
-        ? {
-            data: [
-              {
-                guildId: "100000000000000001",
-                guildName: "Fixture guild",
-                guildIcon: null,
-                isAdmin: true,
-                isDiceWitchAdmin: false,
-              },
-              {
-                guildId: "100000000000000002",
-                guildName: "Ordinary membership",
-                guildIcon: null,
-                isAdmin: false,
-                isDiceWitchAdmin: false,
-              },
-            ],
-            isLoading: false,
-            isFetching: false,
-          }
-        : {
+      : {
           data: {
             channels: [
               { id: "100000000000000010", name: "general", type: 0 },

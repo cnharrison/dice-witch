@@ -1050,7 +1050,9 @@ async function getMutualGuilds(
   if (!isRecord(value) || !Array.isArray(value.memberships)) {
     return json({ error: "Mutual guild response is invalid" }, 502);
   }
-  const guilds: unknown[] = [];
+  const candidates: Array<{
+    guilds: { id: string; name: string | null; icon: string | null };
+  }> = [];
   for (const membership of value.memberships) {
     if (
       !isRecord(membership) ||
@@ -1069,11 +1071,38 @@ async function getMutualGuilds(
     ) {
       return json({ error: "Mutual guild response is invalid" }, 502);
     }
-    guilds.push({
-      guilds: membership.guild,
-      isAdmin: membership.isAdmin,
-      isDiceWitchAdmin: membership.isDiceWitchAdmin,
+    candidates.push({
+      guilds: {
+        id: membership.guild.id,
+        name: membership.guild.name,
+        icon: membership.guild.icon,
+      },
     });
+  }
+
+  const guilds: unknown[] = [];
+  for (let offset = 0; offset < candidates.length; offset += 5) {
+    const batch = candidates.slice(offset, offset + 5);
+    let inspections: MembershipInspection[];
+    try {
+      inspections = await Promise.all(
+        batch.map(({ guilds: guild }) =>
+          env.DISCORD_REST.inspectMembership(guild.id, session.user.id),
+        ),
+      );
+    } catch {
+      return json({ error: "Mutual guild verification failed" }, 502);
+    }
+    for (let index = 0; index < batch.length; index += 1) {
+      const candidate = batch[index];
+      const inspection = inspections[index];
+      if (candidate === undefined || inspection?.status !== "found") continue;
+      guilds.push({
+        ...candidate,
+        isAdmin: inspection.isAdmin,
+        isDiceWitchAdmin: inspection.isDiceWitchAdmin,
+      });
+    }
   }
   return json({ guilds });
 }

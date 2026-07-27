@@ -90,8 +90,9 @@ export class D1MembershipRepository {
            users_guilds.is_admin,
            users_guilds.is_dice_witch_admin
          FROM users_guilds
-         LEFT JOIN guilds ON guilds.id = users_guilds.guild_id
+         JOIN guilds ON guilds.id = users_guilds.guild_id
          WHERE users_guilds.user_id = ?
+           AND guilds.is_active = 1
          ORDER BY users_guilds.id`,
       )
       .bind(id)

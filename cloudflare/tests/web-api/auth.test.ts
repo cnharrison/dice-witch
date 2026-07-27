@@ -384,7 +384,7 @@ describe("web API Discord OAuth", () => {
     });
   });
 
-  it("returns legacy-compatible mutual guilds for the active session", async () => {
+  it("returns only currently mutual guilds with fresh permissions", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
@@ -409,12 +409,33 @@ describe("web API Discord OAuth", () => {
               name: "Fixture guild",
               icon: null,
             },
-            isAdmin: true,
+            isAdmin: false,
             isDiceWitchAdmin: false,
+          },
+          {
+            guild: {
+              id: "100000000000000004",
+              name: "Fixture guild",
+              icon: null,
+            },
+            isAdmin: true,
+            isDiceWitchAdmin: true,
           },
         ],
       }));
     });
+    const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectMembership = vi.fn((guildId: string) =>
+      Promise.resolve(
+        guildId === "100000000000000001"
+          ? {
+              status: "found" as const,
+              isAdmin: true,
+              isDiceWitchAdmin: false,
+            }
+          : { status: "missing" as const },
+      ),
+    );
     const response = await handleAuthRequest(
       new Request("https://api.example.com/api/guilds/mutual", {
         headers: {
@@ -422,7 +443,7 @@ describe("web API Discord OAuth", () => {
           origin: frontendOrigin,
         },
       }),
-      bindings(dataFetch),
+      env,
       vi.fn(),
       () => now,
     );

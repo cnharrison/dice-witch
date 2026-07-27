@@ -32,15 +32,34 @@ beforeEach(async () => {
 });
 
 describe("D1MembershipRepository", () => {
-  it("lists mutual guilds with stored permissions", async () => {
-    await dataEnv.DATA.prepare(
-      `INSERT INTO users_guilds (
-         user_id, guild_id, is_admin, is_dice_witch_admin,
-         created_at, updated_at
-       ) VALUES (?, ?, 1, 0, ?, ?)`,
-    )
-      .bind(userId, guildId, occurredAt, occurredAt)
-      .run();
+  it("lists only active mutual guilds with stored permissions", async () => {
+    const inactiveGuildId = "100000000000000004";
+    await dataEnv.DATA.batch([
+      dataEnv.DATA
+        .prepare(
+          `INSERT INTO guilds (
+             id, name, icon, created_at, updated_at, is_active
+           ) VALUES (?, 'Fixture Guild', 'fixture-icon', ?, ?, 0)`,
+        )
+        .bind(inactiveGuildId, occurredAt, occurredAt),
+      dataEnv.DATA
+        .prepare(
+          `INSERT INTO users_guilds (
+             user_id, guild_id, is_admin, is_dice_witch_admin,
+             created_at, updated_at
+           ) VALUES (?, ?, 1, 0, ?, ?), (?, ?, 0, 0, ?, ?)`,
+        )
+        .bind(
+          userId,
+          guildId,
+          occurredAt,
+          occurredAt,
+          userId,
+          inactiveGuildId,
+          occurredAt,
+          occurredAt,
+        ),
+    ]);
     const repository = new D1MembershipRepository(dataEnv.DATA);
 
     await expect(repository.listMutualGuilds(userId)).resolves.toEqual([

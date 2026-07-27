@@ -13,10 +13,7 @@ import { SparkleLoadingIndicator } from '@/components/SparkleLoadingIndicator';
 import { useDiceValidation } from '@/hooks/useDiceValidation';
 import type { Guild } from "@/types/guild";
 import type { RollPreparation, RollResponse } from '@/types/dice';
-import {
-  listSavedRollLibraries,
-  type SavedRollScope,
-} from '@/lib/saved-rolls';
+import type { SavedRollScope } from '@/lib/saved-rolls';
 import { useUser } from '@/lib/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { BookmarkPlus, PanelRightOpen } from "lucide-react";
@@ -242,13 +239,6 @@ export const Home = () => {
       stableRenderSeed.current = undefined;
     }
   };
-
-  const { data: savedRollLibraries = [] } = useQuery({
-    queryKey: ["saved-roll-libraries"],
-    queryFn: listSavedRollLibraries,
-    enabled: user?.id !== undefined,
-    staleTime: 5 * 60 * 1_000,
-  });
 
   const { data: channelsResponse } = useQuery({
     queryKey: ['channels', selectedGuild],
@@ -539,16 +529,13 @@ export const Home = () => {
   const selectedChannelRecord = channels.find(
     ({ id }) => id === selectedChannel,
   );
-  const selectedSavedRollLibrary = savedRollLibraries.find(
-    ({ guildId }) => guildId === selectedGuildRecord?.guilds.id,
-  );
   const savedRollGuildScope: SavedRollScope | null =
-    selectedSavedRollLibrary === undefined
+    selectedGuildRecord === undefined
       ? null
       : {
           type: "guild",
-          guildId: selectedSavedRollLibrary.guildId,
-          guildName: selectedSavedRollLibrary.guildName,
+          guildId: selectedGuildRecord.guilds.id,
+          guildName: selectedGuildRecord.guilds.name,
         };
 
   const selectGuild = (value: string) => {
