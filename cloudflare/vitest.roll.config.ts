@@ -335,7 +335,20 @@ async function discordTestResponse(request: Request): Promise<Response> {
     return Response.json({ message: "temporary" }, { status: 503 });
   }
   if (token === "delivery-terminal-failure") {
-    return Response.json({ message: "invalid interaction" }, { status: 404 });
+    return Response.json(
+      { code: 10_015, message: "invalid interaction" },
+      { status: 404 },
+    );
+  }
+  if (token === "delivery-clatter-rejected") {
+    return Response.json(
+      {
+        code: 10_008,
+        message: "sensitive provider detail",
+        errors: { token: "must not be logged" },
+      },
+      { status: 404 },
+    );
   }
   if (token === "delivery-rate-limited") {
     return Response.json(

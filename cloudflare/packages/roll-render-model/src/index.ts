@@ -404,7 +404,8 @@ export function buildRollRenderRequestV3(
   return validateRenderRequestV3({ version: 3, groups });
 }
 
-function renderedAppearanceFaceV4(die: RollDie): number {
+/** Returns the physical face represented by a V4 roll die. */
+export function renderedRollFaceV4(die: RollDie): number {
   if (
     die.sides === 10 &&
     die.rolled === 0 &&
@@ -468,7 +469,7 @@ function renderDieV4(
   if (recipe === undefined) {
     throw new Error(`Effective appearance recipe V3 for ${target} is required`);
   }
-  const result = renderedAppearanceFaceV4(die);
+  const result = renderedRollFaceV4(die);
   const onesIdentity = logicalPercentileIdentity(die, "ones");
   let resolved: ResolvedAppearanceV3;
   if (onesIdentity === undefined) {

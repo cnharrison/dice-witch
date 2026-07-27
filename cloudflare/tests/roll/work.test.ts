@@ -908,6 +908,34 @@ describe("RollWork Durable Object", () => {
     expect(parseRecord(JSON.stringify(record))).toEqual(record);
   });
 
+  it("restores V4 percentile snapshots whose ones die rolled zero", () => {
+    const request = { notation: ["1d100"], repetitions: 1 };
+    const rollSeed = 1_567_612_846;
+    const renderSeed = 1_750_463_891;
+    const outcome = executeRoll({
+      ...request,
+      seed: rollSeed,
+      stableAppearanceIdentities: true,
+    });
+    const record = {
+      version: 4 as const,
+      request,
+      rollSeed,
+      renderSeed,
+      outcome,
+      createdAt: 1_785_183_198_972,
+      renderRequest: buildRollRenderRequestV4(
+        outcome,
+        renderSeed,
+        v4Recipes(),
+      ),
+    };
+
+    expect(outcome.outcomes[0]?.dice[1]?.rolled).toBe(0);
+    expect(record.renderRequest.groups[0]?.[1]?.result).toBe(10);
+    expect(parseRecord(JSON.stringify(record))).toEqual(record);
+  });
+
   it("persists the original physical face for out-of-range V4 results", () => {
     const request = { notation: ["1d2!!"], repetitions: 1 };
     const outcome = executeRoll({
@@ -1620,6 +1648,90 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("preserves lifecycle state when an alarm interleaves with acceptance", async () => {
+    const id = snowflakeAt(Date.now(), 68);
+    const stub = work(id);
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    let releaseInitialSync = (): void => undefined;
+    let markInitialSyncStarted = (): void => undefined;
+    const initialSyncReleased = new Promise<void>((resolve) => {
+      releaseInitialSync = resolve;
+    });
+    const initialSyncStarted = new Promise<void>((resolve) => {
+      markInitialSyncStarted = resolve;
+    });
+    let firstLifecycleRequest = true;
+
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      const path = new URL(request.url).pathname;
+      if (path === "/internal/appearance/v3/effective") {
+        return Response.json({ version: 3, recipes: v4Recipes() });
+      }
+      if (path === "/internal/roll-lifecycle") {
+        const snapshot = await request.json<{ interactionId?: unknown }>();
+        if (snapshot.interactionId === id && firstLifecycleRequest) {
+          firstLifecycleRequest = false;
+          markInitialSyncStarted();
+          await initialSyncReleased;
+        }
+        return Response.json({ status: "applied" });
+      }
+      throw new Error(`Unexpected acceptance-race request: ${path}`);
+    });
+
+    try {
+      await runInDurableObject(stub, async (instance, state) => {
+        const acceptance = (instance as unknown as {
+          acceptDelivery(value: unknown): Promise<unknown>;
+        }).acceptDelivery(deliveryRequest(id, "delivery-success"));
+        await initialSyncStarted;
+        await callAlarm(instance);
+        releaseInitialSync();
+        await expect(acceptance).resolves.toMatchObject({
+          status: "created",
+          delivery: "pending",
+        });
+
+        const rows = state.storage.sql
+          .exec<{ snapshot_json: string; synced_revision: number }>(
+            "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
+          )
+          .toArray();
+        expect(rows).toHaveLength(1);
+        expect(JSON.parse(rows[0]?.snapshot_json ?? "null")).toMatchObject({
+          state: "accepted",
+          revision: 2,
+        });
+        expect(rows[0]?.synced_revision).toBe(1);
+      });
+    } finally {
+      releaseInitialSync();
+      dataService.fetch = originalFetch;
+    }
+
+    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const lifecycle = state.storage.sql
+        .exec<{ snapshot_json: string; synced_revision: number }>(
+          "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
+        )
+        .one();
+      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
+        state: string;
+        revision: number;
+      };
+      expect(snapshot.state).toBe("delivered");
+      expect(lifecycle.synced_revision).toBe(snapshot.revision);
+    });
+  });
+
   it("terminates delivery without rereading an invalid stored record", async () => {
     const id = snowflakeAt(Date.now(), 66);
     const stub = work(id);
@@ -1774,6 +1886,8 @@ describe("RollWork Durable Object", () => {
         attempts: 1,
         httpStatus: 404,
         failurePhase: "discord",
+        discordErrorCode: 10_015,
+        discordOperation: "edit-original-result",
       });
       expect(failed?.outcome).toMatchObject({
         version: 1,
@@ -1781,12 +1895,42 @@ describe("RollWork Durable Object", () => {
       });
       expect(failed?.destinationPayload).toBeDefined();
       expect(JSON.stringify([delivered, failed])).not.toMatch(
-        /delivery-success|delivery-terminal-failure|token_fingerprint|image_bytes/i,
+        /delivery-success|delivery-terminal-failure|invalid interaction|token_fingerprint|image_bytes/i,
       );
       expect(delivered).not.toHaveProperty("token");
       expect(delivered).not.toHaveProperty("imageBytes");
     } finally {
       consoleInfo.mockRestore();
+      consoleError.mockRestore();
+    }
+  });
+
+  it("logs only the numeric Discord error code for rejected clatter", async () => {
+    const id = snowflakeAt(Date.now(), 69);
+    const input = deliveryRequest(id, "delivery-clatter-rejected");
+    input.accounting.guildId = "100000000000000002";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      await expect(work(id).deliver(input)).resolves.toEqual({ status: "failed" });
+      const failed = consoleError.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Roll destination delivery completed");
+      expect(failed).toMatchObject({
+        rollId: id,
+        state: "failed",
+        httpStatus: 404,
+        failurePhase: "clatter",
+        discordErrorCode: 10_008,
+        discordOperation: "edit-original-clatter",
+      });
+      expect(JSON.stringify(failed)).not.toMatch(
+        /sensitive provider detail|must not be logged/,
+      );
+    } finally {
       consoleError.mockRestore();
     }
   });

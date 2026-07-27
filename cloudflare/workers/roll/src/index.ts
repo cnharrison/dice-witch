@@ -111,6 +111,7 @@ function randomSeed(): number {
 
 const DELIVERY_FINALIZATION_BUFFER_MS = 60_000;
 const DELIVERY_LAST_ATTEMPT_BUFFER_MS = 1_000;
+const MAX_DISCORD_ERROR_BODY_BYTES = 8 * 1_024;
 const ROLL_DELIVERY_FAILURE_MESSAGE =
   "This roll could not be completed. Please try again.";
 
@@ -124,6 +125,18 @@ type DestinationCompletionPhase =
   | RetryableDeliveryPhase
   | RollDeliveryFailurePhase
   | "expired";
+
+type DiscordOperation =
+  | "create-followup-clatter"
+  | "create-followup-result"
+  | "edit-followup-result"
+  | "edit-original-clatter"
+  | "edit-original-result";
+
+type DiscordFailureDetails = Readonly<{
+  code: number | null;
+  operation: DiscordOperation;
+}>;
 
 type RollDeliveryTarget = Readonly<{
   id: string;
@@ -154,6 +167,55 @@ function deliveryFinalizationAt(expiresAt: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readDiscordErrorCode(response: Response): Promise<number | null> {
+  const contentType = response.headers.get("content-type")
+    ?.split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  if (contentType !== "application/json" || response.body === null) return null;
+  const contentLength = response.headers.get("content-length");
+  if (
+    contentLength !== null &&
+    (!/^(0|[1-9][0-9]*)$/.test(contentLength) ||
+      Number(contentLength) > MAX_DISCORD_ERROR_BODY_BYTES)
+  ) {
+    return null;
+  }
+  const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      byteLength += chunk.value.byteLength;
+      if (byteLength > MAX_DISCORD_ERROR_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(chunk.value);
+    }
+  } catch {
+    return null;
+  }
+
+  const body = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(body));
+    if (!isRecord(parsed) || !Number.isSafeInteger(parsed.code)) return null;
+    const code = Number(parsed.code);
+    return code >= 0 ? code : null;
+  } catch {
+    return null;
+  }
 }
 
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
@@ -356,6 +418,7 @@ function rollLogArtifact(value: unknown): RollLogArtifactV1 {
 }
 
 export class RollWork extends DurableObject<RollEnv> {
+  private activeAcceptances = 0;
   private activeDelivery: Promise<DeliverRollWorkResult> | null = null;
   private activeAccounting: Promise<void> | null = null;
   private activeLogging: Promise<void> | null = null;
@@ -1244,7 +1307,25 @@ export class RollWork extends DurableObject<RollEnv> {
 
     const resolution = await this.recordForDelivery(delivery);
     if (resolution.status !== "ready") return resolution;
-    this.initializeLifecycleSnapshot(delivery, resolution.record);
+
+    this.activeAcceptances += 1;
+    try {
+      return await this.finishDeliveryAcceptance(
+        delivery,
+        resolution.record,
+        expiresAt,
+      );
+    } finally {
+      this.activeAcceptances -= 1;
+    }
+  }
+
+  private async finishDeliveryAcceptance(
+    delivery: ReturnType<typeof validateDeliveryRequest>,
+    record: RollWorkRecord,
+    expiresAt: number,
+  ): Promise<AcceptRollDeliveryResult> {
+    this.initializeLifecycleSnapshot(delivery, record);
     await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
     await this.syncLifecycle();
     const metadataJson = deliveryMetadata(delivery);
@@ -1254,10 +1335,7 @@ export class RollWork extends DurableObject<RollEnv> {
     try {
       accepted = this.ctx.storage.transactionSync(
         (): AcceptRollDeliveryResult => {
-          const prepared = this.prepareRequest(
-            delivery.request,
-            resolution.record,
-          );
+          const prepared = this.prepareRequest(delivery.request, record);
           if (prepared.status === "conflict") return prepared;
 
           const existing = this.readDelivery();
@@ -1645,6 +1723,7 @@ export class RollWork extends DurableObject<RollEnv> {
     completedAt: number;
     record?: RollWorkRecord;
     delayMs?: number | null;
+    discordFailure?: DiscordFailureDetails;
   }): void {
     const record = input.record ?? this.tryReadWork();
     const source = this.readSourceLogRow();
@@ -1668,6 +1747,8 @@ export class RollWork extends DurableObject<RollEnv> {
       attempts: input.attempts,
       httpStatus: input.httpStatus,
       failurePhase: input.failurePhase,
+      discordErrorCode: input.discordFailure?.code ?? null,
+      discordOperation: input.discordFailure?.operation ?? null,
       elapsedMs:
         record === undefined
           ? null
@@ -1689,10 +1770,21 @@ export class RollWork extends DurableObject<RollEnv> {
     }
   }
 
+  private async rescheduleAlarmForActiveAcceptance(): Promise<boolean> {
+    // External lifecycle sync can yield to an alarm before acceptance is stored.
+    if (this.activeAcceptances === 0 || this.readDelivery() !== undefined) {
+      return false;
+    }
+    await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
+    return true;
+  }
+
   private async processAlarm(): Promise<void> {
+    if (await this.rescheduleAlarmForActiveAcceptance()) return;
     await this.syncLifecycle();
     const delivery = this.readDelivery();
     if (delivery === undefined) {
+      if (await this.rescheduleAlarmForActiveAcceptance()) return;
       const lifecycle = this.readLifecycleOutbox();
       if (
         lifecycle !== undefined &&
@@ -2461,6 +2553,10 @@ export class RollWork extends DurableObject<RollEnv> {
         );
       }
       if (!skipDiceDelay && delivery.clatter_sent_at === null) {
+        const discordOperation: DiscordOperation =
+          metadata.responseMode === "followup"
+            ? "create-followup-clatter"
+            : "edit-original-clatter";
         let clatterResponse: Response;
         try {
           const request = metadata.responseMode === "followup"
@@ -2486,12 +2582,14 @@ export class RollWork extends DurableObject<RollEnv> {
               clatterResponse.status,
             );
           }
+          const code = await readDiscordErrorCode(clatterResponse);
           return this.failDelivery(
             target.id,
             attempts,
             clatterResponse.status,
             delivery.expires_at,
             "clatter",
+            { code, operation: discordOperation },
           );
         }
         if (metadata.responseMode === "followup") {
@@ -2550,6 +2648,7 @@ export class RollWork extends DurableObject<RollEnv> {
     }
 
     let request: Request;
+    let discordOperation: DiscordOperation;
     if (record.outcome.outcomes.length === 0) {
       try {
         const payload =
@@ -2568,6 +2667,9 @@ export class RollWork extends DurableObject<RollEnv> {
         request = metadata.responseMode === "followup"
           ? buildFollowupResponse(target, payload, false)
           : buildEditOriginalResponse(target, payload);
+        discordOperation = metadata.responseMode === "followup"
+          ? "create-followup-result"
+          : "edit-original-result";
       } catch {
         return this.terminateDelivery(
           target,
@@ -2672,6 +2774,7 @@ export class RollWork extends DurableObject<RollEnv> {
       };
       if (metadata.responseMode !== "followup") {
         request = buildEditOriginalResponseWithFile(target, payload, attachment);
+        discordOperation = "edit-original-result";
       } else if (followupMessageId !== null) {
         request = buildEditFollowupResponseWithFile(
           target,
@@ -2679,8 +2782,10 @@ export class RollWork extends DurableObject<RollEnv> {
           payload,
           attachment,
         );
+        discordOperation = "edit-followup-result";
       } else {
         request = buildFollowupResponseWithFile(target, payload, attachment);
+        discordOperation = "create-followup-result";
       }
     }
 
@@ -2763,12 +2868,14 @@ export class RollWork extends DurableObject<RollEnv> {
       );
     }
 
+    const code = await readDiscordErrorCode(response);
     return this.failDelivery(
       target.id,
       attempts,
       response.status,
       delivery.expires_at,
       "discord",
+      { code, operation: discordOperation },
     );
   }
 
@@ -2891,6 +2998,7 @@ export class RollWork extends DurableObject<RollEnv> {
     httpStatus: number,
     expiresAt: number,
     failurePhase: DestinationCompletionPhase,
+    discordFailure?: DiscordFailureDetails,
   ): Promise<DeliverRollWorkResult> {
     this.ctx.storage.sql.exec(
       `UPDATE interaction_delivery
@@ -2914,6 +3022,7 @@ export class RollWork extends DurableObject<RollEnv> {
       httpStatus,
       failurePhase,
       completedAt,
+      ...(discordFailure === undefined ? {} : { discordFailure }),
     });
     await this.ctx.storage.setAlarm(expiresAt);
     return { status: "failed" };

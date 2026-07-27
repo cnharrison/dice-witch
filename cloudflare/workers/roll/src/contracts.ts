@@ -18,6 +18,7 @@ import {
   isDiscordRollChannelType,
   type RollLoggingContext,
 } from "../../../packages/discord-contracts/src";
+import { renderedRollFaceV4 } from "../../../packages/roll-render-model/src";
 import {
   MAX_DIE_SIDES,
   MAX_NOTATION_EXPRESSIONS,
@@ -752,13 +753,6 @@ function renderTargetForRollDieV4(die: RollDie): RenderDieV4["target"] {
   return TARGET_BY_SIDES_V4[die.sides] ?? "other";
 }
 
-function renderedResultForRollDieV4(die: RollDie): number {
-  const face = die.physicalFace ?? die.rolled;
-  if (die.sides === "F" || die.sides === "%") return face;
-  if (die.sides === 10 && face === 0) return 0;
-  return ((face - 1) % die.sides) + 1;
-}
-
 function modifierIconsForRollDieV4(
   modifiers: readonly string[],
 ): IconNameV4[] {
@@ -803,7 +797,7 @@ function validateRenderSnapshotV4(
       const expectedIcons = modifierIconsForRollDieV4(rollDie.modifiers);
       if (
         renderDie.target !== target ||
-        renderDie.result !== renderedResultForRollDieV4(rollDie) ||
+        renderDie.result !== renderedRollFaceV4(rollDie) ||
         (target === "other" &&
           (renderDie.target !== "other" || renderDie.sides !== rollDie.sides)) ||
         renderDie.icons.length !== expectedIcons.length ||
