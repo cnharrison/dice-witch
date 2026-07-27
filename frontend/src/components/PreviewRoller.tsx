@@ -196,24 +196,24 @@ export function PreviewRoller() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="preview-theme">
       <div className="flex flex-col items-center">
-        <div className="w-full 
-                        [&_button:not([variant=ghost]):not([size=icon])]:!bg-[#8000ff] 
-                        [&_button:not([variant=ghost]):not([size=icon])]:!text-white 
-                        [&_button:not([variant=ghost]):not([size=icon])]:hover:!bg-[#6600cc]
-                        
-                        [&_button[variant=ghost]]:!bg-transparent 
-                        [&_button[variant=ghost]]:!text-[#9933ff]
-                        [&_button[variant=ghost]]:hover:!text-[#aa66ff]
-                        
-                        [&_button[size=icon]]:!bg-transparent 
-                        [&_button[size=icon]]:!text-[#9933ff]
-                        [&_button[size=icon]]:hover:!text-[#aa66ff]
-                        
-                        [&_input]:!bg-[#050505] 
-                        [&_input]:!border-[#333333] 
-                        [&_input]:!text-[#ffffff]
-                        
-                        [&_.d20-icon]:!text-[#9933ff]">
+        <div className="w-full
+                        [&_button:not([variant=ghost]):not([size=icon])]:!bg-marketing-accent
+                        [&_button:not([variant=ghost]):not([size=icon])]:!text-marketing-foreground
+                        [&_button:not([variant=ghost]):not([size=icon])]:hover:!bg-marketing-accent-hover
+
+                        [&_button[variant=ghost]]:!bg-transparent
+                        [&_button[variant=ghost]]:!text-marketing-accent
+                        [&_button[variant=ghost]]:hover:!text-marketing-accent-hover
+
+                        [&_button[size=icon]]:!bg-transparent
+                        [&_button[size=icon]]:!text-marketing-accent
+                        [&_button[size=icon]]:hover:!text-marketing-accent-hover
+
+                        [&_input]:!border-marketing-border
+                        [&_input]:!bg-marketing-background
+                        [&_input]:!text-marketing-foreground
+
+                        [&_.d20-icon]:!text-marketing-accent">
           <Roller
             diceInfo={diceInfo}
             rollResults={rollResults}

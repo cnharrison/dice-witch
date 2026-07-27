@@ -286,6 +286,10 @@ describe("executeRoll", () => {
       code: "TOO_MANY_DICE",
     },
     {
+      notation: ["d2!!>0"],
+      code: "UNSAFE_EXPLOSION",
+    },
+    {
       notation: ["hello"],
       code: "NO_DICE",
     },

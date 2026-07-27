@@ -10,7 +10,7 @@
   "packageManager": "npm@11.6.2",
   "scripts": {
     "lint": "eslint .",
-    "test": "npm run test:config && npm run test:canvaskit-runtime && npm run test:appearance && npm run test:dice-svg && npm run test:gateway && npm run test:discord-rest && npm run test:interactions && npm run test:roll && npm run test:data && npm run test:web-api",
+    "test": "npm run test:config && npm run test:canvaskit-runtime && npm run test:appearance && npm run test:saved-rolls && npm run test:dice-svg && npm run test:gateway && npm run test:discord-rest && npm run test:interactions && npm run test:roll && npm run test:data && npm run test:web-api",
     "test:config": "node --test tools/*.test.mjs",
     "test:canvaskit-runtime": "npm run canvaskit:verify && vitest run --config vitest.canvaskit-runtime.config.ts && vitest run --config vitest.canvaskit-r4-resource.config.ts",
     "canvaskit:verify": "node tools/canvaskit/verify.mjs",
@@ -18,6 +18,7 @@
     "canvaskit:product-benchmark": "vitest run --config vitest.canvaskit-product-benchmark.config.ts",
     "type-check:canvaskit-runtime": "npm run canvaskit:verify && tsc --noEmit --project tsconfig.canvaskit-runtime.json",
     "test:appearance": "vitest run --config vitest.appearance.config.ts",
+    "test:saved-rolls": "vitest run --config vitest.saved-rolls.config.ts",
     "test:dice-svg": "vitest run --config vitest.dice-svg.config.ts",
     "test:gateway": "vitest run --config vitest.gateway.config.ts",
     "test:discord-rest": "vitest run --config vitest.discord-rest.config.ts",
@@ -41,8 +42,9 @@
   },
   "dependencies": {
     "@cf-wasm/resvg": "0.3.4",
+    "@dice-roller/rpg-dice-roller": "5.5.1",
     "@dice-witch/dice-v4-model": "0.0.0",
-    "@dice-roller/rpg-dice-roller": "5.5.1"
+    "unicode-segmenter": "0.14.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",

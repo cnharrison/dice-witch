@@ -23,6 +23,10 @@ import type { ThreeDiceGridViewportV4 } from "./grid-layout";
 
 const SMOKE_DURATION_MILLISECONDS_V4 = 360;
 const SMOKE_PARTICLE_COUNT_V4 = 6;
+const TRAY_CAMERA_DISTANCE_SCALE_V4 = 0.75;
+const TRAY_CAMERA_MINIMUM_Y_V4 = -0.6;
+const TRAY_CAMERA_MAXIMUM_Y_V4 = 4.2;
+const TRAY_CAMERA_FIT_ITERATIONS_V4 = 20;
 
 export type ThreeTraySmokeV4 = {
   group: Group;
@@ -97,16 +101,48 @@ export function configureThreeTrayCameraV4(
     2.4,
     bounds.halfDepth + TRAY_DIE_RADIUS_V4,
   );
-  const distance = boundingRadius / Math.sin(limitingHalfFov);
+  const fitDistance = boundingRadius / Math.sin(limitingHalfFov);
+  const requestedDistance = fitDistance * TRAY_CAMERA_DISTANCE_SCALE_V4;
   const target = new Vector3(0, 1.8, 0);
   const direction = new Vector3(0, 0.72, 0.69).normalize();
-  context.camera.aspect = aspect;
-  context.camera.position.copy(target).addScaledVector(direction, distance);
-  context.camera.up.set(0, 1, 0);
-  context.camera.lookAt(target);
-  context.camera.far = Math.max(100, distance + boundingRadius * 2);
-  context.camera.updateProjectionMatrix();
-  context.camera.updateMatrixWorld();
+  const positionCamera = (distance: number) => {
+    context.camera.aspect = aspect;
+    context.camera.position.copy(target).addScaledVector(direction, distance);
+    context.camera.up.set(0, 1, 0);
+    context.camera.lookAt(target);
+    context.camera.far = Math.max(100, distance + boundingRadius * 2);
+    context.camera.updateProjectionMatrix();
+    context.camera.updateMatrixWorld();
+  };
+  const containsTray = () => {
+    const xExtent = bounds.halfWidth + TRAY_DIE_RADIUS_V4;
+    const zExtent = bounds.halfDepth + TRAY_DIE_RADIUS_V4;
+    return [-1, 1].every((xDirection) =>
+      [-1, 1].every((zDirection) =>
+        [TRAY_CAMERA_MINIMUM_Y_V4, TRAY_CAMERA_MAXIMUM_Y_V4].every((y) => {
+          const projected = new Vector3(
+            xDirection * xExtent,
+            y,
+            zDirection * zExtent,
+          ).project(context.camera);
+          return Math.abs(projected.x) <= 1 && Math.abs(projected.y) <= 1;
+        }),
+      ),
+    );
+  };
+
+  positionCamera(requestedDistance);
+  if (!containsTray()) {
+    let clippedDistance = requestedDistance;
+    let containedDistance = fitDistance;
+    for (let index = 0; index < TRAY_CAMERA_FIT_ITERATIONS_V4; index += 1) {
+      const candidateDistance = (clippedDistance + containedDistance) / 2;
+      positionCamera(candidateDistance);
+      if (containsTray()) containedDistance = candidateDistance;
+      else clippedDistance = candidateDistance;
+    }
+    positionCamera(containedDistance);
+  }
 }
 
 export function applyTraySnapshotToGroupV4(

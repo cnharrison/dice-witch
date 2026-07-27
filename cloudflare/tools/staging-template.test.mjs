@@ -41,13 +41,16 @@ test("uses isolated staging Worker and service names", async () => {
   }
 });
 
-test("keeps staging Data private and schedules only audience capture", async () => {
+test("keeps staging Data private with lifecycle and audience schedules", async () => {
   const configs = await loadTemplates();
 
   assert.equal(configs.data.workers_dev, false);
   assert.equal(configs.interactions.workers_dev, true);
   assert.equal("route" in configs.data, false);
   assert.equal("routes" in configs.data, false);
+  assert.deepEqual(configs.data.triggers, {
+    crons: ["* * * * *", "0 3 * * *"],
+  });
   assert.deepEqual(configs.gateway.triggers, { crons: ["*/5 * * * *"] });
   assert.equal(configs.roll.vars.ROLL_RENDER_VERSION, "4");
 });

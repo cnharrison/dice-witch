@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { getAppearancePreview } from "@/lib/appearance";
 import {
   APPEARANCE_TARGET_LABELS,
@@ -55,10 +56,7 @@ export function AppearancePreviewPane({
   let previewContent: React.ReactNode;
   if (previewQuery.isLoading || previewQuery.isFetching) {
     previewContent = (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground dark:text-white/70">
-        <RefreshCw className="h-4 w-4 animate-spin" />
-        Rendering preview…
-      </div>
+      <SparkleLoadingIndicator label="Rendering preview" className="min-h-24" />
     );
   } else if (previewQuery.data) {
     previewContent = (
@@ -72,7 +70,7 @@ export function AppearancePreviewPane({
     );
   } else {
     previewContent = (
-      <p role="alert" className="text-sm text-destructive dark:text-rose-200">
+      <p role="alert" className="text-sm text-destructive">
         {previewQuery.error instanceof Error
           ? previewQuery.error.message
           : "Preview is unavailable."}
@@ -84,11 +82,11 @@ export function AppearancePreviewPane({
     <section
       aria-label="Preview"
       data-expanded={isExpanded}
-      className="overflow-hidden rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg dark:border-fuchsia-500/40 dark:bg-[#170a16] dark:text-white"
+      className="overflow-hidden rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg dark:border-brand/40 dark:bg-select dark:text-card-foreground"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-fuchsia-800 dark:text-fuchsia-200">
+          <h2 className="text-sm font-semibold text-foreground">
             Preview
           </h2>
           <p className="text-sm text-muted-foreground dark:text-white/70">

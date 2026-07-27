@@ -1,7 +1,6 @@
 import * as React from "react";
-import { useAuth, useUser } from "@/lib/AuthProvider";
 import { Link } from "react-router-dom";
-import { LogOut, Settings, Box } from "lucide-react";
+import { Bookmark, Settings, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
   Sheet, 
@@ -11,18 +10,15 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useTheme } from "@/components/theme-provider";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import {
+  loadHomePage,
+  loadLibraryPage,
+  loadPreferencesPage,
+} from "@/lib/app-route-loaders";
 
 export function MobileMenu() {
-  const { signOut } = useAuth();
-  const { user } = useUser();
   const { theme } = useTheme();
   const [open, setOpen] = React.useState(false);
-
-  const handleSignOut = () => {
-    setOpen(false);
-    signOut();
-  };
 
   const D20SVG = ({className}: {className?: string}) => {
     const fillColor = theme === 'dark' ? "white" : "black";
@@ -63,22 +59,17 @@ export function MobileMenu() {
       </SheetTrigger>
       <SheetContent side="left" className="w-64 sm:max-w-md border-r p-0">
         <SheetHeader className="text-left p-4 border-b">
-          <SheetTitle className="font-['UnifrakturMaguntia'] text-[#ff00ff] text-3xl">Dice Witch</SheetTitle>
-          <div className="flex items-center gap-3 mt-4">
-            <Avatar>
-              <AvatarImage src={user?.image} alt={user?.name || "User"} />
-              <AvatarFallback>
-                {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
-              </AvatarFallback>
-            </Avatar>
-            <span className="font-medium">
-              {user?.name || "User"}
-            </span>
-          </div>
+          <SheetTitle className="font-['UnifrakturMaguntia'] text-brand text-3xl">Dice Witch</SheetTitle>
         </SheetHeader>
         <div className="py-2">
           <nav className="flex flex-col">
-            <Link to="/app" replace onClick={() => setOpen(false)}>
+            <Link
+              to="/app"
+              replace
+              onFocus={() => void loadHomePage()}
+              onPointerDown={() => void loadHomePage()}
+              onClick={() => setOpen(false)}
+            >
               <Button 
                 variant="ghost" 
                 className="w-full justify-start rounded-none h-12"
@@ -87,7 +78,28 @@ export function MobileMenu() {
                 Roll
               </Button>
             </Link>
-            <Link to="/app/preferences" replace onClick={() => setOpen(false)}>
+            <Link
+              to="/app/library"
+              replace
+              onFocus={() => void loadLibraryPage()}
+              onPointerDown={() => void loadLibraryPage()}
+              onClick={() => setOpen(false)}
+            >
+              <Button
+                variant="ghost"
+                className="w-full justify-start rounded-none h-12"
+              >
+                <Bookmark className="mr-2 h-5 w-5" />
+                Library
+              </Button>
+            </Link>
+            <Link
+              to="/app/preferences"
+              replace
+              onFocus={() => void loadPreferencesPage()}
+              onPointerDown={() => void loadPreferencesPage()}
+              onClick={() => setOpen(false)}
+            >
               <Button 
                 variant="ghost" 
                 className="w-full justify-start rounded-none h-12"
@@ -96,14 +108,6 @@ export function MobileMenu() {
                 Preferences
               </Button>
             </Link>
-            <Button
-              variant="ghost"
-              onClick={handleSignOut}
-              className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-none h-12 mt-2 border-t"
-            >
-              <LogOut className="mr-2 h-5 w-5" />
-              Logout
-            </Button>
           </nav>
         </div>
       </SheetContent>

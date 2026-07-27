@@ -4,6 +4,7 @@ import { AppearanceRecipeControlsV3 } from "@/components/AppearanceRecipeControl
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { AppearanceTargetPickerV3 } from "@/components/AppearanceTargetPickerV3";
 import { SavedAppearanceDesigns } from "@/components/SavedAppearanceDesigns";
+import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,7 +33,7 @@ import type {
   AppearanceRecipeV3,
   CustomAppearanceDesignV3,
 } from "@dice-witch/dice-v4-model";
-import { Save } from "lucide-react";
+import { Check, Save } from "lucide-react";
 import * as React from "react";
 
 type AppearanceEditorV3Props = {
@@ -95,6 +96,9 @@ export function AppearanceEditorV3({
     initial.styleId !== "",
   );
   const [status, setStatus] = React.useState<string | null>(null);
+  const [presetState, setPresetState] = React.useState<
+    "idle" | "applying" | "applied"
+  >("idle");
   const [customizing, setCustomizing] = React.useState(false);
   const [personalDesignId, setPersonalDesignId] = React.useState("");
 
@@ -113,7 +117,7 @@ export function AppearanceEditorV3({
 
   const saveProfile = async (
     profile: EditableAppearanceProfileV3,
-    message: string,
+    message: string | null,
   ): Promise<boolean> => {
     setStatus(null);
     try {
@@ -148,23 +152,28 @@ export function AppearanceEditorV3({
   const selectTarget = (nextTarget: AppearanceEditorTargetV3) => {
     loadSelection(currentProfile, nextTarget);
     setStatus(null);
+    setPresetState("idle");
   };
 
   const selectStyle = async (styleId: string) => {
+    setPresetState("applying");
     const profile = applyAppearanceReferenceV3(
       currentProfile,
       target,
       { source: "builtin", id: styleId },
       catalog,
     );
-    const saved = await saveProfile(
-      profile,
-      `${APPEARANCE_TARGET_LABELS[target]} now uses the selected preset.`,
-    );
-    if (saved) loadSelection(profile, target);
+    const saved = await saveProfile(profile, null);
+    if (saved) {
+      loadSelection(profile, target);
+      setPresetState("applied");
+    } else {
+      setPresetState("idle");
+    }
   };
 
   const setCustomRecipe = (next: AppearanceRecipeV3) => {
+    setPresetState("idle");
     try {
       const editingPreset = selectedStyleId !== "";
       setRecipe(beginAppearanceRecipeEditV3(recipe, next, editingPreset));
@@ -311,13 +320,7 @@ export function AppearanceEditorV3({
     currentProfile.assignments.overrides[target] !== undefined;
 
   return (
-    <section
-      className={
-        target === "all"
-          ? "grid gap-6"
-          : "grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]"
-      }
-    >
+    <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
       <div className="space-y-6 rounded-xl border bg-card p-4 shadow-sm sm:p-6">
         <div>
           <AppearanceTargetPickerV3
@@ -335,7 +338,7 @@ export function AppearanceEditorV3({
                 type="button"
                 disabled={isSaving}
                 onClick={() => void clearTargetOverride()}
-                className="font-semibold text-fuchsia-600 underline-offset-2 hover:underline disabled:opacity-50 dark:text-fuchsia-300"
+                className="font-semibold text-brand underline-offset-2 hover:underline disabled:opacity-50"
               >
                 Use All dice design
               </button>
@@ -379,14 +382,15 @@ export function AppearanceEditorV3({
           <AppearancePresetGalleryV3
             catalog={catalog}
             selectedStyleId={selectedStyleId}
-            disabled={isSaving || customizing}
+            disabled={isSaving || presetState === "applying" || customizing}
             onSelect={(styleId) => void selectStyle(styleId)}
           />
           <Button
             type="button"
             variant="outline"
-            disabled={isSaving || customizing}
+            disabled={isSaving || presetState === "applying" || customizing}
             onClick={() => {
+              setPresetState("idle");
               setRecipe(withAutomaticMaterialFormsV3(recipe));
               setCustomizing(true);
               setStatus(null);
@@ -405,7 +409,7 @@ export function AppearanceEditorV3({
               onChange={setCustomRecipe}
             />
 
-            <div className="sticky bottom-2 z-20 rounded-lg border border-fuchsia-200 bg-fuchsia-50/95 p-4 shadow-lg backdrop-blur-sm dark:border-fuchsia-900 dark:bg-fuchsia-950/90">
+            <div className="sticky bottom-2 z-20 rounded-lg border border-brand/35 bg-card/95 p-4 shadow-lg backdrop-blur-sm">
               <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
                 <div className="space-y-1.5">
                   <Label htmlFor={`${kind}-design-name-v3`}>Design name</Label>
@@ -441,31 +445,41 @@ export function AppearanceEditorV3({
           </>
         )}
 
-        {status !== null && (
-          <p
-            role="status"
-            className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300"
-          >
+        {presetState === "applying" ? (
+          <SparkleLoadingIndicator
+            label="Applying preset"
+            className="w-fit"
+          />
+        ) : presetState === "applied" ? (
+          <p role="status" className="text-brand">
+            <Check
+              data-completion-glyph="check"
+              className="h-7 w-7"
+              strokeWidth={3}
+              aria-hidden="true"
+            />
+            <span className="sr-only">Preset applied</span>
+          </p>
+        ) : status !== null ? (
+          <p role="status" className="text-sm font-medium text-brand">
             {status}
           </p>
-        )}
+        ) : null}
       </div>
 
-      <aside
-        className={
-          target === "all"
-            ? "space-y-4"
-            : "space-y-4 xl:sticky xl:top-6 xl:self-start"
-        }
-      >
-        <AppearancePreviewPaneV3 target={target} recipe={recipe} />
-        <SavedAppearanceDesigns
-          designs={currentProfile.designs}
-          isSaving={isSaving}
-          onApply={(designId) => void applySavedDesign(designId)}
-          onEdit={editDesign}
-          onDelete={(designId) => void deleteDesign(designId)}
-        />
+      <aside className="space-y-4">
+        <div className="xl:sticky xl:top-6 xl:z-10">
+          <AppearancePreviewPaneV3 target={target} recipe={recipe} />
+        </div>
+        {currentProfile.designs.length > 0 && (
+          <SavedAppearanceDesigns
+            designs={currentProfile.designs}
+            isSaving={isSaving}
+            onApply={(designId) => void applySavedDesign(designId)}
+            onEdit={editDesign}
+            onDelete={(designId) => void deleteDesign(designId)}
+          />
+        )}
       </aside>
     </section>
   );

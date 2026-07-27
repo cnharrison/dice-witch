@@ -55,8 +55,8 @@ export function SearchableGuildPicker({
               key={guild.id}
               className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors focus-within:ring-2 focus-within:ring-ring ${
                 selected
-                  ? "border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-950/30"
-                  : "hover:border-fuchsia-300 hover:bg-muted/50"
+                  ? "border-brand bg-brand/10"
+                  : "hover:border-brand/50 hover:bg-muted/50"
               }`}
             >
               <input

@@ -31,25 +31,35 @@ function Harness({ initial = recipe() }: { initial?: AppearanceRecipeV3 }) {
 afterEach(cleanup);
 
 describe("AppearanceMaterialControlsV3", () => {
-  it("shows a selectable material list with one shared editor and no accordions", async () => {
+  it("uses one readable material selector and one shared editor", async () => {
     const user = userEvent.setup();
     const { container } = render(<Harness initial={recipe("chaotic")} />);
 
     expect(container.querySelectorAll("details")).toHaveLength(0);
     const mix = screen.getByRole("group", { name: "Material mix" });
-    const materialRows = within(mix).getAllByRole("button");
-    expect(materialRows).toHaveLength(17);
-    expect(materialRows[0]?.getAttribute("aria-pressed")).toBe("true");
+    const selector = within(mix).getByRole("combobox", {
+      name: "Material in mix",
+    });
+    expect(within(selector).getAllByRole("option")).toHaveLength(18);
+    expect(within(mix).getAllByRole("slider")).toHaveLength(1);
     expect(screen.getAllByLabelText("Material")).toHaveLength(1);
 
-    await user.click(materialRows[1] as HTMLButtonElement);
-    expect(materialRows[1]?.getAttribute("aria-pressed")).toBe("true");
+    await user.selectOptions(selector, "2");
+    expect(selector).toHaveProperty("value", "2");
+    expect(
+      screen.getByRole("heading", { name: "Edit Classic · Checkerboard" }),
+    ).toBeDefined();
     expect(screen.getAllByLabelText("Material")).toHaveLength(1);
   });
 
-  it("changes one fixed material while making its approved shape automatic", async () => {
+  it("gives one fixed material a full-width editor without a redundant mix", async () => {
     const user = userEvent.setup();
     render(<Harness />);
+
+    expect(screen.queryByRole("group", { name: "Material mix" })).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Edit Classic · Gradient" }),
+    ).toBeDefined();
 
     await user.selectOptions(screen.getByLabelText("Material"), "hollow-metal");
 
@@ -89,24 +99,27 @@ describe("AppearanceMaterialControlsV3", () => {
     expect(screen.queryByText(/Not authored/i)).toBeNull();
   });
 
-  it("redistributes linked sliders while keeping an exact 100% total", () => {
+  it("redistributes one active share slider while keeping an exact 100% total", () => {
     render(<Harness initial={recipe("chaotic")} />);
 
     const mix = screen.getByRole("group", { name: "Material mix" });
-    const sliders = within(mix).getAllByRole("slider") as HTMLInputElement[];
-    expect(sliders).toHaveLength(17);
-    expect(sliders[0]).toHaveProperty("value", "400");
+    const slider = within(mix).getByRole("slider") as HTMLInputElement;
+    expect(slider).toHaveProperty("value", "600");
 
-    fireEvent.change(sliders[0] as HTMLInputElement, {
-      target: { value: "700" },
-    });
+    fireEvent.change(slider, { target: { value: "700" } });
 
-    const updated = within(mix).getAllByRole("slider") as HTMLInputElement[];
-    expect(updated[0]).toHaveProperty("value", "700");
-    expect(updated.reduce((sum, slider) => sum + slider.valueAsNumber, 0)).toBe(
-      1000,
-    );
-    expect(within(mix).getAllByText("70%")).toHaveLength(1);
+    expect(within(mix).getByRole("slider")).toHaveProperty("value", "700");
+    expect(within(mix).getByText("70%")).toBeDefined();
+    const value = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    if (value.material.mode !== "weighted") {
+      throw new Error("Weighted fixture is missing");
+    }
+    expect(value.material.options[0]?.weight).toBe(700);
+    expect(
+      value.material.options.reduce((sum, option) => sum + option.weight, 0),
+    ).toBe(1000);
   });
 
   it("adds bounded weighted materials without dropping existing choices", async () => {
@@ -121,8 +134,8 @@ describe("AppearanceMaterialControlsV3", () => {
     await user.click(screen.getByRole("button", { name: "Add material" }));
 
     const mix = screen.getByRole("group", { name: "Material mix" });
-    const sliders = within(mix).getAllByRole("slider") as HTMLInputElement[];
-    expect(sliders.map(({ valueAsNumber }) => valueAsNumber)).toEqual([500, 500]);
+    expect(within(mix).getAllByRole("slider")).toHaveLength(1);
+    expect(within(mix).getByRole("slider")).toHaveProperty("value", "500");
     const value = JSON.parse(
       screen.getByTestId("recipe").textContent ?? "null",
     ) as AppearanceRecipeV3;

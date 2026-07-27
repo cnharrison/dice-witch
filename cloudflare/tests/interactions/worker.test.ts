@@ -14,7 +14,8 @@ async function signedRequest(
   body: string,
   overrides: {
     path?: string;
-    rollWork?: { acceptDelivery(value: unknown): Promise<unknown> };
+    rollWork?: Record<string, (value: unknown) => Promise<unknown>>;
+    dataFetch?: (request: Request) => Promise<Response>;
     signature?: string;
   } = {},
 ): Promise<{ env: InteractionEnv; request: Request }> {
@@ -43,7 +44,7 @@ async function signedRequest(
       SUPPORT_SERVER_LINK: "https://discord.gg/example",
       WEB_APP_URL: "https://example.com/app",
       DATA_SERVICE: {
-        fetch: () =>
+        fetch: overrides.dataFetch ?? (() =>
           Promise.resolve(
             Response.json({
               status: "found",
@@ -57,7 +58,7 @@ async function signedRequest(
                 guildCountsByShard: [1],
               },
             }),
-          ),
+          )),
       } as unknown as Fetcher,
       GATEWAY_STATUS: {
         getStatusSnapshot: () =>
@@ -84,6 +85,44 @@ async function signedRequest(
       },
     ),
   };
+}
+
+function savedRollDataFetch(request: Request): Promise<Response> {
+  const body = request.json<{
+    owner: { type: "user" | "guild"; userId?: string; guildId?: string };
+  }>();
+  return body.then(({ owner }) => {
+    const personal = owner.type === "user";
+    const ownerId = personal ? owner.userId : owner.guildId;
+    const id = personal
+      ? "123e4567-e89b-42d3-a456-426614174000"
+      : "223e4567-e89b-42d3-a456-426614174000";
+    return Response.json({
+      status: "found",
+      listRevision: 1,
+      savedRolls: [
+        {
+          version: 1,
+          id,
+          owner: personal
+            ? { type: "user", userId: ownerId }
+            : { type: "guild", guildId: ownerId },
+          displayName: personal ? "Attack" : "Defense",
+          comparisonKey: personal ? "attack" : "defense",
+          notation: personal ? "2d20+5" : "1d20+2",
+          title: null,
+          repetitions: 1,
+          pinned: false,
+          manualOrder: 0,
+          revision: 1,
+          createdByUserId: "100000000000000004",
+          updatedByUserId: "100000000000000004",
+          createdAt: 100,
+          updatedAt: 100,
+        },
+      ],
+    });
+  });
 }
 
 describe("Discord HTTP interaction Worker", () => {
@@ -120,18 +159,407 @@ describe("Discord HTTP interaction Worker", () => {
     });
   });
 
+  it("returns Personal and Server saved-roll autocomplete choices", async () => {
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: "100000000000000010",
+        application_id: "100000000000000001",
+        type: 4,
+        token: "fixture.interaction.token",
+        guild_id: "100000000000000002",
+        guild: { id: "100000000000000002", name: "Fixture Guild" },
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: { user: { id: "100000000000000004", username: "alice" } },
+        data: {
+          name: "library",
+          type: 1,
+          options: [{ name: "name", type: 3, value: "", focused: true }],
+        },
+      }),
+      { dataFetch: savedRollDataFetch },
+    );
+
+    const response = await handleInteractionRequest(request, env);
+
+    await expect(response.json()).resolves.toMatchObject({
+      type: 8,
+      data: {
+        choices: [
+          { name: "Personal · Attack" },
+          { name: "Server · Defense" },
+        ],
+      },
+    });
+  });
+
+  it("opens an actor-bound private saved-roll picker", async () => {
+    const openSavedRollPicker = vi.fn(() =>
+      Promise.resolve({
+        status: "created",
+        scope: "mine",
+        page: 0,
+        selectedId: null,
+        selectedRevision: null,
+      }),
+    );
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: "100000000000000010",
+        application_id: "100000000000000001",
+        type: 2,
+        token: "fixture.interaction.token",
+        guild_id: "100000000000000002",
+        guild: { id: "100000000000000002", name: "Fixture Guild" },
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: { user: { id: "100000000000000004", username: "alice" } },
+        data: { name: "library", type: 1 },
+      }),
+      {
+        dataFetch: savedRollDataFetch,
+        rollWork: { openSavedRollPicker },
+      },
+    );
+
+    const response = await handleInteractionRequest(request, env);
+    const body = await response.json<{
+      type: number;
+      data: { flags: number; components: Array<{ components: unknown[] }> };
+    }>();
+
+    expect(body.type).toBe(4);
+    expect(body.data.flags).toBe(64);
+    expect(body.data.components).toHaveLength(2);
+    expect(body.data.components.flatMap((row) => row.components)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 3 })]),
+    );
+    expect(openSavedRollPicker).toHaveBeenCalledOnce();
+  });
+
+  it("runs a saved roll and deletes its consumed picker", async () => {
+    const deletePicker = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const selection = {
+      scope: "mine",
+      id: "123e4567-e89b-42d3-a456-426614174000",
+      revision: 1,
+    };
+    const updateSavedRollPicker = vi.fn(() =>
+      Promise.resolve({
+        status: "updated",
+        scope: "mine",
+        page: 0,
+        selectedId: selection.id,
+        selectedRevision: selection.revision,
+      }),
+    );
+    const reserveSavedRollRun = vi.fn(() =>
+      Promise.resolve({ status: "reserved", selection }),
+    );
+    const acceptSavedRollDelivery = vi.fn(() =>
+      Promise.resolve({ status: "created", delivery: "pending" }),
+    );
+    const releaseData: Array<() => void> = [];
+    const dataFetch = vi.fn(
+      (request: Request) =>
+        new Promise<Response>((resolve) => {
+          releaseData.push(() => {
+            void savedRollDataFetch(request).then(resolve);
+          });
+        }),
+    );
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: "100000000000000011",
+        application_id: "100000000000000001",
+        type: 3,
+        token: "fixture.interaction.token",
+        guild_id: "100000000000000002",
+        guild: { id: "100000000000000002", name: "Fixture Guild" },
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: { user: { id: "100000000000000004", username: "alice" } },
+        data: {
+          custom_id: "saved-roll:v1:100000000000000010:run:mine:123e4567-e89b-42d3-a456-426614174000",
+          component_type: 2,
+        },
+      }),
+      {
+        dataFetch,
+        rollWork: {
+          updateSavedRollPicker,
+          reserveSavedRollRun,
+          acceptSavedRollDelivery,
+        },
+      },
+    );
+    let background: Promise<unknown> | undefined;
+    const ctx = {
+      waitUntil(promise: Promise<unknown>) {
+        background = promise;
+      },
+    } as unknown as ExecutionContext;
+
+    const response = await handleInteractionRequest(request, env, ctx);
+
+    await expect(response.json()).resolves.toEqual({ type: 6 });
+    expect(updateSavedRollPicker).not.toHaveBeenCalled();
+    expect(background).toBeDefined();
+    for (const release of releaseData) release();
+    await background;
+    expect(updateSavedRollPicker).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "select", selection }),
+    );
+    expect(reserveSavedRollRun).toHaveBeenCalledOnce();
+    expect(acceptSavedRollDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ selection, responseMode: "followup" }),
+    );
+    expect(deletePicker).toHaveBeenCalledOnce();
+    const deleteRequest = deletePicker.mock.calls[0]?.[0];
+    expect(deleteRequest).toBeInstanceOf(Request);
+    expect((deleteRequest as Request).method).toBe("DELETE");
+    expect((deleteRequest as Request).url).toBe(
+      "https://discord.com/api/v10/webhooks/100000000000000001/fixture.interaction.token/messages/@original",
+    );
+    deletePicker.mockRestore();
+  });
+
+  it("reserves an opaque saved roll before publicly deferring its direct delivery", async () => {
+    const reserveDirectSavedRoll = vi.fn((value: unknown) => {
+      const input = value as { selection: unknown };
+      return Promise.resolve({ status: "reserved", selection: input.selection });
+    });
+    const acceptSavedRollDelivery = vi.fn(() =>
+      Promise.resolve({ status: "created", delivery: "pending" }),
+    );
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: "100000000000000010",
+        application_id: "100000000000000001",
+        type: 2,
+        token: "fixture.interaction.token",
+        guild_id: "100000000000000002",
+        guild: { id: "100000000000000002", name: "Fixture Guild" },
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: { user: { id: "100000000000000004", username: "alice" } },
+        data: {
+          name: "library",
+          type: 1,
+          options: [
+            {
+              name: "name",
+              type: 3,
+              value: "mine:123e4567-e89b-42d3-a456-426614174000",
+            },
+          ],
+        },
+      }),
+      {
+        dataFetch: savedRollDataFetch,
+        rollWork: { reserveDirectSavedRoll, acceptSavedRollDelivery },
+      },
+    );
+
+    const response = await handleInteractionRequest(request, env);
+
+    await expect(response.json()).resolves.toEqual({ type: 5 });
+    expect(reserveDirectSavedRoll).toHaveBeenCalledOnce();
+    expect(acceptSavedRollDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        responseMode: "edit-original",
+        selection: {
+          scope: "mine",
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          revision: 1,
+        },
+      }),
+    );
+  });
+
+  it("returns the public defer before direct guild saved-roll preparation", async () => {
+    const releaseData: Array<() => void> = [];
+    const dataFetch = vi.fn(
+      (request: Request) =>
+        new Promise<Response>((resolve) => {
+          releaseData.push(() => {
+            void savedRollDataFetch(request).then(resolve);
+          });
+        }),
+    );
+    const reserveDirectSavedRoll = vi.fn((value: unknown) => {
+      const input = value as { selection: unknown };
+      return Promise.resolve({ status: "reserved", selection: input.selection });
+    });
+    const acceptSavedRollDelivery = vi.fn(() =>
+      Promise.resolve({ status: "created" }),
+    );
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: "100000000000000010",
+        application_id: "100000000000000001",
+        type: 2,
+        token: "fixture.interaction.token",
+        guild_id: "100000000000000002",
+        guild: { id: "100000000000000002", name: "Fixture Guild" },
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: { user: { id: "100000000000000004", username: "alice" } },
+        data: {
+          name: "library",
+          type: 1,
+          options: [
+            {
+              name: "name",
+              type: 3,
+              value: "mine:123e4567-e89b-42d3-a456-426614174000",
+            },
+          ],
+        },
+      }),
+      {
+        dataFetch,
+        rollWork: { reserveDirectSavedRoll, acceptSavedRollDelivery },
+      },
+    );
+    let background: Promise<unknown> | undefined;
+    const ctx = {
+      waitUntil(promise: Promise<unknown>) {
+        background = promise;
+      },
+    } as unknown as ExecutionContext;
+
+    const response = await handleInteractionRequest(request, env, ctx);
+    await expect(response.json()).resolves.toEqual({ type: 5 });
+    expect(reserveDirectSavedRoll).not.toHaveBeenCalled();
+    expect(background).toBeDefined();
+
+    for (const release of releaseData) release();
+    await background;
+    expect(reserveDirectSavedRoll).toHaveBeenCalledOnce();
+    expect(acceptSavedRollDelivery).toHaveBeenCalledOnce();
+  });
+
+  it("opens a prefilled private rename modal for Copy to Personal conflicts", async () => {
+    const copySavedRollToMine = vi.fn((value: unknown) => {
+      const input = value as { name: string | null };
+      return Promise.resolve(
+        input.name === null
+          ? { status: "name_conflict", name: "Attack" }
+          : { status: "copied", name: input.name },
+      );
+    });
+    const base = {
+      id: "100000000000000011",
+      application_id: "100000000000000001",
+      token: "fixture.interaction.token",
+      guild_id: "100000000000000002",
+      guild: { id: "100000000000000002", name: "Fixture Guild" },
+      channel_id: "100000000000000003",
+      channel: {
+        id: "100000000000000003",
+        guild_id: "100000000000000002",
+        name: "dice-rolls",
+        type: 0,
+      },
+      member: { user: { id: "100000000000000004", username: "alice" } },
+    };
+    const sessionId = "100000000000000020";
+    const component = await signedRequest(
+      JSON.stringify({
+        ...base,
+        type: 3,
+        data: {
+          custom_id: `saved-roll:v1:${sessionId}:copy`,
+          component_type: 2,
+        },
+      }),
+      { rollWork: { copySavedRollToMine } },
+    );
+
+    await expect(
+      (await handleInteractionRequest(component.request, component.env)).json(),
+    ).resolves.toMatchObject({
+      type: 9,
+      data: {
+        custom_id: `saved-roll:v1:${sessionId}:rename`,
+        components: [
+          { components: [{ value: "Attack" }] },
+        ],
+      },
+    });
+
+    const modal = await signedRequest(
+      JSON.stringify({
+        ...base,
+        id: "100000000000000012",
+        type: 5,
+        data: {
+          custom_id: `saved-roll:v1:${sessionId}:rename`,
+          components: [
+            {
+              type: 1,
+              components: [
+                {
+                  type: 4,
+                  custom_id: "saved-roll-name",
+                  value: "Attack copy",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      { rollWork: { copySavedRollToMine } },
+    );
+    await expect(
+      (await handleInteractionRequest(modal.request, modal.env)).json(),
+    ).resolves.toMatchObject({
+      type: 4,
+      data: { content: "Copied “Attack copy” to your Personal Library.", flags: 64 },
+    });
+  });
+
   it("durably accepts a roll before returning Discord's defer response", async () => {
     const interactionTimestamp = 1_783_800_000_000;
     const interactionId = String(
       (BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n,
     );
-    const acceptDelivery = vi.fn(() =>
-      Promise.resolve({
+    const acceptDelivery = vi.fn((value: unknown) => {
+      void value;
+      return Promise.resolve({
         status: "created",
         delivery: "pending",
         expiresAt: interactionTimestamp + 15 * 60 * 1_000,
-      }),
-    );
+      });
+    });
     const { env, request } = await signedRequest(
       JSON.stringify({
         id: interactionId,
@@ -160,7 +588,7 @@ describe("Discord HTTP interaction Worker", () => {
           options: [
             { name: "notation", type: 3, value: "2d20 + 5" },
             { name: "title", type: 3, value: "Attack" },
-            { name: "timestorepeat", type: 3, value: "2" },
+            { name: "times", type: 3, value: "2" },
           ],
         },
       }),
@@ -171,6 +599,17 @@ describe("Discord HTTP interaction Worker", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ type: 5 });
+    expect(acceptDelivery).toHaveBeenCalledOnce();
+    const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
+    if (
+      typeof acceptedRequest !== "object" ||
+      acceptedRequest === null ||
+      !("deferredAt" in acceptedRequest)
+    ) {
+      throw new Error("Accepted roll request is missing its deferred timestamp");
+    }
+    const deferredAt = acceptedRequest.deferredAt;
+    expect(typeof deferredAt).toBe("number");
     expect(acceptDelivery).toHaveBeenCalledWith({
       interaction: {
         id: interactionId,
@@ -184,6 +623,7 @@ describe("Discord HTTP interaction Worker", () => {
         userId: "100000000000000004",
         receivedAt: interactionTimestamp,
       },
+      deferredAt,
       logging: {
         source: "discord",
         channelId: "100000000000000003",

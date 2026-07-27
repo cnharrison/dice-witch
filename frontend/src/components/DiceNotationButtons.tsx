@@ -38,6 +38,25 @@ const MODIFIERS = [
   ...SUCCESS_FAILURE,
   ...COMPARISON,
 ] as const;
+const MODIFIER_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  k: "Keeps the highest die result in the group.",
+  kl: "Keeps the lowest die result in the group.",
+  d: "Drops the lowest die result in the group.",
+  dh: "Drops the highest die result in the group.",
+  "!": "Rolls another die whenever the maximum value is rolled.",
+  "!!": "Adds each exploding roll into one compound result.",
+  "!p": "Explodes on the maximum and subtracts one from each extra roll.",
+  r: "Rerolls matching results until they no longer match.",
+  ro: "Rerolls matching results once.",
+  u: "Rerolls duplicate results until every result is unique.",
+  cs: "Marks matching results as critical successes.",
+  cf: "Marks matching results as critical failures.",
+  "=": "Counts results equal to the comparison value as successes.",
+  ">": "Counts results above the comparison value as successes.",
+  "<": "Counts results below the comparison value as successes.",
+  ">=": "Counts results at or above the comparison value as successes.",
+  "<=": "Counts results at or below the comparison value as successes.",
+};
 const ADVANCED_TABS = ["dice", "modifiers", "numbers"] as const;
 type AdvancedTab = (typeof ADVANCED_TABS)[number];
 const ADVANCED_TAB_LABELS: Readonly<Record<AdvancedTab, string>> = {
@@ -182,6 +201,12 @@ function modifierLabel(modifier: string): string {
   return labels[modifier] ?? `Comparison ${modifier}`;
 }
 
+function modifierDescription(modifier: string): string {
+  const description = MODIFIER_DESCRIPTIONS[modifier];
+  if (description === undefined) throw new Error("Unknown dice modifier");
+  return description;
+}
+
 function DieIcon({ sides }: { sides: QuickDie }) {
   const { theme } = useTheme();
   const props = { className: "h-5 w-5", darkMode: theme === "dark" };
@@ -241,7 +266,10 @@ function DesktopDieControl({
           <DieIcon sides={sides} />
           <span className="text-[11px]">{label}</span>
           {count > 0 && (
-            <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ff00ff] px-1 text-[10px] font-bold text-white shadow-md">
+            <span
+              data-die-count
+              className="absolute -right-1.5 -top-1.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-foreground shadow-md"
+            >
               {count}
             </span>
           )}
@@ -406,21 +434,28 @@ export function DiceNotationButtons({
   );
   const modifierControls = (
     <div
-      className="mx-auto grid w-full max-w-xl grid-cols-4 gap-2"
+      className={cn(
+        "mx-auto grid w-full max-w-xl gap-2",
+        mobile ? "grid-cols-4" : "grid-cols-5",
+      )}
       aria-label="Modifiers"
     >
       {MODIFIERS.map((modifier) => (
-        <Button
-          type="button"
-          key={modifier}
-          variant="outline"
-          onClick={() => addModifier(modifier)}
-          disabled={isDisabled}
-          aria-label={modifierLabel(modifier)}
-          className={cn(mobile ? "h-11" : "h-9", "px-1 text-xs")}
-        >
-          {modifier}
-        </Button>
+        <Tooltip key={modifier}>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => addModifier(modifier)}
+              disabled={isDisabled}
+              aria-label={modifierLabel(modifier)}
+              className={cn(mobile ? "h-11" : "h-9", "px-1 text-xs")}
+            >
+              {modifier}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{modifierDescription(modifier)}</TooltipContent>
+        </Tooltip>
       ))}
     </div>
   );
@@ -464,7 +499,6 @@ export function DiceNotationButtons({
         <Button
           type="button"
           variant="outline"
-          disabled={isDisabled}
           aria-expanded={advancedOpen}
           aria-controls={`${advancedId}-controls`}
           onClick={() => {
@@ -512,95 +546,65 @@ export function DiceNotationButtons({
               </Button>
             )}
 
-            {mobile ? (
-              <>
-                <div
-                  role="tablist"
-                  aria-label="Advanced notation categories"
-                  className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1"
+            <div
+              role="tablist"
+              aria-label="Advanced notation categories"
+              className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1"
+            >
+              {ADVANCED_TABS.map((tab, index) => (
+                <button
+                  key={tab}
+                  id={`${advancedId}-${tab}-tab`}
+                  type="button"
+                  role="tab"
+                  aria-selected={advancedTab === tab}
+                  aria-controls={`${advancedId}-${tab}-panel`}
+                  tabIndex={advancedTab === tab ? 0 : -1}
+                  onClick={() => setAdvancedTab(tab)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key !== "ArrowLeft" &&
+                      event.key !== "ArrowRight"
+                    ) {
+                      return;
+                    }
+                    event.preventDefault();
+                    const offset = event.key === "ArrowRight" ? 1 : -1;
+                    const next = ADVANCED_TABS[
+                      (index + offset + ADVANCED_TABS.length) %
+                        ADVANCED_TABS.length
+                    ] as AdvancedTab;
+                    setAdvancedTab(next);
+                    document
+                      .getElementById(`${advancedId}-${next}-tab`)
+                      ?.focus();
+                  }}
+                  className={cn(
+                    "rounded px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    mobile ? "h-11" : "h-9",
+                    advancedTab === tab
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
                 >
-                  {ADVANCED_TABS.map((tab, index) => (
-                    <button
-                      key={tab}
-                      id={`${advancedId}-${tab}-tab`}
-                      type="button"
-                      role="tab"
-                      aria-selected={advancedTab === tab}
-                      aria-controls={`${advancedId}-${tab}-panel`}
-                      tabIndex={advancedTab === tab ? 0 : -1}
-                      onClick={() => setAdvancedTab(tab)}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key !== "ArrowLeft" &&
-                          event.key !== "ArrowRight"
-                        ) {
-                          return;
-                        }
-                        event.preventDefault();
-                        const offset = event.key === "ArrowRight" ? 1 : -1;
-                        const next = ADVANCED_TABS[
-                          (index + offset + ADVANCED_TABS.length) %
-                            ADVANCED_TABS.length
-                        ] as AdvancedTab;
-                        setAdvancedTab(next);
-                        document
-                          .getElementById(`${advancedId}-${next}-tab`)
-                          ?.focus();
-                      }}
-                      className={cn(
-                        "h-11 rounded px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        advancedTab === tab
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {ADVANCED_TAB_LABELS[tab]}
-                    </button>
-                  ))}
-                </div>
+                  {ADVANCED_TAB_LABELS[tab]}
+                </button>
+              ))}
+            </div>
 
-                <div
-                  id={`${advancedId}-${advancedTab}-panel`}
-                  role="tabpanel"
-                  aria-labelledby={`${advancedId}-${advancedTab}-tab`}
-                  className="grid min-h-0 flex-1 items-start justify-items-center overflow-y-auto py-3"
-                >
-                  {advancedTab === "dice" && advancedDiceControls}
-                  {advancedTab === "modifiers" && modifierControls}
-                  {advancedTab === "numbers" && numberControls}
-                </div>
-              </>
-            ) : (
-              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-3">
-                <section aria-labelledby={`${advancedId}-dice-heading`}>
-                  <h3
-                    id={`${advancedId}-dice-heading`}
-                    className="mb-2 text-xs font-semibold text-muted-foreground"
-                  >
-                    Dice
-                  </h3>
-                  {advancedDiceControls}
-                </section>
-                <section aria-labelledby={`${advancedId}-modifiers-heading`}>
-                  <h3
-                    id={`${advancedId}-modifiers-heading`}
-                    className="mb-2 text-xs font-semibold text-muted-foreground"
-                  >
-                    Modifiers
-                  </h3>
-                  {modifierControls}
-                </section>
-                <section aria-labelledby={`${advancedId}-numbers-heading`}>
-                  <h3
-                    id={`${advancedId}-numbers-heading`}
-                    className="mb-2 text-xs font-semibold text-muted-foreground"
-                  >
-                    Numbers
-                  </h3>
-                  {numberControls}
-                </section>
-              </div>
-            )}
+            <div
+              id={`${advancedId}-${advancedTab}-panel`}
+              role="tabpanel"
+              aria-labelledby={`${advancedId}-${advancedTab}-tab`}
+              className={cn(
+                "grid min-h-0 flex-1 items-start justify-items-center py-2",
+                mobile && "overflow-y-auto",
+              )}
+            >
+              {advancedTab === "dice" && advancedDiceControls}
+              {advancedTab === "modifiers" && modifierControls}
+              {advancedTab === "numbers" && numberControls}
+            </div>
           </div>
         )}
       </div>

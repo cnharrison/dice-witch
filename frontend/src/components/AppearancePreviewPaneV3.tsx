@@ -77,7 +77,7 @@ export function AppearancePreviewPaneV3({
   } else if (previewQuery.isError) {
     previewContent = (
       <div className="space-y-3 text-center">
-        <p role="alert" className="text-sm text-destructive dark:text-rose-200">
+        <p role="alert" className="text-sm text-destructive">
           {previewErrorMessage(previewQuery.error)}
         </p>
         <Button
@@ -102,7 +102,7 @@ export function AppearancePreviewPaneV3({
     );
   } else {
     previewContent = (
-      <p role="alert" className="text-sm text-destructive dark:text-rose-200">
+      <p role="alert" className="text-sm text-destructive">
         Preview is unavailable.
       </p>
     );
@@ -112,14 +112,14 @@ export function AppearancePreviewPaneV3({
     <section
       aria-label="Preview"
       data-expanded={isExpanded}
-      className="overflow-hidden rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg dark:border-fuchsia-500/40 dark:bg-[#170a16] dark:text-white"
+      className="overflow-hidden rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg dark:border-brand/40 dark:bg-select dark:text-card-foreground"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-fuchsia-800 dark:text-fuchsia-200">
+          <h2 className="text-sm font-semibold text-foreground">
             Preview
           </h2>
-          <p className="text-sm text-muted-foreground dark:text-white/70">
+          <p className="text-sm text-muted-foreground">
             {APPEARANCE_TARGET_LABELS[target]}
           </p>
         </div>

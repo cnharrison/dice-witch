@@ -165,23 +165,28 @@ describe("built-in appearance catalog", () => {
     }
   });
 
-  it("pins Random to the approved 1,200-point material recipe", () => {
+  it("pins Random V2 to the approved solid-first material recipe", () => {
     const random = BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID]
       ?.recipe;
     if (random === undefined || random.material.mode !== "weighted") {
       throw new Error("Random V3 weighted material recipe is missing");
     }
-    expect(random.randomization).toBe("full-spectrum-v1");
-    expect(random.material.options).toHaveLength(17);
+    expect(random.randomization).toBe("full-spectrum-v2");
+    expect(random.material.options).toHaveLength(18);
     expect(
       random.material.options.reduce((total, option) => total + option.weight, 0),
-    ).toBe(1_200);
+    ).toBe(1_500);
 
+    const solid = random.material.options.find(
+      ({ value }) =>
+        value.family === "classic" && value.treatment === "solid",
+    );
+    expect(solid?.weight).toBe(900);
     const gradient = random.material.options.find(
       ({ value }) =>
         value.family === "classic" && value.treatment === "gradient",
     );
-    expect(gradient?.weight).toBe(480);
+    expect(gradient?.weight).toBe(240);
     const patterns = random.material.options.filter(
       ({ value }) =>
         value.family === "classic" && value.treatment === "pattern",
@@ -192,7 +197,7 @@ describe("built-in appearance catalog", () => {
         ? value.patternId
         : null,
     )).toEqual(PATTERN_IDS_V4);
-    expect(patterns.every(({ weight }) => weight === 42)).toBe(true);
+    expect(patterns.every(({ weight }) => weight === 21)).toBe(true);
 
     const specials = random.material.options.filter(
       ({ value }) => value.family !== "classic",
@@ -200,7 +205,7 @@ describe("built-in appearance catalog", () => {
     expect(specials.map(({ value }) => value)).toEqual(
       RANDOM_SPECIAL_MATERIALS_V3.map(({ material }) => material),
     );
-    expect(specials.every(({ weight }) => weight === 50)).toBe(true);
+    expect(specials.every(({ weight }) => weight === 25)).toBe(true);
 
     expect(random.engraving).toEqual({
       mode: "weighted",
@@ -383,7 +388,7 @@ describe("built-in appearance catalog", () => {
     );
   });
 
-  it("gives V3 Random explicit 75/25 material and retained font weights", () => {
+  it("gives V3 Random explicit 60% solid and retained font weights", () => {
     const random = BUILTIN_APPEARANCE_RECIPES_V3.chaotic?.recipe;
     if (
       random === undefined ||
@@ -402,18 +407,18 @@ describe("built-in appearance catalog", () => {
             .filter(({ value }) => value.family === family)
             .reduce((total, { weight }) => total + weight, 0)
         : 0;
-    expect(materialWeight("classic")).toBe(900);
+    expect(materialWeight("classic")).toBe(1_350);
     expect(
       random.material.options
         .filter(({ value }) => value.family !== "classic")
         .reduce((total, { weight }) => total + weight, 0),
-    ).toBe(300);
+    ).toBe(150);
     expect(
       random.material.options.reduce(
         (total, { weight }) => total + weight,
         0,
       ),
-    ).toBe(1_200);
+    ).toBe(1_500);
     expect(
       new Set(
         random.material.options.flatMap(({ value }) =>

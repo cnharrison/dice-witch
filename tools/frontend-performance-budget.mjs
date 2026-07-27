@@ -3,8 +3,6 @@ import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 
-const LANDING_ROUTE_ASSETS = ["/images/dice-witch-banner.webp"];
-
 export const FRONTEND_PERFORMANCE_BUDGET = Object.freeze({
   initialTransferBytes: 225 * 1024,
   initialJavaScriptBytes: 90 * 1024,
@@ -33,7 +31,7 @@ function initialReferences(html) {
       match[0].startsWith("<script") ||
       rel === "modulepreload" ||
       rel === "stylesheet" ||
-      (rel === "preload" && values.as === "image");
+      rel === "preload";
     if (included) references.push(reference);
   }
   return [...new Set(references)];
@@ -50,10 +48,7 @@ export async function measureFrontendEntry(distDirectory) {
   const html = await readFile(indexPath, "utf8");
   const localReferences = [];
   const thirdPartyOrigins = new Set();
-  for (const reference of [
-    ...initialReferences(html),
-    ...LANDING_ROUTE_ASSETS,
-  ]) {
+  for (const reference of initialReferences(html)) {
     if (/^https?:\/\//.test(reference)) {
       thirdPartyOrigins.add(new URL(reference).origin);
     } else {

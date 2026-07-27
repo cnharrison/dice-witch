@@ -274,67 +274,78 @@ export function AppearanceMaterialControlsV3({
         </AppearanceSelectV3>
       </label>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.2fr)]">
-        <fieldset className="max-h-80 space-y-2 overflow-y-auto rounded-lg border bg-muted/20 p-4">
-          <legend className="px-1 text-sm font-semibold">Material mix</legend>
-          {entries.map((entry, index) => {
-            const familyName = materialNames.get(entry.material.family) ??
-              entry.material.family;
-            const name = `${familyName} · ${materialVariant(entry.material)}`;
-            const selected = index === activeIndex;
-            const percentage = weighted
-              ? formatMaterialWeightPercentV3(materialWeights[index] as number)
-              : null;
-            return (
-              <div
-                key={`${String(index)}-${entry.material.family}`}
-                className="grid grid-cols-[minmax(0,1fr)_4rem_2.5rem] items-center gap-2 sm:grid-cols-[minmax(8rem,0.9fr)_minmax(6rem,1fr)_3rem]"
+      <div className="grid items-start gap-4">
+        {multiple && (
+          <fieldset className="min-w-0 space-y-4 rounded-lg border bg-muted/20 p-4">
+            <legend className="px-1 text-sm font-semibold">Material mix</legend>
+            <label className="block max-w-xl space-y-1.5 text-xs font-medium">
+              <span className="block">Material to edit</span>
+              <AppearanceSelectV3
+                aria-label="Material in mix"
+                value={String(activeIndex)}
+                onChange={(event) =>
+                  setSelectedIndex(Number(event.target.value))
+                }
               >
-                <button
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => setSelectedIndex(index)}
-                  className={`min-h-11 truncate rounded-md border px-2 py-2 text-left text-sm font-medium sm:px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    weighted ? "" : "col-span-3"
-                  } ${
-                    selected
-                      ? "border-fuchsia-500 bg-fuchsia-500/10"
-                      : "bg-background hover:border-fuchsia-300"
-                  }`}
-                >
-                  {name}
-                </button>
-                {weighted ? (
-                  <input
-                    aria-label={`${name} share`}
-                    aria-valuetext={percentage ?? undefined}
-                    type="range"
-                    min={catalog.bounds.selectionWeight.minimum}
-                    max={
-                      MATERIAL_WEIGHT_TOTAL_V3 -
-                      (entries.length - 1) *
-                        catalog.bounds.selectionWeight.minimum
-                    }
-                    step={catalog.bounds.selectionWeight.step}
-                    value={materialWeights[index] as number}
-                    disabled={entries.length === 1}
-                    onChange={(event) =>
-                      updateWeight(index, event.currentTarget.valueAsNumber)
-                    }
-                    className="h-11 w-full cursor-pointer accent-fuchsia-600 disabled:cursor-default sm:h-9"
-                  />
-                ) : (
-                  <span className="hidden sm:block" aria-hidden="true" />
-                )}
-                {percentage !== null && (
-                  <output className="text-right font-mono text-xs tabular-nums text-muted-foreground">
-                    {percentage}
+                {entries.map((entry, index) => {
+                  const familyName =
+                    materialNames.get(entry.material.family) ??
+                    entry.material.family;
+                  const name = `${familyName} · ${materialVariant(entry.material)}`;
+                  const percentage = weighted
+                    ? ` — ${formatMaterialWeightPercentV3(
+                        materialWeights[index] as number,
+                      )}`
+                    : "";
+                  return (
+                    <option
+                      key={`${String(index)}-${entry.material.family}`}
+                      value={index}
+                    >
+                      {name}
+                      {percentage}
+                    </option>
+                  );
+                })}
+              </AppearanceSelectV3>
+            </label>
+            {weighted && (
+              <label className="block max-w-xl space-y-1.5 text-xs font-medium">
+                <span className="flex items-center justify-between gap-3">
+                  <span>Share of rolls</span>
+                  <output className="font-mono tabular-nums text-muted-foreground">
+                    {formatMaterialWeightPercentV3(
+                      materialWeights[activeIndex] as number,
+                    )}
                   </output>
-                )}
-              </div>
-            );
-          })}
-        </fieldset>
+                </span>
+                <input
+                  aria-label={`${activeName} share`}
+                  aria-valuetext={formatMaterialWeightPercentV3(
+                    materialWeights[activeIndex] as number,
+                  )}
+                  type="range"
+                  min={catalog.bounds.selectionWeight.minimum}
+                  max={
+                    MATERIAL_WEIGHT_TOTAL_V3 -
+                    (entries.length - 1) *
+                      catalog.bounds.selectionWeight.minimum
+                  }
+                  step={catalog.bounds.selectionWeight.step}
+                  value={materialWeights[activeIndex] as number}
+                  disabled={entries.length === 1}
+                  onChange={(event) =>
+                    updateWeight(activeIndex, event.currentTarget.valueAsNumber)
+                  }
+                  className="h-11 w-full cursor-pointer accent-brand disabled:cursor-default sm:h-9"
+                />
+                <span className="block font-normal text-muted-foreground">
+                  Other shares rebalance automatically to keep the mix at 100%.
+                </span>
+              </label>
+            )}
+          </fieldset>
+        )}
 
         <section
           className="rounded-lg border bg-background p-4"

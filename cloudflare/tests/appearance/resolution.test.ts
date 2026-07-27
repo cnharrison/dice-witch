@@ -1208,6 +1208,7 @@ describe("resolveAppearanceRecipeV3", () => {
     if (style === undefined) throw new Error("Random V3 style is missing");
 
     const sampleCount = 12_000;
+    let solids = 0;
     let gradients = 0;
     let patterns = 0;
     let specials = 0;
@@ -1234,18 +1235,23 @@ describe("resolveAppearanceRecipeV3", () => {
       engravingFinishes.add(appearance.engraving.finish);
       if (appearance.material.family === "classic") {
         expect(resolved.form).toBe("standard");
-        if (appearance.material.treatment === "gradient") {
-          gradients += 1;
-          const stops = appearance.palette.length;
-          stopCounts.set(stops, (stopCounts.get(stops) ?? 0) + 1);
-          if ([45, 135, 225, 315].includes(appearance.texture.rotation)) {
-            diagonalGradients += 1;
+        switch (appearance.material.treatment) {
+          case "solid":
+            solids += 1;
+            break;
+          case "gradient": {
+            gradients += 1;
+            const stops = appearance.palette.length;
+            stopCounts.set(stops, (stopCounts.get(stops) ?? 0) + 1);
+            if ([45, 135, 225, 315].includes(appearance.texture.rotation)) {
+              diagonalGradients += 1;
+            }
+            break;
           }
-        } else if (appearance.material.treatment === "pattern") {
-          patterns += 1;
-          patternIds.add(appearance.material.patternId);
-        } else {
-          throw new Error("Random selected an unsupported classic treatment");
+          case "pattern":
+            patterns += 1;
+            patternIds.add(appearance.material.patternId);
+            break;
         }
       } else {
         specials += 1;
@@ -1265,12 +1271,14 @@ describe("resolveAppearanceRecipeV3", () => {
       }
     }
 
-    expect(gradients / sampleCount).toBeGreaterThan(0.37);
-    expect(gradients / sampleCount).toBeLessThan(0.43);
-    expect(patterns / sampleCount).toBeGreaterThan(0.32);
-    expect(patterns / sampleCount).toBeLessThan(0.38);
-    expect(specials / sampleCount).toBeGreaterThan(0.22);
-    expect(specials / sampleCount).toBeLessThan(0.28);
+    expect(solids / sampleCount).toBeGreaterThan(0.57);
+    expect(solids / sampleCount).toBeLessThan(0.63);
+    expect(gradients / sampleCount).toBeGreaterThan(0.14);
+    expect(gradients / sampleCount).toBeLessThan(0.18);
+    expect(patterns / sampleCount).toBeGreaterThan(0.12);
+    expect(patterns / sampleCount).toBeLessThan(0.16);
+    expect(specials / sampleCount).toBeGreaterThan(0.08);
+    expect(specials / sampleCount).toBeLessThan(0.12);
     expect(patternIds).toEqual(
       new Set([
         "checkerboard",

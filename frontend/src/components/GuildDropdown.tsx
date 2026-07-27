@@ -1,36 +1,52 @@
-import * as React from "react";
-import { Badge } from "@/components/ui/badge";
+import { GuildLibraryLabel } from "@/components/SavedRollLibrarySelect";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-} from "@/components/ui/select"
-import { Guild } from "@/types/guild";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+} from "@/components/ui/select";
+import type { Guild } from "@/types/guild";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 
 interface GuildDropdownProps {
   guilds?: Guild[];
   value?: string;
   onValueChange?: (value: string) => void;
   ariaLabel?: string;
+  triggerClassName?: string;
+  contentClassName?: string;
 }
 
-export function GuildDropdown({ guilds = [], value, onValueChange, ariaLabel }: GuildDropdownProps) {
-  const adminGuilds = guilds.filter(guild => guild.isAdmin || guild.isDiceWitchAdmin);
-  const selectedGuild = adminGuilds.find(guild => guild.guilds.id === value);
+export function GuildDropdown({
+  guilds = [],
+  value,
+  onValueChange,
+  ariaLabel,
+  triggerClassName,
+  contentClassName,
+}: GuildDropdownProps) {
+  const adminGuilds = guilds.filter(
+    (guild) => guild.isAdmin || guild.isDiceWitchAdmin,
+  );
+  const selectedGuild = adminGuilds.find(
+    (guild) => guild.guilds.id === value,
+  );
 
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="w-[300px]" aria-label={ariaLabel}>
-        <div className="flex items-center w-full">
+      <SelectTrigger
+        className={cn("w-[300px]", triggerClassName)}
+        aria-label={ariaLabel}
+      >
+        <div className="flex w-full items-center">
           {selectedGuild ? (
             <>
-              <Avatar className="h-6 w-6 shrink-0 mr-2">
+              <Avatar className="mr-2 h-6 w-6 shrink-0">
                 {selectedGuild.guilds.icon ? (
-                  <AvatarImage 
-                    src={`https://cdn.discordapp.com/icons/${selectedGuild.guilds.id}/${selectedGuild.guilds.icon}.png`} 
-                    alt={selectedGuild.guilds.name} 
+                  <AvatarImage
+                    src={`https://cdn.discordapp.com/icons/${selectedGuild.guilds.id}/${selectedGuild.guilds.icon}.png`}
+                    alt={selectedGuild.guilds.name}
                   />
                 ) : (
                   <AvatarFallback>
@@ -41,41 +57,22 @@ export function GuildDropdown({ guilds = [], value, onValueChange, ariaLabel }: 
               <span className="truncate">{selectedGuild.guilds.name}</span>
             </>
           ) : (
-            <span className="text-muted-foreground">Select Guild</span>
+            <span className="text-muted-foreground">Select server</span>
           )}
         </div>
       </SelectTrigger>
-      <SelectContent className="min-w-[300px]">
+      <SelectContent className={cn("min-w-[300px]", contentClassName)}>
         {adminGuilds.map((guild) => (
-          <SelectItem key={guild.guilds.id} value={guild.guilds.id} className="py-2">
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Avatar className="h-6 w-6 flex-shrink-0">
-                  {guild.guilds.icon ? (
-                    <AvatarImage 
-                      src={`https://cdn.discordapp.com/icons/${guild.guilds.id}/${guild.guilds.icon}.png`} 
-                      alt={guild.guilds.name} 
-                    />
-                  ) : (
-                    <AvatarFallback>
-                      {guild.guilds.name.charAt(0)}
-                    </AvatarFallback>
-                  )}
-                </Avatar>
-                <span className="truncate max-w-[100px]">{guild.guilds.name}</span>
-              </div>
-              <div className="flex ml-2 flex-shrink-0">
-                {guild.isAdmin && (
-                  <Badge variant="secondary" className="ml-1">Admin</Badge>
-                )}
-                {guild.isDiceWitchAdmin && (
-                  <Badge variant="destructive" className="ml-1">DW Admin</Badge>
-                )}
-              </div>
-            </div>
+          <SelectItem
+            key={guild.guilds.id}
+            value={guild.guilds.id}
+            textValue={guild.guilds.name}
+            className="py-2"
+          >
+            <GuildLibraryLabel guild={guild} />
           </SelectItem>
         ))}
       </SelectContent>
     </Select>
-  )
+  );
 }

@@ -42,15 +42,15 @@ test("creates an exact-SHA deployment plan in dependency order", () => {
 
   assert.equal(plan.sourceSha, sha);
   assert.deepEqual(plan.workers, [
-    "data",
     "discord-rest",
-    "roll",
+    "data",
     "gateway",
+    "roll",
     "web-api",
   ]);
   assert.deepEqual(
     plan.steps.filter(({ kind }) => kind === "deploy").map(({ worker }) => worker),
-    ["data", "discord-rest", "roll", "gateway", "web-api"],
+    ["discord-rest", "data", "gateway", "roll", "web-api"],
   );
   assert.equal(plan.steps[0].kind, "quality-gate");
   assert.equal(plan.steps[1].kind, "migration-list");
@@ -126,8 +126,8 @@ test("requires a separate acknowledgement for Gateway deployment", () => {
   );
   assert.deepEqual(plan.workers, [
     "discord-rest",
-    "roll",
     "gateway",
+    "roll",
     "web-api",
   ]);
 });
@@ -141,7 +141,7 @@ test("creates a producer-only plan that waits for a real snapshot", () => {
     }),
   );
 
-  assert.deepEqual(plan.workers, ["data", "discord-rest", "gateway"]);
+  assert.deepEqual(plan.workers, ["discord-rest", "data", "gateway"]);
   assert.equal(plan.audienceProducerOnly, true);
   assert.equal(plan.steps.at(-1).kind, "await-audience-snapshot");
   assert.equal(

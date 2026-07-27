@@ -238,43 +238,6 @@ export class D1GuildRepository {
         : { status: "conflict" };
     }
 
-    const mutation =
-      value.type === "upsert"
-        ? this.db
-            .prepare(
-              `INSERT INTO guilds (
-                 id, name, icon, owner_id, member_count,
-                 approximate_member_count, preferred_locale,
-                 joined_timestamp, created_at, updated_at, is_active
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-               ON CONFLICT(id) DO UPDATE SET
-                 name = excluded.name,
-                 icon = excluded.icon,
-                 owner_id = excluded.owner_id,
-                 member_count = excluded.member_count,
-                 approximate_member_count = excluded.approximate_member_count,
-                 preferred_locale = excluded.preferred_locale,
-                 joined_timestamp = excluded.joined_timestamp,
-                 updated_at = excluded.updated_at,
-                 is_active = 1`,
-            )
-            .bind(
-              guildId,
-              value.guild.name,
-              value.guild.icon,
-              value.guild.ownerId,
-              value.guild.memberCount,
-              value.guild.approximateMemberCount,
-              value.guild.preferredLocale,
-              value.guild.joinedTimestamp,
-              value.occurredAt,
-              value.occurredAt,
-            )
-        : this.db
-            .prepare(
-              `UPDATE guilds SET is_active = 0, updated_at = ? WHERE id = ?`,
-            )
-            .bind(value.occurredAt, guildId);
     const receipt = this.db
       .prepare(
         `INSERT INTO mutation_receipts (
@@ -292,14 +255,112 @@ export class D1GuildRepository {
         guildId,
       );
     try {
-      const [changed, receiptCreated] = await this.db.batch([
-        mutation,
-        receipt,
-      ]);
-      const changedCount = changed?.meta.changes ?? 0;
+      if (value.type === "upsert") {
+        const mutation = this.db
+          .prepare(
+            `INSERT INTO guilds (
+               id, name, icon, owner_id, member_count,
+               approximate_member_count, preferred_locale,
+               joined_timestamp, created_at, updated_at, is_active
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+             ON CONFLICT(id) DO UPDATE SET
+               name = excluded.name,
+               icon = excluded.icon,
+               owner_id = excluded.owner_id,
+               member_count = excluded.member_count,
+               approximate_member_count = excluded.approximate_member_count,
+               preferred_locale = excluded.preferred_locale,
+               joined_timestamp = excluded.joined_timestamp,
+               updated_at = excluded.updated_at,
+               is_active = 1
+             WHERE guilds.updated_at <= excluded.updated_at`,
+          )
+          .bind(
+            guildId,
+            value.guild.name,
+            value.guild.icon,
+            value.guild.ownerId,
+            value.guild.memberCount,
+            value.guild.approximateMemberCount,
+            value.guild.preferredLocale,
+            value.guild.joinedTimestamp,
+            value.occurredAt,
+            value.occurredAt,
+          );
+        const [changed, receiptCreated] = await this.db.batch([
+          mutation,
+          receipt,
+        ]);
+        const changedCount = changed?.meta.changes ?? 0;
+        const receiptCount = receiptCreated?.meta.changes ?? 0;
+        if (receiptCount !== 1 || (changedCount !== 0 && changedCount !== 1)) {
+          throw new Error("Guild lifecycle mutation was not atomic");
+        }
+        return { status: "applied" };
+      }
+
+      const receiptMatch = `EXISTS (
+        SELECT 1 FROM mutation_receipts
+        WHERE mutation_id = ? AND entity_type = 'guild' AND entity_key = ?
+          AND operation = 'upsert' AND payload_json = ? AND occurred_at = ?
+      )`;
+      const deleteRolls = this.db.prepare(
+        `DELETE FROM saved_rolls
+         WHERE guild_id = ?
+           AND EXISTS (
+             SELECT 1 FROM guilds WHERE id = ? AND updated_at <= ?
+           )
+           AND ${receiptMatch}`,
+      ).bind(
+        guildId,
+        guildId,
+        value.occurredAt,
+        value.mutationId,
+        guildId,
+        payloadJson,
+        value.occurredAt,
+      );
+      const deleteList = this.db.prepare(
+        `DELETE FROM guild_saved_roll_lists
+         WHERE guild_id = ?
+           AND EXISTS (
+             SELECT 1 FROM guilds WHERE id = ? AND updated_at <= ?
+           )
+           AND ${receiptMatch}`,
+      ).bind(
+        guildId,
+        guildId,
+        value.occurredAt,
+        value.mutationId,
+        guildId,
+        payloadJson,
+        value.occurredAt,
+      );
+      const deactivate = this.db.prepare(
+        `UPDATE guilds SET is_active = 0, updated_at = ?
+         WHERE id = ? AND updated_at <= ? AND ${receiptMatch}`,
+      ).bind(
+        value.occurredAt,
+        guildId,
+        value.occurredAt,
+        value.mutationId,
+        guildId,
+        payloadJson,
+        value.occurredAt,
+      );
+      const [receiptCreated, rollsDeleted, listDeleted, changed] =
+        await this.db.batch([receipt, deleteRolls, deleteList, deactivate]);
       const receiptCount = receiptCreated?.meta.changes ?? 0;
-      if (changedCount === 0 && receiptCount === 0) return { status: "missing" };
-      if (changedCount !== 1 || receiptCount !== 1) {
+      const changedCount = changed?.meta.changes ?? 0;
+      const rollsDeletedCount = rollsDeleted?.meta.changes ?? 0;
+      const listDeletedCount = listDeleted?.meta.changes ?? 0;
+      if (receiptCount === 0) return { status: "missing" };
+      if (
+        receiptCount !== 1 ||
+        (changedCount !== 0 && changedCount !== 1) ||
+        (changedCount === 0 &&
+          (rollsDeletedCount !== 0 || listDeletedCount !== 0))
+      ) {
         throw new Error("Guild lifecycle mutation was not atomic");
       }
       return { status: "applied" };

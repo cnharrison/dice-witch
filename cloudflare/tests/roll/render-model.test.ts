@@ -709,9 +709,18 @@ describe("buildRollRenderRequestV3", () => {
 describe("buildRollRenderRequestV4", () => {
   it("maps every physical die into a validated renderer-revision snapshot", () => {
     const request = buildRollRenderRequestV4(
-      outcome(["d4", "d6", "d8", "d10", "d12", "d20", "d%", "dF", "d7"]),
+      executeRoll({
+        notation: ["d4", "d6", "d8", "d10", "d12", "d20", "d%", "dF", "d7"],
+        seed: 0,
+        stableAppearanceIdentities: true,
+      }),
       0x1234_abcd,
-      effectiveRecipesV3(),
+      effectiveRecipesV3(
+        appearanceRecipeV3({
+          variation: "wild",
+          colors: { mode: "vivid-random-pair" },
+        }),
+      ),
     );
 
     expect(request.version).toBe(4);
@@ -737,6 +746,10 @@ describe("buildRollRenderRequestV4", () => {
       sides: 7,
       form: "sphere",
     });
+    expect(request.groups[6]?.[0]?.appearance).toEqual(
+      request.groups[6]?.[1]?.appearance,
+    );
+    expect(request.groups[6]?.[0]?.form).toBe(request.groups[6]?.[1]?.form);
     expect(validateRenderRequestV4(request)).toEqual(request);
   });
 

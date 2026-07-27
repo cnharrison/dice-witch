@@ -85,23 +85,19 @@ function unsafeExplosion(
   repetitions: number,
 ): boolean {
   let hasExplosions = false;
-  let expectedDice = 0;
+  let expectedRolls = 0;
   for (const die of dice) {
     const explode = die.modifiers?.get("explode");
     if (!(explode instanceof Modifiers.ExplodeModifier)) {
-      expectedDice += die.qty;
+      expectedRolls += die.qty;
       continue;
     }
     hasExplosions = true;
-    if (explode.compound) {
-      expectedDice += die.qty;
-      continue;
-    }
     const probability = comparisonProbability(die, explode);
     if (probability >= 1 - Number.EPSILON) return true;
-    expectedDice += die.qty / (1 - probability);
+    expectedRolls += die.qty / (1 - probability);
   }
-  return hasExplosions && expectedDice * repetitions > MAX_RENDERED_DICE;
+  return hasExplosions && expectedRolls * repetitions > MAX_RENDERED_DICE;
 }
 
 export function parseNotationArgs(rawNotation: string): string[] {
@@ -162,7 +158,7 @@ export function checkRollLimits(
       allowed: false,
       containsDice: true,
       code: "UNSAFE_EXPLOSION",
-      message: `Expected exploded dice count exceeds the ${MAX_RENDERED_DICE} dice image limit`,
+      message: `Expected explosion work exceeds the ${MAX_RENDERED_DICE}-roll safety limit`,
     };
   }
   return { allowed: true, containsDice: true };

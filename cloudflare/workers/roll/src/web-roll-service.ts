@@ -103,6 +103,11 @@ export type WebRollResult =
       };
     };
 
+export type WebSavedRollAttribution = {
+  scope: "personal" | "guild";
+  name: string;
+};
+
 type WebRollRequest = {
   notation: string;
   repetitions: number;
@@ -110,6 +115,7 @@ type WebRollRequest = {
   title: string | null;
   userId: string;
   guildId: string;
+  savedRoll?: WebSavedRollAttribution;
   renderSeed?: number;
   appearanceDigest?: string;
 };
@@ -172,6 +178,22 @@ function hasExactKeys(
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 
+export function parseWebSavedRollAttribution(
+  value: unknown,
+): WebSavedRollAttribution {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["name", "scope"]) ||
+    (value.scope !== "personal" && value.scope !== "guild") ||
+    typeof value.name !== "string" ||
+    value.name.length < 1 ||
+    value.name.length > 1_024
+  ) {
+    throw new Error("Web Library roll attribution is invalid");
+  }
+  return { scope: value.scope, name: value.name };
+}
+
 function validateRequest(value: unknown): WebRollRequest {
   const legacyKeys = [
     "guildId",
@@ -181,12 +203,14 @@ function validateRequest(value: unknown): WebRollRequest {
     "userId",
     "username",
   ] as const;
+  const hasSavedRoll = isRecord(value) && value.savedRoll !== undefined;
+  const requestKeys = hasSavedRoll ? [...legacyKeys, "savedRoll"] : legacyKeys;
   const prepared =
     isRecord(value) &&
-    hasExactKeys(value, [...legacyKeys, "appearanceDigest", "renderSeed"]);
+    hasExactKeys(value, [...requestKeys, "appearanceDigest", "renderSeed"]);
   if (
     !isRecord(value) ||
-    (!hasExactKeys(value, legacyKeys) && !prepared) ||
+    (!hasExactKeys(value, requestKeys) && !prepared) ||
     (prepared &&
       (typeof value.appearanceDigest !== "string" ||
         !/^[0-9a-f]{64}$/.test(value.appearanceDigest))) ||
@@ -223,6 +247,9 @@ function validateRequest(value: unknown): WebRollRequest {
     title: value.title,
     userId: value.userId,
     guildId: value.guildId,
+    ...(hasSavedRoll
+      ? { savedRoll: parseWebSavedRollAttribution(value.savedRoll) }
+      : {}),
     ...(prepared
       ? {
           renderSeed: value.renderSeed as number,
@@ -713,6 +740,7 @@ export async function executeWebRoll(
 ): Promise<WebRollResult> {
   const request = validateRequest(value);
   const renderSeed = request.renderSeed ?? createRenderSeed();
+  const version = parseRollRenderVersion(configuredRenderVersion);
   const validation = prepareRollAppearance({
     notation: parseNotationArgs(request.notation),
     repetitions: request.repetitions,
@@ -726,7 +754,6 @@ export async function executeWebRoll(
         buildRollErrorMessage(validation).content ?? "Invalid dice notation",
     };
   }
-  const version = parseRollRenderVersion(configuredRenderVersion);
   const appearance = await loadWebAppearance(
     dataService,
     version,
@@ -738,6 +765,7 @@ export async function executeWebRoll(
     repetitions: request.repetitions,
     seed: createRollSeed(),
     stableAppearanceIdentities: true,
+    preserveOutOfRangePhysicalFaces: version === 4,
   });
   if (outcome.outcomes.length === 0) {
     return {
@@ -794,6 +822,14 @@ export async function executeWebRoll(
         title: request.title,
         username: request.username,
         filename,
+        ...(request.savedRoll === undefined
+          ? {}
+          : {
+              savedRoll: {
+                scope: request.savedRoll.scope === "personal" ? "Mine" : "Server",
+                name: request.savedRoll.name,
+              },
+            }),
       }),
       clatter,
       filename,

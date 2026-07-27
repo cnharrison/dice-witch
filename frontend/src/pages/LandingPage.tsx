@@ -1,9 +1,10 @@
 import * as React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth, useSignIn } from '@/lib/AuthProvider';
 import { Button } from "@/components/ui/button";
 import { useServerStats } from '@/hooks/useServerStats';
 import { SvgFilters } from '@/components/SvgFilters';
+import diceWitchBanner from '@/assets/dice-witch-banner.webp';
 import { appConfig } from '@/lib/config';
 
 const DeferredPreviewRoller = React.lazy(
@@ -13,6 +14,7 @@ const DeferredPreviewRoller = React.lazy(
 const LandingPage = () => {
   const { isSignedIn } = useAuth();
   const { signIn, isLoaded } = useSignIn();
+  const location = useLocation();
   const {
     liveGuilds,
     estimatedGuildMemberships,
@@ -41,21 +43,25 @@ const LandingPage = () => {
     if (!isLoaded) return;
     
     try {
-      signIn.authenticateWithRedirect({ strategy: 'oauth_discord' });
+      const returnTo = new URLSearchParams(location.search).get('returnTo');
+      signIn.authenticateWithRedirect({
+        strategy: 'oauth_discord',
+        ...(returnTo === null ? {} : { returnTo }),
+      });
     } catch (error) {
       console.error('Authentication error:', error);
     }
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-black text-white font-mono">
+    <div className="flex min-h-screen flex-col bg-marketing-background font-mono text-marketing-foreground">
       <SvgFilters />
       <section className="py-24 md:py-32">
         <div className="container mx-auto px-4 text-center">
           <div className="relative w-60 h-60 md:w-80 md:h-80 mx-auto mb-16">
-            <div className="aspect-square overflow-hidden rounded-full border border-zinc-800">
+            <div className="aspect-square overflow-hidden rounded-full border border-marketing-border">
               <img
-                src="/images/dice-witch-banner.webp"
+                src={diceWitchBanner}
                 alt="Dice Witch"
                 width="320"
                 height="320"
@@ -126,17 +132,17 @@ const LandingPage = () => {
 
           </div>
 
-          <h1 className="font-['UnifrakturMaguntia'] text-[#ff00ff] text-6xl md:text-8xl mb-8">
+          <h1 className="font-['UnifrakturMaguntia'] text-brand text-6xl md:text-8xl mb-8">
             Dice Witch
           </h1>
 
-          <p className="text-xl md:text-2xl mb-12 max-w-2xl mx-auto text-zinc-400 border-t border-b border-zinc-800 py-4">
+          <p className="mx-auto mb-12 max-w-2xl border-y border-marketing-border py-4 text-xl text-marketing-muted md:text-2xl">
             A dice roller for Discord with panache
           </p>
 
           <div className="flex flex-col md:flex-row justify-center gap-4">
             {isSignedIn ? (
-              <Button asChild className="bg-[#5865F2] hover:bg-[#4752C4] text-white px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors">
+              <Button asChild variant="discord" className="px-8 py-3 text-lg">
                 <Link to="/app" className="flex items-center">
                   <svg
                     width="24"
@@ -155,7 +161,7 @@ const LandingPage = () => {
               <Button
                 onClick={handleSignInWithDiscord}
                 disabled={!isLoaded}
-                className={`bg-[#5865F2] hover:bg-[#4752C4] text-white px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors ${!isLoaded ? 'opacity-70 cursor-not-allowed' : ''}`}
+                className={`bg-discord text-discord-foreground hover:bg-discord-hover px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors ${!isLoaded ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
                 <svg
                   width="24"
@@ -173,7 +179,7 @@ const LandingPage = () => {
 
             <Button
               asChild
-              className="bg-[#ff00ff] hover:bg-[#cc00cc] text-white px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors border border-[#ff66ff] shadow-[0_0_15px_rgba(255,0,255,0.5)]"
+              className="bg-brand text-brand-foreground hover:bg-brand-hover px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors border border-brand shadow-[0_0_15px_hsl(var(--brand)/0.45)]"
             >
               <a
                 href={appConfig.inviteUrl}
@@ -197,34 +203,34 @@ const LandingPage = () => {
         </div>
       </section>
 
-      <section className="py-24 border-t border-zinc-900 bg-[#120012]">
+      <section className="border-t border-marketing-border bg-marketing-surface py-24">
         <div className="container mx-auto px-4 max-w-3xl">
-          <h2 className="text-3xl font-mono mb-8 text-center border-b border-zinc-800 pb-2">Why Dice Witch?</h2>
+          <h2 className="mb-8 border-b border-marketing-border pb-2 text-center font-mono text-3xl">Why Dice Witch?</h2>
           <div className="grid grid-cols-1 gap-16">
             <div className="flex flex-col items-start">
               <h3 className="text-2xl font-mono mb-2">She literally shows you the dice</h3>
-              <p className="text-zinc-400">Dice Witch generates images on the fly as you roll, and presents you with these images right in Discord. Modifiers are represented this way as well</p>
+              <p className="text-marketing-muted">Dice Witch generates images on the fly as you roll, and presents you with these images right in Discord. Modifiers are represented this way as well</p>
             </div>
 
             <div className="flex flex-col items-start">
               <h3 className="text-2xl font-mono mb-2">Designed to simulate the feeling of rolling dice IRL</h3>
-              <p className="text-zinc-400">Rolling dice on Discord lacks the drama and tactility of real life. Dice Witch is about bringing that experience to Discord</p>
+              <p className="text-marketing-muted">Rolling dice on Discord lacks the drama and tactility of real life. Dice Witch is about bringing that experience to Discord</p>
             </div>
 
             <div className="flex flex-col items-start">
               <h3 className="text-2xl font-mono mb-2">Advanced rolling</h3>
-              <p className="text-zinc-400">Don't worry, Dice Witch supports the complex rolls and modifiers required for your esoteric shed-based hobby</p>
+              <p className="text-marketing-muted">Don't worry, Dice Witch supports the complex rolls and modifiers required for your esoteric shed-based hobby</p>
             </div>
 
             <div className="flex flex-col items-start">
               <h3 className="text-2xl font-mono mb-2">Web interface</h3>
-              <p className="text-zinc-400">You can control the bot from the web as a GM</p>
+              <p className="text-marketing-muted">You can control the bot from the web as a GM</p>
             </div>
 
             {available && (
               <div className="flex flex-col items-start">
                 <h3 className="text-2xl font-mono mb-2">Popular</h3>
-                <p className="text-zinc-400">
+                <p className="text-marketing-muted">
                   Dice Witch is active in {liveGuilds.toLocaleString()} Discord servers, representing approximately {estimatedGuildMemberships.toLocaleString()} guild memberships. {knownDiceWitchUsers.toLocaleString()} known users have interacted with Dice Witch.
                 </p>
               </div>
@@ -235,13 +241,13 @@ const LandingPage = () => {
 
       <section
         ref={previewSectionRef}
-        className="py-24 border-t border-zinc-900 bg-[#1a1a1a]"
+        className="border-t border-marketing-border bg-marketing-panel py-24"
       >
         <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-mono mb-8 text-center border-b border-zinc-800 pb-2 text-[#9933ff]">Roll</h2>
-          <p className="text-xl text-center mb-8 text-zinc-300 max-w-2xl mx-auto">You came here to roll, didn't you? Roll. (Note that these results won't be sent to Discord or anywhere else)</p>
+          <h2 className="mb-8 border-b border-marketing-border pb-2 text-center font-mono text-3xl text-marketing-accent">Roll</h2>
+          <p className="mx-auto mb-8 max-w-2xl text-center text-xl text-marketing-muted">You came here to roll, didn't you? Roll. (Note that these results won't be sent to Discord or anywhere else)</p>
           <div className="max-w-5xl mx-auto">
-            <div className="preview-section rounded-lg p-6 shadow-lg bg-[#121212] border border-[#333333]">
+            <div className="preview-section rounded-lg border border-marketing-border bg-marketing-card p-6 shadow-lg">
               {previewActive && (
                 <React.Suspense fallback={<div className="min-h-96" aria-hidden="true" />}>
                   <DeferredPreviewRoller />
@@ -252,9 +258,9 @@ const LandingPage = () => {
         </div>
       </section>
 
-      <footer className="py-8 border-t border-zinc-900 mt-auto bg-[#0f0f0f]">
+      <footer className="mt-auto border-t border-marketing-border bg-marketing-card py-8">
         <div className="container mx-auto px-4 text-center">
-          <p className="text-gray-400 font-mono">
+          <p className="font-mono text-marketing-muted">
             © {new Date().getFullYear()} Dice Witch, c/o Christopher Harrison
           </p>
         </div>

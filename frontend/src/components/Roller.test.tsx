@@ -2,7 +2,10 @@
 
 import { parsePublicRenderModelV4 } from "@dice-witch/dice-v4-model";
 import fixture from "./dice-v4-3d/fixtures/d6-r3.json";
-import { ROLL_DISPLAY_MODE_STORAGE_KEY_V4 } from "./dice-v4-3d/roll-display-mode";
+import {
+  MOBILE_ROLL_DISPLAY_MODE_STORAGE_KEY_V4,
+  ROLL_DISPLAY_MODE_STORAGE_KEY_V4,
+} from "./dice-v4-3d/roll-display-mode";
 import { ThemeProvider } from "./theme-provider";
 import type { RollPreparation, RollResponse } from "@/types/dice";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -111,6 +114,7 @@ function rollerElement(
   isPreparing = false,
   preparation: RollPreparation | null = null,
   isResultStale = false,
+  mobileView: "controls" | "result" = "result",
 ): React.ReactElement {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="roller-test-theme">
@@ -123,6 +127,7 @@ function rollerElement(
         input="1d6"
         setInput={vi.fn()}
         selectedChannel
+        mobileView={mobileView}
       />
     </ThemeProvider>
   );
@@ -171,8 +176,18 @@ describe("Roller V4 display modes", () => {
     expect(localStorage.getItem(ROLL_DISPLAY_MODE_STORAGE_KEY_V4)).toBe("2d");
   });
 
+  it("renders only notation controls in the mobile Roll workspace", () => {
+    stubMatchMedia(true);
+    render(rollerElement(rollResponse, false, null, false, "controls"));
+
+    expect(screen.getByText("Notation controls")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Show 2D dice" })).toBeNull();
+    expect(screen.queryByText("[6]")).toBeNull();
+  });
+
   it("defaults mobile results to 2D and allows an explicit 3D opt-in", async () => {
     stubMatchMedia(true);
+    localStorage.setItem(ROLL_DISPLAY_MODE_STORAGE_KEY_V4, "3d");
     const user = userEvent.setup();
     renderRoller();
 
@@ -185,7 +200,7 @@ describe("Roller V4 display modes", () => {
 
     await user.click(show3d);
     expect(await screen.findByTestId("three-dice")).toBeDefined();
-    expect(localStorage.getItem(ROLL_DISPLAY_MODE_STORAGE_KEY_V4)).toBe("3d");
+    expect(localStorage.getItem(MOBILE_ROLL_DISPLAY_MODE_STORAGE_KEY_V4)).toBe("3d");
   });
 
   it("switches to authoritative 2D with a capability notice after WebGL failure", async () => {

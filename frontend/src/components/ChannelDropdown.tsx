@@ -1,39 +1,51 @@
-import * as React from "react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
-interface Channel {
+export interface Channel {
   id: string;
   name: string;
   type: number;
 }
 
 interface ChannelDropdownProps {
-  channels?: any[];
+  channels?: Channel[];
   value?: string;
   onValueChange?: (value: string) => void;
+  ariaLabel?: string;
+  triggerClassName?: string;
+  contentClassName?: string;
 }
 
-export function ChannelDropdown({ channels = [], value, onValueChange }: ChannelDropdownProps) {
-  const selectedChannel = channels.find(channel => channel.id === value);
+export function ChannelDropdown({
+  channels = [],
+  value,
+  onValueChange,
+  ariaLabel,
+  triggerClassName,
+  contentClassName,
+}: ChannelDropdownProps) {
+  const selectedChannel = channels.find((channel) => channel.id === value);
 
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="w-[300px]">
-        <div className="flex items-center w-full">
+      <SelectTrigger
+        className={cn("w-[300px]", triggerClassName)}
+        aria-label={ariaLabel}
+      >
+        <div className="flex w-full items-center">
           {selectedChannel ? (
             <span className="truncate">#{selectedChannel.name}</span>
           ) : (
-            <span className="text-muted-foreground">Select Channel</span>
+            <span className="text-muted-foreground">Select channel</span>
           )}
         </div>
       </SelectTrigger>
-      <SelectContent className="min-w-[300px]">
+      <SelectContent className={cn("min-w-[300px]", contentClassName)}>
         {channels.map((channel) => (
           <SelectItem key={channel.id} value={channel.id} className="py-2">
             <span>#{channel.name}</span>
@@ -41,5 +53,5 @@ export function ChannelDropdown({ channels = [], value, onValueChange }: Channel
         ))}
       </SelectContent>
     </Select>
-  )
+  );
 }

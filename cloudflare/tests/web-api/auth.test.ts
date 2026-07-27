@@ -54,7 +54,9 @@ describe("web API Discord OAuth", () => {
   it("starts authorization with D1-backed state and a secure state cookie", async () => {
     const dataRequests: Array<{ path: string; body: unknown }> = [];
     const response = await handleAuthRequest(
-      new Request("https://api.example.com/api/auth/signin/discord"),
+      new Request(
+        "https://api.example.com/api/auth/signin/discord?returnTo=%2Fapp%2Flibrary",
+      ),
       bindings(async (request) => {
         dataRequests.push({
           path: new URL(request.url).pathname,
@@ -86,6 +88,9 @@ describe("web API Discord OAuth", () => {
     ]);
     expect(cookieValue(response, "auth_state")).toBe(
       `auth_state=${oauthState}; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
+    );
+    expect(cookieValue(response, "auth_return")).toBe(
+      "auth_return=%2Fapp%2Flibrary; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Lax",
     );
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
@@ -166,13 +171,21 @@ describe("web API Discord OAuth", () => {
     });
     const env = bindings(dataFetch);
     env.DISCORD_REST.inspectMembership = vi.fn(() =>
-      Promise.resolve({ status: "found" as const, isDiceWitchAdmin: true }),
+      Promise.resolve({
+        status: "found" as const,
+        isAdmin: true,
+        isDiceWitchAdmin: true,
+      }),
     );
 
     const response = await handleAuthRequest(
       new Request(
         `https://api.example.com/api/auth/callback/discord?code=callback-code&state=${oauthState}`,
-        { headers: { cookie: `auth_state=${oauthState}` } },
+        {
+          headers: {
+            cookie: `auth_state=${oauthState}; auth_return=%2Fapp%2Flibrary`,
+          },
+        },
       ),
       env,
       discordFetch,
@@ -180,13 +193,18 @@ describe("web API Discord OAuth", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe(`${frontendOrigin}/app`);
+    expect(response.headers.get("location")).toBe(
+      `${frontendOrigin}/app/library`,
+    );
     const sessionCookie = cookieValue(response, "session_id");
     expect(sessionCookie).toMatch(
       /^session_id=[A-Za-z0-9_-]{43}; Path=\/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax$/,
     );
     expect(cookieValue(response, "auth_state")).toBe(
       "auth_state=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+    );
+    expect(cookieValue(response, "auth_return")).toBe(
+      "auth_return=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
     );
     expect(dataRequests.map(({ path }) => path)).toEqual([
       "/internal/oauth-states/consume",
@@ -611,6 +629,18 @@ describe("web API Discord OAuth", () => {
           }),
         );
       }
+      if (path === "/internal/saved-rolls/v2/get") {
+        return Promise.resolve(Response.json({
+          status: "found",
+          savedRoll: {
+            displayName: "Initiative",
+            revision: 2,
+            notation: "1d20",
+            title: null,
+            repetitions: 1,
+          },
+        }));
+      }
       expect(path).toBe("/internal/guilds/settings");
       return Promise.resolve(
         Response.json({
@@ -620,9 +650,9 @@ describe("web API Discord OAuth", () => {
       );
     });
     const env = bindings(dataFetch);
-    const deliverWebRoll = vi.fn(() =>
-      Promise.resolve({ status: "delivered" as const }),
-    );
+    const deliverWebRoll = vi.fn<
+      WebApiBindings["DISCORD_REST"]["deliverWebRoll"]
+    >(() => Promise.resolve({ status: "delivered" as const }));
     env.DISCORD_REST.deliverWebRoll = deliverWebRoll;
     const png = new Uint8Array([137, 80, 78, 71]);
     const deliveryId = "11111111-1111-4111-8111-111111111111";
@@ -668,6 +698,11 @@ describe("web API Discord OAuth", () => {
           renderSeed: 123,
           appearanceDigest: "a".repeat(64),
           timesToRepeat: 1,
+          libraryRoll: {
+            scope: "personal",
+            id: "123e4567-e89b-42d3-a456-426614174000",
+            revision: 2,
+          },
         }),
       }),
       env,
@@ -695,6 +730,7 @@ describe("web API Discord OAuth", () => {
       title: null,
       userId: "100000000000000003",
       guildId: "100000000000000001",
+      savedRoll: { scope: "personal", name: "Initiative" },
       deliveryId,
       channelId: "100000000000000010",
       skipDelay: false,
@@ -734,6 +770,10 @@ describe("web API Discord OAuth", () => {
       guildId: "100000000000000001",
     });
     expect(deliverWebRoll).toHaveBeenCalledOnce();
+    const legacyDelivery = deliverWebRoll.mock.calls[0]?.[0];
+    expect(legacyDelivery).toMatchObject({ skipDelay: false });
+    expect(legacyDelivery?.delayMs).toBeGreaterThanOrEqual(1);
+    expect(legacyDelivery?.delayMs).toBeLessThanOrEqual(5_000);
   });
 
   it("keeps web preparation restricted to guild administrators", async () => {

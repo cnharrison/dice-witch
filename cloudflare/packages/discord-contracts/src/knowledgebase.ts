@@ -109,7 +109,7 @@ const ARTICLES: Record<string, KnowledgeBaseField[]> = {
     {
       name: "Repeating rolls",
       value:
-        "You can repeat any roll by using the `timestorepeat` parameter.\n\n`/roll notation:1d20+5 timestorepeat:6 `: Roll 1d20+5 6 times.\n\n `/roll notation:3d20+3d6 timestorepeat:10`: Roll 3d20 and 3d6 and add the results. Repeat ten times.",
+        "You can repeat any roll by using the `times` parameter.\n\n`/roll notation:1d20+5 times:6`: Roll 1d20+5 6 times.\n\n`/roll notation:3d20+3d6 times:10`: Roll 3d20 and 3d6 and add the results. Repeat ten times.",
       inline: false,
     },
   ],

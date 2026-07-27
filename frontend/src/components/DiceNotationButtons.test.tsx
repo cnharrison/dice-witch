@@ -67,6 +67,7 @@ describe("dice notation quick controls", () => {
     await user.click(addD6);
     await user.click(addD6);
     expect(screen.getByTestId("notation").textContent).toBe("2d6");
+    expect(addD6.querySelector("[data-die-count]")?.className).toContain("z-10");
 
     fireEvent.contextMenu(addD6);
     expect(screen.getByTestId("notation").textContent).toBe("1d6");
@@ -128,7 +129,7 @@ describe("dice notation quick controls", () => {
     );
   });
 
-  it("uses available desktop height to expose every advanced group", async () => {
+  it("keeps desktop Advanced controls in compact tabs", async () => {
     const user = userEvent.setup();
     render(<Harness initial="1d20+" />);
 
@@ -144,14 +145,25 @@ describe("dice notation quick controls", () => {
     expect(region.className).toContain("min-h-0");
     expect(region.className).toContain("flex-1");
     expect(region.className).not.toContain("absolute");
+    expect(screen.getByLabelText("Common dice")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Add d6" })).toBeDefined();
     expect(screen.queryByRole("dialog", { name: "Advanced dice notation" })).toBeNull();
-    expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.queryByRole("tab")).toBeNull();
-    expect(screen.queryByLabelText("Operators")).toBeNull();
+    expect(
+      screen.getByRole("tablist", { name: "Advanced notation categories" }),
+    ).toBeDefined();
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
     expect(indicator?.getAttribute("class")).toContain("rotate-180");
     expect(screen.getByRole("button", { name: "Add d%" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Add dF" })).toBeDefined();
+    await user.click(screen.getByRole("tab", { name: "Modifiers" }));
     expect(screen.getByRole("button", { name: "Keep highest" })).toBeDefined();
+    expect(
+      screen.getByText("Keeps the highest die result in the group."),
+    ).toBeDefined();
+    expect(
+      screen.getByText("Rerolls matching results once."),
+    ).toBeDefined();
+    await user.click(screen.getByRole("tab", { name: "Numbers" }));
     await user.click(screen.getByRole("button", { name: "7" }));
     expect(screen.getByTestId("notation").textContent).toBe("1d20+7");
 
@@ -165,6 +177,7 @@ describe("dice notation quick controls", () => {
     render(<Harness initial="1d20" />);
 
     await user.click(screen.getByRole("button", { name: "Advanced" }));
+    await user.click(screen.getByRole("tab", { name: "Modifiers" }));
     await user.click(screen.getByRole("button", { name: "Reroll once" }));
 
     expect(screen.getByTestId("notation").textContent).toBe("1d20ro");

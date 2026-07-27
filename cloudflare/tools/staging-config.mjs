@@ -28,7 +28,13 @@ const COMMON_CONFIG_KEYS = [
   "observability",
 ];
 const WORKER_CONFIG_KEYS = {
-  data: [...COMMON_CONFIG_KEYS, "d1_databases"],
+  data: [
+    ...COMMON_CONFIG_KEYS,
+    "triggers",
+    "alias",
+    "d1_databases",
+    "services",
+  ],
   "discord-rest": [
     ...COMMON_CONFIG_KEYS,
     "vars",
@@ -76,6 +82,7 @@ const WORKER_VAR_NAMES = {
     "INVITE_LINK",
     "SUPPORT_SERVER_LINK",
     "LOG_OUTPUT_CHANNEL_ID",
+    "ROLL_LIFECYCLE_ALERT_CHANNEL_ID",
   ],
   gateway: [
     "DISCORD_APPLICATION_ID",
@@ -253,7 +260,7 @@ function validateStaticWorkerConfiguration(errors, configs) {
     errors.push("Staging Interactions Worker must enable workers_dev");
   }
 
-  for (const worker of ["gateway", "roll"]) {
+  for (const worker of ["data", "gateway", "roll"]) {
     const alias = configs[worker]?.alias;
     if (
       !isRecord(alias) ||
@@ -279,6 +286,13 @@ function validateStaticWorkerConfiguration(errors, configs) {
   ];
   if (JSON.stringify(rules) !== JSON.stringify(expectedRules)) {
     errors.push("Roll asset rules are invalid");
+  }
+
+  if (
+    JSON.stringify(configs.data?.triggers) !==
+    JSON.stringify({ crons: ["* * * * *", "0 3 * * *"] })
+  ) {
+    errors.push("Data lifecycle and retention schedules are invalid");
   }
 
   if (
@@ -402,6 +416,9 @@ function validateTopology(errors, configs, suffix) {
   const names = Object.fromEntries(
     WORKERS.map((worker) => [worker, workerName(worker, suffix)]),
   );
+  requireExactBindings(errors, "data", configs.data?.services, [
+    "DISCORD_REST",
+  ]);
   requireExactBindings(errors, "roll", configs.roll?.services, [
     "DATA_SERVICE",
     "DISCORD_REST",
@@ -436,6 +453,14 @@ function validateTopology(errors, configs, suffix) {
     "WEB_DELIVERY_WORK",
   ]);
 
+  requireService(
+    errors,
+    configs.data,
+    "data",
+    "DISCORD_REST",
+    names["discord-rest"],
+    "DiscordRestService",
+  );
   requireService(
     errors,
     configs.roll,

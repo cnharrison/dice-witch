@@ -45,6 +45,7 @@ export type RollExecutionRequest = {
   repetitions?: number;
   seed: number;
   stableAppearanceIdentities?: boolean;
+  preserveOutOfRangePhysicalFaces?: boolean;
 };
 
 export type RollExecutionResult = {
@@ -141,18 +142,31 @@ function percentileDice(
   value: number,
   modifiers: string[],
   identity?: AppearanceIdentityV4,
+  physicalValue?: number,
 ): RollDie[] {
+  const physicalTens = physicalValue === undefined
+    ? undefined
+    : physicalValue === 100
+      ? 0
+      : Math.floor(physicalValue / 10) * 10;
+  const physicalOnes = physicalValue === undefined
+    ? undefined
+    : physicalValue % 10 === 0
+      ? 10
+      : physicalValue % 10;
   return [
     {
       sides: "%",
       rolled: value === 100 ? 0 : Math.floor(value / 10) * 10,
       modifiers,
+      ...(physicalTens === undefined ? {} : { physicalFace: physicalTens }),
       ...identityFields(identity, "percentile"),
     },
     {
       sides: 10,
       rolled: value % 10,
       modifiers: [],
+      ...(physicalOnes === undefined ? {} : { physicalFace: physicalOnes }),
       ...identityFields(identity, "ones"),
     },
   ];
@@ -162,25 +176,41 @@ function physicalDice(
   definition: Dice.StandardDice,
   result: Results.RollResult,
   identity?: AppearanceIdentityV4,
+  preserveOutOfRangePhysicalFaces = false,
 ): RollDie[] {
   const modifiers = [...result.modifiers];
   if (definition instanceof Dice.FudgeDice) {
+    const physicalFace =
+      preserveOutOfRangePhysicalFaces &&
+        (result.value < -1 || result.value > 1)
+        ? result.initialValue
+        : undefined;
     return [
       {
         sides: "F",
         rolled: result.value,
         modifiers,
+        ...(physicalFace === undefined ? {} : { physicalFace }),
         ...identityFields(identity),
       },
     ];
   }
   if (definition instanceof Dice.PercentileDice || definition.sides === 100) {
-    return percentileDice(result.value, modifiers, identity);
+    const physicalValue =
+      preserveOutOfRangePhysicalFaces &&
+        (result.value < 1 || result.value > 100)
+        ? result.initialValue
+        : undefined;
+    return percentileDice(result.value, modifiers, identity, physicalValue);
   }
   if (typeof definition.sides !== "number") {
     throw new Error("Roll result contains unsupported die sides");
   }
-  const physicalFace = result.value < 1 ? result.initialValue : undefined;
+  const physicalFace =
+    result.value < 1 ||
+      (preserveOutOfRangePhysicalFaces && result.value > definition.sides)
+      ? result.initialValue
+      : undefined;
   if (
     physicalFace !== undefined &&
     (!Number.isSafeInteger(physicalFace) ||
@@ -279,6 +309,7 @@ function diceForRoll(
   parsed: unknown,
   roll: DiceRoll,
   appearanceGroupIdentity?: string,
+  preserveOutOfRangePhysicalFaces = false,
 ): RollDie[] {
   const definitions: Dice.StandardDice[] = [];
   const resultGroups: Results.RollResults[] = [];
@@ -294,7 +325,12 @@ function diceForRoll(
     }
     if (appearanceGroupIdentity === undefined) {
       return group.rolls.flatMap((result) =>
-        physicalDice(definition, result),
+        physicalDice(
+          definition,
+          result,
+          undefined,
+          preserveOutOfRangePhysicalFaces,
+        ),
       );
     }
     const identities = resultAppearanceIdentities(
@@ -305,7 +341,12 @@ function diceForRoll(
       definitionDieOffset(definitions, index),
     );
     return group.rolls.flatMap((result, resultIndex) =>
-      physicalDice(definition, result, identities[resultIndex]),
+      physicalDice(
+        definition,
+        result,
+        identities[resultIndex],
+        preserveOutOfRangePhysicalFaces,
+      ),
     );
   });
 }
@@ -505,6 +546,7 @@ export function executeRoll(request: RollExecutionRequest): RollExecutionResult 
           parsed,
           roll,
           appearanceGroupIdentity,
+          request.preserveOutOfRangePhysicalFaces,
         ),
       });
     }
@@ -529,4 +571,17 @@ export function executeRoll(request: RollExecutionRequest): RollExecutionResult 
     };
   }
   return { version: 1, seed: request.seed, outcomes, errors };
+}
+
+export type RenderableRollOutcome = {
+  outcome: RollOutcome;
+  outcomeIndex: number;
+};
+
+export function renderableRollOutcomes(
+  result: RollExecutionResult,
+): RenderableRollOutcome[] {
+  return result.outcomes.flatMap((outcome, outcomeIndex) =>
+    outcome.dice.length === 0 ? [] : [{ outcome, outcomeIndex }],
+  );
 }

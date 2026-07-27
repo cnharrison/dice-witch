@@ -241,6 +241,60 @@ async function upsertMembership(
   }
 }
 
+async function upsertMembershipPermissions(
+  request: Request,
+  db: D1Database,
+): Promise<Response> {
+  let value: Record<string, unknown>;
+  try {
+    value = await parseBody(request, [
+      "guildId",
+      "isAdmin",
+      "isDiceWitchAdmin",
+      "mutationId",
+      "occurredAt",
+      "userId",
+    ]);
+    if (
+      typeof value.guildId !== "string" ||
+      !SNOWFLAKE.test(value.guildId) ||
+      typeof value.userId !== "string" ||
+      !SNOWFLAKE.test(value.userId) ||
+      typeof value.isAdmin !== "boolean" ||
+      typeof value.isDiceWitchAdmin !== "boolean" ||
+      typeof value.mutationId !== "string" ||
+      value.mutationId.length < 1 ||
+      value.mutationId.length > 255 ||
+      typeof value.occurredAt !== "number" ||
+      !Number.isSafeInteger(value.occurredAt) ||
+      value.occurredAt < 0
+    ) {
+      throw new Error("Membership permission upsert is invalid");
+    }
+  } catch {
+    return errorResponse("Membership permission upsert is invalid", 400);
+  }
+
+  try {
+    const result = await new D1MembershipRepository(db).upsertPermissions({
+      userId: value.userId,
+      guildId: value.guildId,
+      permissions: {
+        isAdmin: value.isAdmin,
+        isDiceWitchAdmin: value.isDiceWitchAdmin,
+      },
+      mutationId: value.mutationId,
+      occurredAt: value.occurredAt,
+    });
+    let status = 200;
+    if (result.status === "missing") status = 404;
+    if (result.status === "conflict") status = 409;
+    return Response.json(result, { status, headers: responseHeaders });
+  } catch {
+    return errorResponse("Membership permission upsert failed", 500);
+  }
+}
+
 async function applyGuildLifecycle(
   request: Request,
   db: D1Database,
@@ -454,6 +508,8 @@ export function handleMembershipRequest(
       return getStatusStats(request, db);
     case "/internal/memberships":
       return upsertMembership(request, db);
+    case "/internal/memberships/permissions":
+      return upsertMembershipPermissions(request, db);
     case "/internal/memberships/list":
       return listMemberships(request, db);
     default:

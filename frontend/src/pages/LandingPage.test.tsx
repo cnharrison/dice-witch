@@ -1,15 +1,19 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let intersectionCallback: IntersectionObserverCallback;
+const { authenticateWithRedirect } = vi.hoisted(() => ({
+  authenticateWithRedirect: vi.fn(),
+}));
 
 vi.mock("@/lib/AuthProvider", () => ({
   useAuth: () => ({ isSignedIn: false }),
-  useSignIn: () => ({ isLoaded: true, signIn: { authenticateWithRedirect: vi.fn() } }),
+  useSignIn: () => ({ isLoaded: true, signIn: { authenticateWithRedirect } }),
 }));
 
 vi.mock("@/hooks/useServerStats", () => ({
@@ -31,6 +35,7 @@ import LandingPage from "./LandingPage";
 
 describe("LandingPage", () => {
   beforeEach(() => {
+    authenticateWithRedirect.mockReset();
     vi.stubGlobal(
       "IntersectionObserver",
       class {
@@ -51,6 +56,22 @@ describe("LandingPage", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it("forwards the requested app route when login begins", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/?returnTo=%2Fapp%2Flibrary"]}>
+        <LandingPage />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Continue with Discord" }));
+
+    expect(authenticateWithRedirect).toHaveBeenCalledWith({
+      strategy: "oauth_discord",
+      returnTo: "/app/library",
+    });
   });
 
   it("loads the preview roller only when its below-fold section approaches the viewport", async () => {

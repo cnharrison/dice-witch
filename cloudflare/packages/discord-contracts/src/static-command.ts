@@ -52,11 +52,10 @@ export function parseStaticInteractionCommand(
   return value.data.name;
 }
 
-export function buildStaticCommandResponse(
-  command: StaticInteractionCommand,
-  links: DiscordFooterLinks,
+export function buildWebAppRouteUrl(
   webAppUrl: string,
-): Record<string, unknown> {
+  route?: "library" | "preferences",
+): string {
   const webUrl = new URL(webAppUrl);
   if (
     webUrl.protocol !== "https:" ||
@@ -66,15 +65,30 @@ export function buildStaticCommandResponse(
   ) {
     throw new Error("Web app URL is invalid");
   }
+  if (route !== undefined) {
+    webUrl.pathname = `${webUrl.pathname.replace(/\/$/, "")}/${route}`;
+  }
+  return webUrl.href;
+}
+
+export function buildStaticCommandResponse(
+  command: StaticInteractionCommand,
+  links: DiscordFooterLinks,
+  webAppUrl: string,
+): Record<string, unknown> {
+  const destination = buildWebAppRouteUrl(
+    webAppUrl,
+    command === "prefs" ? "preferences" : undefined,
+  );
   const content =
     command === "web"
       ? {
           title: "Dice Witch Web Interface",
-          description: `Control Dice Witch from the web: ${webUrl.href}`,
+          description: `Control Dice Witch from the web: ${destination}`,
         }
       : {
           title: "Dice Witch Preferences",
-          description: `Set user preferences and control Dice Witch from the web: ${webUrl.href}`,
+          description: `Set user preferences and control Dice Witch from the web: ${destination}`,
         };
   return {
     type: 4,

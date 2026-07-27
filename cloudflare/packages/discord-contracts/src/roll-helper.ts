@@ -29,7 +29,7 @@ export function buildRollHelperMessage(
   links: DiscordFooterLinks,
 ): Record<string, unknown> {
   const description =
-    "The `/roll` command has three arguments: `notation`, `title`, and `timestorepeat`. The `notation` argument must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any dice, but you can only see images of these dice: **d100, d20, d12, d10, d8, d6, d4, dF**.\nYou can roll up to **50** dice at once 😈\n\n";
+    "The `/roll` command has three arguments: `notation`, `title`, and `times`. The `notation` argument must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any dice, but you can only see images of these dice: **d100, d20, d12, d10, d8, d6, d4, dF**.\nYou can roll up to **50** dice at once 😈\n\n";
   return {
     embeds: [
       {

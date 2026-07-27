@@ -1,4 +1,83 @@
-@tailwind preflight;
+@font-face {
+  font-family: "Bangers";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/Bangers-Latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "UnifrakturMaguntia";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/UnifrakturMaguntia-Latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-liberation-sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/LiberationSans-Bold-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-new-rocker";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/NewRocker-Regular-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-stencil-ops";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/StencilOps-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-creeping-horror";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/CreepingHorror-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-special-elite";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/SpecialElite-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-luckiest-guy";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/LuckiestGuy-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-fontdiner-swanky";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/FontdinerSwanky-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-syncopate";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/Syncopate-Bold-ui.ttf") format("truetype");
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -22,7 +101,32 @@
     --destructive-foreground: 0 0% 98%;
     --border: 34 40% 70%; /* Darker parchment border */
     --input: 34 40% 70%;
-    --ring: 0 0% 3.9%;
+    --select: 36 36% 88%;
+    --ring: 300 100% 32%;
+    --brand: 300 100% 32%;
+    --brand-foreground: 0 0% 100%;
+    --brand-hover: 300 100% 27%;
+    --discord: 235 86% 65%;
+    --discord-foreground: 0 0% 100%;
+    --discord-hover: 235 51% 52%;
+    --warning: 43 96% 90%;
+    --warning-foreground: 30 80% 18%;
+    --warning-border: 38 80% 55%;
+    --info: 210 80% 94%;
+    --info-foreground: 218 65% 23%;
+    --info-border: 210 60% 72%;
+    --success: 145 55% 90%;
+    --success-foreground: 150 65% 20%;
+    --success-border: 145 45% 55%;
+    --marketing-background: 0 0% 0%;
+    --marketing-surface: 300 100% 4%;
+    --marketing-panel: 0 0% 10%;
+    --marketing-card: 0 0% 7%;
+    --marketing-foreground: 0 0% 100%;
+    --marketing-muted: 0 0% 65%;
+    --marketing-border: 0 0% 20%;
+    --marketing-accent: 270 100% 60%;
+    --marketing-accent-hover: 270 100% 70%;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
@@ -49,7 +153,32 @@
     --destructive-foreground: 0 0% 98%;
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
+    --select: 315 22% 11%;
+    --ring: 300 100% 65%;
+    --brand: 300 100% 65%;
+    --brand-foreground: 0 0% 5%;
+    --brand-hover: 300 100% 72%;
+    --discord: 235 86% 70%;
+    --discord-foreground: 0 0% 5%;
+    --discord-hover: 235 86% 76%;
+    --warning: 35 60% 15%;
+    --warning-foreground: 43 90% 88%;
+    --warning-border: 38 65% 38%;
+    --info: 218 45% 16%;
+    --info-foreground: 210 80% 90%;
+    --info-border: 215 50% 36%;
+    --success: 150 45% 14%;
+    --success-foreground: 145 65% 88%;
+    --success-border: 145 50% 34%;
+    --marketing-background: 0 0% 0%;
+    --marketing-surface: 300 100% 4%;
+    --marketing-panel: 0 0% 10%;
+    --marketing-card: 0 0% 7%;
+    --marketing-foreground: 0 0% 100%;
+    --marketing-muted: 0 0% 65%;
+    --marketing-border: 0 0% 20%;
+    --marketing-accent: 270 100% 60%;
+    --marketing-accent-hover: 270 100% 70%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
@@ -59,15 +188,6 @@
 }
 @layer base {
   * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
-
-@layer base {
-  * {
     @apply border-border outline-ring/50;
   }
   body {
@@ -75,16 +195,15 @@
   }
 }
 
-.preview-section .dice-input-container button[variant="ghost"],
-.preview-section .absolute button[size="icon"] {
-  background-color: transparent !important;
-  color: #44665A !important;
+select {
+  background-color: hsl(var(--select));
 }
 
-.preview-section .dice-input-container button[variant="ghost"]:hover:not(:disabled),
-.preview-section .absolute button[size="icon"]:hover:not(:disabled) {
-  background-color: rgba(68, 102, 90, 0.1) !important;
-  color: #56877A !important;
+@media (min-width: 768px) {
+  .roller-workspace :disabled {
+    cursor: not-allowed !important;
+    pointer-events: auto !important;
+  }
 }
 
 @keyframes dice-witch-sparkle-twinkle {

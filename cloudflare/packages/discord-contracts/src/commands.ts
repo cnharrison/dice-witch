@@ -15,9 +15,8 @@ export const DISCORD_GLOBAL_COMMANDS = [
         type: 3,
       },
       {
-        name: "timestorepeat",
-        description:
-          "If you would like to repeat this roll, enter the number of times here.",
+        name: "times",
+        description: "Number of times to repeat this roll",
         type: 3,
       },
     ],
@@ -58,5 +57,21 @@ export const DISCORD_GLOBAL_COMMANDS = [
   {
     name: "prefs",
     description: "Set your preferences on the web",
+  },
+  {
+    type: 1,
+    name: "library",
+    description: "Runs a roll from your Library",
+    integration_types: [0],
+    contexts: [0, 1],
+    options: [
+      {
+        name: "name",
+        description: "Personal or Server Library roll",
+        type: 3,
+        required: false,
+        autocomplete: true,
+      },
+    ],
   },
 ] as const;

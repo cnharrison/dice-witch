@@ -7,6 +7,8 @@ import { D20Icon } from '@/components/icons/D20Icon';
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
 
+const MAX_REPETITIONS = 50;
+
 interface DiceInputProps {
   input: string;
   setInput: (value: string) => void;
@@ -18,6 +20,8 @@ interface DiceInputProps {
   isRollReady?: boolean;
   rollTitle?: string;
   onRollTitleChange?: (value: string) => void;
+  onHistoryPrevious?: () => void;
+  onHistoryNext?: () => void;
 }
 
 export function DiceInput({
@@ -30,7 +34,9 @@ export function DiceInput({
   selectedChannel,
   isRollReady = true,
   rollTitle = '',
-  onRollTitleChange
+  onRollTitleChange,
+  onHistoryPrevious,
+  onHistoryNext,
 }: DiceInputProps) {
   const diceInputRef = React.useRef<HTMLInputElement>(null);
   const { theme } = useTheme();
@@ -74,8 +80,20 @@ export function DiceInput({
   }, [setInput, onRollTitleChange, onTimesToRepeatChange]);
 
   const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && canRoll) onRoll?.();
-  }, [canRoll, onRoll]);
+    if (e.key === 'ArrowUp' && onHistoryPrevious !== undefined) {
+      e.preventDefault();
+      onHistoryPrevious();
+      return;
+    }
+    if (e.key === 'ArrowDown' && onHistoryNext !== undefined) {
+      e.preventDefault();
+      onHistoryNext();
+      return;
+    }
+    if (e.key !== 'Enter' || !canRoll) return;
+    e.preventDefault();
+    onRoll?.();
+  }, [canRoll, onHistoryNext, onHistoryPrevious, onRoll]);
 
   const handleDiceInputKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     handleKeyDown(e);
@@ -99,8 +117,8 @@ export function DiceInput({
             disabled={!selectedChannel}
             className={cn(
               "w-full pr-10",
-              !isValid && "text-red-500",
-              !selectedChannel && "border-amber-500 opacity-50"
+              !isValid && "text-destructive",
+              !selectedChannel && "border-warning-border opacity-50"
             )}
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center space-x-1">
@@ -160,13 +178,13 @@ export function DiceInput({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="relative w-16">
-                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">x</div>
+                    <div className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground">x</div>
                     <Input
                       id="mobile-repeat"
                       aria-label="Times to repeat roll"
                       type="tel"
                       min="1"
-                      max="20"
+                      max={MAX_REPETITIONS}
                       value={timesToRepeat}
                       disabled={!selectedChannel}
                       onChange={(e) => {
@@ -176,7 +194,7 @@ export function DiceInput({
                       onKeyDown={(e) => {
                         if (e.key === 'ArrowUp') {
                           e.preventDefault();
-                          onTimesToRepeatChange?.(Math.min(20, timesToRepeat + 1));
+                          onTimesToRepeatChange?.(Math.min(MAX_REPETITIONS, timesToRepeat + 1));
                         } else if (e.key === 'ArrowDown') {
                           e.preventDefault();
                           onTimesToRepeatChange?.(Math.max(1, timesToRepeat - 1));
@@ -193,7 +211,7 @@ export function DiceInput({
                         variant="ghost"
                         size="icon"
                         aria-label="Increase times to repeat roll"
-                        onClick={() => onTimesToRepeatChange?.(Math.min(20, timesToRepeat + 1))}
+                        onClick={() => onTimesToRepeatChange?.(Math.min(MAX_REPETITIONS, timesToRepeat + 1))}
                         className="h-4 w-4 p-0"
                         tabIndex={-1}
                         disabled={!selectedChannel}
@@ -238,8 +256,8 @@ export function DiceInput({
             disabled={!selectedChannel}
             className={cn(
               "w-full pr-10",
-              !isValid && "text-red-500",
-              !selectedChannel && "border-amber-500 opacity-50"
+              !isValid && "text-destructive",
+              !selectedChannel && "border-warning-border opacity-50"
             )}
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center space-x-1">
@@ -295,13 +313,13 @@ export function DiceInput({
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="relative w-16">
-                  <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">x</div>
+                  <div className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground">x</div>
                   <Input
                     id="repeat"
                     aria-label="Times to repeat roll"
                     type="tel"
                     min="1"
-                    max="20"
+                    max={MAX_REPETITIONS}
                     value={timesToRepeat}
                     disabled={!selectedChannel}
                     onChange={(e) => {
@@ -311,7 +329,7 @@ export function DiceInput({
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowUp') {
                         e.preventDefault();
-                        onTimesToRepeatChange?.(Math.min(20, timesToRepeat + 1));
+                        onTimesToRepeatChange?.(Math.min(MAX_REPETITIONS, timesToRepeat + 1));
                       } else if (e.key === 'ArrowDown') {
                         e.preventDefault();
                         onTimesToRepeatChange?.(Math.max(1, timesToRepeat - 1));
@@ -328,7 +346,7 @@ export function DiceInput({
                       variant="ghost"
                       size="icon"
                       aria-label="Increase times to repeat roll"
-                      onClick={() => onTimesToRepeatChange?.(Math.min(20, timesToRepeat + 1))}
+                      onClick={() => onTimesToRepeatChange?.(Math.min(MAX_REPETITIONS, timesToRepeat + 1))}
                       className="h-4 w-4 p-0"
                       tabIndex={-1}
                       disabled={!selectedChannel}

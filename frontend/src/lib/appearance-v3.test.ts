@@ -9,6 +9,7 @@ import {
   getAppearanceCatalogV3,
   getAppearancePreviewV3,
   getGuildAppearanceProfileV3,
+  getPersonalAppearanceBootstrapV3,
   getPersonalAppearanceProfileV3,
   parseAppearanceCatalogV3,
   parseAppearanceProfileResourceV3,
@@ -126,6 +127,37 @@ describe("appearance V3 response contracts", () => {
 });
 
 describe("appearance V3 API client", () => {
+  it("loads the immutable catalog and personal profile concurrently", async () => {
+    let resolveCatalog: ((response: Response) => void) | undefined;
+    const catalogResponse = new Promise<Response>((resolve) => {
+      resolveCatalog = resolve;
+    });
+    let profileRequested = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        const url = new URL(typeof input === "string" ? input : input.toString());
+        if (url.pathname === "/api/appearance/v3/catalog") {
+          return catalogResponse;
+        }
+        if (url.pathname === "/api/appearance/v3/me") {
+          profileRequested = true;
+          return Promise.resolve(Response.json({ revision: 0, profile: null }));
+        }
+        return Promise.reject(new Error(`Unexpected request: ${url.pathname}`));
+      }),
+    );
+
+    const bootstrap = getPersonalAppearanceBootstrapV3();
+    await vi.waitFor(() => expect(profileRequested).toBe(true));
+    resolveCatalog?.(Response.json(APPEARANCE_CATALOG_V3));
+
+    await expect(bootstrap).resolves.toEqual({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 0, profile: null },
+    });
+  });
+
   it("uses exact V3 routes, build keys, revisions, and idempotency", async () => {
     const profile = personalProfileV3();
     const guildProfile = { ...profile, mode: "enforced" as const };

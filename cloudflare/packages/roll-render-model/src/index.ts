@@ -49,6 +49,7 @@ import {
   createDeterministicRandom,
   type DeterministicRandom,
 } from "../../roll-domain/src/random";
+import { renderableRollOutcomes } from "../../roll-domain/src/execute";
 
 const APPEARANCE_PATTERNS = PATTERN_NAMES_V1_V2;
 type AppearancePatternName = PatternNameV1V2;
@@ -141,9 +142,9 @@ export function buildRollRenderRequest(
 ): RenderRequest {
   validateRenderSeed(renderSeed);
   const random = createDeterministicRandom(renderSeed);
-  const groups = result.outcomes
-    .map((outcome) => outcome.dice.map((die) => renderDie(die, random)))
-    .filter((group) => group.length > 0);
+  const groups = renderableRollOutcomes(result).map(({ outcome }) =>
+    outcome.dice.map((die) => renderDie(die, random)),
+  );
   if (groups.length === 0) {
     throw new Error("Roll result has no renderable dice");
   }
@@ -264,13 +265,12 @@ export function buildRollRenderRequestV2(
   recipes: EffectiveAppearanceRecipes,
 ): RenderRequestV2 {
   validateRenderSeed(renderSeed);
-  const groups = result.outcomes
-    .map((outcome, groupIndex) =>
+  const groups = renderableRollOutcomes(result).map(
+    ({ outcome, outcomeIndex }) =>
       outcome.dice.map((die, dieIndex) =>
-        renderDieV2(die, renderSeed, groupIndex, dieIndex, recipes),
+        renderDieV2(die, renderSeed, outcomeIndex, dieIndex, recipes),
       ),
-    )
-    .filter((group) => group.length > 0);
+  );
   if (groups.length === 0) {
     throw new Error("Roll result has no renderable dice");
   }
@@ -392,13 +392,12 @@ export function buildRollRenderRequestV3(
   recipes: EffectiveAppearanceRecipesV2,
 ): RenderRequestV3 {
   validateRenderSeed(renderSeed);
-  const groups = result.outcomes
-    .map((outcome, groupIndex) =>
+  const groups = renderableRollOutcomes(result).map(
+    ({ outcome, outcomeIndex }) =>
       outcome.dice.map((die, dieIndex) =>
-        renderDieV3(die, renderSeed, groupIndex, dieIndex, recipes),
+        renderDieV3(die, renderSeed, outcomeIndex, dieIndex, recipes),
       ),
-    )
-    .filter((group) => group.length > 0);
+  );
   if (groups.length === 0) {
     throw new Error("Roll result has no renderable dice");
   }
@@ -440,12 +439,29 @@ function renderAppearanceV4(
   };
 }
 
+function logicalPercentileIdentity(
+  die: RollDie,
+  component: "percentile" | "ones",
+): string | undefined {
+  if (
+    (component === "percentile" && die.sides !== "%") ||
+    (component === "ones" && die.sides !== 10)
+  ) {
+    return undefined;
+  }
+  const suffix = `:${component}`;
+  return die.appearanceDieIdentity?.endsWith(suffix)
+    ? die.appearanceDieIdentity.slice(0, -suffix.length)
+    : undefined;
+}
+
 function renderDieV4(
   die: RollDie,
   renderSeed: number,
   groupIndex: number,
   dieIndex: number,
   recipes: EffectiveAppearanceRecipesV3,
+  percentileAppearances: Map<string, ResolvedAppearanceV3>,
 ): RenderDieV4 {
   const target = appearanceTarget(die);
   const recipe = recipes[target];
@@ -453,18 +469,32 @@ function renderDieV4(
     throw new Error(`Effective appearance recipe V3 for ${target} is required`);
   }
   const result = renderedAppearanceFaceV4(die);
-  const resolved = resolveAppearanceRecipeV3(recipe, {
-    renderSeed,
-    target,
-    groupIndex,
-    dieIndex,
-    ...(die.appearanceGroupIdentity === undefined
-      ? {}
-      : { groupIdentity: die.appearanceGroupIdentity }),
-    ...(die.appearanceDieIdentity === undefined
-      ? {}
-      : { dieIdentity: die.appearanceDieIdentity }),
-  });
+  const onesIdentity = logicalPercentileIdentity(die, "ones");
+  let resolved: ResolvedAppearanceV3;
+  if (onesIdentity === undefined) {
+    resolved = resolveAppearanceRecipeV3(recipe, {
+      renderSeed,
+      target,
+      groupIndex,
+      dieIndex,
+      ...(die.appearanceGroupIdentity === undefined
+        ? {}
+        : { groupIdentity: die.appearanceGroupIdentity }),
+      ...(die.appearanceDieIdentity === undefined
+        ? {}
+        : { dieIdentity: die.appearanceDieIdentity }),
+    });
+  } else {
+    const percentileAppearance = percentileAppearances.get(onesIdentity);
+    if (percentileAppearance === undefined) {
+      throw new Error("Percentile ones die is missing its logical appearance");
+    }
+    resolved = structuredClone(percentileAppearance);
+  }
+  const percentileIdentity = logicalPercentileIdentity(die, "percentile");
+  if (percentileIdentity !== undefined) {
+    percentileAppearances.set(percentileIdentity, resolved);
+  }
   if (target === "other") {
     if (typeof die.sides !== "number") {
       throw new Error("Other appearance target requires numeric sides");
@@ -494,13 +524,21 @@ export function buildRollRenderRequestV4(
   recipes: EffectiveAppearanceRecipesV3,
 ): RenderRequestV4 {
   validateRenderSeed(renderSeed);
-  const groups = result.outcomes
-    .map((outcome, groupIndex) =>
-      outcome.dice.map((die, dieIndex) =>
-        renderDieV4(die, renderSeed, groupIndex, dieIndex, recipes),
-      ),
-    )
-    .filter((group) => group.length > 0);
+  const groups = renderableRollOutcomes(result).map(
+    ({ outcome, outcomeIndex }) => {
+      const percentileAppearances = new Map<string, ResolvedAppearanceV3>();
+      return outcome.dice.map((die, dieIndex) =>
+        renderDieV4(
+          die,
+          renderSeed,
+          outcomeIndex,
+          dieIndex,
+          recipes,
+          percentileAppearances,
+        ),
+      );
+    },
+  );
   if (groups.length === 0) {
     throw new Error("Roll result has no renderable dice");
   }

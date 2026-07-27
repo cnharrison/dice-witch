@@ -23,7 +23,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "lint:ci": "npm run lint --workspace=@dice-witch/dice-v4-model -- --max-warnings=0 && npm run lint --workspace=@dice-witch/cloudflare -- --max-warnings=0 && npm run lint --workspace=@dice-witch/frontend -- --max-warnings=65",
     "performance:budget": "node tools/frontend-performance-budget.mjs",
-    "test": "node --test tools/*.test.mjs && npm run test --workspaces --if-present",
+    "test": "node --test tools/*.test.mjs && npm run test --workspace=@dice-witch/cloudflare && npm run test --workspace=@dice-witch/frontend -- --maxWorkers=1 && npm run test --workspace=@dice-witch/dice-v4-model -- --maxWorkers=1",
     "type-check": "npm run type-check --workspaces --if-present"
   }
 }

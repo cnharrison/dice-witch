@@ -40,7 +40,7 @@ describe("buildRollDeliveryPayload", () => {
     );
     if (parsed === null) throw new Error("Roll interaction was ignored");
 
-    expect(buildRollDeliveryPayload(parsed)).toEqual({
+    expect(buildRollDeliveryPayload(parsed, 1_753_856_410_750)).toEqual({
       interaction: {
         id: "1400000000000000000",
         applicationId,
@@ -53,6 +53,7 @@ describe("buildRollDeliveryPayload", () => {
         userId: "1400000000000000003",
         receivedAt: 1_753_856_410_742,
       },
+      deferredAt: 1_753_856_410_750,
       logging: {
         source: "discord",
         channelId: "1400000000000000002",

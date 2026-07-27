@@ -69,6 +69,10 @@ describe("AppearanceTreatmentControlsV3", () => {
     expect((summary.closest("details") as HTMLDetailsElement).open).toBe(false);
     await user.click(summary);
     expect((summary.closest("details") as HTMLDetailsElement).open).toBe(true);
+    const advanced = screen.getByRole("group", {
+      name: "Advanced appearance treatment",
+    });
+    expect(advanced.className).toContain("lg:grid-cols-2");
     const engraving = screen.getByRole("group", { name: "Engraving finish" });
     expect(
       within(engraving)

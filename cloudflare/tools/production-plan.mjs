@@ -11,14 +11,15 @@ import {
 const execFileAsync = promisify(execFile);
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const DEPLOYMENT_ORDER = [
-  "data",
   "discord-rest",
+  "data",
   "gateway",
+  "roll",
   "interactions",
   "web-api",
-  "roll",
 ];
 const DEPENDENCIES = {
+  data: ["discord-rest"],
   gateway: ["data", "discord-rest"],
   interactions: ["data", "gateway", "roll"],
   roll: ["data", "discord-rest", "gateway"],

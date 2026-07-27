@@ -16,7 +16,7 @@ const base = {
 
 test("orders a targeted production rollout with acknowledged active dependencies", () => {
   const plan = createProductionPlan(base);
-  assert.deepEqual(plan.workers, ["web-api", "roll"]);
+  assert.deepEqual(plan.workers, ["roll", "web-api"]);
   assert.equal(plan.applyMigrations, false);
   assert.equal(plan.existingDependenciesAcknowledged, true);
   assert.ok(plan.omittedDependencies.includes("roll:gateway"));

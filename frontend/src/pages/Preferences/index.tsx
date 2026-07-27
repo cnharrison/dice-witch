@@ -1,4 +1,5 @@
 import { AppearanceEditorV3 } from "@/components/AppearanceEditorV3";
+import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { SearchableGuildPicker } from "@/components/SearchableGuildPicker";
 import { ServerAppearanceModeV3 } from "@/components/ServerAppearanceModeV3";
 import { Label } from "@/components/ui/label";
@@ -6,12 +7,16 @@ import { Switch } from "@/components/ui/switch";
 import { useGuild } from "@/context/GuildContext";
 import { AppearanceApiError } from "@/lib/appearance";
 import {
-  getAppearanceCatalogV3,
   getGuildAppearanceProfileV3,
-  getPersonalAppearanceProfileV3,
+  getPersonalAppearanceBootstrapV3,
   putGuildAppearanceProfileV3,
   putPersonalAppearanceProfileV3,
+  type PersonalAppearanceBootstrapV3,
 } from "@/lib/appearance-v3";
+import {
+  PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
+  PERSONAL_APPEARANCE_STALE_TIME_MS,
+} from "@/lib/appearance-query";
 import {
   createEmptyAppearanceProfileV3,
   setGuildAppearanceModeV3,
@@ -136,21 +141,16 @@ async function getGuildPreferences(guildId: string): Promise<boolean> {
 
 function LoadingPanel({ label }: { label: string }) {
   return (
-    <div
-      className="flex min-h-64 items-center justify-center rounded-xl border bg-card"
-      role="status"
-    >
-      <div className="flex items-center gap-3 text-muted-foreground">
-        <span className="h-6 w-6 animate-spin rounded-full border-2 border-fuchsia-500 border-t-transparent" />
-        {label}
-      </div>
-    </div>
+    <SparkleLoadingIndicator
+      label={label}
+      className="min-h-64 rounded-xl border bg-card"
+    />
   );
 }
 
 function ErrorPanel({ message }: { message: string }) {
   return (
-    <div className="rounded-xl border border-rose-300 bg-rose-50 p-5 text-rose-900 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-100" role="alert">
+    <div className="rounded-xl border border-destructive/45 bg-destructive/10 p-5 text-destructive" role="alert">
       <h2 className="font-semibold">Appearance settings are unavailable</h2>
       <p className="mt-1 text-sm">{message}</p>
     </div>
@@ -203,10 +203,10 @@ export default function Preferences() {
     "personal",
   );
 
-  const catalogQuery = useQuery({
-    queryKey: ["appearanceCatalogV3"],
-    queryFn: getAppearanceCatalogV3,
-    staleTime: 60 * 60 * 1_000,
+  const personalBootstrapQuery = useQuery({
+    queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
+    queryFn: getPersonalAppearanceBootstrapV3,
+    staleTime: PERSONAL_APPEARANCE_STALE_TIME_MS,
     retry: (failureCount, error) =>
       retryAppearanceQuery(failureCount, error, 2),
   });
@@ -218,16 +218,8 @@ export default function Preferences() {
     retry: 2,
   });
 
-  const personalQuery = useQuery({
-    queryKey: ["appearanceProfileV3", "personal"],
-    queryFn: () => {
-      if (!catalogQuery.data) throw new Error("Appearance catalog is missing");
-      return getPersonalAppearanceProfileV3(catalogQuery.data);
-    },
-    enabled: catalogQuery.isSuccess,
-    retry: (failureCount, error) =>
-      retryAppearanceQuery(failureCount, error, 1),
-  });
+  const catalog = personalBootstrapQuery.data?.catalog;
+  const personalResource = personalBootstrapQuery.data?.resource;
 
   const adminGuilds = guildsQuery.isSuccess
     ? guildsQuery.data.filter(
@@ -255,14 +247,14 @@ export default function Preferences() {
   const guildAppearanceQuery = useQuery({
     queryKey: ["appearanceProfileV3", "guild", selectedGuildId],
     queryFn: () => {
-      if (!catalogQuery.data || !selectedGuildId) {
+      if (!catalog || !selectedGuildId) {
         throw new Error("Guild appearance context is missing");
       }
-      return getGuildAppearanceProfileV3(selectedGuildId, catalogQuery.data);
+      return getGuildAppearanceProfileV3(selectedGuildId, catalog);
     },
     enabled:
       section === "guild" &&
-      catalogQuery.isSuccess &&
+      personalBootstrapQuery.isSuccess &&
       selectedAdminGuild !== undefined,
     retry: (failureCount, error) =>
       retryAppearanceQuery(failureCount, error, 1),
@@ -287,24 +279,24 @@ export default function Preferences() {
       profile: AppearanceProfileV3 | GuildAppearanceProfileV3;
       revision: number;
     }) => {
-      if (!catalogQuery.data) {
+      if (!catalog) {
         throw new Error("Personal appearance catalog is not loaded");
       }
       if ("mode" in profile) {
         throw new Error("Guild profile cannot be saved as a personal profile");
       }
-      return putPersonalAppearanceProfileV3(
-        revision,
-        profile,
-        catalogQuery.data,
-      );
+      return putPersonalAppearanceProfileV3(revision, profile, catalog);
     },
     onSuccess: (resource) => {
-      queryClient.setQueryData(["appearanceProfileV3", "personal"], resource);
+      queryClient.setQueryData(
+        PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
+        (current: PersonalAppearanceBootstrapV3 | undefined) =>
+          current === undefined ? current : { ...current, resource },
+      );
     },
     onError: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["appearanceProfileV3", "personal"],
+        queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
       });
     },
   });
@@ -319,7 +311,7 @@ export default function Preferences() {
       guildId: string;
       revision: number;
     }) => {
-      if (!catalogQuery.data) {
+      if (!catalog) {
         throw new Error("Guild appearance catalog is not loaded");
       }
       if (!("mode" in profile)) {
@@ -329,7 +321,7 @@ export default function Preferences() {
         guildId,
         revision,
         profile,
-        catalogQuery.data,
+        catalog,
       );
     },
     onSuccess: (resource, variables) => {
@@ -388,18 +380,16 @@ export default function Preferences() {
     },
   });
 
-  const catalog = catalogQuery.data;
-  const personalResource = personalQuery.data;
   const guildResource = guildAppearanceQuery.data;
 
   let content: React.ReactNode;
-  if (catalogQuery.isLoading) {
-    content = <LoadingPanel label="Loading appearance controls…" />;
-  } else if (catalogQuery.isError) {
-    content = <ErrorPanel message={appearanceErrorMessage(catalogQuery.error)} />;
-  } else if (personalQuery.isError) {
-    content = <ErrorPanel message={appearanceErrorMessage(personalQuery.error)} />;
-  } else if (personalQuery.isLoading || !catalog || !personalResource) {
+  if (personalBootstrapQuery.isError) {
+    content = (
+      <ErrorPanel
+        message={appearanceErrorMessage(personalBootstrapQuery.error)}
+      />
+    );
+  } else if (personalBootstrapQuery.isLoading || !catalog || !personalResource) {
     content = <LoadingPanel label="Loading your appearance workspace…" />;
   } else if (section === "personal") {
     content = (
@@ -438,7 +428,7 @@ export default function Preferences() {
       let deliverySetting: React.ReactNode;
       if (guildPreferencesQuery.isError) {
         deliverySetting = (
-          <p role="alert" className="mt-4 text-sm text-rose-600">
+          <p role="alert" className="mt-4 text-sm text-destructive">
             {guildPreferencesQuery.error.message}
           </p>
         );
@@ -447,9 +437,10 @@ export default function Preferences() {
         guildPreferencesQuery.data === undefined
       ) {
         deliverySetting = (
-          <p className="mt-4 text-sm text-muted-foreground">
-            Loading roll delivery preference…
-          </p>
+          <SparkleLoadingIndicator
+            label="Loading roll delivery preference"
+            className="mt-4 min-h-20"
+          />
         );
       } else {
         deliverySetting = (
@@ -471,7 +462,7 @@ export default function Preferences() {
               </Label>
             </div>
             {guildPreferencesMutation.isError && (
-              <p role="alert" className="text-sm text-rose-600">
+              <p role="alert" className="text-sm text-destructive">
                 {guildPreferencesMutation.error.message}
               </p>
             )}
@@ -481,7 +472,7 @@ export default function Preferences() {
 
       serverSettings = (
         <>
-          <div className="rounded-xl border border-fuchsia-200 bg-card p-5 shadow-sm dark:border-fuchsia-900">
+          <div className="rounded-xl border border-brand/35 bg-card p-5 shadow-sm">
             <h3 className="font-semibold">Roll delivery</h3>
             {deliverySetting}
           </div>
@@ -548,7 +539,7 @@ export default function Preferences() {
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <header className="mb-8 border-b pb-5">
-        <h1 className="font-['UnifrakturMaguntia'] text-5xl text-[#ff00ff] sm:text-6xl">
+        <h1 className="font-['UnifrakturMaguntia'] text-5xl text-brand sm:text-6xl">
           Preferences
         </h1>
       </header>
@@ -560,11 +551,11 @@ export default function Preferences() {
           aria-current={section === "personal" ? "page" : undefined}
           className={`rounded-full px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             section === "personal"
-              ? "bg-foreground text-background"
-              : "border bg-card hover:border-fuchsia-400"
+              ? "bg-primary text-primary-foreground"
+              : "border bg-card hover:border-brand/70"
           }`}
         >
-          My appearance
+          Personal appearance
         </button>
         {adminGuilds.length > 0 && (
           <button
@@ -573,8 +564,8 @@ export default function Preferences() {
             aria-current={section === "guild" ? "page" : undefined}
             className={`rounded-full px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               section === "guild"
-                ? "bg-foreground text-background"
-                : "border bg-card hover:border-fuchsia-400"
+                ? "bg-primary text-primary-foreground"
+                : "border bg-card hover:border-brand/70"
             }`}
           >
             Server appearance
@@ -585,7 +576,7 @@ export default function Preferences() {
       {guildsQuery.isError && (
         <div
           role="alert"
-          className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100"
+          className="mb-6 rounded-xl border border-warning-border bg-warning p-4 text-sm text-warning-foreground"
         >
           Server appearance controls are unavailable: {guildsQuery.error.message}
         </div>
@@ -594,7 +585,7 @@ export default function Preferences() {
       {content}
 
       {guildsQuery.isSuccess && guildsQuery.data.length === 0 && (
-        <aside className="mt-8 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
+        <aside className="mt-8 rounded-xl border border-info-border bg-info p-4 text-sm text-info-foreground">
           Dice Witch does not share a server with this account yet. Personal
           styles still work in DMs.{" "}
           <a

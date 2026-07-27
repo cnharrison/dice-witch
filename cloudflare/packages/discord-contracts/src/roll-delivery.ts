@@ -24,6 +24,7 @@ export type RollDeliveryPayload = {
     userId: string;
     receivedAt: number;
   };
+  deferredAt: number;
   logging: {
     source: "discord";
     channelId: string;
@@ -34,6 +35,7 @@ export type RollDeliveryPayload = {
 
 export function buildRollDeliveryPayload(
   interaction: RollInteraction,
+  deferredAt: number,
 ): RollDeliveryPayload {
   return {
     interaction: {
@@ -56,6 +58,7 @@ export function buildRollDeliveryPayload(
         (BigInt(interaction.id) >> 22n) + BigInt(DISCORD_EPOCH_MS),
       ),
     },
+    deferredAt,
     logging: {
       source: "discord",
       channelId: interaction.channelId,

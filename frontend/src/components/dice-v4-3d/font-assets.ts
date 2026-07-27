@@ -21,11 +21,15 @@ const FONT_URLS_V4: Readonly<Record<FontIdV4, string>> = Object.freeze({
 
 const loadedFonts = new Map<FontIdV4, Promise<string>>();
 
+export function browserFontFamilyV4(fontId: FontIdV4): string {
+  return `DiceWitchV4-${fontId}`;
+}
+
 export function loadBrowserFontV4(fontId: FontIdV4): Promise<string> {
   let loading = loadedFonts.get(fontId);
   if (loading !== undefined) return loading;
   loading = (async () => {
-    const family = `DiceWitchV4-${fontId}`;
+    const family = browserFontFamilyV4(fontId);
     const face = await new FontFace(family, `url(${FONT_URLS_V4[fontId]})`).load();
     document.fonts.add(face);
     return family;

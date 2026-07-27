@@ -5,7 +5,7 @@ import type { AppearanceRecipeV3 } from "@dice-witch/dice-v4-model";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { AppearanceRecipeControlsV3 } from "./AppearanceRecipeControlsV3";
 
 function recipe(styleId: string): AppearanceRecipeV3 {
@@ -29,6 +29,16 @@ function Harness({ initial }: { initial: AppearanceRecipeV3 }) {
   );
 }
 
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+beforeAll(() => {
+  HTMLElement.prototype.scrollIntoView = () => undefined;
+});
+
+afterAll(() => {
+  HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+});
+
 afterEach(cleanup);
 
 describe("AppearanceRecipeControlsV3", () => {
@@ -37,7 +47,7 @@ describe("AppearanceRecipeControlsV3", () => {
 
     expect(
       screen.getByRole("group", {
-        name: "Material: Weighted mix · 17 materials",
+        name: "Material: Weighted mix · 18 materials",
       }),
     ).toBeDefined();
     expect(screen.queryByText("Form")).toBeNull();
@@ -51,11 +61,18 @@ describe("AppearanceRecipeControlsV3", () => {
     );
   });
 
-  it("keeps the common font choice directly available", async () => {
+  it("shows each font choice in its own typeface", async () => {
     const user = userEvent.setup();
     render(<Harness initial={recipe("chaotic")} />);
 
-    await user.selectOptions(screen.getByLabelText("Primary font"), "new-rocker");
+    const font = screen.getByRole("combobox", { name: "Primary font" });
+    font.focus();
+    await user.keyboard("{Enter}");
+    const newRocker = screen.getByRole("option", { name: "New Rocker" });
+    expect(newRocker.style.fontFamily).toBe("DiceWitchV4-new-rocker");
+
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    expect(font.style.fontFamily).toBe("DiceWitchV4-new-rocker");
     const value = JSON.parse(
       screen.getByTestId("recipe").textContent ?? "null",
     ) as AppearanceRecipeV3;

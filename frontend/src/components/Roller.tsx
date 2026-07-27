@@ -37,6 +37,7 @@ interface RollerProps {
   input: string;
   setInput: (value: string) => void;
   selectedChannel: boolean;
+  mobileView: "controls" | "result";
 }
 
 function initialRollDisplayModeV4(): RollDisplayModeV4 {
@@ -244,7 +245,7 @@ function DiceResultDisplay({
         {notice !== null && (
           <p
             role="alert"
-            className="absolute bottom-12 left-2 right-2 z-40 rounded-md border border-amber-500/60 bg-background/95 px-3 py-2 text-sm text-foreground shadow-sm"
+            className="absolute bottom-12 left-2 right-2 z-40 rounded-md border border-warning-border bg-background/95 px-3 py-2 text-sm text-foreground shadow-sm"
           >
             {notice}
           </p>
@@ -263,22 +264,27 @@ export function Roller({
   input,
   setInput,
   selectedChannel,
+  mobileView,
 }: RollerProps) {
   const isMobile = useBrowserMediaQueryV4(MOBILE_QUERY_V4);
   const [displayMode, setDisplayMode] = React.useState<RollDisplayModeV4>(
     initialRollDisplayModeV4,
   );
 
+  React.useEffect(() => {
+    setDisplayMode(readRollDisplayModeV4(window.localStorage, isMobile));
+  }, [isMobile]);
+
   const handleDisplayModeChange = React.useCallback(
     (mode: RollDisplayModeV4): void => {
       setDisplayMode(mode);
       try {
-        writeRollDisplayModeV4(window.localStorage, mode);
+        writeRollDisplayModeV4(window.localStorage, mode, isMobile);
       } catch {
         // The current browser session still retains the explicit choice.
       }
     },
-    [],
+    [isMobile],
   );
 
   const display = (
@@ -294,19 +300,23 @@ export function Roller({
   );
 
   if (isMobile) {
-    return (
+    return mobileView === "result" ? (
       <div
-        className="flex h-full min-h-0 flex-col rounded-lg border"
+        className="h-full min-h-0 overflow-hidden rounded-lg border"
         aria-busy={isPreparing || isRolling}
       >
-        <div className="relative min-h-0 flex-1">{display}</div>
-        <div className="flex-none border-t p-2">
-          <DiceNotationButtons
-            input={input}
-            setInput={setInput}
-            isDisabled={!selectedChannel}
-          />
-        </div>
+        {display}
+      </div>
+    ) : (
+      <div
+        className="h-full min-h-0 overflow-y-auto rounded-lg border"
+        aria-busy={isPreparing || isRolling}
+      >
+        <DiceNotationButtons
+          input={input}
+          setInput={setInput}
+          isDisabled={!selectedChannel}
+        />
       </div>
     );
   }
