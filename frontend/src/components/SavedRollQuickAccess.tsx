@@ -82,10 +82,18 @@ export function SavedRollQuickAccess({
   });
   const [activeTab, setActiveTab] = React.useState<LibraryTab>("personal");
   const [search, setSearch] = React.useState("");
+  const hasServerRolls = (server.data?.savedRolls.length ?? 0) > 0;
+  const showLibrarySwitcher =
+    guildScope !== null && (hasServerRolls || server.isError);
 
   React.useEffect(() => {
-    if (guildScope === null && activeTab === "guild") setActiveTab("personal");
-  }, [activeTab, guildScope]);
+    if (
+      activeTab === "guild" &&
+      (guildScope === null || (server.isSuccess && !hasServerRolls))
+    ) {
+      setActiveTab("personal");
+    }
+  }, [activeTab, guildScope, hasServerRolls, server.isSuccess]);
 
   const activeQuery = activeTab === "personal" ? personal : server;
   const normalizedSearch = search.trim().toLocaleLowerCase();
@@ -119,7 +127,7 @@ export function SavedRollQuickAccess({
         )}
       </header>
 
-      {guildScope !== null && (
+      {showLibrarySwitcher && (
         <div
           role="tablist"
           aria-label="Library"
@@ -178,9 +186,9 @@ export function SavedRollQuickAccess({
 
       <div
         id={`library-${activeTab}-panel`}
-        role={guildScope === null ? undefined : "tabpanel"}
+        role={showLibrarySwitcher ? "tabpanel" : undefined}
         aria-labelledby={
-          guildScope === null ? "library-quick-heading" : `library-${activeTab}-tab`
+          showLibrarySwitcher ? `library-${activeTab}-tab` : "library-quick-heading"
         }
         className="min-h-0 flex-1 overflow-y-auto p-2"
       >

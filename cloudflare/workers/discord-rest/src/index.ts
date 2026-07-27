@@ -48,6 +48,11 @@ const DICE_WITCH_ADMIN_ROLE = "Dice Witch Admin";
 const ADMINISTRATOR_PERMISSION = 1n << 3n;
 const VIEW_CHANNEL_PERMISSION = 1n << 10n;
 const SEND_MESSAGES_PERMISSION = 1n << 11n;
+const USE_APPLICATION_COMMANDS_PERMISSION = 1n << 31n;
+const POST_CHANNEL_PERMISSIONS =
+  VIEW_CHANNEL_PERMISSION | SEND_MESSAGES_PERMISSION;
+const INVOKE_DICE_WITCH_PERMISSIONS =
+  POST_CHANNEL_PERMISSIONS | USE_APPLICATION_COMMANDS_PERMISSION;
 const MAX_GUILDS_PER_STATS_RUN = 100_000;
 const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
@@ -821,6 +826,7 @@ function canUseTextChannel(
   member: GuildMemberPermissions,
   guildId: string,
   overwrites: PermissionOverwrite[],
+  requiredPermissions: bigint,
 ): boolean {
   if (member.isTimedOut) return false;
   if (member.isAdministrator) return true;
@@ -849,8 +855,7 @@ function canUseTextChannel(
   if (memberOverwrite !== undefined) {
     permissions = applyPermissionOverwrite(permissions, memberOverwrite);
   }
-  const required = VIEW_CHANNEL_PERMISSION | SEND_MESSAGES_PERMISSION;
-  return (permissions & required) === required;
+  return (permissions & requiredPermissions) === requiredPermissions;
 }
 
 export async function listMemberTextChannels(
@@ -898,24 +903,22 @@ export async function listMemberTextChannels(
     throw new Error("Discord guild roles response is invalid");
   }
   const ownerId = parseGuildOwnerId(await guildResponse.json());
-  const members = [
-    guildMemberPermissions(
-      member,
-      permissionsByRole,
-      everyonePermissions,
-      ownerId,
-      userId,
-      now,
-    ),
-    guildMemberPermissions(
-      bot,
-      permissionsByRole,
-      everyonePermissions,
-      ownerId,
-      env.DISCORD_APPLICATION_ID,
-      now,
-    ),
-  ];
+  const memberPermissions = guildMemberPermissions(
+    member,
+    permissionsByRole,
+    everyonePermissions,
+    ownerId,
+    userId,
+    now,
+  );
+  const botPermissions = guildMemberPermissions(
+    bot,
+    permissionsByRole,
+    everyonePermissions,
+    ownerId,
+    env.DISCORD_APPLICATION_ID,
+    now,
+  );
 
   const value: unknown = await channelsResponse.json();
   if (!Array.isArray(value)) {
@@ -937,7 +940,19 @@ export async function listMemberTextChannels(
       throw new Error("Discord guild channels response is invalid");
     }
     const overwrites = permissionOverwrites(channel.permission_overwrites);
-    if (members.every((current) => canUseTextChannel(current, guildId, overwrites))) {
+    const memberCanUseDiceWitch = canUseTextChannel(
+      memberPermissions,
+      guildId,
+      overwrites,
+      INVOKE_DICE_WITCH_PERMISSIONS,
+    );
+    const botCanPost = canUseTextChannel(
+      botPermissions,
+      guildId,
+      overwrites,
+      POST_CHANNEL_PERMISSIONS,
+    );
+    if (memberCanUseDiceWitch && botCanPost) {
       channels.push({ id: channel.id, name: channel.name, type: channel.type });
     }
   }

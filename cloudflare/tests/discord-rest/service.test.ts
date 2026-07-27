@@ -1025,9 +1025,11 @@ describe("Discord REST service", () => {
     ]);
   });
 
-  it("lists only text channels where the member and Dice Witch can view and send", async () => {
+  it("lists only text channels where the member can use Dice Witch and both can post", async () => {
     const memberRoleId = "100000000000000006";
     const botId = "100000000000000007";
+    const botRoleId = "100000000000000008";
+    const useApplicationCommands = String(1n << 31n);
     const discordFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
       if (path.endsWith(`/members/${userId}`)) {
@@ -1038,14 +1040,19 @@ describe("Discord REST service", () => {
       }
       if (path.endsWith(`/members/${botId}`)) {
         return Promise.resolve(Response.json({
-          roles: [memberRoleId],
+          roles: [botRoleId],
           communication_disabled_until: null,
         }));
       }
       if (path.endsWith("/roles")) {
         return Promise.resolve(Response.json([
           { id: guildId, name: "@everyone", permissions: "3072" },
-          { id: memberRoleId, name: "Players", permissions: "0" },
+          {
+            id: memberRoleId,
+            name: "Players",
+            permissions: useApplicationCommands,
+          },
+          { id: botRoleId, name: "Dice Witch", permissions: "0" },
         ]));
       }
       if (path === `/api/v10/guilds/${guildId}`) {
@@ -1074,6 +1081,7 @@ describe("Discord REST service", () => {
             permission_overwrites: [
               { id: guildId, type: 0, allow: "0", deny: "1024" },
               { id: memberRoleId, type: 0, allow: "1024", deny: "0" },
+              { id: botRoleId, type: 0, allow: "1024", deny: "0" },
             ],
           },
           {
@@ -1090,6 +1098,19 @@ describe("Discord REST service", () => {
             type: 0,
             permission_overwrites: [
               { id: botId, type: 1, allow: "0", deny: "2048" },
+            ],
+          },
+          {
+            id: "100000000000000015",
+            name: "commands-blocked",
+            type: 0,
+            permission_overwrites: [
+              {
+                id: userId,
+                type: 1,
+                allow: "0",
+                deny: useApplicationCommands,
+              },
             ],
           },
         ]));

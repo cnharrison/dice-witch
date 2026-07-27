@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -129,7 +129,7 @@ describe("SavedRollQuickAccess", () => {
       guildName: "Fixture guild",
     });
 
-    await user.click(screen.getByRole("tab", { name: "Server" }));
+    await user.click(await screen.findByRole("tab", { name: "Server" }));
     await user.click(await screen.findByRole("button", { name: "Load Server fireball" }));
 
     expect(onLoad).toHaveBeenCalledWith({
@@ -138,6 +138,27 @@ describe("SavedRollQuickAccess", () => {
       repetitions: 2,
     });
     expect(screen.getByRole("tab", { name: "Server" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("hides the Library switcher when the selected server has no rolls", async () => {
+    listSavedRolls.mockImplementation((scope: { type: string }) =>
+      Promise.resolve({
+        listRevision: 1,
+        savedRolls: scope.type === "guild" ? [] : [savedRoll],
+      }),
+    );
+    const guildScope = {
+      type: "guild" as const,
+      guildId: "100000000000000001",
+      guildName: "Fixture guild",
+    };
+
+    renderQuickAccess(vi.fn(), guildScope);
+
+    expect(await screen.findByRole("button", { name: "Load Fireball" })).toBeDefined();
+    await waitFor(() => expect(listSavedRolls).toHaveBeenCalledWith(guildScope));
+    expect(screen.queryByRole("tablist", { name: "Library" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Library" })).toBeDefined();
   });
 
   it("disables staging while no server is selected", async () => {
@@ -197,7 +218,7 @@ describe("SavedRollQuickAccess", () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole("tab", { name: "Server" }));
+    await user.click(await screen.findByRole("tab", { name: "Server" }));
     expect(
       await screen.findByRole("button", { name: "Load First server roll" }),
     ).toBeDefined();
