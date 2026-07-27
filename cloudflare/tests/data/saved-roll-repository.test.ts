@@ -226,7 +226,18 @@ describe("D1SavedRollRepository create/read", () => {
     expect(duplicate).toEqual({ status: "name_conflict", listRevision: 1 });
   });
 
-  it("discovers non-empty member libraries and searches only authorized owners", async () => {
+  it("discovers an empty active member library", async () => {
+    await expect(repository().listLibraryCandidates(userId)).resolves.toEqual([
+      { guildId, guildName: "Guild", guildIcon: null },
+    ]);
+
+    await dataEnv.DATA.prepare(
+      "UPDATE guilds SET is_active = 0 WHERE id = ?",
+    ).bind(guildId).run();
+    await expect(repository().listLibraryCandidates(userId)).resolves.toEqual([]);
+  });
+
+  it("discovers member libraries with saved rolls and searches only authorized owners", async () => {
     await repository().create(createInput());
     await repository().create(
       createInput({

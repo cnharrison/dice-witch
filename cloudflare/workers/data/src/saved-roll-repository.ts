@@ -418,9 +418,6 @@ export class D1SavedRollRepository {
          JOIN guilds AS g ON g.id = membership.guild_id
          WHERE membership.user_id = ?
            AND g.is_active = 1
-           AND EXISTS (
-             SELECT 1 FROM saved_rolls WHERE guild_id = g.id
-           )
          ORDER BY lower(g.name), g.id
          LIMIT ?`,
       )
