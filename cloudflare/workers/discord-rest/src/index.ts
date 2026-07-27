@@ -68,6 +68,15 @@ export type MembershipInspection =
     }
   | { status: "missing" };
 
+export type RollerGuildInspection =
+  | {
+      status: "found";
+      isAdmin: boolean;
+      isDiceWitchAdmin: boolean;
+      hasUsableChannel: boolean;
+    }
+  | { status: "missing" };
+
 export type TextChannel = {
   id: string;
   name: string;
@@ -858,13 +867,19 @@ function canUseTextChannel(
   return (permissions & requiredPermissions) === requiredPermissions;
 }
 
-export async function listMemberTextChannels(
+type MemberTextChannelInspection =
+  | (Extract<RollerGuildInspection, { status: "found" }> & {
+      channels: TextChannel[];
+    })
+  | { status: "missing" };
+
+async function inspectMemberTextChannels(
   env: Pick<DiscordRestEnv, "DISCORD_APPLICATION_ID" | "DISCORD_BOT_TOKEN">,
   guildId: string,
   userId: string,
-  discordFetch: RequestFetch = (request) => fetch(request),
-  now = Date.now(),
-): Promise<TextChannel[]> {
+  discordFetch: RequestFetch,
+  now: number,
+): Promise<MemberTextChannelInspection> {
   if (
     !SNOWFLAKE.test(guildId) ||
     !SNOWFLAKE.test(userId) ||
@@ -887,7 +902,9 @@ export async function listMemberTextChannels(
       discordFetch(new Request(guildPath, { headers })),
       discordFetch(new Request(`${guildPath}/channels`, { headers })),
     ]);
-  if (memberResponse.status === 404 || botResponse.status === 404) return [];
+  if (memberResponse.status === 404 || botResponse.status === 404) {
+    return { status: "missing" };
+  }
   if (!memberResponse.ok || !botResponse.ok) {
     throw new Error("Discord guild member request failed");
   }
@@ -897,7 +914,8 @@ export async function listMemberTextChannels(
 
   const member: unknown = await memberResponse.json();
   const bot: unknown = await botResponse.json();
-  const permissionsByRole = rolePermissions(await rolesResponse.json());
+  const roles: unknown = await rolesResponse.json();
+  const permissionsByRole = rolePermissions(roles);
   const everyonePermissions = permissionsByRole.get(guildId);
   if (everyonePermissions === undefined) {
     throw new Error("Discord guild roles response is invalid");
@@ -956,7 +974,57 @@ export async function listMemberTextChannels(
       channels.push({ id: channel.id, name: channel.name, type: channel.type });
     }
   }
-  return channels;
+  const assignedRoles = inspectAssignedRoles(
+    roles,
+    new Set([guildId, ...memberPermissions.roleIds]),
+  );
+  return {
+    status: "found",
+    isAdmin: memberPermissions.isAdministrator,
+    isDiceWitchAdmin: assignedRoles.isDiceWitchAdmin,
+    hasUsableChannel: channels.length > 0,
+    channels,
+  };
+}
+
+export async function listMemberTextChannels(
+  env: Pick<DiscordRestEnv, "DISCORD_APPLICATION_ID" | "DISCORD_BOT_TOKEN">,
+  guildId: string,
+  userId: string,
+  discordFetch: RequestFetch = (request) => fetch(request),
+  now = Date.now(),
+): Promise<TextChannel[]> {
+  const inspection = await inspectMemberTextChannels(
+    env,
+    guildId,
+    userId,
+    discordFetch,
+    now,
+  );
+  return inspection.status === "found" ? inspection.channels : [];
+}
+
+export async function inspectRollerGuild(
+  env: Pick<DiscordRestEnv, "DISCORD_APPLICATION_ID" | "DISCORD_BOT_TOKEN">,
+  guildId: string,
+  userId: string,
+  discordFetch: RequestFetch = (request) => fetch(request),
+  now = Date.now(),
+): Promise<RollerGuildInspection> {
+  const inspection = await inspectMemberTextChannels(
+    env,
+    guildId,
+    userId,
+    discordFetch,
+    now,
+  );
+  if (inspection.status === "missing") return inspection;
+  return {
+    status: inspection.status,
+    isAdmin: inspection.isAdmin,
+    isDiceWitchAdmin: inspection.isDiceWitchAdmin,
+    hasUsableChannel: inspection.hasUsableChannel,
+  };
 }
 
 function isRetryableDiscordStatus(status: number): boolean {
@@ -2229,6 +2297,13 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     userId: string,
   ): Promise<MembershipInspection> {
     return inspectMembership(await this.botEnv(), guildId, userId);
+  }
+
+  async inspectRollerGuild(
+    guildId: string,
+    userId: string,
+  ): Promise<RollerGuildInspection> {
+    return inspectRollerGuild(await this.botEnv(), guildId, userId);
   }
 }
 

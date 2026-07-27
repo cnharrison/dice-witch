@@ -41,6 +41,7 @@ vi.mock("@tanstack/react-query", () => ({
               },
               isAdmin: true,
               isDiceWitchAdmin: false,
+              isRollable: true,
             },
             {
               guilds: {
@@ -50,6 +51,17 @@ vi.mock("@tanstack/react-query", () => ({
               },
               isAdmin: false,
               isDiceWitchAdmin: false,
+              isRollable: true,
+            },
+            {
+              guilds: {
+                id: "100000000000000004",
+                name: "No usable channels",
+                icon: null,
+              },
+              isAdmin: true,
+              isDiceWitchAdmin: false,
+              isRollable: false,
             },
           ],
           isLoading: mocks.guildsLoading,
@@ -336,7 +348,7 @@ describe("Home roll preparation lifecycle", () => {
     ).toBe(true);
   });
 
-  it("offers every mutual server as a web-roll target", () => {
+  it("offers only mutual servers with usable channels as web-roll targets", () => {
     render(<Home />);
 
     expect(screen.getByTestId("guild-options").textContent).toBe(

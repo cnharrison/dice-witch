@@ -22,6 +22,9 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
       inspectMembership: vi.fn(() =>
         Promise.resolve({ status: "missing" as const }),
       ),
+      inspectRollerGuild: vi.fn(() =>
+        Promise.resolve({ status: "missing" as const }),
+      ),
     },
     ROLL_WEB: {
       prepare: vi.fn(),
@@ -459,6 +462,94 @@ describe("web API Discord OAuth", () => {
           },
           isAdmin: true,
           isDiceWitchAdmin: false,
+        },
+      ],
+    });
+  });
+
+  it("marks only mutual guilds with usable channels as Roller targets", async () => {
+    const sessionToken = "T".repeat(43);
+    const dataFetch = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/internal/sessions/current") {
+        return Promise.resolve(Response.json({
+          user: {
+            id: "100000000000000003",
+            username: "fixture-user",
+            email: null,
+            avatar: null,
+          },
+          createdAt: now - 1,
+          expiresAt: now + 1,
+        }));
+      }
+      expect(path).toBe("/internal/memberships/list");
+      return Promise.resolve(Response.json({
+        memberships: [
+          {
+            guild: {
+              id: "100000000000000001",
+              name: "Rollable guild",
+              icon: null,
+            },
+            isAdmin: false,
+            isDiceWitchAdmin: false,
+          },
+          {
+            guild: {
+              id: "100000000000000004",
+              name: "Management-only guild",
+              icon: null,
+            },
+            isAdmin: true,
+            isDiceWitchAdmin: false,
+          },
+        ],
+      }));
+    });
+    const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectRollerGuild = vi.fn((guildId: string) =>
+      Promise.resolve({
+        status: "found" as const,
+        isAdmin: guildId === "100000000000000004",
+        isDiceWitchAdmin: false,
+        hasUsableChannel: guildId === "100000000000000001",
+      }),
+    );
+    const response = await handleAuthRequest(
+      new Request("https://api.example.com/api/guilds/mutual?view=roller", {
+        headers: {
+          cookie: `session_id=${sessionToken}`,
+          origin: frontendOrigin,
+        },
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      guilds: [
+        {
+          guilds: {
+            id: "100000000000000001",
+            name: "Rollable guild",
+            icon: null,
+          },
+          isAdmin: false,
+          isDiceWitchAdmin: false,
+          isRollable: true,
+        },
+        {
+          guilds: {
+            id: "100000000000000004",
+            name: "Management-only guild",
+            icon: null,
+          },
+          isAdmin: true,
+          isDiceWitchAdmin: false,
+          isRollable: false,
         },
       ],
     });

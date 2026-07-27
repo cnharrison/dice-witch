@@ -2,6 +2,7 @@ import { exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import {
   DISCORD_GLOBAL_COMMANDS,
+  rollLogContextDescription,
   type RollLogArtifactV1,
 } from "../../packages/discord-contracts/src";
 import {
@@ -11,6 +12,7 @@ import {
   deliverWebRoll,
   fetchPublicStats,
   inspectMembership,
+  inspectRollerGuild,
   listCurrentGuildIds,
   listCurrentGuildIdsPage,
   listMemberTextChannels,
@@ -540,6 +542,23 @@ describe("Discord REST service", () => {
     }
   });
 
+  it("renders unknown log destinations as plain text", () => {
+    expect(
+      rollLogContextDescription(
+        { ...rollLogArtifact(), context: null },
+        {
+          status: "available",
+          shardId: 0,
+          shardCount: 1,
+          generation: 16,
+        },
+        { channelName: null, guildName: null },
+      ),
+    ).toBe(
+      "user: **roller** [Discord]\nunknown channel\nunknown guild [Shard 1]",
+    );
+  });
+
   it.each([403, 404])(
     "delivers a durable roll log when Discord context returns %i",
     async (contextStatus) => {
@@ -563,7 +582,7 @@ describe("Discord REST service", () => {
           embeds: Array<{ description: string }>;
         };
         expect(payload.embeds[0]?.description).toContain(
-          "channel: **unavailable**\nguild: **Fixture Guild** [Shard 1]",
+          "unknown channel\nguild: **Fixture Guild** [Shard 1]",
         );
         return Response.json({ id: "100000000000000088" });
       });
@@ -1118,17 +1137,21 @@ describe("Discord REST service", () => {
       throw new Error(`Unexpected Discord route ${path}`);
     });
 
+    const memberEnv = { ...env, DISCORD_APPLICATION_ID: botId };
     await expect(
-      listMemberTextChannels(
-        { ...env, DISCORD_APPLICATION_ID: botId },
-        guildId,
-        userId,
-        discordFetch,
-      ),
+      listMemberTextChannels(memberEnv, guildId, userId, discordFetch),
     ).resolves.toEqual([
       { id: "100000000000000010", name: "general", type: 0 },
       { id: "100000000000000012", name: "players", type: 0 },
     ]);
+    await expect(
+      inspectRollerGuild(memberEnv, guildId, userId, discordFetch),
+    ).resolves.toEqual({
+      status: "found",
+      isAdmin: false,
+      isDiceWitchAdmin: false,
+      hasUsableChannel: true,
+    });
   });
 
   it("delivers a rendered web roll only to a channel in the guild", async () => {

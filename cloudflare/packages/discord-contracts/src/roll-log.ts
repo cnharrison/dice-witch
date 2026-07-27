@@ -395,8 +395,13 @@ export type RollLogDisplayContextV1 = {
   channelName: string | null;
 };
 
-function rollLogDisplayName(value: string | null): string {
-  return value === null ? "unavailable" : escapeDiscordMarkdown(value);
+function rollLogDisplayLine(
+  kind: "channel" | "guild",
+  value: string | null,
+): string {
+  return value === null
+    ? `unknown ${kind}`
+    : `${kind}: **${escapeDiscordMarkdown(value)}**`;
 }
 
 export function rollLogContextDescription(
@@ -421,9 +426,11 @@ export function rollLogContextDescription(
     throw new Error("Roll log guild context is invalid");
   }
   if (context === null) {
-    return `${user}\nchannel: **unavailable**\nguild: **unavailable**${shardSuffix}`;
+    return `${user}\nunknown channel\nunknown guild${shardSuffix}`;
   }
-  return `${user}\nchannel: **${rollLogDisplayName(context.channelName)}**\nguild: **${rollLogDisplayName(context.guildName)}**${shardSuffix}`;
+  const channel = rollLogDisplayLine("channel", context.channelName);
+  const guild = rollLogDisplayLine("guild", context.guildName);
+  return `${user}\n${channel}\n${guild}${shardSuffix}`;
 }
 
 export function rollLogResultDescription(

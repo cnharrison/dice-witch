@@ -75,6 +75,12 @@ type MembershipInspection =
     }
   | { status: "missing" };
 
+type RollerGuildInspection =
+  | (Extract<MembershipInspection, { status: "found" }> & {
+      hasUsableChannel: boolean;
+    })
+  | { status: "missing" };
+
 type TextChannel = { id: string; name: string; type: 0 | 5 };
 
 type DiscordRestService = {
@@ -93,6 +99,10 @@ type DiscordRestService = {
     guildId: string,
     userId: string,
   ): Promise<MembershipInspection>;
+  inspectRollerGuild(
+    guildId: string,
+    userId: string,
+  ): Promise<RollerGuildInspection>;
 };
 
 export type WebApiBindings = {
@@ -1017,6 +1027,11 @@ async function getMutualGuilds(
   env: WebApiBindings,
   now: number,
 ): Promise<Response> {
+  const view = new URL(request.url).searchParams.get("view");
+  if (view !== null && view !== "roller") {
+    return json({ error: "Guild view is invalid" }, 400);
+  }
+  const rollerView = view === "roller";
   const token = readCookie(request, "session_id");
   if (token === null || !OPAQUE_TOKEN.test(token)) {
     return json({ error: "Unauthorized" }, 401);
@@ -1083,11 +1098,13 @@ async function getMutualGuilds(
   const guilds: unknown[] = [];
   for (let offset = 0; offset < candidates.length; offset += 5) {
     const batch = candidates.slice(offset, offset + 5);
-    let inspections: MembershipInspection[];
+    let inspections: Array<MembershipInspection | RollerGuildInspection>;
     try {
       inspections = await Promise.all(
         batch.map(({ guilds: guild }) =>
-          env.DISCORD_REST.inspectMembership(guild.id, session.user.id),
+          rollerView
+            ? env.DISCORD_REST.inspectRollerGuild(guild.id, session.user.id)
+            : env.DISCORD_REST.inspectMembership(guild.id, session.user.id),
         ),
       );
     } catch {
@@ -1097,10 +1114,17 @@ async function getMutualGuilds(
       const candidate = batch[index];
       const inspection = inspections[index];
       if (candidate === undefined || inspection?.status !== "found") continue;
+      const isRollable = "hasUsableChannel" in inspection
+        ? inspection.hasUsableChannel
+        : null;
+      if (rollerView !== (isRollable !== null)) {
+        return json({ error: "Mutual guild verification failed" }, 502);
+      }
       guilds.push({
         ...candidate,
         isAdmin: inspection.isAdmin,
         isDiceWitchAdmin: inspection.isDiceWitchAdmin,
+        ...(isRollable === null ? {} : { isRollable }),
       });
     }
   }

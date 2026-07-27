@@ -56,6 +56,7 @@ type RollPreparationState =
   | { status: "ready"; value: RollPreparation };
 
 type MobileRollTab = "roll" | "saved" | "result";
+type RollerGuild = Guild & { isRollable: boolean };
 type LibraryRollSelection = NonNullable<QuickRollComposition["libraryRoll"]>;
 type ActiveLibraryRoll = Readonly<{
   selection: LibraryRollSelection;
@@ -214,10 +215,10 @@ export const Home = () => {
     setRecentRolls(readRecentRolls(window.localStorage, user.id));
   }, [user?.id]);
 
-  const { data: mutualGuilds, isLoading, isFetching } = useQuery<Guild[]>({
-    queryKey: ['guilds'],
+  const { data: mutualGuilds, isLoading, isFetching } = useQuery<RollerGuild[]>({
+    queryKey: ['guilds', 'roller'],
     queryFn: async () => {
-      const response = await customFetch('/api/guilds/mutual');
+      const response = await customFetch('/api/guilds/mutual?view=roller');
       if (!response.ok) {
         throw new Error('Failed to fetch guilds');
       }
@@ -518,8 +519,9 @@ export const Home = () => {
     setPreparation({ status: "idle" });
   };
 
-  const availableGuilds = Array.isArray(mutualGuilds) ? mutualGuilds : [];
-  const manageableGuilds = availableGuilds.filter(
+  const allGuilds = Array.isArray(mutualGuilds) ? mutualGuilds : [];
+  const availableGuilds = allGuilds.filter(({ isRollable }) => isRollable);
+  const manageableGuilds = allGuilds.filter(
     ({ isAdmin, isDiceWitchAdmin }) => isAdmin || isDiceWitchAdmin,
   );
   const hasNoGuilds = availableGuilds.length === 0;
@@ -626,7 +628,9 @@ export const Home = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <h1 className="text-2xl font-semibold text-center text-muted-foreground max-w-lg mb-6">
-          You don't have any mutual servers with Dice Witch
+          {allGuilds.length === 0
+            ? "You don't have any mutual servers with Dice Witch"
+            : "You don't have any servers with a channel available for Dice Witch rolls"}
         </h1>
         <a
           href={appConfig.inviteUrl}

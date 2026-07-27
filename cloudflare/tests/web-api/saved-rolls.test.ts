@@ -35,6 +35,9 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
       inspectMembership: vi.fn(() =>
         Promise.resolve({ status: "missing" as const }),
       ),
+      inspectRollerGuild: vi.fn(() =>
+        Promise.resolve({ status: "missing" as const }),
+      ),
     },
     ROLL_WEB: {
       prepare: vi.fn(),
