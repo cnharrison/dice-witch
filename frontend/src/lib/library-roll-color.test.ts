@@ -46,11 +46,7 @@ describe("Library roll name colors", () => {
 
   it("generates five theme-compatible suggestions that exclude used colors", () => {
     const initial = generateLibraryRollColorSuggestions([]);
-    const used = [
-      ...generateLibraryRollColorSuggestions([], 100),
-      "#123456",
-      "not-a-color",
-    ];
+    const used = [...initial, "#123456", "not-a-color"];
     const suggestions = generateLibraryRollColorSuggestions(used);
 
     expect(initial).toHaveLength(5);
