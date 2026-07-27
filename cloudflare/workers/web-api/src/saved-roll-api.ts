@@ -416,12 +416,15 @@ async function searchSavedRolls(
   }
   const libraries = await authorizedLibraries(env, userId, now);
   if (libraries instanceof Response) return libraries;
+  const managedLibraries = libraries.filter(
+    (library) => library.isAdmin || library.isDiceWitchAdmin,
+  );
   const response = await postData(
     env.DATA_SERVICE,
     `/internal/saved-rolls/v${String(contractVersion)}/search`,
     {
       userId,
-      guildIds: libraries.map(({ guildId }) => guildId),
+      guildIds: managedLibraries.map(({ guildId }) => guildId),
       query,
       offset: Number(offset),
       sort,
@@ -450,7 +453,7 @@ async function searchSavedRolls(
     return json({ error: "Saved roll search response is invalid" }, 502);
   }
   const libraryById = new Map(
-    libraries.map((library) => [library.guildId, library]),
+    managedLibraries.map((library) => [library.guildId, library]),
   );
   const entries: unknown[] = [];
   for (const entry of value.entries) {

@@ -87,7 +87,9 @@ function bindings(
       DATA_SERVICE: { fetch: dataFetch } as Fetcher,
       DISCORD_REST: {
         deliverWebRoll,
-        listTextChannels: vi.fn(() => Promise.resolve([])),
+        listTextChannels: vi.fn(() => Promise.resolve([
+          { id: "100000000000000010", name: "general", type: 0 as const },
+        ])),
         inspectMembership: vi.fn(() =>
           Promise.resolve({ status: "missing" as const }),
         ),

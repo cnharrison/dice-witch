@@ -226,6 +226,25 @@ describe("D1SavedRollRepository create/read", () => {
     expect(duplicate).toEqual({ status: "name_conflict", listRevision: 1 });
   });
 
+  it("creates the first Server roll without any existing Personal or Server rolls", async () => {
+    const result = await repository().create(createInput({
+      owner: { type: "guild", guildId },
+      authorizationUpdatedAt: timestamp,
+      mutationId: "first-server-roll",
+    }));
+
+    expect(result).toMatchObject({
+      status: "applied",
+      listRevision: 1,
+      savedRoll: { owner: { type: "guild", guildId } },
+    });
+    await expect(
+      dataEnv.DATA.prepare(
+        "SELECT COUNT(*) AS count FROM saved_rolls WHERE user_id IS NOT NULL",
+      ).first(),
+    ).resolves.toEqual({ count: 0 });
+  });
+
   it("discovers an empty active member library", async () => {
     await expect(repository().listLibraryCandidates(userId)).resolves.toEqual([
       { guildId, guildName: "Guild", guildIcon: null },

@@ -333,6 +333,76 @@ describe("saved-roll Web API", () => {
     });
   });
 
+  it("searches only Server libraries managed by the current user", async () => {
+    const memberGuildId = "100000000000000001";
+    const adminGuildId = "100000000000000002";
+    const diceWitchAdminGuildId = "100000000000000004";
+    const dataFetch = vi.fn(async (dataRequest: Request) => {
+      const path = new URL(dataRequest.url).pathname;
+      if (path === "/internal/sessions/current") return sessionResponse();
+      if (path === "/internal/saved-rolls/v1/libraries") {
+        return Response.json({
+          status: "found",
+          libraries: [
+            { guildId: memberGuildId, guildName: "Member Server", guildIcon: null },
+            { guildId: adminGuildId, guildName: "Admin Server", guildIcon: null },
+            {
+              guildId: diceWitchAdminGuildId,
+              guildName: "Dice Witch Admin Server",
+              guildIcon: null,
+            },
+          ],
+        });
+      }
+      if (path === "/internal/memberships/permissions") {
+        const proof = await body(dataRequest);
+        return Response.json({
+          status: "applied",
+          permissions: {
+            isAdmin: proof.isAdmin,
+            isDiceWitchAdmin: proof.isDiceWitchAdmin,
+          },
+        });
+      }
+      if (path === "/internal/saved-rolls/v2/search") {
+        expect(await body(dataRequest)).toMatchObject({
+          userId,
+          guildIds: [adminGuildId, diceWitchAdminGuildId],
+          query: "fire",
+        });
+        return Response.json({
+          status: "found",
+          entries: [],
+          hasMore: false,
+          total: 0,
+        });
+      }
+      throw new Error(`Unexpected Data route ${path}`);
+    });
+    const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectMembership = vi.fn((candidateGuildId: string) =>
+      Promise.resolve({
+        status: "found" as const,
+        isAdmin: candidateGuildId === adminGuildId,
+        isDiceWitchAdmin: candidateGuildId === diceWitchAdminGuildId,
+      }),
+    );
+
+    const response = await handleAuthRequest(
+      request("/api/saved-rolls/v2/search?query=fire&offset=0&sort=name&direction=asc"),
+      env,
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "found",
+      entries: [],
+      total: 0,
+    });
+  });
+
   it("denies a stale admin inspection superseded by newer revoked proof", async () => {
     const paths: string[] = [];
     const dataFetch = vi.fn((dataRequest: Request) => {
@@ -448,7 +518,7 @@ describe("saved-roll Web API", () => {
       if (path === "/internal/memberships/permissions") {
         return Response.json({
           status: "applied",
-          permissions: { isAdmin: false, isDiceWitchAdmin: false },
+          permissions: { isAdmin: true, isDiceWitchAdmin: false },
         });
       }
       if (path === "/internal/saved-rolls/v1/search") {
@@ -480,7 +550,7 @@ describe("saved-roll Web API", () => {
     const env = bindings(dataFetch);
     env.DISCORD_REST.inspectMembership = vi.fn(() => Promise.resolve({
       status: "found" as const,
-      isAdmin: false,
+      isAdmin: true,
       isDiceWitchAdmin: false,
     }));
     const response = await handleAuthRequest(
@@ -503,7 +573,7 @@ describe("saved-roll Web API", () => {
           guildName: "Moonlit Library",
           guildIcon: null,
         },
-        canManage: false,
+        canManage: true,
       }],
       hasMore: false,
       total: 1,

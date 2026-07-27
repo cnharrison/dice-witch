@@ -88,7 +88,7 @@ type DiscordRestService = {
     skipDelay: boolean;
     delayMs: number;
   }): Promise<{ status: "delivered" | "permission_error" }>;
-  listTextChannels(guildId: string): Promise<TextChannel[]>;
+  listTextChannels(guildId: string, userId?: string): Promise<TextChannel[]>;
   inspectMembership(
     guildId: string,
     userId: string,
@@ -1103,29 +1103,15 @@ async function getGuildChannels(
   if (session === null) {
     return json({ error: "Session response is invalid" }, 502);
   }
-  const membershipResponse = await postData(
-    env,
-    "/internal/memberships/list",
-    { userId: session.user.id },
-  );
-  if (!membershipResponse.ok) {
-    return json({ error: "Guild authorization failed" }, 502);
+  let channels: unknown;
+  try {
+    channels = await env.DISCORD_REST.listTextChannels(
+      guildId,
+      session.user.id,
+    );
+  } catch {
+    return json({ error: "Guild channels lookup failed" }, 502);
   }
-  const value: unknown = await membershipResponse.json();
-  if (!isRecord(value) || !Array.isArray(value.memberships)) {
-    return json({ error: "Guild authorization response is invalid" }, 502);
-  }
-  const authorized = value.memberships.some(
-    (membership) =>
-      isRecord(membership) &&
-      isRecord(membership.guild) &&
-      membership.guild.id === guildId &&
-      (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
-  );
-  if (!authorized) return json({ error: "Unauthorized" }, 401);
-
-  const channels: unknown =
-    await env.DISCORD_REST.listTextChannels(guildId);
   if (
     !Array.isArray(channels) ||
     !channels.every(
@@ -1352,8 +1338,7 @@ async function postWebRollPreparation(
     (membership) =>
       isRecord(membership) &&
       isRecord(membership.guild) &&
-      membership.guild.id === value.guildId &&
-      (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
+      membership.guild.id === value.guildId,
   );
   if (!authorized) return json({ error: "Unauthorized" }, 401);
 
@@ -1616,26 +1601,18 @@ async function postWebRoll(
   const session = parseStoredSession(await sessionResponse.json());
   if (session === null) return json({ error: "Session response is invalid" }, 502);
 
-  const membershipsResponse = await postData(
-    env,
-    "/internal/memberships/list",
-    { userId: session.user.id },
-  );
-  if (!membershipsResponse.ok) {
-    return json({ error: "Guild authorization failed" }, 502);
+  let availableChannels: TextChannel[];
+  try {
+    availableChannels = await env.DISCORD_REST.listTextChannels(
+      value.guildId,
+      session.user.id,
+    );
+  } catch {
+    return json({ error: "Guild channel authorization failed" }, 502);
   }
-  const memberships: unknown = await membershipsResponse.json();
-  if (!isRecord(memberships) || !Array.isArray(memberships.memberships)) {
-    return json({ error: "Guild authorization response is invalid" }, 502);
+  if (!availableChannels.some(({ id }) => id === value.channelId)) {
+    return json({ error: "Unauthorized" }, 401);
   }
-  const authorized = memberships.memberships.some(
-    (membership) =>
-      isRecord(membership) &&
-      isRecord(membership.guild) &&
-      membership.guild.id === value.guildId &&
-      (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
-  );
-  if (!authorized) return json({ error: "Unauthorized" }, 401);
 
   const savedRollAttribution = libraryRoll === null
     ? undefined

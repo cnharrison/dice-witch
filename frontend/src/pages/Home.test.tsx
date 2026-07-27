@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   guildsLoading: false,
   invalidateQueries: vi.fn(),
+  selectedGuildId: "100000000000000001",
 }));
 
 vi.mock("@/lib/AuthProvider", () => ({
@@ -18,7 +19,7 @@ vi.mock("@/lib/AuthProvider", () => ({
 
 vi.mock("@/context/GuildContext", () => ({
   useGuild: () => ({
-    selectedGuildId: "100000000000000001",
+    selectedGuildId: mocks.selectedGuildId,
     selectedChannelId: "100000000000000010",
     setSelectedGuildId: vi.fn(),
     setSelectedChannelId: vi.fn(),
@@ -62,6 +63,13 @@ vi.mock("@tanstack/react-query", () => ({
                 guildName: "Fixture guild",
                 guildIcon: null,
                 isAdmin: true,
+                isDiceWitchAdmin: false,
+              },
+              {
+                guildId: "100000000000000002",
+                guildName: "Ordinary membership",
+                guildIcon: null,
+                isAdmin: false,
                 isDiceWitchAdmin: false,
               },
             ],
@@ -118,9 +126,11 @@ vi.mock("@/components/LoadingMedia", () => ({
 }));
 vi.mock("@/components/SavedRollQuickAccess", () => ({
   SavedRollQuickAccess: ({
+    guildScope,
     onLoad,
     onRollNow,
   }: {
+    guildScope: { guildId: string } | null;
     onLoad: (savedRoll: {
       notation: string;
       title: string | null;
@@ -133,7 +143,10 @@ vi.mock("@/components/SavedRollQuickAccess", () => ({
       libraryRoll: { scope: "personal"; id: string; revision: number };
     }) => void;
   }) => (
-    <div>
+    <div
+      data-testid="saved-roll-guild-scope"
+      data-guild-id={guildScope?.guildId ?? ""}
+    >
       <button
         type="button"
         onClick={() => onLoad({
@@ -319,6 +332,7 @@ beforeEach(() => {
   mocks.customFetch.mockReset();
   mocks.toast.mockReset();
   mocks.guildsLoading = false;
+  mocks.selectedGuildId = "100000000000000001";
   window.localStorage.clear();
 });
 
@@ -343,12 +357,21 @@ describe("Home roll preparation lifecycle", () => {
     ).toBe(true);
   });
 
-  it("does not expose ordinary mutual memberships as web-roll targets", () => {
+  it("offers every mutual server as a web-roll target", () => {
     render(<Home />);
 
     expect(screen.getByTestId("guild-options").textContent).toBe(
-      "Fixture guild",
+      "Fixture guild,Ordinary membership",
     );
+  });
+
+  it("loads the selected ordinary member's Server Library in the Roller", () => {
+    mocks.selectedGuildId = "100000000000000002";
+    render(<Home />);
+
+    expect(
+      screen.getByTestId("saved-roll-guild-scope").getAttribute("data-guild-id"),
+    ).toBe("100000000000000002");
   });
 
   it("renders the idle portrait from the bundled image asset", () => {

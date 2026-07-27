@@ -536,43 +536,28 @@ describe("web API Discord OAuth", () => {
     });
   });
 
-  it("returns channels only for an authorized mutual guild", async () => {
+  it("returns only channels available to the current guild member", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
-      const path = new URL(request.url).pathname;
-      return Promise.resolve(
-        path === "/internal/sessions/current"
-          ? Response.json({
-              user: {
-                id: "100000000000000003",
-                username: "fixture-user",
-                email: null,
-                avatar: null,
-              },
-              createdAt: now - 1,
-              expiresAt: now + 1,
-            })
-          : Response.json({
-              memberships: [
-                {
-                  guild: {
-                    id: "100000000000000001",
-                    name: "Fixture guild",
-                    icon: null,
-                  },
-                  isAdmin: true,
-                  isDiceWitchAdmin: false,
-                },
-              ],
-            }),
-      );
+      expect(new URL(request.url).pathname).toBe("/internal/sessions/current");
+      return Promise.resolve(Response.json({
+        user: {
+          id: "100000000000000003",
+          username: "fixture-user",
+          email: null,
+          avatar: null,
+        },
+        createdAt: now - 1,
+        expiresAt: now + 1,
+      }));
     });
     const env = bindings(dataFetch);
-    env.DISCORD_REST.listTextChannels = vi.fn(() =>
+    const listTextChannels = vi.fn(() =>
       Promise.resolve([
         { id: "100000000000000010", name: "general", type: 0 as const },
       ]),
     );
+    env.DISCORD_REST.listTextChannels = listTextChannels;
     const response = await handleAuthRequest(
       new Request(
         "https://api.example.com/api/guilds/100000000000000001/channels",
@@ -592,9 +577,13 @@ describe("web API Discord OAuth", () => {
     await expect(response.json()).resolves.toEqual({
       channels: [{ id: "100000000000000010", name: "general", type: 0 }],
     });
+    expect(listTextChannels).toHaveBeenCalledWith(
+      "100000000000000001",
+      "100000000000000003",
+    );
   });
 
-  it("executes and delivers an authorized web roll", async () => {
+  it("executes and delivers a current guild member's web roll", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
@@ -609,23 +598,6 @@ describe("web API Discord OAuth", () => {
             },
             createdAt: now - 1,
             expiresAt: now + 1,
-          }),
-        );
-      }
-      if (path === "/internal/memberships/list") {
-        return Promise.resolve(
-          Response.json({
-            memberships: [
-              {
-                guild: {
-                  id: "100000000000000001",
-                  name: "Fixture guild",
-                  icon: null,
-                },
-                isAdmin: true,
-                isDiceWitchAdmin: false,
-              },
-            ],
           }),
         );
       }
@@ -650,6 +622,10 @@ describe("web API Discord OAuth", () => {
       );
     });
     const env = bindings(dataFetch);
+    const listTextChannels = vi.fn(() => Promise.resolve([
+      { id: "100000000000000010", name: "general", type: 0 as const },
+    ]));
+    env.DISCORD_REST.listTextChannels = listTextChannels;
     const deliverWebRoll = vi.fn<
       WebApiBindings["DISCORD_REST"]["deliverWebRoll"]
     >(() => Promise.resolve({ status: "delivered" as const }));
@@ -699,7 +675,7 @@ describe("web API Discord OAuth", () => {
           appearanceDigest: "a".repeat(64),
           timesToRepeat: 1,
           libraryRoll: {
-            scope: "personal",
+            scope: "server",
             id: "123e4567-e89b-42d3-a456-426614174000",
             revision: 2,
           },
@@ -730,7 +706,7 @@ describe("web API Discord OAuth", () => {
       title: null,
       userId: "100000000000000003",
       guildId: "100000000000000001",
-      savedRoll: { scope: "personal", name: "Initiative" },
+      savedRoll: { scope: "guild", name: "Initiative" },
       deliveryId,
       channelId: "100000000000000010",
       skipDelay: false,
@@ -770,13 +746,18 @@ describe("web API Discord OAuth", () => {
       guildId: "100000000000000001",
     });
     expect(deliverWebRoll).toHaveBeenCalledOnce();
+    expect(listTextChannels).toHaveBeenCalledTimes(2);
+    expect(listTextChannels).toHaveBeenLastCalledWith(
+      "100000000000000001",
+      "100000000000000003",
+    );
     const legacyDelivery = deliverWebRoll.mock.calls[0]?.[0];
     expect(legacyDelivery).toMatchObject({ skipDelay: false });
     expect(legacyDelivery?.delayMs).toBeGreaterThanOrEqual(1);
     expect(legacyDelivery?.delayMs).toBeLessThanOrEqual(5_000);
   });
 
-  it("keeps web preparation restricted to guild administrators", async () => {
+  it("allows a current non-admin guild member to prepare a web roll", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
@@ -814,7 +795,10 @@ describe("web API Discord OAuth", () => {
       throw new Error(`Unexpected Data Worker route ${path}`);
     });
     const env = bindings(dataFetch);
-    const prepare = vi.fn();
+    const prepare = vi.fn(() => Promise.resolve({
+      status: "invalid" as const,
+      message: "Fixture stopped after authorization",
+    }));
     env.ROLL_WEB.prepare = prepare;
 
     const response = await handleAuthRequest(
@@ -836,9 +820,11 @@ describe("web API Discord OAuth", () => {
       () => now,
     );
 
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
-    expect(prepare).not.toHaveBeenCalled();
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Fixture stopped after authorization",
+    });
+    expect(prepare).toHaveBeenCalledOnce();
   });
 
   it("accepts same-origin session reads when browsers omit Origin on GET", async () => {

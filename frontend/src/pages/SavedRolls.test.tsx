@@ -250,78 +250,44 @@ it("suggests Library Name (Server Name) after a copy-name conflict", async () =>
   ).toBe("Fireball (Friday Game)");
 });
 
-it("shows read-only Server search results without management chrome", async () => {
-  const guildId = "100000000000000001";
-  const savedRoll = {
-    version: 2 as const,
-    id: "00000000-0000-4000-8000-000000000001",
-    displayName: "Fireball",
-    comparisonKey: "fireball",
-    notation: "8d6",
-    title: null,
-    repetitions: 1,
-    nameColor: null,
-    pinned: false,
-    manualOrder: 0,
-    revision: 1,
-    createdAt: 1,
-    updatedAt: 1,
-  };
+it("offers only managed Server Libraries in the Library tab", async () => {
   listSavedRollLibraries.mockResolvedValue([{
-    guildId,
-    guildName: "A Server Name That Is Intentionally Very Long",
+    guildId: "100000000000000001",
+    guildName: "Member Server",
     guildIcon: null,
     isAdmin: false,
     isDiceWitchAdmin: false,
   }]);
-  searchSavedRolls.mockResolvedValue({
-    entries: [{
-      savedRoll,
-      listRevision: 1,
-      source: {
-        type: "guild",
-        guildId,
-        guildName: "A Server Name That Is Intentionally Very Long",
-        guildIcon: null,
-      },
-      canManage: false,
-    }],
-    hasMore: false,
-    total: 1,
-  });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const user = userEvent.setup();
   render(
     <QueryClientProvider client={queryClient}>
       <SavedRolls />
     </QueryClientProvider>,
   );
 
-  expect(
-    await screen.findByRole("combobox", { name: "Library" }),
-  ).toBeDefined();
-  expect(screen.queryByRole("combobox", { name: "Copy to" })).toBeNull();
-  await user.type(screen.getByRole("searchbox", { name: "Search" }), "fire");
-  await waitFor(() => expect(searchSavedRolls).toHaveBeenCalledOnce(), {
-    timeout: 1_000,
-  });
+  expect(await screen.findByText("Personal Library")).toBeDefined();
+  expect(screen.queryByRole("combobox", { name: "Library" })).toBeNull();
 
-  expect(
-    (
-      await screen.findByText(
-        "A Server Name That Is Intentionally Very Long",
-      )
-    ).getAttribute("title"),
-  ).toBe("A Server Name That Is Intentionally Very Long");
-  expect(screen.getByRole("checkbox", { name: "Select Fireball" })).toBeDefined();
-  expect(
-    (screen.getByRole("button", { name: "Copy to…" }) as HTMLButtonElement).disabled,
-  ).toBe(true);
-  expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Delete Fireball" })).toBeNull();
-  expect(screen.queryByText("Order")).toBeNull();
+  cleanup();
+  listSavedRollLibraries.mockResolvedValue([{
+    guildId: "100000000000000002",
+    guildName: "Empty Admin Server",
+    guildIcon: null,
+    isAdmin: true,
+    isDiceWitchAdmin: false,
+  }]);
+  const adminQueryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={adminQueryClient}>
+      <SavedRolls />
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByRole("combobox", { name: "Library" })).toBeDefined();
 });
 
 it("uses the sparkle state without visible loading copy", () => {

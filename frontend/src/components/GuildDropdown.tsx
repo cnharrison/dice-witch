@@ -26,10 +26,7 @@ export function GuildDropdown({
   triggerClassName,
   contentClassName,
 }: GuildDropdownProps) {
-  const adminGuilds = guilds.filter(
-    (guild) => guild.isAdmin || guild.isDiceWitchAdmin,
-  );
-  const selectedGuild = adminGuilds.find(
+  const selectedGuild = guilds.find(
     (guild) => guild.guilds.id === value,
   );
 
@@ -62,7 +59,7 @@ export function GuildDropdown({
         </div>
       </SelectTrigger>
       <SelectContent className={cn("min-w-[300px]", contentClassName)}>
-        {adminGuilds.map((guild) => (
+        {guilds.map((guild) => (
           <SelectItem
             key={guild.guilds.id}
             value={guild.guilds.id}

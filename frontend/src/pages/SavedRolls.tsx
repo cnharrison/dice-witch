@@ -372,15 +372,17 @@ export default function SavedRolls() {
   });
   const libraryGuilds = React.useMemo<Guild[]>(
     () =>
-      (libraryQuery.data ?? []).map((library) => ({
-        guilds: {
-          id: library.guildId,
-          name: library.guildName,
-          icon: library.guildIcon ?? "",
-        },
-        isAdmin: library.isAdmin,
-        isDiceWitchAdmin: library.isDiceWitchAdmin,
-      })),
+      (libraryQuery.data ?? [])
+        .filter((library) => library.isAdmin || library.isDiceWitchAdmin)
+        .map((library) => ({
+          guilds: {
+            id: library.guildId,
+            name: library.guildName,
+            icon: library.guildIcon ?? "",
+          },
+          isAdmin: library.isAdmin,
+          isDiceWitchAdmin: library.isDiceWitchAdmin,
+        })),
     [libraryQuery.data],
   );
   const selectedLibrary = libraryQuery.data?.find(
@@ -414,13 +416,13 @@ export default function SavedRolls() {
     if (
       scope.type === "guild" &&
       libraryQuery.data !== undefined &&
-      !libraryQuery.data.some(({ guildId }) => guildId === scope.guildId)
+      !libraryGuilds.some(({ guilds }) => guilds.id === scope.guildId)
     ) {
       setScope({ type: "personal" });
       setEditing(null);
       setCreating(false);
     }
-  }, [libraryQuery.data, scope]);
+  }, [libraryGuilds, libraryQuery.data, scope]);
 
   React.useEffect(() => {
     if (

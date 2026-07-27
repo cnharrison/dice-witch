@@ -528,14 +528,12 @@ export const Home = () => {
     setPreparation({ status: "idle" });
   };
 
-  const authorizedGuilds = Array.isArray(mutualGuilds)
-    ? mutualGuilds.filter(
-        ({ isAdmin, isDiceWitchAdmin }) => isAdmin || isDiceWitchAdmin,
-      )
-    : [];
-  const hasAdminPermissions = authorizedGuilds.length > 0;
-  const hasNoGuilds = !Array.isArray(mutualGuilds) || mutualGuilds.length === 0;
-  const selectedGuildRecord = authorizedGuilds.find(
+  const availableGuilds = Array.isArray(mutualGuilds) ? mutualGuilds : [];
+  const manageableGuilds = availableGuilds.filter(
+    ({ isAdmin, isDiceWitchAdmin }) => isAdmin || isDiceWitchAdmin,
+  );
+  const hasNoGuilds = availableGuilds.length === 0;
+  const selectedGuildRecord = availableGuilds.find(
     ({ guilds }) => guilds.id === selectedGuild,
   );
   const selectedChannelRecord = channels.find(
@@ -655,16 +653,6 @@ export const Home = () => {
     );
   }
 
-  if (!hasAdminPermissions) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <h1 className="text-2xl font-semibold text-center text-muted-foreground max-w-lg">
-          It doesn't look like you have permission to roll in any of the guilds you're in
-        </h1>
-      </div>
-    );
-  }
-
   const diceInput = (
     <DiceInput
       input={input}
@@ -754,7 +742,7 @@ export const Home = () => {
           open={saveDialogOpen}
           onOpenChange={setSaveDialogOpen}
           composition={{ notation: input, title: rollTitle, repetitions: timesToRepeat }}
-          manageableGuilds={authorizedGuilds}
+          manageableGuilds={manageableGuilds}
         />
         <div className="roller-workspace flex h-full min-h-0 flex-col overflow-hidden px-2 py-2 sm:px-4">
         {isMobile ? (
@@ -789,7 +777,7 @@ export const Home = () => {
                   </DialogHeader>
                   <div className="grid gap-3">
                     <GuildDropdown
-                      guilds={authorizedGuilds}
+                      guilds={availableGuilds}
                       value={selectedGuild}
                       onValueChange={selectGuild}
                       ariaLabel="Server"
@@ -855,7 +843,7 @@ export const Home = () => {
               </div>
               <div className="grid w-[300px] gap-2">
                 <GuildDropdown
-                  guilds={authorizedGuilds}
+                  guilds={availableGuilds}
                   value={selectedGuild}
                   onValueChange={selectGuild}
                 />

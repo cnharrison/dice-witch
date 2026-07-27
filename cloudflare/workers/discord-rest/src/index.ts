@@ -45,6 +45,9 @@ export type DiscordRestBindings = Omit<
 
 const DISCORD_API = "https://discord.com/api/v10";
 const DICE_WITCH_ADMIN_ROLE = "Dice Witch Admin";
+const ADMINISTRATOR_PERMISSION = 1n << 3n;
+const VIEW_CHANNEL_PERMISSION = 1n << 10n;
+const SEND_MESSAGES_PERMISSION = 1n << 11n;
 const MAX_GUILDS_PER_STATS_RUN = 100_000;
 const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
@@ -203,6 +206,97 @@ function parseMemberRoles(value: unknown): string[] {
     throw new Error("Discord guild member response is invalid");
   }
   return value.roles;
+}
+
+function parsePermission(value: unknown, source: string): bigint {
+  if (
+    typeof value !== "string" ||
+    value.length > 32 ||
+    !/^(0|[1-9][0-9]*)$/.test(value)
+  ) {
+    throw new Error(`${source} permissions are invalid`);
+  }
+  return BigInt(value);
+}
+
+function memberTimeout(value: unknown, now: number): boolean {
+  if (!isRecord(value)) throw new Error("Discord guild member response is invalid");
+  const timeout = value.communication_disabled_until;
+  if (timeout === undefined || timeout === null) return false;
+  if (typeof timeout !== "string") {
+    throw new Error("Discord guild member response is invalid");
+  }
+  const expiresAt = Date.parse(timeout);
+  if (!Number.isFinite(expiresAt)) {
+    throw new Error("Discord guild member response is invalid");
+  }
+  return expiresAt > now;
+}
+
+function rolePermissions(value: unknown): Map<string, bigint> {
+  if (!Array.isArray(value) || value.length > 250) {
+    throw new Error("Discord guild roles response is invalid");
+  }
+  const permissions = new Map<string, bigint>();
+  for (const role of value) {
+    if (
+      !isRecord(role) ||
+      typeof role.id !== "string" ||
+      !SNOWFLAKE.test(role.id) ||
+      permissions.has(role.id)
+    ) {
+      throw new Error("Discord guild roles response is invalid");
+    }
+    permissions.set(
+      role.id,
+      parsePermission(role.permissions, "Discord guild role"),
+    );
+  }
+  return permissions;
+}
+
+type PermissionOverwrite = {
+  id: string;
+  type: 0 | 1;
+  allow: bigint;
+  deny: bigint;
+};
+
+function permissionOverwrites(value: unknown): PermissionOverwrite[] {
+  if (!Array.isArray(value) || value.length > 1_000) {
+    throw new Error("Discord channel permission overwrites are invalid");
+  }
+  const overwrites: PermissionOverwrite[] = [];
+  const keys = new Set<string>();
+  for (const overwrite of value) {
+    if (
+      !isRecord(overwrite) ||
+      typeof overwrite.id !== "string" ||
+      !SNOWFLAKE.test(overwrite.id) ||
+      (overwrite.type !== 0 && overwrite.type !== 1)
+    ) {
+      throw new Error("Discord channel permission overwrites are invalid");
+    }
+    const key = `${String(overwrite.type)}:${overwrite.id}`;
+    if (keys.has(key)) {
+      throw new Error("Discord channel permission overwrites are invalid");
+    }
+    keys.add(key);
+    overwrites.push({
+      id: overwrite.id,
+      type: overwrite.type,
+      allow: parsePermission(overwrite.allow, "Discord channel overwrite"),
+      deny: parsePermission(overwrite.deny, "Discord channel overwrite"),
+    });
+  }
+  return overwrites;
+}
+
+function applyPermissionOverwrite(
+  permissions: bigint,
+  overwrite: Pick<PermissionOverwrite, "allow" | "deny">,
+): bigint {
+  return (permissions & ~overwrite.deny) | overwrite.allow;
 }
 
 function inspectAssignedRoles(
@@ -682,6 +776,170 @@ export async function listTextChannels(
       throw new Error("Discord guild channels response is invalid");
     }
     channels.push({ id: channel.id, name: channel.name, type: channel.type });
+  }
+  return channels;
+}
+
+type GuildMemberPermissions = {
+  userId: string;
+  roleIds: Set<string>;
+  base: bigint;
+  isAdministrator: boolean;
+  isTimedOut: boolean;
+};
+
+function guildMemberPermissions(
+  member: unknown,
+  permissionsByRole: Map<string, bigint>,
+  everyonePermissions: bigint,
+  ownerId: string,
+  userId: string,
+  now: number,
+): GuildMemberPermissions {
+  const roleIds = new Set(parseMemberRoles(member));
+  let base = everyonePermissions;
+  for (const roleId of roleIds) {
+    const permissions = permissionsByRole.get(roleId);
+    if (permissions === undefined) {
+      throw new Error("Discord guild roles response is invalid");
+    }
+    base |= permissions;
+  }
+  const isAdministrator =
+    ownerId === userId ||
+    (base & ADMINISTRATOR_PERMISSION) === ADMINISTRATOR_PERMISSION;
+  return {
+    userId,
+    roleIds,
+    base,
+    isAdministrator,
+    isTimedOut: memberTimeout(member, now) && !isAdministrator,
+  };
+}
+
+function canUseTextChannel(
+  member: GuildMemberPermissions,
+  guildId: string,
+  overwrites: PermissionOverwrite[],
+): boolean {
+  if (member.isTimedOut) return false;
+  if (member.isAdministrator) return true;
+  let permissions = member.base;
+  const everyone = overwrites.find(
+    (overwrite) => overwrite.type === 0 && overwrite.id === guildId,
+  );
+  if (everyone !== undefined) {
+    permissions = applyPermissionOverwrite(permissions, everyone);
+  }
+  let roleAllow = 0n;
+  let roleDeny = 0n;
+  for (const overwrite of overwrites) {
+    if (overwrite.type === 0 && member.roleIds.has(overwrite.id)) {
+      roleAllow |= overwrite.allow;
+      roleDeny |= overwrite.deny;
+    }
+  }
+  permissions = applyPermissionOverwrite(permissions, {
+    allow: roleAllow,
+    deny: roleDeny,
+  });
+  const memberOverwrite = overwrites.find(
+    (overwrite) => overwrite.type === 1 && overwrite.id === member.userId,
+  );
+  if (memberOverwrite !== undefined) {
+    permissions = applyPermissionOverwrite(permissions, memberOverwrite);
+  }
+  const required = VIEW_CHANNEL_PERMISSION | SEND_MESSAGES_PERMISSION;
+  return (permissions & required) === required;
+}
+
+export async function listMemberTextChannels(
+  env: Pick<DiscordRestEnv, "DISCORD_APPLICATION_ID" | "DISCORD_BOT_TOKEN">,
+  guildId: string,
+  userId: string,
+  discordFetch: RequestFetch = (request) => fetch(request),
+  now = Date.now(),
+): Promise<TextChannel[]> {
+  if (
+    !SNOWFLAKE.test(guildId) ||
+    !SNOWFLAKE.test(userId) ||
+    !SNOWFLAKE.test(env.DISCORD_APPLICATION_ID)
+  ) {
+    throw new Error("Membership identifiers are invalid");
+  }
+  const headers = {
+    authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+    "user-agent": "Dice-Witch",
+  };
+  const guildPath = `${DISCORD_API}/guilds/${guildId}`;
+  const [memberResponse, botResponse, rolesResponse, guildResponse, channelsResponse] =
+    await Promise.all([
+      discordFetch(new Request(`${guildPath}/members/${userId}`, { headers })),
+      discordFetch(
+        new Request(`${guildPath}/members/${env.DISCORD_APPLICATION_ID}`, { headers }),
+      ),
+      discordFetch(new Request(`${guildPath}/roles`, { headers })),
+      discordFetch(new Request(guildPath, { headers })),
+      discordFetch(new Request(`${guildPath}/channels`, { headers })),
+    ]);
+  if (memberResponse.status === 404 || botResponse.status === 404) return [];
+  if (!memberResponse.ok || !botResponse.ok) {
+    throw new Error("Discord guild member request failed");
+  }
+  if (!rolesResponse.ok) throw new Error("Discord guild roles request failed");
+  if (!guildResponse.ok) throw new Error("Discord guild request failed");
+  if (!channelsResponse.ok) throw new Error("Discord guild channels request failed");
+
+  const member: unknown = await memberResponse.json();
+  const bot: unknown = await botResponse.json();
+  const permissionsByRole = rolePermissions(await rolesResponse.json());
+  const everyonePermissions = permissionsByRole.get(guildId);
+  if (everyonePermissions === undefined) {
+    throw new Error("Discord guild roles response is invalid");
+  }
+  const ownerId = parseGuildOwnerId(await guildResponse.json());
+  const members = [
+    guildMemberPermissions(
+      member,
+      permissionsByRole,
+      everyonePermissions,
+      ownerId,
+      userId,
+      now,
+    ),
+    guildMemberPermissions(
+      bot,
+      permissionsByRole,
+      everyonePermissions,
+      ownerId,
+      env.DISCORD_APPLICATION_ID,
+      now,
+    ),
+  ];
+
+  const value: unknown = await channelsResponse.json();
+  if (!Array.isArray(value)) {
+    throw new Error("Discord guild channels response is invalid");
+  }
+  const channels: TextChannel[] = [];
+  for (const channel of value) {
+    if (!isRecord(channel) || typeof channel.type !== "number") {
+      throw new Error("Discord guild channels response is invalid");
+    }
+    if (channel.type !== 0 && channel.type !== 5) continue;
+    if (
+      typeof channel.id !== "string" ||
+      !SNOWFLAKE.test(channel.id) ||
+      typeof channel.name !== "string" ||
+      channel.name.length < 1 ||
+      channel.name.length > 100
+    ) {
+      throw new Error("Discord guild channels response is invalid");
+    }
+    const overwrites = permissionOverwrites(channel.permission_overwrites);
+    if (members.every((current) => canUseTextChannel(current, guildId, overwrites))) {
+      channels.push({ id: channel.id, name: channel.name, type: channel.type });
+    }
   }
   return channels;
 }
@@ -1941,8 +2199,14 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     return deliverWebRoll(await this.botEnv(), input);
   }
 
-  async listTextChannels(guildId: string): Promise<TextChannel[]> {
-    return listTextChannels(await this.botEnv(), guildId);
+  async listTextChannels(
+    guildId: string,
+    userId?: string,
+  ): Promise<TextChannel[]> {
+    const env = await this.botEnv();
+    return userId === undefined
+      ? listTextChannels(env, guildId)
+      : listMemberTextChannels(env, guildId, userId);
   }
 
   async inspectMembership(

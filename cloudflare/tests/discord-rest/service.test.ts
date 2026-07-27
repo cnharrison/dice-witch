@@ -13,6 +13,7 @@ import {
   inspectMembership,
   listCurrentGuildIds,
   listCurrentGuildIdsPage,
+  listMemberTextChannels,
   listTextChannels,
   logGuildLifecycle,
   logRoll,
@@ -1021,6 +1022,91 @@ describe("Discord REST service", () => {
     await expect(listTextChannels(env, guildId, discordFetch)).resolves.toEqual([
       { id: "100000000000000010", name: "general", type: 0 },
       { id: "100000000000000011", name: "news", type: 5 },
+    ]);
+  });
+
+  it("lists only text channels where the member and Dice Witch can view and send", async () => {
+    const memberRoleId = "100000000000000006";
+    const botId = "100000000000000007";
+    const discordFetch = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith(`/members/${userId}`)) {
+        return Promise.resolve(Response.json({
+          roles: [memberRoleId],
+          communication_disabled_until: null,
+        }));
+      }
+      if (path.endsWith(`/members/${botId}`)) {
+        return Promise.resolve(Response.json({
+          roles: [memberRoleId],
+          communication_disabled_until: null,
+        }));
+      }
+      if (path.endsWith("/roles")) {
+        return Promise.resolve(Response.json([
+          { id: guildId, name: "@everyone", permissions: "3072" },
+          { id: memberRoleId, name: "Players", permissions: "0" },
+        ]));
+      }
+      if (path === `/api/v10/guilds/${guildId}`) {
+        return Promise.resolve(Response.json({ owner_id: "100000000000000099" }));
+      }
+      if (path.endsWith("/channels")) {
+        return Promise.resolve(Response.json([
+          {
+            id: "100000000000000010",
+            name: "general",
+            type: 0,
+            permission_overwrites: [],
+          },
+          {
+            id: "100000000000000011",
+            name: "staff",
+            type: 0,
+            permission_overwrites: [
+              { id: guildId, type: 0, allow: "0", deny: "1024" },
+            ],
+          },
+          {
+            id: "100000000000000012",
+            name: "players",
+            type: 0,
+            permission_overwrites: [
+              { id: guildId, type: 0, allow: "0", deny: "1024" },
+              { id: memberRoleId, type: 0, allow: "1024", deny: "0" },
+            ],
+          },
+          {
+            id: "100000000000000013",
+            name: "read-only",
+            type: 5,
+            permission_overwrites: [
+              { id: userId, type: 1, allow: "0", deny: "2048" },
+            ],
+          },
+          {
+            id: "100000000000000014",
+            name: "bot-blocked",
+            type: 0,
+            permission_overwrites: [
+              { id: botId, type: 1, allow: "0", deny: "2048" },
+            ],
+          },
+        ]));
+      }
+      throw new Error(`Unexpected Discord route ${path}`);
+    });
+
+    await expect(
+      listMemberTextChannels(
+        { ...env, DISCORD_APPLICATION_ID: botId },
+        guildId,
+        userId,
+        discordFetch,
+      ),
+    ).resolves.toEqual([
+      { id: "100000000000000010", name: "general", type: 0 },
+      { id: "100000000000000012", name: "players", type: 0 },
     ]);
   });
 
