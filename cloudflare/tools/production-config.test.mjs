@@ -65,6 +65,9 @@ test("materializes exact production configs from source templates and bounded va
   const discordRest = JSON.parse(
     await readFile(path.join(directory, "wrangler.discord-rest.jsonc"), "utf8"),
   );
+  const interactions = JSON.parse(
+    await readFile(path.join(directory, "wrangler.interactions.jsonc"), "utf8"),
+  );
   assert.equal(web.vars.BUILD_SHA, sha);
   assert.equal(
     data.services.find(({ binding }) => binding === "DISCORD_REST")?.service,
@@ -77,6 +80,7 @@ test("materializes exact production configs from source templates and bounded va
     discordRest.vars.ROLL_LIFECYCLE_ALERT_CHANNEL_ID,
     "809246262888890420",
   );
+  assert.equal(interactions.vars.DISCORD_TEST_GUILD_ID, undefined);
   assert.equal(web.vars.ENVIRONMENT, "production");
   assert.deepEqual(web.routes, [{ pattern: "dicewit.ch", custom_domain: true }]);
   assert.deepEqual(gateway.triggers, {

@@ -65,7 +65,6 @@ const REQUIRED_BINDINGS = {
     DATA_SERVICE: "service",
     DISCORD_APPLICATION_ID: "plain_text",
     DISCORD_PUBLIC_KEY: "secrets_store_secret",
-    DISCORD_TEST_GUILD_ID: "plain_text",
     GATEWAY_STATUS: "service",
     INVITE_LINK: "plain_text",
     ROLL_WORK: "durable_object_namespace",
@@ -253,7 +252,6 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
 
   configs.interactions.vars = {
     DISCORD_APPLICATION_ID: values.discordApplicationId,
-    DISCORD_TEST_GUILD_ID: values.discordTestGuildId,
     INVITE_LINK: values.inviteLink,
     SUPPORT_SERVER_LINK: values.supportServerLink,
     WEB_APP_URL: `${values.frontendOrigin}/app`,
