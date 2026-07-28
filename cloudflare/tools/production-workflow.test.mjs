@@ -26,7 +26,7 @@ test("keeps production credentials out of unprotected preflight", async () => {
   const preflight = value.slice(value.indexOf("  preflight:"), value.indexOf("  deploy:"));
   assert.doesNotMatch(
     preflight,
-    /PRODUCTION_VALUES_B64|CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID/,
+    /PRODUCTION_VALUES_B64|CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID|DISCORD_DEPLOY_WEBHOOK_URL/,
   );
 });
 
@@ -68,4 +68,21 @@ test("uses Node 24 actions and removes materialized production config on every o
     value,
     /rm -f wrangler\.\{data,discord-rest,gateway,interactions,roll,web-api\}\.jsonc/,
   );
+});
+
+test("requires a confirmed Discord notification from the protected deploy job", async () => {
+  const value = await workflow();
+  const deploy = value.slice(value.indexOf("  deploy:"));
+  const cleanup = deploy.indexOf("Remove production configuration");
+  const notification = deploy.indexOf("Notify Discord of production result");
+
+  assert.notEqual(cleanup, -1);
+  assert.ok(notification > cleanup);
+  assert.match(deploy, /if: \$\{\{ always\(\) \}\}/);
+  assert.match(
+    deploy,
+    /DISCORD_DEPLOY_WEBHOOK_URL: \$\{\{ secrets\.DISCORD_DEPLOY_WEBHOOK_URL \}\}/,
+  );
+  assert.match(deploy, /DEPLOYMENT_STATUS: \$\{\{ job\.status \}\}/);
+  assert.match(deploy, /node tools\/notify-discord-deployment\.mjs/);
 });

@@ -283,3 +283,10 @@ jobs:
         if: always()
         working-directory: cloudflare
         run: rm -f wrangler.{data,discord-rest,gateway,interactions,roll,web-api}.jsonc
+
+      - name: Notify Discord of production result
+        if: ${{ always() }}
+        env:
+          DEPLOYMENT_STATUS: ${{ job.status }}
+          DISCORD_DEPLOY_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+        run: node tools/notify-discord-deployment.mjs
