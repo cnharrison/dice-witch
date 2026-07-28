@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import gatewayWorker, {
   AUDIENCE_SNAPSHOT_CRON,
   BOT_LIST_STATS_CRON,
+  GATEWAY_RECOMMENDATION_CRON,
   type GatewayEnv,
   type GatewayFaultResult,
   type GatewayStatus,
@@ -303,6 +304,13 @@ function request(path: string, method: string, authenticated = false) {
   return new Request(`https://gateway.test${path}`, init);
 }
 
+function recommendationController() {
+  return createScheduledController({
+    cron: GATEWAY_RECOMMENDATION_CRON,
+    scheduledTime: new Date(1_720_000_000_000),
+  });
+}
+
 describe("Gateway control Worker", () => {
   it("exposes only a minimal public health response", async () => {
     const { env } = environment();
@@ -454,16 +462,29 @@ describe("Gateway control Worker", () => {
     const { coordinator, env, stub } = environment();
     const ctx = createExecutionContext();
 
-    gatewayWorker.scheduled(
-      createScheduledController({ scheduledTime: new Date(1_720_000_000_000) }),
-      env,
-      ctx,
-    );
+    gatewayWorker.scheduled(recommendationController(), env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect(stub.initializeControlPlane).toHaveBeenCalledOnce();
     expect(coordinator.checkRecommendation).toHaveBeenCalledWith(2);
     expect(stub.applyGenerationPlan).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unrecognized cron without mutating the fleet", () => {
+    const { coordinator, env } = environment();
+    const ctx = createExecutionContext();
+
+    expect(() => {
+      gatewayWorker.scheduled(
+        createScheduledController({
+          cron: "15 * * * *",
+          scheduledTime: new Date(1_720_000_000_000),
+        }),
+        env,
+        ctx,
+      );
+    }).toThrow("Gateway scheduled trigger is not configured");
+    expect(coordinator.reconcileFleetRecommendation).not.toHaveBeenCalled();
   });
 
   it("captures and persists staging audience snapshots without bot-list posts", async () => {
@@ -671,11 +692,7 @@ describe("Gateway control Worker", () => {
     const infoLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const ctx = createExecutionContext();
 
-    gatewayWorker.scheduled(
-      createScheduledController({ scheduledTime: new Date(1_720_000_000_000) }),
-      env,
-      ctx,
-    );
+    gatewayWorker.scheduled(recommendationController(), env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect(coordinator.reconcileFleetRecommendation).toHaveBeenCalledWith(24);
@@ -765,11 +782,7 @@ describe("Gateway control Worker", () => {
     stub.initializeControlPlane.mockResolvedValue({ ...status, state: "idle" });
     const ctx = createExecutionContext();
 
-    gatewayWorker.scheduled(
-      createScheduledController({ scheduledTime: new Date(1_720_000_000_000) }),
-      env,
-      ctx,
-    );
+    gatewayWorker.scheduled(recommendationController(), env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect(coordinator.checkRecommendation).toHaveBeenCalledWith(2);
@@ -784,11 +797,7 @@ describe("Gateway control Worker", () => {
     });
     const ctx = createExecutionContext();
 
-    gatewayWorker.scheduled(
-      createScheduledController({ scheduledTime: new Date(1_720_000_000_000) }),
-      env,
-      ctx,
-    );
+    gatewayWorker.scheduled(recommendationController(), env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect(coordinator.checkRecommendation).not.toHaveBeenCalled();
@@ -810,11 +819,7 @@ describe("Gateway control Worker", () => {
     });
     const ctx = createExecutionContext();
 
-    gatewayWorker.scheduled(
-      createScheduledController({ scheduledTime: new Date(1_720_000_000_000) }),
-      env,
-      ctx,
-    );
+    gatewayWorker.scheduled(recommendationController(), env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect(stub.applyGenerationPlan).toHaveBeenCalledOnce();

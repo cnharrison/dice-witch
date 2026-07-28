@@ -25,6 +25,7 @@ import {
   type GatewayEnv,
 } from "./environment";
 
+export const GATEWAY_RECOMMENDATION_CRON = "0 * * * *";
 export const BOT_LIST_STATS_CRON = "30 */4 * * *";
 export const AUDIENCE_SNAPSHOT_CRON = "*/5 * * * *";
 
@@ -536,6 +537,9 @@ const gatewayWorker = {
     if (controller.cron === AUDIENCE_SNAPSHOT_CRON) {
       ctx.waitUntil(captureAudienceSnapshot(env));
       return;
+    }
+    if (controller.cron !== GATEWAY_RECOMMENDATION_CRON) {
+      throw new Error("Gateway scheduled trigger is not configured");
     }
     ctx.waitUntil(
       runScheduledRecommendation(env).catch(() => {

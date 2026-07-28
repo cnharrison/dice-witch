@@ -84,7 +84,7 @@ test("materializes exact production configs from source templates and bounded va
   assert.equal(web.vars.ENVIRONMENT, "production");
   assert.deepEqual(web.routes, [{ pattern: "dicewit.ch", custom_domain: true }]);
   assert.deepEqual(gateway.triggers, {
-    crons: ["*/5 * * * *", "30 */4 * * *"],
+    crons: ["0 * * * *", "*/5 * * * *", "30 */4 * * *"],
   });
   assert.equal(
     (await stat(path.join(directory, "wrangler.roll.jsonc"))).mode & 0o777,

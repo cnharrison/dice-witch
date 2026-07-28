@@ -93,7 +93,7 @@ function validConfigs() {
     gateway: {
       ...baseConfig(gatewayName, "workers/gateway/src/index.ts"),
       workers_dev: true,
-      triggers: { crons: ["*/5 * * * *"] },
+      triggers: { crons: ["0 * * * *", "*/5 * * * *"] },
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
       vars: {
         DISCORD_APPLICATION_ID: applicationId,
@@ -216,10 +216,10 @@ test("rejects routes, unsafe Crons, and undeclared bindings outside the staging 
   );
 
   const scheduled = validConfigs();
-  scheduled.gateway.triggers = { crons: ["0 * * * *"] };
+  scheduled.gateway.triggers = { crons: ["*/5 * * * *"] };
   assert.throws(
     () => validateStagingConfigs(scheduled),
-    /Gateway audience snapshot schedule is invalid/,
+    /Gateway recommendation and audience schedules are invalid/,
   );
 
   const invalidDataSchedule = validConfigs();

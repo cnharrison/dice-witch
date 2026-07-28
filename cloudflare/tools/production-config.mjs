@@ -236,7 +236,7 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
   );
 
   configs.gateway.triggers = {
-    crons: ["*/5 * * * *", "30 */4 * * *"],
+    crons: ["0 * * * *", "*/5 * * * *", "30 */4 * * *"],
   };
   configs.gateway.vars = {
     ...configs.gateway.vars,
@@ -366,7 +366,12 @@ export function validateProductionConfigs(configs, expectedSha) {
   ) {
     errors.push("Production Data lifecycle and retention schedules are invalid");
   }
-  if (JSON.stringify(configs.gateway?.triggers) !== JSON.stringify({ crons: ["*/5 * * * *", "30 */4 * * *"] })) {
+  if (
+    JSON.stringify(configs.gateway?.triggers) !==
+    JSON.stringify({
+      crons: ["0 * * * *", "*/5 * * * *", "30 */4 * * *"],
+    })
+  ) {
     errors.push("Production Gateway schedules are invalid");
   }
   if (errors.length > 0) {

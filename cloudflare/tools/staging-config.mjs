@@ -297,9 +297,9 @@ function validateStaticWorkerConfiguration(errors, configs) {
 
   if (
     JSON.stringify(configs.gateway?.triggers) !==
-    JSON.stringify({ crons: ["*/5 * * * *"] })
+    JSON.stringify({ crons: ["0 * * * *", "*/5 * * * *"] })
   ) {
-    errors.push("Gateway audience snapshot schedule is invalid");
+    errors.push("Gateway recommendation and audience schedules are invalid");
   }
 
   const expectedGatewayMigrations = [

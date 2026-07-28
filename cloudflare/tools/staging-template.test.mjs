@@ -51,7 +51,9 @@ test("keeps staging Data private with lifecycle and audience schedules", async (
   assert.deepEqual(configs.data.triggers, {
     crons: ["* * * * *", "0 3 * * *"],
   });
-  assert.deepEqual(configs.gateway.triggers, { crons: ["*/5 * * * *"] });
+  assert.deepEqual(configs.gateway.triggers, {
+    crons: ["0 * * * *", "*/5 * * * *"],
+  });
   assert.equal(configs.roll.vars.ROLL_RENDER_VERSION, "4");
 });
 
