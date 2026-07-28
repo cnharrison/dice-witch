@@ -360,10 +360,7 @@ function hasRegisteredFudgeChoice(command: Record<string, unknown>): boolean {
   );
   if (!isRecord(topic) || !Array.isArray(topic.choices)) return false;
   return (topic.choices as unknown[]).some(
-    (choice) =>
-      isRecord(choice) &&
-      choice.name === "Fudge dice" &&
-      choice.value === "fudge",
+    (choice) => isRecord(choice) && choice.value === "fudge",
   );
 }
 
