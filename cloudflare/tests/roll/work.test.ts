@@ -1508,18 +1508,30 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("keeps invalid-roll help private and does not send an automatic DM", async () => {
+  it("retains private invalid-roll help without sending an automatic DM", async () => {
     const id = snowflakeAt(Date.now(), 31);
     const stub = work(id);
     const input = {
       ...deliveryRequest(id, "invalid-private-help"),
       responseMode: "followup" as const,
     };
-    const notation = "x".repeat(6_000);
+    const notation = "1776";
     input.request.notation = notation;
     input.logging.notation = notation;
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+    try {
+      await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+      expect(consoleWarn).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          level: "warn",
+          message: "Direct roll private defer cleanup failed",
+          rollId: id,
+        }),
+      );
+    } finally {
+      consoleWarn.mockRestore();
+    }
     await runInDurableObject(stub, (_instance, state) => {
       const delivery = state.storage.sql
         .exec<{ helper_state: string; helper_attempts: number }>(

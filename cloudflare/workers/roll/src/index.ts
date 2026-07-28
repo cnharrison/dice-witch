@@ -2822,15 +2822,21 @@ export class RollWork extends DurableObject<RollEnv> {
       );
     }
     if (response.ok) {
-      if (metadata.responseMode === "followup") {
+      if (
+        metadata.responseMode === "followup" &&
+        record.outcome.outcomes.length > 0
+      ) {
         try {
-          await fetch(
+          const cleanupResponse = await fetch(
             directPrivateDefer
               ? buildDeleteOriginalResponse(target)
               : buildEditOriginalResponse(target, {
                   content: "Saved roll posted.",
                 }),
           );
+          if (!cleanupResponse.ok) {
+            throw new Error("Private interaction cleanup failed");
+          }
         } catch {
           console.warn(
             JSON.stringify({

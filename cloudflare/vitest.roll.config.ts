@@ -234,6 +234,15 @@ async function discordTestResponse(request: Request): Promise<Response> {
   }
   if (token === "invalid-private-help") {
     const url = new URL(request.url);
+    if (
+      request.method === "DELETE" &&
+      url.pathname.endsWith("/messages/@original")
+    ) {
+      return Response.json(
+        { message: "Private invalid-roll help must be retained" },
+        { status: 400 },
+      );
+    }
     const payload: unknown = await request.json();
     if (
       request.method !== "PATCH" ||
