@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [master, feature/next-version-r1]
 
 permissions:
   contents: read
@@ -12,15 +12,16 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  VITE_API_BASE: https://ci.invalid
+  VITE_DISCORD_CLIENT_ID: "100000000000000001"
+  VITE_ENVIRONMENT: development
+  VITE_BUILD_SHA: ${{ github.sha }}
+
 jobs:
-  quality:
+  static-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      VITE_API_BASE: https://ci.invalid
-      VITE_DISCORD_CLIENT_ID: "100000000000000001"
-      VITE_ENVIRONMENT: development
-      VITE_BUILD_SHA: ${{ github.sha }}
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -37,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test repository tooling
+        run: node --test tools/*.test.mjs
+
       - name: Audit dependencies
         run: npm run audit:ci
 
@@ -46,11 +50,80 @@ jobs:
       - name: Lint with warning budget
         run: npm run lint:ci
 
-      - name: Test
-        run: npm test
-
       - name: Build frontend
         run: npm run build
+
+  test-suite:
+    name: Tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Cloudflare configuration
+            command: npm run test:config --workspace=@dice-witch/cloudflare
+          - name: CanvasKit runtime
+            command: npm run test:canvaskit-runtime --workspace=@dice-witch/cloudflare
+          - name: appearance
+            command: npm run test:appearance --workspace=@dice-witch/cloudflare
+          - name: saved rolls
+            command: npm run test:saved-rolls --workspace=@dice-witch/cloudflare
+          - name: SVG renderer
+            command: npm run test:dice-svg --workspace=@dice-witch/cloudflare
+          - name: Gateway
+            command: npm run test:gateway --workspace=@dice-witch/cloudflare
+          - name: Discord REST
+            command: npm run test:discord-rest --workspace=@dice-witch/cloudflare
+          - name: Interactions
+            command: npm run test:interactions --workspace=@dice-witch/cloudflare
+          - name: Roll
+            command: npm run test:roll --workspace=@dice-witch/cloudflare
+          - name: Data
+            command: npm run test:data --workspace=@dice-witch/cloudflare
+          - name: Web API
+            command: npm run test:web-api --workspace=@dice-witch/cloudflare
+          - name: frontend
+            command: npm run test --workspace=@dice-witch/frontend -- --maxWorkers=1
+          - name: V4 model
+            command: npm run test --workspace=@dice-witch/dice-v4-model -- --maxWorkers=1
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.13.0
+          cache: npm
+
+      - name: Set up npm
+        run: npm install --global npm@11.6.2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ matrix.name }} tests
+        run: ${{ matrix.command }}
+
+  worker-dry-runs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.13.0
+          cache: npm
+
+      - name: Set up npm
+        run: npm install --global npm@11.6.2
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Dry-run all Workers
         working-directory: cloudflare
@@ -60,4 +133,24 @@ jobs:
             npx --no-install wrangler deploy \
               --dry-run \
               --config "wrangler.${worker}.example.jsonc"
+          done
+
+  quality:
+    needs: [static-validation, test-suite, worker-dry-runs]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every quality job
+        env:
+          STATIC_RESULT: ${{ needs.static-validation.result }}
+          TEST_RESULT: ${{ needs.test-suite.result }}
+          DRY_RUN_RESULT: ${{ needs.worker-dry-runs.result }}
+        run: |
+          set -euo pipefail
+          for result in "$STATIC_RESULT" "$TEST_RESULT" "$DRY_RUN_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              printf 'Required CI dependency did not succeed: %s\n' "$result" >&2
+              exit 1
+            fi
           done
