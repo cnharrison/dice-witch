@@ -13,6 +13,9 @@ const occurredAt = 1_767_225_600_123;
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM saved_rolls"),
+    dataEnv.DATA.prepare("DELETE FROM guild_saved_roll_lists"),
+    dataEnv.DATA.prepare("DELETE FROM user_saved_roll_lists"),
     dataEnv.DATA.prepare("DELETE FROM mutation_receipts"),
     dataEnv.DATA.prepare("DELETE FROM interaction_receipts"),
     dataEnv.DATA.prepare("DELETE FROM users_guilds"),
@@ -124,6 +127,93 @@ describe("D1GuildRepository", () => {
     ]);
   });
 
+  it("deletes Server saved rolls only for a current confirmed removal", async () => {
+    const repository = new D1GuildRepository(dataEnv.DATA);
+    const userId = "100000000000000003";
+    const profile = {
+      id: guildId,
+      name: "Lifecycle Guild",
+      icon: null,
+      ownerId: userId,
+      memberCount: 42,
+      approximateMemberCount: 43,
+      preferredLocale: "en-US",
+      joinedTimestamp: occurredAt - 10_000,
+      isActive: true as const,
+    };
+    await repository.applyLifecycle({
+      mutationId: "create",
+      occurredAt,
+      type: "upsert",
+      guild: profile,
+    });
+    await dataEnv.DATA.prepare(
+      `INSERT INTO users (
+         id, username, email, last_web_login, flags, discriminator,
+         roll_count, created_at, updated_at
+       ) VALUES (?, 'witch', 'witch@example.com', ?, 0, '0', 0, ?, ?)`,
+    ).bind(userId, occurredAt, occurredAt, occurredAt).run();
+
+    async function insertLibrary(recordId: string, name: string): Promise<void> {
+      await dataEnv.DATA.batch([
+        dataEnv.DATA.prepare(
+          `INSERT INTO guild_saved_roll_lists (guild_id, revision, updated_at)
+           VALUES (?, 1, ?)`,
+        ).bind(guildId, occurredAt),
+        dataEnv.DATA.prepare(
+          `INSERT INTO saved_rolls (
+             id, user_id, guild_id, display_name, comparison_key, notation,
+             repetitions, pinned, manual_order, revision, created_by_user_id,
+             updated_by_user_id, created_at, updated_at
+           ) VALUES (?, NULL, ?, ?, ?, '1d20', 1, 0, 0, 1, ?, ?, ?, ?)`,
+        ).bind(
+          recordId,
+          guildId,
+          name,
+          name.toLowerCase(),
+          userId,
+          userId,
+          occurredAt,
+          occurredAt,
+        ),
+      ]);
+    }
+
+    await insertLibrary("00000000-0000-4000-8000-000000000001", "Old");
+    await expect(repository.applyLifecycle({
+      mutationId: "remove-current",
+      occurredAt: occurredAt + 20,
+      type: "deactivate",
+      guildId,
+    })).resolves.toEqual({ status: "applied" });
+    await expect(dataEnv.DATA.prepare(
+      "SELECT COUNT(*) AS count FROM saved_rolls WHERE guild_id = ?",
+    ).bind(guildId).first<{ count: number }>()).resolves.toEqual({ count: 0 });
+
+    await repository.applyLifecycle({
+      mutationId: "rejoin",
+      occurredAt: occurredAt + 30,
+      type: "upsert",
+      guild: profile,
+    });
+    await insertLibrary("00000000-0000-4000-8000-000000000002", "New");
+    await expect(repository.applyLifecycle({
+      mutationId: "remove-delayed",
+      occurredAt: occurredAt + 25,
+      type: "deactivate",
+      guildId,
+    })).resolves.toEqual({ status: "applied" });
+
+    const guild = await dataEnv.DATA.prepare(
+      "SELECT is_active FROM guilds WHERE id = ?",
+    ).bind(guildId).first<{ is_active: number }>();
+    const rolls = await dataEnv.DATA.prepare(
+      "SELECT display_name FROM saved_rolls WHERE guild_id = ?",
+    ).bind(guildId).all<{ display_name: string }>();
+    expect(guild).toEqual({ is_active: 1 });
+    expect(rolls.results).toEqual([{ display_name: "New" }]);
+  });
+
   it("deactivates only active guilds absent from a complete reconciliation set", async () => {
     const currentGuildId = guildId;
     const removedGuildId = "100000000000000004";
@@ -147,6 +237,33 @@ describe("D1GuildRepository", () => {
            VALUES (?, 'Inactive', ?, ?, 0)`,
         )
         .bind(alreadyInactiveGuildId, occurredAt, occurredAt),
+    ]);
+    const actorUserId = "100000000000000003";
+    await dataEnv.DATA.batch([
+      dataEnv.DATA.prepare(
+        `INSERT INTO users (
+           id, username, email, last_web_login, flags, discriminator,
+           roll_count, created_at, updated_at
+         ) VALUES (?, 'witch', 'witch@example.com', ?, 0, '0', 0, ?, ?)`,
+      ).bind(actorUserId, occurredAt, occurredAt, occurredAt),
+      dataEnv.DATA.prepare(
+        `INSERT INTO guild_saved_roll_lists (guild_id, revision, updated_at)
+         VALUES (?, 1, ?)`,
+      ).bind(removedGuildId, occurredAt),
+      dataEnv.DATA.prepare(
+        `INSERT INTO saved_rolls (
+           id, user_id, guild_id, display_name, comparison_key, notation,
+           repetitions, pinned, manual_order, revision, created_by_user_id,
+           updated_by_user_id, created_at, updated_at
+         ) VALUES (?, NULL, ?, 'Preserved', 'preserved', '1d20', 1, 0, 0, 1, ?, ?, ?, ?)`,
+      ).bind(
+        "00000000-0000-4000-8000-000000000001",
+        removedGuildId,
+        actorUserId,
+        actorUserId,
+        occurredAt,
+        occurredAt,
+      ),
     ]);
     const repository = new D1GuildRepository(dataEnv.DATA);
     const input = {
@@ -185,6 +302,10 @@ describe("D1GuildRepository", () => {
         payload_json: JSON.stringify({ isActive: false }),
       },
     ]);
+    const savedRollCount = await dataEnv.DATA.prepare(
+      "SELECT COUNT(*) AS count FROM saved_rolls WHERE guild_id = ?",
+    ).bind(removedGuildId).first<{ count: number }>();
+    expect(savedRollCount).toEqual({ count: 1 });
   });
 
   it("does not overwrite lifecycle changes newer than the inventory cutoff", async () => {

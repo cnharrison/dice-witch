@@ -211,6 +211,78 @@ describe("Data Worker membership service", () => {
     });
   });
 
+  it("refreshes permission proof without rewriting the guild profile", async () => {
+    const response = await post("/internal/memberships/permissions", {
+      userId,
+      guildId: activeGuildId,
+      isAdmin: false,
+      isDiceWitchAdmin: true,
+      mutationId: "saved-roll-membership:fixture",
+      occurredAt: occurredAt + 1,
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      status: "applied",
+      permissions: { isAdmin: false, isDiceWitchAdmin: true },
+    });
+    const row = await dataEnv.DATA.prepare(
+      `SELECT is_admin, is_dice_witch_admin, updated_at
+       FROM users_guilds WHERE user_id = ? AND guild_id = ?`,
+    ).bind(userId, activeGuildId).first();
+    expect(row).toEqual({
+      is_admin: 0,
+      is_dice_witch_admin: 1,
+      updated_at: occurredAt + 1,
+    });
+
+    await post("/internal/memberships/permissions", {
+      userId,
+      guildId: activeGuildId,
+      isAdmin: false,
+      isDiceWitchAdmin: false,
+      mutationId: "saved-roll-membership:newer",
+      occurredAt: occurredAt + 3,
+    });
+    const stale = await post("/internal/memberships/permissions", {
+      userId,
+      guildId: activeGuildId,
+      isAdmin: true,
+      isDiceWitchAdmin: true,
+      mutationId: "saved-roll-membership:stale",
+      occurredAt: occurredAt + 2,
+    });
+    await expect(stale.json()).resolves.toEqual({
+      status: "superseded",
+      permissions: { isAdmin: false, isDiceWitchAdmin: false },
+    });
+
+    const equalTimestampGrant = await post("/internal/memberships/permissions", {
+      userId,
+      guildId: activeGuildId,
+      isAdmin: true,
+      isDiceWitchAdmin: true,
+      mutationId: "saved-roll-membership:equal-grant",
+      occurredAt: occurredAt + 3,
+    });
+    await expect(equalTimestampGrant.json()).resolves.toEqual({
+      status: "applied",
+      permissions: { isAdmin: false, isDiceWitchAdmin: false },
+    });
+
+    const replayedOldGrant = await post("/internal/memberships/permissions", {
+      userId,
+      guildId: activeGuildId,
+      isAdmin: false,
+      isDiceWitchAdmin: true,
+      mutationId: "saved-roll-membership:fixture",
+      occurredAt: occurredAt + 1,
+    });
+    await expect(replayedOldGrant.json()).resolves.toEqual({
+      status: "existing",
+      permissions: { isAdmin: false, isDiceWitchAdmin: false },
+    });
+  });
+
   it("rejects duplicate, oversized, and malformed guild filters", async () => {
     await expect(
       post("/internal/guilds/filter", {

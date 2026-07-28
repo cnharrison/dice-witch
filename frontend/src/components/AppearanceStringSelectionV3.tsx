@@ -5,6 +5,7 @@ import {
   updateMaterialWeightV3,
 } from "@/lib/material-weight-percentages";
 import * as React from "react";
+import { AppearanceFontSelectV3 } from "./AppearanceFontSelectV3";
 import { AppearanceSelectV3 } from "./AppearanceSelectV3";
 
 type Option<Value extends string> = Readonly<{
@@ -45,6 +46,7 @@ export function AppearanceStringSelectionV3<Value extends string>({
   weightBounds,
   maximumTotalWeight,
   disabledReasons = {},
+  getOptionFontFamily,
   onChange,
 }: {
   label: string;
@@ -53,6 +55,7 @@ export function AppearanceStringSelectionV3<Value extends string>({
   weightBounds: WeightBounds;
   maximumTotalWeight: number;
   disabledReasons?: Partial<Record<Value, string>>;
+  getOptionFontFamily?(value: Value): string;
   onChange(selection: AppearanceSelection<Value>): void;
 }) {
   const id = React.useId();
@@ -187,27 +190,41 @@ export function AppearanceStringSelectionV3<Value extends string>({
       {selection.mode === "fixed" ? (
         <label className="block space-y-1.5 text-xs font-medium">
           <span className="block">{label}</span>
-          <AppearanceSelectV3
-            aria-label={label}
-            value={selection.value}
-            onChange={(event) =>
-              emit({ mode: "fixed", value: event.target.value as Value })
-            }
-            containerClassName="sm:max-w-xs"
-          >
-            {visibleOptions.map((option) => (
-              <option
-                key={option.id}
-                value={option.id}
-                disabled={
-                  disabledReasons[option.id] !== undefined &&
-                  option.id !== selection.value
+          {getOptionFontFamily === undefined ? (
+            <AppearanceSelectV3
+              aria-label={label}
+              value={selection.value}
+              onChange={(event) =>
+                emit({ mode: "fixed", value: event.target.value as Value })
+              }
+              containerClassName="sm:max-w-xs"
+            >
+              {visibleOptions.map((option) => (
+                <option
+                  key={option.id}
+                  value={option.id}
+                  disabled={
+                    disabledReasons[option.id] !== undefined &&
+                    option.id !== selection.value
+                  }
+                >
+                  {option.name}
+                </option>
+              ))}
+            </AppearanceSelectV3>
+          ) : (
+            <div className="sm:max-w-xs">
+              <AppearanceFontSelectV3
+                aria-label={label}
+                value={selection.value}
+                options={visibleOptions}
+                getFontFamily={getOptionFontFamily}
+                onChange={(value) =>
+                  emit({ mode: "fixed", value: value as Value })
                 }
-              >
-                {option.name}
-              </option>
-            ))}
-          </AppearanceSelectV3>
+              />
+            </div>
+          )}
         </label>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-2">
@@ -226,7 +243,15 @@ export function AppearanceStringSelectionV3<Value extends string>({
                     disabled={reason !== undefined && !checked}
                     onChange={() => toggle(option.id)}
                   />
-                  {option.name}
+                  <span
+                    style={
+                      getOptionFontFamily === undefined
+                        ? undefined
+                        : { fontFamily: getOptionFontFamily(option.id) }
+                    }
+                  >
+                    {option.name}
+                  </span>
                 </label>
                 {selection.mode === "weighted" && checked && (
                   <label className="mt-2 block space-y-1 text-xs text-muted-foreground">
@@ -254,7 +279,7 @@ export function AppearanceStringSelectionV3<Value extends string>({
                       onChange={(event) =>
                         setWeight(option.id, event.currentTarget.valueAsNumber)
                       }
-                      className="h-11 w-full accent-fuchsia-500 sm:h-9"
+                      className="h-11 w-full accent-brand sm:h-9"
                     />
                   </label>
                 )}

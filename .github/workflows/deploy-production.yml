@@ -41,7 +41,10 @@ concurrency:
 jobs:
   preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
     env:
       REQUESTED_SHA: ${{ inputs.sha }}
       SELECTED_WORKERS: ${{ inputs.workers }}
@@ -49,10 +52,6 @@ jobs:
       ALLOW_GATEWAY_DEPLOY: ${{ inputs.allow_gateway_deploy }}
       ALLOW_EXISTING_DEPENDENCIES: ${{ inputs.allow_existing_dependencies }}
       DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
-      VITE_API_BASE: https://ci.invalid
-      VITE_DISCORD_CLIENT_ID: "100000000000000001"
-      VITE_ENVIRONMENT: development
-      VITE_BUILD_SHA: ${{ inputs.sha }}
     steps:
       - name: Validate dispatch authorization
         run: |
@@ -85,32 +84,11 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24.13.0
-          cache: npm
 
-      - name: Set up npm
-        run: npm install --global npm@11.6.2
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run quality gates without production credentials
-        run: |
-          set -euo pipefail
-          npm run audit:ci
-          npm run type-check
-          npm run lint:ci
-          npm test
-          npm run build
-
-      - name: Dry-run public Worker examples
-        working-directory: cloudflare
-        run: |
-          set -euo pipefail
-          for worker in data discord-rest roll gateway interactions web-api; do
-            npx --no-install wrangler deploy \
-              --dry-run \
-              --config "wrangler.${worker}.example.jsonc" > /dev/null
-          done
+      - name: Verify successful CI promotion
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/verify-ci-promotion.mjs --sha "$REQUESTED_SHA"
 
   deploy:
     needs: preflight

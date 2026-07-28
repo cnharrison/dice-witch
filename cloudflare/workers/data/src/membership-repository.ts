@@ -26,7 +26,7 @@ export type UpsertPermissionsInput = {
 
 export type UpsertPermissionsResult =
   | {
-      status: "applied" | "existing";
+      status: "applied" | "existing" | "superseded";
       permissions: MembershipPermissions;
     }
   | { status: "missing" | "conflict" };
@@ -75,16 +75,6 @@ function validateInput(input: UpsertPermissionsInput): ValidatedInput {
   };
 }
 
-function existingResult(
-  row: MutationReceiptRow,
-  input: ValidatedInput,
-): UpsertPermissionsResult {
-  if (!matchesMutationReceipt(row, input.receipt)) {
-    return { status: "conflict" };
-  }
-  return { status: "existing", permissions: input.permissions };
-}
-
 export class D1MembershipRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -100,8 +90,9 @@ export class D1MembershipRepository {
            users_guilds.is_admin,
            users_guilds.is_dice_witch_admin
          FROM users_guilds
-         LEFT JOIN guilds ON guilds.id = users_guilds.guild_id
+         JOIN guilds ON guilds.id = users_guilds.guild_id
          WHERE users_guilds.user_id = ?
+           AND guilds.is_active = 1
          ORDER BY users_guilds.id`,
       )
       .bind(id)
@@ -125,7 +116,7 @@ export class D1MembershipRepository {
   ): Promise<UpsertPermissionsResult> {
     const input = validateInput(value);
     const existing = await readMutationReceipt(this.db, input.mutationId);
-    if (existing !== null) return existingResult(existing, input);
+    if (existing !== null) return this.existingResult(existing, input);
 
     try {
       const [upsert, receipt] = await this.db.batch([
@@ -139,9 +130,18 @@ export class D1MembershipRepository {
              WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
                AND EXISTS (SELECT 1 FROM guilds WHERE id = ?)
              ON CONFLICT(user_id, guild_id) DO UPDATE SET
-               is_admin = excluded.is_admin,
-               is_dice_witch_admin = excluded.is_dice_witch_admin,
-               updated_at = excluded.updated_at`,
+               is_admin = CASE
+                 WHEN excluded.updated_at = users_guilds.updated_at
+                   THEN MIN(users_guilds.is_admin, excluded.is_admin)
+                 ELSE excluded.is_admin
+               END,
+               is_dice_witch_admin = CASE
+                 WHEN excluded.updated_at = users_guilds.updated_at
+                   THEN MIN(users_guilds.is_dice_witch_admin, excluded.is_dice_witch_admin)
+                 ELSE excluded.is_dice_witch_admin
+               END,
+               updated_at = excluded.updated_at
+             WHERE excluded.updated_at >= users_guilds.updated_at`,
           )
           .bind(
             input.userId,
@@ -162,7 +162,7 @@ export class D1MembershipRepository {
              SELECT ?, 'membership', ?, 'upsert', ?, ?
              WHERE EXISTS (
                SELECT 1 FROM users_guilds
-               WHERE user_id = ? AND guild_id = ?
+               WHERE user_id = ? AND guild_id = ? AND updated_at <= ?
              )`,
           )
           .bind(
@@ -172,19 +172,81 @@ export class D1MembershipRepository {
             input.occurredAt,
             input.userId,
             input.guildId,
+            input.occurredAt,
           ),
       ]);
       const upserted = upsert?.meta.changes ?? 0;
       const receiptCreated = receipt?.meta.changes ?? 0;
-      if (upserted === 0 && receiptCreated === 0) return { status: "missing" };
+      if (upserted === 0 && receiptCreated === 0) {
+        const current = await this.db
+          .withSession("first-primary")
+          .prepare(
+            `SELECT is_admin, is_dice_witch_admin, updated_at
+             FROM users_guilds WHERE user_id = ? AND guild_id = ?`,
+          )
+          .bind(input.userId, input.guildId)
+          .first<{
+            is_admin: number;
+            is_dice_witch_admin: number;
+            updated_at: number;
+          }>();
+        if (current === null) return { status: "missing" };
+        if (current.updated_at <= input.occurredAt) {
+          throw new Error("Membership permission mutation was not atomic");
+        }
+        return {
+          status: "superseded",
+          permissions: {
+            isAdmin: current.is_admin === 1,
+            isDiceWitchAdmin: current.is_dice_witch_admin === 1,
+          },
+        };
+      }
       if (upserted !== 1 || receiptCreated !== 1) {
         throw new Error("Membership permission mutation was not atomic");
       }
-      return { status: "applied", permissions: input.permissions };
+      const permissions = await this.readPermissions(input.userId, input.guildId);
+      if (permissions === null) {
+        throw new Error("Membership permission mutation lost its stored row");
+      }
+      return { status: "applied", permissions };
     } catch (error) {
       const concurrent = await readMutationReceipt(this.db, input.mutationId);
-      if (concurrent !== null) return existingResult(concurrent, input);
+      if (concurrent !== null) return this.existingResult(concurrent, input);
       throw error;
     }
+  }
+
+  private async existingResult(
+    row: MutationReceiptRow,
+    input: ValidatedInput,
+  ): Promise<UpsertPermissionsResult> {
+    if (!matchesMutationReceipt(row, input.receipt)) {
+      return { status: "conflict" };
+    }
+    const permissions = await this.readPermissions(input.userId, input.guildId);
+    return permissions === null
+      ? { status: "missing" }
+      : { status: "existing", permissions };
+  }
+
+  private async readPermissions(
+    userId: string,
+    guildId: string,
+  ): Promise<MembershipPermissions | null> {
+    const current = await this.db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT is_admin, is_dice_witch_admin
+         FROM users_guilds WHERE user_id = ? AND guild_id = ?`,
+      )
+      .bind(userId, guildId)
+      .first<{ is_admin: number; is_dice_witch_admin: number }>();
+    return current === null
+      ? null
+      : {
+          isAdmin: current.is_admin === 1,
+          isDiceWitchAdmin: current.is_dice_witch_admin === 1,
+        };
   }
 }

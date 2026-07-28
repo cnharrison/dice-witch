@@ -197,7 +197,7 @@ function SelectionEditor<Value extends string>({
                       onChange={(event) =>
                         updateWeight(value, event.currentTarget.valueAsNumber)
                       }
-                      className="h-11 w-full accent-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60 sm:h-8"
+                      className="h-11 w-full accent-brand disabled:cursor-not-allowed disabled:opacity-60 sm:h-8"
                     />
                   </label>
                 )}

@@ -96,6 +96,82 @@ async function dataTestResponse(request: Request): Promise<Response> {
           : effectiveRecipesV2(primary),
     });
   }
+  if (path === "/internal/saved-rolls/v1/ensure-user") {
+    return Response.json({ status: "existing" });
+  }
+  if (path === "/internal/saved-rolls/v1/list") {
+    return Response.json({ status: "found", listRevision: 0, savedRolls: [] });
+  }
+  if (
+    path === "/internal/saved-rolls/v1/copy" ||
+    path === "/internal/saved-rolls/v2/copy"
+  ) {
+    if (
+      !isRecord(value) ||
+      !isRecord(value.draft) ||
+      (path.includes("/v2/") &&
+        (value.draft.version !== 2 || value.draft.nameColor !== "#AABBCC"))
+    ) {
+      return Response.json({ error: "invalid" }, { status: 400 });
+    }
+    if (value.draft.name === "Attack") {
+      return Response.json(
+        { status: "name_conflict", listRevision: 0 },
+        { status: 409 },
+      );
+    }
+    return Response.json({
+      status: "applied",
+      listRevision: 1,
+      savedRoll: { id: value.id },
+    });
+  }
+  if (
+    path === "/internal/saved-rolls/v1/get" ||
+    path === "/internal/saved-rolls/v2/get"
+  ) {
+    if (
+      !isRecord(value) ||
+      !isRecord(value.owner) ||
+      typeof value.id !== "string"
+    ) {
+      return Response.json({ error: "invalid" }, { status: 400 });
+    }
+    if (value.id === "323e4567-e89b-42d3-a456-426614174000") {
+      return Response.json({ status: "missing" }, { status: 404 });
+    }
+    const owner = value.owner;
+    const ownerId = owner.type === "user" ? owner.userId : owner.guildId;
+    if (
+      (owner.type !== "user" && owner.type !== "guild") ||
+      typeof ownerId !== "string"
+    ) {
+      return Response.json({ error: "invalid" }, { status: 400 });
+    }
+    const version = path.includes("/v2/") ? 2 : 1;
+    return Response.json({
+      status: "found",
+      savedRoll: {
+        version,
+        id: value.id,
+        owner,
+        displayName: "Attack",
+        comparisonKey: "attack",
+        notation: "2d20+5",
+        title: "Sword",
+        repetitions: 2,
+        ...(version === 2 ? { nameColor: "#AABBCC" } : {}),
+        pinned: true,
+        manualOrder: 0,
+        revision:
+          value.id === "423e4567-e89b-42d3-a456-426614174000" ? 4 : 3,
+        createdByUserId: "100000000000000003",
+        updatedByUserId: "100000000000000003",
+        createdAt: 100,
+        updatedAt: 200,
+      },
+    });
+  }
   if (path === "/internal/guilds/settings") {
     if (!isRecord(value) || typeof value.guildId !== "string") {
       return Response.json({ error: "invalid" }, { status: 400 });
@@ -106,6 +182,9 @@ async function dataTestResponse(request: Request): Promise<Response> {
         skipDiceDelay: value.guildId === "100000000000000003",
       },
     });
+  }
+  if (path === "/internal/roll-lifecycle") {
+    return Response.json({ status: "applied" });
   }
   if (path !== "/internal/roll-accounting") {
     return Response.json({ error: "not found" }, { status: 404 });
@@ -153,6 +232,84 @@ async function discordTestResponse(request: Request): Promise<Response> {
   if (token === "delivery-success") {
     return Response.json({ id: "development-message" });
   }
+  if (token === "saved-public-clatter") {
+    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
+    resultDeliveryAttempts.set(token, attempts);
+    const url = new URL(request.url);
+    if (attempts === 1) {
+      const payload: unknown = await request.json();
+      if (
+        request.method !== "POST" ||
+        url.searchParams.get("wait") !== "true" ||
+        !isRecord(payload) ||
+        typeof payload.content !== "string" ||
+        !payload.content.startsWith("_...") ||
+        typeof payload.nonce !== "string" ||
+        !/^c[1-9][0-9]{16,19}$/u.test(payload.nonce) ||
+        payload.enforce_nonce !== true
+      ) {
+        return Response.json({ message: "public clatter is invalid" }, { status: 400 });
+      }
+      return Response.json({ id: "100000000000000099" });
+    }
+    if (attempts === 2) {
+      if (
+        request.method !== "PATCH" ||
+        !url.pathname.endsWith("/messages/100000000000000099")
+      ) {
+        return Response.json({ message: "public result edit is invalid" }, { status: 400 });
+      }
+      const form = await request.formData();
+      const rawPayload = form.get("payload_json");
+      const payload = typeof rawPayload === "string"
+        ? JSON.parse(rawPayload) as unknown
+        : null;
+      if (!isRecord(payload) || !Array.isArray(payload.components)) {
+        return Response.json({ message: "saved result is invalid" }, { status: 400 });
+      }
+      return Response.json({ id: "100000000000000099" });
+    }
+    if (
+      attempts !== 3 ||
+      request.method !== "PATCH" ||
+      !url.pathname.endsWith("/messages/@original")
+    ) {
+      return Response.json({ message: "private confirmation is invalid" }, { status: 400 });
+    }
+    return Response.json({ id: "100000000000000098" });
+  }
+  if (token === "saved-followup") {
+    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
+    resultDeliveryAttempts.set(token, attempts);
+    const pathname = new URL(request.url).pathname;
+    if (
+      (attempts === 1 &&
+        (request.method !== "POST" || pathname.endsWith("/messages/@original"))) ||
+      (attempts === 2 &&
+        (request.method !== "PATCH" || !pathname.endsWith("/messages/@original")))
+    ) {
+      return Response.json({ message: "invalid saved-roll delivery mode" }, { status: 400 });
+    }
+    if (attempts === 1) {
+      const form = await request.formData();
+      const rawPayload = form.get("payload_json");
+      const payload =
+        typeof rawPayload === "string" ? JSON.parse(rawPayload) as unknown : null;
+      if (
+        new URL(request.url).searchParams.get("wait") !== "true" ||
+        !isRecord(payload) ||
+        payload.nonce === undefined ||
+        payload.enforce_nonce !== true ||
+        !Array.isArray(payload.components)
+      ) {
+        return Response.json(
+          { message: "saved-roll followup is not replay-safe" },
+          { status: 400 },
+        );
+      }
+    }
+    return Response.json({ id: "development-message" });
+  }
   if (token.startsWith("delivery-result-temporary-")) {
     const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
     resultDeliveryAttempts.set(token, attempts);
@@ -178,7 +335,20 @@ async function discordTestResponse(request: Request): Promise<Response> {
     return Response.json({ message: "temporary" }, { status: 503 });
   }
   if (token === "delivery-terminal-failure") {
-    return Response.json({ message: "invalid interaction" }, { status: 404 });
+    return Response.json(
+      { code: 10_015, message: "invalid interaction" },
+      { status: 404 },
+    );
+  }
+  if (token === "delivery-clatter-rejected") {
+    return Response.json(
+      {
+        code: 10_008,
+        message: "sensitive provider detail",
+        errors: { token: "must not be logged" },
+      },
+      { status: 404 },
+    );
   }
   if (token === "delivery-rate-limited") {
     return Response.json(

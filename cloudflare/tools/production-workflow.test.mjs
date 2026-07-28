@@ -28,8 +28,16 @@ test("keeps production credentials out of unprotected preflight", async () => {
     preflight,
     /PRODUCTION_VALUES_B64|CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID/,
   );
-  assert.match(preflight, /Run quality gates without production credentials/);
-  assert.match(preflight, /npm run audit:ci/);
+});
+
+test("requires a successful CI push for the exact SHA without repeating quality gates", async () => {
+  const value = await workflow();
+  const preflight = value.slice(value.indexOf("  preflight:"), value.indexOf("  deploy:"));
+  assert.match(preflight, /actions: read/);
+  assert.match(preflight, /Verify successful CI promotion/);
+  assert.match(preflight, /node tools\/verify-ci-promotion\.mjs/);
+  assert.match(preflight, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(preflight, /npm ci|npm test|npm run audit:ci|npm run type-check|npm run lint:ci|npm run build/);
 });
 
 test("requires exact SHA, source-derived config, explicit mutation acknowledgements, and strict deploys", async () => {

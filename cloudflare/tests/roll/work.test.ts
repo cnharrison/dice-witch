@@ -57,6 +57,15 @@ function interactionExpiresAt(id: string): number {
   return Number((BigInt(id) >> 22n) + 1_420_070_400_000n) + 15 * 60 * 1_000;
 }
 
+function v4Recipes() {
+  const builtin =
+    BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID];
+  if (builtin === undefined) throw new Error("Chaotic V3 recipe is missing");
+  return Object.fromEntries(
+    APPEARANCE_TARGETS.map((target) => [target, builtin.recipe]),
+  );
+}
+
 function deliveryRequest(
   id: string,
   token = "interaction-token-value",
@@ -120,6 +129,7 @@ describe("RollWork Durable Object", () => {
       expect(columns.map((column) => column.name)).toEqual(
         expect.arrayContaining([
           "clatter_sent_at",
+          "followup_message_id",
           "skip_dice_delay",
           "delay_ms",
           "result_not_before",
@@ -167,6 +177,361 @@ describe("RollWork Durable Object", () => {
     });
     expect(first.record.renderSeed).toBeGreaterThanOrEqual(0);
     expect(first.record.renderSeed).toBeLessThanOrEqual(0xffff_ffff);
+  });
+
+  it("binds saved-roll picker state to one actor and consumes Run once", async () => {
+    const sessionId = snowflakeAt(Date.now(), 35);
+    const firstRunId = snowflakeAt(Date.now(), 36);
+    const secondRunId = snowflakeAt(Date.now(), 37);
+    const stub = work(sessionId);
+    const context = {
+      version: 1 as const,
+      userId: "100000000000000003",
+      guildId: "100000000000000002",
+      channelId: "100000000000000010",
+    };
+
+    await expect(
+      stub.openSavedRollPicker({ ...context, interactionId: sessionId }),
+    ).resolves.toMatchObject({ status: "created", scope: "mine", page: 0 });
+    await expect(
+      stub.updateSavedRollPicker({
+        ...context,
+        interactionId: firstRunId,
+        action: "select",
+        selection: {
+          scope: "server",
+          id: "223e4567-e89b-42d3-a456-426614174000",
+          revision: 3,
+        },
+      }),
+    ).resolves.toEqual({ status: "invalid_selection" });
+    await expect(
+      stub.updateSavedRollPicker({
+        ...context,
+        interactionId: firstRunId,
+        action: "server",
+        selection: null,
+      }),
+    ).resolves.toMatchObject({ status: "updated", scope: "server" });
+    await expect(
+      stub.updateSavedRollPicker({
+        ...context,
+        interactionId: firstRunId,
+        action: "select",
+        selection: {
+          scope: "server",
+          id: "223e4567-e89b-42d3-a456-426614174000",
+          revision: 3,
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: "updated",
+      selectedId: "223e4567-e89b-42d3-a456-426614174000",
+      selectedRevision: 3,
+    });
+    await expect(
+      stub.reserveSavedRollRun({ ...context, interactionId: firstRunId }),
+    ).resolves.toMatchObject({ status: "reserved" });
+    await expect(
+      stub.reserveSavedRollRun({ ...context, interactionId: firstRunId }),
+    ).resolves.toMatchObject({ status: "existing" });
+    await expect(
+      stub.reserveSavedRollRun({ ...context, interactionId: secondRunId }),
+    ).resolves.toEqual({ status: "consumed" });
+    await expect(
+      stub.reserveSavedRollRun({
+        ...context,
+        userId: "100000000000000099",
+        interactionId: firstRunId,
+      }),
+    ).resolves.toEqual({ status: "unauthorized" });
+  });
+
+  it("bounds picker navigation to all 20-button Mine and Server pages", async () => {
+    const sessionId = snowflakeAt(Date.now(), 38);
+    const updateId = snowflakeAt(Date.now(), 39);
+    const stub = work(sessionId);
+    const context = {
+      version: 1 as const,
+      interactionId: updateId,
+      userId: "100000000000000003",
+      guildId: "100000000000000002",
+      channelId: "100000000000000010",
+    };
+    await stub.openSavedRollPicker({ ...context, interactionId: sessionId });
+
+    let state;
+    for (let index = 0; index < 3; index += 1) {
+      state = await stub.updateSavedRollPicker({
+        ...context,
+        action: "next",
+        selection: null,
+      });
+    }
+    expect(state).toMatchObject({ status: "updated", scope: "mine", page: 2 });
+
+    await stub.updateSavedRollPicker({
+      ...context,
+      action: "server",
+      selection: null,
+    });
+    for (let index = 0; index < 5; index += 1) {
+      state = await stub.updateSavedRollPicker({
+        ...context,
+        action: "next",
+        selection: null,
+      });
+    }
+    expect(state).toMatchObject({ status: "updated", scope: "server", page: 4 });
+  });
+
+  it("copies an actor-bound Server snapshot to Personal through a rename conflict", async () => {
+    const sessionId = snowflakeAt(Date.now(), 44);
+    const selectId = snowflakeAt(Date.now(), 45);
+    const copyId = snowflakeAt(Date.now(), 46);
+    const renameId = snowflakeAt(Date.now(), 47);
+    const stub = work(sessionId);
+    const context = {
+      version: 1 as const,
+      userId: "100000000000000003",
+      guildId: "100000000000000002",
+      channelId: "100000000000000010",
+    };
+    await stub.openSavedRollPicker({ ...context, interactionId: sessionId });
+    await stub.updateSavedRollPicker({
+      ...context,
+      interactionId: selectId,
+      action: "server",
+      selection: null,
+    });
+    await stub.updateSavedRollPicker({
+      ...context,
+      interactionId: selectId,
+      action: "select",
+      selection: {
+        scope: "server",
+        id: "223e4567-e89b-42d3-a456-426614174000",
+        revision: 3,
+      },
+    });
+
+    await expect(
+      stub.copySavedRollToMine({
+        ...context,
+        interactionId: copyId,
+        username: "alice",
+        name: null,
+      }),
+    ).resolves.toEqual({ status: "name_conflict", name: "Attack" });
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM saved_roll_invocation",
+          )
+          .one().count,
+      ).toBe(0);
+    });
+    const copied = await stub.copySavedRollToMine({
+      ...context,
+      interactionId: renameId,
+      username: "alice",
+      name: "Attack copy",
+    });
+    expect(copied).toMatchObject({ status: "copied", name: "Attack copy" });
+    await expect(
+      stub.copySavedRollToMine({
+        ...context,
+        interactionId: renameId,
+        username: "alice",
+        name: "Attack copy",
+      }),
+    ).resolves.toEqual(copied);
+  });
+
+  it("resolves and persists one immutable saved invocation before delivery", async () => {
+    const runId = snowflakeAt(Date.now(), 39);
+    const sessionId = runId;
+    const stub = work(sessionId);
+    const context = {
+      version: 1 as const,
+      userId: "100000000000000003",
+      guildId: "100000000000000003",
+      channelId: "100000000000000010",
+    };
+    const selection = {
+      scope: "server" as const,
+      id: "223e4567-e89b-42d3-a456-426614174000",
+      revision: 3,
+    };
+    await stub.reserveDirectSavedRoll({
+      ...context,
+      interactionId: runId,
+      selection,
+    });
+
+    const request = {
+      version: 1 as const,
+      sessionId,
+      selection,
+      deferredAt: Date.now(),
+      interaction: {
+        id: runId,
+        applicationId: "100000000000000001",
+        token: "saved-followup",
+      },
+      actor: {
+        ...context,
+        username: "roller",
+        loggingContext: {
+          kind: "guild" as const,
+          guildId: "100000000000000003",
+          guildName: "Fixture Guild",
+          channelId: "100000000000000010",
+          channelName: "dice-rolls",
+          channelType: 0 as const,
+        },
+      },
+      sourceInteraction: "component" as const,
+      responseMode: "followup" as const,
+    };
+    await expect(stub.acceptSavedRollDelivery(request)).resolves.toMatchObject({
+      status: "created",
+      savedRoll: { name: "Attack", notation: "2d20+5", revision: 3 },
+    });
+    await expect(stub.acceptSavedRollDelivery(request)).resolves.toMatchObject({
+      status: "existing",
+      savedRoll: { name: "Attack", notation: "2d20+5", revision: 3 },
+    });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ invocation_json: string }>("SELECT invocation_json FROM saved_roll_invocation")
+        .one();
+      expect(JSON.parse(row.invocation_json)).toMatchObject({
+        version: 1,
+        id: selection.id,
+        scope: "guild",
+        name: "Attack",
+        notation: "2d20+5",
+        revision: 3,
+      });
+    });
+  });
+
+  it("creates one public saved-roll clatter message and edits it with the result", async () => {
+    const runId = snowflakeAt(Date.now(), 44);
+    const stub = work(runId);
+    const context = {
+      version: 1 as const,
+      userId: "100000000000000003",
+      guildId: "100000000000000002",
+      channelId: "100000000000000010",
+    };
+    const selection = {
+      scope: "server" as const,
+      id: "223e4567-e89b-42d3-a456-426614174000",
+      revision: 3,
+    };
+    await stub.reserveDirectSavedRoll({
+      ...context,
+      interactionId: runId,
+      selection,
+    });
+    await expect(stub.acceptSavedRollDelivery({
+      version: 1,
+      sessionId: runId,
+      selection,
+      deferredAt: Date.now(),
+      interaction: {
+        id: runId,
+        applicationId: "100000000000000001",
+        token: "saved-public-clatter",
+      },
+      actor: {
+        ...context,
+        username: "roller",
+        loggingContext: {
+          kind: "guild",
+          guildId: context.guildId,
+          guildName: "Fixture Guild",
+          channelId: context.channelId,
+          channelName: "dice-rolls",
+          channelType: 0,
+        },
+      },
+      sourceInteraction: "component",
+      responseMode: "followup",
+    })).resolves.toMatchObject({ status: "created" });
+
+    await runDurableObjectAlarm(stub);
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql.exec<{
+        followup_message_id: string | null;
+      }>(
+        "SELECT followup_message_id FROM interaction_delivery WHERE singleton = 1",
+      ).one();
+      expect(row.followup_message_id).toBe("100000000000000099");
+      state.storage.sql.exec(
+        "UPDATE interaction_delivery SET result_not_before = 0 WHERE singleton = 1",
+      );
+    });
+    await runDurableObjectAlarm(stub);
+
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+  });
+
+  it("rejects a saved selection whose record revision changed before acceptance", async () => {
+    const runId = snowflakeAt(Date.now(), 43);
+    const sessionId = runId;
+    const stub = work(sessionId);
+    const context = {
+      version: 1 as const,
+      userId: "100000000000000003",
+      guildId: "100000000000000002",
+      channelId: "100000000000000010",
+    };
+    const selection = {
+      scope: "server" as const,
+      id: "423e4567-e89b-42d3-a456-426614174000",
+      revision: 3,
+    };
+    await stub.reserveDirectSavedRoll({ ...context, interactionId: runId, selection });
+    await expect(
+      stub.acceptSavedRollDelivery({
+        version: 1,
+        sessionId,
+        selection,
+        deferredAt: Date.now(),
+        interaction: {
+          id: runId,
+          applicationId: "100000000000000001",
+          token: "delivery-success",
+        },
+        actor: {
+          ...context,
+          username: "roller",
+          loggingContext: {
+            kind: "guild",
+            guildId: "100000000000000002",
+            guildName: "Fixture Guild",
+            channelId: "100000000000000010",
+            channelName: "dice-rolls",
+            channelType: 0,
+          },
+        },
+        sourceInteraction: "component",
+        responseMode: "followup",
+      }),
+    ).resolves.toEqual({ status: "stale" });
   });
 
   it("stores a fully resolved renderer-v4 snapshot at staging delivery acceptance", async () => {
@@ -526,6 +891,79 @@ describe("RollWork Durable Object", () => {
     );
   });
 
+  it("restores V4 snapshots with valid zero-dice outcomes", () => {
+    const request = { notation: ["1d20", "5"], repetitions: 1 };
+    const outcome = executeRoll({ ...request, seed: 1 });
+    expect(outcome.outcomes.map(({ dice }) => dice.length)).toEqual([1, 0]);
+    const record = {
+      version: 4 as const,
+      request,
+      rollSeed: 1,
+      renderSeed: 2,
+      outcome,
+      createdAt: Date.now(),
+      renderRequest: buildRollRenderRequestV4(outcome, 2, v4Recipes()),
+    };
+
+    expect(parseRecord(JSON.stringify(record))).toEqual(record);
+  });
+
+  it("restores V4 percentile snapshots whose ones die rolled zero", () => {
+    const request = { notation: ["1d100"], repetitions: 1 };
+    const rollSeed = 1_567_612_846;
+    const renderSeed = 1_750_463_891;
+    const outcome = executeRoll({
+      ...request,
+      seed: rollSeed,
+      stableAppearanceIdentities: true,
+    });
+    const record = {
+      version: 4 as const,
+      request,
+      rollSeed,
+      renderSeed,
+      outcome,
+      createdAt: 1_785_183_198_972,
+      renderRequest: buildRollRenderRequestV4(
+        outcome,
+        renderSeed,
+        v4Recipes(),
+      ),
+    };
+
+    expect(outcome.outcomes[0]?.dice[1]?.rolled).toBe(0);
+    expect(record.renderRequest.groups[0]?.[1]?.result).toBe(10);
+    expect(parseRecord(JSON.stringify(record))).toEqual(record);
+  });
+
+  it("persists the original physical face for out-of-range V4 results", () => {
+    const request = { notation: ["1d2!!"], repetitions: 1 };
+    const outcome = executeRoll({
+      ...request,
+      seed: 1,
+      preserveOutOfRangePhysicalFaces: true,
+    });
+    const die = outcome.outcomes[0]?.dice[0];
+    expect(die).toMatchObject({
+      sides: 2,
+      rolled: 11,
+      physicalFace: 2,
+      modifiers: ["explode", "compound"],
+    });
+    const record = {
+      version: 4 as const,
+      request,
+      rollSeed: 1,
+      renderSeed: 2,
+      outcome,
+      createdAt: Date.now(),
+      renderRequest: buildRollRenderRequestV4(outcome, 2, v4Recipes()),
+    };
+
+    expect(record.renderRequest.groups[0]?.[0]?.result).toBe(2);
+    expect(parseRecord(JSON.stringify(record))).toEqual(record);
+  });
+
   it.each([
     ["fails", "100000000000000099", 42],
     ["returns malformed data", "100000000000000098", 43],
@@ -614,12 +1052,6 @@ describe("RollWork Durable Object", () => {
   it("renders zero-valued penetrating d2 results from a persisted V4 snapshot", async () => {
     const request = { notation: ["15d2!p"], repetitions: 1 };
     const outcome = executeRoll({ ...request, seed: 0 });
-    const builtin =
-      BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID];
-    if (builtin === undefined) throw new Error("Chaotic V3 recipe is missing");
-    const recipes = Object.fromEntries(
-      APPEARANCE_TARGETS.map((target) => [target, builtin.recipe]),
-    );
     const record = {
       version: 4 as const,
       request,
@@ -627,7 +1059,7 @@ describe("RollWork Durable Object", () => {
       renderSeed: 1,
       outcome,
       createdAt: Date.now(),
-      renderRequest: buildRollRenderRequestV4(outcome, 1, recipes),
+      renderRequest: buildRollRenderRequestV4(outcome, 1, v4Recipes()),
     };
     const stub = work("1400000000000000047");
     await runInDurableObject(stub, (_instance, state) => {
@@ -1147,6 +1579,18 @@ describe("RollWork Durable Object", () => {
         logging_state: "delivered",
         logging_attempts: 1,
       });
+      const lifecycle = state.storage.sql
+        .exec<{ snapshot_json: string; synced_revision: number }>(
+          "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
+        )
+        .one();
+      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
+        revision: number;
+        state: string;
+        httpStatus: number | null;
+      };
+      expect(snapshot).toMatchObject({ state: "delivered", httpStatus: 200 });
+      expect(lifecycle.synced_revision).toBe(snapshot.revision);
       expect(await state.storage.getAlarm()).toBe(interactionExpiresAt(id));
     });
     await expect(stub.deliveryDiagnostics()).resolves.toEqual({
@@ -1161,6 +1605,203 @@ describe("RollWork Durable Object", () => {
       helperState: "not_applicable",
       helperAttempts: 0,
     });
+  });
+
+  it("records a terminal lifecycle when durable acceptance fails", async () => {
+    const id = snowflakeAt(Date.now(), 67);
+    const stub = work(id);
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(`
+        CREATE TRIGGER fail_roll_prepare
+        BEFORE INSERT ON roll_work
+        BEGIN
+          SELECT RAISE(ABORT, 'simulated durable acceptance failure');
+        END;
+      `);
+    });
+
+    await runInDurableObject(stub, async (instance) => {
+      await expect(
+        (instance as unknown as {
+          acceptDelivery(value: unknown): Promise<unknown>;
+        }).acceptDelivery(deliveryRequest(id, "delivery-success")),
+      ).rejects.toThrow("simulated durable acceptance failure");
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const lifecycle = state.storage.sql
+        .exec<{ snapshot_json: string; synced_revision: number }>(
+          "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
+        )
+        .one();
+      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
+        revision: number;
+        state: string;
+        acceptedAt: number | null;
+        failureCode: string | null;
+      };
+      expect(snapshot).toMatchObject({
+        state: "failed",
+        acceptedAt: null,
+        failureCode: "acceptance-failed",
+      });
+      expect(lifecycle.synced_revision).toBe(snapshot.revision);
+    });
+  });
+
+  it("preserves lifecycle state when an alarm interleaves with acceptance", async () => {
+    const id = snowflakeAt(Date.now(), 68);
+    const stub = work(id);
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    let releaseInitialSync = (): void => undefined;
+    let markInitialSyncStarted = (): void => undefined;
+    const initialSyncReleased = new Promise<void>((resolve) => {
+      releaseInitialSync = resolve;
+    });
+    const initialSyncStarted = new Promise<void>((resolve) => {
+      markInitialSyncStarted = resolve;
+    });
+    let firstLifecycleRequest = true;
+
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      const path = new URL(request.url).pathname;
+      if (path === "/internal/appearance/v3/effective") {
+        return Response.json({ version: 3, recipes: v4Recipes() });
+      }
+      if (path === "/internal/roll-lifecycle") {
+        const snapshot = await request.json<{ interactionId?: unknown }>();
+        if (snapshot.interactionId === id && firstLifecycleRequest) {
+          firstLifecycleRequest = false;
+          markInitialSyncStarted();
+          await initialSyncReleased;
+        }
+        return Response.json({ status: "applied" });
+      }
+      throw new Error(`Unexpected acceptance-race request: ${path}`);
+    });
+
+    try {
+      await runInDurableObject(stub, async (instance, state) => {
+        const acceptance = (instance as unknown as {
+          acceptDelivery(value: unknown): Promise<unknown>;
+        }).acceptDelivery(deliveryRequest(id, "delivery-success"));
+        await initialSyncStarted;
+        await callAlarm(instance);
+        releaseInitialSync();
+        await expect(acceptance).resolves.toMatchObject({
+          status: "created",
+          delivery: "pending",
+        });
+
+        const rows = state.storage.sql
+          .exec<{ snapshot_json: string; synced_revision: number }>(
+            "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
+          )
+          .toArray();
+        expect(rows).toHaveLength(1);
+        expect(JSON.parse(rows[0]?.snapshot_json ?? "null")).toMatchObject({
+          state: "accepted",
+          revision: 2,
+        });
+        expect(rows[0]?.synced_revision).toBe(1);
+      });
+    } finally {
+      releaseInitialSync();
+      dataService.fetch = originalFetch;
+    }
+
+    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const lifecycle = state.storage.sql
+        .exec<{ snapshot_json: string; synced_revision: number }>(
+          "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
+        )
+        .one();
+      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
+        state: string;
+        revision: number;
+      };
+      expect(snapshot.state).toBe("delivered");
+      expect(lifecycle.synced_revision).toBe(snapshot.revision);
+    });
+  });
+
+  it("terminates delivery without rereading an invalid stored record", async () => {
+    const id = snowflakeAt(Date.now(), 66);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-success");
+    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+      status: "created",
+      delivery: "pending",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      const record = JSON.parse(row.record_json) as {
+        renderRequest: { groups: unknown[][] };
+      };
+      const renderGroup = record.renderRequest.groups[0];
+      if (renderGroup === undefined) throw new Error("V4 render group is missing");
+      record.renderRequest.groups.push(structuredClone(renderGroup));
+      state.storage.sql.exec(
+        "UPDATE roll_work SET record_json = ? WHERE singleton = 1",
+        JSON.stringify(record),
+      );
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      await runInDurableObject(stub, async (instance) => callAlarm(instance));
+      await expect(stub.deliveryStatus()).resolves.toMatchObject({
+        state: "failed",
+        lastHttpStatus: 200,
+      });
+      await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({
+        state: "failed",
+        failurePhase: "record",
+      });
+      const terminalFailure = consoleError.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(
+          ({ message }) =>
+            message === "Roll delivery encountered a terminal internal failure",
+        );
+      expect(terminalFailure).toMatchObject({
+        rollId: id,
+        interactionId: id,
+        phase: "record",
+        userImpact: "failed",
+      });
+      expect(terminalFailure?.request).toBeNull();
+      expect(terminalFailure?.outcome).toBeNull();
+      expect(JSON.stringify(terminalFailure)).not.toContain(input.interaction.token);
+      await runInDurableObject(stub, (_instance, state) => {
+        const lifecycle = state.storage.sql
+          .exec<{ snapshot_json: string; synced_revision: number }>(
+            "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
+          )
+          .one();
+        const snapshot = JSON.parse(lifecycle.snapshot_json) as {
+          revision: number;
+          state: string;
+          failureCode: string | null;
+        };
+        expect(snapshot).toMatchObject({
+          state: "failed",
+          failureCode: "stored-record-invalid",
+        });
+        expect(lifecycle.synced_revision).toBe(snapshot.revision);
+      });
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("emits complete terminal destination telemetry without credentials", async () => {
@@ -1245,6 +1886,8 @@ describe("RollWork Durable Object", () => {
         attempts: 1,
         httpStatus: 404,
         failurePhase: "discord",
+        discordErrorCode: 10_015,
+        discordOperation: "edit-original-result",
       });
       expect(failed?.outcome).toMatchObject({
         version: 1,
@@ -1252,12 +1895,42 @@ describe("RollWork Durable Object", () => {
       });
       expect(failed?.destinationPayload).toBeDefined();
       expect(JSON.stringify([delivered, failed])).not.toMatch(
-        /delivery-success|delivery-terminal-failure|token_fingerprint|image_bytes/i,
+        /delivery-success|delivery-terminal-failure|invalid interaction|token_fingerprint|image_bytes/i,
       );
       expect(delivered).not.toHaveProperty("token");
       expect(delivered).not.toHaveProperty("imageBytes");
     } finally {
       consoleInfo.mockRestore();
+      consoleError.mockRestore();
+    }
+  });
+
+  it("logs only the numeric Discord error code for rejected clatter", async () => {
+    const id = snowflakeAt(Date.now(), 69);
+    const input = deliveryRequest(id, "delivery-clatter-rejected");
+    input.accounting.guildId = "100000000000000002";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      await expect(work(id).deliver(input)).resolves.toEqual({ status: "failed" });
+      const failed = consoleError.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(({ message }) => message === "Roll destination delivery completed");
+      expect(failed).toMatchObject({
+        rollId: id,
+        state: "failed",
+        httpStatus: 404,
+        failurePhase: "clatter",
+        discordErrorCode: 10_008,
+        discordOperation: "edit-original-clatter",
+      });
+      expect(JSON.stringify(failed)).not.toMatch(
+        /sensitive provider detail|must not be logged/,
+      );
+    } finally {
       consoleError.mockRestore();
     }
   });
@@ -1429,9 +2102,7 @@ describe("RollWork Durable Object", () => {
       `);
     });
 
-    await expect(runDurableObjectAlarm(stub)).rejects.toThrow(
-      "simulated source acknowledgement failure",
-    );
+    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
     await runInDurableObject(stub, (_instance, state) => {
       expect(
         state.storage.sql
@@ -1680,6 +2351,28 @@ describe("RollWork Durable Object", () => {
     expect(first.status).toBe("created");
     expect(retry).toEqual({ ...first, status: "existing" });
     expect(conflict).toEqual({ status: "conflict" });
+  });
+
+  it("rejects saved-roll metadata that does not match the executed request", () => {
+    const id = snowflakeAt(Date.now(), 34);
+    const input = {
+      ...deliveryRequest(id),
+      responseMode: "followup",
+      savedRoll: {
+        version: 1,
+        id: "223e4567-e89b-42d3-a456-426614174000",
+        scope: "guild",
+        name: "Attack",
+        notation: "2d20+5",
+        title: "Initiative",
+        repetitions: 1,
+        revision: 3,
+      },
+    };
+
+    expect(() => validateDeliveryRequest(input)).toThrow(
+      "Saved roll delivery does not match its invocation",
+    );
   });
 
   it.each(["0", null, false])(

@@ -1,7 +1,8 @@
 import { AppearanceColorControlsV3 } from "@/components/AppearanceColorControlsV3";
+import { AppearanceFontSelectV3 } from "@/components/AppearanceFontSelectV3";
 import { AppearanceMaterialControlsV3 } from "@/components/AppearanceMaterialControlsV3";
-import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { AppearanceTreatmentControlsV3 } from "@/components/AppearanceTreatmentControlsV3";
+import { browserFontFamilyV4 } from "@/components/dice-v4-3d/font-assets";
 import {
   selectionValuesV3,
   type AppearanceEditorTargetV3,
@@ -56,7 +57,7 @@ export function AppearanceRecipeControlsV3({
   if (material === undefined) {
     throw new Error("Appearance recipe catalog metadata is missing");
   }
-  const fontValue = recipe.font.mode === "fixed" ? recipe.font.value : "";
+  const fontValue = recipe.font.mode === "fixed" ? recipe.font.value : null;
 
   return (
     <div className="space-y-5">
@@ -69,27 +70,17 @@ export function AppearanceRecipeControlsV3({
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
         <label className="block space-y-1.5 text-xs font-medium">
           <span className="block">Font</span>
-          <AppearanceSelectV3
+          <AppearanceFontSelectV3
             aria-label="Primary font"
             value={fontValue}
-            onChange={(event) => {
-              if (event.target.value === "") return;
-              onChange({
-                ...recipe,
-                font: { mode: "fixed", value: event.target.value },
-              });
-            }}
+            options={catalog.fonts}
+            procedural={recipe.font.mode !== "fixed"}
             className="sm:h-10"
-          >
-            {recipe.font.mode !== "fixed" && (
-              <option value="">Procedural mix</option>
-            )}
-            {catalog.fonts.map(({ id, name }) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </AppearanceSelectV3>
+            getFontFamily={browserFontFamilyV4}
+            onChange={(value) =>
+              onChange({ ...recipe, font: { mode: "fixed", value } })
+            }
+          />
         </label>
         <SummaryField
           label="Material"

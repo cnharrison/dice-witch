@@ -83,6 +83,48 @@ describe("buildRollResultMessage", () => {
     });
   });
 
+  it("attributes a saved roll in the footer without replacing its title", () => {
+    const message = buildRollResultMessage(result(["1d20"]), {
+      source: "discord",
+      title: "Initiative",
+      username: "roller",
+      filename: "dice.png",
+      savedRoll: { scope: "Server", name: "Opening attack" },
+      copyCustomId: "saved-roll:v1:1400000000000000000:copy",
+    });
+
+    expect(message.embeds?.[0]).toMatchObject({
+      title: "Initiative",
+      footer: {
+        text: "sent to roller via discord · from server library · Opening attack",
+      },
+    });
+    expect(
+      buildRollResultMessage(result(["1d20"]), {
+        source: "discord",
+        title: null,
+        username: "roller",
+        filename: "dice.png",
+        savedRoll: { scope: "Mine", name: "Initiative" },
+      }).embeds?.[0]?.footer,
+    ).toEqual({
+      text: "sent to roller via discord · from personal library · Initiative",
+    });
+    expect(message.components).toEqual([
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            style: 2,
+            label: "Copy to Personal",
+            custom_id: "saved-roll:v1:1400000000000000000:copy",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("omits only an absent optional title", () => {
     const message = buildRollResultMessage(result(["1d20"]), {
       source: "web",

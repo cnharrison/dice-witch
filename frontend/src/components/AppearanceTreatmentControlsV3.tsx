@@ -1,5 +1,7 @@
+import { AppearanceFontSelectV3 } from "@/components/AppearanceFontSelectV3";
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { AppearanceStringSelectionV3 } from "@/components/AppearanceStringSelectionV3";
+import { browserFontFamilyV4 } from "@/components/dice-v4-3d/font-assets";
 import { selectionValuesV3 } from "@/lib/appearance-editor-v3";
 import type { AppearanceCatalogV3 } from "@/types/appearance";
 import {
@@ -15,35 +17,50 @@ function PrimarySelection<Value extends string>({
   label,
   selection,
   options,
+  getOptionFontFamily,
   onChange,
 }: {
   label: string;
   selection: AppearanceSelection<Value>;
   options: readonly Option<Value>[];
+  getOptionFontFamily?(value: Value): string;
   onChange(selection: AppearanceSelection<Value>): void;
 }) {
-  const value = selection.mode === "fixed" ? selection.value : "procedural";
+  const fixedValue = selection.mode === "fixed" ? selection.value : null;
   return (
     <label className="block space-y-1.5 text-xs font-medium">
       <span className="block">{label}</span>
-      <AppearanceSelectV3
-        aria-label={label}
-        value={value}
-        onChange={(event) => {
-          if (event.target.value !== "procedural") {
-            onChange({ mode: "fixed", value: event.target.value as Value });
+      {getOptionFontFamily === undefined ? (
+        <AppearanceSelectV3
+          aria-label={label}
+          value={fixedValue ?? "procedural"}
+          onChange={(event) => {
+            if (event.target.value !== "procedural") {
+              onChange({ mode: "fixed", value: event.target.value as Value });
+            }
+          }}
+        >
+          {fixedValue === null && (
+            <option value="procedural">Procedural mix</option>
+          )}
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
+          ))}
+        </AppearanceSelectV3>
+      ) : (
+        <AppearanceFontSelectV3
+          aria-label={label}
+          value={fixedValue}
+          options={options}
+          procedural={fixedValue === null}
+          getFontFamily={getOptionFontFamily}
+          onChange={(value) =>
+            onChange({ mode: "fixed", value: value as Value })
           }
-        }}
-      >
-        {selection.mode !== "fixed" && (
-          <option value="procedural">Procedural mix</option>
-        )}
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </AppearanceSelectV3>
+        />
+      )}
     </label>
   );
 }
@@ -150,6 +167,7 @@ export function AppearanceTreatmentControlsV3({
           label="Font"
           selection={recipe.font}
           options={catalog.fonts}
+          getOptionFontFamily={browserFontFamilyV4}
           onChange={(font) => emit({ ...recipe, font })}
         />
         <PrimarySelection
@@ -215,7 +233,7 @@ export function AppearanceTreatmentControlsV3({
           Advanced procedural controls
         </summary>
         <div
-          className="mt-4 space-y-4"
+          className="mt-4 grid gap-4 lg:grid-cols-2"
           role="group"
           aria-label="Advanced appearance treatment"
         >
@@ -225,6 +243,7 @@ export function AppearanceTreatmentControlsV3({
             options={catalog.fonts}
             weightBounds={catalog.bounds.selectionWeight}
             maximumTotalWeight={catalog.bounds.maximumTotalSelectionWeight}
+            getOptionFontFamily={browserFontFamilyV4}
             onChange={(font) => emit({ ...recipe, font })}
           />
           <AppearanceStringSelectionV3

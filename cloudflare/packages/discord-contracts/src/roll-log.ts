@@ -243,10 +243,47 @@ function validateEmbed(value: unknown): DiscordEmbed {
   return value;
 }
 
+function validateComponents(
+  value: unknown,
+): NonNullable<DiscordMessage["components"]> {
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > 5 ||
+    value.some(
+      (row) =>
+        !isRecord(row) ||
+        !hasExactKeys(row, ["components", "type"]) ||
+        row.type !== 1 ||
+        !Array.isArray(row.components) ||
+        row.components.length < 1 ||
+        row.components.length > 5 ||
+        row.components.some(
+          (component) =>
+            !isRecord(component) ||
+            !hasExactKeys(component, ["custom_id", "label", "style", "type"]) ||
+            component.type !== 2 ||
+            ![1, 2, 3, 4].includes(Number(component.style)) ||
+            typeof component.label !== "string" ||
+            component.label.length < 1 ||
+            component.label.length > 80 ||
+            typeof component.custom_id !== "string" ||
+            component.custom_id.length < 1 ||
+            component.custom_id.length > 100,
+        ),
+    )
+  ) {
+    throw new Error("Roll log artifact payload is invalid");
+  }
+  return value as NonNullable<DiscordMessage["components"]>;
+}
+
 function validatePayload(value: unknown): DiscordMessage {
   if (
     !isRecord(value) ||
-    Object.keys(value).some((key) => key !== "content" && key !== "embeds") ||
+    Object.keys(value).some(
+      (key) => key !== "components" && key !== "content" && key !== "embeds",
+    ) ||
     (value.content !== undefined &&
       (typeof value.content !== "string" ||
         value.content.length < 1 ||
@@ -255,7 +292,9 @@ function validatePayload(value: unknown): DiscordMessage {
       (!Array.isArray(value.embeds) ||
         value.embeds.length < 1 ||
         value.embeds.length > MAX_EMBED_COUNT)) ||
-    (value.content === undefined && value.embeds === undefined)
+    (value.content === undefined &&
+      value.embeds === undefined &&
+      value.components === undefined)
   ) {
     throw new Error("Roll log artifact payload is invalid");
   }
@@ -264,6 +303,9 @@ function validatePayload(value: unknown): DiscordMessage {
     ...(value.embeds === undefined
       ? {}
       : { embeds: value.embeds.map(validateEmbed) }),
+    ...(value.components === undefined
+      ? {}
+      : { components: validateComponents(value.components) }),
   };
 }
 
@@ -353,8 +395,13 @@ export type RollLogDisplayContextV1 = {
   channelName: string | null;
 };
 
-function rollLogDisplayName(value: string | null): string {
-  return value === null ? "unavailable" : escapeDiscordMarkdown(value);
+function rollLogDisplayLine(
+  kind: "channel" | "guild",
+  value: string | null,
+): string {
+  return value === null
+    ? `unknown ${kind}`
+    : `${kind}: **${escapeDiscordMarkdown(value)}**`;
 }
 
 export function rollLogContextDescription(
@@ -379,9 +426,11 @@ export function rollLogContextDescription(
     throw new Error("Roll log guild context is invalid");
   }
   if (context === null) {
-    return `${user}\nchannel: **unavailable**\nguild: **unavailable**${shardSuffix}`;
+    return `${user}\nunknown channel\nunknown guild${shardSuffix}`;
   }
-  return `${user}\nchannel: **${rollLogDisplayName(context.channelName)}**\nguild: **${rollLogDisplayName(context.guildName)}**${shardSuffix}`;
+  const channel = rollLogDisplayLine("channel", context.channelName);
+  const guild = rollLogDisplayLine("guild", context.guildName);
+  return `${user}\n${channel}\n${guild}${shardSuffix}`;
 }
 
 export function rollLogResultDescription(

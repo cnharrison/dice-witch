@@ -6,7 +6,7 @@
   "workers_dev": true,
   "preview_urls": false,
   "triggers": {
-    "crons": ["0 * * * *", "30 */4 * * *"]
+    "crons": ["0 * * * *", "*/5 * * * *", "30 */4 * * *"]
   },
   "alias": {
     "crypto": "./packages/roll-domain/src/worker-crypto.ts"

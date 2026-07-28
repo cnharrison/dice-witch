@@ -661,6 +661,25 @@ describe("WebRollService", () => {
     });
   });
 
+  it("includes authoritative Library attribution in web-initiated Discord results", async () => {
+    const dataService = appearanceService();
+    const value = await preparedRequest(dataService, "4", {
+      savedRoll: { scope: "personal", name: "Initiative" },
+    });
+    const result = await executeWebRoll(value, dataService, "4");
+
+    if (result.status !== "rolled") throw new Error("Expected a rolled result");
+    expect(result.discord.payload).toMatchObject({
+      embeds: [
+        {
+          footer: {
+            text: "sent to fixture-user via web · from personal library · Initiative",
+          },
+        },
+      ],
+    });
+  });
+
   it("executes staging rolls once and uses one exact renderer-v4 PNG for web and Discord", async () => {
     const lookups: Array<{ path: string; value: unknown }> = [];
     const dataService = appearanceService((value, path) =>

@@ -12,17 +12,22 @@ import {
 async function fixture({ javascript, externalStylesheets = [] }) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "frontend-budget-"));
   await mkdir(path.join(directory, "assets"));
-  await mkdir(path.join(directory, "images"));
   await writeFile(path.join(directory, "assets", "entry.js"), javascript);
   await writeFile(path.join(directory, "assets", "entry.css"), "body{color:#fff}");
   await writeFile(
-    path.join(directory, "images", "dice-witch-banner.webp"),
+    path.join(directory, "assets", "banner-a1b2c3.webp"),
+    randomBytes(1_024),
+  );
+  await writeFile(
+    path.join(directory, "assets", "display-a1b2c3.woff2"),
     randomBytes(1_024),
   );
   await writeFile(
     path.join(directory, "index.html"),
     `<!doctype html><script type="module" src="/assets/entry.js"></script>
      <link rel="stylesheet" href="/assets/entry.css">
+     <link rel="preload" as="image" href="/assets/banner-a1b2c3.webp">
+     <link rel="preload" as="font" href="/assets/display-a1b2c3.woff2">
      ${externalStylesheets.map((href) => `<link rel="stylesheet" href="${href}">`).join("\n")}`,
   );
   return directory;
@@ -36,7 +41,7 @@ test("accepts a bounded initial route and reports its transfer composition", asy
   const measurement = await measureFrontendEntry(directory);
 
   assert.doesNotThrow(() => assertFrontendPerformanceBudget(measurement));
-  assert.equal(measurement.assets.length, 3);
+  assert.equal(measurement.assets.length, 4);
   assert.deepEqual(measurement.thirdPartyOrigins, ["https://fonts.example"]);
   assert.ok(measurement.initialTransferBytes > measurement.htmlBytes);
 });

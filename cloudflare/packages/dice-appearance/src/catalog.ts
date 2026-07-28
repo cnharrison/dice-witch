@@ -1305,12 +1305,22 @@ const RANDOM_CLASSIC_MATERIALS_V3: readonly WeightedSelectionOption<AppearanceMa
   {
     value: {
       family: "classic",
+      treatment: "solid",
+      opacity: "opaque",
+      finish: "satin",
+      textureScale: 100,
+    },
+    weight: 900,
+  },
+  {
+    value: {
+      family: "classic",
       treatment: "gradient",
       opacity: "opaque",
       finish: "satin",
       textureScale: 100,
     },
-    weight: 480,
+    weight: 240,
   },
   ...PATTERNS.map(({ id: patternId }) => ({
     value: {
@@ -1321,14 +1331,14 @@ const RANDOM_CLASSIC_MATERIALS_V3: readonly WeightedSelectionOption<AppearanceMa
       finish: "satin" as const,
       textureScale: 100,
     },
-    weight: 42,
+    weight: 21,
   })),
 ];
 const randomRecipeV3: AppearanceRecipeV3 = {
   version: 3,
   variation: "wild",
   varyBy: "die",
-  randomization: "full-spectrum-v1",
+  randomization: "full-spectrum-v2",
   colors: { mode: "vivid-random-pair" },
   material: {
     mode: "weighted",
@@ -1336,7 +1346,7 @@ const randomRecipeV3: AppearanceRecipeV3 = {
       ...RANDOM_CLASSIC_MATERIALS_V3,
       ...RANDOM_SPECIAL_MATERIALS_V3.map(({ material: value }) => ({
         value,
-        weight: 50,
+        weight: 25,
       })),
     ],
   },

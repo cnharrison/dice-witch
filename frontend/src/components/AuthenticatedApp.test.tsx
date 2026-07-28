@@ -17,6 +17,9 @@ vi.mock("@/pages/Home", () => ({ default: () => <div>Home</div> }));
 vi.mock("@/pages/Preferences", () => ({
   default: () => <div>Preferences</div>,
 }));
+vi.mock("@/pages/SavedRolls", () => ({
+  default: () => <div>Library page</div>,
+}));
 
 import AuthenticatedApp from "./AuthenticatedApp";
 
@@ -33,4 +36,22 @@ it("keeps the authenticated scroll container at the viewport edge", () => {
   expect(main.className).toContain("w-full");
   expect(main.className).not.toContain("container");
   expect(main.className).toContain("overflow-y-auto");
+});
+
+it("serves the Library at /library without retaining the old route", async () => {
+  const { unmount } = render(
+    <MemoryRouter initialEntries={["/library"]}>
+      <AuthenticatedApp />
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByText("Library page")).toBeDefined();
+  unmount();
+
+  render(
+    <MemoryRouter initialEntries={["/saved-rolls"]}>
+      <AuthenticatedApp />
+    </MemoryRouter>,
+  );
+  expect(screen.queryByText("Library page")).toBeNull();
 });

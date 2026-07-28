@@ -9,7 +9,8 @@
     "DISCORD_APPLICATION_ID": "100000000000000001",
     "INVITE_LINK": "https://example.com/replace-with-discord-invite",
     "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
-    "LOG_OUTPUT_CHANNEL_ID": "100000000000000002"
+    "LOG_OUTPUT_CHANNEL_ID": "100000000000000002",
+    "ROLL_LIFECYCLE_ALERT_CHANNEL_ID": "100000000000000003"
   },
   "observability": {
     "enabled": true

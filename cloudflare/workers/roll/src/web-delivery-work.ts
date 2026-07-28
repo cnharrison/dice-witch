@@ -6,7 +6,13 @@ import {
   validateRollLogArtifact,
   type RollLogArtifactV1,
 } from "../../../packages/discord-contracts/src";
-import { executeWebRoll, type WebRollResult } from "./web-roll-service";
+import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
+import {
+  executeWebRoll,
+  parseWebSavedRollAttribution,
+  type WebRollResult,
+  type WebSavedRollAttribution,
+} from "./web-roll-service";
 
 const DELIVERY_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -34,6 +40,7 @@ type WebDeliveryInput = {
   guildId: string;
   channelId: string;
   skipDelay: boolean;
+  savedRoll?: WebSavedRollAttribution;
   renderSeed?: number;
   appearanceDigest?: string;
 };
@@ -95,6 +102,7 @@ type WebDeliveryService = {
     filename: string;
     png: Uint8Array;
     skipDelay: boolean;
+    delayMs: number;
   }): Promise<
     | { status: "delivered" }
     | { status: "permission_error" }
@@ -124,7 +132,7 @@ function hasExactKeys(
 }
 
 function validateInput(value: unknown): WebDeliveryInput {
-  const required = [
+  const baseKeys = [
     "channelId",
     "deliveryId",
     "guildId",
@@ -135,6 +143,8 @@ function validateInput(value: unknown): WebDeliveryInput {
     "userId",
     "username",
   ] as const;
+  const hasSavedRoll = isRecord(value) && value.savedRoll !== undefined;
+  const required = hasSavedRoll ? [...baseKeys, "savedRoll"] : baseKeys;
   const prepared =
     isRecord(value) &&
     hasExactKeys(value, [...required, "appearanceDigest", "renderSeed"]);
@@ -183,6 +193,9 @@ function validateInput(value: unknown): WebDeliveryInput {
     guildId: value.guildId,
     channelId: value.channelId,
     skipDelay: value.skipDelay,
+    ...(hasSavedRoll
+      ? { savedRoll: parseWebSavedRollAttribution(value.savedRoll) }
+      : {}),
     ...(prepared
       ? {
           renderSeed: Number(value.renderSeed),
@@ -437,6 +450,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
         title: input.title,
         userId: input.userId,
         guildId: input.guildId,
+        ...(input.savedRoll === undefined ? {} : { savedRoll: input.savedRoll }),
         ...(input.appearanceDigest === undefined
           ? {}
           : {
@@ -592,6 +606,9 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
         filename: result.discord.filename,
         png: result.discord.png,
         skipDelay: input.skipDelay,
+        delayMs: input.skipDelay
+          ? 0
+          : selectRollDelayMs(row.roll_seed / 2 ** 32),
       });
     } catch {
       await this.scheduleRetry(row.retry_until, attempts, null, null);

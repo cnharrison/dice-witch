@@ -76,6 +76,18 @@ describe("static Discord command contract", () => {
     });
   });
 
+  it("links the prefs command directly to Preferences", () => {
+    const response = buildStaticCommandResponse(
+      "prefs",
+      links,
+      "https://example.com/app",
+    ) as { data: { embeds: Array<{ description: string }> } };
+
+    expect(response.data.embeds[0]?.description).toBe(
+      "Set user preferences and control Dice Witch from the web: https://example.com/app/preferences",
+    );
+  });
+
   it("rejects options and ignores unrelated commands", () => {
     expect(
       parseStaticInteractionCommand(

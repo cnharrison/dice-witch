@@ -2,16 +2,20 @@ import { exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import {
   DISCORD_GLOBAL_COMMANDS,
+  rollLogContextDescription,
   type RollLogArtifactV1,
 } from "../../packages/discord-contracts/src";
 import {
   captureAudienceSnapshot,
+  createRollLifecycleAlertV1,
   deliverRollLogV1,
   deliverWebRoll,
   fetchPublicStats,
   inspectMembership,
+  inspectRollerGuild,
   listCurrentGuildIds,
   listCurrentGuildIdsPage,
+  listMemberTextChannels,
   listTextChannels,
   logGuildLifecycle,
   logRoll,
@@ -19,6 +23,7 @@ import {
   registerGlobalCommands,
   reportBotListStats,
   sendRollHelper,
+  updateRollLifecycleAlertV1,
 } from "../../workers/discord-rest/src";
 
 const guildId = "100000000000000001";
@@ -76,11 +81,114 @@ const env = {
   INVITE_LINK: "https://discord.com/oauth2/authorize?client_id=100000000000000001",
   SUPPORT_SERVER_LINK: "https://discord.gg/fixture",
   LOG_OUTPUT_CHANNEL_ID: "100000000000000099",
+  ROLL_LIFECYCLE_ALERT_CHANNEL_ID: "100000000000000098",
   TOPGG_KEY: "fixture-topgg-token",
   DISCORD_BOT_LIST_KEY: "fixture-discord-bot-list-token",
 };
 
+function lifecycleAlert(alertMessageId: string | null = null) {
+  return {
+    version: 1 as const,
+    interactionId: "1400000000000000001",
+    alertMessageId,
+    state: alertMessageId === null ? "delivery_started" as const : "delivered" as const,
+    deferredAt: 1_749_999_999_990,
+    acceptedAt: 1_750_000_000_000,
+    deliveryStartedAt: 1_750_000_000_010,
+    terminalAt: alertMessageId === null ? null : 1_750_000_120_000,
+    attempts: 2,
+    httpStatus: alertMessageId === null ? null : 200,
+    failurePhase: null,
+    failureCode: null,
+    context: {
+      version: 1 as const,
+      applicationId: "100000000000000001",
+      notation: "1d20",
+      request: { notation: ["1d20"], repetitions: 1 },
+      title: "Initiative",
+      savedRoll: null,
+      userId,
+      username: "roller",
+      guildId,
+      channelId: "100000000000000010",
+      guildName: "Fixture Guild",
+      channelName: "dice-rolls",
+      channelType: 0,
+      outcome: { version: 1, outcomes: [], errors: [] },
+      rollSeed: 1,
+      renderSeed: 2,
+      renderVersion: 4,
+      rendererRevision: "canvaskit-v4-r8",
+      destinationPayload: null,
+    },
+  };
+}
+
 describe("Discord REST service", () => {
+  it("creates one silent token-free lifecycle alert with diagnostic JSON", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      expect(request.method).toBe("POST");
+      expect(request.url).toBe(
+        "https://discord.com/api/v10/channels/100000000000000098/messages",
+      );
+      const form = await request.formData();
+      const payloadValue = form.get("payload_json");
+      const file = form.get("files[0]");
+      if (typeof payloadValue !== "string" || !(file instanceof File)) {
+        throw new Error("Lifecycle alert multipart body is invalid");
+      }
+      const payload = JSON.parse(payloadValue) as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        flags: 1 << 12,
+        allowed_mentions: { parse: [] },
+        nonce: "l1400000000000000001",
+        enforce_nonce: true,
+      });
+      expect(file.name).toBe("roll-lifecycle-1400000000000000001.json");
+      const diagnostic = await file.text();
+      expect(diagnostic).toContain('"notation": "1d20"');
+      expect(diagnostic).not.toMatch(/token|image_bytes|png/i);
+      return Response.json({ id: "100000000000000088" });
+    });
+
+    await expect(
+      createRollLifecycleAlertV1(env, lifecycleAlert(), discordFetch),
+    ).resolves.toEqual({
+      status: "delivered",
+      messageId: "100000000000000088",
+      httpStatus: 200,
+    });
+  });
+
+  it("edits the original lifecycle alert when delivery recovers", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      expect(request.method).toBe("PATCH");
+      expect(request.url).toBe(
+        "https://discord.com/api/v10/channels/100000000000000098/messages/100000000000000088",
+      );
+      const form = await request.formData();
+      const payloadValue = form.get("payload_json");
+      if (typeof payloadValue !== "string") {
+        throw new Error("Lifecycle update payload is invalid");
+      }
+      const payload = JSON.parse(payloadValue) as Record<string, unknown>;
+      expect(payload).not.toHaveProperty("nonce");
+      expect(JSON.stringify(payload)).toContain("Recovered");
+      return Response.json({ id: "100000000000000088" });
+    });
+
+    await expect(
+      updateRollLifecycleAlertV1(
+        env,
+        lifecycleAlert("100000000000000088"),
+        discordFetch,
+      ),
+    ).resolves.toMatchObject({
+      status: "delivered",
+      messageId: "100000000000000088",
+    });
+  });
+
   it("does not expose a public HTTP API", async () => {
     const response = await exports.default.fetch(
       new Request("https://discord-rest.test/"),
@@ -177,13 +285,21 @@ describe("Discord REST service", () => {
         throw new Error("Multipart log fixture is invalid");
       }
       const payload = JSON.parse(payloadValue) as {
-        embeds: Array<{ title?: string; description?: string }>;
+        embeds: Array<{
+          title?: string;
+          description?: string;
+          footer?: { text: string };
+        }>;
       };
       expect(payload.embeds).toHaveLength(1);
       expect(payload.embeds[0]).toMatchObject({
         title: "receivedCommand: /roll",
         description:
           "user: **roller** [Web]\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 1]\n\n**Enchanted sword**\n1d20: [20] = 20",
+        footer: {
+          text:
+            "from personal library · Initiative · from server library · Decoy",
+        },
       });
       return Response.json({ id: "100000000000000088" });
     });
@@ -196,7 +312,16 @@ describe("Discord REST service", () => {
             ...artifact,
             payload: {
               ...artifact.payload,
-              embeds: [{ ...resultEmbed, title: "Enchanted sword" }],
+              embeds: [
+                {
+                  ...resultEmbed,
+                  title: "Enchanted sword",
+                  footer: {
+                    text:
+                      "sent to roller via web · from personal library · Initiative · from server library · Decoy",
+                  },
+                },
+              ],
             },
           },
           logicalShard: {
@@ -417,6 +542,23 @@ describe("Discord REST service", () => {
     }
   });
 
+  it("renders unknown log destinations as plain text", () => {
+    expect(
+      rollLogContextDescription(
+        { ...rollLogArtifact(), context: null },
+        {
+          status: "available",
+          shardId: 0,
+          shardCount: 1,
+          generation: 16,
+        },
+        { channelName: null, guildName: null },
+      ),
+    ).toBe(
+      "user: **roller** [Discord]\nunknown channel\nunknown guild [Shard 1]",
+    );
+  });
+
   it.each([403, 404])(
     "delivers a durable roll log when Discord context returns %i",
     async (contextStatus) => {
@@ -440,7 +582,7 @@ describe("Discord REST service", () => {
           embeds: Array<{ description: string }>;
         };
         expect(payload.embeds[0]?.description).toContain(
-          "channel: **unavailable**\nguild: **Fixture Guild** [Shard 1]",
+          "unknown channel\nguild: **Fixture Guild** [Shard 1]",
         );
         return Response.json({ id: "100000000000000088" });
       });
@@ -527,7 +669,14 @@ describe("Discord REST service", () => {
 
     await expect(registerGlobalCommands(env, discordFetch)).resolves.toEqual({
       status: "registered",
-      commandNames: ["knowledgebase", "prefs", "roll", "status", "web"],
+      commandNames: [
+        "knowledgebase",
+        "library",
+        "prefs",
+        "roll",
+        "status",
+        "web",
+      ],
     });
   });
 
@@ -549,7 +698,14 @@ describe("Discord REST service", () => {
       registerDevelopmentGuildCommands(env, discordFetch),
     ).resolves.toEqual({
       status: "registered",
-      commandNames: ["knowledgebase", "prefs", "roll", "status", "web"],
+      commandNames: [
+        "knowledgebase",
+        "library",
+        "prefs",
+        "roll",
+        "status",
+        "web",
+      ],
     });
   });
 
@@ -888,6 +1044,116 @@ describe("Discord REST service", () => {
     ]);
   });
 
+  it("lists only text channels where the member can use Dice Witch and both can post", async () => {
+    const memberRoleId = "100000000000000006";
+    const botId = "100000000000000007";
+    const botRoleId = "100000000000000008";
+    const useApplicationCommands = String(1n << 31n);
+    const discordFetch = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith(`/members/${userId}`)) {
+        return Promise.resolve(Response.json({
+          roles: [memberRoleId],
+          communication_disabled_until: null,
+        }));
+      }
+      if (path.endsWith(`/members/${botId}`)) {
+        return Promise.resolve(Response.json({
+          roles: [botRoleId],
+          communication_disabled_until: null,
+        }));
+      }
+      if (path.endsWith("/roles")) {
+        return Promise.resolve(Response.json([
+          { id: guildId, name: "@everyone", permissions: "3072" },
+          {
+            id: memberRoleId,
+            name: "Players",
+            permissions: useApplicationCommands,
+          },
+          { id: botRoleId, name: "Dice Witch", permissions: "0" },
+        ]));
+      }
+      if (path === `/api/v10/guilds/${guildId}`) {
+        return Promise.resolve(Response.json({ owner_id: "100000000000000099" }));
+      }
+      if (path.endsWith("/channels")) {
+        return Promise.resolve(Response.json([
+          {
+            id: "100000000000000010",
+            name: "general",
+            type: 0,
+            permission_overwrites: [],
+          },
+          {
+            id: "100000000000000011",
+            name: "staff",
+            type: 0,
+            permission_overwrites: [
+              { id: guildId, type: 0, allow: "0", deny: "1024" },
+            ],
+          },
+          {
+            id: "100000000000000012",
+            name: "players",
+            type: 0,
+            permission_overwrites: [
+              { id: guildId, type: 0, allow: "0", deny: "1024" },
+              { id: memberRoleId, type: 0, allow: "1024", deny: "0" },
+              { id: botRoleId, type: 0, allow: "1024", deny: "0" },
+            ],
+          },
+          {
+            id: "100000000000000013",
+            name: "read-only",
+            type: 5,
+            permission_overwrites: [
+              { id: userId, type: 1, allow: "0", deny: "2048" },
+            ],
+          },
+          {
+            id: "100000000000000014",
+            name: "bot-blocked",
+            type: 0,
+            permission_overwrites: [
+              { id: botId, type: 1, allow: "0", deny: "2048" },
+            ],
+          },
+          {
+            id: "100000000000000015",
+            name: "commands-blocked",
+            type: 0,
+            permission_overwrites: [
+              {
+                id: userId,
+                type: 1,
+                allow: "0",
+                deny: useApplicationCommands,
+              },
+            ],
+          },
+        ]));
+      }
+      throw new Error(`Unexpected Discord route ${path}`);
+    });
+
+    const memberEnv = { ...env, DISCORD_APPLICATION_ID: botId };
+    await expect(
+      listMemberTextChannels(memberEnv, guildId, userId, discordFetch),
+    ).resolves.toEqual([
+      { id: "100000000000000010", name: "general", type: 0 },
+      { id: "100000000000000012", name: "players", type: 0 },
+    ]);
+    await expect(
+      inspectRollerGuild(memberEnv, guildId, userId, discordFetch),
+    ).resolves.toEqual({
+      status: "found",
+      isAdmin: false,
+      isDiceWitchAdmin: false,
+      hasUsableChannel: true,
+    });
+  });
+
   it("delivers a rendered web roll only to a channel in the guild", async () => {
     const channelId = "100000000000000010";
     const discordFetch = vi.fn(async (request: Request) => {
@@ -923,10 +1189,71 @@ describe("Discord REST service", () => {
           filename: "dice-witch-roll.png",
           png: new Uint8Array([137, 80, 78, 71]),
           skipDelay: true,
+          delayMs: 0,
         },
         discordFetch,
       ),
     ).resolves.toEqual({ status: "delivered" });
+  });
+
+  it("edits the public web clatter message into the rendered result", async () => {
+    const channelId = "100000000000000010";
+    const clatterMessageId = "100000000000000020";
+    const wait = vi.fn(() => Promise.resolve());
+    let deliveryAttempt = 0;
+    const discordFetch = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith("/channels")) {
+        return Response.json([{ id: channelId, name: "general", type: 0 }]);
+      }
+      deliveryAttempt += 1;
+      if (deliveryAttempt === 1) {
+        expect(request.method).toBe("POST");
+        expect(path).toBe(`/api/v10/channels/${channelId}/messages`);
+        await expect(request.json()).resolves.toEqual({
+          content: "_clatter_",
+          nonce: "c1400000000000000001",
+          enforce_nonce: true,
+        });
+        return Response.json({ id: clatterMessageId });
+      }
+      expect(request.method).toBe("PATCH");
+      expect(path).toBe(
+        `/api/v10/channels/${channelId}/messages/${clatterMessageId}`,
+      );
+      const form = await request.formData();
+      const payloadJson = form.get("payload_json");
+      if (typeof payloadJson !== "string") {
+        throw new Error("Discord payload is missing");
+      }
+      expect(JSON.parse(payloadJson)).toEqual({
+        embeds: [],
+        allowed_mentions: { parse: [] },
+        attachments: [{ id: 0, filename: "dice-witch-roll.png" }],
+      });
+      return Response.json({ id: clatterMessageId });
+    });
+
+    await expect(
+      deliverWebRoll(
+        env,
+        {
+          rollId: "1400000000000000001",
+          guildId,
+          channelId,
+          payload: { embeds: [] },
+          clatter: "_clatter_",
+          filename: "dice-witch-roll.png",
+          png: new Uint8Array([137, 80, 78, 71]),
+          skipDelay: false,
+          delayMs: 1_234,
+        },
+        discordFetch,
+        wait,
+      ),
+    ).resolves.toEqual({ status: "delivered" });
+    expect(wait).toHaveBeenCalledWith(1_234);
+    expect(deliveryAttempt).toBe(2);
   });
 
   it("logs the exact legacy guild lifecycle embed", async () => {
@@ -1307,33 +1634,105 @@ describe("Discord REST service", () => {
       if (path.endsWith(`/members/${userId}`)) {
         return Promise.resolve(Response.json({ roles: [adminRoleId] }));
       }
-      expect(path).toBe(`/api/v10/guilds/${guildId}/roles`);
+      if (path.endsWith("/roles")) {
+        return Promise.resolve(
+          Response.json([
+            { id: guildId, name: "@everyone", permissions: "0" },
+            {
+              id: adminRoleId,
+              name: "Dice Witch Admin",
+              permissions: "0",
+            },
+          ]),
+        );
+      }
+      expect(path).toBe(`/api/v10/guilds/${guildId}`);
       return Promise.resolve(
-        Response.json([
-          { id: guildId, name: "@everyone" },
-          { id: adminRoleId, name: "Dice Witch Admin" },
-        ]),
+        Response.json({ owner_id: "100000000000000099" }),
       );
     });
 
     await expect(
       inspectMembership(env, guildId, userId, discordFetch),
-    ).resolves.toEqual({ status: "found", isDiceWitchAdmin: true });
-    expect(discordFetch).toHaveBeenCalledTimes(2);
+    ).resolves.toEqual({
+      status: "found",
+      isAdmin: false,
+      isDiceWitchAdmin: true,
+    });
+    expect(discordFetch).toHaveBeenCalledTimes(3);
   });
 
   it("does not grant a same-named role the member does not hold", async () => {
-    const discordFetch = vi.fn((request: Request) =>
-      Promise.resolve(
-        new URL(request.url).pathname.includes("/members/")
-          ? Response.json({ roles: [] })
-          : Response.json([{ id: adminRoleId, name: "Dice Witch Admin" }]),
-      ),
-    );
+    const discordFetch = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.includes("/members/")) {
+        return Promise.resolve(Response.json({ roles: [] }));
+      }
+      if (path.endsWith("/roles")) {
+        return Promise.resolve(
+          Response.json([
+            { id: guildId, name: "@everyone", permissions: "0" },
+            {
+              id: adminRoleId,
+              name: "Dice Witch Admin",
+              permissions: "0",
+            },
+          ]),
+        );
+      }
+      return Promise.resolve(
+        Response.json({ owner_id: "100000000000000099" }),
+      );
+    });
 
     await expect(
       inspectMembership(env, guildId, userId, discordFetch),
-    ).resolves.toEqual({ status: "found", isDiceWitchAdmin: false });
+    ).resolves.toEqual({
+      status: "found",
+      isAdmin: false,
+      isDiceWitchAdmin: false,
+    });
+  });
+
+  it("recognizes Discord Administrator role permissions and guild ownership", async () => {
+    const adminByRole = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.includes("/members/")) {
+        return Promise.resolve(Response.json({ roles: [adminRoleId] }));
+      }
+      if (path.endsWith("/roles")) {
+        return Promise.resolve(
+          Response.json([
+            { id: guildId, name: "@everyone", permissions: "0" },
+            { id: adminRoleId, name: "Admin", permissions: "8" },
+          ]),
+        );
+      }
+      return Promise.resolve(
+        Response.json({ owner_id: "100000000000000099" }),
+      );
+    });
+    await expect(
+      inspectMembership(env, guildId, userId, adminByRole),
+    ).resolves.toMatchObject({ status: "found", isAdmin: true });
+
+    const adminByOwnership = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.includes("/members/")) {
+        return Promise.resolve(Response.json({ roles: [] }));
+      }
+      if (path.endsWith("/roles")) {
+        return Promise.resolve(
+          Response.json([
+            { id: guildId, name: "@everyone", permissions: "0" },
+          ]),
+        );
+      }
+      return Promise.resolve(Response.json({ owner_id: userId }));
+    });
+    await expect(
+      inspectMembership(env, guildId, userId, adminByOwnership),
+    ).resolves.toMatchObject({ status: "found", isAdmin: true });
   });
 
   it("returns missing without requesting roles when the user left", async () => {

@@ -5,6 +5,16 @@
   "compatibility_date": "2026-07-10",
   "workers_dev": false,
   "preview_urls": false,
+  "alias": {
+    "crypto": "./packages/roll-domain/src/worker-crypto.ts"
+  },
+  "services": [
+    {
+      "binding": "DISCORD_REST",
+      "service": "dice-witch-discord-rest-staging",
+      "entrypoint": "DiscordRestService"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DATA",
@@ -13,6 +23,9 @@
       "migrations_dir": "migrations/data"
     }
   ],
+  "triggers": {
+    "crons": ["* * * * *", "0 3 * * *"]
+  },
   "observability": {
     "enabled": true,
     "logs": {

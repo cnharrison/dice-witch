@@ -891,20 +891,26 @@ function fullSpectrumGradientColorsV3(seed: number): NativeColors {
   };
 }
 
+function usesFullSpectrumRandomizationV3(
+  recipe: AppearanceRecipeV3,
+): boolean {
+  return (
+    recipe.randomization === "full-spectrum-v1" ||
+    recipe.randomization === "full-spectrum-v2"
+  );
+}
+
 function resolveRandomizedColorsV3(
   recipe: AppearanceRecipeV3,
   material: AppearanceMaterialV4,
   seed: number,
   authoredPalette?: readonly [string, string, ...string[]],
 ): NativeColors {
-  if (
-    recipe.randomization === "full-spectrum-v1" &&
-    authoredPalette !== undefined
-  ) {
+  if (usesFullSpectrumRandomizationV3(recipe) && authoredPalette !== undefined) {
     return colorsFromPaletteV3(authoredPalette);
   }
   if (
-    recipe.randomization === "full-spectrum-v1" &&
+    usesFullSpectrumRandomizationV3(recipe) &&
     material.family === "classic" &&
     material.treatment === "gradient"
   ) {
@@ -988,10 +994,11 @@ export function resolveAppearanceRecipeV3(
     recipe.material,
     namedRandomV3(seed, "material"),
   );
-  const randomSpecial =
-    recipe.randomization === "full-spectrum-v1"
-      ? randomSpecialMaterialV3(selectedMaterial)
-      : undefined;
+  const usesFullSpectrumRandomization =
+    usesFullSpectrumRandomizationV3(recipe);
+  const randomSpecial = usesFullSpectrumRandomization
+    ? randomSpecialMaterialV3(selectedMaterial)
+    : undefined;
   const material: AppearanceMaterialV4 = {
     ...(context.target === "d20" && randomSpecial !== undefined
       ? randomSpecial.d20Material
@@ -1006,7 +1013,7 @@ export function resolveAppearanceRecipeV3(
   const form =
     context.target === "other"
       ? recipe.form.other
-      : recipe.randomization === "full-spectrum-v1"
+      : usesFullSpectrumRandomization
         ? context.target === "d20" && randomSpecial !== undefined
           ? randomSpecial.d20Form
           : "standard"

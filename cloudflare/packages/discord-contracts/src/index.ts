@@ -9,9 +9,15 @@ export {
 export { DISCORD_GLOBAL_COMMANDS } from "./commands";
 export {
   buildDeferredResponse,
+  buildDeleteOriginalResponse,
+  buildEditFollowupResponseWithFile,
   buildEditOriginalResponse,
   buildEditOriginalResponseWithFile,
   buildFollowupResponse,
+  buildFollowupResponseWithFile,
+  buildPublicFollowupResponse,
+  type DiscordActionRow,
+  type DiscordButton,
   type DiscordEmbed,
   type DiscordMessage,
   type DiscordPngAttachment,
@@ -59,6 +65,16 @@ export {
   type ValidatedRollLogArtifactV1,
 } from "./roll-log";
 export {
+  parseRollLifecycleAlert,
+  parseRollLifecycleContext,
+  parseRollLifecycleSnapshot,
+  rollLifecycleContextJson,
+  type RollLifecycleAlertV1,
+  type RollLifecycleContextV1,
+  type RollLifecycleSnapshotV1,
+  type RollLifecycleState,
+} from "./roll-lifecycle";
+export {
   buildRollClatterMessage,
   buildRollErrorMessage,
   buildRollResultMessage,
@@ -78,9 +94,16 @@ export {
 } from "./status";
 export {
   buildStaticCommandResponse,
+  buildWebAppRouteUrl,
   parseStaticInteractionCommand,
   type StaticInteractionCommand,
 } from "./static-command";
+export {
+  isSavedRollSelection,
+  parseSavedRollInteraction,
+  type SavedRollInteraction,
+  type SavedRollInteractionScope,
+} from "./saved-roll-interaction";
 export {
   DISCORD_ROLL_CHANNEL_TYPES,
   isDiscordRollChannelType,

@@ -24,9 +24,22 @@ export type DiscordEmbed = {
   image?: { url: string };
 };
 
+export type DiscordButton = {
+  type: 2;
+  style: 1 | 2 | 3 | 4;
+  label: string;
+  custom_id: string;
+};
+
+export type DiscordActionRow = {
+  type: 1;
+  components: DiscordButton[];
+};
+
 export type DiscordMessage = {
   content?: string;
   embeds?: DiscordEmbed[];
+  components?: DiscordActionRow[];
 };
 
 export type DiscordPngAttachment = {
@@ -71,6 +84,28 @@ function validateEmbed(embed: DiscordEmbed): void {
   }
 }
 
+function validateComponents(rows: DiscordActionRow[]): void {
+  if (
+    rows.length < 1 ||
+    rows.length > 5 ||
+    rows.some(
+      (row) =>
+        row.components.length < 1 ||
+        row.components.length > 5 ||
+        row.components.some(
+          (component) =>
+            ![1, 2, 3, 4].includes(component.style) ||
+            component.label.length < 1 ||
+            component.label.length > 80 ||
+            component.custom_id.length < 1 ||
+            component.custom_id.length > 100,
+        ),
+    )
+  ) {
+    throw new Error("Discord message components are invalid");
+  }
+}
+
 function messagePayload(
   message: DiscordMessage,
   ephemeral: boolean | null,
@@ -87,13 +122,19 @@ function messagePayload(
   ) {
     throw new Error("Discord message embeds are invalid");
   }
-  if (message.content === undefined && message.embeds === undefined) {
-    throw new Error("Discord message must contain content or embeds");
+  if (
+    message.content === undefined &&
+    message.embeds === undefined &&
+    message.components === undefined
+  ) {
+    throw new Error("Discord message must contain content, embeds, or components");
   }
   message.embeds?.forEach(validateEmbed);
+  if (message.components !== undefined) validateComponents(message.components);
   return {
     ...(message.content === undefined ? {} : { content: message.content }),
     ...(message.embeds === undefined ? {} : { embeds: message.embeds }),
+    ...(message.components === undefined ? {} : { components: message.components }),
     ...(ephemeral === null ? {} : { flags: ephemeral ? EPHEMERAL_FLAG : 0 }),
     allowed_mentions: { parse: [] },
   };
@@ -127,6 +168,15 @@ export function buildDeferredResponse(
   );
 }
 
+export function buildDeleteOriginalResponse(
+  target: InteractionResponseTarget,
+): Request {
+  validateTarget(target);
+  return new Request(`${interactionWebhookUrl(target)}/messages/@original`, {
+    method: "DELETE",
+  });
+}
+
 export function buildEditOriginalResponse(
   target: InteractionResponseTarget,
   message: DiscordMessage,
@@ -152,6 +202,22 @@ export function buildFollowupResponse(
   );
 }
 
+export function buildPublicFollowupResponse(
+  target: InteractionResponseTarget,
+  message: DiscordMessage,
+): Request {
+  validateTarget(target);
+  return jsonRequest(
+    `${interactionWebhookUrl(target)}?wait=true`,
+    "POST",
+    {
+      ...messagePayload(message, false),
+      nonce: `c${target.id}`,
+      enforce_nonce: true,
+    },
+  );
+}
+
 function validateAttachment(attachment: DiscordPngAttachment): void {
   if (
     !PNG_FILENAME.test(attachment.filename) ||
@@ -166,13 +232,18 @@ function validateAttachment(attachment: DiscordPngAttachment): void {
   }
 }
 
-export function buildEditOriginalResponseWithFile(
+function responseWithFile(
   target: InteractionResponseTarget,
   message: DiscordMessage,
   attachment: DiscordPngAttachment,
+  mode: "edit-original" | "followup" | "edit-followup",
+  followupMessageId?: string,
 ): Request {
   validateTarget(target);
   validateAttachment(attachment);
+  if (mode === "edit-followup" && !SNOWFLAKE.test(followupMessageId ?? "")) {
+    throw new Error("Discord followup message id is invalid");
+  }
   const payload = messagePayload(message, null);
   const attachmentUrl = `attachment://${attachment.filename}`;
   if (
@@ -195,7 +266,13 @@ export function buildEditOriginalResponseWithFile(
   const form = new FormData();
   form.set(
     "payload_json",
-    JSON.stringify({ ...payload, attachments: [metadata] }),
+    JSON.stringify({
+      ...payload,
+      ...(mode === "followup"
+        ? { nonce: target.id, enforce_nonce: true }
+        : {}),
+      attachments: [metadata],
+    }),
   );
   form.set(
     "files[0]",
@@ -204,8 +281,44 @@ export function buildEditOriginalResponseWithFile(
     }),
     attachment.filename,
   );
-  return new Request(
-    `${interactionWebhookUrl(target)}/messages/@original`,
-    { method: "PATCH", body: form },
+  let url = `${interactionWebhookUrl(target)}/messages/@original`;
+  if (mode === "followup") url = `${interactionWebhookUrl(target)}?wait=true`;
+  else if (mode === "edit-followup") {
+    url = `${interactionWebhookUrl(target)}/messages/${followupMessageId ?? ""}`;
+  }
+  return new Request(url, {
+    method: mode === "followup" ? "POST" : "PATCH",
+    body: form,
+  });
+}
+
+export function buildEditOriginalResponseWithFile(
+  target: InteractionResponseTarget,
+  message: DiscordMessage,
+  attachment: DiscordPngAttachment,
+): Request {
+  return responseWithFile(target, message, attachment, "edit-original");
+}
+
+export function buildFollowupResponseWithFile(
+  target: InteractionResponseTarget,
+  message: DiscordMessage,
+  attachment: DiscordPngAttachment,
+): Request {
+  return responseWithFile(target, message, attachment, "followup");
+}
+
+export function buildEditFollowupResponseWithFile(
+  target: InteractionResponseTarget,
+  followupMessageId: string,
+  message: DiscordMessage,
+  attachment: DiscordPngAttachment,
+): Request {
+  return responseWithFile(
+    target,
+    message,
+    attachment,
+    "edit-followup",
+    followupMessageId,
   );
 }

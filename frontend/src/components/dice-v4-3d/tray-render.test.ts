@@ -31,10 +31,17 @@ describe("Three.js V4 shared tray rendering", () => {
   it("maps one Rapier transform into a shared shallow-perspective viewport", () => {
     const context = createThreeTrayRenderContextV4();
     try {
-      configureThreeTrayCameraV4(context, 600, 360, {
-        halfWidth: 5.2,
-        halfDepth: 3.5,
-      });
+      const bounds = { halfWidth: 5.2, halfDepth: 3.5 };
+      configureThreeTrayCameraV4(context, 600, 360, bounds);
+      const boundingRadius = Math.hypot(
+        bounds.halfWidth + TRAY_DIE_RADIUS_V4,
+        2.4,
+        bounds.halfDepth + TRAY_DIE_RADIUS_V4,
+      );
+      const originalFitDistance = boundingRadius / Math.sin(38 * Math.PI / 360);
+      expect(
+        context.camera.position.distanceTo(new Vector3(0, 1.8, 0)),
+      ).toBeCloseTo(originalFitDistance * 0.75, 5);
       const group = new Group();
       applyTraySnapshotToGroupV4(group, snapshot);
       expect(group.position.toArray()).toEqual([0.5, 0.7, -0.2]);

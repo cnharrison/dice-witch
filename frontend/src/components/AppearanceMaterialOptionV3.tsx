@@ -116,7 +116,7 @@ function RangeField({
         max={range.maximum}
         step={range.step}
         onChange={(event) => onChange(event.currentTarget.valueAsNumber)}
-        className="h-11 w-full accent-fuchsia-500 sm:h-9"
+        className="h-11 w-full accent-brand sm:h-9"
       />
     </label>
   );

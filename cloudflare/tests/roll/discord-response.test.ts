@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDeferredResponse,
+  buildDeleteOriginalResponse,
+  buildEditFollowupResponseWithFile,
   buildEditOriginalResponse,
   buildEditOriginalResponseWithFile,
   buildFollowupResponse,
+  buildFollowupResponseWithFile,
+  buildPublicFollowupResponse,
 } from "../../packages/discord-contracts/src";
 
 const target = {
@@ -30,6 +34,16 @@ describe("Discord interaction response requests", () => {
       type: 5,
       data: { flags: 64 },
     });
+  });
+
+  it("deletes the original interaction response", () => {
+    const request = buildDeleteOriginalResponse(target);
+
+    expect(request.method).toBe("DELETE");
+    expect(request.url).toBe(
+      "https://discord.com/api/v10/webhooks/100000000000000001/interaction-token-value/messages/@original",
+    );
+    expect(request.body).toBeNull();
   });
 
   it("edits the original response without permitting mentions", async () => {
@@ -64,6 +78,22 @@ describe("Discord interaction response requests", () => {
       content: "Private diagnostic",
       flags: 64,
       allowed_mentions: { parse: [] },
+    });
+  });
+
+  it("creates a replay-safe public clatter followup and waits for its id", async () => {
+    const request = buildPublicFollowupResponse(target, { content: "_clatter_" });
+
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe(
+      "https://discord.com/api/v10/webhooks/100000000000000001/interaction-token-value?wait=true",
+    );
+    await expect(request.json()).resolves.toEqual({
+      content: "_clatter_",
+      allowed_mentions: { parse: [] },
+      flags: 0,
+      nonce: `c${target.id}`,
+      enforce_nonce: true,
     });
   });
 
@@ -121,6 +151,67 @@ describe("Discord interaction response requests", () => {
       type: "image/png",
     });
     await expect((file as File).arrayBuffer()).resolves.toEqual(png.buffer);
+  });
+
+  it("edits an identified public followup with the final attachment", async () => {
+    const request = buildEditFollowupResponseWithFile(
+      target,
+      "1500000000000000000",
+      { embeds: [{ image: { url: "attachment://dice.png" } }] },
+      {
+        filename: "dice.png",
+        contentType: "image/png",
+        bytes: new Uint8Array([137, 80, 78, 71]),
+      },
+    );
+
+    expect(request.method).toBe("PATCH");
+    expect(request.url).toBe(
+      "https://discord.com/api/v10/webhooks/100000000000000001/interaction-token-value/messages/1500000000000000000",
+    );
+    const form = await request.formData();
+    const payload = form.get("payload_json");
+    if (typeof payload !== "string") {
+      throw new Error("Multipart payload_json is missing");
+    }
+    expect(JSON.parse(payload)).toMatchObject({
+      attachments: [{ id: 0, filename: "dice.png" }],
+    });
+    expect(JSON.parse(payload)).not.toHaveProperty("nonce");
+  });
+
+  it("builds a replay-safe public multipart followup", async () => {
+    const request = buildFollowupResponseWithFile(
+      target,
+      {
+        embeds: [
+          {
+            description: "1d20: [17] = 17",
+            image: { url: "attachment://dice.png" },
+          },
+        ],
+      },
+      {
+        filename: "dice.png",
+        contentType: "image/png",
+        bytes: new Uint8Array([137, 80, 78, 71]),
+      },
+    );
+
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe(
+      "https://discord.com/api/v10/webhooks/100000000000000001/interaction-token-value?wait=true",
+    );
+    const form = await request.formData();
+    const payload = form.get("payload_json");
+    if (typeof payload !== "string") {
+      throw new Error("Multipart payload_json is missing");
+    }
+    expect(JSON.parse(payload)).toMatchObject({
+      nonce: target.id,
+      enforce_nonce: true,
+      attachments: [{ id: 0, filename: "dice.png" }],
+    });
   });
 
   it.each([

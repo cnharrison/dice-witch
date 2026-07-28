@@ -80,4 +80,19 @@ describe("DiceInput roll controls", () => {
 
     expect(onRoll).toHaveBeenCalledOnce();
   });
+
+  it("navigates roll history with Arrow Up and Arrow Down", async () => {
+    const onHistoryPrevious = vi.fn();
+    const onHistoryNext = vi.fn();
+    const user = userEvent.setup();
+    renderInput(vi.fn(), { onHistoryPrevious, onHistoryNext });
+    const input = screen.getAllByRole("textbox", { name: "Dice notation" })[1];
+    if (input === undefined) throw new Error("Desktop notation input is missing");
+
+    input.focus();
+    await user.keyboard("{ArrowUp}{ArrowDown}");
+
+    expect(onHistoryPrevious).toHaveBeenCalledOnce();
+    expect(onHistoryNext).toHaveBeenCalledOnce();
+  });
 });

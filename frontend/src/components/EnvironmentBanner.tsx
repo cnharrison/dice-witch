@@ -13,7 +13,7 @@ export function EnvironmentBanner({
     <aside
       role="status"
       aria-label="Staging environment"
-      className="border-b border-amber-700 bg-amber-300 px-4 py-1.5 text-center text-xs font-semibold uppercase tracking-[0.16em] text-amber-950"
+      className="border-b border-warning-border bg-warning px-4 py-1.5 text-center text-xs font-semibold uppercase tracking-[0.16em] text-warning-foreground"
     >
       Staging environment
       <span aria-hidden="true"> · </span>

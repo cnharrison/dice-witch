@@ -8,10 +8,12 @@ export {
 export {
   executeRoll,
   prepareRollAppearance,
+  renderableRollOutcomes,
   type RollDie,
   type RollExecutionError,
   type RollExecutionRequest,
   type RollExecutionResult,
+  type RenderableRollOutcome,
   type RollOutcome,
 } from "./execute";
 export {

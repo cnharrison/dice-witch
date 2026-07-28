@@ -189,11 +189,13 @@ describe("Appearance Profile V3", () => {
   });
 
   it("accepts only explicit additive randomization and form policies", () => {
-    const randomized = {
-      ...recipe(),
-      randomization: "full-spectrum-v1" as const,
-    };
-    expect(parseAppearanceRecipeV3(randomized)).toEqual(randomized);
+    for (const randomization of [
+      "full-spectrum-v1",
+      "full-spectrum-v2",
+    ] as const) {
+      const randomized = { ...recipe(), randomization };
+      expect(parseAppearanceRecipeV3(randomized)).toEqual(randomized);
+    }
     expect(() =>
       parseAppearanceRecipeV3({
         ...recipe(),

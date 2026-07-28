@@ -185,6 +185,36 @@ describe("LogWork Durable Object", () => {
     });
 
     expect(() =>
+      validateRollLogArtifact(
+        artifact({
+          rollId: "1400000000000000007",
+          payload: {
+            embeds: [
+              {
+                description: "1d20 = 10",
+                image: {
+                  url: "attachment://dice-1400000000000000001.png",
+                },
+              },
+            ],
+            components: [
+              {
+                type: 1,
+                components: [
+                  {
+                    type: 2,
+                    style: 2,
+                    label: "Copy to Personal",
+                    custom_id: "saved-roll:v1:1400000000000000007:copy",
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
       validateRollLogArtifact({
         ...artifact({ rollId: "1400000000000000006" }),
         payload: { bogus: "attachment://dice-1400000000000000006.png" },

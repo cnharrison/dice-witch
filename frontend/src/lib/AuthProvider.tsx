@@ -7,7 +7,7 @@ interface AuthContextType {
   isLoading: boolean;
   isSignedIn: boolean;
   user: User | null;
-  signIn: (provider: string) => void;
+  signIn: (provider: string, returnTo?: string) => void;
   signOut: () => void;
 }
 
@@ -51,9 +51,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     checkSession();
   }, []);
 
-  const signIn = (provider: string) => {
-    // Redirect to auth endpoint
-    window.location.href = `${appConfig.apiBase}/api/auth/signin/${provider}`;
+  const signIn = (provider: string, returnTo?: string) => {
+    const url = new URL(`${appConfig.apiBase}/api/auth/signin/${provider}`);
+    if (returnTo !== undefined) url.searchParams.set('returnTo', returnTo);
+    window.location.href = url.toString();
   };
 
   const signOut = async () => {
@@ -92,10 +93,16 @@ export function useUser() {
 
 export function useSignIn() {
   const { signIn, isLoading } = useAuth();
-  return { 
-    signIn: { 
-      authenticateWithRedirect: ({strategy}: any) => signIn(strategy.replace('oauth_', ''))
-    }, 
-    isLoaded: !isLoading 
+  return {
+    signIn: {
+      authenticateWithRedirect: ({
+        strategy,
+        returnTo,
+      }: {
+        strategy: string;
+        returnTo?: string;
+      }) => signIn(strategy.replace('oauth_', ''), returnTo),
+    },
+    isLoaded: !isLoading,
   };
 }

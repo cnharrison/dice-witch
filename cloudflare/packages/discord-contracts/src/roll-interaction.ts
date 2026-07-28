@@ -142,7 +142,7 @@ function parseOptions(value: unknown): Map<string, string> {
       typeof option.name !== "string" ||
       option.type !== 3 ||
       typeof option.value !== "string" ||
-      !["notation", "title", "timestorepeat"].includes(option.name) ||
+      !["notation", "title", "times"].includes(option.name) ||
       options.has(option.name)
     ) {
       throw new Error("Roll interaction option is invalid");
@@ -229,7 +229,7 @@ export function parseRollInteraction(
     token,
     notation: rawNotation,
     title: parseTitle(options.get("title")),
-    repetitions: parseRepetitions(options.get("timestorepeat")),
+    repetitions: parseRepetitions(options.get("times")),
     ephemeral: false,
   };
 }

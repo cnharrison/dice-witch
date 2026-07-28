@@ -8,6 +8,8 @@ import {
   APPEARANCE_CATALOG_V2,
   APPEARANCE_CATALOG_V3,
 } from "../../../packages/dice-appearance/src";
+import { MAX_NOTATION_LENGTH } from "../../../packages/roll-domain/src/constants";
+import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
 import {
   DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS,
   parseDiscordAudienceSnapshotV1,
@@ -35,6 +37,7 @@ import {
   putPersonalAppearanceV3,
 } from "./appearance-api";
 import { bytesToBase64, json, securityHeaders } from "./responses";
+import { handleSavedRollApiRequest } from "./saved-roll-api";
 
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
@@ -44,6 +47,12 @@ const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 const STATE_TTL_MS = 10 * 60 * 1_000;
+const MAX_AUTH_RETURN_LENGTH = 2_048;
+const AUTHENTICATED_ROUTES = new Set([
+  "/app",
+  "/app/library",
+  "/app/preferences",
+]);
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FULL_SHA = /^[0-9a-f]{40}$/;
@@ -51,8 +60,25 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const DELIVERY_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function webRollDelayMs(skipDelay: boolean): number {
+  if (skipDelay) return 0;
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  if (seed === undefined) throw new Error("Web roll delay generation failed");
+  return selectRollDelayMs(seed / 2 ** 32);
+}
+
 type MembershipInspection =
-  | { status: "found"; isDiceWitchAdmin: boolean }
+  | {
+      status: "found";
+      isAdmin: boolean;
+      isDiceWitchAdmin: boolean;
+    }
+  | { status: "missing" };
+
+type RollerGuildInspection =
+  | (Extract<MembershipInspection, { status: "found" }> & {
+      hasUsableChannel: boolean;
+    })
   | { status: "missing" };
 
 type TextChannel = { id: string; name: string; type: 0 | 5 };
@@ -66,12 +92,17 @@ type DiscordRestService = {
     filename: string;
     png: Uint8Array;
     skipDelay: boolean;
+    delayMs: number;
   }): Promise<{ status: "delivered" | "permission_error" }>;
-  listTextChannels(guildId: string): Promise<TextChannel[]>;
+  listTextChannels(guildId: string, userId?: string): Promise<TextChannel[]>;
   inspectMembership(
     guildId: string,
     userId: string,
   ): Promise<MembershipInspection>;
+  inspectRollerGuild(
+    guildId: string,
+    userId: string,
+  ): Promise<RollerGuildInspection>;
 };
 
 export type WebApiBindings = {
@@ -225,6 +256,10 @@ function stateCookie(token: string, maxAge: number): string {
   return `auth_state=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 
+function authReturnCookie(returnTo: string, maxAge: number): string {
+  return `auth_return=${encodeURIComponent(returnTo)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+}
+
 function appendCookie(response: Response, cookie: string): Response {
   response.headers.append("set-cookie", cookie);
   return response;
@@ -292,6 +327,16 @@ function preflight(
     )
   ) {
     methods = "GET, PUT";
+    allowedHeaders = "content-type, idempotency-key";
+  } else if (
+    /^\/api\/saved-rolls\/v[12]\/(?:libraries|search|me(?:\/(?:[0-9a-f-]+|copy|delete-batch|reorder))?)$/.test(
+      pathname,
+    ) ||
+    /^\/api\/guilds\/[1-9][0-9]{16,19}\/saved-rolls\/v[12](?:\/(?:[0-9a-f-]+|copy|delete-batch|reorder))?$/.test(
+      pathname,
+    )
+  ) {
+    methods = "GET, POST, PATCH, DELETE";
     allowedHeaders = "content-type, idempotency-key";
   } else if (
     pathname === "/api/appearance/preview" ||
@@ -503,11 +548,46 @@ async function postData(
   );
 }
 
+function parseAuthenticatedReturnTo(value: string): string | null {
+  if (value.length > MAX_AUTH_RETURN_LENGTH) return null;
+  try {
+    const url = new URL(value, "https://return.invalid");
+    if (
+      url.origin !== "https://return.invalid" ||
+      !AUTHENTICATED_ROUTES.has(url.pathname) ||
+      url.hash !== ""
+    ) {
+      return null;
+    }
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
+function readAuthenticatedReturnTo(request: Request): string {
+  const encoded = readCookie(request, "auth_return");
+  if (encoded === null) return "/app";
+  try {
+    return parseAuthenticatedReturnTo(decodeURIComponent(encoded)) ?? "/app";
+  } catch {
+    return "/app";
+  }
+}
+
 async function startAuthorization(
+  request: Request,
   env: WebApiBindings,
   configuration: ValidatedConfiguration,
   now: number,
 ): Promise<Response> {
+  const requestedReturnTo = new URL(request.url).searchParams.get("returnTo");
+  const returnTo = requestedReturnTo === null
+    ? "/app"
+    : parseAuthenticatedReturnTo(requestedReturnTo);
+  if (returnTo === null) {
+    return json({ error: "Return route is invalid" }, 400);
+  }
   const stateResponse = await postData(env, "/internal/oauth-states", {
     createdAt: now,
     expiresAt: now + STATE_TTL_MS,
@@ -532,9 +612,11 @@ async function startAuthorization(
     scope: "identify email guilds",
     state: value.token,
   }).toString();
+  const response = redirect(authorizationUrl.toString());
+  appendCookie(response, stateCookie(value.token, STATE_TTL_MS / 1_000));
   return appendCookie(
-    redirect(authorizationUrl.toString()),
-    stateCookie(value.token, STATE_TTL_MS / 1_000),
+    response,
+    authReturnCookie(returnTo, STATE_TTL_MS / 1_000),
   );
 }
 
@@ -708,7 +790,7 @@ async function syncMemberships(
       guildName: guild.name,
       guildIcon: guild.icon,
       guildMutationId: `oauth-guild-profile:${stateHash}:${guildId}`,
-      isAdmin: (BigInt(guild.permissions) & 8n) === 8n,
+      isAdmin: inspection.isAdmin,
       isDiceWitchAdmin: inspection.isDiceWitchAdmin,
       mutationId: `oauth-membership:${stateHash}:${guildId}`,
       occurredAt,
@@ -836,9 +918,12 @@ async function completeCallback(
     );
   }
 
-  const response = redirect(new URL("/app", configuration.frontendUrl).toString());
+  const response = redirect(
+    new URL(readAuthenticatedReturnTo(request), configuration.frontendUrl).toString(),
+  );
   appendCookie(response, sessionCookie(sessionToken, SESSION_TTL_MS / 1_000));
-  return appendCookie(response, stateCookie("", 0));
+  appendCookie(response, stateCookie("", 0));
+  return appendCookie(response, authReturnCookie("", 0));
 }
 
 function parseStoredSession(value: unknown): StoredSession | null {
@@ -942,6 +1027,11 @@ async function getMutualGuilds(
   env: WebApiBindings,
   now: number,
 ): Promise<Response> {
+  const view = new URL(request.url).searchParams.get("view");
+  if (view !== null && view !== "roller") {
+    return json({ error: "Guild view is invalid" }, 400);
+  }
+  const rollerView = view === "roller";
   const token = readCookie(request, "session_id");
   if (token === null || !OPAQUE_TOKEN.test(token)) {
     return json({ error: "Unauthorized" }, 401);
@@ -975,7 +1065,9 @@ async function getMutualGuilds(
   if (!isRecord(value) || !Array.isArray(value.memberships)) {
     return json({ error: "Mutual guild response is invalid" }, 502);
   }
-  const guilds: unknown[] = [];
+  const candidates: Array<{
+    guilds: { id: string; name: string | null; icon: string | null };
+  }> = [];
   for (const membership of value.memberships) {
     if (
       !isRecord(membership) ||
@@ -994,11 +1086,47 @@ async function getMutualGuilds(
     ) {
       return json({ error: "Mutual guild response is invalid" }, 502);
     }
-    guilds.push({
-      guilds: membership.guild,
-      isAdmin: membership.isAdmin,
-      isDiceWitchAdmin: membership.isDiceWitchAdmin,
+    candidates.push({
+      guilds: {
+        id: membership.guild.id,
+        name: membership.guild.name,
+        icon: membership.guild.icon,
+      },
     });
+  }
+
+  const guilds: unknown[] = [];
+  for (let offset = 0; offset < candidates.length; offset += 5) {
+    const batch = candidates.slice(offset, offset + 5);
+    let inspections: Array<MembershipInspection | RollerGuildInspection>;
+    try {
+      inspections = await Promise.all(
+        batch.map(({ guilds: guild }) =>
+          rollerView
+            ? env.DISCORD_REST.inspectRollerGuild(guild.id, session.user.id)
+            : env.DISCORD_REST.inspectMembership(guild.id, session.user.id),
+        ),
+      );
+    } catch {
+      return json({ error: "Mutual guild verification failed" }, 502);
+    }
+    for (let index = 0; index < batch.length; index += 1) {
+      const candidate = batch[index];
+      const inspection = inspections[index];
+      if (candidate === undefined || inspection?.status !== "found") continue;
+      const isRollable = "hasUsableChannel" in inspection
+        ? inspection.hasUsableChannel
+        : null;
+      if (rollerView !== (isRollable !== null)) {
+        return json({ error: "Mutual guild verification failed" }, 502);
+      }
+      guilds.push({
+        ...candidate,
+        isAdmin: inspection.isAdmin,
+        isDiceWitchAdmin: inspection.isDiceWitchAdmin,
+        ...(isRollable === null ? {} : { isRollable }),
+      });
+    }
   }
   return json({ guilds });
 }
@@ -1028,29 +1156,15 @@ async function getGuildChannels(
   if (session === null) {
     return json({ error: "Session response is invalid" }, 502);
   }
-  const membershipResponse = await postData(
-    env,
-    "/internal/memberships/list",
-    { userId: session.user.id },
-  );
-  if (!membershipResponse.ok) {
-    return json({ error: "Guild authorization failed" }, 502);
+  let channels: unknown;
+  try {
+    channels = await env.DISCORD_REST.listTextChannels(
+      guildId,
+      session.user.id,
+    );
+  } catch {
+    return json({ error: "Guild channels lookup failed" }, 502);
   }
-  const value: unknown = await membershipResponse.json();
-  if (!isRecord(value) || !Array.isArray(value.memberships)) {
-    return json({ error: "Guild authorization response is invalid" }, 502);
-  }
-  const authorized = value.memberships.some(
-    (membership) =>
-      isRecord(membership) &&
-      isRecord(membership.guild) &&
-      membership.guild.id === guildId &&
-      (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
-  );
-  if (!authorized) return json({ error: "Unauthorized" }, 401);
-
-  const channels: unknown =
-    await env.DISCORD_REST.listTextChannels(guildId);
   if (
     !Array.isArray(channels) ||
     !channels.every(
@@ -1225,7 +1339,7 @@ async function postWebRollPreparation(
       !SNOWFLAKE.test(value.guildId) ||
       typeof value.notation !== "string" ||
       value.notation.length < 1 ||
-      value.notation.length > 1_000 ||
+      value.notation.length > MAX_NOTATION_LENGTH ||
       typeof value.timesToRepeat !== "number" ||
       !Number.isSafeInteger(value.timesToRepeat) ||
       value.timesToRepeat < 1 ||
@@ -1277,8 +1391,7 @@ async function postWebRollPreparation(
     (membership) =>
       isRecord(membership) &&
       isRecord(membership.guild) &&
-      membership.guild.id === value.guildId &&
-      (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
+      membership.guild.id === value.guildId,
   );
   if (!authorized) return json({ error: "Unauthorized" }, 401);
 
@@ -1364,6 +1477,87 @@ async function postWebRollPreparation(
   });
 }
 
+type WebLibraryRollSelection = {
+  scope: "personal" | "server";
+  id: string;
+  revision: number;
+};
+
+function parseWebLibraryRollSelection(value: unknown): WebLibraryRollSelection | null {
+  if (value === undefined) return null;
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["id", "revision", "scope"]) ||
+    (value.scope !== "personal" && value.scope !== "server") ||
+    typeof value.id !== "string" ||
+    !UUID_V4.test(value.id) ||
+    typeof value.revision !== "number" ||
+    !Number.isSafeInteger(value.revision) ||
+    value.revision < 1
+  ) {
+    throw new Error("Web Library roll selection is invalid");
+  }
+  return { scope: value.scope, id: value.id, revision: value.revision };
+}
+
+async function resolveWebLibraryRoll(
+  env: WebApiBindings,
+  selection: WebLibraryRollSelection,
+  userId: string,
+  guildId: string,
+  composition: {
+    notation: unknown;
+    repetitions: unknown;
+    title: unknown;
+  },
+): Promise<{ scope: "personal" | "guild"; name: string } | Response> {
+  const owner = selection.scope === "personal"
+    ? { type: "user", userId }
+    : { type: "guild", guildId };
+  const response = await postData(env, "/internal/saved-rolls/v2/get", {
+    owner,
+    id: selection.id,
+  });
+  if (!response.ok) return json({ error: "Library roll lookup failed" }, 502);
+  let result: unknown;
+  try {
+    result = await response.json();
+  } catch {
+    return json({ error: "Library roll response is invalid" }, 502);
+  }
+  if (isRecord(result) && result.status === "missing") {
+    return json({ error: "That Library roll no longer exists" }, 404);
+  }
+  if (
+    !isRecord(result) ||
+    result.status !== "found" ||
+    !isRecord(result.savedRoll) ||
+    typeof result.savedRoll.displayName !== "string" ||
+    result.savedRoll.displayName.length < 1 ||
+    result.savedRoll.displayName.length > 1_024 ||
+    typeof result.savedRoll.revision !== "number" ||
+    !Number.isSafeInteger(result.savedRoll.revision) ||
+    typeof result.savedRoll.notation !== "string" ||
+    (result.savedRoll.title !== null && typeof result.savedRoll.title !== "string") ||
+    typeof result.savedRoll.repetitions !== "number" ||
+    !Number.isSafeInteger(result.savedRoll.repetitions)
+  ) {
+    return json({ error: "Library roll response is invalid" }, 502);
+  }
+  if (
+    result.savedRoll.revision !== selection.revision ||
+    result.savedRoll.notation !== composition.notation ||
+    result.savedRoll.title !== composition.title ||
+    result.savedRoll.repetitions !== composition.repetitions
+  ) {
+    return json({ error: "That Library roll changed. Roll it again." }, 409);
+  }
+  return {
+    scope: selection.scope === "personal" ? "personal" : "guild",
+    name: result.savedRoll.displayName,
+  };
+}
+
 async function postWebRoll(
   request: Request,
   env: WebApiBindings,
@@ -1371,6 +1565,7 @@ async function postWebRoll(
 ): Promise<Response> {
   let value: Record<string, unknown>;
   let preparedRequest: boolean;
+  let libraryRoll: WebLibraryRollSelection | null;
   try {
     value = await request.json();
     const legacyKeys = [
@@ -1381,9 +1576,13 @@ async function postWebRoll(
     ];
     const hasDeliveryId =
       isRecord(value) && typeof value.deliveryId === "string";
-    const requestKeys = hasDeliveryId
+    const baseKeys = hasDeliveryId
       ? [...legacyKeys, "deliveryId"]
       : legacyKeys;
+    const hasLibraryRoll = isRecord(value) && value.libraryRoll !== undefined;
+    const requestKeys = hasLibraryRoll
+      ? [...baseKeys, "libraryRoll"]
+      : baseKeys;
     const isLegacyRequest =
       isRecord(value) &&
       (hasExactKeys(value, requestKeys) ||
@@ -1416,7 +1615,7 @@ async function postWebRoll(
           !SHA256.test(value.appearanceDigest))) ||
       typeof value.notation !== "string" ||
       value.notation.length < 1 ||
-      value.notation.length > 1_000 ||
+      value.notation.length > MAX_NOTATION_LENGTH ||
       (preparedRequest &&
         (typeof value.renderSeed !== "number" ||
           !Number.isInteger(value.renderSeed) ||
@@ -1433,6 +1632,7 @@ async function postWebRoll(
     ) {
       throw new Error("Web roll request is invalid");
     }
+    libraryRoll = parseWebLibraryRollSelection(value.libraryRoll);
   } catch {
     return json({ error: "Web roll request is invalid" }, 400);
   }
@@ -1454,26 +1654,33 @@ async function postWebRoll(
   const session = parseStoredSession(await sessionResponse.json());
   if (session === null) return json({ error: "Session response is invalid" }, 502);
 
-  const membershipsResponse = await postData(
-    env,
-    "/internal/memberships/list",
-    { userId: session.user.id },
-  );
-  if (!membershipsResponse.ok) {
-    return json({ error: "Guild authorization failed" }, 502);
+  let availableChannels: TextChannel[];
+  try {
+    availableChannels = await env.DISCORD_REST.listTextChannels(
+      value.guildId,
+      session.user.id,
+    );
+  } catch {
+    return json({ error: "Guild channel authorization failed" }, 502);
   }
-  const memberships: unknown = await membershipsResponse.json();
-  if (!isRecord(memberships) || !Array.isArray(memberships.memberships)) {
-    return json({ error: "Guild authorization response is invalid" }, 502);
+  if (!availableChannels.some(({ id }) => id === value.channelId)) {
+    return json({ error: "Unauthorized" }, 401);
   }
-  const authorized = memberships.memberships.some(
-    (membership) =>
-      isRecord(membership) &&
-      isRecord(membership.guild) &&
-      membership.guild.id === value.guildId &&
-      (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
-  );
-  if (!authorized) return json({ error: "Unauthorized" }, 401);
+
+  const savedRollAttribution = libraryRoll === null
+    ? undefined
+    : await resolveWebLibraryRoll(
+        env,
+        libraryRoll,
+        session.user.id,
+        value.guildId,
+        {
+          notation: value.notation,
+          repetitions: value.timesToRepeat,
+          title: value.title ?? null,
+        },
+      );
+  if (savedRollAttribution instanceof Response) return savedRollAttribution;
 
   const settingsResponse = await postData(env, "/internal/guilds/settings", {
     guildId: value.guildId,
@@ -1501,6 +1708,9 @@ async function postWebRoll(
     title: value.title ?? null,
     userId: session.user.id,
     guildId: value.guildId,
+    ...(savedRollAttribution === undefined
+      ? {}
+      : { savedRoll: savedRollAttribution }),
     ...(value.deliveryId === undefined
       ? {}
       : {
@@ -1616,6 +1826,7 @@ async function postWebRoll(
           filename: roll.discord.filename,
           png: roll.discord.png,
           skipDelay: settings.settings.skipDiceDelay,
+          delayMs: webRollDelayMs(settings.settings.skipDiceDelay),
         })
       : { status: roll.deliveryStatus };
   if (delivery.status === "pending" || delivery.status === "retryable") {
@@ -1694,7 +1905,7 @@ export async function handleAuthRequest(
   const now = clock();
   try {
     if (request.method === "GET" && pathname === "/api/auth/signin/discord") {
-      return await startAuthorization(env, configuration, now);
+      return await startAuthorization(request, env, configuration, now);
     }
     if (
       request.method === "GET" &&
@@ -1890,6 +2101,39 @@ export async function handleAuthRequest(
       return request.headers.has("origin")
         ? withCors(response, configuration)
         : response;
+    }
+    const isSavedRollPath =
+      /^\/api\/saved-rolls\/v[12]\/(?:libraries|search|me(?:\/.*)?)$/.test(
+        pathname,
+      ) ||
+      /^\/api\/guilds\/[1-9][0-9]{16,19}\/saved-rolls\/v[12](?:\/.*)?$/.test(
+        pathname,
+      );
+    if (isSavedRollPath) {
+      const exactOrigin =
+        request.headers.get("origin") === configuration.FRONTEND_ORIGIN;
+      if (
+        (request.method === "GET" &&
+          !isFrontendRequest(request, configuration)) ||
+        (request.method !== "GET" && !exactOrigin)
+      ) {
+        return json({ error: "Forbidden" }, 403);
+      }
+      const authentication = await authenticateSession(request, env, now);
+      if (!authentication.authenticated) {
+        return exactOrigin
+          ? withCors(authentication.response, configuration)
+          : authentication.response;
+      }
+      const savedRollResponse = await handleSavedRollApiRequest(
+        request,
+        env,
+        authentication.session.user.id,
+        now,
+      );
+      const response =
+        savedRollResponse ?? json({ error: "Not found" }, 404);
+      return exactOrigin ? withCors(response, configuration) : response;
     }
     const channelMatch = pathname.match(
       /^\/api\/guilds\/([1-9][0-9]{16,19})\/channels$/,

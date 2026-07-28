@@ -29,7 +29,7 @@ function interaction(overrides: Record<string, unknown> = {}) {
       options: [
         { name: "notation", type: 3, value: " 2d20 + 5 " },
         { name: "title", type: 3, value: "enchanted sword" },
-        { name: "timestorepeat", type: 3, value: "3" },
+        { name: "times", type: 3, value: "3" },
       ],
     },
     ...overrides,
@@ -180,7 +180,18 @@ describe("parseRollInteraction", () => {
         type: 1,
         options: [
           { name: "notation", type: 3, value: "1d6" },
-          { name: "timestorepeat", type: 3, value: "abc" },
+          { name: "times", type: 3, value: "abc" },
+        ],
+      },
+    },
+    {
+      data: {
+        id: "1400000000000000001",
+        name: "roll",
+        type: 1,
+        options: [
+          { name: "notation", type: 3, value: "1d6" },
+          { name: "timestorepeat", type: 3, value: "3" },
         ],
       },
     },

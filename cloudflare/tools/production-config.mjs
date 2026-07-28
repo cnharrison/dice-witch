@@ -28,12 +28,13 @@ const REQUIRED_VALUE_KEYS = [
   "frontendOrigin",
   "inviteLink",
   "logOutputChannelId",
+  "rollLifecycleAlertChannelId",
   "secretsStoreId",
   "supportServerLink",
   "version",
 ];
 const REQUIRED_BINDINGS = {
-  data: { DATA: "d1" },
+  data: { DATA: "d1", DISCORD_REST: "service" },
   "discord-rest": {
     DISCORD_APPLICATION_ID: "plain_text",
     DISCORD_BOT_LIST_KEY: "secrets_store_secret",
@@ -41,6 +42,7 @@ const REQUIRED_BINDINGS = {
     DISCORD_TEST_GUILD_ID: "plain_text",
     INVITE_LINK: "plain_text",
     LOG_OUTPUT_CHANNEL_ID: "plain_text",
+    ROLL_LIFECYCLE_ALERT_CHANNEL_ID: "plain_text",
     SUPPORT_SERVER_LINK: "plain_text",
     TOPGG_KEY: "secrets_store_secret",
   },
@@ -63,7 +65,6 @@ const REQUIRED_BINDINGS = {
     DATA_SERVICE: "service",
     DISCORD_APPLICATION_ID: "plain_text",
     DISCORD_PUBLIC_KEY: "secrets_store_secret",
-    DISCORD_TEST_GUILD_ID: "plain_text",
     GATEWAY_STATUS: "service",
     INVITE_LINK: "plain_text",
     ROLL_WORK: "durable_object_namespace",
@@ -145,6 +146,7 @@ function decodeValues(encodedValues) {
     values.discordApplicationId !== DISCORD_APPLICATION_ID ||
     !SNOWFLAKE.test(values.discordTestGuildId ?? "") ||
     !SNOWFLAKE.test(values.logOutputChannelId ?? "") ||
+    !SNOWFLAKE.test(values.rollLifecycleAlertChannelId ?? "") ||
     values.frontendOrigin !== FRONTEND_ORIGIN
   ) {
     throw new Error("Production values bundle is invalid");
@@ -226,6 +228,7 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
     INVITE_LINK: values.inviteLink,
     SUPPORT_SERVER_LINK: values.supportServerLink,
     LOG_OUTPUT_CHANNEL_ID: values.logOutputChannelId,
+    ROLL_LIFECYCLE_ALERT_CHANNEL_ID: values.rollLifecycleAlertChannelId,
   };
   configs["discord-rest"].secrets_store_secrets = productionSecrets(
     "discord-rest",
@@ -233,7 +236,7 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
   );
 
   configs.gateway.triggers = {
-    crons: ["*/5 * * * *", "30 */4 * * *"],
+    crons: ["0 * * * *", "*/5 * * * *", "30 */4 * * *"],
   };
   configs.gateway.vars = {
     ...configs.gateway.vars,
@@ -249,7 +252,6 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
 
   configs.interactions.vars = {
     DISCORD_APPLICATION_ID: values.discordApplicationId,
-    DISCORD_TEST_GUILD_ID: values.discordTestGuildId,
     INVITE_LINK: values.inviteLink,
     SUPPORT_SERVER_LINK: values.supportServerLink,
     WEB_APP_URL: `${values.frontendOrigin}/app`,
@@ -358,7 +360,18 @@ export function validateProductionConfigs(configs, expectedSha) {
   if (configs["web-api"]?.vars?.FRONTEND_ORIGIN !== FRONTEND_ORIGIN) {
     errors.push("Web API production origin is invalid");
   }
-  if (JSON.stringify(configs.gateway?.triggers) !== JSON.stringify({ crons: ["*/5 * * * *", "30 */4 * * *"] })) {
+  if (
+    JSON.stringify(configs.data?.triggers) !==
+    JSON.stringify({ crons: ["* * * * *", "0 3 * * *"] })
+  ) {
+    errors.push("Production Data lifecycle and retention schedules are invalid");
+  }
+  if (
+    JSON.stringify(configs.gateway?.triggers) !==
+    JSON.stringify({
+      crons: ["0 * * * *", "*/5 * * * *", "30 */4 * * *"],
+    })
+  ) {
     errors.push("Production Gateway schedules are invalid");
   }
   if (errors.length > 0) {

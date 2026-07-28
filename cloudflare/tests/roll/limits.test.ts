@@ -76,7 +76,7 @@ describe("checkRollLimits", () => {
     });
   });
 
-  it.each(["d100!>0", "10d100!>1"])(
+  it.each(["d100!>0", "10d100!>1", "d2!!>0", "d1!!"])(
     "rejects an unsafe exploding expression: %s",
     (notation) => {
       expect(checkRollLimits([notation])).toMatchObject({
@@ -87,12 +87,15 @@ describe("checkRollLimits", () => {
     },
   );
 
-  it("accepts a bounded standard explosion", () => {
-    expect(checkRollLimits(["1d6!"])).toEqual({
-      allowed: true,
-      containsDice: true,
-    });
-  });
+  it.each(["1d6!", "1d6!!"])(
+    "accepts a bounded explosion: %s",
+    (notation) => {
+      expect(checkRollLimits([notation])).toEqual({
+        allowed: true,
+        containsDice: true,
+      });
+    },
+  );
 
   it("accounts for repetitions in expected explosion size", () => {
     expect(checkRollLimits(["10d6!"], 5)).toMatchObject({

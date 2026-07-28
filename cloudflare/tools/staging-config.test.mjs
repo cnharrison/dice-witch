@@ -37,6 +37,9 @@ function validConfigs() {
   return {
     data: {
       ...baseConfig(dataName, "workers/data/src/index.ts"),
+      triggers: { crons: ["* * * * *", "0 3 * * *"] },
+      alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
+      services: [service("DISCORD_REST", restName, "DiscordRestService")],
       d1_databases: [
         {
           binding: "DATA",
@@ -54,6 +57,7 @@ function validConfigs() {
         INVITE_LINK: `https://discord.com/api/oauth2/authorize?client_id=${applicationId}`,
         SUPPORT_SERVER_LINK: "https://example.com/support",
         LOG_OUTPUT_CHANNEL_ID: "100000000000000003",
+        ROLL_LIFECYCLE_ALERT_CHANNEL_ID: "100000000000000004",
       },
     },
     roll: {
@@ -89,7 +93,7 @@ function validConfigs() {
     gateway: {
       ...baseConfig(gatewayName, "workers/gateway/src/index.ts"),
       workers_dev: true,
-      triggers: { crons: ["*/5 * * * *"] },
+      triggers: { crons: ["0 * * * *", "*/5 * * * *"] },
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
       vars: {
         DISCORD_APPLICATION_ID: applicationId,
@@ -212,10 +216,17 @@ test("rejects routes, unsafe Crons, and undeclared bindings outside the staging 
   );
 
   const scheduled = validConfigs();
-  scheduled.gateway.triggers = { crons: ["0 * * * *"] };
+  scheduled.gateway.triggers = { crons: ["*/5 * * * *"] };
   assert.throws(
     () => validateStagingConfigs(scheduled),
-    /Gateway audience snapshot schedule is invalid/,
+    /Gateway recommendation and audience schedules are invalid/,
+  );
+
+  const invalidDataSchedule = validConfigs();
+  invalidDataSchedule.data.triggers = { crons: ["0 3 * * *"] };
+  assert.throws(
+    () => validateStagingConfigs(invalidDataSchedule),
+    /Data lifecycle and retention schedules are invalid/,
   );
 
   const extraBinding = validConfigs();
@@ -303,13 +314,14 @@ test("rejects inconsistent Discord and browser identities", () => {
   );
 });
 
-test("keeps the Data Worker private", () => {
+test("keeps the Data Worker private with its required crypto alias", () => {
   const configs = validConfigs();
   configs.data.workers_dev = true;
+  delete configs.data.alias;
 
   assert.throws(
     () => validateStagingConfigs(configs),
-    /Staging Data Worker must disable workers_dev/,
+    /Staging Data Worker must disable workers_dev|data crypto alias is invalid/,
   );
 });
 

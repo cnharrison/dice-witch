@@ -14,7 +14,17 @@ export type RollResultMessageOptions = {
   username: string;
   filename: string;
   clatter?: string;
+  savedRoll?: { scope: "Mine" | "Server"; name: string };
+  copyCustomId?: string;
 };
+
+function savedRollAttributionSuffix(
+  savedRoll: RollResultMessageOptions["savedRoll"],
+): string {
+  if (savedRoll === undefined) return "";
+  const owner = savedRoll.scope === "Server" ? "server" : "personal";
+  return ` · from ${owner} library · ${savedRoll.name}`;
+}
 
 function clatterMessages(single: boolean): string[] {
   const pick = (singular: string, plural: string) =>
@@ -130,7 +140,14 @@ export function buildRollResultMessage(
     options.username.length > MAX_USERNAME_LENGTH ||
     !PNG_FILENAME.test(options.filename) ||
     (options.clatter !== undefined &&
-      (options.clatter.length === 0 || options.clatter.length > 2_000))
+      (options.clatter.length === 0 || options.clatter.length > 2_000)) ||
+    (options.savedRoll !== undefined &&
+      (options.savedRoll.name.length === 0 ||
+        options.savedRoll.name.length > 1_024)) ||
+    (options.copyCustomId !== undefined &&
+      (options.savedRoll?.scope !== "Server" ||
+        options.copyCustomId.length < 1 ||
+        options.copyCustomId.length > 100))
   ) {
     throw new Error("Roll result message options are invalid");
   }
@@ -155,9 +172,28 @@ export function buildRollResultMessage(
         ...(options.title === null ? {} : { title: options.title }),
         description,
         color: TABLETOP_COLOR,
-        footer: { text: `sent to ${options.username} via ${options.source}` },
+        footer: {
+          text: `sent to ${options.username} via ${options.source}${savedRollAttributionSuffix(options.savedRoll)}`,
+        },
         image: { url: `attachment://${options.filename}` },
       },
     ],
+    ...(options.copyCustomId === undefined
+      ? {}
+      : {
+          components: [
+            {
+              type: 1 as const,
+              components: [
+                {
+                  type: 2 as const,
+                  style: 2 as const,
+                  label: "Copy to Personal",
+                  custom_id: options.copyCustomId,
+                },
+              ],
+            },
+          ],
+        }),
   };
 }

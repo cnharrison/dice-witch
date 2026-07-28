@@ -22,6 +22,9 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
       inspectMembership: vi.fn(() =>
         Promise.resolve({ status: "missing" as const }),
       ),
+      inspectRollerGuild: vi.fn(() =>
+        Promise.resolve({ status: "missing" as const }),
+      ),
     },
     ROLL_WEB: {
       prepare: vi.fn(),
@@ -54,7 +57,9 @@ describe("web API Discord OAuth", () => {
   it("starts authorization with D1-backed state and a secure state cookie", async () => {
     const dataRequests: Array<{ path: string; body: unknown }> = [];
     const response = await handleAuthRequest(
-      new Request("https://api.example.com/api/auth/signin/discord"),
+      new Request(
+        "https://api.example.com/api/auth/signin/discord?returnTo=%2Fapp%2Flibrary",
+      ),
       bindings(async (request) => {
         dataRequests.push({
           path: new URL(request.url).pathname,
@@ -86,6 +91,9 @@ describe("web API Discord OAuth", () => {
     ]);
     expect(cookieValue(response, "auth_state")).toBe(
       `auth_state=${oauthState}; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
+    );
+    expect(cookieValue(response, "auth_return")).toBe(
+      "auth_return=%2Fapp%2Flibrary; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Lax",
     );
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
@@ -166,13 +174,21 @@ describe("web API Discord OAuth", () => {
     });
     const env = bindings(dataFetch);
     env.DISCORD_REST.inspectMembership = vi.fn(() =>
-      Promise.resolve({ status: "found" as const, isDiceWitchAdmin: true }),
+      Promise.resolve({
+        status: "found" as const,
+        isAdmin: true,
+        isDiceWitchAdmin: true,
+      }),
     );
 
     const response = await handleAuthRequest(
       new Request(
         `https://api.example.com/api/auth/callback/discord?code=callback-code&state=${oauthState}`,
-        { headers: { cookie: `auth_state=${oauthState}` } },
+        {
+          headers: {
+            cookie: `auth_state=${oauthState}; auth_return=%2Fapp%2Flibrary`,
+          },
+        },
       ),
       env,
       discordFetch,
@@ -180,13 +196,18 @@ describe("web API Discord OAuth", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe(`${frontendOrigin}/app`);
+    expect(response.headers.get("location")).toBe(
+      `${frontendOrigin}/app/library`,
+    );
     const sessionCookie = cookieValue(response, "session_id");
     expect(sessionCookie).toMatch(
       /^session_id=[A-Za-z0-9_-]{43}; Path=\/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax$/,
     );
     expect(cookieValue(response, "auth_state")).toBe(
       "auth_state=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+    );
+    expect(cookieValue(response, "auth_return")).toBe(
+      "auth_return=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
     );
     expect(dataRequests.map(({ path }) => path)).toEqual([
       "/internal/oauth-states/consume",
@@ -366,7 +387,7 @@ describe("web API Discord OAuth", () => {
     });
   });
 
-  it("returns legacy-compatible mutual guilds for the active session", async () => {
+  it("returns only currently mutual guilds with fresh permissions", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
@@ -391,12 +412,33 @@ describe("web API Discord OAuth", () => {
               name: "Fixture guild",
               icon: null,
             },
-            isAdmin: true,
+            isAdmin: false,
             isDiceWitchAdmin: false,
+          },
+          {
+            guild: {
+              id: "100000000000000004",
+              name: "Fixture guild",
+              icon: null,
+            },
+            isAdmin: true,
+            isDiceWitchAdmin: true,
           },
         ],
       }));
     });
+    const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectMembership = vi.fn((guildId: string) =>
+      Promise.resolve(
+        guildId === "100000000000000001"
+          ? {
+              status: "found" as const,
+              isAdmin: true,
+              isDiceWitchAdmin: false,
+            }
+          : { status: "missing" as const },
+      ),
+    );
     const response = await handleAuthRequest(
       new Request("https://api.example.com/api/guilds/mutual", {
         headers: {
@@ -404,7 +446,7 @@ describe("web API Discord OAuth", () => {
           origin: frontendOrigin,
         },
       }),
-      bindings(dataFetch),
+      env,
       vi.fn(),
       () => now,
     );
@@ -420,6 +462,94 @@ describe("web API Discord OAuth", () => {
           },
           isAdmin: true,
           isDiceWitchAdmin: false,
+        },
+      ],
+    });
+  });
+
+  it("marks only mutual guilds with usable channels as Roller targets", async () => {
+    const sessionToken = "T".repeat(43);
+    const dataFetch = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/internal/sessions/current") {
+        return Promise.resolve(Response.json({
+          user: {
+            id: "100000000000000003",
+            username: "fixture-user",
+            email: null,
+            avatar: null,
+          },
+          createdAt: now - 1,
+          expiresAt: now + 1,
+        }));
+      }
+      expect(path).toBe("/internal/memberships/list");
+      return Promise.resolve(Response.json({
+        memberships: [
+          {
+            guild: {
+              id: "100000000000000001",
+              name: "Rollable guild",
+              icon: null,
+            },
+            isAdmin: false,
+            isDiceWitchAdmin: false,
+          },
+          {
+            guild: {
+              id: "100000000000000004",
+              name: "Management-only guild",
+              icon: null,
+            },
+            isAdmin: true,
+            isDiceWitchAdmin: false,
+          },
+        ],
+      }));
+    });
+    const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectRollerGuild = vi.fn((guildId: string) =>
+      Promise.resolve({
+        status: "found" as const,
+        isAdmin: guildId === "100000000000000004",
+        isDiceWitchAdmin: false,
+        hasUsableChannel: guildId === "100000000000000001",
+      }),
+    );
+    const response = await handleAuthRequest(
+      new Request("https://api.example.com/api/guilds/mutual?view=roller", {
+        headers: {
+          cookie: `session_id=${sessionToken}`,
+          origin: frontendOrigin,
+        },
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      guilds: [
+        {
+          guilds: {
+            id: "100000000000000001",
+            name: "Rollable guild",
+            icon: null,
+          },
+          isAdmin: false,
+          isDiceWitchAdmin: false,
+          isRollable: true,
+        },
+        {
+          guilds: {
+            id: "100000000000000004",
+            name: "Management-only guild",
+            icon: null,
+          },
+          isAdmin: true,
+          isDiceWitchAdmin: false,
+          isRollable: false,
         },
       ],
     });
@@ -518,43 +648,28 @@ describe("web API Discord OAuth", () => {
     });
   });
 
-  it("returns channels only for an authorized mutual guild", async () => {
+  it("returns only channels available to the current guild member", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
-      const path = new URL(request.url).pathname;
-      return Promise.resolve(
-        path === "/internal/sessions/current"
-          ? Response.json({
-              user: {
-                id: "100000000000000003",
-                username: "fixture-user",
-                email: null,
-                avatar: null,
-              },
-              createdAt: now - 1,
-              expiresAt: now + 1,
-            })
-          : Response.json({
-              memberships: [
-                {
-                  guild: {
-                    id: "100000000000000001",
-                    name: "Fixture guild",
-                    icon: null,
-                  },
-                  isAdmin: true,
-                  isDiceWitchAdmin: false,
-                },
-              ],
-            }),
-      );
+      expect(new URL(request.url).pathname).toBe("/internal/sessions/current");
+      return Promise.resolve(Response.json({
+        user: {
+          id: "100000000000000003",
+          username: "fixture-user",
+          email: null,
+          avatar: null,
+        },
+        createdAt: now - 1,
+        expiresAt: now + 1,
+      }));
     });
     const env = bindings(dataFetch);
-    env.DISCORD_REST.listTextChannels = vi.fn(() =>
+    const listTextChannels = vi.fn(() =>
       Promise.resolve([
         { id: "100000000000000010", name: "general", type: 0 as const },
       ]),
     );
+    env.DISCORD_REST.listTextChannels = listTextChannels;
     const response = await handleAuthRequest(
       new Request(
         "https://api.example.com/api/guilds/100000000000000001/channels",
@@ -574,9 +689,13 @@ describe("web API Discord OAuth", () => {
     await expect(response.json()).resolves.toEqual({
       channels: [{ id: "100000000000000010", name: "general", type: 0 }],
     });
+    expect(listTextChannels).toHaveBeenCalledWith(
+      "100000000000000001",
+      "100000000000000003",
+    );
   });
 
-  it("executes and delivers an authorized web roll", async () => {
+  it("executes and delivers a current guild member's web roll", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
@@ -594,22 +713,17 @@ describe("web API Discord OAuth", () => {
           }),
         );
       }
-      if (path === "/internal/memberships/list") {
-        return Promise.resolve(
-          Response.json({
-            memberships: [
-              {
-                guild: {
-                  id: "100000000000000001",
-                  name: "Fixture guild",
-                  icon: null,
-                },
-                isAdmin: true,
-                isDiceWitchAdmin: false,
-              },
-            ],
-          }),
-        );
+      if (path === "/internal/saved-rolls/v2/get") {
+        return Promise.resolve(Response.json({
+          status: "found",
+          savedRoll: {
+            displayName: "Initiative",
+            revision: 2,
+            notation: "1d20",
+            title: null,
+            repetitions: 1,
+          },
+        }));
       }
       expect(path).toBe("/internal/guilds/settings");
       return Promise.resolve(
@@ -620,9 +734,13 @@ describe("web API Discord OAuth", () => {
       );
     });
     const env = bindings(dataFetch);
-    const deliverWebRoll = vi.fn(() =>
-      Promise.resolve({ status: "delivered" as const }),
-    );
+    const listTextChannels = vi.fn(() => Promise.resolve([
+      { id: "100000000000000010", name: "general", type: 0 as const },
+    ]));
+    env.DISCORD_REST.listTextChannels = listTextChannels;
+    const deliverWebRoll = vi.fn<
+      WebApiBindings["DISCORD_REST"]["deliverWebRoll"]
+    >(() => Promise.resolve({ status: "delivered" as const }));
     env.DISCORD_REST.deliverWebRoll = deliverWebRoll;
     const png = new Uint8Array([137, 80, 78, 71]);
     const deliveryId = "11111111-1111-4111-8111-111111111111";
@@ -668,6 +786,11 @@ describe("web API Discord OAuth", () => {
           renderSeed: 123,
           appearanceDigest: "a".repeat(64),
           timesToRepeat: 1,
+          libraryRoll: {
+            scope: "server",
+            id: "123e4567-e89b-42d3-a456-426614174000",
+            revision: 2,
+          },
         }),
       }),
       env,
@@ -695,6 +818,7 @@ describe("web API Discord OAuth", () => {
       title: null,
       userId: "100000000000000003",
       guildId: "100000000000000001",
+      savedRoll: { scope: "guild", name: "Initiative" },
       deliveryId,
       channelId: "100000000000000010",
       skipDelay: false,
@@ -734,9 +858,18 @@ describe("web API Discord OAuth", () => {
       guildId: "100000000000000001",
     });
     expect(deliverWebRoll).toHaveBeenCalledOnce();
+    expect(listTextChannels).toHaveBeenCalledTimes(2);
+    expect(listTextChannels).toHaveBeenLastCalledWith(
+      "100000000000000001",
+      "100000000000000003",
+    );
+    const legacyDelivery = deliverWebRoll.mock.calls[0]?.[0];
+    expect(legacyDelivery).toMatchObject({ skipDelay: false });
+    expect(legacyDelivery?.delayMs).toBeGreaterThanOrEqual(1);
+    expect(legacyDelivery?.delayMs).toBeLessThanOrEqual(5_000);
   });
 
-  it("keeps web preparation restricted to guild administrators", async () => {
+  it("allows a current non-admin guild member to prepare a web roll", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
@@ -774,7 +907,10 @@ describe("web API Discord OAuth", () => {
       throw new Error(`Unexpected Data Worker route ${path}`);
     });
     const env = bindings(dataFetch);
-    const prepare = vi.fn();
+    const prepare = vi.fn(() => Promise.resolve({
+      status: "invalid" as const,
+      message: "Fixture stopped after authorization",
+    }));
     env.ROLL_WEB.prepare = prepare;
 
     const response = await handleAuthRequest(
@@ -796,9 +932,11 @@ describe("web API Discord OAuth", () => {
       () => now,
     );
 
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
-    expect(prepare).not.toHaveBeenCalled();
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Fixture stopped after authorization",
+    });
+    expect(prepare).toHaveBeenCalledOnce();
   });
 
   it("accepts same-origin session reads when browsers omit Origin on GET", async () => {

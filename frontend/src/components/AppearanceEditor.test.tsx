@@ -187,7 +187,7 @@ describe("AppearanceEditor", () => {
     expect(previewPane.className).not.toContain("gradient");
     const previewClasses = previewPane.className.split(/\s+/);
     expect(previewClasses).toContain("bg-card");
-    expect(previewClasses).toContain("dark:bg-[#170a16]");
+    expect(previewClasses).toContain("dark:bg-select");
     expect(previewClasses).not.toContain("bg-[#170a16]");
     const previewStage = previewPane.querySelector("[aria-busy]");
     expect(previewStage?.className.split(/\s+/)).toContain("bg-background");

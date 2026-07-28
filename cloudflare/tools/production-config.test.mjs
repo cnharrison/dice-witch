@@ -27,6 +27,7 @@ function values(overrides = {}) {
     inviteLink: "https://discord.com/oauth2/authorize",
     supportServerLink: "https://discord.gg/example",
     logOutputChannelId: "809246262888890419",
+    rollLifecycleAlertChannelId: "809246262888890420",
     frontendOrigin: "https://dicewit.ch",
     ...overrides,
   };
@@ -58,11 +59,32 @@ test("materializes exact production configs from source templates and bounded va
   const gateway = JSON.parse(
     await readFile(path.join(directory, "wrangler.gateway.jsonc"), "utf8"),
   );
+  const data = JSON.parse(
+    await readFile(path.join(directory, "wrangler.data.jsonc"), "utf8"),
+  );
+  const discordRest = JSON.parse(
+    await readFile(path.join(directory, "wrangler.discord-rest.jsonc"), "utf8"),
+  );
+  const interactions = JSON.parse(
+    await readFile(path.join(directory, "wrangler.interactions.jsonc"), "utf8"),
+  );
   assert.equal(web.vars.BUILD_SHA, sha);
+  assert.equal(
+    data.services.find(({ binding }) => binding === "DISCORD_REST")?.service,
+    "dice-witch-discord-rest-production",
+  );
+  assert.deepEqual(data.triggers, {
+    crons: ["* * * * *", "0 3 * * *"],
+  });
+  assert.equal(
+    discordRest.vars.ROLL_LIFECYCLE_ALERT_CHANNEL_ID,
+    "809246262888890420",
+  );
+  assert.equal(interactions.vars.DISCORD_TEST_GUILD_ID, undefined);
   assert.equal(web.vars.ENVIRONMENT, "production");
   assert.deepEqual(web.routes, [{ pattern: "dicewit.ch", custom_domain: true }]);
   assert.deepEqual(gateway.triggers, {
-    crons: ["*/5 * * * *", "30 */4 * * *"],
+    crons: ["0 * * * *", "*/5 * * * *", "30 */4 * * *"],
   });
   assert.equal(
     (await stat(path.join(directory, "wrangler.roll.jsonc"))).mode & 0o777,

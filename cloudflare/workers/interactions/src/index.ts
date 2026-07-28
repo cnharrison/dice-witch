@@ -8,11 +8,13 @@ import {
   buildStatusUnavailableResponse,
   parseKnowledgeBaseInteraction,
   parseRollInteraction,
+  parseSavedRollInteraction,
   parseStaticInteractionCommand,
   parseStatusCommandInteraction,
   verifyDiscordRequestSignature,
   type StatusGatewaySnapshot,
 } from "../../../packages/discord-contracts/src";
+import { handleSavedRollInteraction } from "./saved-roll-handler";
 
 export type InteractionEnv = {
   DISCORD_APPLICATION_ID: string;
@@ -84,7 +86,19 @@ async function acceptDeferredRoll(
 ): Promise<void> {
   try {
     const accepted = await stub.acceptDelivery(payload);
-    if (isAcceptedRollDelivery(accepted)) return;
+    if (isAcceptedRollDelivery(accepted)) {
+      console.info(
+        JSON.stringify({
+          telemetryVersion: 1,
+          level: "info",
+          message: "Discord roll lifecycle advanced",
+          interactionId: roll.id,
+          stage: "accepted",
+          status: (accepted as { status: string }).status,
+        }),
+      );
+      return;
+    }
   } catch {
     // The deferred response still needs an explicit terminal error.
   }
@@ -159,6 +173,32 @@ export async function handleInteractionRequest(
   if (interaction.type === 1) return json({ type: 1 });
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID) {
     return invalidInteraction("application-mismatch");
+  }
+  let savedRoll;
+  try {
+    savedRoll = parseSavedRollInteraction(interaction, {
+      applicationId: env.DISCORD_APPLICATION_ID,
+      ...(env.DISCORD_TEST_GUILD_ID === undefined
+        ? {}
+        : { guildId: env.DISCORD_TEST_GUILD_ID }),
+    });
+  } catch (error) {
+    return invalidInteraction(
+      error instanceof Error ? error.message : "saved-roll-parse-failed",
+    );
+  }
+  if (savedRoll !== null) {
+    console.info(
+      JSON.stringify({
+        telemetryVersion: 1,
+        level: "info",
+        message: "Discord roll lifecycle advanced",
+        interactionId: savedRoll.id,
+        stage: "received",
+        commandName: "library",
+      }),
+    );
+    return json(await handleSavedRollInteraction(savedRoll, env, ctx));
   }
   let roll;
   try {
@@ -263,10 +303,30 @@ export async function handleInteractionRequest(
       }),
     );
   }
+  console.info(
+    JSON.stringify({
+      telemetryVersion: 1,
+      level: "info",
+      message: "Discord roll lifecycle advanced",
+      interactionId: roll.id,
+      stage: "received",
+    }),
+  );
   const stub = env.ROLL_WORK.getByName(
     roll.id,
   ) as unknown as RollWorkAcceptanceStub;
-  const payload = buildRollDeliveryPayload(roll);
+  const deferredAt = Date.now();
+  const payload = buildRollDeliveryPayload(roll, deferredAt);
+  console.info(
+    JSON.stringify({
+      telemetryVersion: 1,
+      level: "info",
+      message: "Discord roll lifecycle advanced",
+      interactionId: roll.id,
+      stage: "deferred",
+      deferredAt,
+    }),
+  );
   if (ctx !== undefined) {
     ctx.waitUntil(acceptDeferredRoll(stub, payload, roll));
     return json({ type: 5 });

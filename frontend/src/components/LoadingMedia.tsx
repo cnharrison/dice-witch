@@ -96,7 +96,7 @@ export const LoadingMedia: React.FC<LoadingMediaProps> = ({
         <div
           className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none w-auto min-w-[200%]"
         >
-          <span className="font-fraktur text-fuchsia-500 text-[12rem] font-bold" style={{
+          <span className="font-fraktur text-brand text-[12rem] font-bold" style={{
             textShadow: '4px 4px 8px rgba(0,0,0,0.95)',
           }}>
             Dice Witch

@@ -8,7 +8,7 @@ import type {
 } from "@dice-witch/dice-v4-model";
 import { AppearanceApiError } from "@/lib/appearance";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -69,6 +69,31 @@ afterEach(() => {
 });
 
 describe("AppearanceEditorV3", () => {
+  it("keeps the preview rail visible beside every desktop target", async () => {
+    const user = userEvent.setup();
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    const preview = screen.getByRole("region", { name: "Preview" });
+    const editor = preview.closest("section.grid");
+    expect(editor?.className).toContain("xl:grid-cols");
+    expect(preview.parentElement?.className).toContain("xl:sticky");
+    expect(screen.queryByRole("heading", { name: "Saved designs" })).toBeNull();
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Appearance target" }),
+      "d20",
+    );
+    expect(editor?.className).toContain("xl:grid-cols");
+    expect(preview.parentElement?.className).toContain("xl:sticky");
+  });
+
   it("keeps detailed controls transactional and removes redundant preset actions", async () => {
     const user = userEvent.setup();
     renderEditor({
@@ -115,9 +140,15 @@ describe("AppearanceEditorV3", () => {
     });
   });
 
-  it("applies one preset to all dice and clears target overrides", async () => {
+  it("shows branded progress and a check while applying a preset", async () => {
     const user = userEvent.setup();
-    const onSave = vi.fn(async () => undefined);
+    let completeSave: (() => void) | undefined;
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeSave = resolve;
+        }),
+    );
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 4, profile: personalProfile() },
@@ -132,11 +163,25 @@ describe("AppearanceEditorV3", () => {
       "dice-witch",
     );
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(screen.getByRole("status").textContent).toBe("Applying preset");
+    expect(
+      screen.getByRole("status").querySelector('[data-loading-glyph="sparkles"]'),
+    ).toBeTruthy();
     expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
       all: { source: "builtin", id: "dice-witch" },
       overrides: {},
     });
+
+    completeSave?.();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("status").querySelector('[data-completion-glyph="check"]'),
+      ).toBeTruthy(),
+    );
+    expect(screen.getByRole("status").textContent).toBe("Preset applied");
+    expect(
+      screen.queryByText("All dice now uses the selected preset."),
+    ).toBeNull();
   });
 
   it("applies a target preset without changing the All dice assignment", async () => {
@@ -215,8 +260,11 @@ describe("AppearanceEditorV3", () => {
     );
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     await user.click(screen.getByRole("button", { name: "Customize" }));
-    const firstColor = screen.getByLabelText("Color 1");
-    fireEvent.change(firstColor, { target: { value: "#123456" } });
+    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
+    const hex = screen.getByRole("textbox", { name: "Hex color" });
+    await user.clear(hex);
+    await user.type(hex, "#123456");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(screen.getByLabelText("Design name")).toHaveProperty(
       "value",
       "Edit 1",

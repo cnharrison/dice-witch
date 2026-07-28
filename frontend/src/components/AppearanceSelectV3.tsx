@@ -17,7 +17,7 @@ export function AppearanceSelectV3({
       <select
         {...props}
         className={cn(
-          "h-11 w-full min-w-0 appearance-none rounded-md border bg-background py-0 pl-3 pr-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9",
+          "h-11 w-full min-w-0 appearance-none rounded-md border bg-select py-0 pl-3 pr-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9",
           className,
         )}
       >

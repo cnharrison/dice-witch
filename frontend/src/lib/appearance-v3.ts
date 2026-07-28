@@ -62,6 +62,7 @@ import type {
 } from "../types/appearance";
 import { appConfig } from "./config";
 import { AppearanceApiError } from "./appearance";
+export { PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY } from "./appearance-query";
 
 const CATALOG_ROOT_KEYS = [
   "bounds",
@@ -681,6 +682,32 @@ export function getPersonalAppearanceProfileV3(
   return getProfile("/api/appearance/v3/me", catalog, false) as Promise<
     AppearanceProfileResource<AppearanceProfileV3>
   >;
+}
+
+export type PersonalAppearanceBootstrapV3 = Readonly<{
+  catalog: AppearanceCatalogV3;
+  resource: AppearanceProfileResource<AppearanceProfileV3>;
+}>;
+
+export async function getPersonalAppearanceBootstrapV3(): Promise<PersonalAppearanceBootstrapV3> {
+  const catalogPromise = getAppearanceCatalogV3();
+  const profileResponsePromise = apiFetch(
+    apiUrl("/api/appearance/v3/me"),
+    { credentials: "include" },
+  ).then(requireOk);
+  const [catalog, profileResponse] = await Promise.all([
+    catalogPromise,
+    profileResponsePromise,
+  ]);
+  const resource = await parseResponse(
+    profileResponse,
+    "appearance_profile_response_invalid",
+    (value) => parseAppearanceProfileResourceV3(value, catalog, false),
+  );
+  return {
+    catalog,
+    resource: resource as AppearanceProfileResource<AppearanceProfileV3>,
+  };
 }
 
 export function getGuildAppearanceProfileV3(

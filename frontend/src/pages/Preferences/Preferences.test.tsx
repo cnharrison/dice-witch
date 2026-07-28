@@ -117,7 +117,9 @@ describe("appearance preference authorization", () => {
     const heading = await screen.findByRole("heading", { name: "Preferences" });
     expect(heading.className).toContain("UnifrakturMaguntia");
     expect(await screen.findByText("Preview")).toBeDefined();
-    expect(screen.getByRole("button", { name: "My appearance" })).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Personal appearance" }),
+    ).toBeDefined();
     expect(screen.queryByText("Dice Witch workbench")).toBeNull();
     expect(screen.queryByText(/Start with one design/)).toBeNull();
     expect(

@@ -1,27 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  MOBILE_ROLL_DISPLAY_MODE_STORAGE_KEY_V4,
   readRollDisplayModeV4,
   ROLL_DISPLAY_MODE_STORAGE_KEY_V4,
   writeRollDisplayModeV4,
 } from "./roll-display-mode";
 
 describe("V4 roll display preference", () => {
-  it("uses responsive initial defaults until the user chooses a mode", () => {
-    const storage = { getItem: vi.fn(() => null) };
+  it("keeps mobile 2D-first unless 3D was explicitly selected on mobile", () => {
+    const values = new Map<string, string>([
+      [ROLL_DISPLAY_MODE_STORAGE_KEY_V4, "3d"],
+    ]);
+    const storage = {
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+    };
 
     expect(readRollDisplayModeV4(storage, false)).toBe("3d");
     expect(readRollDisplayModeV4(storage, true)).toBe("2d");
 
-    storage.getItem.mockReturnValue("2d");
-    expect(readRollDisplayModeV4(storage, false)).toBe("2d");
-    storage.getItem.mockReturnValue("3d");
+    values.set(MOBILE_ROLL_DISPLAY_MODE_STORAGE_KEY_V4, "3d");
     expect(readRollDisplayModeV4(storage, true)).toBe("3d");
     expect(storage.getItem).toHaveBeenCalledWith(
-      ROLL_DISPLAY_MODE_STORAGE_KEY_V4,
+      MOBILE_ROLL_DISPLAY_MODE_STORAGE_KEY_V4,
     );
   });
 
-  it("ignores unavailable or invalid storage and writes only exact modes", () => {
+  it("ignores unavailable or invalid storage and writes each responsive preference separately", () => {
     const unavailable = {
       getItem: vi.fn(() => {
         throw new DOMException("blocked");
@@ -34,12 +38,19 @@ describe("V4 roll display preference", () => {
 
     expect(readRollDisplayModeV4(unavailable, false)).toBe("3d");
     expect(readRollDisplayModeV4(invalid, true)).toBe("2d");
-    expect(() => writeRollDisplayModeV4(unavailable, "2d")).not.toThrow();
+    expect(() => writeRollDisplayModeV4(unavailable, "2d", false)).not.toThrow();
 
     const storage = { setItem: vi.fn() };
-    writeRollDisplayModeV4(storage, "3d");
-    expect(storage.setItem).toHaveBeenCalledWith(
+    writeRollDisplayModeV4(storage, "3d", false);
+    writeRollDisplayModeV4(storage, "3d", true);
+    expect(storage.setItem).toHaveBeenNthCalledWith(
+      1,
       ROLL_DISPLAY_MODE_STORAGE_KEY_V4,
+      "3d",
+    );
+    expect(storage.setItem).toHaveBeenNthCalledWith(
+      2,
+      MOBILE_ROLL_DISPLAY_MODE_STORAGE_KEY_V4,
       "3d",
     );
   });

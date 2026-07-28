@@ -10,10 +10,10 @@ import {
 
 const execFileAsync = promisify(execFile);
 const DEPLOYMENT_ORDER = [
-  "data",
   "discord-rest",
-  "roll",
+  "data",
   "gateway",
+  "roll",
   "interactions",
   "web-api",
 ];

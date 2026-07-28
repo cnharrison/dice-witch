@@ -8,12 +8,14 @@ import {
   rollLogContextDescription,
   rollLogMetadataDescription,
   rollLogResultDescription,
+  parseRollLifecycleAlert,
   rollLogTelemetryContext,
   validateRollLogArtifact,
   type DeliverRollLogInputV1,
   type DeliverRollLogResultV1,
   type DiscordAudienceCaptureV1,
   type DiscordRollChannelType,
+  type RollLifecycleAlertV1,
   type RollLoggingContext,
   type RollLogArtifactV1,
   type RollLogDisplayContextV1,
@@ -27,6 +29,7 @@ export type DiscordRestEnv = {
   INVITE_LINK: string;
   SUPPORT_SERVER_LINK: string;
   LOG_OUTPUT_CHANNEL_ID: string;
+  ROLL_LIFECYCLE_ALERT_CHANNEL_ID: string;
   TOPGG_KEY: string;
   DISCORD_BOT_LIST_KEY: string;
 };
@@ -42,6 +45,14 @@ export type DiscordRestBindings = Omit<
 
 const DISCORD_API = "https://discord.com/api/v10";
 const DICE_WITCH_ADMIN_ROLE = "Dice Witch Admin";
+const ADMINISTRATOR_PERMISSION = 1n << 3n;
+const VIEW_CHANNEL_PERMISSION = 1n << 10n;
+const SEND_MESSAGES_PERMISSION = 1n << 11n;
+const USE_APPLICATION_COMMANDS_PERMISSION = 1n << 31n;
+const POST_CHANNEL_PERMISSIONS =
+  VIEW_CHANNEL_PERMISSION | SEND_MESSAGES_PERMISSION;
+const INVOKE_DICE_WITCH_PERMISSIONS =
+  POST_CHANNEL_PERMISSIONS | USE_APPLICATION_COMMANDS_PERMISSION;
 const MAX_GUILDS_PER_STATS_RUN = 100_000;
 const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
@@ -50,7 +61,20 @@ const INVALID_ROLL_LOG_TITLE = "invalidRoll: /roll";
 const MAX_EMBED_CHARACTERS = 6_000;
 
 export type MembershipInspection =
-  | { status: "found"; isDiceWitchAdmin: boolean }
+  | {
+      status: "found";
+      isAdmin: boolean;
+      isDiceWitchAdmin: boolean;
+    }
+  | { status: "missing" };
+
+export type RollerGuildInspection =
+  | {
+      status: "found";
+      isAdmin: boolean;
+      isDiceWitchAdmin: boolean;
+      hasUsableChannel: boolean;
+    }
   | { status: "missing" };
 
 export type TextChannel = {
@@ -58,6 +82,15 @@ export type TextChannel = {
   name: string;
   type: 0 | 5;
 };
+
+export type RollLifecycleAlertDeliveryResult =
+  | { status: "delivered"; messageId: string; httpStatus: number }
+  | { status: "failed"; httpStatus: number }
+  | {
+      status: "retryable";
+      httpStatus: number | null;
+      retryAfterMs: number | null;
+    };
 
 export type WebRollDeliveryResult =
   | { status: "delivered" }
@@ -177,35 +210,147 @@ function parseMemberRoles(value: unknown): string[] {
   if (
     !isRecord(value) ||
     !Array.isArray(value.roles) ||
+    value.roles.length > 250 ||
     !value.roles.every(
       (roleId): roleId is string =>
         typeof roleId === "string" && SNOWFLAKE.test(roleId),
-    )
+    ) ||
+    new Set(value.roles).size !== value.roles.length
   ) {
     throw new Error("Discord guild member response is invalid");
   }
   return value.roles;
 }
 
-function hasNamedRole(value: unknown, assignedRoleIds: Set<string>): boolean {
-  if (!Array.isArray(value)) {
+function parsePermission(value: unknown, source: string): bigint {
+  if (
+    typeof value !== "string" ||
+    value.length > 32 ||
+    !/^(0|[1-9][0-9]*)$/.test(value)
+  ) {
+    throw new Error(`${source} permissions are invalid`);
+  }
+  return BigInt(value);
+}
+
+function memberTimeout(value: unknown, now: number): boolean {
+  if (!isRecord(value)) throw new Error("Discord guild member response is invalid");
+  const timeout = value.communication_disabled_until;
+  if (timeout === undefined || timeout === null) return false;
+  if (typeof timeout !== "string") {
+    throw new Error("Discord guild member response is invalid");
+  }
+  const expiresAt = Date.parse(timeout);
+  if (!Number.isFinite(expiresAt)) {
+    throw new Error("Discord guild member response is invalid");
+  }
+  return expiresAt > now;
+}
+
+function rolePermissions(value: unknown): Map<string, bigint> {
+  if (!Array.isArray(value) || value.length > 250) {
     throw new Error("Discord guild roles response is invalid");
   }
-  let hasRole = false;
+  const permissions = new Map<string, bigint>();
   for (const role of value) {
     if (
       !isRecord(role) ||
       typeof role.id !== "string" ||
       !SNOWFLAKE.test(role.id) ||
-      typeof role.name !== "string"
+      permissions.has(role.id)
     ) {
       throw new Error("Discord guild roles response is invalid");
     }
-    if (role.name === DICE_WITCH_ADMIN_ROLE && assignedRoleIds.has(role.id)) {
-      hasRole = true;
-    }
+    permissions.set(
+      role.id,
+      parsePermission(role.permissions, "Discord guild role"),
+    );
   }
-  return hasRole;
+  return permissions;
+}
+
+type PermissionOverwrite = {
+  id: string;
+  type: 0 | 1;
+  allow: bigint;
+  deny: bigint;
+};
+
+function permissionOverwrites(value: unknown): PermissionOverwrite[] {
+  if (!Array.isArray(value) || value.length > 1_000) {
+    throw new Error("Discord channel permission overwrites are invalid");
+  }
+  const overwrites: PermissionOverwrite[] = [];
+  const keys = new Set<string>();
+  for (const overwrite of value) {
+    if (
+      !isRecord(overwrite) ||
+      typeof overwrite.id !== "string" ||
+      !SNOWFLAKE.test(overwrite.id) ||
+      (overwrite.type !== 0 && overwrite.type !== 1)
+    ) {
+      throw new Error("Discord channel permission overwrites are invalid");
+    }
+    const key = `${String(overwrite.type)}:${overwrite.id}`;
+    if (keys.has(key)) {
+      throw new Error("Discord channel permission overwrites are invalid");
+    }
+    keys.add(key);
+    overwrites.push({
+      id: overwrite.id,
+      type: overwrite.type,
+      allow: parsePermission(overwrite.allow, "Discord channel overwrite"),
+      deny: parsePermission(overwrite.deny, "Discord channel overwrite"),
+    });
+  }
+  return overwrites;
+}
+
+function applyPermissionOverwrite(
+  permissions: bigint,
+  overwrite: Pick<PermissionOverwrite, "allow" | "deny">,
+): bigint {
+  return (permissions & ~overwrite.deny) | overwrite.allow;
+}
+
+function inspectAssignedRoles(
+  value: unknown,
+  assignedRoleIds: Set<string>,
+): { isAdmin: boolean; isDiceWitchAdmin: boolean } {
+  if (!Array.isArray(value)) {
+    throw new Error("Discord guild roles response is invalid");
+  }
+  let isAdmin = false;
+  let isDiceWitchAdmin = false;
+  for (const role of value) {
+    if (
+      !isRecord(role) ||
+      typeof role.id !== "string" ||
+      !SNOWFLAKE.test(role.id) ||
+      typeof role.name !== "string" ||
+      role.name.length > 100 ||
+      typeof role.permissions !== "string" ||
+      role.permissions.length > 32 ||
+      !/^(0|[1-9][0-9]*)$/.test(role.permissions)
+    ) {
+      throw new Error("Discord guild roles response is invalid");
+    }
+    if (!assignedRoleIds.has(role.id)) continue;
+    if ((BigInt(role.permissions) & 8n) === 8n) isAdmin = true;
+    if (role.name === DICE_WITCH_ADMIN_ROLE) isDiceWitchAdmin = true;
+  }
+  return { isAdmin, isDiceWitchAdmin };
+}
+
+function parseGuildOwnerId(value: unknown): string {
+  if (
+    !isRecord(value) ||
+    typeof value.owner_id !== "string" ||
+    !SNOWFLAKE.test(value.owner_id)
+  ) {
+    throw new Error("Discord guild response is invalid");
+  }
+  return value.owner_id;
 }
 
 function hasRegisteredFudgeChoice(command: Record<string, unknown>): boolean {
@@ -215,10 +360,7 @@ function hasRegisteredFudgeChoice(command: Record<string, unknown>): boolean {
   );
   if (!isRecord(topic) || !Array.isArray(topic.choices)) return false;
   return (topic.choices as unknown[]).some(
-    (choice) =>
-      isRecord(choice) &&
-      choice.name === "Fudge dice" &&
-      choice.value === "fudge",
+    (choice) => isRecord(choice) && choice.value === "fudge",
   );
 }
 
@@ -647,6 +789,239 @@ export async function listTextChannels(
     channels.push({ id: channel.id, name: channel.name, type: channel.type });
   }
   return channels;
+}
+
+type GuildMemberPermissions = {
+  userId: string;
+  roleIds: Set<string>;
+  base: bigint;
+  isAdministrator: boolean;
+  isTimedOut: boolean;
+};
+
+function guildMemberPermissions(
+  member: unknown,
+  permissionsByRole: Map<string, bigint>,
+  everyonePermissions: bigint,
+  ownerId: string,
+  userId: string,
+  now: number,
+): GuildMemberPermissions {
+  const roleIds = new Set(parseMemberRoles(member));
+  let base = everyonePermissions;
+  for (const roleId of roleIds) {
+    const permissions = permissionsByRole.get(roleId);
+    if (permissions === undefined) {
+      throw new Error("Discord guild roles response is invalid");
+    }
+    base |= permissions;
+  }
+  const isAdministrator =
+    ownerId === userId ||
+    (base & ADMINISTRATOR_PERMISSION) === ADMINISTRATOR_PERMISSION;
+  return {
+    userId,
+    roleIds,
+    base,
+    isAdministrator,
+    isTimedOut: memberTimeout(member, now) && !isAdministrator,
+  };
+}
+
+function canUseTextChannel(
+  member: GuildMemberPermissions,
+  guildId: string,
+  overwrites: PermissionOverwrite[],
+  requiredPermissions: bigint,
+): boolean {
+  if (member.isTimedOut) return false;
+  if (member.isAdministrator) return true;
+  let permissions = member.base;
+  const everyone = overwrites.find(
+    (overwrite) => overwrite.type === 0 && overwrite.id === guildId,
+  );
+  if (everyone !== undefined) {
+    permissions = applyPermissionOverwrite(permissions, everyone);
+  }
+  let roleAllow = 0n;
+  let roleDeny = 0n;
+  for (const overwrite of overwrites) {
+    if (overwrite.type === 0 && member.roleIds.has(overwrite.id)) {
+      roleAllow |= overwrite.allow;
+      roleDeny |= overwrite.deny;
+    }
+  }
+  permissions = applyPermissionOverwrite(permissions, {
+    allow: roleAllow,
+    deny: roleDeny,
+  });
+  const memberOverwrite = overwrites.find(
+    (overwrite) => overwrite.type === 1 && overwrite.id === member.userId,
+  );
+  if (memberOverwrite !== undefined) {
+    permissions = applyPermissionOverwrite(permissions, memberOverwrite);
+  }
+  return (permissions & requiredPermissions) === requiredPermissions;
+}
+
+type MemberTextChannelInspection =
+  | (Extract<RollerGuildInspection, { status: "found" }> & {
+      channels: TextChannel[];
+    })
+  | { status: "missing" };
+
+async function inspectMemberTextChannels(
+  env: Pick<DiscordRestEnv, "DISCORD_APPLICATION_ID" | "DISCORD_BOT_TOKEN">,
+  guildId: string,
+  userId: string,
+  discordFetch: RequestFetch,
+  now: number,
+): Promise<MemberTextChannelInspection> {
+  if (
+    !SNOWFLAKE.test(guildId) ||
+    !SNOWFLAKE.test(userId) ||
+    !SNOWFLAKE.test(env.DISCORD_APPLICATION_ID)
+  ) {
+    throw new Error("Membership identifiers are invalid");
+  }
+  const headers = {
+    authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+    "user-agent": "Dice-Witch",
+  };
+  const guildPath = `${DISCORD_API}/guilds/${guildId}`;
+  const [memberResponse, botResponse, rolesResponse, guildResponse, channelsResponse] =
+    await Promise.all([
+      discordFetch(new Request(`${guildPath}/members/${userId}`, { headers })),
+      discordFetch(
+        new Request(`${guildPath}/members/${env.DISCORD_APPLICATION_ID}`, { headers }),
+      ),
+      discordFetch(new Request(`${guildPath}/roles`, { headers })),
+      discordFetch(new Request(guildPath, { headers })),
+      discordFetch(new Request(`${guildPath}/channels`, { headers })),
+    ]);
+  if (memberResponse.status === 404 || botResponse.status === 404) {
+    return { status: "missing" };
+  }
+  if (!memberResponse.ok || !botResponse.ok) {
+    throw new Error("Discord guild member request failed");
+  }
+  if (!rolesResponse.ok) throw new Error("Discord guild roles request failed");
+  if (!guildResponse.ok) throw new Error("Discord guild request failed");
+  if (!channelsResponse.ok) throw new Error("Discord guild channels request failed");
+
+  const member: unknown = await memberResponse.json();
+  const bot: unknown = await botResponse.json();
+  const roles: unknown = await rolesResponse.json();
+  const permissionsByRole = rolePermissions(roles);
+  const everyonePermissions = permissionsByRole.get(guildId);
+  if (everyonePermissions === undefined) {
+    throw new Error("Discord guild roles response is invalid");
+  }
+  const ownerId = parseGuildOwnerId(await guildResponse.json());
+  const memberPermissions = guildMemberPermissions(
+    member,
+    permissionsByRole,
+    everyonePermissions,
+    ownerId,
+    userId,
+    now,
+  );
+  const botPermissions = guildMemberPermissions(
+    bot,
+    permissionsByRole,
+    everyonePermissions,
+    ownerId,
+    env.DISCORD_APPLICATION_ID,
+    now,
+  );
+
+  const value: unknown = await channelsResponse.json();
+  if (!Array.isArray(value)) {
+    throw new Error("Discord guild channels response is invalid");
+  }
+  const channels: TextChannel[] = [];
+  for (const channel of value) {
+    if (!isRecord(channel) || typeof channel.type !== "number") {
+      throw new Error("Discord guild channels response is invalid");
+    }
+    if (channel.type !== 0 && channel.type !== 5) continue;
+    if (
+      typeof channel.id !== "string" ||
+      !SNOWFLAKE.test(channel.id) ||
+      typeof channel.name !== "string" ||
+      channel.name.length < 1 ||
+      channel.name.length > 100
+    ) {
+      throw new Error("Discord guild channels response is invalid");
+    }
+    const overwrites = permissionOverwrites(channel.permission_overwrites);
+    const memberCanUseDiceWitch = canUseTextChannel(
+      memberPermissions,
+      guildId,
+      overwrites,
+      INVOKE_DICE_WITCH_PERMISSIONS,
+    );
+    const botCanPost = canUseTextChannel(
+      botPermissions,
+      guildId,
+      overwrites,
+      POST_CHANNEL_PERMISSIONS,
+    );
+    if (memberCanUseDiceWitch && botCanPost) {
+      channels.push({ id: channel.id, name: channel.name, type: channel.type });
+    }
+  }
+  const assignedRoles = inspectAssignedRoles(
+    roles,
+    new Set([guildId, ...memberPermissions.roleIds]),
+  );
+  return {
+    status: "found",
+    isAdmin: memberPermissions.isAdministrator,
+    isDiceWitchAdmin: assignedRoles.isDiceWitchAdmin,
+    hasUsableChannel: channels.length > 0,
+    channels,
+  };
+}
+
+export async function listMemberTextChannels(
+  env: Pick<DiscordRestEnv, "DISCORD_APPLICATION_ID" | "DISCORD_BOT_TOKEN">,
+  guildId: string,
+  userId: string,
+  discordFetch: RequestFetch = (request) => fetch(request),
+  now = Date.now(),
+): Promise<TextChannel[]> {
+  const inspection = await inspectMemberTextChannels(
+    env,
+    guildId,
+    userId,
+    discordFetch,
+    now,
+  );
+  return inspection.status === "found" ? inspection.channels : [];
+}
+
+export async function inspectRollerGuild(
+  env: Pick<DiscordRestEnv, "DISCORD_APPLICATION_ID" | "DISCORD_BOT_TOKEN">,
+  guildId: string,
+  userId: string,
+  discordFetch: RequestFetch = (request) => fetch(request),
+  now = Date.now(),
+): Promise<RollerGuildInspection> {
+  const inspection = await inspectMemberTextChannels(
+    env,
+    guildId,
+    userId,
+    discordFetch,
+    now,
+  );
+  if (inspection.status === "missing") return inspection;
+  return {
+    status: inspection.status,
+    isAdmin: inspection.isAdmin,
+    isDiceWitchAdmin: inspection.isDiceWitchAdmin,
+    hasUsableChannel: inspection.hasUsableChannel,
+  };
 }
 
 function isRetryableDiscordStatus(status: number): boolean {
@@ -1235,6 +1610,17 @@ async function resolveRollLogContext(
   };
 }
 
+function savedRollLogAttribution(artifact: RollLogArtifactV1): string | null {
+  const resultFooter = artifact.payload.embeds?.[0]?.footer?.text;
+  if (resultFooter === undefined) return null;
+  const prefix = `sent to ${artifact.user.username} via ${artifact.source} · `;
+  if (!resultFooter.startsWith(prefix)) return null;
+  const attribution = resultFooter.slice(prefix.length);
+  return /^from (?:personal|server) library · .+$/u.test(attribution)
+    ? attribution
+    : null;
+}
+
 function buildRollLogEmbed(
   artifact: RollLogArtifactV1,
   shard: RollLogShardV1,
@@ -1257,11 +1643,16 @@ function buildRollLogEmbed(
         )}${errorSuffix}`
       : `${rollLogContextDescription(artifact, shard, displayContext)}\n\n${resultDescription}`;
   const title = isInvalidRoll ? INVALID_ROLL_LOG_TITLE : ROLL_LOG_TITLE;
-  const footer =
+  const footerParts = [
+    savedRollLogAttribution(artifact),
     artifact.image.status === "unavailable" &&
     artifact.image.reason !== "not-applicable"
-      ? { text: "Image unavailable" }
-      : undefined;
+      ? "Image unavailable"
+      : null,
+  ].filter((part): part is string => part !== null);
+  const footer = footerParts.length === 0
+    ? undefined
+    : { text: footerParts.join(" · ") };
   if (
     description.length > 4_096 ||
     title.length + description.length + (footer?.text.length ?? 0) >
@@ -1443,8 +1834,10 @@ export async function deliverWebRoll(
     filename: string;
     png: Uint8Array;
     skipDelay: boolean;
+    delayMs: number;
   },
   discordFetch: RequestFetch = (request) => fetch(request),
+  wait: Sleep = sleep,
 ): Promise<WebRollDeliveryResult> {
   if (
     (input.rollId !== undefined && !SNOWFLAKE.test(input.rollId)) ||
@@ -1456,7 +1849,11 @@ export async function deliverWebRoll(
     !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/i.test(input.filename) ||
     !(input.png instanceof Uint8Array) ||
     input.png.byteLength === 0 ||
-    typeof input.skipDelay !== "boolean"
+    typeof input.skipDelay !== "boolean" ||
+    !Number.isSafeInteger(input.delayMs) ||
+    input.delayMs < 0 ||
+    input.delayMs > 5_000 ||
+    (input.skipDelay ? input.delayMs !== 0 : input.delayMs < 1)
   ) {
     throw new Error("Web roll delivery request is invalid");
   }
@@ -1506,17 +1903,18 @@ export async function deliverWebRoll(
       throw new Error("Discord clatter response is invalid");
     }
     referenceId = clatterMessage.id;
+    await wait(input.delayMs);
   }
 
   const payload = {
     ...input.payload,
-    ...(input.rollId === undefined
+    ...(referenceId !== null || input.rollId === undefined
       ? {}
       : { nonce: input.rollId, enforce_nonce: true }),
     allowed_mentions: { parse: [] },
     ...(referenceId === null
       ? {}
-      : { message_reference: { message_id: referenceId } }),
+      : { attachments: [{ id: 0, filename: input.filename }] }),
   };
   const form = new FormData();
   form.set("payload_json", JSON.stringify(payload));
@@ -1525,9 +1923,12 @@ export async function deliverWebRoll(
     new Blob([input.png], { type: "image/png" }),
     input.filename,
   );
+  const resultUrl = referenceId === null
+    ? messagesUrl
+    : `${messagesUrl}/${referenceId}`;
   const response = await discordFetch(
-    new Request(messagesUrl, {
-      method: "POST",
+    new Request(resultUrl, {
+      method: referenceId === null ? "POST" : "PATCH",
       headers: {
         authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
         "user-agent": "Dice-Witch",
@@ -1553,6 +1954,179 @@ export async function deliverWebRoll(
   return { status: "delivered" };
 }
 
+function lifecycleAlertPresentation(
+  state: RollLifecycleAlertV1["state"],
+): { label: string; color: number } {
+  switch (state) {
+    case "delivered":
+      return { label: "Recovered", color: 0x2e_cc71 };
+    case "failed":
+      return { label: "Failed", color: 0xe7_4c3c };
+    default:
+      return { label: "No terminal outcome", color: 0xf3_9c12 };
+  }
+}
+
+function lifecycleAlertPayload(alert: RollLifecycleAlertV1) {
+  const { context } = alert;
+  const presentation = lifecycleAlertPresentation(alert.state);
+  const resultSummary = JSON.stringify(context.outcome);
+  return {
+    flags: 1 << 12,
+    allowed_mentions: { parse: [] },
+    embeds: [
+      {
+        title: `Roll lifecycle alert: ${presentation.label}`,
+        color: presentation.color,
+        fields: [
+          { name: "Interaction", value: alert.interactionId, inline: true },
+          { name: "State", value: alert.state, inline: true },
+          { name: "Attempts", value: String(alert.attempts), inline: true },
+          {
+            name: "User",
+            value: `${context.username} (${context.userId})`,
+            inline: false,
+          },
+          {
+            name: "Destination",
+            value:
+              context.guildId === null
+                ? `DM channel ${context.channelId}`
+                : `${context.guildName ?? "Unknown guild"} (${context.guildId}) / ${context.channelName ?? "Unknown channel"} (${context.channelId})`,
+            inline: false,
+          },
+          {
+            name: "Notation",
+            value: context.notation.slice(0, 1_024),
+            inline: false,
+          },
+          {
+            name: "Failure",
+            value:
+              alert.failureCode === null
+                ? "No terminal failure code"
+                : `${alert.failureCode} · ${alert.failurePhase ?? "unknown phase"}`,
+            inline: false,
+          },
+          {
+            name: "Result snapshot",
+            value: resultSummary.slice(0, 1_024),
+            inline: false,
+          },
+        ],
+        footer: {
+          text: `${alert.acceptedAt === null ? "Deferred" : "Accepted"} ${new Date(alert.acceptedAt ?? alert.deferredAt).toISOString()} · HTTP ${alert.httpStatus === null ? "n/a" : String(alert.httpStatus)}`,
+        },
+      },
+    ],
+  };
+}
+
+function lifecycleAlertForm(alert: RollLifecycleAlertV1, create: boolean): FormData {
+  const filename = `roll-lifecycle-${alert.interactionId}.json`;
+  const payload = {
+    ...lifecycleAlertPayload(alert),
+    ...(create
+      ? { nonce: `l${alert.interactionId}`, enforce_nonce: true }
+      : {}),
+    attachments: [
+      {
+        id: "0",
+        filename,
+        description: "Token-free roll lifecycle diagnostic context",
+      },
+    ],
+  };
+  const form = new FormData();
+  form.set("payload_json", JSON.stringify(payload));
+  form.set(
+    "files[0]",
+    new Blob([JSON.stringify(alert, null, 2)], {
+      type: "application/json",
+    }),
+    filename,
+  );
+  return form;
+}
+
+async function deliverRollLifecycleAlert(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
+  value: unknown,
+  operation: "create" | "update",
+  discordFetch: RequestFetch = (request) => fetch(request),
+): Promise<RollLifecycleAlertDeliveryResult> {
+  const alert = parseRollLifecycleAlert(value);
+  if (!SNOWFLAKE.test(env.ROLL_LIFECYCLE_ALERT_CHANNEL_ID)) {
+    throw new Error("Roll lifecycle alert channel is invalid");
+  }
+  if (operation === "update" && alert.alertMessageId === null) {
+    throw new Error("Roll lifecycle alert message id is required");
+  }
+  const messageId = alert.alertMessageId;
+  const url = messageId === null
+    ? `${DISCORD_API}/channels/${env.ROLL_LIFECYCLE_ALERT_CHANNEL_ID}/messages`
+    : `${DISCORD_API}/channels/${env.ROLL_LIFECYCLE_ALERT_CHANNEL_ID}/messages/${messageId}`;
+  let response: Response;
+  try {
+    response = await discordFetch(
+      new Request(url, {
+        method: messageId === null ? "POST" : "PATCH",
+        headers: {
+          authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+          "user-agent": "Dice-Witch",
+        },
+        body: lifecycleAlertForm(alert, messageId === null),
+      }),
+    );
+  } catch {
+    return { status: "retryable", httpStatus: null, retryAfterMs: null };
+  }
+  if (!response.ok) {
+    if (isRetryableDiscordStatus(response.status)) {
+      const retryAfterSeconds = numericResponseHeader(response, "retry-after");
+      return {
+        status: "retryable",
+        httpStatus: response.status,
+        retryAfterMs:
+          retryAfterSeconds === null
+            ? null
+            : Math.ceil(retryAfterSeconds * 1_000),
+      };
+    }
+    return { status: "failed", httpStatus: response.status };
+  }
+  const created: unknown = await response.json();
+  if (
+    !isRecord(created) ||
+    typeof created.id !== "string" ||
+    !SNOWFLAKE.test(created.id) ||
+    (messageId !== null && created.id !== messageId)
+  ) {
+    throw new Error("Discord roll lifecycle alert response is invalid");
+  }
+  return {
+    status: "delivered",
+    messageId: created.id,
+    httpStatus: response.status,
+  };
+}
+
+export function createRollLifecycleAlertV1(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
+  value: unknown,
+  discordFetch?: RequestFetch,
+): Promise<RollLifecycleAlertDeliveryResult> {
+  return deliverRollLifecycleAlert(env, value, "create", discordFetch);
+}
+
+export function updateRollLifecycleAlertV1(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
+  value: unknown,
+  discordFetch?: RequestFetch,
+): Promise<RollLifecycleAlertDeliveryResult> {
+  return deliverRollLifecycleAlert(env, value, "update", discordFetch);
+}
+
 export async function inspectMembership(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
   guildId: string,
@@ -1575,21 +2149,31 @@ export async function inspectMembership(
   if (!memberResponse.ok) {
     throw new Error("Discord guild member request failed");
   }
-  const assignedRoleIds = new Set(
-    parseMemberRoles(await memberResponse.json()),
-  );
-  const rolesResponse = await discordFetch(
-    new Request(`${DISCORD_API}/guilds/${guildId}/roles`, { headers }),
-  );
+  const assignedRoleIds = new Set([
+    guildId,
+    ...parseMemberRoles(await memberResponse.json()),
+  ]);
+  const [rolesResponse, guildResponse] = await Promise.all([
+    discordFetch(
+      new Request(`${DISCORD_API}/guilds/${guildId}/roles`, { headers }),
+    ),
+    discordFetch(new Request(`${DISCORD_API}/guilds/${guildId}`, { headers })),
+  ]);
   if (!rolesResponse.ok) {
     throw new Error("Discord guild roles request failed");
   }
+  if (!guildResponse.ok) {
+    throw new Error("Discord guild request failed");
+  }
+  const roles = inspectAssignedRoles(
+    await rolesResponse.json(),
+    assignedRoleIds,
+  );
   return {
     status: "found",
-    isDiceWitchAdmin: hasNamedRole(
-      await rolesResponse.json(),
-      assignedRoleIds,
-    ),
+    isAdmin:
+      roles.isAdmin || parseGuildOwnerId(await guildResponse.json()) === userId,
+    isDiceWitchAdmin: roles.isDiceWitchAdmin,
   };
 }
 
@@ -1683,12 +2267,26 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     return deliverRollLogV1(await this.botEnv(), input);
   }
 
+  async createRollLifecycleAlertV1(input: unknown) {
+    return createRollLifecycleAlertV1(await this.botEnv(), input);
+  }
+
+  async updateRollLifecycleAlertV1(input: unknown) {
+    return updateRollLifecycleAlertV1(await this.botEnv(), input);
+  }
+
   async deliverWebRoll(input: Parameters<typeof deliverWebRoll>[1]) {
     return deliverWebRoll(await this.botEnv(), input);
   }
 
-  async listTextChannels(guildId: string): Promise<TextChannel[]> {
-    return listTextChannels(await this.botEnv(), guildId);
+  async listTextChannels(
+    guildId: string,
+    userId?: string,
+  ): Promise<TextChannel[]> {
+    const env = await this.botEnv();
+    return userId === undefined
+      ? listTextChannels(env, guildId)
+      : listMemberTextChannels(env, guildId, userId);
   }
 
   async inspectMembership(
@@ -1696,6 +2294,13 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     userId: string,
   ): Promise<MembershipInspection> {
     return inspectMembership(await this.botEnv(), guildId, userId);
+  }
+
+  async inspectRollerGuild(
+    guildId: string,
+    userId: string,
+  ): Promise<RollerGuildInspection> {
+    return inspectRollerGuild(await this.botEnv(), guildId, userId);
   }
 }
 

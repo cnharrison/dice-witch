@@ -1,11 +1,11 @@
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { CustomColorPickerDialog } from "@/components/CustomColorPickerDialog";
 import { createVividAppearancePaletteV3 } from "@/lib/appearance-editor-v3";
 import type {
   AppearanceCatalogV3,
   AppearanceRecipeV3,
 } from "@/types/appearance";
 import type { AppearanceColorsV3 } from "@dice-witch/dice-v4-model";
-import { cn } from "@/lib/utils";
 import { Plus, X } from "lucide-react";
 import * as React from "react";
 import { AppearanceSelectV3 } from "./AppearanceSelectV3";
@@ -30,7 +30,10 @@ export function AppearanceColorControlsV3({
   onChange(recipe: AppearanceRecipeV3): void;
 }) {
   const [error, setError] = React.useState<string | null>(null);
-  const colorInputs = React.useRef<Array<HTMLInputElement | null>>([]);
+  const [pickerTarget, setPickerTarget] = React.useState<number | "add" | null>(
+    null,
+  );
+  const colorButtons = React.useRef<Array<HTMLButtonElement | null>>([]);
   const pendingFocusIndex = React.useRef<number | null>(null);
   const colors = recipe.colors;
   const palette = colors.mode === "palette" ? colors.colors : null;
@@ -42,7 +45,7 @@ export function AppearanceColorControlsV3({
 
   React.useLayoutEffect(() => {
     if (pendingFocusIndex.current === null) return;
-    colorInputs.current[pendingFocusIndex.current]?.focus();
+    colorButtons.current[pendingFocusIndex.current]?.focus();
     pendingFocusIndex.current = null;
   }, [editableColors.length]);
 
@@ -73,24 +76,23 @@ export function AppearanceColorControlsV3({
     emit({ mode, primary });
   };
 
-  const updateColor = (index: number, color: string): boolean => {
+  const updateColor = (index: number, color: string) => {
     if (!HEX_COLOR.test(color)) {
       setError("Colors must use six-digit hexadecimal notation.");
-      return false;
+      return;
     }
     if (palette === null) {
-      if (colors.mode !== "tonal" && colors.mode !== "random") return false;
+      if (colors.mode !== "tonal" && colors.mode !== "random") return;
       emit({ ...colors, primary: color.toLowerCase() });
-      return true;
+      return;
     }
     const next = [...palette];
     next[index] = color.toLowerCase();
     if (new Set(next).size < catalog.bounds.paletteColors.minimum) {
       setError("Palette needs at least two distinct colors.");
-      return false;
+      return;
     }
     emit({ mode: "palette", colors: next });
-    return true;
   };
 
   const addColor = (color: string) => {
@@ -134,6 +136,15 @@ export function AppearanceColorControlsV3({
     }
   };
 
+  let pickerValue = catalog.editorDefaults.primaryColor;
+  if (typeof pickerTarget === "number") {
+    const selectedColor = editableColors[pickerTarget];
+    if (selectedColor === undefined) {
+      throw new Error("Selected appearance color is missing");
+    }
+    pickerValue = selectedColor;
+  }
+
   return (
     <fieldset className="space-y-3 rounded-lg border bg-muted/20 p-4">
       <legend className="px-1 text-sm font-semibold">Colors</legend>
@@ -160,24 +171,24 @@ export function AppearanceColorControlsV3({
               key={index}
               className="flex items-center rounded-md border bg-background"
             >
-              <label className="flex items-center gap-2 px-2 py-1">
-                <span className="sr-only">Color {index + 1}</span>
-                <input
-                  ref={(input) => {
-                    colorInputs.current[index] = input;
-                  }}
-                  aria-label={`Color ${index + 1}`}
-                  type="color"
-                  value={color}
-                  onChange={(event) => {
-                    if (!updateColor(index, event.target.value)) {
-                      event.currentTarget.value = color;
-                    }
-                  }}
-                  className="h-11 w-11 cursor-pointer border-0 bg-transparent sm:h-8 sm:w-10"
+              <Button
+                ref={(button) => {
+                  colorButtons.current[index] = button;
+                }}
+                type="button"
+                variant="ghost"
+                value={color}
+                className="h-11 gap-2 rounded-r-none px-2 sm:h-8"
+                aria-label={`Choose color ${index + 1}`}
+                onClick={() => setPickerTarget(index)}
+              >
+                <span
+                  className="h-6 w-8 rounded-sm border sm:h-5"
+                  style={{ backgroundColor: color }}
+                  aria-hidden="true"
                 />
                 <span className="font-mono text-xs uppercase">{color}</span>
-              </label>
+              </Button>
               {palette !== null &&
                 palette.length > catalog.bounds.paletteColors.minimum && (
                   <Button
@@ -207,25 +218,36 @@ export function AppearanceColorControlsV3({
           )}
           {palette !== null &&
             palette.length < catalog.bounds.paletteColors.maximum && (
-              <label
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "relative h-11 cursor-pointer overflow-hidden focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 sm:h-9",
-                )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-11 sm:h-9"
+                onClick={() => setPickerTarget("add")}
               >
                 <Plus aria-hidden="true" />
                 Add color
-                <input
-                  aria-label="Add color"
-                  type="color"
-                  value={catalog.editorDefaults.primaryColor}
-                  onChange={(event) => addColor(event.currentTarget.value)}
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                />
-              </label>
+              </Button>
             )}
         </div>
       </div>
+      <CustomColorPickerDialog
+        open={pickerTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setPickerTarget(null);
+        }}
+        value={pickerValue}
+        selectedColor={typeof pickerTarget === "number" ? pickerValue : null}
+        onChange={(color) => {
+          if (pickerTarget === "add") addColor(color);
+          else if (typeof pickerTarget === "number") {
+            updateColor(pickerTarget, color);
+          }
+        }}
+        title="Appearance color"
+        description="Choose a color for this appearance using hue, saturation, lightness, or a hexadecimal value."
+        visuallyHideHeader
+      />
       {error !== null && (
         <p role="alert" className="text-sm text-destructive">
           {error}

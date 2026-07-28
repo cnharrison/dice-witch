@@ -36,6 +36,7 @@ export const APPEARANCE_VARIATION_SCOPES_V3 = Object.freeze([
 
 export const APPEARANCE_RANDOMIZATION_POLICIES_V3 = Object.freeze([
   "full-spectrum-v1",
+  "full-spectrum-v2",
 ] as const);
 
 export const APPEARANCE_FORM_POLICIES_V3 = Object.freeze([

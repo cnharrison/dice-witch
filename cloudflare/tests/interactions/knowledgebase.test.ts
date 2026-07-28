@@ -70,15 +70,15 @@ describe("knowledgebase interaction contract", () => {
             title: "👩‍🎓 Knowledge base",
             fields: [
               {
-                name: "Fudge Dice",
+                name: "Fate or Fudge dice",
                 value:
-                  "Fudge dice (also called Fate dice) have 6 faces: 2 plus (+), 2 minus (-), and 2 blank (0). Each + adds 1, each - subtracts 1, and blanks are 0.\n\n`/roll notation:4dF`: Roll 4 fudge dice (standard for Fate/Fudge systems).\n`/roll notation:4dF+2`: Roll 4 fudge dice and add 2 to the result.",
+                  "Fate or Fudge dice have six faces: two plus (+), two minus (-), and two blank (0).\n\n`/roll notation:4dF`: Roll four Fate or Fudge dice.\n`/roll notation:4dF+2`: Roll four and add 2.",
                 inline: false,
               },
               {
-                name: "Reading Results",
+                name: "Read the results",
                 value:
-                  "Results range from -4 to +4 when rolling 4dF.\n\nExample: [+, -, 0, +] = +1 total\nExample: [-, -, +, 0] = -1 total",
+                  "Each + adds 1, each - subtracts 1, and each blank is 0.\n\n`[+, -, 0, +] = +1`\n`[-, -, +, 0] = -1`",
                 inline: false,
               },
             ],
@@ -106,6 +106,18 @@ describe("knowledgebase interaction contract", () => {
         allowed_mentions: { parse: [] },
       },
     });
+  });
+
+  it("uses the same exhaustive modifier language as the player guide", () => {
+    const exploding = JSON.stringify(buildKnowledgeBaseResponse("exploding", links));
+    const unique = JSON.stringify(buildKnowledgeBaseResponse("unique", links));
+    const critical = JSON.stringify(buildKnowledgeBaseResponse("crit", links));
+
+    expect(exploding).toContain("Compound and penetrate");
+    expect(unique).toContain("Reroll each duplicate once");
+    expect(critical).toContain(
+      "Critical modifiers add a cosmetic illustration showing whether a die is critical.",
+    );
   });
 
   it("rejects malformed command options and ignores unknown button ids", () => {

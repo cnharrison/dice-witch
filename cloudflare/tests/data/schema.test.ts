@@ -15,6 +15,9 @@ beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
     dataEnv.DATA.prepare("DELETE FROM discord_audience_snapshot"),
+    dataEnv.DATA.prepare("DELETE FROM saved_rolls"),
+    dataEnv.DATA.prepare("DELETE FROM guild_saved_roll_lists"),
+    dataEnv.DATA.prepare("DELETE FROM user_saved_roll_lists"),
     dataEnv.DATA.prepare("DELETE FROM guild_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM user_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM mutation_receipts"),
@@ -261,6 +264,10 @@ describe("D1 business schema migration", () => {
       { name: "0003_mutation_receipts.sql" },
       { name: "0004_appearance_profiles.sql" },
       { name: "0005_discord_audience_snapshot.sql" },
+      { name: "0006_saved_rolls.sql" },
+      { name: "0007_saved_roll_manual_order.sql" },
+      { name: "0008_saved_roll_name_color.sql" },
+      { name: "0009_roll_lifecycle_receipts.sql" },
     ]);
   });
 

@@ -482,8 +482,8 @@ export function AppearanceEditor({
                 aria-pressed={target === value}
                 className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   target === value
-                    ? "border-fuchsia-500 bg-fuchsia-500 text-white"
-                    : "bg-background hover:border-fuchsia-400"
+                    ? "border-brand bg-brand text-brand-foreground"
+                    : "bg-background hover:border-brand/70"
                 }`}
               >
                 {TARGET_LABELS[value as AppearanceEditorTarget]}
@@ -499,7 +499,7 @@ export function AppearanceEditor({
                 type="button"
                 disabled={isSaving}
                 onClick={() => void clearTargetOverride()}
-                className="font-semibold text-fuchsia-600 underline-offset-2 hover:underline disabled:opacity-50 dark:text-fuchsia-300"
+                className="font-semibold text-brand underline-offset-2 hover:underline disabled:opacity-50"
               >
                 Use All dice design
               </button>
@@ -778,7 +778,7 @@ export function AppearanceEditor({
           </div>
         </details>
 
-        <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50/60 p-4 dark:border-fuchsia-900 dark:bg-fuchsia-950/20">
+        <div className="rounded-lg border border-brand/35 bg-brand/10 p-4">
           <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
             <div className="space-y-1.5">
               <Label htmlFor={`${kind}-design-name`}>Design name</Label>
@@ -809,7 +809,7 @@ export function AppearanceEditor({
         </div>
 
         {status && (
-          <p role="status" className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
+          <p role="status" className="text-sm font-medium text-brand">
             {status}
           </p>
         )}
@@ -824,12 +824,14 @@ export function AppearanceEditor({
       >
         <AppearancePreviewPane target={target} recipe={recipe} />
 
-        <SavedAppearanceDesigns
-          designs={currentProfile.designs}
-          isSaving={isSaving}
-          onEdit={editDesign}
-          onDelete={(designId) => void deleteDesign(designId)}
-        />
+        {currentProfile.designs.length > 0 && (
+          <SavedAppearanceDesigns
+            designs={currentProfile.designs}
+            isSaving={isSaving}
+            onEdit={editDesign}
+            onDelete={(designId) => void deleteDesign(designId)}
+          />
+        )}
       </aside>
     </section>
   );
