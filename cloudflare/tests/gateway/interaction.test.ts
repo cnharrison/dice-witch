@@ -59,6 +59,7 @@ describe("buildRollDeliveryPayload", () => {
         channelId: "1400000000000000002",
         notation: "2d20 1d10",
       },
+      responseMode: "followup",
     });
   });
 });
