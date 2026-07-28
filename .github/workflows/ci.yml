@@ -125,6 +125,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build frontend assets for Web API dry-run
+        run: npm run build --workspace=@dice-witch/frontend
+
       - name: Dry-run all Workers
         working-directory: cloudflare
         run: |

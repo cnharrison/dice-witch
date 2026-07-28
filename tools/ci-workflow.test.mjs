@@ -41,6 +41,17 @@ test("CI preserves every quality gate while running independent tests in paralle
   assert.doesNotMatch(workflow, /run: npm audit(?:\s|$)/);
 });
 
+test("CI builds Web API assets before isolated Worker dry-runs", () => {
+  const dryRuns = workflow.slice(
+    workflow.indexOf("  worker-dry-runs:"),
+    workflow.indexOf("  quality:"),
+  );
+  const build = dryRuns.indexOf("npm run build --workspace=@dice-witch/frontend");
+  const dryRun = dryRuns.indexOf("wrangler deploy");
+  assert.notEqual(build, -1);
+  assert.ok(build < dryRun);
+});
+
 test("CI retains one fail-closed required quality result", () => {
   const quality = workflow.slice(workflow.indexOf("  quality:"));
   assert.match(quality, /needs: \[static-validation, test-suite, worker-dry-runs\]/);
