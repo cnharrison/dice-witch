@@ -1,10 +1,17 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import mdx from "@mdx-js/rollup";
+import remarkGfm from "remark-gfm";
 import { defineConfig } from "vitest/config";
+import { docsSearchPlugin } from "./docs-search-plugin";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  plugins: [
+    docsSearchPlugin(path.join(root, "src/pages/Docs/content")),
+    mdx({ remarkPlugins: [remarkGfm] }),
+  ],
   resolve: {
     alias: { "@": path.join(root, "src") },
   },

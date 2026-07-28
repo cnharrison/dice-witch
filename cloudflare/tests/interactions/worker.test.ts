@@ -733,7 +733,10 @@ describe("Discord HTTP interaction Worker", () => {
           {
             color: 2003199,
             title: "👩‍🎓 Knowledge base",
-            fields: [{ name: "Fudge Dice" }, { name: "Reading Results" }],
+            fields: [
+              { name: "Fate or Fudge dice" },
+              { name: "Read the results" },
+            ],
           },
         ],
         components: [

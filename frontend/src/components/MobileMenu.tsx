@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
-import { Bookmark, Settings, Box } from "lucide-react";
+import { BookOpen, Bookmark, Settings, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
   Sheet, 
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { useTheme } from "@/components/theme-provider";
 import {
+  loadDocsApp,
   loadHomePage,
   loadLibraryPage,
   loadPreferencesPage,
@@ -106,6 +107,20 @@ export function MobileMenu() {
               >
                 <Settings className="mr-2 h-5 w-5" />
                 Preferences
+              </Button>
+            </Link>
+            <Link
+              to="/docs"
+              onFocus={() => void loadDocsApp()}
+              onPointerDown={() => void loadDocsApp()}
+              onClick={() => setOpen(false)}
+            >
+              <Button
+                variant="ghost"
+                className="w-full justify-start rounded-none h-12"
+              >
+                <BookOpen className="mr-2 h-5 w-5" aria-hidden="true" />
+                Docs
               </Button>
             </Link>
           </nav>

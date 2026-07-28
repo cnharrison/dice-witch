@@ -1,5 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Bookmark, Box, LogOut, Settings } from "lucide-react";
+import { BookOpen, Bookmark, Box, LogOut, Settings } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { MobileMenu } from "./MobileMenu";
@@ -8,6 +8,7 @@ import { Button } from "./ui/button";
 import { ThemeToggle } from "./ui/theme-toggle";
 import { useAuth, useUser } from "@/lib/AuthProvider";
 import {
+  loadDocsApp,
   loadHomePage,
   loadLibraryPage,
   loadPreferencesPage,
@@ -86,6 +87,16 @@ export function Navbar() {
               <Button variant="ghost" className="flex items-center gap-2">
                 <Settings className="h-4 w-4" aria-hidden="true" />
                 Preferences
+              </Button>
+            </Link>
+            <Link
+              to="/docs"
+              onMouseEnter={() => void loadDocsApp()}
+              onFocus={() => void loadDocsApp()}
+            >
+              <Button variant="ghost" className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4" aria-hidden="true" />
+                Docs
               </Button>
             </Link>
           </div>
