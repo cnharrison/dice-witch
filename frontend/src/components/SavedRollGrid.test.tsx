@@ -48,7 +48,31 @@ function props(rows: SavedRollGridRow[], searchMode = false) {
   };
 }
 
-afterEach(cleanup);
+const originalMatchMedia = window.matchMedia;
+
+function matchOnly(queryToMatch: string): void {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn((query: string) => ({
+      matches: query === queryToMatch,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
+afterEach(() => {
+  cleanup();
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: originalMatchMedia,
+  });
+});
 
 describe("SavedRollGrid", () => {
   it("defaults to ascending manual order and enables drag only in that view", async () => {
@@ -76,15 +100,25 @@ describe("SavedRollGrid", () => {
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByRole("columnheader", { name: /Order/ })).toBeNull();
     expect(screen.getByRole("button", { name: "About Library order" })).toBeDefined();
-    expect(screen.getByRole("table").parentElement?.className).toContain(
-      "overflow-y-hidden",
-    );
+    const table = screen.getByRole("table");
+    expect(table.parentElement?.className).toContain("overflow-y-hidden");
+    expect(table.className).toContain("table-fixed");
     expect(screen.queryByLabelText(/Pin/)).toBeNull();
 
     await user.click(screen.getByRole("button", { name: /Created/ }));
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(true);
     await user.click(screen.getByRole("button", { name: "Use Library order" }));
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("uses cards through the narrow tablet breakpoint", () => {
+    matchOnly("(max-width: 767px)");
+
+    render(<SavedRollGrid {...props([row()])} />);
+
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.getByRole("list")).toBeDefined();
+    expect(screen.getByText("Edited")).toBeDefined();
   });
 
   it("hides library-specific order in global search and truncates Server source visually", () => {

@@ -58,7 +58,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
-const MOBILE_GRID_QUERY = "(max-width: 639px)";
+const MOBILE_GRID_QUERY = "(max-width: 767px)";
 const COMPACT_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
@@ -380,7 +380,14 @@ function DraggableTableRow({
         </td>
       )}
       {row.getVisibleCells().map((cell) => (
-        <td key={cell.id} className="px-3 py-3 align-middle">
+        <td
+          key={cell.id}
+          className={cn(
+            "px-3 py-3 align-middle",
+            (cell.column.id === "created" || cell.column.id === "updated") &&
+              "whitespace-nowrap",
+          )}
+        >
           {cell.column.id === "actions" ? (
             <RowActions
               row={row.original}
@@ -693,7 +700,7 @@ export function SavedRollGrid({
     </>
   ) : (
     <div className="overflow-x-auto overflow-y-hidden rounded-lg border bg-card">
-      <table className="w-full min-w-[44rem] border-collapse text-sm">
+      <table className="w-full min-w-[44rem] table-fixed border-collapse text-sm">
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id} className="border-b bg-muted/30 text-left">
@@ -715,7 +722,9 @@ export function SavedRollGrid({
                   key={header.id}
                   className={cn(
                     "px-3 py-1 align-middle",
-                    header.column.id === "actions" && "text-right",
+                    (header.column.id === "created" ||
+                      header.column.id === "updated") && "w-32",
+                    header.column.id === "actions" && "w-28 text-right",
                   )}
                   aria-sort={ariaSort(header.column.getIsSorted())}
                 >

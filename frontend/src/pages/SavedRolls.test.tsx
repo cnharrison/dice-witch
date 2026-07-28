@@ -84,7 +84,14 @@ it("keeps personal management available without an administrable guild", async (
   ).toBeNull();
   expect(screen.queryByText("Scope")).toBeNull();
   expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
-  expect(screen.getByRole("region", { name: "Library" })).toBeDefined();
+  const libraryRegion = screen.getByRole("region", { name: "Library" });
+  expect(libraryRegion).toBeDefined();
+  expect(libraryRegion.parentElement?.className).toContain(
+    "xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]",
+  );
+  expect(libraryRegion.parentElement?.className).not.toContain(
+    "lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]",
+  );
   expect(screen.queryByText(/No Library rolls yet/)).toBeNull();
   expect(screen.queryByText(/You don't have any mutual servers/)).toBeNull();
 

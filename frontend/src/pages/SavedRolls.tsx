@@ -757,7 +757,7 @@ export default function SavedRolls() {
             Library
           </h1>
         </header>
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
           <aside className="grid min-w-0 max-w-full self-start content-start gap-4 overflow-hidden rounded-lg border bg-card p-4">
             {canManageScope && !searchMode && (
               <Tooltip>
