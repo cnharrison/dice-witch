@@ -31,6 +31,7 @@ export type RollDeliveryPayload = {
     notation: string;
     context?: RollLoggingContext;
   };
+  responseMode: "followup";
 };
 
 export function buildRollDeliveryPayload(
@@ -67,5 +68,6 @@ export function buildRollDeliveryPayload(
         ? {}
         : { context: interaction.loggingContext }),
     },
+    responseMode: "followup",
   };
 }

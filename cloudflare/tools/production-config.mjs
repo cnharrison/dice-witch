@@ -65,6 +65,7 @@ const REQUIRED_BINDINGS = {
     DATA_SERVICE: "service",
     DISCORD_APPLICATION_ID: "plain_text",
     DISCORD_PUBLIC_KEY: "secrets_store_secret",
+    DISCORD_REST: "service",
     GATEWAY_STATUS: "service",
     INVITE_LINK: "plain_text",
     ROLL_WORK: "durable_object_namespace",

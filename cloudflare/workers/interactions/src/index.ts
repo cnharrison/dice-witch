@@ -7,11 +7,13 @@ import {
   buildStatusCommandResponse,
   buildStatusUnavailableResponse,
   parseKnowledgeBaseInteraction,
+  parseRollHelperDmInteraction,
   parseRollInteraction,
   parseSavedRollInteraction,
   parseStaticInteractionCommand,
   parseStatusCommandInteraction,
   verifyDiscordRequestSignature,
+  type RollHelperDmInteraction,
   type StatusGatewaySnapshot,
 } from "../../../packages/discord-contracts/src";
 import { handleSavedRollInteraction } from "./saved-roll-handler";
@@ -26,6 +28,9 @@ export type InteractionEnv = {
   DATA_SERVICE: Fetcher;
   GATEWAY_STATUS: {
     getStatusSnapshot(): Promise<unknown>;
+  };
+  DISCORD_REST: {
+    sendRollHelper(value: unknown): Promise<unknown>;
   };
   ROLL_WORK: DurableObjectNamespace;
 };
@@ -77,6 +82,50 @@ function isAcceptedRollDelivery(value: unknown): boolean {
     (value.status === "created" || value.status === "existing") &&
     (value.delivery === "pending" || value.delivery === "delivered")
   );
+}
+
+async function deliverRequestedRollHelper(
+  interaction: RollHelperDmInteraction,
+  service: InteractionEnv["DISCORD_REST"],
+): Promise<void> {
+  let content = "I couldn't send a DM. Use `/knowledgebase` here instead.";
+  try {
+    const result = await service.sendRollHelper({
+      rollId: interaction.rollId,
+      userId: interaction.userId,
+    });
+    if (isRecord(result) && result.status === "delivered") {
+      content = "Knowledge base sent to your DMs.";
+    }
+  } catch {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "Requested roll helper DM failed",
+      }),
+    );
+  }
+  try {
+    const response = await fetch(
+      buildEditOriginalResponse(interaction, { content }),
+    );
+    if (!response.ok) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "Roll helper DM confirmation failed",
+          httpStatus: response.status,
+        }),
+      );
+    }
+  } catch {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "Roll helper DM confirmation failed",
+      }),
+    );
+  }
 }
 
 async function acceptDeferredRoll(
@@ -173,6 +222,27 @@ export async function handleInteractionRequest(
   if (interaction.type === 1) return json({ type: 1 });
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID) {
     return invalidInteraction("application-mismatch");
+  }
+  let requestedRollHelper;
+  try {
+    requestedRollHelper = parseRollHelperDmInteraction(
+      interaction,
+      env.DISCORD_APPLICATION_ID,
+      env.DISCORD_TEST_GUILD_ID,
+    );
+  } catch (error) {
+    return invalidInteraction(
+      error instanceof Error ? error.message : "roll-helper-parse-failed",
+    );
+  }
+  if (requestedRollHelper !== null) {
+    const delivery = deliverRequestedRollHelper(
+      requestedRollHelper,
+      env.DISCORD_REST,
+    );
+    if (ctx === undefined) await delivery;
+    else ctx.waitUntil(delivery);
+    return json({ type: 6 });
   }
   let savedRoll;
   try {
@@ -329,7 +399,7 @@ export async function handleInteractionRequest(
   );
   if (ctx !== undefined) {
     ctx.waitUntil(acceptDeferredRoll(stub, payload, roll));
-    return json({ type: 5 });
+    return json({ type: 5, data: { flags: 64 } });
   }
   let accepted: unknown;
   try {
@@ -340,7 +410,7 @@ export async function handleInteractionRequest(
   if (!isAcceptedRollDelivery(accepted)) {
     return interactionError("This roll could not be accepted. Please try again.");
   }
-  return json({ type: 5 });
+  return json({ type: 5, data: { flags: 64 } });
 }
 
 export default {

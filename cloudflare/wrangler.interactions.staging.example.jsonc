@@ -21,6 +21,11 @@
       "binding": "GATEWAY_STATUS",
       "service": "dice-witch-gateway-staging",
       "entrypoint": "GatewayStatusService"
+    },
+    {
+      "binding": "DISCORD_REST",
+      "service": "dice-witch-discord-rest-staging",
+      "entrypoint": "DiscordRestService"
     }
   ],
   "secrets_store_secrets": [

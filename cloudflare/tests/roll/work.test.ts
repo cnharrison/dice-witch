@@ -10,7 +10,6 @@ import {
   BUILTIN_APPEARANCE_RECIPES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
 } from "../../packages/dice-appearance/src";
-import { ROLL_HELPER_ANNOUNCEMENT } from "../../packages/discord-contracts/src";
 import {
   buildRollRenderRequest,
   buildRollRenderRequestV4,
@@ -483,6 +482,21 @@ describe("RollWork Durable Object", () => {
     });
     await runDurableObjectAlarm(stub);
 
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+  });
+
+  it("publishes a valid direct roll after resolving its private defer", async () => {
+    const id = snowflakeAt(Date.now(), 45);
+    const stub = work(id);
+    const input = {
+      ...deliveryRequest(id, "direct-public-roll"),
+      responseMode: "followup" as const,
+    };
+
+    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
       lastHttpStatus: 200,
@@ -1494,10 +1508,13 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("durably logs an invalid roll without an image and delivers its helper once", async () => {
+  it("keeps invalid-roll help private and does not send an automatic DM", async () => {
     const id = snowflakeAt(Date.now(), 31);
     const stub = work(id);
-    const input = deliveryRequest(id, "delivery-success");
+    const input = {
+      ...deliveryRequest(id, "invalid-private-help"),
+      responseMode: "followup" as const,
+    };
     const notation = "x".repeat(6_000);
     input.request.notation = notation;
     input.logging.notation = notation;
@@ -1510,8 +1527,8 @@ describe("RollWork Durable Object", () => {
         )
         .one();
       expect(delivery).toEqual({
-        helper_state: "delivered",
-        helper_attempts: 1,
+        helper_state: "not_applicable",
+        helper_attempts: 0,
       });
       const outbox = state.storage.sql
         .exec<{ artifact_json: string; image_bytes: ArrayBuffer }>(
@@ -1521,7 +1538,20 @@ describe("RollWork Durable Object", () => {
       expect(JSON.parse(outbox.artifact_json)).toMatchObject({
         rollId: id,
         notation,
-        payload: { content: ROLL_HELPER_ANNOUNCEMENT },
+        payload: {
+          content: "That dice notation needs fixing.",
+          components: [
+            {
+              components: [
+                {
+                  style: 5,
+                  url: "https://dicewit.ch/docs/dice-notation#fix-an-invalid-roll",
+                },
+                { custom_id: `roll-help:dm-knowledgebase:${id}` },
+              ],
+            },
+          ],
+        },
         image: { status: "unavailable", reason: "not-applicable" },
       });
       expect(new Uint8Array(outbox.image_bytes)).toHaveLength(0);
@@ -2351,6 +2381,19 @@ describe("RollWork Durable Object", () => {
     expect(first.status).toBe("created");
     expect(retry).toEqual({ ...first, status: "existing" });
     expect(conflict).toEqual({ status: "conflict" });
+  });
+
+  it("rejects private-defer metadata outside direct Discord delivery", () => {
+    const id = snowflakeAt(Date.now(), 46);
+    const input = {
+      ...deliveryRequest(id),
+      responseMode: "followup" as const,
+    };
+    input.logging.source = "web";
+
+    expect(() => validateDeliveryRequest(input)).toThrow(
+      "Roll delivery response mode is invalid",
+    );
   });
 
   it("rejects saved-roll metadata that does not match the executed request", () => {

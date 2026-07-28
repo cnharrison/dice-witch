@@ -131,6 +131,7 @@ function validConfigs() {
       },
       services: [
         service("DATA_SERVICE", dataName),
+        service("DISCORD_REST", restName, "DiscordRestService"),
         service("GATEWAY_STATUS", gatewayName, "GatewayStatusService"),
       ],
       durable_objects: {

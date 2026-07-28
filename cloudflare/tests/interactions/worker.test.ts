@@ -15,6 +15,7 @@ async function signedRequest(
   overrides: {
     path?: string;
     rollWork?: Record<string, (value: unknown) => Promise<unknown>>;
+    discordRest?: { sendRollHelper(value: unknown): Promise<unknown> };
     dataFetch?: (request: Request) => Promise<Response>;
     signature?: string;
   } = {},
@@ -67,6 +68,9 @@ async function signedRequest(
             shardCount: 1,
             shards: [{ id: 0, state: "ready", ping: 25 }],
           }),
+      },
+      DISCORD_REST: overrides.discordRest ?? {
+        sendRollHelper: () => Promise.resolve({ status: "delivered" }),
       },
       ROLL_WORK: {
         getByName: () => overrides.rollWork ?? {},
@@ -598,7 +602,10 @@ describe("Discord HTTP interaction Worker", () => {
     const response = await handleInteractionRequest(request, env);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ type: 5 });
+    await expect(response.json()).resolves.toEqual({
+      type: 5,
+      data: { flags: 64 },
+    });
     expect(acceptDelivery).toHaveBeenCalledOnce();
     const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
     if (
@@ -637,6 +644,7 @@ describe("Discord HTTP interaction Worker", () => {
           channelType: 0,
         },
       },
+      responseMode: "followup",
     });
   });
 
@@ -790,6 +798,60 @@ describe("Discord HTTP interaction Worker", () => {
         ],
       },
     });
+  });
+
+  it("sends knowledge base help by DM only after the private button is pressed", async () => {
+    const sendRollHelper = vi.fn(() =>
+      Promise.resolve({ status: "delivered" }),
+    );
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: "100000000000000011",
+        application_id: "100000000000000001",
+        type: 3,
+        token: "fixture.interaction.token",
+        guild_id: "100000000000000002",
+        member: {
+          user: { id: "100000000000000004", username: "alice" },
+        },
+        data: {
+          custom_id: "roll-help:dm-knowledgebase:100000000000000010",
+          component_type: 2,
+        },
+      }),
+      { discordRest: { sendRollHelper } },
+    );
+    let background: Promise<unknown> | undefined;
+    const responseFetch = vi.fn((request: Request) => {
+      void request;
+      return Promise.resolve(new Response(null, { status: 204 }));
+    });
+    vi.stubGlobal("fetch", responseFetch);
+    try {
+      const response = await handleInteractionRequest(request, env, {
+        waitUntil(promise) {
+          background = promise;
+        },
+      } as ExecutionContext);
+
+      await expect(response.json()).resolves.toEqual({ type: 6 });
+      await background;
+      expect(sendRollHelper).toHaveBeenCalledWith({
+        rollId: "100000000000000010",
+        userId: "100000000000000004",
+      });
+      expect(responseFetch).toHaveBeenCalledOnce();
+      const edit = responseFetch.mock.calls[0]?.[0];
+      if (!(edit instanceof Request)) {
+        throw new Error("Knowledge base confirmation request is missing");
+      }
+      expect(edit.method).toBe("PATCH");
+      await expect(edit.json()).resolves.toMatchObject({
+        content: "Knowledge base sent to your DMs.",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it.each([

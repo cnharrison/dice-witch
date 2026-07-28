@@ -432,7 +432,7 @@ function validateTopology(errors, configs, suffix) {
     errors,
     "interactions",
     configs.interactions?.services,
-    ["DATA_SERVICE", "GATEWAY_STATUS"],
+    ["DATA_SERVICE", "DISCORD_REST", "GATEWAY_STATUS"],
   );
   requireExactBindings(errors, "web-api", configs["web-api"]?.services, [
     "DATA_SERVICE",
@@ -513,6 +513,14 @@ function validateTopology(errors, configs, suffix) {
     "GATEWAY_STATUS",
     names.gateway,
     "GatewayStatusService",
+  );
+  requireService(
+    errors,
+    configs.interactions,
+    "interactions",
+    "DISCORD_REST",
+    names["discord-rest"],
+    "DiscordRestService",
   );
   requireService(
     errors,

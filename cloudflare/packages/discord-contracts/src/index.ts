@@ -39,9 +39,11 @@ export {
   type DiscordSignatureRequest,
 } from "./http-signature";
 export {
+  buildInvalidRollHelpMessage,
   buildRollHelperMessage,
-  ROLL_HELPER_ANNOUNCEMENT,
-  ROLL_HELPER_DM_ANNOUNCEMENT,
+  parseRollHelperDmInteraction,
+  ROLL_HELPER_DM_CUSTOM_ID,
+  type RollHelperDmInteraction,
 } from "./roll-helper";
 export {
   LOG_WORK_RETENTION_MS,

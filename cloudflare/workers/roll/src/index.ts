@@ -22,18 +22,16 @@ import {
   parseSavedRollNameV1,
 } from "../../../packages/saved-rolls/src";
 import {
+  buildDeleteOriginalResponse,
   buildEditFollowupResponseWithFile,
   buildEditOriginalResponse,
   buildEditOriginalResponseWithFile,
-  buildFollowupResponse,
   buildFollowupResponseWithFile,
   buildPublicFollowupResponse,
+  buildInvalidRollHelpMessage,
   buildRollClatterMessage,
-  buildRollErrorMessage,
   buildRollResultMessage,
   LOG_WORK_RETRY_WINDOW_MS,
-  ROLL_HELPER_ANNOUNCEMENT,
-  ROLL_HELPER_DM_ANNOUNCEMENT,
   parseRollLifecycleSnapshot,
   validateRollLogArtifact,
   type DiscordMessage,
@@ -1371,15 +1369,6 @@ export class RollWork extends DurableObject<RollEnv> {
             accountingState === "pending" ? acceptedAt : null;
           const loggingState =
             delivery.logging === null ? "not_applicable" : "pending";
-          const helperState =
-            prepared.record.outcome.errors.length > 0 &&
-            !prepared.record.outcome.errors.some(({ code }) =>
-              ["TOO_MANY_DICE", "TOO_MANY_SIDES", "UNSAFE_EXPLOSION"].includes(
-                code,
-              ),
-            )
-              ? "pending"
-              : "not_applicable";
           this.ctx.storage.sql.exec(
             `INSERT INTO interaction_delivery (
                singleton, metadata_json, token, token_fingerprint, expires_at,
@@ -1393,7 +1382,7 @@ export class RollWork extends DurableObject<RollEnv> {
             accountingState,
             accountingOccurredAt,
             loggingState,
-            helperState,
+            "not_applicable",
           );
           this.acceptLifecycleSnapshot(acceptedAt);
           return { status: "created", delivery: "pending", expiresAt };
@@ -2535,6 +2524,50 @@ export class RollWork extends DurableObject<RollEnv> {
 
     let clatter: string | undefined;
     let followupMessageId = delivery.followup_message_id;
+    const directPrivateDefer =
+      metadata.responseMode === "followup" && metadata.savedRoll === null;
+    if (
+      record.outcome.outcomes.length > 0 &&
+      directPrivateDefer &&
+      delivery.clatter_sent_at === null
+    ) {
+      let response: Response;
+      try {
+        response = await fetch(
+          buildEditOriginalResponse(target, {
+            content: "Preparing your roll.",
+          }),
+        );
+      } catch {
+        return this.scheduleRetry(
+          target.id,
+          attempts,
+          delivery.expires_at,
+          "discord",
+        );
+      }
+      if (!response.ok) {
+        if (isRetryableHttpStatus(response.status)) {
+          return this.scheduleRetry(
+            target.id,
+            attempts,
+            delivery.expires_at,
+            "discord",
+            retryAfterMs(response, attempts),
+            response.status,
+          );
+        }
+        const code = await readDiscordErrorCode(response);
+        return this.failDelivery(
+          target.id,
+          attempts,
+          response.status,
+          delivery.expires_at,
+          "response",
+          { code, operation: "edit-original-result" },
+        );
+      }
+    }
     if (record.outcome.outcomes.length > 0) {
       try {
         clatter = buildRollClatterMessage(
@@ -2651,25 +2684,13 @@ export class RollWork extends DurableObject<RollEnv> {
     let discordOperation: DiscordOperation;
     if (record.outcome.outcomes.length === 0) {
       try {
-        const payload =
-          delivery.helper_state === "pending"
-            ? {
-                content:
-                  metadata.accounting?.guildId === null
-                    ? ROLL_HELPER_DM_ANNOUNCEMENT
-                    : ROLL_HELPER_ANNOUNCEMENT,
-              }
-            : buildRollErrorMessage(record.outcome);
+        const payload = buildInvalidRollHelpMessage(record.outcome, target.id);
         await this.prepareSourceLogArtifact(metadata, payload, {
           status: "unavailable",
           reason: "not-applicable",
         });
-        request = metadata.responseMode === "followup"
-          ? buildFollowupResponse(target, payload, false)
-          : buildEditOriginalResponse(target, payload);
-        discordOperation = metadata.responseMode === "followup"
-          ? "create-followup-result"
-          : "edit-original-result";
+        request = buildEditOriginalResponse(target, payload);
+        discordOperation = "edit-original-result";
       } catch {
         return this.terminateDelivery(
           target,
@@ -2804,15 +2825,19 @@ export class RollWork extends DurableObject<RollEnv> {
       if (metadata.responseMode === "followup") {
         try {
           await fetch(
-            buildEditOriginalResponse(target, {
-              content: "Saved roll posted.",
-            }),
+            directPrivateDefer
+              ? buildDeleteOriginalResponse(target)
+              : buildEditOriginalResponse(target, {
+                  content: "Saved roll posted.",
+                }),
           );
         } catch {
           console.warn(
             JSON.stringify({
               level: "warn",
-              message: "Saved roll private confirmation failed",
+              message: directPrivateDefer
+                ? "Direct roll private defer cleanup failed"
+                : "Saved roll private confirmation failed",
               rollId: target.id,
             }),
           );

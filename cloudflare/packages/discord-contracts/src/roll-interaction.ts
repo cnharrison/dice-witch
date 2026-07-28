@@ -51,7 +51,7 @@ export type RollInteraction = {
   notation: string;
   title: string | null;
   repetitions: number;
-  ephemeral: false;
+  ephemeral: true;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -230,6 +230,6 @@ export function parseRollInteraction(
     notation: rawNotation,
     title: parseTitle(options.get("title")),
     repetitions: parseRepetitions(options.get("times")),
-    ephemeral: false,
+    ephemeral: true,
   };
 }

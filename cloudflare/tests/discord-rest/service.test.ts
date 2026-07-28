@@ -1282,7 +1282,7 @@ describe("Discord REST service", () => {
     ).resolves.toEqual({ status: "delivered" });
   });
 
-  it("sends the legacy invalid-roll helper DM with nonce enforcement", async () => {
+  it("sends requested knowledge base help by DM with nonce enforcement", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
       const url = new URL(request.url);
       if (url.pathname === "/api/v10/users/@me/channels") {

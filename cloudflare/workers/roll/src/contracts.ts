@@ -379,6 +379,14 @@ export function validateDeliveryRequest(
     "responseMode",
     "savedRoll",
   ]);
+  const hasDirectResponseMode = hasExactKeys(shape, [
+    "accounting",
+    "interaction",
+    "logging",
+    "message",
+    "request",
+    "responseMode",
+  ]);
   const hasLogging = hasExactKeys(shape, [
     "accounting",
     "interaction",
@@ -394,7 +402,11 @@ export function validateDeliveryRequest(
   ]);
   const isLegacy = hasExactKeys(shape, ["interaction", "message", "request"]);
   if (
-    (!hasSavedRoll && !hasLogging && !hasAccounting && !isLegacy) ||
+    (!hasSavedRoll &&
+      !hasDirectResponseMode &&
+      !hasLogging &&
+      !hasAccounting &&
+      !isLegacy) ||
     !isRecord(value.interaction) ||
     !hasExactKeys(value.interaction, ["applicationId", "id", "token"]) ||
     !SNOWFLAKE.test(String(value.interaction.id)) ||
@@ -419,7 +431,7 @@ export function validateDeliveryRequest(
   }
 
   let accounting: RollDeliveryRequest["accounting"] | null = null;
-  if (hasSavedRoll || hasLogging || hasAccounting) {
+  if (hasSavedRoll || hasDirectResponseMode || hasLogging || hasAccounting) {
     if (
       !isRecord(value.accounting) ||
       !hasExactKeys(value.accounting, ["guildId", "receivedAt", "userId"]) ||
@@ -450,7 +462,7 @@ export function validateDeliveryRequest(
   }
 
   let logging: RollDeliveryRequest["logging"] | null = null;
-  if (hasSavedRoll || hasLogging) {
+  if (hasSavedRoll || hasDirectResponseMode || hasLogging) {
     if (
       !isRecord(value.logging) ||
       (!hasExactKeys(value.logging, ["channelId", "notation", "source"]) &&
@@ -487,14 +499,19 @@ export function validateDeliveryRequest(
 
   let responseMode: "edit-original" | "followup" = "edit-original";
   let savedRoll: SavedRollInvocationV1 | null = null;
-  if (hasSavedRoll) {
-    if (
+  if (
+    (hasDirectResponseMode && logging?.source !== "discord") ||
+    (hasDirectResponseMode && value.responseMode !== "followup") ||
+    (hasSavedRoll &&
       value.responseMode !== "followup" &&
-      value.responseMode !== "edit-original"
-    ) {
-      throw new Error("Roll delivery response mode is invalid");
-    }
-    responseMode = value.responseMode;
+      value.responseMode !== "edit-original")
+  ) {
+    throw new Error("Roll delivery response mode is invalid");
+  }
+  if (hasSavedRoll || hasDirectResponseMode) {
+    responseMode = value.responseMode as "edit-original" | "followup";
+  }
+  if (hasSavedRoll) {
     savedRoll = parseSavedRollInvocation(value.savedRoll);
     if (
       savedRoll.notation !== value.request.notation ||
@@ -955,23 +972,28 @@ export async function tokenFingerprint(token: string): Promise<string> {
     .join("");
 }
 
+function deliveryMetadataVersion(
+  request: ValidatedRollDeliveryRequest,
+): 3 | 4 | 5 | 6 {
+  if (request.savedRoll !== null) return 5;
+  if (request.responseMode === "followup") return 6;
+  return request.logging?.context === undefined ? 3 : 4;
+}
+
 export function deliveryMetadata(
   request: ValidatedRollDeliveryRequest,
 ): string {
   return JSON.stringify({
-    version:
-      request.savedRoll === null
-        ? request.logging?.context === undefined
-          ? 3
-          : 4
-        : 5,
+    version: deliveryMetadataVersion(request),
     interactionId: request.interaction.id,
     applicationId: request.interaction.applicationId,
     message: request.message,
     accounting: request.accounting,
     logging: request.logging,
     ...(request.savedRoll === null
-      ? {}
+      ? request.responseMode === "followup"
+        ? { responseMode: request.responseMode }
+        : {}
       : {
           responseMode: request.responseMode,
           savedRoll: request.savedRoll,
@@ -992,6 +1014,17 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
     "message",
     "version",
   ];
+  const version6 =
+    parsed.version === 6 &&
+    hasExactKeys(parsed, [
+      "accounting",
+      "applicationId",
+      "interactionId",
+      "logging",
+      "message",
+      "responseMode",
+      "version",
+    ]);
   const version5 =
     parsed.version === 5 &&
     hasExactKeys(parsed, [
@@ -1019,7 +1052,12 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
     parsed.version === undefined &&
     hasExactKeys(parsed, ["applicationId", "interactionId", "message"]);
   if (
-    (!version5 && !version4 && !version3 && !version2 && !legacy) ||
+    (!version6 &&
+      !version5 &&
+      !version4 &&
+      !version3 &&
+      !version2 &&
+      !legacy) ||
     !SNOWFLAKE.test(String(parsed.interactionId)) ||
     !SNOWFLAKE.test(String(parsed.applicationId)) ||
     !isRecord(parsed.message) ||
@@ -1046,7 +1084,14 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
         parsed.logging.notation.length < 1 ||
         parsed.logging.notation.length > MAX_NOTATION_LENGTH ||
         (version4 && parsed.logging.context === undefined) ||
-        (!version5 && !version4 && parsed.logging.context !== undefined))) ||
+        (!version6 &&
+          !version5 &&
+          !version4 &&
+          parsed.logging.context !== undefined))) ||
+    (version6 &&
+      (parsed.responseMode !== "followup" ||
+        !isRecord(parsed.logging) ||
+        parsed.logging.source !== "discord")) ||
     (version5 &&
       parsed.responseMode !== "edit-original" &&
       parsed.responseMode !== "followup")
@@ -1087,7 +1132,7 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
                   ),
                 }),
           },
-    responseMode: version5
+    responseMode: version6 || version5
       ? (parsed.responseMode as "edit-original" | "followup")
       : "edit-original",
     savedRoll: version5 ? parseSavedRollInvocation(parsed.savedRoll) : null,

@@ -232,6 +232,56 @@ async function discordTestResponse(request: Request): Promise<Response> {
   if (token === "delivery-success") {
     return Response.json({ id: "development-message" });
   }
+  if (token === "invalid-private-help") {
+    const url = new URL(request.url);
+    const payload: unknown = await request.json();
+    if (
+      request.method !== "PATCH" ||
+      !url.pathname.endsWith("/messages/@original") ||
+      !isRecord(payload) ||
+      payload.content !== "That dice notation needs fixing." ||
+      !Array.isArray(payload.components) ||
+      JSON.stringify(payload).includes("DMing you")
+    ) {
+      return Response.json({ message: "private help is invalid" }, { status: 400 });
+    }
+    return Response.json({ id: "development-message" });
+  }
+  if (token === "direct-public-roll") {
+    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
+    resultDeliveryAttempts.set(token, attempts);
+    const url = new URL(request.url);
+    if (attempts === 1) {
+      const payload: unknown = await request.json();
+      if (
+        request.method !== "PATCH" ||
+        !url.pathname.endsWith("/messages/@original") ||
+        !isRecord(payload) ||
+        payload.content !== "Preparing your roll."
+      ) {
+        return Response.json({ message: "private defer was not resolved" }, { status: 400 });
+      }
+      return Response.json({ id: "development-message" });
+    }
+    if (attempts === 2) {
+      if (
+        request.method !== "POST" ||
+        url.searchParams.get("wait") !== "true" ||
+        !request.headers.get("content-type")?.startsWith("multipart/form-data")
+      ) {
+        return Response.json({ message: "public result is invalid" }, { status: 400 });
+      }
+      return Response.json({ id: "100000000000000099" });
+    }
+    if (
+      attempts !== 3 ||
+      request.method !== "DELETE" ||
+      !url.pathname.endsWith("/messages/@original")
+    ) {
+      return Response.json({ message: "private defer was not deleted" }, { status: 400 });
+    }
+    return new Response(null, { status: 204 });
+  }
   if (token === "saved-public-clatter") {
     const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
     resultDeliveryAttempts.set(token, attempts);

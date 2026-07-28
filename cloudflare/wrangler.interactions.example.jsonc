@@ -20,6 +20,11 @@
       "binding": "GATEWAY_STATUS",
       "service": "dice-witch-gateway",
       "entrypoint": "GatewayStatusService"
+    },
+    {
+      "binding": "DISCORD_REST",
+      "service": "dice-witch-discord-rest",
+      "entrypoint": "DiscordRestService"
     }
   ],
   "durable_objects": {
