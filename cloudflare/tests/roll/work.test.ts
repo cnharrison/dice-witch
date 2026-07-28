@@ -1800,8 +1800,9 @@ describe("RollWork Durable Object", () => {
       const terminalFailure = consoleError.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(
-          ({ message }) =>
-            message === "Roll delivery encountered a terminal internal failure",
+          ({ message, rollId }) =>
+            message === "Roll delivery encountered a terminal internal failure" &&
+            rollId === id,
         );
       expect(terminalFailure).toMatchObject({
         rollId: id,
@@ -1854,7 +1855,11 @@ describe("RollWork Durable Object", () => {
 
       const delivered = consoleInfo.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(({ message }) => message === "Roll destination delivery completed");
+        .find(
+          ({ message, rollId }) =>
+            message === "Roll destination delivery completed" &&
+            rollId === deliveredId,
+        );
       expect(delivered).toMatchObject({
         telemetryVersion: 2,
         subsystem: "roll-destination",
@@ -1900,7 +1905,11 @@ describe("RollWork Durable Object", () => {
 
       const failed = consoleError.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(({ message }) => message === "Roll destination delivery completed");
+        .find(
+          ({ message, rollId }) =>
+            message === "Roll destination delivery completed" &&
+            rollId === failedId,
+        );
       expect(failed).toMatchObject({
         telemetryVersion: 2,
         subsystem: "roll-destination",
@@ -1948,7 +1957,10 @@ describe("RollWork Durable Object", () => {
       await expect(work(id).deliver(input)).resolves.toEqual({ status: "failed" });
       const failed = consoleError.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(({ message }) => message === "Roll destination delivery completed");
+        .find(
+          ({ message, rollId }) =>
+            message === "Roll destination delivery completed" && rollId === id,
+        );
       expect(failed).toMatchObject({
         rollId: id,
         state: "failed",
@@ -1978,7 +1990,13 @@ describe("RollWork Durable Object", () => {
       });
       const entry = consoleInfo.mock.calls
         .map(([value]) => String(value))
-        .find((value) => value.includes("Roll destination delivery completed"));
+        .find((value) => {
+          const event = JSON.parse(value) as Record<string, unknown>;
+          return (
+            event.message === "Roll destination delivery completed" &&
+            event.rollId === id
+          );
+        });
       expect(entry).toBeDefined();
       if (entry === undefined) throw new Error("Destination telemetry is missing");
       expect(new TextEncoder().encode(entry).byteLength).toBeLessThan(256 * 1_024);
