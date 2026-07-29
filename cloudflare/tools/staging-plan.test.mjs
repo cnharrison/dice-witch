@@ -3,6 +3,21 @@ import test from "node:test";
 import { createStagingPlan } from "./staging-plan.mjs";
 
 const sha = "a".repeat(40);
+const applicationWorkers = [
+  "discord-rest",
+  "gateway",
+  "roll",
+  "interactions",
+  "web-api",
+];
+const allWorkers = [
+  "discord-rest",
+  "data",
+  "gateway",
+  "roll",
+  "interactions",
+  "web-api",
+];
 const configSummary = {
   suffix: "staging",
   frontendOrigin: "https://staging.example.com",
@@ -25,7 +40,8 @@ function input(overrides = {}) {
     requestedSha: sha,
     headSha: sha,
     gitStatus: "",
-    workers: ["web-api", "data", "discord-rest", "roll", "gateway"],
+    workers: applicationWorkers,
+    applyMigrations: false,
     allowGatewayDeploy: true,
     productionIsolationVerified: true,
     smokeTargets: {
@@ -37,36 +53,75 @@ function input(overrides = {}) {
   };
 }
 
-test("creates an exact-SHA deployment plan in dependency order", () => {
+test("deploys the complete application Worker cohort in dependency order", () => {
   const plan = createStagingPlan(input());
 
   assert.equal(plan.sourceSha, sha);
-  assert.deepEqual(plan.workers, [
-    "discord-rest",
-    "data",
-    "gateway",
-    "roll",
-    "web-api",
-  ]);
+  assert.deepEqual(plan.workers, applicationWorkers);
+  assert.equal(plan.applyMigrations, false);
+  assert.equal(plan.gatewayDeploymentAcknowledged, true);
   assert.deepEqual(
     plan.steps.filter(({ kind }) => kind === "deploy").map(({ worker }) => worker),
-    ["discord-rest", "data", "gateway", "roll", "web-api"],
+    applicationWorkers,
   );
   assert.equal(plan.steps[0].kind, "quality-gate");
-  assert.equal(plan.steps[1].kind, "migration-list");
-  assert.equal(plan.steps[2].kind, "migration-apply");
-  assert.equal(plan.steps[3].kind, "audience-snapshot-gate");
+  assert.equal(plan.steps[1].kind, "audience-snapshot-gate");
   assert.equal(plan.steps.at(-1).kind, "smoke-test");
 });
 
-test("rejects a dirty worktree or a different requested SHA", () => {
+test("rejects every partial application Worker deployment", () => {
+  for (const workers of [
+    ["roll", "interactions", "web-api"],
+    ["discord-rest", "roll", "interactions", "web-api"],
+    ["discord-rest", "gateway", "roll", "web-api"],
+  ]) {
+    assert.throws(
+      () => createStagingPlan(input({ workers })),
+      /complete application Worker cohort/,
+    );
+  }
+});
+
+test("deploys Data only as part of the complete migration cohort", () => {
+  const plan = createStagingPlan(
+    input({ workers: allWorkers, applyMigrations: true }),
+  );
+
+  assert.deepEqual(plan.workers, allWorkers);
+  assert.equal(plan.applyMigrations, true);
+  assert.equal(plan.steps[1].kind, "migration-list");
+  assert.equal(plan.steps[2].kind, "migration-apply");
+  assert.equal(plan.steps[3].kind, "audience-snapshot-gate");
+
+  assert.throws(
+    () =>
+      createStagingPlan(
+        input({ workers: allWorkers, applyMigrations: false }),
+      ),
+    /migration authorization must match/,
+  );
+  assert.throws(
+    () => createStagingPlan(input({ applyMigrations: true })),
+    /migration authorization must match/,
+  );
+});
+
+test("requires exact source, valid configuration, isolation, and Gateway acknowledgement", () => {
+  assert.throws(
+    () => createStagingPlan(input({ requestedSha: "b".repeat(40) })),
+    /does not match HEAD/,
+  );
   assert.throws(
     () => createStagingPlan(input({ gitStatus: " M cloudflare/package.json" })),
     /worktree must be clean/,
   );
   assert.throws(
-    () => createStagingPlan(input({ requestedSha: "b".repeat(40) })),
-    /does not match HEAD/,
+    () => createStagingPlan(input({ allowGatewayDeploy: false })),
+    /Gateway deployment requires explicit acknowledgement/,
+  );
+  assert.throws(
+    () => createStagingPlan(input({ productionIsolationVerified: false })),
+    /Production-target isolation must be verified/,
   );
   assert.throws(
     () =>
@@ -75,110 +130,24 @@ test("rejects a dirty worktree or a different requested SHA", () => {
           configSummary: { ...configSummary, buildSha: "b".repeat(40) },
         }),
       ),
-    /Web API BUILD_SHA must match the requested source SHA/,
+    /BUILD_SHA must match/,
   );
 });
 
-test("requires compatible Discord REST when Roll is selected", () => {
-  assert.throws(
-    () => createStagingPlan(input({ workers: ["data", "roll", "web-api"] })),
-    /requires the compatible Discord REST Worker/,
-  );
-});
-
-test("requires compatible Gateway when Roll is selected", () => {
-  assert.throws(
-    () =>
-      createStagingPlan(
-        input({
-          workers: ["data", "discord-rest", "roll", "web-api"],
-          allowGatewayDeploy: false,
-        }),
-      ),
-    /requires the compatible Gateway Worker/,
-  );
-});
-
-test("requires compatible Roll and Discord REST for Web API deployment", () => {
-  assert.throws(
-    () => createStagingPlan(input({ workers: ["data", "web-api"] })),
-    /requires compatible Roll and Discord REST Workers/,
-  );
-});
-
-test("requires a separate acknowledgement for Gateway deployment", () => {
-  assert.throws(
-    () =>
-      createStagingPlan(
-        input({
-          workers: ["discord-rest", "roll", "gateway", "web-api"],
-          allowGatewayDeploy: false,
-        }),
-      ),
-    /Gateway deployment requires --allow-gateway-deploy/,
-  );
-
-  const plan = createStagingPlan(
-    input({
-      workers: ["discord-rest", "roll", "gateway", "web-api"],
-      allowGatewayDeploy: true,
-    }),
-  );
-  assert.deepEqual(plan.workers, [
-    "discord-rest",
-    "gateway",
-    "roll",
-    "web-api",
-  ]);
-});
-
-test("creates a producer-only plan that waits for a real snapshot", () => {
-  const plan = createStagingPlan(
-    input({
-      workers: ["gateway", "discord-rest", "data"],
-      allowGatewayDeploy: true,
-      audienceProducerOnly: true,
-    }),
-  );
-
-  assert.deepEqual(plan.workers, ["discord-rest", "data", "gateway"]);
-  assert.equal(plan.audienceProducerOnly, true);
-  assert.equal(plan.steps.at(-1).kind, "await-audience-snapshot");
-  assert.equal(
-    plan.steps.some(({ kind }) => kind === "smoke-test"),
-    false,
-  );
-  assert.throws(
-    () =>
-      createStagingPlan(
-        input({
-          workers: ["data", "gateway"],
-          allowGatewayDeploy: true,
-          audienceProducerOnly: true,
-        }),
-      ),
-    /requires exactly data, discord-rest, and gateway/,
-  );
-});
-
-test("requires verified production isolation", () => {
-  assert.throws(
-    () => createStagingPlan(input({ productionIsolationVerified: false })),
-    /Production-target isolation must be verified/,
-  );
-});
-
-test("rejects unknown, empty, or unversioned worker selections", () => {
+test("rejects duplicate, unknown, and empty Worker cohorts", () => {
   assert.throws(
     () => createStagingPlan(input({ workers: [] })),
     /At least one staging Worker/,
   );
   assert.throws(
-    () => createStagingPlan(input({ workers: ["data", "roll"] })),
-    /Every staging deployment must include web-api/,
+    () =>
+      createStagingPlan(
+        input({ workers: [...applicationWorkers, "web-api"] }),
+      ),
+    /contains duplicates/,
   );
   assert.throws(
-    () => createStagingPlan(input({ workers: ["data", "unknown"] })),
+    () => createStagingPlan(input({ workers: ["unknown"] })),
     /Unknown staging Worker: unknown/,
   );
 });

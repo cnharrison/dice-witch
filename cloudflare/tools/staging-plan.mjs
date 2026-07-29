@@ -17,10 +17,17 @@ const DEPLOYMENT_ORDER = [
   "interactions",
   "web-api",
 ];
+const APPLICATION_WORKERS = [
+  "discord-rest",
+  "gateway",
+  "roll",
+  "interactions",
+  "web-api",
+];
 const AUDIENCE_SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1_000;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const CLI_USAGE =
-  "Usage: node tools/staging-plan.mjs --sha <full-sha> --workers <comma-list> --roll-origin <url> --gateway-origin <url> [--allow-gateway-deploy] [--audience-producer-only]";
+  "Usage: node tools/staging-plan.mjs --sha <full-sha> --workers <comma-list> --roll-origin <url> --gateway-origin <url> [--apply-migrations] [--allow-gateway-deploy]";
 
 function configFile(worker) {
   return `wrangler.${worker}.jsonc`;
@@ -114,44 +121,30 @@ export function createStagingPlan(input) {
     throw new Error("At least one staging Worker must be selected");
   }
   const selected = new Set(input.workers);
+  if (selected.size !== input.workers.length) {
+    throw new Error("Staging Worker selection contains duplicates");
+  }
   for (const worker of selected) {
     if (!DEPLOYMENT_ORDER.includes(worker)) {
       throw new Error(`Unknown staging Worker: ${worker}`);
     }
   }
-  const audienceProducerOnly = input.audienceProducerOnly === true;
-  if (audienceProducerOnly) {
-    const expected = ["data", "discord-rest", "gateway"];
-    if (
-      selected.size !== expected.length ||
-      !expected.every((worker) => selected.has(worker))
-    ) {
-      throw new Error(
-        "Audience producer rollout requires exactly data, discord-rest, and gateway",
-      );
-    }
-  } else if (!selected.has("web-api")) {
-    throw new Error("Every staging deployment must include web-api for exact-SHA metadata");
+  if (selected.has("data") !== (input.applyMigrations === true)) {
+    throw new Error("Data selection and migration authorization must match");
   }
-  if (selected.has("roll") && !selected.has("discord-rest")) {
-    throw new Error(
-      "Roll deployment requires the compatible Discord REST Worker",
-    );
-  }
-  if (selected.has("roll") && !selected.has("gateway")) {
-    throw new Error("Roll deployment requires the compatible Gateway Worker");
-  }
+  const requiredWorkers = input.applyMigrations === true
+    ? DEPLOYMENT_ORDER
+    : APPLICATION_WORKERS;
   if (
-    !audienceProducerOnly &&
-    selected.has("web-api") &&
-    (!selected.has("roll") || !selected.has("discord-rest"))
+    selected.size !== requiredWorkers.length ||
+    requiredWorkers.some((worker) => !selected.has(worker))
   ) {
     throw new Error(
-      "Web API deployment requires compatible Roll and Discord REST Workers",
+      "Staging deployment must include the complete application Worker cohort",
     );
   }
-  if (selected.has("gateway") && input.allowGatewayDeploy !== true) {
-    throw new Error("Gateway deployment requires --allow-gateway-deploy");
+  if (input.allowGatewayDeploy !== true) {
+    throw new Error("Gateway deployment requires explicit acknowledgement");
   }
   if (input.productionIsolationVerified !== true) {
     throw new Error("Production-target isolation must be verified");
@@ -164,51 +157,51 @@ export function createStagingPlan(input) {
   }
 
   const workers = DEPLOYMENT_ORDER.filter((worker) => selected.has(worker));
-  const origins = audienceProducerOnly
-    ? null
-    : smokeOrigins(input.configSummary, input.smokeTargets);
+  const origins = smokeOrigins(input.configSummary, input.smokeTargets);
   const steps = [
     {
       kind: "quality-gate",
       commands: qualityGateCommands(input.configSummary),
     },
-    {
-      kind: "migration-list",
-      command: command("npx", [
-        "--no-install",
-        "wrangler",
-        "d1",
-        "migrations",
-        "list",
-        "DATA",
-        "--remote",
-        "--config",
-        configFile("data"),
-      ]),
-    },
-    {
-      kind: "migration-apply",
-      approvalRequired: true,
-      mutation: true,
-      command: command("npx", [
-        "--no-install",
-        "wrangler",
-        "d1",
-        "migrations",
-        "apply",
-        "DATA",
-        "--remote",
-        "--config",
-        configFile("data"),
-      ]),
-    },
   ];
-  if (!audienceProducerOnly) {
-    steps.push({
-      kind: "audience-snapshot-gate",
-      command: audienceSnapshotGateCommand(),
-    });
+  if (input.applyMigrations === true) {
+    steps.push(
+      {
+        kind: "migration-list",
+        command: command("npx", [
+          "--no-install",
+          "wrangler",
+          "d1",
+          "migrations",
+          "list",
+          "DATA",
+          "--remote",
+          "--config",
+          configFile("data"),
+        ]),
+      },
+      {
+        kind: "migration-apply",
+        approvalRequired: true,
+        mutation: true,
+        command: command("npx", [
+          "--no-install",
+          "wrangler",
+          "d1",
+          "migrations",
+          "apply",
+          "DATA",
+          "--remote",
+          "--config",
+          configFile("data"),
+        ]),
+      },
+    );
   }
+  steps.push({
+    kind: "audience-snapshot-gate",
+    command: audienceSnapshotGateCommand(),
+  });
   for (const worker of workers) {
     steps.push({
       kind: "deploy",
@@ -224,33 +217,29 @@ export function createStagingPlan(input) {
       ]),
     });
   }
-  if (audienceProducerOnly) {
-    steps.push({ kind: "await-audience-snapshot" });
-  } else {
-    steps.push({
-      kind: "smoke-test",
-      command: command("node", [
-        "tools/staging-smoke.mjs",
-        "--web-origin",
-        origins.web,
-        "--roll-origin",
-        origins.roll,
-        "--gateway-origin",
-        origins.gateway,
-        "--expected-sha",
-        input.requestedSha,
-      ]),
-    });
-  }
+  steps.push({
+    kind: "smoke-test",
+    command: command("node", [
+      "tools/staging-smoke.mjs",
+      "--web-origin",
+      origins.web,
+      "--roll-origin",
+      origins.roll,
+      "--gateway-origin",
+      origins.gateway,
+      "--expected-sha",
+      input.requestedSha,
+    ]),
+  });
 
   return {
-    version: 2,
+    version: 3,
     environmentSuffix: input.configSummary.suffix,
     sourceSha: input.requestedSha,
     d1DatabaseName: input.configSummary.d1DatabaseName,
     workers,
-    gatewayDeploymentAcknowledged: selected.has("gateway"),
-    audienceProducerOnly,
+    applyMigrations: selected.has("data"),
+    gatewayDeploymentAcknowledged: true,
     steps,
   };
 }
@@ -260,16 +249,16 @@ function parseArguments(arguments_) {
   let workers;
   let rollOrigin;
   let gatewayOrigin;
+  let applyMigrations = false;
   let allowGatewayDeploy = false;
-  let audienceProducerOnly = false;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
-    if (argument === "--allow-gateway-deploy") {
-      allowGatewayDeploy = true;
+    if (argument === "--apply-migrations") {
+      applyMigrations = true;
       continue;
     }
-    if (argument === "--audience-producer-only") {
-      audienceProducerOnly = true;
+    if (argument === "--allow-gateway-deploy") {
+      allowGatewayDeploy = true;
       continue;
     }
     const value = arguments_[index + 1];
@@ -300,8 +289,8 @@ function parseArguments(arguments_) {
   return {
     requestedSha,
     workers,
+    applyMigrations,
     allowGatewayDeploy,
-    audienceProducerOnly,
     smokeTargets: { rollOrigin, gatewayOrigin },
   };
 }
