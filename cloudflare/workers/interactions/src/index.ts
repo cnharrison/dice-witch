@@ -106,7 +106,7 @@ async function deliverRequestedRollHelper(
       userId: interaction.userId,
     });
     if (isRecord(result) && result.status === "delivered") {
-      content = "Knowledge base sent to your DMs.";
+      content = "🧠 Knowledge base sent to your DMs";
     }
   } catch {
     console.error(

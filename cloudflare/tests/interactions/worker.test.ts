@@ -696,7 +696,7 @@ describe("Discord HTTP interaction Worker", () => {
     expect(body).toMatchObject({
       type: 4,
       data: {
-        content: "Invalid notation",
+        content: "🚫 Invalid notation",
         flags: 64,
         allowed_mentions: { parse: [] },
       },
@@ -918,7 +918,7 @@ describe("Discord HTTP interaction Worker", () => {
       }
       expect(edit.method).toBe("PATCH");
       await expect(edit.json()).resolves.toMatchObject({
-        content: "Knowledge base sent to your DMs.",
+        content: "🧠 Knowledge base sent to your DMs",
       });
     } finally {
       vi.unstubAllGlobals();

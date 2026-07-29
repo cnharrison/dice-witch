@@ -89,12 +89,12 @@ export function parseRollHelperDmInteraction(
 const NOTATION_HELP_URL = "https://dicewit.ch/docs/dice-notation";
 
 const ERROR_HEADLINES = {
-  INVALID_NOTATION: "Invalid notation",
-  NO_DICE: "Invalid notation",
+  INVALID_NOTATION: "🚫 Invalid notation",
+  NO_DICE: "🚫 Invalid notation",
   TOO_MANY_DICE: "Too many dice",
   TOO_MANY_SIDES: "Too many sides",
   NON_FINITE_TOTAL: "Invalid total",
-  UNSAFE_EXPLOSION: "Potentially infinite modifier",
+  UNSAFE_EXPLOSION: "🚫 Potentially infinite modifier",
 } as const;
 
 const NOTATION_ARTICLE = [

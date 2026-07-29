@@ -1568,7 +1568,7 @@ describe("RollWork Durable Object", () => {
         rollId: id,
         notation,
         payload: {
-          content: "Invalid notation",
+          content: "🚫 Invalid notation",
           components: [
             {
               components: [

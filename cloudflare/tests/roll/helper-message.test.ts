@@ -23,11 +23,11 @@ describe("invalid-roll helper contract", () => {
   it.each([
     {
       error: { code: "NO_DICE", message: "Roll notation contains no dice" },
-      headline: "Invalid notation",
+      headline: "🚫 Invalid notation",
     },
     {
       error: { code: "INVALID_NOTATION", notation: "2d6+" },
-      headline: "Invalid notation",
+      headline: "🚫 Invalid notation",
     },
     {
       error: { code: "TOO_MANY_DICE", message: "Too many dice" },
@@ -46,7 +46,7 @@ describe("invalid-roll helper contract", () => {
         code: "UNSAFE_EXPLOSION",
         message: "Expected explosion work exceeds the safety limit",
       },
-      headline: "Potentially infinite modifier",
+      headline: "🚫 Potentially infinite modifier",
     },
   ] as const)("uses the specific headline: $headline", ({ error, headline }) => {
     expect(helpMessage(error).content).toBe(headline);
