@@ -52,6 +52,7 @@ const WORKER_CONFIG_KEYS = {
   ],
   interactions: [
     ...COMMON_CONFIG_KEYS,
+    "alias",
     "vars",
     "services",
     "secrets_store_secrets",
@@ -260,7 +261,7 @@ function validateStaticWorkerConfiguration(errors, configs) {
     errors.push("Staging Interactions Worker must enable workers_dev");
   }
 
-  for (const worker of ["data", "gateway", "roll"]) {
+  for (const worker of ["data", "gateway", "interactions", "roll"]) {
     const alias = configs[worker]?.alias;
     if (
       !isRecord(alias) ||
@@ -432,7 +433,7 @@ function validateTopology(errors, configs, suffix) {
     errors,
     "interactions",
     configs.interactions?.services,
-    ["DATA_SERVICE", "GATEWAY_STATUS"],
+    ["DATA_SERVICE", "DISCORD_REST", "GATEWAY_STATUS"],
   );
   requireExactBindings(errors, "web-api", configs["web-api"]?.services, [
     "DATA_SERVICE",
@@ -513,6 +514,14 @@ function validateTopology(errors, configs, suffix) {
     "GATEWAY_STATUS",
     names.gateway,
     "GatewayStatusService",
+  );
+  requireService(
+    errors,
+    configs.interactions,
+    "interactions",
+    "DISCORD_REST",
+    names["discord-rest"],
+    "DiscordRestService",
   );
   requireService(
     errors,

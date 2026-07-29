@@ -232,6 +232,26 @@ async function discordTestResponse(request: Request): Promise<Response> {
   if (token === "delivery-success") {
     return Response.json({ id: "development-message" });
   }
+  if (token === "invalid-private-help") {
+    return Response.json(
+      { message: "Preflighted invalid-roll help must not be edited" },
+      { status: 418 },
+    );
+  }
+  if (token === "direct-public-roll") {
+    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
+    resultDeliveryAttempts.set(token, attempts);
+    const url = new URL(request.url);
+    if (
+      attempts !== 1 ||
+      request.method !== "PATCH" ||
+      !url.pathname.endsWith("/messages/@original") ||
+      !request.headers.get("content-type")?.startsWith("multipart/form-data")
+    ) {
+      return Response.json({ message: "public original response is invalid" }, { status: 400 });
+    }
+    return Response.json({ id: "development-message" });
+  }
   if (token === "saved-public-clatter") {
     const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
     resultDeliveryAttempts.set(token, attempts);

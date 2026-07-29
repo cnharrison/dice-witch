@@ -24,12 +24,21 @@ export type DiscordEmbed = {
   image?: { url: string };
 };
 
-export type DiscordButton = {
+export type DiscordCustomButton = {
   type: 2;
   style: 1 | 2 | 3 | 4;
   label: string;
   custom_id: string;
 };
+
+export type DiscordLinkButton = {
+  type: 2;
+  style: 5;
+  label: string;
+  url: string;
+};
+
+export type DiscordButton = DiscordCustomButton | DiscordLinkButton;
 
 export type DiscordActionRow = {
   type: 1;
@@ -84,6 +93,24 @@ function validateEmbed(embed: DiscordEmbed): void {
   }
 }
 
+function isValidLinkButton(component: DiscordLinkButton): boolean {
+  try {
+    const url = new URL(component.url);
+    return (
+      url.protocol === "https:" && url.username === "" && url.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isValidButton(component: DiscordButton): boolean {
+  if (component.label.length < 1 || component.label.length > 80) return false;
+  return component.style === 5
+    ? isValidLinkButton(component)
+    : component.custom_id.length >= 1 && component.custom_id.length <= 100;
+}
+
 function validateComponents(rows: DiscordActionRow[]): void {
   if (
     rows.length < 1 ||
@@ -92,14 +119,7 @@ function validateComponents(rows: DiscordActionRow[]): void {
       (row) =>
         row.components.length < 1 ||
         row.components.length > 5 ||
-        row.components.some(
-          (component) =>
-            ![1, 2, 3, 4].includes(component.style) ||
-            component.label.length < 1 ||
-            component.label.length > 80 ||
-            component.custom_id.length < 1 ||
-            component.custom_id.length > 100,
-        ),
+        row.components.some((component) => !isValidButton(component)),
     )
   ) {
     throw new Error("Discord message components are invalid");

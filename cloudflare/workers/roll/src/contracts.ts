@@ -110,6 +110,7 @@ export type RollDeliveryRequest = {
     receivedAt: number;
   };
   deferredAt?: number;
+  rollSeed?: number;
   logging: {
     source: "discord" | "web";
     channelId: string;
@@ -192,6 +193,7 @@ export type DeliveryMetadata = {
   message: RollDeliveryRequest["message"];
   accounting: RollDeliveryRequest["accounting"] | null;
   logging: RollDeliveryRequest["logging"] | null;
+  preflighted: boolean;
   responseMode: "edit-original" | "followup";
   savedRoll: SavedRollInvocationV1 | null;
 };
@@ -229,11 +231,13 @@ type ValidatedRollDeliveryRequest = Omit<
   | "logging"
   | "request"
   | "responseMode"
+  | "rollSeed"
   | "savedRoll"
 > & {
   request: RollWorkRequest;
   accounting: RollDeliveryRequest["accounting"] | null;
   deferredAt: number;
+  rollSeed: number | null;
   logging: RollDeliveryRequest["logging"] | null;
   responseMode: "edit-original" | "followup";
   savedRoll: SavedRollInvocationV1 | null;
@@ -370,6 +374,14 @@ export function validateDeliveryRequest(
   const hasDeferredAt = Object.hasOwn(value, "deferredAt");
   const shape = { ...value };
   delete shape.deferredAt;
+  const hasPreflightedDirectRoll = hasExactKeys(shape, [
+    "accounting",
+    "interaction",
+    "logging",
+    "message",
+    "request",
+    "rollSeed",
+  ]);
   const hasSavedRoll = hasExactKeys(shape, [
     "accounting",
     "interaction",
@@ -378,6 +390,16 @@ export function validateDeliveryRequest(
     "request",
     "responseMode",
     "savedRoll",
+  ]);
+  // Private-first direct rolls remain valid while accepted deliveries from the
+  // coordinated Interactions/Roll rollout can still retry.
+  const hasLegacyPrivateDirectRoll = hasExactKeys(shape, [
+    "accounting",
+    "interaction",
+    "logging",
+    "message",
+    "request",
+    "responseMode",
   ]);
   const hasLogging = hasExactKeys(shape, [
     "accounting",
@@ -394,7 +416,12 @@ export function validateDeliveryRequest(
   ]);
   const isLegacy = hasExactKeys(shape, ["interaction", "message", "request"]);
   if (
-    (!hasSavedRoll && !hasLogging && !hasAccounting && !isLegacy) ||
+    (!hasPreflightedDirectRoll &&
+      !hasSavedRoll &&
+      !hasLegacyPrivateDirectRoll &&
+      !hasLogging &&
+      !hasAccounting &&
+      !isLegacy) ||
     !isRecord(value.interaction) ||
     !hasExactKeys(value.interaction, ["applicationId", "id", "token"]) ||
     !SNOWFLAKE.test(String(value.interaction.id)) ||
@@ -419,7 +446,13 @@ export function validateDeliveryRequest(
   }
 
   let accounting: RollDeliveryRequest["accounting"] | null = null;
-  if (hasSavedRoll || hasLogging || hasAccounting) {
+  if (
+    hasPreflightedDirectRoll ||
+    hasSavedRoll ||
+    hasLegacyPrivateDirectRoll ||
+    hasLogging ||
+    hasAccounting
+  ) {
     if (
       !isRecord(value.accounting) ||
       !hasExactKeys(value.accounting, ["guildId", "receivedAt", "userId"]) ||
@@ -449,8 +482,27 @@ export function validateDeliveryRequest(
     throw new Error("Roll delivery deferred timestamp is invalid");
   }
 
+  let rollSeed: number | null = null;
+  if (hasPreflightedDirectRoll) {
+    const candidate = value.rollSeed;
+    if (
+      typeof candidate !== "number" ||
+      !Number.isSafeInteger(candidate) ||
+      candidate < 0 ||
+      candidate > 0xffff_ffff
+    ) {
+      throw new Error("Roll delivery seed is invalid");
+    }
+    rollSeed = candidate;
+  }
+
   let logging: RollDeliveryRequest["logging"] | null = null;
-  if (hasSavedRoll || hasLogging) {
+  if (
+    hasPreflightedDirectRoll ||
+    hasSavedRoll ||
+    hasLegacyPrivateDirectRoll ||
+    hasLogging
+  ) {
     if (
       !isRecord(value.logging) ||
       (!hasExactKeys(value.logging, ["channelId", "notation", "source"]) &&
@@ -487,14 +539,20 @@ export function validateDeliveryRequest(
 
   let responseMode: "edit-original" | "followup" = "edit-original";
   let savedRoll: SavedRollInvocationV1 | null = null;
-  if (hasSavedRoll) {
-    if (
+  if (
+    (hasPreflightedDirectRoll && logging?.source !== "discord") ||
+    (hasLegacyPrivateDirectRoll && logging?.source !== "discord") ||
+    (hasLegacyPrivateDirectRoll && value.responseMode !== "followup") ||
+    (hasSavedRoll &&
       value.responseMode !== "followup" &&
-      value.responseMode !== "edit-original"
-    ) {
-      throw new Error("Roll delivery response mode is invalid");
-    }
-    responseMode = value.responseMode;
+      value.responseMode !== "edit-original")
+  ) {
+    throw new Error("Roll delivery response mode is invalid");
+  }
+  if (hasSavedRoll || hasLegacyPrivateDirectRoll) {
+    responseMode = value.responseMode as "edit-original" | "followup";
+  }
+  if (hasSavedRoll) {
     savedRoll = parseSavedRollInvocation(value.savedRoll);
     if (
       savedRoll.notation !== value.request.notation ||
@@ -523,6 +581,7 @@ export function validateDeliveryRequest(
     },
     accounting,
     deferredAt,
+    rollSeed,
     logging,
     responseMode,
     savedRoll,
@@ -915,6 +974,7 @@ function deliveryMetadataIdentity(metadata: DeliveryMetadata): string {
             channelId: metadata.logging.channelId,
             notation: metadata.logging.notation,
           },
+    preflighted: metadata.preflighted,
     responseMode: metadata.responseMode,
     savedRoll: metadata.savedRoll,
   });
@@ -955,23 +1015,30 @@ export async function tokenFingerprint(token: string): Promise<string> {
     .join("");
 }
 
+function deliveryMetadataVersion(
+  request: ValidatedRollDeliveryRequest,
+): 3 | 4 | 5 | 6 | 7 {
+  if (request.rollSeed !== null) return 7;
+  if (request.savedRoll !== null) return 5;
+  if (request.responseMode === "followup") return 6;
+  return request.logging?.context === undefined ? 3 : 4;
+}
+
 export function deliveryMetadata(
   request: ValidatedRollDeliveryRequest,
 ): string {
   return JSON.stringify({
-    version:
-      request.savedRoll === null
-        ? request.logging?.context === undefined
-          ? 3
-          : 4
-        : 5,
+    version: deliveryMetadataVersion(request),
     interactionId: request.interaction.id,
     applicationId: request.interaction.applicationId,
     message: request.message,
     accounting: request.accounting,
     logging: request.logging,
+    ...(request.rollSeed === null ? {} : { preflighted: true }),
     ...(request.savedRoll === null
-      ? {}
+      ? request.responseMode === "followup"
+        ? { responseMode: request.responseMode }
+        : {}
       : {
           responseMode: request.responseMode,
           savedRoll: request.savedRoll,
@@ -992,6 +1059,28 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
     "message",
     "version",
   ];
+  const version7 =
+    parsed.version === 7 &&
+    hasExactKeys(parsed, [
+      "accounting",
+      "applicationId",
+      "interactionId",
+      "logging",
+      "message",
+      "preflighted",
+      "version",
+    ]);
+  const version6 =
+    parsed.version === 6 &&
+    hasExactKeys(parsed, [
+      "accounting",
+      "applicationId",
+      "interactionId",
+      "logging",
+      "message",
+      "responseMode",
+      "version",
+    ]);
   const version5 =
     parsed.version === 5 &&
     hasExactKeys(parsed, [
@@ -1019,7 +1108,13 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
     parsed.version === undefined &&
     hasExactKeys(parsed, ["applicationId", "interactionId", "message"]);
   if (
-    (!version5 && !version4 && !version3 && !version2 && !legacy) ||
+    (!version7 &&
+      !version6 &&
+      !version5 &&
+      !version4 &&
+      !version3 &&
+      !version2 &&
+      !legacy) ||
     !SNOWFLAKE.test(String(parsed.interactionId)) ||
     !SNOWFLAKE.test(String(parsed.applicationId)) ||
     !isRecord(parsed.message) ||
@@ -1046,7 +1141,19 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
         parsed.logging.notation.length < 1 ||
         parsed.logging.notation.length > MAX_NOTATION_LENGTH ||
         (version4 && parsed.logging.context === undefined) ||
-        (!version5 && !version4 && parsed.logging.context !== undefined))) ||
+        (!version7 &&
+          !version6 &&
+          !version5 &&
+          !version4 &&
+          parsed.logging.context !== undefined))) ||
+    (version7 &&
+      (parsed.preflighted !== true ||
+        !isRecord(parsed.logging) ||
+        parsed.logging.source !== "discord")) ||
+    (version6 &&
+      (parsed.responseMode !== "followup" ||
+        !isRecord(parsed.logging) ||
+        parsed.logging.source !== "discord")) ||
     (version5 &&
       parsed.responseMode !== "edit-original" &&
       parsed.responseMode !== "followup")
@@ -1087,7 +1194,8 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
                   ),
                 }),
           },
-    responseMode: version5
+    preflighted: version7,
+    responseMode: version6 || version5
       ? (parsed.responseMode as "edit-original" | "followup")
       : "edit-original",
     savedRoll: version5 ? parseSavedRollInvocation(parsed.savedRoll) : null,

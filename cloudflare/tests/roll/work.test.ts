@@ -10,7 +10,6 @@ import {
   BUILTIN_APPEARANCE_RECIPES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
 } from "../../packages/dice-appearance/src";
-import { ROLL_HELPER_ANNOUNCEMENT } from "../../packages/discord-contracts/src";
 import {
   buildRollRenderRequest,
   buildRollRenderRequestV4,
@@ -486,6 +485,29 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
       lastHttpStatus: 200,
+    });
+  });
+
+  it("edits one public original response for a preflighted valid roll", async () => {
+    const id = snowflakeAt(Date.now(), 45);
+    const stub = work(id);
+    const input = {
+      ...deliveryRequest(id, "direct-public-roll"),
+      rollSeed: 123_456_789,
+    };
+
+    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const record = JSON.parse(
+        state.storage.sql
+          .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+          .one().record_json,
+      ) as { rollSeed: number };
+      expect(record.rollSeed).toBe(input.rollSeed);
     });
   });
 
@@ -1494,24 +1516,48 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("durably logs an invalid roll without an image and delivers its helper once", async () => {
+  it("does not rewrite preflighted private invalid-roll help or send an automatic DM", async () => {
     const id = snowflakeAt(Date.now(), 31);
     const stub = work(id);
-    const input = deliveryRequest(id, "delivery-success");
-    const notation = "x".repeat(6_000);
+    const input = {
+      ...deliveryRequest(id, "invalid-private-help"),
+      rollSeed: 123_456_789,
+    };
+    const notation = "1776";
     input.request.notation = notation;
     input.logging.notation = notation;
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+    try {
+      await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+      expect(consoleWarn).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          level: "warn",
+          message: "Direct roll private defer cleanup failed",
+          rollId: id,
+        }),
+      );
+    } finally {
+      consoleWarn.mockRestore();
+    }
     await runInDurableObject(stub, (_instance, state) => {
       const delivery = state.storage.sql
-        .exec<{ helper_state: string; helper_attempts: number }>(
-          "SELECT helper_state, helper_attempts FROM interaction_delivery",
+        .exec<{
+          helper_state: string;
+          helper_attempts: number;
+          metadata_json: string;
+        }>(
+          `SELECT helper_state, helper_attempts, metadata_json
+           FROM interaction_delivery`,
         )
         .one();
-      expect(delivery).toEqual({
-        helper_state: "delivered",
-        helper_attempts: 1,
+      expect(delivery).toMatchObject({
+        helper_state: "not_applicable",
+        helper_attempts: 0,
+      });
+      expect(JSON.parse(delivery.metadata_json)).toMatchObject({
+        version: 7,
+        preflighted: true,
       });
       const outbox = state.storage.sql
         .exec<{ artifact_json: string; image_bytes: ArrayBuffer }>(
@@ -1521,7 +1567,21 @@ describe("RollWork Durable Object", () => {
       expect(JSON.parse(outbox.artifact_json)).toMatchObject({
         rollId: id,
         notation,
-        payload: { content: ROLL_HELPER_ANNOUNCEMENT },
+        payload: {
+          content: "🚫 Invalid notation",
+          components: [
+            {
+              components: [
+                {
+                  style: 5,
+                  label: "Dice notation guide",
+                  url: "https://dicewit.ch/docs/dice-notation",
+                },
+                { custom_id: `roll-help:dm-knowledgebase:${id}` },
+              ],
+            },
+          ],
+        },
         image: { status: "unavailable", reason: "not-applicable" },
       });
       expect(new Uint8Array(outbox.image_bytes)).toHaveLength(0);
@@ -1770,8 +1830,9 @@ describe("RollWork Durable Object", () => {
       const terminalFailure = consoleError.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
         .find(
-          ({ message }) =>
-            message === "Roll delivery encountered a terminal internal failure",
+          ({ message, rollId }) =>
+            message === "Roll delivery encountered a terminal internal failure" &&
+            rollId === id,
         );
       expect(terminalFailure).toMatchObject({
         rollId: id,
@@ -1824,7 +1885,11 @@ describe("RollWork Durable Object", () => {
 
       const delivered = consoleInfo.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(({ message }) => message === "Roll destination delivery completed");
+        .find(
+          ({ message, rollId }) =>
+            message === "Roll destination delivery completed" &&
+            rollId === deliveredId,
+        );
       expect(delivered).toMatchObject({
         telemetryVersion: 2,
         subsystem: "roll-destination",
@@ -1870,7 +1935,11 @@ describe("RollWork Durable Object", () => {
 
       const failed = consoleError.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(({ message }) => message === "Roll destination delivery completed");
+        .find(
+          ({ message, rollId }) =>
+            message === "Roll destination delivery completed" &&
+            rollId === failedId,
+        );
       expect(failed).toMatchObject({
         telemetryVersion: 2,
         subsystem: "roll-destination",
@@ -1918,7 +1987,10 @@ describe("RollWork Durable Object", () => {
       await expect(work(id).deliver(input)).resolves.toEqual({ status: "failed" });
       const failed = consoleError.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(({ message }) => message === "Roll destination delivery completed");
+        .find(
+          ({ message, rollId }) =>
+            message === "Roll destination delivery completed" && rollId === id,
+        );
       expect(failed).toMatchObject({
         rollId: id,
         state: "failed",
@@ -1948,7 +2020,13 @@ describe("RollWork Durable Object", () => {
       });
       const entry = consoleInfo.mock.calls
         .map(([value]) => String(value))
-        .find((value) => value.includes("Roll destination delivery completed"));
+        .find((value) => {
+          const event = JSON.parse(value) as Record<string, unknown>;
+          return (
+            event.message === "Roll destination delivery completed" &&
+            event.rollId === id
+          );
+        });
       expect(entry).toBeDefined();
       if (entry === undefined) throw new Error("Destination telemetry is missing");
       expect(new TextEncoder().encode(entry).byteLength).toBeLessThan(256 * 1_024);
@@ -2351,6 +2429,32 @@ describe("RollWork Durable Object", () => {
     expect(first.status).toBe("created");
     expect(retry).toEqual({ ...first, status: "existing" });
     expect(conflict).toEqual({ status: "conflict" });
+  });
+
+  it("rejects a changed preflight seed for an accepted direct roll", async () => {
+    const id = snowflakeAt(Date.now(), 47);
+    const stub = work(id);
+    const input = { ...deliveryRequest(id), rollSeed: 123_456_789 };
+
+    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+      status: "created",
+    });
+    await expect(
+      stub.acceptDelivery({ ...input, rollSeed: 987_654_321 }),
+    ).resolves.toEqual({ status: "conflict" });
+  });
+
+  it("rejects private-defer metadata outside direct Discord delivery", () => {
+    const id = snowflakeAt(Date.now(), 46);
+    const input = {
+      ...deliveryRequest(id),
+      responseMode: "followup" as const,
+    };
+    input.logging.source = "web";
+
+    expect(() => validateDeliveryRequest(input)).toThrow(
+      "Roll delivery response mode is invalid",
+    );
   });
 
   it("rejects saved-roll metadata that does not match the executed request", () => {

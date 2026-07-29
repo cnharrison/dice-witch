@@ -22,18 +22,16 @@ import {
   parseSavedRollNameV1,
 } from "../../../packages/saved-rolls/src";
 import {
+  buildDeleteOriginalResponse,
   buildEditFollowupResponseWithFile,
   buildEditOriginalResponse,
   buildEditOriginalResponseWithFile,
-  buildFollowupResponse,
   buildFollowupResponseWithFile,
   buildPublicFollowupResponse,
+  buildInvalidRollHelpMessage,
   buildRollClatterMessage,
-  buildRollErrorMessage,
   buildRollResultMessage,
   LOG_WORK_RETRY_WINDOW_MS,
-  ROLL_HELPER_ANNOUNCEMENT,
-  ROLL_HELPER_DM_ANNOUNCEMENT,
   parseRollLifecycleSnapshot,
   validateRollLogArtifact,
   type DiscordMessage,
@@ -1336,7 +1334,12 @@ export class RollWork extends DurableObject<RollEnv> {
       accepted = this.ctx.storage.transactionSync(
         (): AcceptRollDeliveryResult => {
           const prepared = this.prepareRequest(delivery.request, record);
-          if (prepared.status === "conflict") return prepared;
+          if (
+            prepared.status === "conflict" ||
+            prepared.record.rollSeed !== record.rollSeed
+          ) {
+            return { status: "conflict" };
+          }
 
           const existing = this.readDelivery();
           if (existing !== undefined) {
@@ -1371,15 +1374,6 @@ export class RollWork extends DurableObject<RollEnv> {
             accountingState === "pending" ? acceptedAt : null;
           const loggingState =
             delivery.logging === null ? "not_applicable" : "pending";
-          const helperState =
-            prepared.record.outcome.errors.length > 0 &&
-            !prepared.record.outcome.errors.some(({ code }) =>
-              ["TOO_MANY_DICE", "TOO_MANY_SIDES", "UNSAFE_EXPLOSION"].includes(
-                code,
-              ),
-            )
-              ? "pending"
-              : "not_applicable";
           this.ctx.storage.sql.exec(
             `INSERT INTO interaction_delivery (
                singleton, metadata_json, token, token_fingerprint, expires_at,
@@ -1393,7 +1387,7 @@ export class RollWork extends DurableObject<RollEnv> {
             accountingState,
             accountingOccurredAt,
             loggingState,
-            helperState,
+            "not_applicable",
           );
           this.acceptLifecycleSnapshot(acceptedAt);
           return { status: "created", delivery: "pending", expiresAt };
@@ -2535,6 +2529,50 @@ export class RollWork extends DurableObject<RollEnv> {
 
     let clatter: string | undefined;
     let followupMessageId = delivery.followup_message_id;
+    const legacyDirectPrivateDefer =
+      metadata.responseMode === "followup" && metadata.savedRoll === null;
+    if (
+      record.outcome.outcomes.length > 0 &&
+      legacyDirectPrivateDefer &&
+      delivery.clatter_sent_at === null
+    ) {
+      let response: Response;
+      try {
+        response = await fetch(
+          buildEditOriginalResponse(target, {
+            content: "Preparing your roll.",
+          }),
+        );
+      } catch {
+        return this.scheduleRetry(
+          target.id,
+          attempts,
+          delivery.expires_at,
+          "discord",
+        );
+      }
+      if (!response.ok) {
+        if (isRetryableHttpStatus(response.status)) {
+          return this.scheduleRetry(
+            target.id,
+            attempts,
+            delivery.expires_at,
+            "discord",
+            retryAfterMs(response, attempts),
+            response.status,
+          );
+        }
+        const code = await readDiscordErrorCode(response);
+        return this.failDelivery(
+          target.id,
+          attempts,
+          response.status,
+          delivery.expires_at,
+          "response",
+          { code, operation: "edit-original-result" },
+        );
+      }
+    }
     if (record.outcome.outcomes.length > 0) {
       try {
         clatter = buildRollClatterMessage(
@@ -2651,25 +2689,23 @@ export class RollWork extends DurableObject<RollEnv> {
     let discordOperation: DiscordOperation;
     if (record.outcome.outcomes.length === 0) {
       try {
-        const payload =
-          delivery.helper_state === "pending"
-            ? {
-                content:
-                  metadata.accounting?.guildId === null
-                    ? ROLL_HELPER_DM_ANNOUNCEMENT
-                    : ROLL_HELPER_ANNOUNCEMENT,
-              }
-            : buildRollErrorMessage(record.outcome);
+        const payload = buildInvalidRollHelpMessage(record.outcome, target.id);
         await this.prepareSourceLogArtifact(metadata, payload, {
           status: "unavailable",
           reason: "not-applicable",
         });
-        request = metadata.responseMode === "followup"
-          ? buildFollowupResponse(target, payload, false)
-          : buildEditOriginalResponse(target, payload);
-        discordOperation = metadata.responseMode === "followup"
-          ? "create-followup-result"
-          : "edit-original-result";
+        if (metadata.preflighted) {
+          return await this.completeDelivery(
+            target,
+            attempts,
+            delivery,
+            record,
+            200,
+            null,
+          );
+        }
+        request = buildEditOriginalResponse(target, payload);
+        discordOperation = "edit-original-result";
       } catch {
         return this.terminateDelivery(
           target,
@@ -2801,61 +2837,41 @@ export class RollWork extends DurableObject<RollEnv> {
       );
     }
     if (response.ok) {
-      if (metadata.responseMode === "followup") {
+      if (
+        metadata.responseMode === "followup" &&
+        record.outcome.outcomes.length > 0
+      ) {
         try {
-          await fetch(
-            buildEditOriginalResponse(target, {
-              content: "Saved roll posted.",
-            }),
+          const cleanupResponse = await fetch(
+            legacyDirectPrivateDefer
+              ? buildDeleteOriginalResponse(target)
+              : buildEditOriginalResponse(target, {
+                  content: "Saved roll posted.",
+                }),
           );
+          if (!cleanupResponse.ok) {
+            throw new Error("Private interaction cleanup failed");
+          }
         } catch {
           console.warn(
             JSON.stringify({
               level: "warn",
-              message: "Saved roll private confirmation failed",
+              message: legacyDirectPrivateDefer
+                ? "Direct roll private defer cleanup failed"
+                : "Saved roll private confirmation failed",
               rollId: target.id,
             }),
           );
         }
       }
-      const deliveredAt = Date.now();
-      this.ctx.storage.transactionSync(() => {
-        this.ctx.storage.sql.exec(
-          `UPDATE interaction_delivery
-           SET token = NULL, state = 'delivered', delivered_at = ?,
-               last_http_status = ?, failure_phase = NULL
-           WHERE singleton = 1`,
-          deliveredAt,
-          response.status,
-        );
-        this.ctx.storage.sql.exec(
-          `UPDATE roll_log_outbox
-           SET destination_delivered_at = ?, handoff_until = ?
-           WHERE singleton = 1`,
-          deliveredAt,
-          deliveredAt + LOG_WORK_RETRY_WINDOW_MS,
-        );
-      });
-      this.advanceLifecycle({
-        state: "delivered",
-        occurredAt: deliveredAt,
+      return this.completeDelivery(
+        target,
         attempts,
-        httpStatus: response.status,
-        destinationPayload:
-          this.destinationTelemetryContext(record).destinationPayload,
-      });
-      this.logDestinationCompletion({
-        rollId: target.id,
-        state: "delivered",
-        attempts,
-        httpStatus: response.status,
-        failurePhase: null,
-        completedAt: deliveredAt,
+        delivery,
         record,
-        delayMs: skipDiceDelay ? 0 : delayMs,
-      });
-      await this.ctx.storage.setAlarm(delivery.expires_at);
-      return { status: "delivered" };
+        response.status,
+        skipDiceDelay ? 0 : delayMs,
+      );
     }
     if (isRetryableHttpStatus(response.status)) {
       return this.scheduleRetry(
@@ -2877,6 +2893,54 @@ export class RollWork extends DurableObject<RollEnv> {
       "discord",
       { code, operation: discordOperation },
     );
+  }
+
+  private async completeDelivery(
+    target: RollDeliveryTarget,
+    attempts: number,
+    delivery: StoredDeliveryRow,
+    record: RollWorkRecord,
+    httpStatus: number,
+    delayMs: number | null,
+  ): Promise<DeliverRollWorkResult> {
+    const deliveredAt = Date.now();
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        `UPDATE interaction_delivery
+         SET token = NULL, state = 'delivered', delivered_at = ?,
+             last_http_status = ?, failure_phase = NULL
+         WHERE singleton = 1`,
+        deliveredAt,
+        httpStatus,
+      );
+      this.ctx.storage.sql.exec(
+        `UPDATE roll_log_outbox
+         SET destination_delivered_at = ?, handoff_until = ?
+         WHERE singleton = 1`,
+        deliveredAt,
+        deliveredAt + LOG_WORK_RETRY_WINDOW_MS,
+      );
+    });
+    this.advanceLifecycle({
+      state: "delivered",
+      occurredAt: deliveredAt,
+      attempts,
+      httpStatus,
+      destinationPayload:
+        this.destinationTelemetryContext(record).destinationPayload,
+    });
+    this.logDestinationCompletion({
+      rollId: target.id,
+      state: "delivered",
+      attempts,
+      httpStatus,
+      failurePhase: null,
+      completedAt: deliveredAt,
+      record,
+      delayMs,
+    });
+    await this.ctx.storage.setAlarm(delivery.expires_at);
+    return { status: "delivered" };
   }
 
   private async terminateDelivery(
@@ -3104,10 +3168,16 @@ export class RollWork extends DurableObject<RollEnv> {
     const existing = this.storedPreparation(request);
     if (existing?.status === "conflict") return { status: "conflict" };
     if (existing?.status === "existing") {
+      if (
+        delivery.rollSeed !== null &&
+        existing.record.rollSeed !== delivery.rollSeed
+      ) {
+        return { status: "conflict" };
+      }
       return { status: "ready", record: existing.record };
     }
 
-    const rollSeed = randomSeed();
+    const rollSeed = delivery.rollSeed ?? randomSeed();
     const renderSeed = randomSeed();
     const renderVersion = accounting === null
       ? null
@@ -3172,6 +3242,7 @@ export class RollWork extends DurableObject<RollEnv> {
               message: delivery.message,
               accounting,
               logging: delivery.logging,
+              preflighted: delivery.rollSeed !== null,
               responseMode: delivery.responseMode,
               savedRoll: delivery.savedRoll,
             },

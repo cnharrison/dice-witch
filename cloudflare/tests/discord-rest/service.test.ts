@@ -1282,7 +1282,7 @@ describe("Discord REST service", () => {
     ).resolves.toEqual({ status: "delivered" });
   });
 
-  it("sends the legacy invalid-roll helper DM with nonce enforcement", async () => {
+  it("sends requested knowledge base help by DM with nonce enforcement", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
       const url = new URL(request.url);
       if (url.pathname === "/api/v10/users/@me/channels") {
@@ -1294,8 +1294,11 @@ describe("Discord REST service", () => {
       expect(payload).toMatchObject({
         nonce: "100000000000000020",
         enforce_nonce: true,
-        embeds: [{ fields: [{ name: "Need help? 😅" }] }],
+        embeds: [{ title: "🎲 Dice notation" }],
       });
+      expect(JSON.stringify(payload)).toContain(
+        "https://dicewit.ch/docs/dice-notation",
+      );
       expect(payload.components).toHaveLength(3);
       return Response.json({ id: "100000000000000021" });
     });

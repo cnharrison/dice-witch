@@ -243,6 +243,41 @@ function validateEmbed(value: unknown): DiscordEmbed {
   return value;
 }
 
+function isValidMessageComponent(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    value.type !== 2 ||
+    typeof value.label !== "string" ||
+    value.label.length < 1 ||
+    value.label.length > 80
+  ) {
+    return false;
+  }
+  if (value.style === 5) {
+    if (
+      !hasExactKeys(value, ["label", "style", "type", "url"]) ||
+      typeof value.url !== "string"
+    ) {
+      return false;
+    }
+    try {
+      const url = new URL(value.url);
+      return (
+        url.protocol === "https:" && url.username === "" && url.password === ""
+      );
+    } catch {
+      return false;
+    }
+  }
+  return (
+    hasExactKeys(value, ["custom_id", "label", "style", "type"]) &&
+    [1, 2, 3, 4].includes(Number(value.style)) &&
+    typeof value.custom_id === "string" &&
+    value.custom_id.length >= 1 &&
+    value.custom_id.length <= 100
+  );
+}
+
 function validateComponents(
   value: unknown,
 ): NonNullable<DiscordMessage["components"]> {
@@ -258,19 +293,7 @@ function validateComponents(
         !Array.isArray(row.components) ||
         row.components.length < 1 ||
         row.components.length > 5 ||
-        row.components.some(
-          (component) =>
-            !isRecord(component) ||
-            !hasExactKeys(component, ["custom_id", "label", "style", "type"]) ||
-            component.type !== 2 ||
-            ![1, 2, 3, 4].includes(Number(component.style)) ||
-            typeof component.label !== "string" ||
-            component.label.length < 1 ||
-            component.label.length > 80 ||
-            typeof component.custom_id !== "string" ||
-            component.custom_id.length < 1 ||
-            component.custom_id.length > 100,
-        ),
+        row.components.some((component) => !isValidMessageComponent(component)),
     )
   ) {
     throw new Error("Roll log artifact payload is invalid");

@@ -1,7 +1,12 @@
+import type { RollExecutionResult } from "../../roll-domain/src";
 import {
   buildFooterComponents,
   type DiscordFooterLinks,
 } from "./footer-links";
+import type { DiscordMessage } from "./responses";
+
+const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
 
 const BUTTON_ROWS = [
   [
@@ -20,21 +25,139 @@ const BUTTON_ROWS = [
   ],
 ] as const;
 
-export const ROLL_HELPER_ANNOUNCEMENT =
-  " 🚫🎲 Invalid dice notation! DMing you some help 😉";
-export const ROLL_HELPER_DM_ANNOUNCEMENT =
-  " 🚫🎲 Invalid dice notation! Here's some help 😉";
+export const ROLL_HELPER_DM_CUSTOM_ID = "roll-help:dm-knowledgebase";
+
+export type RollHelperDmInteraction = {
+  id: string;
+  applicationId: string;
+  token: string;
+  rollId: string;
+  userId: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function parseRollHelperDmInteraction(
+  value: unknown,
+  applicationId: string,
+  allowedGuildId?: string,
+): RollHelperDmInteraction | null {
+  if (!isRecord(value) || value.application_id !== applicationId) return null;
+  const data = value.data;
+  if (
+    value.type !== 3 ||
+    !isRecord(data) ||
+    data.component_type !== 2 ||
+    typeof data.custom_id !== "string" ||
+    !data.custom_id.startsWith(`${ROLL_HELPER_DM_CUSTOM_ID}:`)
+  ) {
+    return null;
+  }
+  const rollId = data.custom_id.slice(ROLL_HELPER_DM_CUSTOM_ID.length + 1);
+  const guildId = value.guild_id;
+  const member = value.member;
+  const user = isRecord(member) && isRecord(member.user)
+    ? member.user
+    : value.user;
+  if (
+    typeof value.id !== "string" ||
+    !SNOWFLAKE.test(value.id) ||
+    typeof value.token !== "string" ||
+    !INTERACTION_TOKEN.test(value.token) ||
+    !SNOWFLAKE.test(rollId) ||
+    (guildId !== undefined &&
+      (typeof guildId !== "string" ||
+        !SNOWFLAKE.test(guildId) ||
+        (allowedGuildId !== undefined && guildId !== allowedGuildId))) ||
+    !isRecord(user) ||
+    typeof user.id !== "string" ||
+    !SNOWFLAKE.test(user.id)
+  ) {
+    throw new Error("Roll helper DM interaction is invalid");
+  }
+  return {
+    id: value.id,
+    applicationId,
+    token: value.token,
+    rollId,
+    userId: user.id,
+  };
+}
+
+const NOTATION_HELP_URL = "https://dicewit.ch/docs/dice-notation";
+
+const ERROR_HEADLINES = {
+  INVALID_NOTATION: "🚫 Invalid notation",
+  NO_DICE: "🚫 Invalid notation",
+  TOO_MANY_DICE: "Too many dice",
+  TOO_MANY_SIDES: "Too many sides",
+  NON_FINITE_TOTAL: "Invalid total",
+  UNSAFE_EXPLOSION: "🚫 Potentially infinite modifier",
+} as const;
+
+const NOTATION_ARTICLE = [
+  "Write dice as `NdS`: the number of dice, `d`, then the number of sides.",
+  "",
+  "- `2d6` — two six-sided dice",
+  "- `1d20+5` — one d20, then add 5",
+  "- `4d6k3` — roll four d6 and keep the highest three",
+  "- `2d6!` — roll two exploding d6",
+  "",
+  "Put modifiers directly after the dice they affect. Use normal arithmetic between rolls.",
+  "",
+  `[Read the complete Dice notation guide](${NOTATION_HELP_URL})`,
+].join("\n");
+
+export function buildInvalidRollHelpMessage(
+  result: RollExecutionResult,
+  rollId: string,
+): DiscordMessage {
+  const firstError = result.errors[0];
+  if (
+    !SNOWFLAKE.test(rollId) ||
+    result.outcomes.length > 0 ||
+    firstError === undefined
+  ) {
+    throw new Error("Roll result does not contain a terminal help error");
+  }
+  const error = result.errors.find(
+    ({ code }) => code === "UNSAFE_EXPLOSION",
+  ) ?? firstError;
+  return {
+    content: ERROR_HEADLINES[error.code],
+    components: [
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            style: 5,
+            label: "Dice notation guide",
+            url: NOTATION_HELP_URL,
+          },
+          {
+            type: 2,
+            style: 2,
+            label: "DM me the knowledge base",
+            custom_id: `${ROLL_HELPER_DM_CUSTOM_ID}:${rollId}`,
+          },
+        ],
+      },
+    ],
+  };
+}
 
 export function buildRollHelperMessage(
   links: DiscordFooterLinks,
 ): Record<string, unknown> {
-  const description =
-    "The `/roll` command has three arguments: `notation`, `title`, and `times`. The `notation` argument must be in valid [dice notation](http://dmreference.com/MRD/Basics/The_Basics/Dice_Notation.htm).\nYou can roll any dice, but you can only see images of these dice: **d100, d20, d12, d10, d8, d6, d4, dF**.\nYou can roll up to **50** dice at once 😈\n\n";
   return {
     embeds: [
       {
         color: 0x00_00_ff,
-        fields: [{ name: "Need help? 😅", value: description }],
+        title: "🎲 Dice notation",
+        description: NOTATION_ARTICLE,
       },
     ],
     components: [

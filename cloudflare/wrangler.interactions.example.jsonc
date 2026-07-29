@@ -5,6 +5,9 @@
   "compatibility_date": "2026-07-10",
   "workers_dev": true,
   "preview_urls": false,
+  "alias": {
+    "crypto": "./packages/roll-domain/src/worker-crypto.ts"
+  },
   "vars": {
     "DISCORD_APPLICATION_ID": "100000000000000001",
     "INVITE_LINK": "https://example.com/replace-with-discord-invite",
@@ -20,6 +23,11 @@
       "binding": "GATEWAY_STATUS",
       "service": "dice-witch-gateway",
       "entrypoint": "GatewayStatusService"
+    },
+    {
+      "binding": "DISCORD_REST",
+      "service": "dice-witch-discord-rest",
+      "entrypoint": "DiscordRestService"
     }
   ],
   "durable_objects": {

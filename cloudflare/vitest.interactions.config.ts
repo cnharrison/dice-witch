@@ -27,6 +27,23 @@ export default defineConfig({
             ],
           },
           {
+            name: "dice-witch-discord-rest",
+            modules: [
+              {
+                type: "ESModule",
+                path: "discord-rest-mock.mjs",
+                contents: `
+                  import { WorkerEntrypoint } from "cloudflare:workers";
+                  export class DiscordRestService extends WorkerEntrypoint {
+                    sendRollHelper() {
+                      return { status: "delivered" };
+                    }
+                  }
+                `,
+              },
+            ],
+          },
+          {
             name: "dice-witch-gateway",
             modules: [
               {

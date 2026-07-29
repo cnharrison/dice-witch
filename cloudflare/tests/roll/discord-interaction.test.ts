@@ -62,7 +62,7 @@ describe("parseRollInteraction", () => {
       notation: "2d20 + 5",
       title: "enchanted sword",
       repetitions: 3,
-      ephemeral: false,
+      ephemeral: true,
     });
   });
 
