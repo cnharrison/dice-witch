@@ -18,15 +18,15 @@ const DEPLOYMENT_ORDER = [
   "interactions",
   "web-api",
 ];
-const DEPENDENCIES = {
-  data: ["discord-rest"],
-  gateway: ["data", "discord-rest"],
-  interactions: ["data", "gateway", "roll"],
-  roll: ["data", "discord-rest", "gateway"],
-  "web-api": ["data", "discord-rest", "interactions", "roll"],
-};
+const APPLICATION_WORKERS = [
+  "discord-rest",
+  "gateway",
+  "roll",
+  "interactions",
+  "web-api",
+];
 const CLI_USAGE =
-  "Usage: node tools/production-plan.mjs --sha <full-sha> --workers <comma-list> [--apply-migrations] [--allow-gateway-deploy] [--allow-existing-dependencies]";
+  "Usage: node tools/production-plan.mjs --sha <full-sha> --workers <comma-list> [--apply-migrations] [--allow-gateway-deploy]";
 
 export function createProductionPlan(input) {
   if (!FULL_SHA.test(input?.requestedSha ?? "")) {
@@ -50,25 +50,22 @@ export function createProductionPlan(input) {
       throw new Error(`Unknown production Worker: ${worker}`);
     }
   }
-  if (!selected.has("web-api")) {
-    throw new Error("Every production deployment must include web-api for exact-SHA metadata");
-  }
   if (selected.has("data") !== (input.applyMigrations === true)) {
     throw new Error("Data selection and migration authorization must match");
   }
-  if (selected.has("gateway") && input.allowGatewayDeploy !== true) {
-    throw new Error("Gateway deployment requires explicit acknowledgement");
-  }
-  const omittedDependencies = [];
-  for (const worker of selected) {
-    for (const dependency of DEPENDENCIES[worker] ?? []) {
-      if (!selected.has(dependency)) omittedDependencies.push(`${worker}:${dependency}`);
-    }
-  }
-  if (omittedDependencies.length > 0 && input.allowExistingDependencies !== true) {
+  const requiredWorkers = input.applyMigrations === true
+    ? DEPLOYMENT_ORDER
+    : APPLICATION_WORKERS;
+  if (
+    selected.size !== requiredWorkers.length ||
+    requiredWorkers.some((worker) => !selected.has(worker))
+  ) {
     throw new Error(
-      `Existing production dependencies require explicit acknowledgement: ${omittedDependencies.sort().join(", ")}`,
+      "Production deployment must include the complete application Worker cohort",
     );
+  }
+  if (input.allowGatewayDeploy !== true) {
+    throw new Error("Gateway deployment requires explicit acknowledgement");
   }
   if (input.configSummary?.buildSha !== input.requestedSha) {
     throw new Error("Validated Web API BUILD_SHA must match the requested SHA");
@@ -81,9 +78,7 @@ export function createProductionPlan(input) {
     sourceSha: input.requestedSha,
     workers: DEPLOYMENT_ORDER.filter((worker) => selected.has(worker)),
     applyMigrations: selected.has("data"),
-    gatewayDeploymentAcknowledged: selected.has("gateway"),
-    existingDependenciesAcknowledged: omittedDependencies.length > 0,
-    omittedDependencies: omittedDependencies.sort(),
+    gatewayDeploymentAcknowledged: true,
   };
 }
 
@@ -92,14 +87,11 @@ function parseArguments(arguments_) {
   let workers;
   let applyMigrations = false;
   let allowGatewayDeploy = false;
-  let allowExistingDependencies = false;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--apply-migrations") applyMigrations = true;
     else if (argument === "--allow-gateway-deploy") allowGatewayDeploy = true;
-    else if (argument === "--allow-existing-dependencies") {
-      allowExistingDependencies = true;
-    } else if (argument === "--sha" || argument === "--workers") {
+    else if (argument === "--sha" || argument === "--workers") {
       const value = arguments_[index + 1];
       if (!value) throw new Error(CLI_USAGE);
       if (argument === "--sha") requestedSha = value;
@@ -115,7 +107,6 @@ function parseArguments(arguments_) {
     workers,
     applyMigrations,
     allowGatewayDeploy,
-    allowExistingDependencies,
   };
 }
 

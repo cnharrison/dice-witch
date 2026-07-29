@@ -7,22 +7,13 @@ on:
         description: Full commit SHA to deploy
         required: true
         type: string
-      workers:
-        description: Comma-separated Workers; every deployment must include web-api
-        required: true
-        type: string
       apply_migrations:
-        description: Authorize production D1 migrations; must match Data selection
+        description: Authorize production D1 migrations and include Data in the fixed Worker cohort
         required: true
         default: false
         type: boolean
       allow_gateway_deploy:
         description: Acknowledge that Gateway deployment reconnects the production bot
-        required: true
-        default: false
-        type: boolean
-      allow_existing_dependencies:
-        description: Acknowledge compatible active dependencies omitted from this deployment
         required: true
         default: false
         type: boolean
@@ -47,10 +38,8 @@ jobs:
       contents: read
     env:
       REQUESTED_SHA: ${{ inputs.sha }}
-      SELECTED_WORKERS: ${{ inputs.workers }}
       APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
       ALLOW_GATEWAY_DEPLOY: ${{ inputs.allow_gateway_deploy }}
-      ALLOW_EXISTING_DEPENDENCIES: ${{ inputs.allow_existing_dependencies }}
       DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
     steps:
       - name: Validate dispatch authorization
@@ -58,15 +47,8 @@ jobs:
           set -euo pipefail
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$DEPLOY_CONFIRMATION" == "deploy-production" ]]
-          [[ -n "$SELECTED_WORKERS" ]]
-          if [[ ",${SELECTED_WORKERS}," == *",data,"* ]]; then
-            [[ "$APPLY_MIGRATIONS" == "true" ]]
-          else
-            [[ "$APPLY_MIGRATIONS" == "false" ]]
-          fi
-          if [[ ",${SELECTED_WORKERS}," == *",gateway,"* ]]; then
-            [[ "$ALLOW_GATEWAY_DEPLOY" == "true" ]]
-          fi
+          [[ "$APPLY_MIGRATIONS" == "true" || "$APPLY_MIGRATIONS" == "false" ]]
+          [[ "$ALLOW_GATEWAY_DEPLOY" == "true" ]]
 
       - name: Check out exact source
         uses: actions/checkout@v5
@@ -99,10 +81,7 @@ jobs:
       url: https://dicewit.ch
     env:
       REQUESTED_SHA: ${{ inputs.sha }}
-      SELECTED_WORKERS: ${{ inputs.workers }}
       APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
-      ALLOW_GATEWAY_DEPLOY: ${{ inputs.allow_gateway_deploy }}
-      ALLOW_EXISTING_DEPENDENCIES: ${{ inputs.allow_existing_dependencies }}
     steps:
       - name: Check out exact source
         uses: actions/checkout@v5
@@ -162,13 +141,15 @@ jobs:
         working-directory: cloudflare
         run: |
           set -euo pipefail
-          flags=()
-          [[ "$APPLY_MIGRATIONS" == "true" ]] && flags+=(--apply-migrations)
-          [[ "$ALLOW_GATEWAY_DEPLOY" == "true" ]] && flags+=(--allow-gateway-deploy)
-          [[ "$ALLOW_EXISTING_DEPENDENCIES" == "true" ]] && flags+=(--allow-existing-dependencies)
+          flags=(--allow-gateway-deploy)
+          workers="discord-rest,gateway,roll,interactions,web-api"
+          if [[ "$APPLY_MIGRATIONS" == "true" ]]; then
+            flags+=(--apply-migrations)
+            workers="discord-rest,data,gateway,roll,interactions,web-api"
+          fi
           node tools/production-plan.mjs \
             --sha "$REQUESTED_SHA" \
-            --workers "$SELECTED_WORKERS" \
+            --workers "$workers" \
             "${flags[@]}" > "$RUNNER_TEMP/production-plan.json"
 
       - name: Dry-run complete production configuration
@@ -216,7 +197,7 @@ jobs:
             --config wrangler.data.jsonc \
             --max-age-ms 43200000
 
-      - name: Deploy selected production Workers
+      - name: Deploy production Worker cohort
         working-directory: cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
