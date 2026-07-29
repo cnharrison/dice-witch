@@ -20,20 +20,50 @@ function helpMessage(error: RollExecutionError) {
 }
 
 describe("invalid-roll helper contract", () => {
-  it("links invalid notation to the exact notation repair guide", () => {
+  it.each([
+    {
+      error: { code: "NO_DICE", message: "Roll notation contains no dice" },
+      headline: "Invalid notation",
+    },
+    {
+      error: { code: "INVALID_NOTATION", notation: "2d6+" },
+      headline: "Invalid notation",
+    },
+    {
+      error: { code: "TOO_MANY_DICE", message: "Too many dice" },
+      headline: "Too many dice",
+    },
+    {
+      error: { code: "TOO_MANY_SIDES", message: "Too many sides" },
+      headline: "Too many sides",
+    },
+    {
+      error: { code: "NON_FINITE_TOTAL", notation: "1e999" },
+      headline: "Invalid total",
+    },
+    {
+      error: {
+        code: "UNSAFE_EXPLOSION",
+        message: "Expected explosion work exceeds the safety limit",
+      },
+      headline: "Potentially infinite modifier",
+    },
+  ] as const)("uses the specific headline: $headline", ({ error, headline }) => {
+    expect(helpMessage(error).content).toBe(headline);
+  });
+
+  it("always links invalid rolls to the Dice notation guide", () => {
     expect(
-      helpMessage({ code: "INVALID_NOTATION", notation: "2d6+" }),
-    ).toEqual({
-      content: "That dice notation needs fixing.",
+      helpMessage({ code: "UNSAFE_EXPLOSION", message: "Unsafe explosion" }),
+    ).toMatchObject({
       components: [
         {
-          type: 1,
           components: [
             {
               type: 2,
               style: 5,
-              label: "Fix dice notation",
-              url: "https://dicewit.ch/docs/dice-notation#fix-an-invalid-roll",
+              label: "Dice notation guide",
+              url: "https://dicewit.ch/docs/dice-notation",
             },
             {
               type: 2,
@@ -47,22 +77,7 @@ describe("invalid-roll helper contract", () => {
     });
   });
 
-  it("links unsafe explosions to the exact modifier guide section", () => {
-    const message = helpMessage({
-      code: "UNSAFE_EXPLOSION",
-      message: "Expected explosion work exceeds the safety limit",
-    });
-
-    expect(message.content).toBe("That modifier needs fixing.");
-    expect(message.components?.[0]?.components[0]).toEqual({
-      type: 2,
-      style: 5,
-      label: "Fix the modifier",
-      url: "https://dicewit.ch/docs/modifiers#exploding-dice",
-    });
-  });
-
-  it("keeps the knowledge base DM available only on request", () => {
+  it("sends notation essentials with every knowledge-base topic on request", () => {
     const message = buildRollHelperMessage({
       inviteUrl: "https://discord.com/oauth2/authorize?client_id=100000000000000001",
       supportUrl: "https://discord.gg/fixture",
@@ -71,19 +86,31 @@ describe("invalid-roll helper contract", () => {
       embeds: [
         {
           color: 255,
-          fields: [
-            {
-              name: "Need help? 😅",
-              value: "Use `/knowledgebase` and choose a topic, or choose one below.",
-            },
-          ],
+          title: "🎲 Dice notation",
         },
       ],
       allowed_mentions: { parse: [] },
     });
     const serialized = JSON.stringify(message);
-    expect(serialized).toContain("knowledgebase-exploding");
-    expect(serialized).toContain("knowledgebase-math");
+    expect(serialized).toContain(
+      "[Read the complete Dice notation guide](https://dicewit.ch/docs/dice-notation)",
+    );
+    for (const topic of [
+      "exploding",
+      "reroll",
+      "keepdrop",
+      "target",
+      "crit",
+      "math",
+      "sort",
+      "repeating",
+      "unique",
+      "fudge",
+    ]) {
+      expect(serialized).toContain(`knowledgebase-${topic}`);
+    }
+    expect(serialized).toContain("`2d6`");
+    expect(serialized).toContain("`4d6k3`");
     expect(serialized).toContain("Invite me");
   });
 });

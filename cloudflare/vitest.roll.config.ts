@@ -248,7 +248,7 @@ async function discordTestResponse(request: Request): Promise<Response> {
       request.method !== "PATCH" ||
       !url.pathname.endsWith("/messages/@original") ||
       !isRecord(payload) ||
-      payload.content !== "That dice notation needs fixing." ||
+      payload.content !== "Invalid notation" ||
       !Array.isArray(payload.components) ||
       JSON.stringify(payload).includes("DMing you")
     ) {

@@ -86,29 +86,47 @@ export function parseRollHelperDmInteraction(
   };
 }
 
-const NOTATION_HELP_URL =
-  "https://dicewit.ch/docs/dice-notation#fix-an-invalid-roll";
-const EXPLODING_DICE_HELP_URL =
-  "https://dicewit.ch/docs/modifiers#exploding-dice";
+const NOTATION_HELP_URL = "https://dicewit.ch/docs/dice-notation";
+
+const ERROR_HEADLINES = {
+  INVALID_NOTATION: "Invalid notation",
+  NO_DICE: "Invalid notation",
+  TOO_MANY_DICE: "Too many dice",
+  TOO_MANY_SIDES: "Too many sides",
+  NON_FINITE_TOTAL: "Invalid total",
+  UNSAFE_EXPLOSION: "Potentially infinite modifier",
+} as const;
+
+const NOTATION_ARTICLE = [
+  "Write dice as `NdS`: the number of dice, `d`, then the number of sides.",
+  "",
+  "- `2d6` — two six-sided dice",
+  "- `1d20+5` — one d20, then add 5",
+  "- `4d6k3` — roll four d6 and keep the highest three",
+  "- `2d6!` — roll two exploding d6",
+  "",
+  "Put modifiers directly after the dice they affect. Use normal arithmetic between rolls.",
+  "",
+  `[Read the complete Dice notation guide](${NOTATION_HELP_URL})`,
+].join("\n");
 
 export function buildInvalidRollHelpMessage(
   result: RollExecutionResult,
   rollId: string,
 ): DiscordMessage {
+  const firstError = result.errors[0];
   if (
     !SNOWFLAKE.test(rollId) ||
     result.outcomes.length > 0 ||
-    result.errors.length === 0
+    firstError === undefined
   ) {
     throw new Error("Roll result does not contain a terminal help error");
   }
-  const modifierHelp = result.errors.some(
+  const error = result.errors.find(
     ({ code }) => code === "UNSAFE_EXPLOSION",
-  );
+  ) ?? firstError;
   return {
-    content: modifierHelp
-      ? "That modifier needs fixing."
-      : "That dice notation needs fixing.",
+    content: ERROR_HEADLINES[error.code],
     components: [
       {
         type: 1,
@@ -116,8 +134,8 @@ export function buildInvalidRollHelpMessage(
           {
             type: 2,
             style: 5,
-            label: modifierHelp ? "Fix the modifier" : "Fix dice notation",
-            url: modifierHelp ? EXPLODING_DICE_HELP_URL : NOTATION_HELP_URL,
+            label: "Dice notation guide",
+            url: NOTATION_HELP_URL,
           },
           {
             type: 2,
@@ -134,13 +152,12 @@ export function buildInvalidRollHelpMessage(
 export function buildRollHelperMessage(
   links: DiscordFooterLinks,
 ): Record<string, unknown> {
-  const description =
-    "Use `/knowledgebase` and choose a topic, or choose one below.";
   return {
     embeds: [
       {
         color: 0x00_00_ff,
-        fields: [{ name: "Need help? 😅", value: description }],
+        title: "🎲 Dice notation",
+        description: NOTATION_ARTICLE,
       },
     ],
     components: [

@@ -1551,13 +1551,14 @@ describe("RollWork Durable Object", () => {
         rollId: id,
         notation,
         payload: {
-          content: "That dice notation needs fixing.",
+          content: "Invalid notation",
           components: [
             {
               components: [
                 {
                   style: 5,
-                  url: "https://dicewit.ch/docs/dice-notation#fix-an-invalid-roll",
+                  label: "Dice notation guide",
+                  url: "https://dicewit.ch/docs/dice-notation",
                 },
                 { custom_id: `roll-help:dm-knowledgebase:${id}` },
               ],

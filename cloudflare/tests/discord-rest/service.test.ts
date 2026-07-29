@@ -1294,8 +1294,11 @@ describe("Discord REST service", () => {
       expect(payload).toMatchObject({
         nonce: "100000000000000020",
         enforce_nonce: true,
-        embeds: [{ fields: [{ name: "Need help? 😅" }] }],
+        embeds: [{ title: "🎲 Dice notation" }],
       });
+      expect(JSON.stringify(payload)).toContain(
+        "https://dicewit.ch/docs/dice-notation",
+      );
       expect(payload.components).toHaveLength(3);
       return Response.json({ id: "100000000000000021" });
     });
