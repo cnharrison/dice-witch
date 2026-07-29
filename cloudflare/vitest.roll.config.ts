@@ -233,28 +233,10 @@ async function discordTestResponse(request: Request): Promise<Response> {
     return Response.json({ id: "development-message" });
   }
   if (token === "invalid-private-help") {
-    const url = new URL(request.url);
-    if (
-      request.method === "DELETE" &&
-      url.pathname.endsWith("/messages/@original")
-    ) {
-      return Response.json(
-        { message: "Private invalid-roll help must be retained" },
-        { status: 400 },
-      );
-    }
-    const payload: unknown = await request.json();
-    if (
-      request.method !== "PATCH" ||
-      !url.pathname.endsWith("/messages/@original") ||
-      !isRecord(payload) ||
-      payload.content !== "Invalid notation" ||
-      !Array.isArray(payload.components) ||
-      JSON.stringify(payload).includes("DMing you")
-    ) {
-      return Response.json({ message: "private help is invalid" }, { status: 400 });
-    }
-    return Response.json({ id: "development-message" });
+    return Response.json(
+      { message: "Preflighted invalid-roll help must not be edited" },
+      { status: 418 },
+    );
   }
   if (token === "direct-public-roll") {
     const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;

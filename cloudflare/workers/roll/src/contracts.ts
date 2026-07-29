@@ -193,6 +193,7 @@ export type DeliveryMetadata = {
   message: RollDeliveryRequest["message"];
   accounting: RollDeliveryRequest["accounting"] | null;
   logging: RollDeliveryRequest["logging"] | null;
+  preflighted: boolean;
   responseMode: "edit-original" | "followup";
   savedRoll: SavedRollInvocationV1 | null;
 };
@@ -973,6 +974,7 @@ function deliveryMetadataIdentity(metadata: DeliveryMetadata): string {
             channelId: metadata.logging.channelId,
             notation: metadata.logging.notation,
           },
+    preflighted: metadata.preflighted,
     responseMode: metadata.responseMode,
     savedRoll: metadata.savedRoll,
   });
@@ -1015,7 +1017,8 @@ export async function tokenFingerprint(token: string): Promise<string> {
 
 function deliveryMetadataVersion(
   request: ValidatedRollDeliveryRequest,
-): 3 | 4 | 5 | 6 {
+): 3 | 4 | 5 | 6 | 7 {
+  if (request.rollSeed !== null) return 7;
   if (request.savedRoll !== null) return 5;
   if (request.responseMode === "followup") return 6;
   return request.logging?.context === undefined ? 3 : 4;
@@ -1031,6 +1034,7 @@ export function deliveryMetadata(
     message: request.message,
     accounting: request.accounting,
     logging: request.logging,
+    ...(request.rollSeed === null ? {} : { preflighted: true }),
     ...(request.savedRoll === null
       ? request.responseMode === "followup"
         ? { responseMode: request.responseMode }
@@ -1055,6 +1059,17 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
     "message",
     "version",
   ];
+  const version7 =
+    parsed.version === 7 &&
+    hasExactKeys(parsed, [
+      "accounting",
+      "applicationId",
+      "interactionId",
+      "logging",
+      "message",
+      "preflighted",
+      "version",
+    ]);
   const version6 =
     parsed.version === 6 &&
     hasExactKeys(parsed, [
@@ -1093,7 +1108,8 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
     parsed.version === undefined &&
     hasExactKeys(parsed, ["applicationId", "interactionId", "message"]);
   if (
-    (!version6 &&
+    (!version7 &&
+      !version6 &&
       !version5 &&
       !version4 &&
       !version3 &&
@@ -1125,10 +1141,15 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
         parsed.logging.notation.length < 1 ||
         parsed.logging.notation.length > MAX_NOTATION_LENGTH ||
         (version4 && parsed.logging.context === undefined) ||
-        (!version6 &&
+        (!version7 &&
+          !version6 &&
           !version5 &&
           !version4 &&
           parsed.logging.context !== undefined))) ||
+    (version7 &&
+      (parsed.preflighted !== true ||
+        !isRecord(parsed.logging) ||
+        parsed.logging.source !== "discord")) ||
     (version6 &&
       (parsed.responseMode !== "followup" ||
         !isRecord(parsed.logging) ||
@@ -1173,6 +1194,7 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
                   ),
                 }),
           },
+    preflighted: version7,
     responseMode: version6 || version5
       ? (parsed.responseMode as "edit-original" | "followup")
       : "edit-original",

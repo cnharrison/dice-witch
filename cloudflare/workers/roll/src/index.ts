@@ -2694,6 +2694,16 @@ export class RollWork extends DurableObject<RollEnv> {
           status: "unavailable",
           reason: "not-applicable",
         });
+        if (metadata.preflighted) {
+          return await this.completeDelivery(
+            target,
+            attempts,
+            delivery,
+            record,
+            200,
+            null,
+          );
+        }
         request = buildEditOriginalResponse(target, payload);
         discordOperation = "edit-original-result";
       } catch {
@@ -2854,44 +2864,14 @@ export class RollWork extends DurableObject<RollEnv> {
           );
         }
       }
-      const deliveredAt = Date.now();
-      this.ctx.storage.transactionSync(() => {
-        this.ctx.storage.sql.exec(
-          `UPDATE interaction_delivery
-           SET token = NULL, state = 'delivered', delivered_at = ?,
-               last_http_status = ?, failure_phase = NULL
-           WHERE singleton = 1`,
-          deliveredAt,
-          response.status,
-        );
-        this.ctx.storage.sql.exec(
-          `UPDATE roll_log_outbox
-           SET destination_delivered_at = ?, handoff_until = ?
-           WHERE singleton = 1`,
-          deliveredAt,
-          deliveredAt + LOG_WORK_RETRY_WINDOW_MS,
-        );
-      });
-      this.advanceLifecycle({
-        state: "delivered",
-        occurredAt: deliveredAt,
+      return this.completeDelivery(
+        target,
         attempts,
-        httpStatus: response.status,
-        destinationPayload:
-          this.destinationTelemetryContext(record).destinationPayload,
-      });
-      this.logDestinationCompletion({
-        rollId: target.id,
-        state: "delivered",
-        attempts,
-        httpStatus: response.status,
-        failurePhase: null,
-        completedAt: deliveredAt,
+        delivery,
         record,
-        delayMs: skipDiceDelay ? 0 : delayMs,
-      });
-      await this.ctx.storage.setAlarm(delivery.expires_at);
-      return { status: "delivered" };
+        response.status,
+        skipDiceDelay ? 0 : delayMs,
+      );
     }
     if (isRetryableHttpStatus(response.status)) {
       return this.scheduleRetry(
@@ -2913,6 +2893,54 @@ export class RollWork extends DurableObject<RollEnv> {
       "discord",
       { code, operation: discordOperation },
     );
+  }
+
+  private async completeDelivery(
+    target: RollDeliveryTarget,
+    attempts: number,
+    delivery: StoredDeliveryRow,
+    record: RollWorkRecord,
+    httpStatus: number,
+    delayMs: number | null,
+  ): Promise<DeliverRollWorkResult> {
+    const deliveredAt = Date.now();
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        `UPDATE interaction_delivery
+         SET token = NULL, state = 'delivered', delivered_at = ?,
+             last_http_status = ?, failure_phase = NULL
+         WHERE singleton = 1`,
+        deliveredAt,
+        httpStatus,
+      );
+      this.ctx.storage.sql.exec(
+        `UPDATE roll_log_outbox
+         SET destination_delivered_at = ?, handoff_until = ?
+         WHERE singleton = 1`,
+        deliveredAt,
+        deliveredAt + LOG_WORK_RETRY_WINDOW_MS,
+      );
+    });
+    this.advanceLifecycle({
+      state: "delivered",
+      occurredAt: deliveredAt,
+      attempts,
+      httpStatus,
+      destinationPayload:
+        this.destinationTelemetryContext(record).destinationPayload,
+    });
+    this.logDestinationCompletion({
+      rollId: target.id,
+      state: "delivered",
+      attempts,
+      httpStatus,
+      failurePhase: null,
+      completedAt: deliveredAt,
+      record,
+      delayMs,
+    });
+    await this.ctx.storage.setAlarm(delivery.expires_at);
+    return { status: "delivered" };
   }
 
   private async terminateDelivery(
@@ -3214,6 +3242,7 @@ export class RollWork extends DurableObject<RollEnv> {
               message: delivery.message,
               accounting,
               logging: delivery.logging,
+              preflighted: delivery.rollSeed !== null,
               responseMode: delivery.responseMode,
               savedRoll: delivery.savedRoll,
             },

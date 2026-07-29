@@ -1516,7 +1516,7 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("retains preflighted private invalid-roll help without sending an automatic DM", async () => {
+  it("does not rewrite preflighted private invalid-roll help or send an automatic DM", async () => {
     const id = snowflakeAt(Date.now(), 31);
     const stub = work(id);
     const input = {
@@ -1542,13 +1542,22 @@ describe("RollWork Durable Object", () => {
     }
     await runInDurableObject(stub, (_instance, state) => {
       const delivery = state.storage.sql
-        .exec<{ helper_state: string; helper_attempts: number }>(
-          "SELECT helper_state, helper_attempts FROM interaction_delivery",
+        .exec<{
+          helper_state: string;
+          helper_attempts: number;
+          metadata_json: string;
+        }>(
+          `SELECT helper_state, helper_attempts, metadata_json
+           FROM interaction_delivery`,
         )
         .one();
-      expect(delivery).toEqual({
+      expect(delivery).toMatchObject({
         helper_state: "not_applicable",
         helper_attempts: 0,
+      });
+      expect(JSON.parse(delivery.metadata_json)).toMatchObject({
+        version: 7,
+        preflighted: true,
       });
       const outbox = state.storage.sql
         .exec<{ artifact_json: string; image_bytes: ArrayBuffer }>(
