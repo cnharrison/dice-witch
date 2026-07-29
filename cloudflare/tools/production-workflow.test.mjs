@@ -40,6 +40,21 @@ test("requires a successful CI push for the exact SHA without repeating quality 
   assert.doesNotMatch(preflight, /npm ci|npm test|npm run audit:ci|npm run type-check|npm run lint:ci|npm run build/);
 });
 
+test("derives a complete Worker cohort and has no partial-deployment escape hatch", async () => {
+  const value = await workflow();
+  assert.doesNotMatch(value, /^ {6}workers:/m);
+  assert.doesNotMatch(value, /allow_existing_dependencies|allow-existing-dependencies/);
+  assert.match(
+    value,
+    /workers="discord-rest,gateway,roll,interactions,web-api"/,
+  );
+  assert.match(
+    value,
+    /workers="discord-rest,data,gateway,roll,interactions,web-api"/,
+  );
+  assert.match(value, /--workers "\$workers"/);
+});
+
 test("requires exact SHA, source-derived config, explicit mutation acknowledgements, and strict deploys", async () => {
   const value = await workflow();
   assert.match(value, /\^\[0-9a-f\]\{40\}\$/);
@@ -48,7 +63,6 @@ test("requires exact SHA, source-derived config, explicit mutation acknowledgeme
   assert.match(value, /production-plan\.mjs/);
   assert.match(value, /--apply-migrations/);
   assert.match(value, /--allow-gateway-deploy/);
-  assert.match(value, /--allow-existing-dependencies/);
   assert.match(value, /--strict/);
   assert.match(value, /dfe6c3ddb987a22c7f17955d1973490e/);
   assert.match(value, /Verify production account and credential scope/);
