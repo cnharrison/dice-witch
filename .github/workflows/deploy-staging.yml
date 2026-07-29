@@ -7,11 +7,6 @@ on:
         description: Full commit SHA to deploy
         required: true
         type: string
-      workers:
-        description: Comma-separated Workers
-        required: true
-        default: data,discord-rest,roll,gateway,web-api
-        type: string
       apply_migrations:
         description: Authorize remote staging D1 migration application
         required: true
@@ -19,11 +14,6 @@ on:
         type: boolean
       allow_gateway_deploy:
         description: Acknowledge that deploying Gateway can reconnect the staging bot
-        required: true
-        default: false
-        type: boolean
-      audience_producer_only:
-        description: Deploy only Data, Discord REST, and Gateway; consumers wait for a real snapshot
         required: true
         default: false
         type: boolean
@@ -46,10 +36,8 @@ jobs:
     environment: staging
     env:
       REQUESTED_SHA: ${{ inputs.sha }}
-      SELECTED_WORKERS: ${{ inputs.workers }}
       APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
       ALLOW_GATEWAY_DEPLOY: ${{ inputs.allow_gateway_deploy }}
-      AUDIENCE_PRODUCER_ONLY: ${{ inputs.audience_producer_only }}
       DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
       VITE_API_BASE: https://ci.invalid
       VITE_DISCORD_CLIENT_ID: "100000000000000001"
@@ -61,9 +49,6 @@ jobs:
           set -euo pipefail
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$DEPLOY_CONFIRMATION" == "deploy-staging" ]]
-          if [[ ",${SELECTED_WORKERS}," == *",data,"* ]]; then
-            [[ "$APPLY_MIGRATIONS" == "true" ]]
-          fi
 
       - name: Check out exact source
         uses: actions/checkout@v4
@@ -146,21 +131,23 @@ jobs:
           STAGING_GATEWAY_ORIGIN: ${{ secrets.STAGING_GATEWAY_ORIGIN }}
         run: |
           set -euo pipefail
+          workers="discord-rest,gateway,roll,interactions,web-api"
+          migration_flag=()
+          if [[ "$APPLY_MIGRATIONS" == "true" ]]; then
+            workers="discord-rest,data,gateway,roll,interactions,web-api"
+            migration_flag+=(--apply-migrations)
+          fi
           gateway_flag=()
           if [[ "$ALLOW_GATEWAY_DEPLOY" == "true" ]]; then
             gateway_flag+=(--allow-gateway-deploy)
           fi
-          audience_flag=()
-          if [[ "$AUDIENCE_PRODUCER_ONLY" == "true" ]]; then
-            audience_flag+=(--audience-producer-only)
-          fi
           node tools/staging-plan.mjs \
             --sha "$REQUESTED_SHA" \
-            --workers "$SELECTED_WORKERS" \
+            --workers "$workers" \
             --roll-origin "$STAGING_ROLL_ORIGIN" \
             --gateway-origin "$STAGING_GATEWAY_ORIGIN" \
-            "${gateway_flag[@]}" \
-            "${audience_flag[@]}" > "$RUNNER_TEMP/staging-plan.json"
+            "${migration_flag[@]}" \
+            "${gateway_flag[@]}" > "$RUNNER_TEMP/staging-plan.json"
 
       - name: Dry-run private staging Workers
         working-directory: cloudflare
@@ -185,8 +172,7 @@ jobs:
           npx --no-install wrangler d1 migrations apply DATA \
             --remote --config wrangler.data.jsonc > /dev/null
 
-      - name: Verify audience snapshot before consumer deployment
-        if: ${{ inputs.audience_producer_only == false }}
+      - name: Verify audience snapshot before deployment
         working-directory: cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -196,7 +182,7 @@ jobs:
             --config wrangler.data.jsonc \
             --max-age-ms 43200000
 
-      - name: Deploy selected Workers
+      - name: Deploy staging Worker cohort
         working-directory: cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -218,7 +204,6 @@ jobs:
           done < "$RUNNER_TEMP/staging-workers"
 
       - name: Smoke-test exact staging build
-        if: ${{ inputs.audience_producer_only == false }}
         working-directory: cloudflare
         env:
           STAGING_ROLL_ORIGIN: ${{ secrets.STAGING_ROLL_ORIGIN }}

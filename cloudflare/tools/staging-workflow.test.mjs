@@ -7,64 +7,76 @@ const workflowUrl = new URL(
   import.meta.url,
 );
 
-test("keeps staging deployment manual, serialized, and approval-gated", async () => {
-  const workflow = await readFile(workflowUrl, "utf8");
+async function workflow() {
+  return readFile(workflowUrl, "utf8");
+}
 
-  assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /environment: staging/);
-  assert.match(workflow, /group: dice-witch-staging-deployment/);
-  assert.match(workflow, /cancel-in-progress: false/);
-  assert.match(workflow, /deploy-staging/);
-  assert.match(workflow, /APPLY_MIGRATIONS/);
-  assert.doesNotMatch(workflow, /^\s+schedule:/m);
+test("keeps staging deployment manual, serialized, and approval-gated", async () => {
+  const value = await workflow();
+
+  assert.match(value, /workflow_dispatch:/);
+  assert.match(value, /environment: staging/);
+  assert.match(value, /group: dice-witch-staging-deployment/);
+  assert.match(value, /cancel-in-progress: false/);
+  assert.match(value, /deploy-staging/);
+  assert.doesNotMatch(value, /^\s+schedule:/m);
 });
 
-test("requires migration authorization only when Data is selected", async () => {
-  const workflow = await readFile(workflowUrl, "utf8");
+test("derives a complete Worker cohort and exposes no partial-deployment path", async () => {
+  const value = await workflow();
 
+  assert.doesNotMatch(value, /^ {6}workers:/m);
+  assert.doesNotMatch(value, /audience_producer_only|audience-producer-only/);
   assert.match(
-    workflow,
-    /if \[\[ ",\$\{SELECTED_WORKERS\}," == \*",data,"\* \]\]; then/,
+    value,
+    /workers="discord-rest,gateway,roll,interactions,web-api"/,
   );
-  assert.match(workflow, /if: \$\{\{ inputs\.apply_migrations == true \}\}/);
+  assert.match(
+    value,
+    /workers="discord-rest,data,gateway,roll,interactions,web-api"/,
+  );
+  assert.match(value, /--workers "\$workers"/);
+});
+
+test("couples Data deployment to migration authorization", async () => {
+  const value = await workflow();
+
+  assert.match(value, /if \[\[ "\$APPLY_MIGRATIONS" == "true" \]\]; then/);
+  assert.match(value, /if: \$\{\{ inputs\.apply_migrations == true \}\}/);
+  assert.match(value, /--apply-migrations/);
 });
 
 test("uses the expiring dependency-audit policy", async () => {
-  const workflow = await readFile(workflowUrl, "utf8");
+  const value = await workflow();
 
-  assert.match(workflow, /npm run audit:ci/);
-  assert.doesNotMatch(workflow, /npm audit --audit-level/);
+  assert.match(value, /npm run audit:ci/);
+  assert.doesNotMatch(value, /npm audit --audit-level/);
 });
 
 test("does not expose deployment credentials to dependency or quality steps", async () => {
-  const workflow = await readFile(workflowUrl, "utf8");
-  const qualityIndex = workflow.indexOf("Run quality gates without deployment credentials");
-  const materializeIndex = workflow.indexOf("Materialize private staging configuration");
-  const firstTokenIndex = workflow.indexOf("CLOUDFLARE_API_TOKEN");
-  const stepsIndex = workflow.indexOf("    steps:");
+  const value = await workflow();
+  const qualityIndex = value.indexOf("Run quality gates without deployment credentials");
+  const materializeIndex = value.indexOf("Materialize private staging configuration");
+  const firstTokenIndex = value.indexOf("CLOUDFLARE_API_TOKEN");
+  const stepsIndex = value.indexOf("    steps:");
 
   assert.ok(qualityIndex > stepsIndex);
   assert.ok(materializeIndex > qualityIndex);
   assert.ok(firstTokenIndex > materializeIndex);
-  assert.doesNotMatch(workflow.slice(0, stepsIndex), /STAGING_CONFIG_B64|CLOUDFLARE_API_TOKEN/);
+  assert.doesNotMatch(
+    value.slice(0, stepsIndex),
+    /STAGING_CONFIG_B64|CLOUDFLARE_API_TOKEN/,
+  );
 });
 
-test("enforces producer-only rollout before snapshot consumers", async () => {
-  const workflow = await readFile(workflowUrl, "utf8");
+test("requires exact SHA, isolation, snapshot verification, and Gateway acknowledgement", async () => {
+  const value = await workflow();
 
-  assert.match(workflow, /audience_producer_only:/);
-  assert.match(workflow, /--audience-producer-only/);
-  assert.match(workflow, /Verify audience snapshot before consumer deployment/);
-  assert.match(workflow, /verify-audience-snapshot\.mjs/);
-  assert.match(workflow, /inputs\.audience_producer_only == false/);
-});
-
-test("requires exact-SHA planning and explicit Gateway acknowledgement", async () => {
-  const workflow = await readFile(workflowUrl, "utf8");
-
-  assert.match(workflow, /\^\[0-9a-f\]\{40\}\$/);
-  assert.match(workflow, /staging-plan\.mjs/);
-  assert.match(workflow, /--allow-gateway-deploy/);
-  assert.match(workflow, /STAGING_PRODUCTION_DENYLIST_B64/);
-  assert.match(workflow, /--expected-sha/);
+  assert.match(value, /\^\[0-9a-f\]\{40\}\$/);
+  assert.match(value, /staging-plan\.mjs/);
+  assert.match(value, /--allow-gateway-deploy/);
+  assert.match(value, /STAGING_PRODUCTION_DENYLIST_B64/);
+  assert.match(value, /Verify audience snapshot before deployment/);
+  assert.match(value, /verify-audience-snapshot\.mjs/);
+  assert.match(value, /--expected-sha/);
 });
