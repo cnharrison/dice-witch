@@ -122,6 +122,7 @@ function validConfigs() {
     interactions: {
       ...baseConfig(interactionsName, "workers/interactions/src/index.ts"),
       workers_dev: true,
+      alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
       vars: {
         DISCORD_APPLICATION_ID: applicationId,
         DISCORD_TEST_GUILD_ID: testGuildId,
@@ -323,6 +324,16 @@ test("keeps the Data Worker private with its required crypto alias", () => {
   assert.throws(
     () => validateStagingConfigs(configs),
     /Staging Data Worker must disable workers_dev|data crypto alias is invalid/,
+  );
+});
+
+test("requires the Interactions crypto alias for roll preflight", () => {
+  const configs = validConfigs();
+  delete configs.interactions.alias;
+
+  assert.throws(
+    () => validateStagingConfigs(configs),
+    /interactions crypto alias is invalid/,
   );
 });
 

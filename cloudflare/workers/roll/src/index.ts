@@ -1334,7 +1334,12 @@ export class RollWork extends DurableObject<RollEnv> {
       accepted = this.ctx.storage.transactionSync(
         (): AcceptRollDeliveryResult => {
           const prepared = this.prepareRequest(delivery.request, record);
-          if (prepared.status === "conflict") return prepared;
+          if (
+            prepared.status === "conflict" ||
+            prepared.record.rollSeed !== record.rollSeed
+          ) {
+            return { status: "conflict" };
+          }
 
           const existing = this.readDelivery();
           if (existing !== undefined) {
@@ -2524,11 +2529,11 @@ export class RollWork extends DurableObject<RollEnv> {
 
     let clatter: string | undefined;
     let followupMessageId = delivery.followup_message_id;
-    const directPrivateDefer =
+    const legacyDirectPrivateDefer =
       metadata.responseMode === "followup" && metadata.savedRoll === null;
     if (
       record.outcome.outcomes.length > 0 &&
-      directPrivateDefer &&
+      legacyDirectPrivateDefer &&
       delivery.clatter_sent_at === null
     ) {
       let response: Response;
@@ -2828,7 +2833,7 @@ export class RollWork extends DurableObject<RollEnv> {
       ) {
         try {
           const cleanupResponse = await fetch(
-            directPrivateDefer
+            legacyDirectPrivateDefer
               ? buildDeleteOriginalResponse(target)
               : buildEditOriginalResponse(target, {
                   content: "Saved roll posted.",
@@ -2841,7 +2846,7 @@ export class RollWork extends DurableObject<RollEnv> {
           console.warn(
             JSON.stringify({
               level: "warn",
-              message: directPrivateDefer
+              message: legacyDirectPrivateDefer
                 ? "Direct roll private defer cleanup failed"
                 : "Saved roll private confirmation failed",
               rollId: target.id,
@@ -3135,10 +3140,16 @@ export class RollWork extends DurableObject<RollEnv> {
     const existing = this.storedPreparation(request);
     if (existing?.status === "conflict") return { status: "conflict" };
     if (existing?.status === "existing") {
+      if (
+        delivery.rollSeed !== null &&
+        existing.record.rollSeed !== delivery.rollSeed
+      ) {
+        return { status: "conflict" };
+      }
       return { status: "ready", record: existing.record };
     }
 
-    const rollSeed = randomSeed();
+    const rollSeed = delivery.rollSeed ?? randomSeed();
     const renderSeed = randomSeed();
     const renderVersion = accounting === null
       ? null

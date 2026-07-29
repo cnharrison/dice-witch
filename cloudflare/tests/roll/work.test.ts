@@ -488,18 +488,26 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("publishes a valid direct roll after resolving its private defer", async () => {
+  it("edits one public original response for a preflighted valid roll", async () => {
     const id = snowflakeAt(Date.now(), 45);
     const stub = work(id);
     const input = {
       ...deliveryRequest(id, "direct-public-roll"),
-      responseMode: "followup" as const,
+      rollSeed: 123_456_789,
     };
 
     await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
       lastHttpStatus: 200,
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const record = JSON.parse(
+        state.storage.sql
+          .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+          .one().record_json,
+      ) as { rollSeed: number };
+      expect(record.rollSeed).toBe(input.rollSeed);
     });
   });
 
@@ -1508,12 +1516,12 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("retains private invalid-roll help without sending an automatic DM", async () => {
+  it("retains preflighted private invalid-roll help without sending an automatic DM", async () => {
     const id = snowflakeAt(Date.now(), 31);
     const stub = work(id);
     const input = {
       ...deliveryRequest(id, "invalid-private-help"),
-      responseMode: "followup" as const,
+      rollSeed: 123_456_789,
     };
     const notation = "1776";
     input.request.notation = notation;
@@ -2412,6 +2420,19 @@ describe("RollWork Durable Object", () => {
     expect(first.status).toBe("created");
     expect(retry).toEqual({ ...first, status: "existing" });
     expect(conflict).toEqual({ status: "conflict" });
+  });
+
+  it("rejects a changed preflight seed for an accepted direct roll", async () => {
+    const id = snowflakeAt(Date.now(), 47);
+    const stub = work(id);
+    const input = { ...deliveryRequest(id), rollSeed: 123_456_789 };
+
+    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+      status: "created",
+    });
+    await expect(
+      stub.acceptDelivery({ ...input, rollSeed: 987_654_321 }),
+    ).resolves.toEqual({ status: "conflict" });
   });
 
   it("rejects private-defer metadata outside direct Discord delivery", () => {

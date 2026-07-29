@@ -16,6 +16,8 @@ const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const MAX_VALUES_BYTES = 16 * 1024;
 const FRONTEND_ORIGIN = "https://dicewit.ch";
+const CRYPTO_ALIAS = "./packages/roll-domain/src/worker-crypto.ts";
+const CRYPTO_ALIAS_WORKERS = new Set(["data", "gateway", "interactions", "roll"]);
 const DATABASE_NAME = "dice-witch-production";
 const DATABASE_ID = "9a8f7de1-8fa6-400b-8694-609fde81f2db";
 const SECRETS_STORE_ID = "68e7aff3814e40d0afbcf2a9f4357d8f";
@@ -323,6 +325,14 @@ export function validateProductionConfigs(configs, expectedSha) {
     }
     if (config.workers_dev !== false || config.preview_urls !== false) {
       errors.push(`${worker} public preview settings are invalid`);
+    }
+    if (
+      CRYPTO_ALIAS_WORKERS.has(worker) &&
+      (!isRecord(config.alias) ||
+        Object.keys(config.alias).join(",") !== "crypto" ||
+        config.alias.crypto !== CRYPTO_ALIAS)
+    ) {
+      errors.push(`${worker} crypto alias is invalid`);
     }
     if (JSON.stringify(config).includes("REPLACE_WITH_") || JSON.stringify(config).includes("-staging")) {
       errors.push(`${worker} contains a staging value or placeholder`);

@@ -110,6 +110,7 @@ export type RollDeliveryRequest = {
     receivedAt: number;
   };
   deferredAt?: number;
+  rollSeed?: number;
   logging: {
     source: "discord" | "web";
     channelId: string;
@@ -229,11 +230,13 @@ type ValidatedRollDeliveryRequest = Omit<
   | "logging"
   | "request"
   | "responseMode"
+  | "rollSeed"
   | "savedRoll"
 > & {
   request: RollWorkRequest;
   accounting: RollDeliveryRequest["accounting"] | null;
   deferredAt: number;
+  rollSeed: number | null;
   logging: RollDeliveryRequest["logging"] | null;
   responseMode: "edit-original" | "followup";
   savedRoll: SavedRollInvocationV1 | null;
@@ -370,6 +373,14 @@ export function validateDeliveryRequest(
   const hasDeferredAt = Object.hasOwn(value, "deferredAt");
   const shape = { ...value };
   delete shape.deferredAt;
+  const hasPreflightedDirectRoll = hasExactKeys(shape, [
+    "accounting",
+    "interaction",
+    "logging",
+    "message",
+    "request",
+    "rollSeed",
+  ]);
   const hasSavedRoll = hasExactKeys(shape, [
     "accounting",
     "interaction",
@@ -379,7 +390,9 @@ export function validateDeliveryRequest(
     "responseMode",
     "savedRoll",
   ]);
-  const hasDirectResponseMode = hasExactKeys(shape, [
+  // Private-first direct rolls remain valid while accepted deliveries from the
+  // coordinated Interactions/Roll rollout can still retry.
+  const hasLegacyPrivateDirectRoll = hasExactKeys(shape, [
     "accounting",
     "interaction",
     "logging",
@@ -402,8 +415,9 @@ export function validateDeliveryRequest(
   ]);
   const isLegacy = hasExactKeys(shape, ["interaction", "message", "request"]);
   if (
-    (!hasSavedRoll &&
-      !hasDirectResponseMode &&
+    (!hasPreflightedDirectRoll &&
+      !hasSavedRoll &&
+      !hasLegacyPrivateDirectRoll &&
       !hasLogging &&
       !hasAccounting &&
       !isLegacy) ||
@@ -431,7 +445,13 @@ export function validateDeliveryRequest(
   }
 
   let accounting: RollDeliveryRequest["accounting"] | null = null;
-  if (hasSavedRoll || hasDirectResponseMode || hasLogging || hasAccounting) {
+  if (
+    hasPreflightedDirectRoll ||
+    hasSavedRoll ||
+    hasLegacyPrivateDirectRoll ||
+    hasLogging ||
+    hasAccounting
+  ) {
     if (
       !isRecord(value.accounting) ||
       !hasExactKeys(value.accounting, ["guildId", "receivedAt", "userId"]) ||
@@ -461,8 +481,27 @@ export function validateDeliveryRequest(
     throw new Error("Roll delivery deferred timestamp is invalid");
   }
 
+  let rollSeed: number | null = null;
+  if (hasPreflightedDirectRoll) {
+    const candidate = value.rollSeed;
+    if (
+      typeof candidate !== "number" ||
+      !Number.isSafeInteger(candidate) ||
+      candidate < 0 ||
+      candidate > 0xffff_ffff
+    ) {
+      throw new Error("Roll delivery seed is invalid");
+    }
+    rollSeed = candidate;
+  }
+
   let logging: RollDeliveryRequest["logging"] | null = null;
-  if (hasSavedRoll || hasDirectResponseMode || hasLogging) {
+  if (
+    hasPreflightedDirectRoll ||
+    hasSavedRoll ||
+    hasLegacyPrivateDirectRoll ||
+    hasLogging
+  ) {
     if (
       !isRecord(value.logging) ||
       (!hasExactKeys(value.logging, ["channelId", "notation", "source"]) &&
@@ -500,15 +539,16 @@ export function validateDeliveryRequest(
   let responseMode: "edit-original" | "followup" = "edit-original";
   let savedRoll: SavedRollInvocationV1 | null = null;
   if (
-    (hasDirectResponseMode && logging?.source !== "discord") ||
-    (hasDirectResponseMode && value.responseMode !== "followup") ||
+    (hasPreflightedDirectRoll && logging?.source !== "discord") ||
+    (hasLegacyPrivateDirectRoll && logging?.source !== "discord") ||
+    (hasLegacyPrivateDirectRoll && value.responseMode !== "followup") ||
     (hasSavedRoll &&
       value.responseMode !== "followup" &&
       value.responseMode !== "edit-original")
   ) {
     throw new Error("Roll delivery response mode is invalid");
   }
-  if (hasSavedRoll || hasDirectResponseMode) {
+  if (hasSavedRoll || hasLegacyPrivateDirectRoll) {
     responseMode = value.responseMode as "edit-original" | "followup";
   }
   if (hasSavedRoll) {
@@ -540,6 +580,7 @@ export function validateDeliveryRequest(
     },
     accounting,
     deferredAt,
+    rollSeed,
     logging,
     responseMode,
     savedRoll,

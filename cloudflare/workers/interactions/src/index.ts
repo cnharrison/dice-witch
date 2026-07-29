@@ -1,6 +1,7 @@
 import { readWorkerSecret, type WorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
   buildEditOriginalResponse,
+  buildInvalidRollHelpMessage,
   buildKnowledgeBaseResponse,
   buildRollDeliveryPayload,
   buildStaticCommandResponse,
@@ -16,6 +17,10 @@ import {
   type RollHelperDmInteraction,
   type StatusGatewaySnapshot,
 } from "../../../packages/discord-contracts/src";
+import {
+  executeRoll,
+  parseNotationArgs,
+} from "../../../packages/roll-domain/src";
 import { handleSavedRollInteraction } from "./saved-roll-handler";
 
 export type InteractionEnv = {
@@ -64,6 +69,12 @@ function interactionError(content: string): Response {
       allowed_mentions: { parse: [] },
     },
   });
+}
+
+function randomSeed(): number {
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  if (seed === undefined) throw new Error("Roll seed generation failed");
+  return seed;
 }
 
 type RollWorkAcceptanceStub = {
@@ -386,7 +397,31 @@ export async function handleInteractionRequest(
     roll.id,
   ) as unknown as RollWorkAcceptanceStub;
   const deferredAt = Date.now();
-  const payload = buildRollDeliveryPayload(roll, deferredAt);
+  let payload: ReturnType<typeof buildRollDeliveryPayload>;
+  let acknowledgement: Record<string, unknown>;
+  try {
+    const rollSeed = randomSeed();
+    const outcome = executeRoll({
+      notation: parseNotationArgs(roll.notation),
+      repetitions: roll.repetitions,
+      seed: rollSeed,
+      stableAppearanceIdentities: true,
+      preserveOutOfRangePhysicalFaces: true,
+    });
+    payload = buildRollDeliveryPayload(roll, deferredAt, rollSeed);
+    acknowledgement = outcome.outcomes.length === 0
+      ? {
+          type: 4,
+          data: {
+            ...buildInvalidRollHelpMessage(outcome, roll.id),
+            flags: 64,
+            allowed_mentions: { parse: [] },
+          },
+        }
+      : { type: 5 };
+  } catch {
+    return interactionError("This roll could not be accepted. Please try again.");
+  }
   console.info(
     JSON.stringify({
       telemetryVersion: 1,
@@ -399,7 +434,7 @@ export async function handleInteractionRequest(
   );
   if (ctx !== undefined) {
     ctx.waitUntil(acceptDeferredRoll(stub, payload, roll));
-    return json({ type: 5, data: { flags: 64 } });
+    return json(acknowledgement);
   }
   let accepted: unknown;
   try {
@@ -410,7 +445,7 @@ export async function handleInteractionRequest(
   if (!isAcceptedRollDelivery(accepted)) {
     return interactionError("This roll could not be accepted. Please try again.");
   }
-  return json({ type: 5, data: { flags: 64 } });
+  return json(acknowledgement);
 }
 
 export default {

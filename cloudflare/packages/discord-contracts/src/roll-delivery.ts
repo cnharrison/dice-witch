@@ -25,19 +25,27 @@ export type RollDeliveryPayload = {
     receivedAt: number;
   };
   deferredAt: number;
+  rollSeed: number;
   logging: {
     source: "discord";
     channelId: string;
     notation: string;
     context?: RollLoggingContext;
   };
-  responseMode: "followup";
 };
 
 export function buildRollDeliveryPayload(
   interaction: RollInteraction,
   deferredAt: number,
+  rollSeed: number,
 ): RollDeliveryPayload {
+  if (
+    !Number.isSafeInteger(rollSeed) ||
+    rollSeed < 0 ||
+    rollSeed > 0xffff_ffff
+  ) {
+    throw new Error("Roll delivery seed is invalid");
+  }
   return {
     interaction: {
       id: interaction.id,
@@ -60,6 +68,7 @@ export function buildRollDeliveryPayload(
       ),
     },
     deferredAt,
+    rollSeed,
     logging: {
       source: "discord",
       channelId: interaction.channelId,
@@ -68,6 +77,5 @@ export function buildRollDeliveryPayload(
         ? {}
         : { context: interaction.loggingContext }),
     },
-    responseMode: "followup",
   };
 }

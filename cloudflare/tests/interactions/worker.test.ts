@@ -551,7 +551,7 @@ describe("Discord HTTP interaction Worker", () => {
     });
   });
 
-  it("durably accepts a roll before returning Discord's defer response", async () => {
+  it("preflights and publicly defers a valid roll before durable delivery", async () => {
     const interactionTimestamp = 1_783_800_000_000;
     const interactionId = String(
       (BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n,
@@ -602,21 +602,21 @@ describe("Discord HTTP interaction Worker", () => {
     const response = await handleInteractionRequest(request, env);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      type: 5,
-      data: { flags: 64 },
-    });
+    await expect(response.json()).resolves.toEqual({ type: 5 });
     expect(acceptDelivery).toHaveBeenCalledOnce();
     const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
     if (
       typeof acceptedRequest !== "object" ||
       acceptedRequest === null ||
-      !("deferredAt" in acceptedRequest)
+      !("deferredAt" in acceptedRequest) ||
+      !("rollSeed" in acceptedRequest)
     ) {
-      throw new Error("Accepted roll request is missing its deferred timestamp");
+      throw new Error("Accepted roll request is missing preflight metadata");
     }
     const deferredAt = acceptedRequest.deferredAt;
+    const rollSeed = acceptedRequest.rollSeed;
     expect(typeof deferredAt).toBe("number");
+    expect(rollSeed).toEqual(expect.any(Number));
     expect(acceptDelivery).toHaveBeenCalledWith({
       interaction: {
         id: interactionId,
@@ -631,6 +631,7 @@ describe("Discord HTTP interaction Worker", () => {
         receivedAt: interactionTimestamp,
       },
       deferredAt,
+      rollSeed,
       logging: {
         source: "discord",
         channelId: "100000000000000003",
@@ -644,8 +645,78 @@ describe("Discord HTTP interaction Worker", () => {
           channelType: 0,
         },
       },
-      responseMode: "followup",
     });
+  });
+
+  it("responds privately to invalid notation without a preparation step", async () => {
+    const interactionTimestamp = 1_783_800_000_001;
+    const interactionId = String(
+      ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
+    );
+    const acceptDelivery = vi.fn((value: unknown) => {
+      void value;
+      return Promise.resolve({
+        status: "created",
+        delivery: "pending",
+        expiresAt: interactionTimestamp + 15 * 60 * 1_000,
+      });
+    });
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: interactionId,
+        application_id: "100000000000000001",
+        type: 2,
+        token: "fixture.invalid.token",
+        guild_id: "100000000000000002",
+        guild: { id: "100000000000000002", name: "Fixture Guild" },
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: {
+          user: { id: "100000000000000004", username: "alice" },
+        },
+        data: {
+          id: "100000000000000005",
+          name: "roll",
+          type: 1,
+          options: [{ name: "notation", type: 3, value: "1776" }],
+        },
+      }),
+      { rollWork: { acceptDelivery } },
+    );
+
+    const response = await handleInteractionRequest(request, env);
+    const body: unknown = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      type: 4,
+      data: {
+        content: "Invalid notation",
+        flags: 64,
+        allowed_mentions: { parse: [] },
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain("Preparing your roll");
+    expect(JSON.stringify(body)).toContain("Dice notation guide");
+    expect(acceptDelivery).toHaveBeenCalledOnce();
+    const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
+    expect(acceptedRequest).toMatchObject({
+      interaction: { id: interactionId },
+      request: { notation: "1776", repetitions: 1 },
+    });
+    if (
+      typeof acceptedRequest !== "object" ||
+      acceptedRequest === null ||
+      !("rollSeed" in acceptedRequest)
+    ) {
+      throw new Error("Accepted invalid roll is missing its preflight seed");
+    }
+    expect(typeof acceptedRequest.rollSeed).toBe("number");
   });
 
   it("durably accepts a bot-DM roll without guild accounting", async () => {

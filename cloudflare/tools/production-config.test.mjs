@@ -81,6 +81,9 @@ test("materializes exact production configs from source templates and bounded va
     "809246262888890420",
   );
   assert.equal(interactions.vars.DISCORD_TEST_GUILD_ID, undefined);
+  assert.deepEqual(interactions.alias, {
+    crypto: "./packages/roll-domain/src/worker-crypto.ts",
+  });
   assert.equal(web.vars.ENVIRONMENT, "production");
   assert.deepEqual(web.routes, [{ pattern: "dicewit.ch", custom_domain: true }]);
   assert.deepEqual(gateway.triggers, {

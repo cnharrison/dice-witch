@@ -260,36 +260,15 @@ async function discordTestResponse(request: Request): Promise<Response> {
     const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
     resultDeliveryAttempts.set(token, attempts);
     const url = new URL(request.url);
-    if (attempts === 1) {
-      const payload: unknown = await request.json();
-      if (
-        request.method !== "PATCH" ||
-        !url.pathname.endsWith("/messages/@original") ||
-        !isRecord(payload) ||
-        payload.content !== "Preparing your roll."
-      ) {
-        return Response.json({ message: "private defer was not resolved" }, { status: 400 });
-      }
-      return Response.json({ id: "development-message" });
-    }
-    if (attempts === 2) {
-      if (
-        request.method !== "POST" ||
-        url.searchParams.get("wait") !== "true" ||
-        !request.headers.get("content-type")?.startsWith("multipart/form-data")
-      ) {
-        return Response.json({ message: "public result is invalid" }, { status: 400 });
-      }
-      return Response.json({ id: "100000000000000099" });
-    }
     if (
-      attempts !== 3 ||
-      request.method !== "DELETE" ||
-      !url.pathname.endsWith("/messages/@original")
+      attempts !== 1 ||
+      request.method !== "PATCH" ||
+      !url.pathname.endsWith("/messages/@original") ||
+      !request.headers.get("content-type")?.startsWith("multipart/form-data")
     ) {
-      return Response.json({ message: "private defer was not deleted" }, { status: 400 });
+      return Response.json({ message: "public original response is invalid" }, { status: 400 });
     }
-    return new Response(null, { status: 204 });
+    return Response.json({ id: "development-message" });
   }
   if (token === "saved-public-clatter") {
     const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;

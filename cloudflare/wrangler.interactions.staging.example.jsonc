@@ -5,6 +5,9 @@
   "compatibility_date": "2026-07-10",
   "workers_dev": true,
   "preview_urls": false,
+  "alias": {
+    "crypto": "./packages/roll-domain/src/worker-crypto.ts"
+  },
   "vars": {
     "DISCORD_APPLICATION_ID": "100000000000000001",
     "DISCORD_TEST_GUILD_ID": "100000000000000002",
