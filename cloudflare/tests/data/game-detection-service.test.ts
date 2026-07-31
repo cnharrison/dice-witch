@@ -86,6 +86,7 @@ beforeEach(async () => {
     dataEnv.DATA.prepare("DELETE FROM game_detection_sessions"),
     dataEnv.DATA.prepare("DELETE FROM game_detection_daily_aggregates"),
     dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts"),
+    dataEnv.DATA.prepare("DELETE FROM guilds"),
     dataEnv.DATA.prepare(
       "UPDATE game_detection_control SET started_at = 0 WHERE singleton = 1",
     ),
@@ -110,7 +111,10 @@ describe("processGameDetectionMinute", () => {
       processGameDetectionMinute({
         DATA: dataEnv.DATA,
         AI: { run: aiRun } as unknown as Ai,
-        DISCORD_REST: { createGameDetectionAnnouncementV1: announce },
+        DISCORD_REST: {
+          createGameDetectionAnnouncementV1: announce,
+          resolveGameDetectionChannelContextV1: vi.fn(),
+        },
       }, observedAt),
     ).resolves.toMatchObject({
       ingested: 1,
@@ -188,7 +192,10 @@ describe("processGameDetectionMinute", () => {
       processGameDetectionMinute({
         DATA: dataEnv.DATA,
         AI: { run: aiRun } as unknown as Ai,
-        DISCORD_REST: { createGameDetectionAnnouncementV1: announce },
+        DISCORD_REST: {
+          createGameDetectionAnnouncementV1: announce,
+          resolveGameDetectionChannelContextV1: vi.fn(),
+        },
       }, observedAt),
     ).resolves.toMatchObject({ rankJob: "selected", announcement: "sent" });
 
@@ -201,6 +208,136 @@ describe("processGameDetectionMinute", () => {
     );
   });
 
+  it("looks up missing display context before ranking the live Discord receipt shape", async () => {
+    const roll = deliveredRoll("100000000000000039");
+    await new D1RollLifecycleRepository(dataEnv.DATA).record({
+      ...roll,
+      context: {
+        ...roll.context,
+        guildName: null,
+        channelName: null,
+        channelType: null,
+      },
+    });
+    await dataEnv.DATA.prepare(
+      `INSERT INTO guilds (id, name, created_at, updated_at)
+       VALUES (?, ?, ?, ?)`,
+    ).bind(
+      "100000000000000003",
+      "Stored Thursday Guild",
+      observedAt,
+      observedAt,
+    ).run();
+    const resolveContext = vi.fn(() => Promise.resolve({
+      status: "resolved" as const,
+      channelName: "resolved-strahd",
+      channelType: 0 as const,
+    }));
+    const aiRun = vi.fn(() =>
+      Promise.resolve({ response: JSON.stringify(dndResponse) })
+    );
+    const announce = vi.fn(() => Promise.resolve({
+      status: "delivered" as const,
+      messageId: "100000000000000097",
+      httpStatus: 200,
+    }));
+
+    await expect(
+      processGameDetectionMinute({
+        DATA: dataEnv.DATA,
+        AI: { run: aiRun } as unknown as Ai,
+        DISCORD_REST: {
+          createGameDetectionAnnouncementV1: announce,
+          resolveGameDetectionChannelContextV1: resolveContext,
+        },
+      }, observedAt),
+    ).resolves.toMatchObject({
+      ingested: 1,
+      channelContext: "resolved",
+      rankJob: "selected",
+      announcement: "sent",
+    });
+
+    expect(resolveContext).toHaveBeenCalledWith({
+      version: 1,
+      guildId: "100000000000000003",
+      channelId: "100000000000000004",
+    });
+    expect(JSON.stringify(aiRun.mock.calls[0])).toContain("Stored Thursday Guild");
+    expect(JSON.stringify(aiRun.mock.calls[0])).toContain("resolved-strahd");
+    expect(announce).toHaveBeenCalledWith(expect.objectContaining({
+      guildName: "Stored Thursday Guild",
+      channelName: "resolved-strahd",
+    }));
+  });
+
+  it("keeps the unresolved session blocked across retryable and failed lookups", async () => {
+    const roll = deliveredRoll("100000000000000040");
+    await new D1RollLifecycleRepository(dataEnv.DATA).record({
+      ...roll,
+      context: {
+        ...roll.context,
+        guildName: null,
+        channelName: null,
+        channelType: null,
+      },
+    });
+    await dataEnv.DATA.prepare(
+      `INSERT INTO guilds (id, name, created_at, updated_at)
+       VALUES (?, ?, ?, ?)`,
+    ).bind(
+      "100000000000000003",
+      "Stored Thursday Guild",
+      observedAt,
+      observedAt,
+    ).run();
+    const resolveContext = vi.fn()
+      .mockResolvedValueOnce({
+        status: "retryable" as const,
+        httpStatus: 429,
+        retryAfterMs: 60_000,
+      })
+      .mockResolvedValueOnce({
+        status: "failed" as const,
+        httpStatus: 401,
+      });
+    const aiRun = vi.fn();
+    const announce = vi.fn();
+    const serviceEnv = {
+      DATA: dataEnv.DATA,
+      AI: { run: aiRun } as unknown as Ai,
+      DISCORD_REST: {
+        createGameDetectionAnnouncementV1: announce,
+        resolveGameDetectionChannelContextV1: resolveContext,
+      },
+    };
+
+    await expect(
+      processGameDetectionMinute(serviceEnv, observedAt),
+    ).resolves.toMatchObject({
+      channelContext: "retrying",
+      rankJob: "none",
+      announcement: "none",
+    });
+    await expect(
+      processGameDetectionMinute(serviceEnv, observedAt + 59_999),
+    ).resolves.toMatchObject({
+      channelContext: "none",
+      rankJob: "none",
+    });
+
+    await expect(
+      processGameDetectionMinute(serviceEnv, observedAt + 60_000),
+    ).resolves.toMatchObject({
+      channelContext: "failed",
+      rankJob: "none",
+    });
+
+    expect(resolveContext).toHaveBeenCalledTimes(2);
+    expect(aiRun).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
   it("records an invalid model response once without posting or retrying", async () => {
     await new D1RollLifecycleRepository(dataEnv.DATA).record(
       deliveredRoll("100000000000000041"),
@@ -210,7 +347,10 @@ describe("processGameDetectionMinute", () => {
     const serviceEnv = {
       DATA: dataEnv.DATA,
       AI: { run: aiRun } as unknown as Ai,
-      DISCORD_REST: { createGameDetectionAnnouncementV1: announce },
+      DISCORD_REST: {
+        createGameDetectionAnnouncementV1: announce,
+        resolveGameDetectionChannelContextV1: vi.fn(),
+      },
     };
 
     await expect(

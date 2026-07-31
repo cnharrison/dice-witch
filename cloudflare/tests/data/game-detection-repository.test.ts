@@ -23,8 +23,9 @@ function snapshot(input: {
   notation?: readonly string[];
   repetitions?: number;
   title?: string | null;
-  guildName?: string;
-  channelName?: string;
+  guildName?: string | null;
+  channelName?: string | null;
+  channelType?: number | null;
 }): RollLifecycleSnapshotV1 {
   const notation = input.notation ?? ["1d20"];
   const repetitions = input.repetitions ?? 1;
@@ -55,9 +56,13 @@ function snapshot(input: {
       username: "fixture-player",
       guildId: "100000000000000003",
       channelId: input.channelId ?? "100000000000000004",
-      guildName: input.guildName ?? "Savage Wednesday",
-      channelName: input.channelName ?? "deadlands-session",
-      channelType: 0,
+      guildName:
+        input.guildName === undefined ? "Savage Wednesday" : input.guildName,
+      channelName:
+        input.channelName === undefined
+          ? "deadlands-session"
+          : input.channelName,
+      channelType: input.channelType === undefined ? 0 : input.channelType,
       outcome: {
         version: 1,
         seed: 1,
@@ -122,6 +127,7 @@ beforeEach(async () => {
     dataEnv.DATA.prepare("DELETE FROM game_detection_sessions"),
     dataEnv.DATA.prepare("DELETE FROM game_detection_daily_aggregates"),
     dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts"),
+    dataEnv.DATA.prepare("DELETE FROM guilds"),
     dataEnv.DATA.prepare(
       "UPDATE game_detection_control SET started_at = 0 WHERE singleton = 1",
     ),
@@ -332,6 +338,76 @@ describe("D1GameDetectionRepository", () => {
       game_id: "dungeons-and-dragons-5e-2014",
       previous_game_id: null,
       announcement_state: "pending",
+    });
+  });
+
+  it("enriches the live null-name receipt shape before ranking and announcements", async () => {
+    await dataEnv.DATA.prepare(
+      `INSERT INTO guilds (id, name, created_at, updated_at)
+       VALUES (?, ?, ?, ?)`,
+    ).bind(
+      "100000000000000003",
+      "Stored Fixture Guild",
+      baseTime,
+      baseTime,
+    ).run();
+    await record(snapshot({
+      interactionId: "100000000000000034",
+      receivedAt: baseTime,
+      notation: ["4d6kh3"],
+      repetitions: 6,
+      title: "Create a character",
+      guildName: null,
+      channelName: null,
+      channelType: null,
+    }));
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+
+    await expect(repository.ingestDeliveredRolls(baseTime)).resolves.toMatchObject({
+      ingested: 1,
+    });
+    await expect(repository.claimRankJob(baseTime + 1)).resolves.toBeNull();
+    await expect(
+      repository.nextPendingChannelContext(baseTime + 1),
+    ).resolves.toEqual({
+      sessionId: "100000000000000034",
+      guildId: "100000000000000003",
+      channelId: "100000000000000004",
+    });
+
+    await repository.completeChannelContext(
+      "100000000000000034",
+      { channelName: "resolved-rolls", channelType: 0 },
+      baseTime + 2,
+    );
+    const job = await repository.claimRankJob(baseTime + 3);
+    expect(job).toMatchObject({
+      context: {
+        guildName: "Stored Fixture Guild",
+        channelName: "resolved-rolls",
+        channelType: 0,
+      },
+    });
+    if (job === null) throw new Error("Expected an enriched rank job");
+
+    await repository.completeRankJob(
+      job,
+      { status: "accepted", value: dndResponse },
+      baseTime + 4,
+      1,
+    );
+    await expect(repository.claimAnnouncement(baseTime + 5)).resolves.toMatchObject({
+      guildName: "Stored Fixture Guild",
+      channelName: "resolved-rolls",
+    });
+    await expect(
+      dataEnv.DATA.prepare(
+        `SELECT guild_name, channel_name
+         FROM game_detection_titled_rolls_90d`,
+      ).first(),
+    ).resolves.toEqual({
+      guild_name: "Stored Fixture Guild",
+      channel_name: "resolved-rolls",
     });
   });
 

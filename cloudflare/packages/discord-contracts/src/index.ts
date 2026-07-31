@@ -9,7 +9,11 @@ export {
 export { DISCORD_GLOBAL_COMMANDS } from "./commands";
 export {
   parseGameDetectionAnnouncementV1,
+  parseGameDetectionChannelContextRequestV1,
+  parseGameDetectionChannelContextResponseV1,
   type GameDetectionAnnouncementV1,
+  type GameDetectionChannelContextRequestV1,
+  type GameDetectionChannelContextResultV1,
 } from "./game-detection";
 export {
   buildDeferredResponse,
