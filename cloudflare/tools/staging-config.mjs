@@ -208,18 +208,30 @@ function validateDiscordIdentity(errors, configs, frontendOrigin) {
     errors.push("Web API Discord client id must match Discord REST");
   }
 
+  const logOutputChannelId =
+    configs["discord-rest"]?.vars?.LOG_OUTPUT_CHANNEL_ID;
+  const rollLifecycleAlertChannelId =
+    configs["discord-rest"]?.vars?.ROLL_LIFECYCLE_ALERT_CHANNEL_ID;
+  const gameDetectionChannelId =
+    configs["discord-rest"]?.vars?.GAME_DETECTION_CHANNEL_ID;
   const channelIds = [
-    "LOG_OUTPUT_CHANNEL_ID",
-    "ROLL_LIFECYCLE_ALERT_CHANNEL_ID",
-    "GAME_DETECTION_CHANNEL_ID",
-  ].map((name) => configs["discord-rest"]?.vars?.[name]);
+    logOutputChannelId,
+    rollLifecycleAlertChannelId,
+    gameDetectionChannelId,
+  ];
   if (
     channelIds.some((channelId) =>
       typeof channelId !== "string" || !SNOWFLAKE.test(channelId)
-    ) ||
-    new Set(channelIds).size !== channelIds.length
+    )
   ) {
-    errors.push("Discord private telemetry channels must be distinct snowflakes");
+    errors.push("Discord telemetry channels must be snowflakes");
+  } else if (
+    gameDetectionChannelId !== rollLifecycleAlertChannelId ||
+    logOutputChannelId === rollLifecycleAlertChannelId
+  ) {
+    errors.push(
+      "Staging game detection must use the lifecycle alert channel, separate from roll logs",
+    );
   }
 
   const guildId = configs["discord-rest"]?.vars?.DISCORD_TEST_GUILD_ID;

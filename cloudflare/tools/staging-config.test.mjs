@@ -59,7 +59,7 @@ function validConfigs() {
         SUPPORT_SERVER_LINK: "https://example.com/support",
         LOG_OUTPUT_CHANNEL_ID: "100000000000000003",
         ROLL_LIFECYCLE_ALERT_CHANNEL_ID: "100000000000000004",
-        GAME_DETECTION_CHANNEL_ID: "100000000000000005",
+        GAME_DETECTION_CHANNEL_ID: "100000000000000004",
       },
     },
     roll: {
@@ -330,14 +330,21 @@ test("keeps the Data Worker private with its required crypto and AI bindings", (
   );
 });
 
-test("requires a distinct private game-detection channel", () => {
-  const configs = validConfigs();
-  configs["discord-rest"].vars.GAME_DETECTION_CHANNEL_ID =
-    configs["discord-rest"].vars.LOG_OUTPUT_CHANNEL_ID;
-
+test("requires the approved shared staging game-detection channel", () => {
+  const separateDetection = validConfigs();
+  separateDetection["discord-rest"].vars.GAME_DETECTION_CHANNEL_ID =
+    "100000000000000005";
   assert.throws(
-    () => validateStagingConfigs(configs),
-    /private telemetry channels must be distinct snowflakes/,
+    () => validateStagingConfigs(separateDetection),
+    /game detection must use the lifecycle alert channel/,
+  );
+
+  const rollLogCollision = validConfigs();
+  rollLogCollision["discord-rest"].vars.LOG_OUTPUT_CHANNEL_ID =
+    rollLogCollision["discord-rest"].vars.ROLL_LIFECYCLE_ALERT_CHANNEL_ID;
+  assert.throws(
+    () => validateStagingConfigs(rollLogCollision),
+    /game detection must use the lifecycle alert channel/,
   );
 });
 
