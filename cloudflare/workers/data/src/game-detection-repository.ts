@@ -1,9 +1,13 @@
 import {
+  assessGameDetectionActivePlayV1,
   buildGameDetectionCandidateSignatureInputV1,
   buildGameDetectionCandidateSignatureInputV2,
   extractNarrationGameFeaturesV1,
+  GAME_DETECTION_ACTIVE_PLAY_POLICY_REVISION_V1,
+  GAME_DETECTION_EPISODE_INACTIVITY_MS_V1,
   NARRATION_GAME_CATALOG_V1,
   prepareGameDetectionV2,
+  type GameDetectionActivePlayStateV1,
   type GameDetectionSessionContextV1,
   type NarrationGameConfidenceV1,
   type NarrationGameFeatureRequestV1,
@@ -27,6 +31,7 @@ export type GameDetectionIngestionResult = Readonly<{
 export type ClaimedGameDetectionRankJob = Readonly<{
   sessionId: string;
   candidateSignature: string;
+  episodeStartedAt: number;
   ranking: NarrationGameRankingRequestV1;
   context: GameDetectionSessionContextV1;
 }>;
@@ -80,6 +85,8 @@ type SessionRow = Readonly<{
   guild_name: string | null;
   channel_name: string | null;
   channel_type: number | null;
+  active_play_state: GameDetectionActivePlayStateV1;
+  active_episode_started_at: number | null;
 }>;
 
 type StoredRollContext = Readonly<{
@@ -88,6 +95,7 @@ type StoredRollContext = Readonly<{
   guildName: string | null;
   channelName: string | null;
   channelType: number | null;
+  userId: string;
   username: string;
   title: string | null;
   savedRollName: string | null;
@@ -102,10 +110,17 @@ type ContextRow = Readonly<{
   context_json: string;
 }>;
 
+type ActivityRow = Readonly<{
+  interaction_id: string;
+  observed_at: number;
+  context_json: string;
+}>;
+
 type RankJobRow = Readonly<{
   session_id: string;
   candidate_signature: string;
   feature_request_json: string;
+  active_episode_started_at: number | null;
 }>;
 
 type AnnouncementRow = Readonly<{
@@ -206,6 +221,7 @@ function parseStoredRollContext(raw: string): StoredRollContext {
     guildName: nullableString(value.guildName, "guild name", 100),
     channelName: nullableString(value.channelName, "channel name", 100),
     channelType: parseChannelType(value.channelType),
+    userId: requiredString(value.userId, "user ID", 32),
     username: requiredString(value.username, "username", 32),
     title: nullableString(value.title, "title", 256),
     savedRollName:
@@ -268,7 +284,7 @@ export class D1GameDetectionRepository {
        CROSS JOIN game_detection_control AS control
        WHERE control.singleton = 1
          AND r.state = 'delivered'
-         AND r.received_at >= control.started_at
+         AND r.received_at >= control.active_play_started_at
          AND NOT EXISTS (
            SELECT 1 FROM game_detection_rolls AS observed
            WHERE observed.interaction_id = r.interaction_id
@@ -295,7 +311,7 @@ export class D1GameDetectionRepository {
          CROSS JOIN game_detection_control AS control
          WHERE control.singleton = 1
            AND r.state = 'delivered'
-           AND r.received_at >= control.started_at
+           AND r.received_at >= control.active_play_started_at
            AND NOT EXISTS (
              SELECT 1 FROM game_detection_rolls AS observed
              WHERE observed.interaction_id = r.interaction_id
@@ -360,8 +376,11 @@ export class D1GameDetectionRepository {
            session_id, scope, guild_id, channel_id, started_at, last_roll_at,
            roll_count, state, closed_at, created_at, updated_at,
            guild_name, channel_name, channel_type,
-           channel_context_checked_at, channel_context_retry_at
-         ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+           channel_context_checked_at, channel_context_retry_at,
+           active_play_state, active_play_path, active_episode_started_at,
+           active_play_updated_at, active_play_policy_revision
+         ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, NULL,
+                   'isolated', NULL, ?, ?, ?)`,
       )
         .bind(
           row.interaction_id,
@@ -378,6 +397,9 @@ export class D1GameDetectionRepository {
           context.channelName,
           context.channelType,
           channelContextCheckedAt,
+          row.received_at,
+          now,
+          GAME_DETECTION_ACTIVE_PLAY_POLICY_REVISION_V1,
         )
         .run();
       session =
@@ -451,11 +473,16 @@ export class D1GameDetectionRepository {
       }
     }
 
-    const rankPending = await this.prepareRankJob(
-      session,
-      row.interaction_id,
-      now,
-    );
+    session = await this.assessActivePlay(session, now);
+    const currentEpisode =
+      session.active_episode_started_at !== null &&
+      row.received_at >= session.active_episode_started_at;
+    const rankPending = currentEpisode
+      ? await this.prepareRankJob(session, row.interaction_id, now)
+      : false;
+    if (!currentEpisode) {
+      await this.classifyRoll(row.interaction_id, "unknown", null);
+    }
     if (session.state === "closed" && !rankPending) {
       await this.finalizeClosedClassifications(session);
     }
@@ -471,7 +498,8 @@ export class D1GameDetectionRepository {
               last_roll_at, roll_count, state, current_game_id,
               current_confidence, current_game_detected_at,
               last_candidate_signature, last_candidate_disposition,
-              guild_name, channel_name, channel_type
+              guild_name, channel_name, channel_type,
+              active_play_state, active_episode_started_at
        FROM game_detection_sessions
        WHERE channel_id = ?
          AND ? > started_at - ?
@@ -493,7 +521,8 @@ export class D1GameDetectionRepository {
               last_roll_at, roll_count, state, current_game_id,
               current_confidence, current_game_detected_at,
               last_candidate_signature, last_candidate_disposition,
-              guild_name, channel_name, channel_type
+              guild_name, channel_name, channel_type,
+              active_play_state, active_episode_started_at
        FROM game_detection_sessions
        WHERE channel_id = ? AND state = 'open'`,
     ).bind(channelId).first<SessionRow>();
@@ -505,13 +534,86 @@ export class D1GameDetectionRepository {
               last_roll_at, roll_count, state, current_game_id,
               current_confidence, current_game_detected_at,
               last_candidate_signature, last_candidate_disposition,
-              guild_name, channel_name, channel_type
+              guild_name, channel_name, channel_type,
+              active_play_state, active_episode_started_at
        FROM game_detection_sessions WHERE session_id = ?`,
     ).bind(sessionId).first<SessionRow>();
   }
 
+  private async assessActivePlay(
+    session: SessionRow,
+    now: number,
+  ): Promise<SessionRow> {
+    const rows = await this.db.prepare(
+      `SELECT interaction_id, observed_at, context_json
+       FROM (
+         SELECT observed.interaction_id, observed.observed_at,
+                receipt.context_json
+         FROM game_detection_rolls AS observed
+         JOIN roll_lifecycle_receipts AS receipt
+           ON receipt.interaction_id = observed.interaction_id
+         CROSS JOIN game_detection_control AS control
+         WHERE observed.session_id = ?
+           AND control.singleton = 1
+           AND observed.observed_at >= control.active_play_started_at
+           AND observed.observed_at <= ?
+         ORDER BY observed.observed_at DESC, observed.interaction_id DESC
+         LIMIT ?
+       )
+       ORDER BY observed_at, interaction_id`,
+    ).bind(session.session_id, now, MAX_FEATURE_ROLLS).all<ActivityRow>();
+
+    const participants = new Map<string, number>();
+    const events = rows.results.map(({ context_json, observed_at }) => {
+      const context = parseStoredRollContext(context_json);
+      let participant = participants.get(context.userId);
+      if (participant === undefined) {
+        participant = participants.size;
+        participants.set(context.userId, participant);
+      }
+      return {
+        atMs: observed_at,
+        participant,
+        notation: context.notation,
+      };
+    });
+    const prior = session.active_episode_started_at === null
+      ? null
+      : {
+          state: session.active_play_state,
+          episodeStartedAt: session.active_episode_started_at,
+        };
+    const assessment = assessGameDetectionActivePlayV1({
+      version: 1,
+      scope: session.scope,
+      nowMs: now,
+      prior,
+      events,
+    });
+    await this.db.prepare(
+      `UPDATE game_detection_sessions
+       SET active_play_state = ?, active_play_path = ?,
+           active_episode_started_at = ?, active_play_updated_at = ?,
+           active_play_policy_revision = ?
+       WHERE session_id = ?`,
+    ).bind(
+      assessment.state,
+      assessment.path,
+      assessment.episodeStartedAt,
+      now,
+      GAME_DETECTION_ACTIVE_PLAY_POLICY_REVISION_V1,
+      session.session_id,
+    ).run();
+    const updated = await this.sessionById(session.session_id);
+    if (updated === null) {
+      throw new Error("Game-detection active-play session disappeared");
+    }
+    return updated;
+  }
+
   private async featureRequest(
     sessionId: string,
+    episodeStartedAt: number,
   ): Promise<NarrationGameFeatureRequestV1> {
     const rows = await this.db.prepare(
       `SELECT receipt.context_json
@@ -519,9 +621,10 @@ export class D1GameDetectionRepository {
        JOIN roll_lifecycle_receipts AS receipt
          ON receipt.interaction_id = observed.interaction_id
        WHERE observed.session_id = ?
+         AND observed.observed_at >= ?
        ORDER BY observed.observed_at DESC, observed.interaction_id DESC
        LIMIT ?`,
-    ).bind(sessionId, MAX_FEATURE_ROLLS).all<{ context_json: string }>();
+    ).bind(sessionId, episodeStartedAt, MAX_FEATURE_ROLLS).all<{ context_json: string }>();
     return {
       version: 1,
       rolls: rows.results.reverse().map(({ context_json }) => {
@@ -539,11 +642,22 @@ export class D1GameDetectionRepository {
     interactionId: string,
     now: number,
   ): Promise<boolean> {
-    const request = await this.featureRequest(session.session_id);
+    if (
+      session.active_play_state !== "active" ||
+      session.active_episode_started_at === null
+    ) {
+      await this.classifyRoll(interactionId, "unknown", null);
+      return false;
+    }
+    const episodeStartedAt = session.active_episode_started_at;
+    const request = await this.featureRequest(session.session_id, episodeStartedAt);
     const ranking = extractNarrationGameFeaturesV1(request);
-    const context = await this.sessionContext(session.session_id);
+    const context = await this.sessionContext(
+      session.session_id,
+      episodeStartedAt,
+    );
     const signature = await sha256(
-      buildGameDetectionCandidateSignatureInputV2(ranking, context),
+      `${String(episodeStartedAt)}:${buildGameDetectionCandidateSignatureInputV2(ranking, context)}`,
     );
 
     if (signature === session.last_candidate_signature) {
@@ -567,20 +681,19 @@ export class D1GameDetectionRepository {
     ).bind(signature, now, session.session_id).run();
 
     if (preparation.state !== "prompt-ready") {
-      if (session.current_game_id !== null) {
-        await this.classifyRoll(interactionId, "unknown", null);
-      }
+      await this.classifyRoll(interactionId, "unknown", null);
       return false;
     }
 
     await this.db.prepare(
       `INSERT INTO game_detection_rank_jobs (
          session_id, candidate_signature, feature_request_json, state,
-         attempt_count, created_at
-       ) VALUES (?, ?, ?, 'pending', 0, ?)
+         attempt_count, created_at, active_episode_started_at
+       ) VALUES (?, ?, ?, 'pending', 0, ?, ?)
        ON CONFLICT(session_id) DO UPDATE SET
          candidate_signature = excluded.candidate_signature,
          feature_request_json = excluded.feature_request_json,
+         active_episode_started_at = excluded.active_episode_started_at,
          state = 'pending',
          attempt_count = 0,
          created_at = excluded.created_at,
@@ -594,6 +707,7 @@ export class D1GameDetectionRepository {
       signature,
       JSON.stringify(ranking),
       now,
+      episodeStartedAt,
     ).run();
     return true;
   }
@@ -612,6 +726,7 @@ export class D1GameDetectionRepository {
 
   private async sessionContext(
     sessionId: string,
+    episodeStartedAt: number,
   ): Promise<GameDetectionSessionContextV1> {
     const rows = await this.db.prepare(
       `SELECT receipt.command_name, receipt.scope, receipt.context_json
@@ -619,9 +734,10 @@ export class D1GameDetectionRepository {
        JOIN roll_lifecycle_receipts AS receipt
          ON receipt.interaction_id = observed.interaction_id
        WHERE observed.session_id = ?
+         AND observed.observed_at >= ?
        ORDER BY observed.observed_at DESC, observed.interaction_id DESC
        LIMIT ?`,
-    ).bind(sessionId, MAX_CONTEXT_ROLLS).all<ContextRow>();
+    ).bind(sessionId, episodeStartedAt, MAX_CONTEXT_ROLLS).all<ContextRow>();
     const chronological = rows.results.reverse();
     const first = chronological[0];
     if (first === undefined) {
@@ -664,6 +780,7 @@ export class D1GameDetectionRepository {
       `SELECT session_id, guild_id, channel_id
        FROM game_detection_sessions
        WHERE scope = 'guild'
+         AND active_play_state = 'active'
          AND channel_context_checked_at IS NULL
          AND (channel_context_retry_at IS NULL OR channel_context_retry_at <= ?)
          AND EXISTS (
@@ -757,16 +874,18 @@ export class D1GameDetectionRepository {
   async claimRankJob(now: number): Promise<ClaimedGameDetectionRankJob | null> {
     const row = await this.db.prepare(
       `SELECT job.session_id, job.candidate_signature,
-              job.feature_request_json
+              job.feature_request_json, job.active_episode_started_at
        FROM game_detection_rank_jobs AS job
        JOIN game_detection_sessions AS session
          ON session.session_id = job.session_id
        WHERE job.state = 'pending'
+         AND session.active_play_state = 'active'
+         AND job.active_episode_started_at = session.active_episode_started_at
          AND session.channel_context_checked_at IS NOT NULL
        ORDER BY job.created_at, job.session_id
        LIMIT 1`,
     ).first<RankJobRow>();
-    if (row === null) return null;
+    if (row === null || row.active_episode_started_at === null) return null;
 
     const claimed = await this.db.prepare(
       `UPDATE game_detection_rank_jobs
@@ -778,8 +897,12 @@ export class D1GameDetectionRepository {
     return {
       sessionId: row.session_id,
       candidateSignature: row.candidate_signature,
+      episodeStartedAt: row.active_episode_started_at,
       ranking: parseRankingRequest(row.feature_request_json),
-      context: await this.sessionContext(row.session_id),
+      context: await this.sessionContext(
+        row.session_id,
+        row.active_episode_started_at,
+      ),
     };
   }
 
@@ -800,6 +923,8 @@ export class D1GameDetectionRepository {
     const current = await this.sessionById(job.sessionId);
     if (
       current === null ||
+      current.active_play_state !== "active" ||
+      current.active_episode_started_at !== job.episodeStartedAt ||
       current.last_candidate_signature !== job.candidateSignature
     ) {
       await this.finishJob(
@@ -813,7 +938,10 @@ export class D1GameDetectionRepository {
     }
 
     if (outcome.status !== "accepted") {
-      await this.classifyPendingUnresolved(job.sessionId);
+      await this.classifyPendingUnresolved(
+        job.sessionId,
+        job.episodeStartedAt,
+      );
       await this.finishJob(
         job,
         outcome.status,
@@ -825,7 +953,10 @@ export class D1GameDetectionRepository {
     }
 
     if (outcome.value.disposition === "abstain") {
-      await this.classifyPendingUnresolved(job.sessionId);
+      await this.classifyPendingUnresolved(
+        job.sessionId,
+        job.episodeStartedAt,
+      );
       await this.finishJob(
         job,
         "abstained",
@@ -854,6 +985,7 @@ export class D1GameDetectionRepository {
         `UPDATE game_detection_rolls
          SET classification = 'in-game', game_id = ?
          WHERE session_id = ?
+           AND observed_at >= ?
            AND (
              classification = 'pending'
              OR (? = 1 AND classification IN ('unknown', 'out-of-game'))
@@ -862,6 +994,7 @@ export class D1GameDetectionRepository {
       ).bind(
         selectedGameId,
         job.sessionId,
+        job.episodeStartedAt,
         firstDetection ? 1 : 0,
         firstDetection ? 1 : 0,
         current.current_game_detected_at ?? current.started_at,
@@ -888,8 +1021,9 @@ export class D1GameDetectionRepository {
         `INSERT OR IGNORE INTO game_detections (
            detection_id, session_id, previous_game_id, game_id, confidence,
            candidate_signature, evidence_json, detected_at, model_id,
-           prompt_revision, announcement_state, next_announcement_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+           prompt_revision, announcement_state, next_announcement_at,
+           active_episode_started_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
       ).bind(
         detectionId,
         job.sessionId,
@@ -902,6 +1036,7 @@ export class D1GameDetectionRepository {
         "@cf/zai-org/glm-5.2",
         "dice-witch-game-detection-v2",
         completedAt,
+        job.episodeStartedAt,
       ).run();
     }
 
@@ -914,20 +1049,16 @@ export class D1GameDetectionRepository {
     );
   }
 
-  private async classifyPendingUnresolved(sessionId: string): Promise<void> {
-    const session = await this.sessionById(sessionId);
-    if (session === null) return;
-    const classification =
-      session.state === "closed" &&
-      session.roll_count === 1 &&
-      session.current_game_id === null
-        ? "out-of-game"
-        : "unknown";
+  private async classifyPendingUnresolved(
+    sessionId: string,
+    episodeStartedAt: number,
+  ): Promise<void> {
     await this.db.prepare(
       `UPDATE game_detection_rolls
-       SET classification = ?, game_id = NULL
-       WHERE session_id = ? AND classification = 'pending'`,
-    ).bind(classification, sessionId).run();
+       SET classification = 'unknown', game_id = NULL
+       WHERE session_id = ? AND observed_at >= ?
+         AND classification = 'pending'`,
+    ).bind(sessionId, episodeStartedAt).run();
   }
 
   private async finalizeClosedClassifications(
@@ -980,14 +1111,20 @@ export class D1GameDetectionRepository {
 
   async failInterruptedRankJobs(now: number): Promise<number> {
     const jobs = await this.db.prepare(
-      `SELECT session_id, candidate_signature, feature_request_json
+      `SELECT session_id, candidate_signature, feature_request_json,
+              active_episode_started_at
        FROM game_detection_rank_jobs
        WHERE state = 'processing' AND started_at <= ?
        ORDER BY started_at
        LIMIT 100`,
     ).bind(now - 10 * 60 * 1_000).all<RankJobRow>();
     for (const job of jobs.results) {
-      await this.classifyPendingUnresolved(job.session_id);
+      if (job.active_episode_started_at !== null) {
+        await this.classifyPendingUnresolved(
+          job.session_id,
+          job.active_episode_started_at,
+        );
+      }
       await this.db.prepare(
         `UPDATE game_detection_rank_jobs
          SET state = 'completed', completed_at = ?, result = 'failed',
@@ -999,13 +1136,51 @@ export class D1GameDetectionRepository {
     return jobs.results.length;
   }
 
+  private async expireInactiveEpisodes(now: number): Promise<void> {
+    const rows = await this.db.prepare(
+      `SELECT session_id, active_episode_started_at
+       FROM game_detection_sessions
+       WHERE state = 'open'
+         AND active_play_state != 'inactive'
+         AND last_roll_at <= ?
+       ORDER BY last_roll_at
+       LIMIT 500`,
+    ).bind(
+      now - GAME_DETECTION_EPISODE_INACTIVITY_MS_V1,
+    ).all<{
+      session_id: string;
+      active_episode_started_at: number | null;
+    }>();
+    for (const row of rows.results) {
+      await this.db.prepare(
+        `UPDATE game_detection_sessions
+         SET active_play_state = 'inactive', active_play_path = NULL,
+             active_play_updated_at = ?
+         WHERE session_id = ? AND state = 'open'
+           AND last_roll_at <= ?`,
+      ).bind(
+        now,
+        row.session_id,
+        now - GAME_DETECTION_EPISODE_INACTIVITY_MS_V1,
+      ).run();
+      if (row.active_episode_started_at !== null) {
+        await this.classifyPendingUnresolved(
+          row.session_id,
+          row.active_episode_started_at,
+        );
+      }
+    }
+  }
+
   private async closeExpiredSessions(now: number): Promise<number> {
+    await this.expireInactiveEpisodes(now);
     const rows = await this.db.prepare(
       `SELECT session_id, scope, guild_id, channel_id, started_at,
               last_roll_at, roll_count, state, current_game_id,
               current_confidence, current_game_detected_at,
               last_candidate_signature, last_candidate_disposition,
-              guild_name, channel_name, channel_type
+              guild_name, channel_name, channel_type,
+              active_play_state, active_episode_started_at
        FROM game_detection_sessions
        WHERE state = 'open' AND last_roll_at <= ?
        ORDER BY last_roll_at
@@ -1045,19 +1220,27 @@ export class D1GameDetectionRepository {
               detection.previous_game_id, detection.game_id,
               detection.confidence, detection.detected_at,
               session.scope, session.guild_id, session.channel_id,
-              session.roll_count, session.started_at,
-              session.last_roll_at, session.guild_name,
-              session.channel_name
+              (
+                SELECT COUNT(*)
+                FROM game_detection_rolls AS episode_roll
+                WHERE episode_roll.session_id = session.session_id
+                  AND episode_roll.observed_at >= detection.active_episode_started_at
+              ) AS roll_count,
+              detection.active_episode_started_at AS started_at,
+              (
+                SELECT MAX(episode_roll.observed_at)
+                FROM game_detection_rolls AS episode_roll
+                WHERE episode_roll.session_id = session.session_id
+                  AND episode_roll.observed_at >= detection.active_episode_started_at
+              ) AS last_roll_at,
+              session.guild_name, session.channel_name
        FROM game_detections AS detection
        JOIN game_detection_sessions AS session
          ON session.session_id = detection.session_id
-       JOIN game_detection_rolls AS observed
-         ON observed.session_id = session.session_id
-       JOIN roll_lifecycle_receipts AS receipt
-         ON receipt.interaction_id = observed.interaction_id
        WHERE detection.announcement_state = 'pending'
+         AND detection.active_episode_started_at IS NOT NULL
          AND detection.next_announcement_at <= ?
-       ORDER BY detection.detected_at, observed.observed_at DESC
+       ORDER BY detection.detected_at
        LIMIT 1`,
     ).bind(now).first<AnnouncementRow>();
     if (row === null) return null;

@@ -23,6 +23,7 @@ function snapshot(input: {
   notation?: readonly string[];
   repetitions?: number;
   title?: string | null;
+  userId?: string;
   guildName?: string | null;
   channelName?: string | null;
   channelType?: number | null;
@@ -52,7 +53,7 @@ function snapshot(input: {
       request: { notation: [...notation], repetitions },
       title: input.title ?? null,
       savedRoll: null,
-      userId: "100000000000000002",
+      userId: input.userId ?? "100000000000000002",
       username: "fixture-player",
       guildId: "100000000000000003",
       channelId: input.channelId ?? "100000000000000004",
@@ -80,6 +81,21 @@ function snapshot(input: {
       destinationPayload: null,
     },
   };
+}
+
+function activeMultiplayerSnapshots(
+  input: Parameters<typeof snapshot>[0],
+): RollLifecycleSnapshotV1[] {
+  const firstId = BigInt(input.interactionId);
+  return Array.from({ length: 4 }, (_, index) => snapshot({
+    ...input,
+    interactionId: String(firstId + BigInt(index)),
+    receivedAt: input.receivedAt + index * 60_000,
+    title: index === 0 ? (input.title ?? null) : null,
+    userId: index < 2
+      ? (input.userId ?? "100000000000000002")
+      : "100000000000000099",
+  }));
 }
 
 const savageWorldsResponse = {
@@ -129,7 +145,9 @@ beforeEach(async () => {
     dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts"),
     dataEnv.DATA.prepare("DELETE FROM guilds"),
     dataEnv.DATA.prepare(
-      "UPDATE game_detection_control SET started_at = 0 WHERE singleton = 1",
+      `UPDATE game_detection_control
+       SET started_at = 0, active_play_started_at = 0
+       WHERE singleton = 1`,
     ),
   ]);
 });
@@ -140,6 +158,146 @@ async function record(...values: RollLifecycleSnapshotV1[]): Promise<void> {
 }
 
 describe("D1GameDetectionRepository", () => {
+  it("does not rank one participant's three-roll staging acceptance sequence", async () => {
+    await record(
+      snapshot({
+        interactionId: "100000000000000101",
+        receivedAt: baseTime,
+        notation: ["3d20"],
+      }),
+      snapshot({
+        interactionId: "100000000000000102",
+        receivedAt: baseTime + 60_000,
+        notation: ["6d8"],
+      }),
+      snapshot({
+        interactionId: "100000000000000103",
+        receivedAt: baseTime + 90_000,
+        notation: ["d10+7"],
+        title: "Cyberpunk RED attack",
+      }),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+
+    await expect(
+      repository.ingestDeliveredRolls(baseTime + 90_000),
+    ).resolves.toMatchObject({ ingested: 3 });
+    await expect(repository.claimRankJob(baseTime + 90_001)).resolves.toBeNull();
+    await expect(
+      repository.nextPendingChannelContext(baseTime + 90_001),
+    ).resolves.toBeNull();
+    await expect(
+      dataEnv.DATA.prepare(
+        `SELECT active_play_state, active_play_path
+         FROM game_detection_sessions`,
+      ).first(),
+    ).resolves.toEqual({ active_play_state: "possible", active_play_path: null });
+    const classifications = await dataEnv.DATA.prepare(
+      `SELECT classification FROM game_detection_rolls ORDER BY observed_at`,
+    ).all<{ classification: string }>();
+    expect(classifications.results).toEqual([
+      { classification: "unknown" },
+      { classification: "unknown" },
+      { classification: "unknown" },
+    ]);
+  });
+
+  it("qualifies four channel-scoped rolls from two participants", async () => {
+    await record(
+      snapshot({ interactionId: "100000000000000111", receivedAt: baseTime, notation: ["4d6kh3"], repetitions: 2 }),
+      snapshot({ interactionId: "100000000000000112", receivedAt: baseTime + 60_000, notation: ["4d6kh3"], repetitions: 2 }),
+      snapshot({ interactionId: "100000000000000113", receivedAt: baseTime + 120_000, notation: ["4d6kh3"], repetitions: 2, userId: "100000000000000099" }),
+      snapshot({ interactionId: "100000000000000114", receivedAt: baseTime + 180_000, notation: ["4d6kh3"], repetitions: 2, userId: "100000000000000099" }),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
+
+    const job = await repository.claimRankJob(baseTime + 180_001);
+    expect(job?.context.rolls.some(({ notation }) => notation === "4d6kh3")).toBe(
+      true,
+    );
+    await expect(
+      dataEnv.DATA.prepare(
+        `SELECT active_play_state, active_play_path
+         FROM game_detection_sessions`,
+      ).first(),
+    ).resolves.toEqual({
+      active_play_state: "active",
+      active_play_path: "multiplayer",
+    });
+  });
+
+  it("blocks an unclaimed rank job at ten minutes of inactivity", async () => {
+    await record(
+      ...activeMultiplayerSnapshots({
+        interactionId: "100000000000000115",
+        receivedAt: baseTime,
+        notation: ["4d6kh3"],
+        repetitions: 2,
+      }),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
+    await repository.ingestDeliveredRolls(baseTime + 780_000);
+
+    await expect(repository.claimRankJob(baseTime + 780_001)).resolves.toBeNull();
+    await expect(
+      dataEnv.DATA.prepare(
+        `SELECT active_play_state FROM game_detection_sessions`,
+      ).first("active_play_state"),
+    ).resolves.toBe("inactive");
+    const classifications = await dataEnv.DATA.prepare(
+      `SELECT DISTINCT classification FROM game_detection_rolls`,
+    ).all<{ classification: string }>();
+    expect(classifications.results).toEqual([{ classification: "unknown" }]);
+  });
+
+  it("qualifies sustained solo activity without multiplying repetitions", async () => {
+    await record(
+      ...Array.from({ length: 6 }, (_, index) => snapshot({
+        interactionId: `10000000000000012${String(index)}`,
+        receivedAt: baseTime + index * 90_000,
+        notation: index < 4 ? ["d10+7"] : ["d6"],
+        repetitions: index === 0 ? 20 : 1,
+        title: index === 0 ? "Cyberpunk RED session" : null,
+      })),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+    await repository.ingestDeliveredRolls(baseTime + 5 * 90_000);
+
+    const job = await repository.claimRankJob(baseTime + 5 * 90_000 + 1);
+    expect(job?.context.rolls.some(
+      ({ title }) => title === "Cyberpunk RED session",
+    )).toBe(true);
+    await expect(
+      dataEnv.DATA.prepare(
+        `SELECT active_play_state, active_play_path
+         FROM game_detection_sessions`,
+      ).first(),
+    ).resolves.toEqual({ active_play_state: "active", active_play_path: "solo" });
+  });
+
+  it("does not combine activity across channels", async () => {
+    await record(
+      snapshot({ interactionId: "100000000000000131", receivedAt: baseTime, channelId: "100000000000000004" }),
+      snapshot({ interactionId: "100000000000000132", receivedAt: baseTime + 60_000, channelId: "100000000000000004", userId: "100000000000000099" }),
+      snapshot({ interactionId: "100000000000000133", receivedAt: baseTime, channelId: "100000000000000005" }),
+      snapshot({ interactionId: "100000000000000134", receivedAt: baseTime + 60_000, channelId: "100000000000000005", userId: "100000000000000099" }),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+    await repository.ingestDeliveredRolls(baseTime + 60_000);
+
+    await expect(repository.claimRankJob(baseTime + 60_001)).resolves.toBeNull();
+    const sessions = await dataEnv.DATA.prepare(
+      `SELECT active_play_state, roll_count
+       FROM game_detection_sessions ORDER BY channel_id`,
+    ).all<{ active_play_state: string; roll_count: number }>();
+    expect(sessions.results).toEqual([
+      { active_play_state: "possible", roll_count: 2 },
+      { active_play_state: "possible", roll_count: 2 },
+    ]);
+  });
+
   it("groups delivered rolls into channel-scoped three-hour sessions idempotently", async () => {
     await record(
       snapshot({ interactionId: "100000000000000011", receivedAt: baseTime, title: "Attack" }),
@@ -281,34 +439,34 @@ describe("D1GameDetectionRepository", () => {
 
   it("sends names and titles to a bounded background rank job and retroactively associates the session", async () => {
     await record(
-      snapshot({
+      ...activeMultiplayerSnapshots({
         interactionId: "100000000000000031",
         receivedAt: baseTime,
         notation: ["4d6kh3"],
-        repetitions: 6,
+        repetitions: 2,
         title: "Create Strahd character",
         guildName: "Thursday D&D",
         channelName: "curse-of-strahd",
       }),
     );
     const repository = new D1GameDetectionRepository(dataEnv.DATA);
-    await repository.ingestDeliveredRolls(baseTime);
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
 
-    const job = await repository.claimRankJob(baseTime + 10);
-    expect(job).toMatchObject({
-      sessionId: "100000000000000031",
-      context: {
-        guildName: "Thursday D&D",
-        channelName: "curse-of-strahd",
-        rolls: [expect.objectContaining({ title: "Create Strahd character" })],
-      },
-    });
+    const job = await repository.claimRankJob(baseTime + 180_010);
     if (job === null) throw new Error("Expected a rank job");
+    expect(job.sessionId).toBe("100000000000000031");
+    expect(job.context).toMatchObject({
+      guildName: "Thursday D&D",
+      channelName: "curse-of-strahd",
+    });
+    expect(job.context.rolls.some(
+      ({ title }) => title === "Create Strahd character",
+    )).toBe(true);
 
     await repository.completeRankJob(
       job,
       { status: "accepted", value: dndResponse },
-      baseTime + 20,
+      baseTime + 180_020,
       10,
     );
 
@@ -351,11 +509,11 @@ describe("D1GameDetectionRepository", () => {
       baseTime,
       baseTime,
     ).run();
-    await record(snapshot({
+    await record(...activeMultiplayerSnapshots({
       interactionId: "100000000000000034",
       receivedAt: baseTime,
       notation: ["4d6kh3"],
-      repetitions: 6,
+      repetitions: 2,
       title: "Create a character",
       guildName: null,
       channelName: null,
@@ -363,12 +521,12 @@ describe("D1GameDetectionRepository", () => {
     }));
     const repository = new D1GameDetectionRepository(dataEnv.DATA);
 
-    await expect(repository.ingestDeliveredRolls(baseTime)).resolves.toMatchObject({
-      ingested: 1,
-    });
-    await expect(repository.claimRankJob(baseTime + 1)).resolves.toBeNull();
     await expect(
-      repository.nextPendingChannelContext(baseTime + 1),
+      repository.ingestDeliveredRolls(baseTime + 180_000),
+    ).resolves.toMatchObject({ ingested: 4 });
+    await expect(repository.claimRankJob(baseTime + 180_001)).resolves.toBeNull();
+    await expect(
+      repository.nextPendingChannelContext(baseTime + 180_001),
     ).resolves.toEqual({
       sessionId: "100000000000000034",
       guildId: "100000000000000003",
@@ -378,9 +536,9 @@ describe("D1GameDetectionRepository", () => {
     await repository.completeChannelContext(
       "100000000000000034",
       { channelName: "resolved-rolls", channelType: 0 },
-      baseTime + 2,
+      baseTime + 180_002,
     );
-    const job = await repository.claimRankJob(baseTime + 3);
+    const job = await repository.claimRankJob(baseTime + 180_003);
     expect(job).toMatchObject({
       context: {
         guildName: "Stored Fixture Guild",
@@ -393,10 +551,12 @@ describe("D1GameDetectionRepository", () => {
     await repository.completeRankJob(
       job,
       { status: "accepted", value: dndResponse },
-      baseTime + 4,
+      baseTime + 180_004,
       1,
     );
-    await expect(repository.claimAnnouncement(baseTime + 5)).resolves.toMatchObject({
+    await expect(
+      repository.claimAnnouncement(baseTime + 180_005),
+    ).resolves.toMatchObject({
       guildName: "Stored Fixture Guild",
       channelName: "resolved-rolls",
     });
@@ -412,34 +572,38 @@ describe("D1GameDetectionRepository", () => {
   });
 
   it("records and announces a changed game as a new detection", async () => {
-    await record(snapshot({
+    await record(...activeMultiplayerSnapshots({
       interactionId: "100000000000000081",
       receivedAt: baseTime,
       notation: ["d8!"],
-      repetitions: 2,
+      repetitions: 1,
       title: "Trait roll",
     }));
     const repository = new D1GameDetectionRepository(dataEnv.DATA);
-    await repository.ingestDeliveredRolls(baseTime);
-    const savageJob = await repository.claimRankJob(baseTime + 1);
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
+    const savageJob = await repository.claimRankJob(baseTime + 180_001);
     if (savageJob === null) throw new Error("Expected a Savage Worlds rank job");
     await repository.completeRankJob(
       savageJob,
       { status: "accepted", value: savageWorldsResponse },
-      baseTime + 2,
+      baseTime + 180_002,
       1,
     );
 
-    await record(snapshot({
-      interactionId: "100000000000000082",
+    await record(...activeMultiplayerSnapshots({
+      interactionId: "100000000000000091",
       receivedAt: baseTime + hour,
       notation: ["4d6kh3"],
-      repetitions: 6,
+      repetitions: 2,
       title: "New campaign abilities",
     }));
-    await repository.ingestDeliveredRolls(baseTime + hour);
-    const dndJob = await repository.claimRankJob(baseTime + hour + 1);
+    await repository.ingestDeliveredRolls(baseTime + hour + 180_000);
+    const dndJob = await repository.claimRankJob(baseTime + hour + 180_001);
     if (dndJob === null) throw new Error("Expected a D&D rank job");
+    expect(dndJob.context.rolls).toHaveLength(4);
+    expect(dndJob.context.rolls).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ title: "Trait roll" })]),
+    );
     await repository.completeRankJob(
       dndJob,
       {
@@ -452,7 +616,7 @@ describe("D1GameDetectionRepository", () => {
           },
         },
       },
-      baseTime + hour + 2,
+      baseTime + hour + 180_002,
       1,
     );
 
@@ -467,46 +631,55 @@ describe("D1GameDetectionRepository", () => {
         game_id: "dungeons-and-dragons-5e-2014",
       },
     ]);
+    const classified = await dataEnv.DATA.prepare(
+      `SELECT game_id, COUNT(*) AS count
+       FROM game_detection_rolls
+       GROUP BY game_id ORDER BY game_id`,
+    ).all<{ game_id: string; count: number }>();
+    expect(classified.results).toEqual([
+      { game_id: "dungeons-and-dragons-5e-2014", count: 4 },
+      { game_id: "savage-worlds", count: 4 },
+    ]);
   });
 
   it("retries transient private-channel delivery with the same detection", async () => {
-    await record(snapshot({
+    await record(...activeMultiplayerSnapshots({
       interactionId: "100000000000000071",
       receivedAt: baseTime,
       notation: ["4d6kh3"],
-      repetitions: 6,
+      repetitions: 2,
       title: "Abilities",
     }));
     const repository = new D1GameDetectionRepository(dataEnv.DATA);
-    await repository.ingestDeliveredRolls(baseTime);
-    const job = await repository.claimRankJob(baseTime + 1);
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
+    const job = await repository.claimRankJob(baseTime + 180_001);
     if (job === null) throw new Error("Expected a rank job");
     await repository.completeRankJob(
       job,
       { status: "accepted", value: dndResponse },
-      baseTime + 2,
+      baseTime + 180_002,
       1,
     );
 
-    const first = await repository.claimAnnouncement(baseTime + 3);
+    const first = await repository.claimAnnouncement(baseTime + 180_003);
     if (first === null) throw new Error("Expected an announcement");
     await expect(
       repository.releaseAnnouncement(
         first.detectionId,
         "retryable-429",
-        baseTime + 60_000,
+        baseTime + 240_000,
       ),
     ).resolves.toBe("retrying");
     await expect(
-      repository.claimAnnouncement(baseTime + 59_999),
+      repository.claimAnnouncement(baseTime + 239_999),
     ).resolves.toBeNull();
-    const second = await repository.claimAnnouncement(baseTime + 60_000);
+    const second = await repository.claimAnnouncement(baseTime + 240_000);
     expect(second?.detectionId).toBe(first.detectionId);
     if (second === null) throw new Error("Expected the announcement retry");
     await repository.markAnnouncementSent(
       second.detectionId,
       "100000000000000099",
-      baseTime + 60_001,
+      baseTime + 240_001,
     );
 
     const stored = await dataEnv.DATA.prepare(
@@ -521,37 +694,38 @@ describe("D1GameDetectionRepository", () => {
   });
 
   it("does not rerank or create another detection for repeated mechanics in the same game", async () => {
-    await record(snapshot({
+    await record(...activeMultiplayerSnapshots({
       interactionId: "100000000000000041",
       receivedAt: baseTime,
       notation: ["4d6kh3"],
-      repetitions: 6,
+      repetitions: 2,
       title: "Abilities",
     }));
     const repository = new D1GameDetectionRepository(dataEnv.DATA);
-    await repository.ingestDeliveredRolls(baseTime);
-    const job = await repository.claimRankJob(baseTime + 1);
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
+    const job = await repository.claimRankJob(baseTime + 180_001);
     if (job === null) throw new Error("Expected a rank job");
     await repository.completeRankJob(
       job,
       { status: "accepted", value: dndResponse },
-      baseTime + 2,
+      baseTime + 180_002,
       1,
     );
 
     await record(snapshot({
-      interactionId: "100000000000000042",
-      receivedAt: baseTime + hour,
+      interactionId: "100000000000000045",
+      receivedAt: baseTime + 240_000,
       notation: ["4d6kh3"],
       repetitions: 1,
       title: "Another ability",
+      userId: "100000000000000099",
     }));
-    await repository.ingestDeliveredRolls(baseTime + hour);
+    await repository.ingestDeliveredRolls(baseTime + 240_000);
 
-    await expect(repository.claimRankJob(baseTime + hour + 1)).resolves.toBeNull();
+    await expect(repository.claimRankJob(baseTime + 240_001)).resolves.toBeNull();
     const second = await dataEnv.DATA.prepare(
       `SELECT classification, game_id FROM game_detection_rolls
-       WHERE interaction_id = '100000000000000042'`,
+       WHERE interaction_id = '100000000000000045'`,
     ).first();
     expect(second).toEqual({
       classification: "in-game",
@@ -563,27 +737,68 @@ describe("D1GameDetectionRepository", () => {
     expect(count?.count).toBe(1);
   });
 
+  it("uses the episode identity when identical mechanics resume after inactivity", async () => {
+    await record(
+      ...activeMultiplayerSnapshots({
+        interactionId: "100000000000000141",
+        receivedAt: baseTime,
+        notation: ["4d6kh3"],
+        repetitions: 2,
+        title: "Abilities",
+      }),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
+    const first = await repository.claimRankJob(baseTime + 180_001);
+    if (first === null) throw new Error("Expected the first episode rank job");
+    await repository.completeRankJob(
+      first,
+      { status: "accepted", value: dndResponse },
+      baseTime + 180_002,
+      1,
+    );
+
+    await record(
+      ...activeMultiplayerSnapshots({
+        interactionId: "100000000000000151",
+        receivedAt: baseTime + hour,
+        notation: ["4d6kh3"],
+        repetitions: 2,
+        title: "Abilities",
+      }),
+    );
+    await repository.ingestDeliveredRolls(baseTime + hour + 180_000);
+    const second = await repository.claimRankJob(baseTime + hour + 180_001);
+
+    expect(second?.episodeStartedAt).toBe(baseTime + hour);
+    expect(second?.candidateSignature).not.toBe(first.candidateSignature);
+  });
+
   it("fails an interrupted model attempt once and releases pending rolls as unknown", async () => {
-    await record(snapshot({
+    await record(...activeMultiplayerSnapshots({
       interactionId: "100000000000000061",
       receivedAt: baseTime,
       notation: ["4d6kh3"],
-      repetitions: 6,
+      repetitions: 2,
       title: "Abilities",
     }));
     const repository = new D1GameDetectionRepository(dataEnv.DATA);
-    await repository.ingestDeliveredRolls(baseTime);
-    await expect(repository.claimRankJob(baseTime + 1)).resolves.not.toBeNull();
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
+    await expect(
+      repository.claimRankJob(baseTime + 180_001),
+    ).resolves.not.toBeNull();
 
     await expect(
-      repository.failInterruptedRankJobs(baseTime + 10 * 60 * 1_000 + 1),
+      repository.failInterruptedRankJobs(
+        baseTime + 180_001 + 10 * 60 * 1_000,
+      ),
     ).resolves.toBe(1);
     const roll = await dataEnv.DATA.prepare(
       "SELECT classification FROM game_detection_rolls",
     ).first();
     expect(roll).toEqual({ classification: "unknown" });
     await expect(
-      repository.claimRankJob(baseTime + 10 * 60 * 1_000 + 2),
+      repository.claimRankJob(baseTime + 180_002 + 10 * 60 * 1_000),
     ).resolves.toBeNull();
   });
 

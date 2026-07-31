@@ -96,6 +96,30 @@ describe("retrieveNarrationGameCandidatesV1", () => {
     });
   });
 
+  it("requires repeated three-d20 checks before treating The Dark Eye as strong", () => {
+    const oneCheck = retrieveNarrationGameCandidatesV2({
+      version: 2,
+      features: [{ kind: "three-d20", occurrences: 1 }],
+      context: [],
+    });
+    expect(oneCheck.candidates[0]).toMatchObject({
+      systemId: "the-dark-eye-5e",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+
+    const repeatedChecks = retrieveNarrationGameCandidatesV2({
+      version: 2,
+      features: [{ kind: "three-d20", occurrences: 2 }],
+      context: [],
+    });
+    expect(repeatedChecks.candidates[0]).toMatchObject({
+      systemId: "the-dark-eye-5e",
+      evidenceTier: "strong",
+      confidenceCeiling: "strong",
+    });
+  });
+
   it("returns safe claims rather than raw frequencies, notation, or results", () => {
     const result = retrieveNarrationGameCandidatesV1({
       version: 1,

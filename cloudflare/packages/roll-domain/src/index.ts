@@ -22,6 +22,23 @@ export {
   type GameDetectionSessionContextV1,
 } from "./game-detection";
 export {
+  assessGameDetectionActivePlayV1,
+  classifyGameDetectionActivityFamilyV1,
+  GAME_DETECTION_ACTIVE_PLAY_POLICY_REVISION_V1,
+  GAME_DETECTION_EPISODE_INACTIVITY_MS_V1,
+  GAME_DETECTION_MULTIPLAYER_WINDOW_MS_V1,
+  GAME_DETECTION_POSSIBLE_WINDOW_MS_V1,
+  GAME_DETECTION_SOLO_WINDOW_MS_V1,
+  GAME_DETECTION_SUSTAIN_WINDOW_MS_V1,
+  type GameDetectionActivePlayEventV1,
+  type GameDetectionActivePlayPathV1,
+  type GameDetectionActivePlayPriorV1,
+  type GameDetectionActivePlayRequestV1,
+  type GameDetectionActivePlayResultV1,
+  type GameDetectionActivePlayStateV1,
+  type GameDetectionActivityFamilyV1,
+} from "./game-detection-active-play";
+export {
   executeRoll,
   prepareRollAppearance,
   renderableRollOutcomes,
