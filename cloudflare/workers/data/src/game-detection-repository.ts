@@ -31,6 +31,12 @@ export type ClaimedGameDetectionRankJob = Readonly<{
   context: GameDetectionSessionContextV1;
 }>;
 
+export type PendingGameDetectionChannelContext = Readonly<{
+  sessionId: string;
+  guildId: string;
+  channelId: string;
+}>;
+
 export type ClaimedGameDetectionAnnouncement = Readonly<{
   detectionId: string;
   sessionId: string;
@@ -71,6 +77,9 @@ type SessionRow = Readonly<{
   current_game_detected_at: number | null;
   last_candidate_signature: string | null;
   last_candidate_disposition: "selected" | "unknown" | null;
+  guild_name: string | null;
+  channel_name: string | null;
+  channel_type: number | null;
 }>;
 
 type StoredRollContext = Readonly<{
@@ -112,7 +121,8 @@ type AnnouncementRow = Readonly<{
   roll_count: number;
   started_at: number;
   last_roll_at: number;
-  context_json: string;
+  guild_name: string | null;
+  channel_name: string | null;
 }>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -144,7 +154,12 @@ function nullableString(
 
 function parseChannelType(value: unknown): number | null {
   if (value === null) return null;
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > 20
+  ) {
     throw new Error("Stored game-detection channel type is invalid");
   }
   return value;
@@ -290,6 +305,15 @@ export class D1GameDetectionRepository {
     return row?.pending === 1;
   }
 
+  private async storedGuildName(guildId: string | null): Promise<string | null> {
+    if (guildId === null) return null;
+    const row = await this.db.prepare(
+      `SELECT name FROM guilds
+       WHERE id = ? AND length(name) BETWEEN 1 AND 100`,
+    ).bind(guildId).first<{ name: string }>();
+    return row?.name ?? null;
+  }
+
   private async ingestRow(row: LifecycleRow, now: number): Promise<boolean> {
     if (
       (row.command_name !== "roll" && row.command_name !== "library") ||
@@ -304,6 +328,12 @@ export class D1GameDetectionRepository {
     ) {
       throw new Error("Stored game-detection lifecycle scope is inconsistent");
     }
+    const guildName =
+      context.guildName ?? await this.storedGuildName(context.guildId);
+    const channelContextComplete =
+      row.scope === "dm" ||
+      (context.channelName !== null && context.channelType !== null);
+    const channelContextCheckedAt = channelContextComplete ? now : null;
 
     let session = await this.sessionAt(
       context.channelId,
@@ -328,8 +358,10 @@ export class D1GameDetectionRepository {
       await this.db.prepare(
         `INSERT OR IGNORE INTO game_detection_sessions (
            session_id, scope, guild_id, channel_id, started_at, last_roll_at,
-           roll_count, state, closed_at, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+           roll_count, state, closed_at, created_at, updated_at,
+           guild_name, channel_name, channel_type,
+           channel_context_checked_at, channel_context_retry_at
+         ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       )
         .bind(
           row.interaction_id,
@@ -342,6 +374,10 @@ export class D1GameDetectionRepository {
           historical ? row.received_at + SESSION_INACTIVITY_MS : null,
           now,
           now,
+          guildName,
+          context.channelName,
+          context.channelType,
+          channelContextCheckedAt,
         )
         .run();
       session =
@@ -380,7 +416,18 @@ export class D1GameDetectionRepository {
                  THEN MAX(last_roll_at, ?) + ?
                ELSE NULL
              END,
-             updated_at = ?
+             updated_at = ?,
+             guild_name = COALESCE(?, guild_name),
+             channel_name = COALESCE(?, channel_name),
+             channel_type = COALESCE(?, channel_type),
+             channel_context_checked_at = CASE
+               WHEN ? IS NOT NULL THEN ?
+               ELSE channel_context_checked_at
+             END,
+             channel_context_retry_at = CASE
+               WHEN ? IS NOT NULL THEN NULL
+               ELSE channel_context_retry_at
+             END
          WHERE session_id = ?`,
       )
         .bind(
@@ -389,6 +436,12 @@ export class D1GameDetectionRepository {
           row.received_at,
           SESSION_INACTIVITY_MS,
           now,
+          guildName,
+          context.channelName,
+          context.channelType,
+          channelContextCheckedAt,
+          channelContextCheckedAt,
+          channelContextCheckedAt,
           session.session_id,
         )
         .run();
@@ -417,7 +470,8 @@ export class D1GameDetectionRepository {
       `SELECT session_id, scope, guild_id, channel_id, started_at,
               last_roll_at, roll_count, state, current_game_id,
               current_confidence, current_game_detected_at,
-              last_candidate_signature, last_candidate_disposition
+              last_candidate_signature, last_candidate_disposition,
+              guild_name, channel_name, channel_type
        FROM game_detection_sessions
        WHERE channel_id = ?
          AND ? > started_at - ?
@@ -438,7 +492,8 @@ export class D1GameDetectionRepository {
       `SELECT session_id, scope, guild_id, channel_id, started_at,
               last_roll_at, roll_count, state, current_game_id,
               current_confidence, current_game_detected_at,
-              last_candidate_signature, last_candidate_disposition
+              last_candidate_signature, last_candidate_disposition,
+              guild_name, channel_name, channel_type
        FROM game_detection_sessions
        WHERE channel_id = ? AND state = 'open'`,
     ).bind(channelId).first<SessionRow>();
@@ -449,7 +504,8 @@ export class D1GameDetectionRepository {
       `SELECT session_id, scope, guild_id, channel_id, started_at,
               last_roll_at, roll_count, state, current_game_id,
               current_confidence, current_game_detected_at,
-              last_candidate_signature, last_candidate_disposition
+              last_candidate_signature, last_candidate_disposition,
+              guild_name, channel_name, channel_type
        FROM game_detection_sessions WHERE session_id = ?`,
     ).bind(sessionId).first<SessionRow>();
   }
@@ -575,17 +631,17 @@ export class D1GameDetectionRepository {
       row,
       context: parseStoredRollContext(row.context_json),
     }));
-    const latest = parsed.at(-1);
-    if (latest === undefined) {
+    const session = await this.sessionById(sessionId);
+    if (session === null) {
       throw new Error("Game-detection session context is unavailable");
     }
 
     return {
       version: 1,
       scope: first.scope,
-      guildName: latest.context.guildName,
-      channelName: latest.context.channelName,
-      channelType: latest.context.channelType,
+      guildName: session.guild_name,
+      channelName: session.channel_name,
+      channelType: session.channel_type,
       rolls: parsed.map(({ row, context }) => ({
         commandName: row.command_name,
         username: context.username,
@@ -598,12 +654,116 @@ export class D1GameDetectionRepository {
     };
   }
 
+  async nextPendingChannelContext(
+    now: number,
+  ): Promise<PendingGameDetectionChannelContext | null> {
+    if (!Number.isSafeInteger(now) || now < 0) {
+      throw new Error("Game-detection channel context request is invalid");
+    }
+    const row = await this.db.prepare(
+      `SELECT session_id, guild_id, channel_id
+       FROM game_detection_sessions
+       WHERE scope = 'guild'
+         AND channel_context_checked_at IS NULL
+         AND (channel_context_retry_at IS NULL OR channel_context_retry_at <= ?)
+         AND EXISTS (
+           SELECT 1 FROM game_detection_rolls AS observed
+           WHERE observed.session_id = game_detection_sessions.session_id
+         )
+       ORDER BY started_at, session_id
+       LIMIT 1`,
+    ).bind(now).first<{
+      session_id: string;
+      guild_id: string;
+      channel_id: string;
+    }>();
+    return row === null
+      ? null
+      : {
+          sessionId: row.session_id,
+          guildId: row.guild_id,
+          channelId: row.channel_id,
+        };
+  }
+
+  async deferChannelContext(
+    sessionId: string,
+    retryAt: number,
+  ): Promise<void> {
+    if (
+      sessionId.length < 1 ||
+      sessionId.length > 64 ||
+      !Number.isSafeInteger(retryAt) ||
+      retryAt < 0
+    ) {
+      throw new Error("Game-detection channel context retry is invalid");
+    }
+    await this.db.prepare(
+      `UPDATE game_detection_sessions
+       SET channel_context_retry_at = ?
+       WHERE session_id = ? AND channel_context_checked_at IS NULL`,
+    ).bind(retryAt, sessionId).run();
+  }
+
+  async completeChannelContext(
+    sessionId: string,
+    context: Readonly<{ channelName: string; channelType: number }> | null,
+    completedAt: number,
+  ): Promise<void> {
+    if (
+      sessionId.length < 1 ||
+      sessionId.length > 64 ||
+      !Number.isSafeInteger(completedAt) ||
+      completedAt < 0
+    ) {
+      throw new Error("Game-detection channel context completion is invalid");
+    }
+    const channelName = context === null
+      ? null
+      : requiredString(context.channelName, "channel name", 100);
+    const channelType = context === null
+      ? null
+      : parseChannelType(context.channelType);
+    const updated = await this.db.prepare(
+      `UPDATE game_detection_sessions
+       SET channel_name = ?, channel_type = ?,
+           channel_context_checked_at = ?, channel_context_retry_at = NULL,
+           updated_at = MAX(updated_at, ?)
+       WHERE session_id = ? AND scope = 'guild'
+         AND channel_context_checked_at IS NULL`,
+    ).bind(
+      channelName,
+      channelType,
+      completedAt,
+      completedAt,
+      sessionId,
+    ).run();
+    if (changes(updated) === 0) return;
+
+    const session = await this.sessionById(sessionId);
+    const latest = await this.db.prepare(
+      `SELECT interaction_id
+       FROM game_detection_rolls
+       WHERE session_id = ?
+       ORDER BY observed_at DESC, interaction_id DESC
+       LIMIT 1`,
+    ).bind(sessionId).first<{ interaction_id: string }>();
+    if (session === null || latest === null) {
+      throw new Error("Game-detection channel context session is unavailable");
+    }
+    await this.prepareRankJob(session, latest.interaction_id, completedAt);
+  }
+
   async claimRankJob(now: number): Promise<ClaimedGameDetectionRankJob | null> {
     const row = await this.db.prepare(
-      `SELECT session_id, candidate_signature, feature_request_json
-       FROM game_detection_rank_jobs
-       WHERE state = 'pending'
-       ORDER BY created_at, session_id
+      `SELECT job.session_id, job.candidate_signature,
+              job.feature_request_json
+       FROM game_detection_rank_jobs AS job
+       JOIN game_detection_sessions AS session
+         ON session.session_id = job.session_id
+       WHERE job.state = 'pending'
+         AND session.channel_context_checked_at IS NOT NULL
+       ORDER BY job.created_at, job.session_id
        LIMIT 1`,
     ).first<RankJobRow>();
     if (row === null) return null;
@@ -844,7 +1004,8 @@ export class D1GameDetectionRepository {
       `SELECT session_id, scope, guild_id, channel_id, started_at,
               last_roll_at, roll_count, state, current_game_id,
               current_confidence, current_game_detected_at,
-              last_candidate_signature, last_candidate_disposition
+              last_candidate_signature, last_candidate_disposition,
+              guild_name, channel_name, channel_type
        FROM game_detection_sessions
        WHERE state = 'open' AND last_roll_at <= ?
        ORDER BY last_roll_at
@@ -885,7 +1046,8 @@ export class D1GameDetectionRepository {
               detection.confidence, detection.detected_at,
               session.scope, session.guild_id, session.channel_id,
               session.roll_count, session.started_at,
-              session.last_roll_at, receipt.context_json
+              session.last_roll_at, session.guild_name,
+              session.channel_name
        FROM game_detections AS detection
        JOIN game_detection_sessions AS session
          ON session.session_id = detection.session_id
@@ -909,7 +1071,6 @@ export class D1GameDetectionRepository {
     ).bind(now, row.detection_id, now).run();
     if (changes(claimed) !== 1) return null;
 
-    const context = parseStoredRollContext(row.context_json);
     return {
       detectionId: row.detection_id,
       sessionId: row.session_id,
@@ -921,8 +1082,8 @@ export class D1GameDetectionRepository {
       scope: row.scope,
       guildId: row.guild_id,
       channelId: row.channel_id,
-      guildName: context.guildName,
-      channelName: context.channelName,
+      guildName: row.guild_name,
+      channelName: row.channel_name,
       rollCount: row.roll_count,
       sessionStartedAt: row.started_at,
       sessionLastRollAt: row.last_roll_at,

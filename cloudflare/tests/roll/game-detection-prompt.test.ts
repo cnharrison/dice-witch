@@ -203,6 +203,20 @@ describe("game-detection prompt contract", () => {
     );
   });
 
+  it("keeps mechanics-only guild sessions valid when display names are unavailable", () => {
+    expect(
+      prepareGameDetectionV2({
+        ranking,
+        context: {
+          ...context,
+          guildName: null,
+          channelName: null,
+          channelType: null,
+        },
+      }),
+    ).toMatchObject({ state: "prompt-ready" });
+  });
+
   it("rejects extra fields that could leak opaque identifiers", () => {
     expect(() =>
       prepareGameDetectionV1({

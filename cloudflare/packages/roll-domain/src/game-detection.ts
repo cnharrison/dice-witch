@@ -224,10 +224,7 @@ function validateContext(value: unknown): GameDetectionSessionContextV1 {
   }
 
   const guildName = validateText(value.guildName, "guild name", 100, true);
-  if (
-    (value.scope === "guild" && guildName === null) ||
-    (value.scope === "dm" && guildName !== null)
-  ) {
+  if (value.scope === "dm" && guildName !== null) {
     throw new Error("Game-detection guild context is inconsistent");
   }
 

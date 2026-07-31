@@ -286,6 +286,7 @@ describe("D1 business schema migration", () => {
       { name: "0008_saved_roll_name_color.sql" },
       { name: "0009_roll_lifecycle_receipts.sql" },
       { name: "0010_game_detection_telemetry.sql" },
+      { name: "0011_game_detection_display_context.sql" },
     ]);
   });
 

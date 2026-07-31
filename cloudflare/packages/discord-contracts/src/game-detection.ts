@@ -1,3 +1,8 @@
+import {
+  isDiscordRollChannelType,
+  type DiscordRollChannelType,
+} from "./roll-interaction";
+
 export type GameDetectionAnnouncementV1 = Readonly<{
   version: 1;
   detectionId: string;
@@ -16,6 +21,26 @@ export type GameDetectionAnnouncementV1 = Readonly<{
   sessionStartedAt: number;
   sessionLastRollAt: number;
 }>;
+
+export type GameDetectionChannelContextRequestV1 = Readonly<{
+  version: 1;
+  guildId: string;
+  channelId: string;
+}>;
+
+export type GameDetectionChannelContextResultV1 =
+  | Readonly<{
+      status: "resolved";
+      channelName: string;
+      channelType: DiscordRollChannelType;
+    }>
+  | Readonly<{ status: "unavailable"; httpStatus: 403 | 404 }>
+  | Readonly<{
+      status: "retryable";
+      httpStatus: number | null;
+      retryAfterMs: number | null;
+    }>
+  | Readonly<{ status: "failed"; httpStatus: number }>;
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/u;
 const DETECTION_ID = /^[1-9][0-9]{16,19}:[a-f0-9]{16}$/u;
@@ -43,6 +68,49 @@ function nullableName(value: unknown): value is string | null {
     value === null ||
     (typeof value === "string" && value.length >= 1 && value.length <= 100)
   );
+}
+
+export function parseGameDetectionChannelContextRequestV1(
+  value: unknown,
+): GameDetectionChannelContextRequestV1 {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["channelId", "guildId", "version"]) ||
+    value.version !== 1 ||
+    typeof value.guildId !== "string" ||
+    !SNOWFLAKE.test(value.guildId) ||
+    typeof value.channelId !== "string" ||
+    !SNOWFLAKE.test(value.channelId)
+  ) {
+    throw new Error("Game-detection channel context request is invalid");
+  }
+  return {
+    version: 1,
+    guildId: value.guildId,
+    channelId: value.channelId,
+  };
+}
+
+export function parseGameDetectionChannelContextResponseV1(
+  value: unknown,
+  request: GameDetectionChannelContextRequestV1,
+): Extract<GameDetectionChannelContextResultV1, { status: "resolved" }> {
+  if (
+    !isRecord(value) ||
+    value.id !== request.channelId ||
+    value.guild_id !== request.guildId ||
+    typeof value.name !== "string" ||
+    value.name.length < 1 ||
+    value.name.length > 100 ||
+    !isDiscordRollChannelType(value.type)
+  ) {
+    throw new Error("Discord game-detection channel response is invalid");
+  }
+  return {
+    status: "resolved",
+    channelName: value.name,
+    channelType: value.type,
+  };
 }
 
 export function parseGameDetectionAnnouncementV1(
@@ -83,7 +151,7 @@ export function parseGameDetectionAnnouncementV1(
     (value.scope === "dm" && value.guildId !== null) ||
     !nullableName(value.guildName) ||
     !nullableName(value.channelName) ||
-    (value.scope === "guild" && value.guildName === null) ||
+    (value.scope === "dm" && value.guildName !== null) ||
     typeof value.gameId !== "string" ||
     value.gameId.length > 100 ||
     !GAME_ID.test(value.gameId) ||

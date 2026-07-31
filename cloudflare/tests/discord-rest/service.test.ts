@@ -23,6 +23,7 @@ import {
   registerDevelopmentGuildCommands,
   registerGlobalCommands,
   reportBotListStats,
+  resolveGameDetectionChannelContextV1,
   sendRollHelper,
   updateRollLifecycleAlertV1,
 } from "../../workers/discord-rest/src";
@@ -189,6 +190,85 @@ describe("Discord REST service", () => {
       httpStatus: 200,
     });
     expect(discordFetch).toHaveBeenCalledOnce();
+  });
+
+  it("renders a detection with genuinely unavailable display names", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      const payload: {
+        embeds: Array<{ fields: Array<{ name: string; value: string }> }>;
+      } = await request.json();
+      expect(JSON.stringify(payload)).toContain("Unknown guild");
+      expect(JSON.stringify(payload)).toContain("Unknown channel");
+      return Response.json({ id: "100000000000000086" });
+    });
+
+    await expect(
+      createGameDetectionAnnouncementV1(
+        env,
+        {
+          ...gameDetectionAnnouncement(),
+          guildName: null,
+          channelName: null,
+        },
+        discordFetch,
+      ),
+    ).resolves.toMatchObject({ status: "delivered" });
+  });
+
+  it("resolves a game-detection channel through the authenticated Discord boundary", async () => {
+    const discordFetch = vi.fn((request: Request) => {
+      expect(request.method).toBe("GET");
+      expect(request.url).toBe(
+        "https://discord.com/api/v10/channels/100000000000000010",
+      );
+      return Promise.resolve(Response.json({
+        id: "100000000000000010",
+        guild_id: guildId,
+        name: "resolved-rolls",
+        type: 0,
+      }));
+    });
+
+    await expect(
+      resolveGameDetectionChannelContextV1(
+        env,
+        {
+          version: 1,
+          guildId,
+          channelId: "100000000000000010",
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({
+      status: "resolved",
+      channelName: "resolved-rolls",
+      channelType: 0,
+    });
+  });
+
+  it("returns bounded retry guidance for a rate-limited channel lookup", async () => {
+    const discordFetch = vi.fn(() => Promise.resolve(
+      Response.json(
+        { message: "rate limited" },
+        { status: 429, headers: { "retry-after": "0.5" } },
+      ),
+    ));
+
+    await expect(
+      resolveGameDetectionChannelContextV1(
+        env,
+        {
+          version: 1,
+          guildId,
+          channelId: "100000000000000010",
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({
+      status: "retryable",
+      httpStatus: 429,
+      retryAfterMs: 500,
+    });
   });
 
   it("creates one silent token-free lifecycle alert with diagnostic JSON", async () => {

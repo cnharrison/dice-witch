@@ -1,3 +1,6 @@
+import type {
+  GameDetectionChannelContextResultV1,
+} from "../../../packages/discord-contracts/src";
 import {
   buildGameDetectionCandidateRequestV2,
   prepareGameDetectionV2,
@@ -7,8 +10,8 @@ import { D1GameDetectionRepository } from "./game-detection-repository";
 
 export const GAME_DETECTION_MODEL_ID = "@cf/zai-org/glm-5.2";
 const MODEL_TIMEOUT_MS = 30_000;
-const DEFAULT_ANNOUNCEMENT_RETRY_MS = 60_000;
-const MAX_ANNOUNCEMENT_RETRY_MS = 15 * 60_000;
+const DEFAULT_RETRY_MS = 60_000;
+const MAX_RETRY_MS = 15 * 60_000;
 
 type DiscordAnnouncementResult =
   | { status: "delivered"; messageId: string; httpStatus: number }
@@ -26,6 +29,9 @@ export type GameDetectionServiceEnv = Readonly<{
     createGameDetectionAnnouncementV1(
       input: unknown,
     ): Promise<DiscordAnnouncementResult>;
+    resolveGameDetectionChannelContextV1(
+      input: unknown,
+    ): Promise<GameDetectionChannelContextResultV1>;
   }>;
 }>;
 
@@ -35,6 +41,7 @@ export type GameDetectionMinuteResult = Readonly<{
   closedSessions: number;
   interruptedJobs: number;
   interruptedAnnouncements: number;
+  channelContext: "none" | "resolved" | "retrying" | "unavailable" | "failed";
   rankJob: "none" | "selected" | "abstained" | "rejected" | "failed";
   announcement: "none" | "sent" | "retrying" | "failed";
 }>;
@@ -82,6 +89,13 @@ function failureDetail(error: unknown): string {
   return "model-request-failed";
 }
 
+function boundedRetryDelay(retryAfterMs: number | null): number {
+  return Math.min(
+    Math.max(retryAfterMs ?? DEFAULT_RETRY_MS, 1_000),
+    MAX_RETRY_MS,
+  );
+}
+
 export async function processGameDetectionMinute(
   env: GameDetectionServiceEnv,
   now = Date.now(),
@@ -91,6 +105,52 @@ export async function processGameDetectionMinute(
   const interruptedAnnouncements =
     await repository.recoverInterruptedAnnouncements(now);
   const ingestion = await repository.ingestDeliveredRolls(now);
+  const pendingContext = await repository.nextPendingChannelContext(now);
+  let channelContext: GameDetectionMinuteResult["channelContext"] = "none";
+  if (pendingContext !== null) {
+    let result: GameDetectionChannelContextResultV1;
+    try {
+      result = await env.DISCORD_REST.resolveGameDetectionChannelContextV1({
+        version: 1,
+        guildId: pendingContext.guildId,
+        channelId: pendingContext.channelId,
+      });
+    } catch {
+      result = { status: "retryable", httpStatus: null, retryAfterMs: null };
+    }
+    if (result.status === "resolved") {
+      await repository.completeChannelContext(
+        pendingContext.sessionId,
+        {
+          channelName: result.channelName,
+          channelType: result.channelType,
+        },
+        now,
+      );
+      channelContext = "resolved";
+    } else if (result.status === "retryable") {
+      const retryDelay = boundedRetryDelay(result.retryAfterMs);
+      await repository.deferChannelContext(
+        pendingContext.sessionId,
+        now + retryDelay,
+      );
+      channelContext = "retrying";
+    } else if (result.status === "unavailable") {
+      await repository.completeChannelContext(
+        pendingContext.sessionId,
+        null,
+        now,
+      );
+      channelContext = "unavailable";
+    } else {
+      await repository.deferChannelContext(
+        pendingContext.sessionId,
+        now + DEFAULT_RETRY_MS,
+      );
+      channelContext = "failed";
+    }
+  }
+
   const job = ingestion.backlog ? null : await repository.claimRankJob(now);
   let rankJob: GameDetectionMinuteResult["rankJob"] = "none";
 
@@ -203,13 +263,7 @@ export async function processGameDetectionMinute(
       );
       announcement = "sent";
     } else if (result.status === "retryable") {
-      const retryDelay = Math.min(
-        Math.max(
-          result.retryAfterMs ?? DEFAULT_ANNOUNCEMENT_RETRY_MS,
-          1_000,
-        ),
-        MAX_ANNOUNCEMENT_RETRY_MS,
-      );
+      const retryDelay = boundedRetryDelay(result.retryAfterMs);
       announcement = await repository.releaseAnnouncement(
         claimed.detectionId,
         `retryable-${String(result.httpStatus ?? "network")}`,
@@ -229,6 +283,7 @@ export async function processGameDetectionMinute(
     ...ingestion,
     interruptedJobs,
     interruptedAnnouncements,
+    channelContext,
     rankJob,
     announcement,
   };

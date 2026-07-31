@@ -9,6 +9,8 @@ import {
   rollLogMetadataDescription,
   rollLogResultDescription,
   parseGameDetectionAnnouncementV1,
+  parseGameDetectionChannelContextRequestV1,
+  parseGameDetectionChannelContextResponseV1,
   parseRollLifecycleAlert,
   rollLogTelemetryContext,
   validateRollLogArtifact,
@@ -17,6 +19,7 @@ import {
   type DiscordAudienceCaptureV1,
   type DiscordRollChannelType,
   type GameDetectionAnnouncementV1,
+  type GameDetectionChannelContextResultV1,
   type RollLifecycleAlertV1,
   type RollLoggingContext,
   type RollLogArtifactV1,
@@ -1966,6 +1969,49 @@ export async function deliverWebRoll(
   return { status: "delivered" };
 }
 
+export async function resolveGameDetectionChannelContextV1(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
+  value: unknown,
+  discordFetch: RequestFetch = (request) => fetch(request),
+): Promise<GameDetectionChannelContextResultV1> {
+  const input = parseGameDetectionChannelContextRequestV1(value);
+  let response: Response;
+  try {
+    response = await discordFetch(
+      new Request(`${DISCORD_API}/channels/${input.channelId}`, {
+        headers: {
+          authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+          "user-agent": "Dice-Witch",
+        },
+      }),
+    );
+  } catch {
+    return { status: "retryable", httpStatus: null, retryAfterMs: null };
+  }
+
+  if (response.ok) {
+    return parseGameDetectionChannelContextResponseV1(
+      await response.json(),
+      input,
+    );
+  }
+  if (response.status === 403 || response.status === 404) {
+    return { status: "unavailable", httpStatus: response.status };
+  }
+  if (isRetryableDiscordStatus(response.status)) {
+    const retryAfterSeconds = numericResponseHeader(response, "retry-after");
+    return {
+      status: "retryable",
+      httpStatus: response.status,
+      retryAfterMs:
+        retryAfterSeconds === null
+          ? null
+          : Math.ceil(retryAfterSeconds * 1_000),
+    };
+  }
+  return { status: "failed", httpStatus: response.status };
+}
+
 function gameDetectionPayload(detection: GameDetectionAnnouncementV1) {
   const destination = detection.scope === "dm"
     ? `Direct message channel ${detection.channelId}`
@@ -2394,6 +2440,10 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
 
   async createGameDetectionAnnouncementV1(input: unknown) {
     return createGameDetectionAnnouncementV1(await this.botEnv(), input);
+  }
+
+  async resolveGameDetectionChannelContextV1(input: unknown) {
+    return resolveGameDetectionChannelContextV1(await this.botEnv(), input);
   }
 
   async createRollLifecycleAlertV1(input: unknown) {
