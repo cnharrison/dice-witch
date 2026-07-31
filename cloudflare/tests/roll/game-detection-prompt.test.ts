@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildGameDetectionCandidateSignatureInputV1,
   buildGameDetectionCandidateSignatureInputV2,
+  buildGameDetectionCandidateSignatureInputV3,
   prepareGameDetectionV1,
   prepareGameDetectionV2,
+  prepareGameDetectionV3,
   type GameDetectionSessionContextV1,
   type NarrationGameRankingRequestV1,
 } from "../../packages/roll-domain/src";
@@ -173,6 +175,62 @@ describe("game-detection prompt contract", () => {
       "current-session-mechanics-and-private-context",
     );
     expect(packet.policy.outsideKnowledge).toBe("context-interpretation-only");
+  });
+
+  it("makes the context hierarchy explicit while preserving slang as model data", () => {
+    const preparation = prepareGameDetectionV3({
+      ranking: {
+        version: 1,
+        features: [{ kind: "single-d10-plus-modifier", occurrences: 4 }],
+      },
+      context: {
+        ...context,
+        guildName: "Friday game",
+        channelName: "cyberpunk-red",
+        rolls: [
+          {
+            ...context.rolls[0],
+            title: "init",
+            savedRollName: "Handgun skillz",
+          },
+        ],
+      },
+    });
+    const messages = promptMessages(preparation);
+
+    expect(preparation).toMatchObject({
+      state: "prompt-ready",
+      prompt: {
+        systemPromptRevision: "dice-witch-game-detection-v3",
+      },
+    });
+    expect(messages.system.content).toContain(
+      "Guild and channel names are location context",
+    );
+    expect(messages.system.content).toContain(
+      "Roll titles and saved-roll names normally describe actions, skills, or mechanics",
+    );
+    expect(messages.system.content).toContain(
+      "supporting semantic clues only",
+    );
+    expect(messages.user.content).toContain('"title":"init"');
+    expect(messages.user.content).toContain('"savedRollName":"Handgun skillz"');
+  });
+
+  it("changes the candidate signature when meaningful roll-label context changes", () => {
+    const initial = {
+      ...context,
+      guildName: "Friday game",
+      channelName: "dice-rolls",
+      rolls: [{ ...context.rolls[0], title: "init", savedRollName: null }],
+    } as const satisfies GameDetectionSessionContextV1;
+    const changed = {
+      ...initial,
+      rolls: [{ ...context.rolls[0], title: "evasion", savedRollName: null }],
+    } as const satisfies GameDetectionSessionContextV1;
+
+    expect(buildGameDetectionCandidateSignatureInputV3(ranking, initial)).not
+      .toBe(buildGameDetectionCandidateSignatureInputV3(ranking, changed));
   });
 
   it("changes the candidate signature when named game evidence changes", () => {

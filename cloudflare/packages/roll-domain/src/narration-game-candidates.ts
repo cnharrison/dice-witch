@@ -20,6 +20,17 @@ export type NarrationGameCandidateRequestV2 = Readonly<{
   context: readonly string[];
 }>;
 
+export type NarrationGameCandidateContextV3 = Readonly<{
+  locationNames: readonly string[];
+  rollLabels: readonly string[];
+}>;
+
+export type NarrationGameCandidateRequestV3 = Readonly<{
+  version: 3;
+  features: readonly NarrationGameFeatureObservationV1[];
+  context: NarrationGameCandidateContextV3;
+}>;
+
 export type NarrationGameCandidateEvidenceV1 = Readonly<{
   claim: string;
   evidenceTier: NarrationGameConfidenceV1;
@@ -65,6 +76,8 @@ type RankedCandidate = Readonly<{
   candidate: NarrationGameCandidateV1;
   strongestEvidenceCount: number;
   contextMatched: boolean;
+  locationMatched: boolean;
+  rollLabelMatched: boolean;
 }>;
 
 const CONFIDENCE_RANK: Readonly<Record<NarrationGameConfidenceV1, number>> = {
@@ -211,6 +224,8 @@ function buildCandidate(
       ({ evidenceTier: tier }) => tier === evidenceTier,
     ).length,
     contextMatched: false,
+    locationMatched: false,
+    rollLabelMatched: false,
   };
 }
 
@@ -224,10 +239,13 @@ function normalizeContext(value: string): string {
     .trim();
 }
 
-function validateContext(value: unknown): readonly string[] {
+function validateContextTerms(
+  value: unknown,
+  maximumTerms: number,
+): readonly string[] {
   if (
     !Array.isArray(value) ||
-    value.length > 64 ||
+    value.length > maximumTerms ||
     !value.every(
       (term) =>
         typeof term === "string" && term.length >= 1 && term.length <= 512,
@@ -235,7 +253,29 @@ function validateContext(value: unknown): readonly string[] {
   ) {
     throw new Error("Narration game candidate context is invalid");
   }
-  return value.map((term) => normalizeContext(String(term))).filter(Boolean);
+  const normalized = value
+    .map((term) => normalizeContext(String(term)))
+    .filter(Boolean);
+  return [...new Set(normalized)];
+}
+
+function validateContext(value: unknown): readonly string[] {
+  return validateContextTerms(value, 64);
+}
+
+export function normalizeNarrationGameCandidateContextV3(
+  value: unknown,
+): NarrationGameCandidateContextV3 {
+  if (
+    !isRecord(value) ||
+    !hasExactFields(value, ["locationNames", "rollLabels"])
+  ) {
+    throw new Error("Narration game candidate context is invalid");
+  }
+  return {
+    locationNames: validateContextTerms(value.locationNames, 2),
+    rollLabels: validateContextTerms(value.rollLabels, 32),
+  };
 }
 
 function matchesContextAlias(
@@ -251,19 +291,33 @@ function matchesContextAlias(
 function addContextEvidence(
   system: NarrationGameSystemV1,
   ranked: RankedCandidate | undefined,
+  definition: Readonly<{
+    claim: string;
+    evidenceTier: NarrationGameConfidenceV1;
+    locationMatched: boolean;
+    rollLabelMatched: boolean;
+  }> = {
+    claim: "explicit-system-name-in-session-context",
+    evidenceTier: "plausible",
+    locationMatched: false,
+    rollLabelMatched: false,
+  },
 ): RankedCandidate {
   const source = system.sources[0];
   if (source === undefined) {
     throw new Error(`Narration game system ${system.id} has no source`);
   }
   const contextEvidence: NarrationGameCandidateEvidenceV1 = {
-    claim: "explicit-system-name-in-session-context",
-    evidenceTier: "plausible",
+    claim: definition.claim,
+    evidenceTier: definition.evidenceTier,
     sourceIds: [source.id],
   };
-  const evidence = [...(ranked?.candidate.evidence ?? []), contextEvidence];
+  const combinedEvidence = [
+    ...(ranked?.candidate.evidence ?? []),
+    contextEvidence,
+  ];
   const evidenceTier = highestConfidence(
-    evidence.map(({ evidenceTier: tier }) => tier),
+    combinedEvidence.map(({ evidenceTier: tier }) => tier),
   );
   const sources = ranked?.candidate.sources ?? [];
 
@@ -273,10 +327,10 @@ function addContextEvidence(
       displayName: system.displayName,
       evidenceTier,
       confidenceCeiling: highestConfidence([
-        ranked?.candidate.confidenceCeiling ?? "plausible",
-        "plausible",
+        ranked?.candidate.confidenceCeiling ?? definition.evidenceTier,
+        definition.evidenceTier,
       ]),
-      evidence,
+      evidence: combinedEvidence,
       sources: sources.some(({ id }) => id === source.id)
         ? sources
         : [...sources, { id: source.id, title: source.title, url: source.url }],
@@ -284,10 +338,12 @@ function addContextEvidence(
       commentaryTopics:
         ranked?.candidate.commentaryTopics ?? system.commentaryTopics,
     },
-    strongestEvidenceCount: evidence.filter(
+    strongestEvidenceCount: combinedEvidence.filter(
       ({ evidenceTier: tier }) => tier === evidenceTier,
     ).length,
     contextMatched: true,
+    locationMatched: definition.locationMatched,
+    rollLabelMatched: definition.rollLabelMatched,
   };
 }
 
@@ -297,6 +353,12 @@ function compareCandidates(left: RankedCandidate, right: RankedCandidate): numbe
     CONFIDENCE_RANK[left.candidate.evidenceTier];
   if (tierDifference !== 0) return tierDifference;
 
+  if (left.locationMatched !== right.locationMatched) {
+    return left.locationMatched ? -1 : 1;
+  }
+  if (left.rollLabelMatched !== right.rollLabelMatched) {
+    return left.rollLabelMatched ? -1 : 1;
+  }
   if (left.contextMatched !== right.contextMatched) {
     return left.contextMatched ? -1 : 1;
   }
@@ -445,6 +507,92 @@ export function retrieveNarrationGameCandidatesV2(
   const required = matches.filter(
     ({ candidate, contextMatched }) =>
       contextMatched ||
+      CONFIDENCE_RANK[candidate.evidenceTier] >= CONFIDENCE_RANK.strong,
+  );
+  const selected = [...required];
+  for (const match of matches) {
+    if (selected.length >= MAX_NARRATION_GAME_CANDIDATES_V1) break;
+    if (!selected.includes(match)) selected.push(match);
+  }
+  const bounded = selected
+    .sort(compareCandidates)
+    .slice(0, MAX_NARRATION_GAME_CANDIDATES_V1);
+  const conflict = buildCandidateConflict(bounded);
+
+  return {
+    version: 1,
+    state: determineCandidateState(bounded, conflict),
+    conflict,
+    truncated:
+      required.length > MAX_NARRATION_GAME_CANDIDATES_V1 ||
+      (required.length === 0 &&
+        matches.length > MAX_NARRATION_GAME_CANDIDATES_V1),
+    candidates: bounded.map(({ candidate }) => candidate),
+  };
+}
+
+export function retrieveNarrationGameCandidatesV3(
+  request: NarrationGameCandidateRequestV3,
+): NarrationGameCandidateResultV1;
+export function retrieveNarrationGameCandidatesV3(
+  request: unknown,
+): NarrationGameCandidateResultV1 {
+  if (
+    !isRecord(request) ||
+    !hasExactFields(request, ["version", "features", "context"])
+  ) {
+    throw new Error(
+      "Narration game candidate request contains an unsupported field",
+    );
+  }
+  if (request.version !== 3) {
+    throw new Error("Narration game candidate request version must be 3");
+  }
+
+  const features = validateFeatures(request.features);
+  const context = normalizeNarrationGameCandidateContextV3(request.context);
+  const observations = new Map(
+    features.map(({ kind, occurrences }) => [kind, occurrences]),
+  );
+  const matches = CATALOG_SYSTEMS.map((system) => {
+    let ranked = buildCandidate(system, observations);
+    const locationMatched = matchesContextAlias(system, context.locationNames);
+    const rollLabelMatched = matchesContextAlias(system, context.rollLabels);
+
+    if (locationMatched) {
+      ranked = addContextEvidence(system, ranked, {
+        claim: "explicit-system-name-in-location-context",
+        evidenceTier: "plausible",
+        locationMatched: true,
+        rollLabelMatched: false,
+      });
+    }
+    if (rollLabelMatched && ranked !== undefined) {
+      ranked = addContextEvidence(system, ranked, {
+        claim: "explicit-system-name-in-roll-label-context",
+        evidenceTier: "weak",
+        locationMatched,
+        rollLabelMatched: true,
+      });
+    }
+    return ranked;
+  })
+    .filter((candidate): candidate is RankedCandidate => candidate !== undefined)
+    .sort(compareCandidates);
+
+  if (matches.length === 0) {
+    return {
+      version: 1,
+      state: "insufficient-evidence",
+      conflict: null,
+      truncated: false,
+      candidates: [],
+    };
+  }
+
+  const required = matches.filter(
+    ({ candidate, locationMatched }) =>
+      locationMatched ||
       CONFIDENCE_RANK[candidate.evidenceTier] >= CONFIDENCE_RANK.strong,
   );
   const selected = [...required];

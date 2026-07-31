@@ -4,10 +4,11 @@ import {
   NARRATION_GAME_CATALOG_V1,
   retrieveNarrationGameCandidatesV1,
   retrieveNarrationGameCandidatesV2,
+  retrieveNarrationGameCandidatesV3,
   type NarrationGameCandidateRequestV1,
 } from "../../packages/roll-domain/src";
 
-describe("retrieveNarrationGameCandidatesV1", () => {
+describe("narration game candidate retrieval", () => {
   it("abstains when no catalogue fingerprint qualifies", () => {
     expect(
       retrieveNarrationGameCandidatesV1({ version: 1, features: [] }),
@@ -96,6 +97,30 @@ describe("retrieveNarrationGameCandidatesV1", () => {
     });
   });
 
+  it("requires repeated three-d20 checks before treating The Dark Eye as strong", () => {
+    const oneCheck = retrieveNarrationGameCandidatesV2({
+      version: 2,
+      features: [{ kind: "three-d20", occurrences: 1 }],
+      context: [],
+    });
+    expect(oneCheck.candidates[0]).toMatchObject({
+      systemId: "the-dark-eye-5e",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+
+    const repeatedChecks = retrieveNarrationGameCandidatesV2({
+      version: 2,
+      features: [{ kind: "three-d20", occurrences: 2 }],
+      context: [],
+    });
+    expect(repeatedChecks.candidates[0]).toMatchObject({
+      systemId: "the-dark-eye-5e",
+      evidenceTier: "strong",
+      confidenceCeiling: "strong",
+    });
+  });
+
   it("returns safe claims rather than raw frequencies, notation, or results", () => {
     const result = retrieveNarrationGameCandidatesV1({
       version: 1,
@@ -154,10 +179,13 @@ describe("retrieveNarrationGameCandidatesV1", () => {
     expect(NARRATION_GAME_CATALOG_V1.systems.length).toBe(43);
 
     for (const system of NARRATION_GAME_CATALOG_V1.systems) {
-      const result = retrieveNarrationGameCandidatesV2({
-        version: 2,
+      const result = retrieveNarrationGameCandidatesV3({
+        version: 3,
         features: [],
-        context: [system.displayName],
+        context: {
+          locationNames: [system.displayName],
+          rollLabels: [],
+        },
       });
       expect(
         result.candidates.map(({ systemId }) => systemId),
@@ -165,6 +193,70 @@ describe("retrieveNarrationGameCandidatesV1", () => {
       ).toContain(system.id);
       expect(result.truncated, system.id).toBe(false);
     }
+  });
+
+  it("uses location names as candidate evidence", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [],
+      context: {
+        locationNames: ["Night City Stories", "cyberpunk-red"],
+        rollLabels: ["Initiative", "Handgun"],
+      },
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "cyberpunk-red",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+    expect(result.candidates[0]?.evidence).toContainEqual({
+      claim: "explicit-system-name-in-location-context",
+      evidenceTier: "plausible",
+      sourceIds: ["cyberpunk-red-rules"],
+    });
+  });
+
+  it("does not let a roll label introduce a candidate by itself", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [],
+      context: {
+        locationNames: ["Friday game", "dice-rolls"],
+        rollLabels: ["Cyberpunk RED initiative", "skillz"],
+      },
+    });
+
+    expect(result).toEqual({
+      version: 1,
+      state: "insufficient-evidence",
+      conflict: null,
+      truncated: false,
+      candidates: [],
+    });
+  });
+
+  it("uses a matching roll label only to corroborate mechanics evidence", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [{ kind: "single-d10-plus-modifier", occurrences: 4 }],
+      context: {
+        locationNames: ["Friday game", "dice-rolls"],
+        rollLabels: ["Cyberpunk RED init", "Handgun skillz"],
+      },
+    });
+
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "cyberpunk-red",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+    expect(result.candidates[0]?.evidence).toContainEqual({
+      claim: "explicit-system-name-in-roll-label-context",
+      evidenceTier: "weak",
+      sourceIds: ["cyberpunk-red-rules"],
+    });
   });
 
   it("retrieves a named popular system while keeping the three-candidate cap", () => {

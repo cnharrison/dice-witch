@@ -1,7 +1,10 @@
 import {
   retrieveNarrationGameCandidatesV1,
   retrieveNarrationGameCandidatesV2,
+  retrieveNarrationGameCandidatesV3,
   type NarrationGameCandidateRequestV2,
+  type NarrationGameCandidateRequestV3,
+  type NarrationGameCandidateResultV1,
   type NarrationGameCandidateV1,
 } from "./narration-game-candidates";
 import type { NarrationGameConfidenceV1 } from "./narration-game-catalog";
@@ -233,13 +236,28 @@ function hasCanonicalAssessmentKeys(
   );
 }
 
+type NarrationGameRankingValidationRequest =
+  | NarrationGameRankingRequestV1
+  | NarrationGameCandidateRequestV2
+  | NarrationGameCandidateRequestV3;
+
+function retrieveValidationCandidates(
+  request: NarrationGameRankingValidationRequest,
+): NarrationGameCandidateResultV1 {
+  if (request.version === 3) {
+    return retrieveNarrationGameCandidatesV3(request);
+  }
+  if (request.version === 2) {
+    return retrieveNarrationGameCandidatesV2(request);
+  }
+  return retrieveNarrationGameCandidatesV1(request);
+}
+
 export function validateNarrationGameRankingResponseV1(
   value: unknown,
-  request: NarrationGameRankingRequestV1 | NarrationGameCandidateRequestV2,
+  request: NarrationGameRankingValidationRequest,
 ): NarrationGameRankingResponseValidationV1 {
-  const candidateResult = request.version === 2
-    ? retrieveNarrationGameCandidatesV2(request)
-    : retrieveNarrationGameCandidatesV1(request);
+  const candidateResult = retrieveValidationCandidates(request);
   if (
     candidateResult.state !== "candidate-set" ||
     candidateResult.truncated

@@ -7,6 +7,13 @@ import type {
 
 const ACCESSED_ON = "2026-07-30";
 
+type AdditionalFingerprintDefinition = Readonly<{
+  minimumOccurrences: number;
+  evidenceStrength: NarrationGameConfidenceV1;
+  confidenceCeiling: NarrationGameConfidenceV1;
+  claim: string;
+}>;
+
 type PopularGameDefinition = Readonly<{
   id: string;
   displayName: string;
@@ -16,6 +23,7 @@ type PopularGameDefinition = Readonly<{
   evidenceStrength: NarrationGameConfidenceV1;
   confidenceCeiling: NarrationGameConfidenceV1;
   claim: string;
+  additionalFingerprint?: AdditionalFingerprintDefinition;
   confusableWith: readonly string[];
   commentaryTopics: readonly string[];
   authority: NarrationGameSourceAuthorityV1;
@@ -487,9 +495,15 @@ const DEFINITIONS = [
     aliases: ["the dark eye", "the dark eye 5e", "das schwarze auge", "dsa5", "tde5"],
     feature: "three-d20",
     minimumOccurrences: 1,
-    evidenceStrength: "strong",
-    confidenceCeiling: "strong",
-    claim: "The Dark Eye Fifth Edition uses three-d20 attribute checks.",
+    evidenceStrength: "plausible",
+    confidenceCeiling: "plausible",
+    claim: "A three-d20 check is consistent with The Dark Eye Fifth Edition.",
+    additionalFingerprint: {
+      minimumOccurrences: 2,
+      evidenceStrength: "strong",
+      confidenceCeiling: "strong",
+      claim: "Repeated three-d20 checks align with The Dark Eye Fifth Edition attribute checks.",
+    },
     confusableWith: ["other-multiple-d20-games"],
     commentaryTopics: ["three-d20", "attribute-checks"],
     authority: "publisher",
@@ -645,29 +659,45 @@ const DEFINITIONS = [
   },
 ] as const satisfies readonly PopularGameDefinition[];
 
-function toSystem(definition: PopularGameDefinition): NarrationGameSystemV1 {
-  const sourceId = `${definition.id}-rules`;
-  const claim = definition.claim
+function claimId(claim: string): string {
+  return claim
     .toLowerCase()
     .replace(/[^a-z0-9]+/gu, "-")
     .replace(/^-|-$/gu, "");
+}
+
+function toSystem(definition: PopularGameDefinition): NarrationGameSystemV1 {
+  const sourceId = `${definition.id}-rules`;
+  const fingerprints = [
+    {
+      id: `${definition.id}-mechanic`,
+      claim: claimId(definition.claim),
+      features: [definition.feature],
+      minimumOccurrences: definition.minimumOccurrences,
+      evidenceStrength: definition.evidenceStrength,
+      confidenceCeiling: definition.confidenceCeiling,
+      sourceIds: [sourceId],
+      commentaryTopics: definition.commentaryTopics,
+    },
+    ...(definition.additionalFingerprint === undefined
+      ? []
+      : [{
+          id: `${definition.id}-repeated-mechanic`,
+          claim: claimId(definition.additionalFingerprint.claim),
+          features: [definition.feature],
+          minimumOccurrences: definition.additionalFingerprint.minimumOccurrences,
+          evidenceStrength: definition.additionalFingerprint.evidenceStrength,
+          confidenceCeiling: definition.additionalFingerprint.confidenceCeiling,
+          sourceIds: [sourceId],
+          commentaryTopics: definition.commentaryTopics,
+        }]),
+  ];
   return {
     id: definition.id,
     displayName: definition.displayName,
     aliases: definition.aliases,
     legacyRetrievalExcluded: true,
-    fingerprints: [
-      {
-        id: `${definition.id}-mechanic`,
-        claim,
-        features: [definition.feature],
-        minimumOccurrences: definition.minimumOccurrences,
-        evidenceStrength: definition.evidenceStrength,
-        confidenceCeiling: definition.confidenceCeiling,
-        sourceIds: [sourceId],
-        commentaryTopics: definition.commentaryTopics,
-      },
-    ],
+    fingerprints,
     confusableWith: definition.confusableWith,
     commentaryTopics: definition.commentaryTopics,
     sources: [

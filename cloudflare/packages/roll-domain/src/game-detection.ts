@@ -3,10 +3,14 @@ import {
   MAX_REPETITIONS,
 } from "./constants";
 import {
+  normalizeNarrationGameCandidateContextV3,
   retrieveNarrationGameCandidatesV1,
   retrieveNarrationGameCandidatesV2,
+  retrieveNarrationGameCandidatesV3,
+  type NarrationGameCandidateContextV3,
   type NarrationGameCandidateRequestV1,
   type NarrationGameCandidateRequestV2,
+  type NarrationGameCandidateRequestV3,
   type NarrationGameCandidateResultV1,
 } from "./narration-game-candidates";
 import {
@@ -19,6 +23,8 @@ export const GAME_DETECTION_PROMPT_REVISION_V1 =
   "dice-witch-game-detection-v1";
 export const GAME_DETECTION_PROMPT_REVISION_V2 =
   "dice-witch-game-detection-v2";
+export const GAME_DETECTION_PROMPT_REVISION_V3 =
+  "dice-witch-game-detection-v3";
 export const MAX_GAME_DETECTION_CONTEXT_ROLLS_V1 = 16;
 export const MAX_GAME_DETECTION_PROMPT_BYTES_V1 = 16_384;
 
@@ -45,7 +51,8 @@ export type GameDetectionPromptV1 = Readonly<{
   version: 1;
   systemPromptRevision:
     | typeof GAME_DETECTION_PROMPT_REVISION_V1
-    | typeof GAME_DETECTION_PROMPT_REVISION_V2;
+    | typeof GAME_DETECTION_PROMPT_REVISION_V2
+    | typeof GAME_DETECTION_PROMPT_REVISION_V3;
   messages: readonly Readonly<{
     role: "system" | "user";
     content: string;
@@ -91,6 +98,15 @@ Decision contract:
 - When multiple candidates share the highest non-weak mechanics tier, select only when the session context clearly distinguishes one; otherwise abstain.
 - A plausible selection is a qualified private hypothesis, not a claim of certainty.
 - Do not output prose or explanations.`;
+
+const GAME_DETECTION_SYSTEM_PROMPT_V3 = `${GAME_DETECTION_SYSTEM_PROMPT_V1}
+
+Context hierarchy:
+- Guild and channel names are location context. They are more likely to identify a game system, campaign, setting, or table than an individual mechanic.
+- Roll titles and saved-roll names normally describe actions, skills, or mechanics. They corroborate supplied mechanics or location evidence but cannot independently introduce a candidate or raise its confidence tier.
+- Interpret abbreviations, slang, and misspellings in roll labels as supporting semantic clues only.
+- Generic terms such as initiative, init, skill, and skillz do not identify a game system.
+- When location context and roll labels conflict, prefer coherent source-backed mechanics and location context; otherwise abstain.`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -280,8 +296,21 @@ function contextCandidateTerms(
     .slice(-64);
 }
 
+function candidateContextV3(
+  context: GameDetectionSessionContextV1,
+): NarrationGameCandidateContextV3 {
+  return {
+    locationNames: [context.guildName, context.channelName].filter(
+      (value): value is string => value !== null,
+    ),
+    rollLabels: context.rolls
+      .flatMap(({ savedRollName, title }) => [title, savedRollName])
+      .filter((value): value is string => value !== null),
+  };
+}
+
 function serializeCandidateSignature(
-  version: 1 | 2,
+  version: 1 | 2 | 3,
   result: NarrationGameCandidateResultV1,
 ): string {
   return JSON.stringify({
@@ -327,6 +356,28 @@ export function buildGameDetectionCandidateRequestV2(
   };
 }
 
+export function buildGameDetectionCandidateRequestV3(input: Readonly<{
+  ranking: NarrationGameRankingRequestV1;
+  context: GameDetectionSessionContextV1;
+}>): NarrationGameCandidateRequestV3;
+export function buildGameDetectionCandidateRequestV3(
+  input: unknown,
+): NarrationGameCandidateRequestV3 {
+  if (!isRecord(input) || !hasExactKeys(input, ["context", "ranking"])) {
+    throw new Error("Game-detection request contains an unsupported field");
+  }
+  const context = validateContext(input.context);
+  retrieveNarrationGameCandidatesV1(
+    input.ranking as NarrationGameCandidateRequestV1,
+  );
+  const ranking = input.ranking as NarrationGameRankingRequestV1;
+  return {
+    version: 3,
+    features: ranking.features,
+    context: candidateContextV3(context),
+  };
+}
+
 export function retrieveGameDetectionCandidatesV2(input: Readonly<{
   ranking: NarrationGameRankingRequestV1;
   context: GameDetectionSessionContextV1;
@@ -345,6 +396,30 @@ export function buildGameDetectionCandidateSignatureInputV2(
     context,
   });
   return serializeCandidateSignature(2, result);
+}
+
+export function retrieveGameDetectionCandidatesV3(input: Readonly<{
+  ranking: NarrationGameRankingRequestV1;
+  context: GameDetectionSessionContextV1;
+}>): NarrationGameCandidateResultV1 {
+  return retrieveNarrationGameCandidatesV3(
+    buildGameDetectionCandidateRequestV3(input),
+  );
+}
+
+export function buildGameDetectionCandidateSignatureInputV3(
+  request: NarrationGameCandidateRequestV1,
+  context: GameDetectionSessionContextV1,
+): string {
+  const candidateRequest = buildGameDetectionCandidateRequestV3({
+    ranking: request,
+    context,
+  });
+  const result = retrieveNarrationGameCandidatesV3(candidateRequest);
+  return JSON.stringify({
+    candidateState: serializeCandidateSignature(3, result),
+    context: normalizeNarrationGameCandidateContextV3(candidateRequest.context),
+  });
 }
 
 export function prepareGameDetectionV1(input: Readonly<{
@@ -450,6 +525,67 @@ export function prepareGameDetectionV2(input: unknown): GameDetectionPreparation
         {
           role: "system",
           content: GAME_DETECTION_SYSTEM_PROMPT_V1,
+        },
+        { role: "user", content: userContent },
+      ],
+      responseSchema: ranking.prompt.responseSchema,
+    },
+  };
+}
+
+export function prepareGameDetectionV3(input: Readonly<{
+  ranking: NarrationGameRankingRequestV1;
+  context: GameDetectionSessionContextV1;
+}>): GameDetectionPreparationV1;
+export function prepareGameDetectionV3(input: unknown): GameDetectionPreparationV1 {
+  if (!isRecord(input) || !hasExactKeys(input, ["context", "ranking"])) {
+    throw new Error("Game-detection request contains an unsupported field");
+  }
+
+  const context = validateContext(input.context);
+  const rankingRequest = input.ranking as NarrationGameRankingRequestV1;
+  const candidates = retrieveGameDetectionCandidatesV3({
+    ranking: rankingRequest,
+    context,
+  });
+  const ranking = prepareNarrationGameRankingFromCandidatesV3(
+    rankingRequest,
+    candidates,
+  );
+  if (ranking.state !== "prompt-ready") {
+    return {
+      version: 1,
+      state: "deterministic-abstention",
+      disposition: "abstain",
+      reason: ranking.reason,
+    };
+  }
+
+  const packet: unknown = JSON.parse(ranking.prompt.messages[1].content);
+  if (!isRecord(packet) || !isRecord(packet.policy)) {
+    throw new Error("Game-detection ranking packet is invalid");
+  }
+  const contextualPacket = {
+    ...packet,
+    evidenceScope: "current-session-mechanics-and-private-context",
+    policy: {
+      ...packet.policy,
+      outsideKnowledge: "context-interpretation-only",
+    },
+  };
+
+  const userContent = serializeSessionPacket(contextualPacket, context);
+
+  return {
+    version: 1,
+    state: "prompt-ready",
+    prompt: {
+      version: 1,
+      systemPromptRevision: GAME_DETECTION_PROMPT_REVISION_V3,
+      messages: [
+        {
+          role: "system",
+          content: GAME_DETECTION_SYSTEM_PROMPT_V3,
         },
         { role: "user", content: userContent },
       ],

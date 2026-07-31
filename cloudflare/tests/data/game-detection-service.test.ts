@@ -10,6 +10,7 @@ const dataEnv = env as unknown as {
   TEST_MIGRATIONS: D1Migration[];
 };
 const observedAt = 1_767_225_600_000;
+const activeAt = observedAt + 180_000;
 
 function deliveredRoll(interactionId: string): RollLifecycleSnapshotV1 {
   return {
@@ -59,6 +60,50 @@ function deliveredRoll(interactionId: string): RollLifecycleSnapshotV1 {
   };
 }
 
+function activeMultiplayerRolls(
+  first: RollLifecycleSnapshotV1,
+): RollLifecycleSnapshotV1[] {
+  if (
+    first.acceptedAt === null ||
+    first.deliveryStartedAt === null ||
+    first.terminalAt === null
+  ) {
+    throw new Error("Active-play fixture must be delivered");
+  }
+  const firstId = BigInt(first.interactionId);
+  const acceptedAt = first.acceptedAt;
+  const deliveryStartedAt = first.deliveryStartedAt;
+  const terminalAt = first.terminalAt;
+  return Array.from({ length: 4 }, (_, index) => {
+    const offset = index * 60_000;
+    return {
+      ...first,
+      interactionId: String(firstId + BigInt(index)),
+      receivedAt: first.receivedAt + offset,
+      deferredAt: first.deferredAt + offset,
+      acceptedAt: acceptedAt + offset,
+      deliveryStartedAt: deliveryStartedAt + offset,
+      terminalAt: terminalAt + offset,
+      context: {
+        ...first.context,
+        title: index === 0 ? first.context.title : null,
+        userId: index < 2
+          ? first.context.userId
+          : "100000000000000099",
+      },
+    };
+  });
+}
+
+async function recordActiveMultiplayer(
+  first: RollLifecycleSnapshotV1,
+): Promise<void> {
+  const repository = new D1RollLifecycleRepository(dataEnv.DATA);
+  for (const roll of activeMultiplayerRolls(first)) {
+    await repository.record(roll);
+  }
+}
+
 const dndResponse = {
   version: 1,
   disposition: "select",
@@ -88,19 +133,69 @@ beforeEach(async () => {
     dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts"),
     dataEnv.DATA.prepare("DELETE FROM guilds"),
     dataEnv.DATA.prepare(
-      "UPDATE game_detection_control SET started_at = 0 WHERE singleton = 1",
+      `UPDATE game_detection_control
+       SET started_at = 0, active_play_started_at = 0
+       WHERE singleton = 1`,
     ),
   ]);
 });
 
 describe("processGameDetectionMinute", () => {
+  it("keeps the three-roll staging sequence below every inference boundary", async () => {
+    const notations = ["3d20", "6d8", "d10+7"];
+    const rolls = activeMultiplayerRolls(
+      deliveredRoll("100000000000000021"),
+    ).slice(0, 3).map((roll, index) => {
+      const notation = notations[index];
+      if (notation === undefined) throw new Error("Missing staging notation");
+      return {
+        ...roll,
+        context: {
+          ...roll.context,
+          notation,
+          request: { notation: [notation], repetitions: 1 },
+          title: index === 2 ? "Cyberpunk RED attack" : null,
+          userId: "100000000000000002",
+          guildName: null,
+          channelName: null,
+          channelType: null,
+        },
+      };
+    });
+    const lifecycle = new D1RollLifecycleRepository(dataEnv.DATA);
+    for (const roll of rolls) await lifecycle.record(roll);
+    const aiRun = vi.fn();
+    const announce = vi.fn();
+    const resolveContext = vi.fn();
+
+    await expect(
+      processGameDetectionMinute({
+        DATA: dataEnv.DATA,
+        AI: { run: aiRun } as unknown as Ai,
+        DISCORD_REST: {
+          createGameDetectionAnnouncementV1: announce,
+          resolveGameDetectionChannelContextV1: resolveContext,
+        },
+      }, observedAt + 120_000),
+    ).resolves.toMatchObject({
+      ingested: 3,
+      channelContext: "none",
+      rankJob: "none",
+      announcement: "none",
+    });
+    expect(aiRun).not.toHaveBeenCalled();
+    expect(resolveContext).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
   it("ranks in the background with all useful context and posts only the validated detection", async () => {
-    await new D1RollLifecycleRepository(dataEnv.DATA).record(
+    await recordActiveMultiplayer(
       deliveredRoll("100000000000000031"),
     );
     const aiRun = vi.fn(() =>
       Promise.resolve({ response: JSON.stringify(dndResponse) })
     );
+    const timeout = vi.spyOn(AbortSignal, "timeout");
     const announce = vi.fn(() => Promise.resolve({
       status: "delivered" as const,
       messageId: "100000000000000099",
@@ -115,20 +210,24 @@ describe("processGameDetectionMinute", () => {
           createGameDetectionAnnouncementV1: announce,
           resolveGameDetectionChannelContextV1: vi.fn(),
         },
-      }, observedAt),
+      }, activeAt),
     ).resolves.toMatchObject({
-      ingested: 1,
+      ingested: 4,
       rankJob: "selected",
       announcement: "sent",
     });
 
     expect(aiRun).toHaveBeenCalledOnce();
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(timeout).toHaveBeenCalledWith(45_000);
+    timeout.mockRestore();
     const modelInput = JSON.stringify(aiRun.mock.calls[0]);
     expect(modelInput).toContain("Thursday D&D");
     expect(modelInput).toContain("curse-of-strahd");
     expect(modelInput).toContain("Create a Curse of Strahd character");
     expect(modelInput).toContain("fixture-player");
     expect(modelInput).not.toContain("100000000000000002");
+    expect(modelInput).not.toContain("100000000000000099");
     expect(modelInput).not.toContain("renderSeed");
     expect(modelInput).not.toContain("destinationPayload");
 
@@ -144,13 +243,13 @@ describe("processGameDetectionMinute", () => {
 
   it("ranks a context-named popular system with otherwise generic mechanics", async () => {
     const roll = deliveredRoll("100000000000000035");
-    await new D1RollLifecycleRepository(dataEnv.DATA).record({
+    await recordActiveMultiplayer({
       ...roll,
       context: {
         ...roll.context,
         notation: "d10+7",
         request: { notation: ["d10+7"], repetitions: 2 },
-        title: "Cyberpunk RED initiative",
+        title: "Initiative",
         guildName: "Night City Stories",
         channelName: "cyberpunk-red",
         outcome: {
@@ -173,7 +272,7 @@ describe("processGameDetectionMinute", () => {
             confidenceTier: "plausible",
             evidenceCitations: [
               {
-                claimId: "explicit-system-name-in-session-context",
+                claimId: "explicit-system-name-in-location-context",
                 sourceIds: ["cyberpunk-red-rules"],
               },
             ],
@@ -196,7 +295,7 @@ describe("processGameDetectionMinute", () => {
           createGameDetectionAnnouncementV1: announce,
           resolveGameDetectionChannelContextV1: vi.fn(),
         },
-      }, observedAt),
+      }, activeAt),
     ).resolves.toMatchObject({ rankJob: "selected", announcement: "sent" });
 
     expect(JSON.stringify(aiRun.mock.calls[0])).toContain("cyberpunk-red");
@@ -210,7 +309,7 @@ describe("processGameDetectionMinute", () => {
 
   it("looks up missing display context before ranking the live Discord receipt shape", async () => {
     const roll = deliveredRoll("100000000000000039");
-    await new D1RollLifecycleRepository(dataEnv.DATA).record({
+    await recordActiveMultiplayer({
       ...roll,
       context: {
         ...roll.context,
@@ -250,9 +349,9 @@ describe("processGameDetectionMinute", () => {
           createGameDetectionAnnouncementV1: announce,
           resolveGameDetectionChannelContextV1: resolveContext,
         },
-      }, observedAt),
+      }, activeAt),
     ).resolves.toMatchObject({
-      ingested: 1,
+      ingested: 4,
       channelContext: "resolved",
       rankJob: "selected",
       announcement: "sent",
@@ -273,7 +372,7 @@ describe("processGameDetectionMinute", () => {
 
   it("keeps the unresolved session blocked across retryable and failed lookups", async () => {
     const roll = deliveredRoll("100000000000000040");
-    await new D1RollLifecycleRepository(dataEnv.DATA).record({
+    await recordActiveMultiplayer({
       ...roll,
       context: {
         ...roll.context,
@@ -313,21 +412,21 @@ describe("processGameDetectionMinute", () => {
     };
 
     await expect(
-      processGameDetectionMinute(serviceEnv, observedAt),
+      processGameDetectionMinute(serviceEnv, activeAt),
     ).resolves.toMatchObject({
       channelContext: "retrying",
       rankJob: "none",
       announcement: "none",
     });
     await expect(
-      processGameDetectionMinute(serviceEnv, observedAt + 59_999),
+      processGameDetectionMinute(serviceEnv, activeAt + 59_999),
     ).resolves.toMatchObject({
       channelContext: "none",
       rankJob: "none",
     });
 
     await expect(
-      processGameDetectionMinute(serviceEnv, observedAt + 60_000),
+      processGameDetectionMinute(serviceEnv, activeAt + 60_000),
     ).resolves.toMatchObject({
       channelContext: "failed",
       rankJob: "none",
@@ -339,7 +438,7 @@ describe("processGameDetectionMinute", () => {
   });
 
   it("records an invalid model response once without posting or retrying", async () => {
-    await new D1RollLifecycleRepository(dataEnv.DATA).record(
+    await recordActiveMultiplayer(
       deliveredRoll("100000000000000041"),
     );
     const aiRun = vi.fn(() => Promise.resolve({ response: "{}" }));
@@ -354,13 +453,13 @@ describe("processGameDetectionMinute", () => {
     };
 
     await expect(
-      processGameDetectionMinute(serviceEnv, observedAt),
+      processGameDetectionMinute(serviceEnv, activeAt),
     ).resolves.toMatchObject({ rankJob: "rejected", announcement: "none" });
     await expect(
-      processGameDetectionMinute(serviceEnv, observedAt + 60_000),
+      processGameDetectionMinute(serviceEnv, activeAt + 60_000),
     ).resolves.toMatchObject({ rankJob: "none", announcement: "none" });
     await expect(
-      processGameDetectionMinute(serviceEnv, observedAt + 3 * 60 * 60 * 1_000),
+      processGameDetectionMinute(serviceEnv, activeAt + 3 * 60 * 60 * 1_000),
     ).resolves.toMatchObject({
       rankJob: "none",
       announcement: "none",
@@ -382,6 +481,6 @@ describe("processGameDetectionMinute", () => {
     const roll = await dataEnv.DATA.prepare(
       "SELECT classification FROM game_detection_rolls",
     ).first();
-    expect(roll).toEqual({ classification: "out-of-game" });
+    expect(roll).toEqual({ classification: "unknown" });
   });
 });
