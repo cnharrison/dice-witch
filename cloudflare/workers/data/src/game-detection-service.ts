@@ -9,7 +9,7 @@ import {
 import { D1GameDetectionRepository } from "./game-detection-repository";
 
 export const GAME_DETECTION_MODEL_ID = "@cf/zai-org/glm-5.2";
-const MODEL_TIMEOUT_MS = 30_000;
+const MODEL_TIMEOUT_MS = 45_000;
 const DEFAULT_RETRY_MS = 60_000;
 const MAX_RETRY_MS = 15 * 60_000;
 

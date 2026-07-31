@@ -195,6 +195,7 @@ describe("processGameDetectionMinute", () => {
     const aiRun = vi.fn(() =>
       Promise.resolve({ response: JSON.stringify(dndResponse) })
     );
+    const timeout = vi.spyOn(AbortSignal, "timeout");
     const announce = vi.fn(() => Promise.resolve({
       status: "delivered" as const,
       messageId: "100000000000000099",
@@ -217,6 +218,9 @@ describe("processGameDetectionMinute", () => {
     });
 
     expect(aiRun).toHaveBeenCalledOnce();
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(timeout).toHaveBeenCalledWith(45_000);
+    timeout.mockRestore();
     const modelInput = JSON.stringify(aiRun.mock.calls[0]);
     expect(modelInput).toContain("Thursday D&D");
     expect(modelInput).toContain("curse-of-strahd");
