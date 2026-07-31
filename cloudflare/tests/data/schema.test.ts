@@ -14,6 +14,11 @@ const timestamp = 1_767_225_600_123;
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM game_detections"),
+    dataEnv.DATA.prepare("DELETE FROM game_detection_rank_jobs"),
+    dataEnv.DATA.prepare("DELETE FROM game_detection_rolls"),
+    dataEnv.DATA.prepare("DELETE FROM game_detection_sessions"),
+    dataEnv.DATA.prepare("DELETE FROM game_detection_daily_aggregates"),
     dataEnv.DATA.prepare("DELETE FROM discord_audience_snapshot"),
     dataEnv.DATA.prepare("DELETE FROM saved_rolls"),
     dataEnv.DATA.prepare("DELETE FROM guild_saved_roll_lists"),
@@ -88,6 +93,12 @@ describe("D1 business schema migration", () => {
     expect(await tableNames()).toEqual(
       expect.arrayContaining([
         "discord_audience_snapshot",
+        "game_detection_control",
+        "game_detection_daily_aggregates",
+        "game_detection_rank_jobs",
+        "game_detection_rolls",
+        "game_detection_sessions",
+        "game_detections",
         "guild_appearance_profiles",
         "guilds",
         "mutation_receipts",
@@ -107,6 +118,12 @@ describe("D1 business schema migration", () => {
     }>();
     for (const name of [
       "discord_audience_snapshot",
+      "game_detection_control",
+      "game_detection_daily_aggregates",
+      "game_detection_rank_jobs",
+      "game_detection_rolls",
+      "game_detection_sessions",
+      "game_detections",
       "guild_appearance_profiles",
       "guilds",
       "mutation_receipts",
@@ -268,6 +285,7 @@ describe("D1 business schema migration", () => {
       { name: "0007_saved_roll_manual_order.sql" },
       { name: "0008_saved_roll_name_color.sql" },
       { name: "0009_roll_lifecycle_receipts.sql" },
+      { name: "0010_game_detection_telemetry.sql" },
     ]);
   });
 

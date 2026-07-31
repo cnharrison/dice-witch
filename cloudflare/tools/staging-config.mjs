@@ -32,6 +32,7 @@ const WORKER_CONFIG_KEYS = {
     ...COMMON_CONFIG_KEYS,
     "triggers",
     "alias",
+    "ai",
     "d1_databases",
     "services",
   ],
@@ -80,6 +81,7 @@ const WORKER_VAR_NAMES = {
   "discord-rest": [
     "DISCORD_APPLICATION_ID",
     "DISCORD_TEST_GUILD_ID",
+    "GAME_DETECTION_CHANNEL_ID",
     "INVITE_LINK",
     "SUPPORT_SERVER_LINK",
     "LOG_OUTPUT_CHANNEL_ID",
@@ -204,6 +206,20 @@ function validateDiscordIdentity(errors, configs, frontendOrigin) {
   }
   if (configs["web-api"]?.vars?.DISCORD_CLIENT_ID !== applicationId) {
     errors.push("Web API Discord client id must match Discord REST");
+  }
+
+  const channelIds = [
+    "LOG_OUTPUT_CHANNEL_ID",
+    "ROLL_LIFECYCLE_ALERT_CHANNEL_ID",
+    "GAME_DETECTION_CHANNEL_ID",
+  ].map((name) => configs["discord-rest"]?.vars?.[name]);
+  if (
+    channelIds.some((channelId) =>
+      typeof channelId !== "string" || !SNOWFLAKE.test(channelId)
+    ) ||
+    new Set(channelIds).size !== channelIds.length
+  ) {
+    errors.push("Discord private telemetry channels must be distinct snowflakes");
   }
 
   const guildId = configs["discord-rest"]?.vars?.DISCORD_TEST_GUILD_ID;
@@ -362,6 +378,13 @@ function validateData(errors, config) {
   }
   if ("route" in config || "routes" in config) {
     errors.push("Staging Data Worker must not define public routes");
+  }
+  if (
+    !isRecord(config?.ai) ||
+    Object.keys(config.ai).join(",") !== "binding" ||
+    config.ai.binding !== "AI"
+  ) {
+    errors.push("Staging Data Worker requires an AI binding named AI");
   }
   const databases = config?.d1_databases;
   if (!Array.isArray(databases) || databases.length !== 1) {

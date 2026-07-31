@@ -1,4 +1,9 @@
 import {
+  processGameDetectionMinute,
+  type GameDetectionServiceEnv,
+} from "./game-detection-service";
+import { D1GameDetectionRepository } from "./game-detection-repository";
+import {
   cleanRollLifecycleRecords,
   processRollLifecycleAlerts,
   recordRollLifecycle,
@@ -17,7 +22,9 @@ import { handleSessionRequest } from "./session-service";
 
 export type DataEnv = {
   DATA: D1Database;
-  DISCORD_REST: RollLifecycleAlertService;
+  AI: Ai;
+  DISCORD_REST: RollLifecycleAlertService &
+    GameDetectionServiceEnv["DISCORD_REST"];
 };
 
 function isConfigured(env: DataEnv): boolean {
@@ -57,6 +64,48 @@ async function accountRoll(request: Request, env: DataEnv): Promise<Response> {
       { status: 500, headers: responseHeaders },
     );
   }
+}
+
+async function runMinuteMaintenance(
+  env: DataEnv,
+  scheduledTime: number,
+): Promise<void> {
+  const failures: unknown[] = [];
+  try {
+    await processRollLifecycleAlerts(env, scheduledTime);
+  } catch (error) {
+    failures.push(error);
+    console.error(JSON.stringify({
+      level: "error",
+      message: "Roll lifecycle alert maintenance failed",
+    }));
+  }
+  try {
+    const result = await processGameDetectionMinute(env, scheduledTime);
+    console.log(JSON.stringify({
+      level: "info",
+      message: "Game-detection maintenance completed",
+      ...result,
+    }));
+  } catch (error) {
+    failures.push(error);
+    console.error(JSON.stringify({
+      level: "error",
+      message: "Game-detection maintenance failed",
+    }));
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "Data minute maintenance failed");
+  }
+}
+
+async function runDailyMaintenance(
+  env: DataEnv,
+  scheduledTime: number,
+): Promise<void> {
+  const repository = new D1GameDetectionRepository(env.DATA);
+  await repository.aggregateAndDeleteExpired(scheduledTime);
+  await cleanRollLifecycleRecords(env, scheduledTime);
 }
 
 const worker = {
@@ -110,12 +159,10 @@ const worker = {
   },
   scheduled(controller, env): Promise<void> {
     if (controller.cron === "* * * * *") {
-      return processRollLifecycleAlerts(env, controller.scheduledTime);
+      return runMinuteMaintenance(env, controller.scheduledTime);
     }
     if (controller.cron === "0 3 * * *") {
-      return cleanRollLifecycleRecords(env, controller.scheduledTime).then(
-        () => undefined,
-      );
+      return runDailyMaintenance(env, controller.scheduledTime);
     }
     throw new Error(`Unsupported Data Worker cron: ${controller.cron}`);
   },

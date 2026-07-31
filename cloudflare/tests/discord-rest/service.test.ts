@@ -7,6 +7,7 @@ import {
 } from "../../packages/discord-contracts/src";
 import {
   captureAudienceSnapshot,
+  createGameDetectionAnnouncementV1,
   createRollLifecycleAlertV1,
   deliverRollLogV1,
   deliverWebRoll,
@@ -82,9 +83,31 @@ const env = {
   SUPPORT_SERVER_LINK: "https://discord.gg/fixture",
   LOG_OUTPUT_CHANNEL_ID: "100000000000000099",
   ROLL_LIFECYCLE_ALERT_CHANNEL_ID: "100000000000000098",
+  GAME_DETECTION_CHANNEL_ID: "100000000000000097",
   TOPGG_KEY: "fixture-topgg-token",
   DISCORD_BOT_LIST_KEY: "fixture-discord-bot-list-token",
 };
+
+function gameDetectionAnnouncement() {
+  return {
+    version: 1 as const,
+    detectionId: "1400000000000000001:0123456789abcdef",
+    sessionId: "1400000000000000001",
+    previousGameId: null,
+    gameId: "dungeons-and-dragons-5e-2014",
+    gameName: "Dungeons & Dragons fifth edition (2014)",
+    confidence: "strong" as const,
+    detectedAt: 1_750_000_010_000,
+    scope: "guild" as const,
+    guildId,
+    channelId: "100000000000000010",
+    guildName: "Fixture Guild",
+    channelName: "dice-rolls",
+    rollCount: 6,
+    sessionStartedAt: 1_750_000_000_000,
+    sessionLastRollAt: 1_750_000_009_000,
+  };
+}
 
 function lifecycleAlert(alertMessageId: string | null = null) {
   return {
@@ -125,6 +148,49 @@ function lifecycleAlert(alertMessageId: string | null = null) {
 }
 
 describe("Discord REST service", () => {
+  it("posts a silent idempotent game detection only to its dedicated private channel", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      expect(request.method).toBe("POST");
+      expect(request.url).toBe(
+        "https://discord.com/api/v10/channels/100000000000000097/messages",
+      );
+      const payload: {
+        flags: number;
+        nonce: string;
+        enforce_nonce: boolean;
+        allowed_mentions: { parse: string[] };
+        embeds: Array<{
+          title: string;
+          fields: Array<{ name: string; value: string }>;
+        }>;
+      } = await request.json();
+      expect(payload).toMatchObject({
+        flags: 1 << 12,
+        nonce: "g000000010123456789abcdef",
+        enforce_nonce: true,
+        allowed_mentions: { parse: [] },
+      });
+      expect(payload.embeds[0]?.title).toBe("Game detected");
+      expect(JSON.stringify(payload)).toContain("Dungeons & Dragons");
+      expect(JSON.stringify(payload)).toContain("Fixture Guild");
+      expect(JSON.stringify(payload)).not.toMatch(/Attack|Initiative|fixture-player/);
+      return Response.json({ id: "100000000000000087" });
+    });
+
+    await expect(
+      createGameDetectionAnnouncementV1(
+        env,
+        gameDetectionAnnouncement(),
+        discordFetch,
+      ),
+    ).resolves.toEqual({
+      status: "delivered",
+      messageId: "100000000000000087",
+      httpStatus: 200,
+    });
+    expect(discordFetch).toHaveBeenCalledOnce();
+  });
+
   it("creates one silent token-free lifecycle alert with diagnostic JSON", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
       expect(request.method).toBe("POST");

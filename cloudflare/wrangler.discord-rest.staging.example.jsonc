@@ -11,7 +11,8 @@
     "INVITE_LINK": "https://example.com/replace-with-staging-discord-invite",
     "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
     "LOG_OUTPUT_CHANNEL_ID": "100000000000000003",
-    "ROLL_LIFECYCLE_ALERT_CHANNEL_ID": "778373871061434411"
+    "ROLL_LIFECYCLE_ALERT_CHANNEL_ID": "778373871061434411",
+    "GAME_DETECTION_CHANNEL_ID": "100000000000000004"
   },
   "secrets_store_secrets": [
     {

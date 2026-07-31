@@ -39,6 +39,7 @@ function validConfigs() {
       ...baseConfig(dataName, "workers/data/src/index.ts"),
       triggers: { crons: ["* * * * *", "0 3 * * *"] },
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
+      ai: { binding: "AI" },
       services: [service("DISCORD_REST", restName, "DiscordRestService")],
       d1_databases: [
         {
@@ -58,6 +59,7 @@ function validConfigs() {
         SUPPORT_SERVER_LINK: "https://example.com/support",
         LOG_OUTPUT_CHANNEL_ID: "100000000000000003",
         ROLL_LIFECYCLE_ALERT_CHANNEL_ID: "100000000000000004",
+        GAME_DETECTION_CHANNEL_ID: "100000000000000005",
       },
     },
     roll: {
@@ -316,14 +318,26 @@ test("rejects inconsistent Discord and browser identities", () => {
   );
 });
 
-test("keeps the Data Worker private with its required crypto alias", () => {
+test("keeps the Data Worker private with its required crypto and AI bindings", () => {
   const configs = validConfigs();
   configs.data.workers_dev = true;
   delete configs.data.alias;
+  delete configs.data.ai;
 
   assert.throws(
     () => validateStagingConfigs(configs),
-    /Staging Data Worker must disable workers_dev|data crypto alias is invalid/,
+    /Staging Data Worker must disable workers_dev|data crypto alias is invalid|requires an AI binding named AI/,
+  );
+});
+
+test("requires a distinct private game-detection channel", () => {
+  const configs = validConfigs();
+  configs["discord-rest"].vars.GAME_DETECTION_CHANNEL_ID =
+    configs["discord-rest"].vars.LOG_OUTPUT_CHANNEL_ID;
+
+  assert.throws(
+    () => validateStagingConfigs(configs),
+    /private telemetry channels must be distinct snowflakes/,
   );
 });
 

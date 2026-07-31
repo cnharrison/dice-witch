@@ -8,6 +8,10 @@ export {
 } from "./audience-snapshot";
 export { DISCORD_GLOBAL_COMMANDS } from "./commands";
 export {
+  parseGameDetectionAnnouncementV1,
+  type GameDetectionAnnouncementV1,
+} from "./game-detection";
+export {
   buildDeferredResponse,
   buildDeleteOriginalResponse,
   buildEditFollowupResponseWithFile,
