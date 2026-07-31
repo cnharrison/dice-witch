@@ -2,8 +2,8 @@ import type {
   GameDetectionChannelContextResultV1,
 } from "../../../packages/discord-contracts/src";
 import {
-  buildGameDetectionCandidateRequestV2,
-  prepareGameDetectionV2,
+  buildGameDetectionCandidateRequestV3,
+  prepareGameDetectionV3,
   validateNarrationGameRankingResponseV1,
 } from "../../../packages/roll-domain/src";
 import { D1GameDetectionRepository } from "./game-detection-repository";
@@ -155,7 +155,7 @@ export async function processGameDetectionMinute(
   let rankJob: GameDetectionMinuteResult["rankJob"] = "none";
 
   if (job !== null) {
-    const preparation = prepareGameDetectionV2({
+    const preparation = prepareGameDetectionV3({
       ranking: job.ranking,
       context: job.context,
     });
@@ -186,12 +186,12 @@ export async function processGameDetectionMinute(
           },
           {
             signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
-            tags: ["dice-witch:game-detection", "prompt:v2"],
+            tags: ["dice-witch:game-detection", "prompt:v3"],
           },
         );
         const validation = validateNarrationGameRankingResponseV1(
           extractModelOutput(response),
-          buildGameDetectionCandidateRequestV2({
+          buildGameDetectionCandidateRequestV3({
             ranking: job.ranking,
             context: job.context,
           }),

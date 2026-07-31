@@ -1,12 +1,12 @@
 import {
   assessGameDetectionActivePlayV1,
   buildGameDetectionCandidateSignatureInputV1,
-  buildGameDetectionCandidateSignatureInputV2,
+  buildGameDetectionCandidateSignatureInputV3,
   extractNarrationGameFeaturesV1,
   GAME_DETECTION_ACTIVE_PLAY_POLICY_REVISION_V1,
   GAME_DETECTION_EPISODE_INACTIVITY_MS_V1,
   NARRATION_GAME_CATALOG_V1,
-  prepareGameDetectionV2,
+  prepareGameDetectionV3,
   type GameDetectionActivePlayStateV1,
   type GameDetectionSessionContextV1,
   type NarrationGameConfidenceV1,
@@ -657,7 +657,7 @@ export class D1GameDetectionRepository {
       episodeStartedAt,
     );
     const signature = await sha256(
-      `${String(episodeStartedAt)}:${buildGameDetectionCandidateSignatureInputV2(ranking, context)}`,
+      `${String(episodeStartedAt)}:${buildGameDetectionCandidateSignatureInputV3(ranking, context)}`,
     );
 
     if (signature === session.last_candidate_signature) {
@@ -672,7 +672,7 @@ export class D1GameDetectionRepository {
       return false;
     }
 
-    const preparation = prepareGameDetectionV2({ ranking, context });
+    const preparation = prepareGameDetectionV3({ ranking, context });
     await this.db.prepare(
       `UPDATE game_detection_sessions
        SET last_candidate_signature = ?, last_candidate_disposition = 'unknown',

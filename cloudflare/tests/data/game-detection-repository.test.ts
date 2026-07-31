@@ -693,7 +693,7 @@ describe("D1GameDetectionRepository", () => {
     });
   });
 
-  it("does not rerank or create another detection for repeated mechanics in the same game", async () => {
+  it("does not rerank or create another detection for repeated mechanics and labels", async () => {
     await record(...activeMultiplayerSnapshots({
       interactionId: "100000000000000041",
       receivedAt: baseTime,
@@ -717,7 +717,7 @@ describe("D1GameDetectionRepository", () => {
       receivedAt: baseTime + 240_000,
       notation: ["4d6kh3"],
       repetitions: 1,
-      title: "Another ability",
+      title: "Abilities",
       userId: "100000000000000099",
     }));
     await repository.ingestDeliveredRolls(baseTime + 240_000);
@@ -735,6 +735,40 @@ describe("D1GameDetectionRepository", () => {
       "SELECT COUNT(*) AS count FROM game_detections",
     ).first<{ count: number }>();
     expect(count?.count).toBe(1);
+  });
+
+  it("reranks when roll-label context changes within the active episode", async () => {
+    await record(...activeMultiplayerSnapshots({
+      interactionId: "100000000000000121",
+      receivedAt: baseTime,
+      notation: ["4d6kh3"],
+      repetitions: 2,
+      title: "Abilities",
+    }));
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+    await repository.ingestDeliveredRolls(baseTime + 180_000);
+    const first = await repository.claimRankJob(baseTime + 180_001);
+    if (first === null) throw new Error("Expected a rank job");
+    await repository.completeRankJob(
+      first,
+      { status: "accepted", value: dndResponse },
+      baseTime + 180_002,
+      1,
+    );
+
+    await record(snapshot({
+      interactionId: "100000000000000125",
+      receivedAt: baseTime + 240_000,
+      notation: ["4d6kh3"],
+      repetitions: 1,
+      title: "Evasion",
+      userId: "100000000000000099",
+    }));
+    await repository.ingestDeliveredRolls(baseTime + 240_000);
+
+    const second = await repository.claimRankJob(baseTime + 240_001);
+    expect(second).not.toBeNull();
+    expect(second?.candidateSignature).not.toBe(first.candidateSignature);
   });
 
   it("uses the episode identity when identical mechanics resume after inactivity", async () => {

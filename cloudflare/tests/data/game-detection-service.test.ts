@@ -245,7 +245,7 @@ describe("processGameDetectionMinute", () => {
         ...roll.context,
         notation: "d10+7",
         request: { notation: ["d10+7"], repetitions: 2 },
-        title: "Cyberpunk RED initiative",
+        title: "Initiative",
         guildName: "Night City Stories",
         channelName: "cyberpunk-red",
         outcome: {
@@ -268,7 +268,7 @@ describe("processGameDetectionMinute", () => {
             confidenceTier: "plausible",
             evidenceCitations: [
               {
-                claimId: "explicit-system-name-in-session-context",
+                claimId: "explicit-system-name-in-location-context",
                 sourceIds: ["cyberpunk-red-rules"],
               },
             ],
