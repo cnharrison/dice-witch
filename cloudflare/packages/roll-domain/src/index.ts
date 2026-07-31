@@ -6,6 +6,22 @@ export {
   MIN_ROLL_DELAY_MS,
 } from "./constants";
 export {
+  buildGameDetectionCandidateRequestV2,
+  buildGameDetectionCandidateSignatureInputV1,
+  buildGameDetectionCandidateSignatureInputV2,
+  GAME_DETECTION_PROMPT_REVISION_V1,
+  GAME_DETECTION_PROMPT_REVISION_V2,
+  MAX_GAME_DETECTION_CONTEXT_ROLLS_V1,
+  MAX_GAME_DETECTION_PROMPT_BYTES_V1,
+  prepareGameDetectionV1,
+  prepareGameDetectionV2,
+  retrieveGameDetectionCandidatesV2,
+  type GameDetectionContextRollV1,
+  type GameDetectionPreparationV1,
+  type GameDetectionPromptV1,
+  type GameDetectionSessionContextV1,
+} from "./game-detection";
+export {
   executeRoll,
   prepareRollAppearance,
   renderableRollOutcomes,
@@ -16,6 +32,70 @@ export {
   type RenderableRollOutcome,
   type RollOutcome,
 } from "./execute";
+export {
+  MAX_NARRATION_GAME_CANDIDATES_V1,
+  retrieveNarrationGameCandidatesV1,
+  retrieveNarrationGameCandidatesV2,
+  type NarrationGameCandidateConflictV1,
+  type NarrationGameCandidateEvidenceV1,
+  type NarrationGameCandidateRequestV1,
+  type NarrationGameCandidateRequestV2,
+  type NarrationGameCandidateResultV1,
+  type NarrationGameCandidateSourceV1,
+  type NarrationGameCandidateV1,
+} from "./narration-game-candidates";
+export {
+  MAX_NARRATION_GAME_RANKING_PACKET_BYTES,
+  prepareNarrationGameRankingV1,
+  prepareNarrationGameRankingV2,
+  prepareNarrationGameRankingV3,
+  type NarrationGameRankingAbstentionReasonV1,
+  type NarrationGameRankingMessageV1,
+  type NarrationGameRankingPacketCandidateV1,
+  type NarrationGameRankingPacketV1,
+  type NarrationGameRankingPacketV2,
+  type NarrationGameRankingPreparationV1,
+  type NarrationGameRankingPreparationV2,
+  type NarrationGameRankingPreparationV3,
+  type NarrationGameRankingPromptContractV1,
+  type NarrationGameRankingPromptContractV2,
+  type NarrationGameRankingPromptContractV3,
+  type NarrationGameRankingRequestV1,
+} from "./narration-game-ranking";
+export {
+  validateNarrationGameRankingResponseV1,
+  type NarrationGameRankingAssessmentV1,
+  type NarrationGameRankingEvidenceCitationV1,
+  type NarrationGameRankingResponseAbstentionReasonV1,
+  type NarrationGameRankingResponseRejectionReasonV1,
+  type NarrationGameRankingResponseV1,
+  type NarrationGameRankingResponseValidationV1,
+} from "./narration-game-ranking-response";
+export {
+  scoreNarrationGameRankingResponseV1,
+  summarizeNarrationGameRankingScoresV1,
+  type NarrationGameRankingEvaluationExpectationV1,
+  type NarrationGameRankingScoreSummaryV1,
+  type NarrationGameRankingScoreV1,
+  type NarrationGameRankingTierAlignmentV1,
+} from "./narration-game-ranking-evaluation";
+export {
+  extractNarrationGameFeaturesV1,
+  type NarrationGameFeatureObservationV1,
+  type NarrationGameFeatureRequestV1,
+  type NarrationGameFeatureResultV1,
+  type NarrationGameFeatureRollV1,
+} from "./narration-game-features";
+export {
+  NARRATION_GAME_CATALOG_V1,
+  type NarrationGameCatalogV1,
+  type NarrationGameConfidenceV1,
+  type NarrationGameFeatureV1,
+  type NarrationGameFingerprintV1,
+  type NarrationGameSourceAuthorityV1,
+  type NarrationGameSourceV1,
+  type NarrationGameSystemV1,
+} from "./narration-game-catalog";
 export {
   MAX_DIE_SIDES,
   MAX_RENDERED_DICE,
