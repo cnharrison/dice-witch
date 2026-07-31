@@ -28,6 +28,7 @@ const REQUIRED_VALUE_KEYS = [
   "discordApplicationId",
   "discordTestGuildId",
   "frontendOrigin",
+  "gameDetectionChannelId",
   "inviteLink",
   "logOutputChannelId",
   "rollLifecycleAlertChannelId",
@@ -36,12 +37,13 @@ const REQUIRED_VALUE_KEYS = [
   "version",
 ];
 const REQUIRED_BINDINGS = {
-  data: { DATA: "d1", DISCORD_REST: "service" },
+  data: { AI: "ai", DATA: "d1", DISCORD_REST: "service" },
   "discord-rest": {
     DISCORD_APPLICATION_ID: "plain_text",
     DISCORD_BOT_LIST_KEY: "secrets_store_secret",
     DISCORD_BOT_TOKEN: "secrets_store_secret",
     DISCORD_TEST_GUILD_ID: "plain_text",
+    GAME_DETECTION_CHANNEL_ID: "plain_text",
     INVITE_LINK: "plain_text",
     LOG_OUTPUT_CHANNEL_ID: "plain_text",
     ROLL_LIFECYCLE_ALERT_CHANNEL_ID: "plain_text",
@@ -150,6 +152,12 @@ function decodeValues(encodedValues) {
     !SNOWFLAKE.test(values.discordTestGuildId ?? "") ||
     !SNOWFLAKE.test(values.logOutputChannelId ?? "") ||
     !SNOWFLAKE.test(values.rollLifecycleAlertChannelId ?? "") ||
+    !SNOWFLAKE.test(values.gameDetectionChannelId ?? "") ||
+    new Set([
+      values.logOutputChannelId,
+      values.rollLifecycleAlertChannelId,
+      values.gameDetectionChannelId,
+    ]).size !== 3 ||
     values.frontendOrigin !== FRONTEND_ORIGIN
   ) {
     throw new Error("Production values bundle is invalid");
@@ -232,6 +240,7 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
     SUPPORT_SERVER_LINK: values.supportServerLink,
     LOG_OUTPUT_CHANNEL_ID: values.logOutputChannelId,
     ROLL_LIFECYCLE_ALERT_CHANNEL_ID: values.rollLifecycleAlertChannelId,
+    GAME_DETECTION_CHANNEL_ID: values.gameDetectionChannelId,
   };
   configs["discord-rest"].secrets_store_secrets = productionSecrets(
     "discord-rest",
@@ -302,6 +311,9 @@ function configuredBindingTypes(config) {
       "durable_object_namespace",
     ]),
     ...(config.d1_databases ?? []).map(({ binding }) => [binding, "d1"]),
+    ...(config.ai?.binding === undefined
+      ? []
+      : [[config.ai.binding, "ai"]]),
     ...(config.assets?.binding === undefined
       ? []
       : [[config.assets.binding, "assets"]]),

@@ -8,6 +8,7 @@ import {
   rollLogContextDescription,
   rollLogMetadataDescription,
   rollLogResultDescription,
+  parseGameDetectionAnnouncementV1,
   parseRollLifecycleAlert,
   rollLogTelemetryContext,
   validateRollLogArtifact,
@@ -15,6 +16,7 @@ import {
   type DeliverRollLogResultV1,
   type DiscordAudienceCaptureV1,
   type DiscordRollChannelType,
+  type GameDetectionAnnouncementV1,
   type RollLifecycleAlertV1,
   type RollLoggingContext,
   type RollLogArtifactV1,
@@ -30,6 +32,7 @@ export type DiscordRestEnv = {
   SUPPORT_SERVER_LINK: string;
   LOG_OUTPUT_CHANNEL_ID: string;
   ROLL_LIFECYCLE_ALERT_CHANNEL_ID: string;
+  GAME_DETECTION_CHANNEL_ID: string;
   TOPGG_KEY: string;
   DISCORD_BOT_LIST_KEY: string;
 };
@@ -82,6 +85,15 @@ export type TextChannel = {
   name: string;
   type: 0 | 5;
 };
+
+export type GameDetectionAnnouncementDeliveryResult =
+  | { status: "delivered"; messageId: string; httpStatus: number }
+  | { status: "failed"; httpStatus: number }
+  | {
+      status: "retryable";
+      httpStatus: number | null;
+      retryAfterMs: number | null;
+    };
 
 export type RollLifecycleAlertDeliveryResult =
   | { status: "delivered"; messageId: string; httpStatus: number }
@@ -1954,6 +1966,119 @@ export async function deliverWebRoll(
   return { status: "delivered" };
 }
 
+function gameDetectionPayload(detection: GameDetectionAnnouncementV1) {
+  const destination = detection.scope === "dm"
+    ? `Direct message channel ${detection.channelId}`
+    : `${detection.guildName ?? "Unknown guild"} / ${detection.channelName ?? "Unknown channel"} (<#${detection.channelId}>)`;
+  const fields = [
+    {
+      name: "Game",
+      value: `${detection.gameName} (\`${detection.gameId}\`)`,
+      inline: false,
+    },
+    {
+      name: "Confidence",
+      value: detection.confidence,
+      inline: true,
+    },
+    {
+      name: "Observed rolls",
+      value: String(detection.rollCount),
+      inline: true,
+    },
+    {
+      name: "Origin",
+      value: destination,
+      inline: false,
+    },
+  ];
+  if (detection.previousGameId !== null) {
+    fields.push({
+      name: "Previous detected game",
+      value: `\`${detection.previousGameId}\``,
+      inline: false,
+    });
+  }
+  return {
+    flags: 1 << 12,
+    allowed_mentions: { parse: [] },
+    nonce: `g${detection.sessionId.slice(-8)}${detection.detectionId.slice(-16)}`,
+    enforce_nonce: true,
+    embeds: [
+      {
+        title:
+          detection.previousGameId === null
+            ? "Game detected"
+            : "New game detected",
+        color: 0x9b_59_b6,
+        fields,
+        footer: {
+          text: `Session ${new Date(detection.sessionStartedAt).toISOString()} – ${new Date(detection.sessionLastRollAt).toISOString()} · detected ${new Date(detection.detectedAt).toISOString()}`,
+        },
+      },
+    ],
+  };
+}
+
+export async function createGameDetectionAnnouncementV1(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "GAME_DETECTION_CHANNEL_ID">,
+  value: unknown,
+  discordFetch: RequestFetch = (request) => fetch(request),
+): Promise<GameDetectionAnnouncementDeliveryResult> {
+  const detection = parseGameDetectionAnnouncementV1(value);
+  if (!SNOWFLAKE.test(env.GAME_DETECTION_CHANNEL_ID)) {
+    throw new Error("Game-detection channel is invalid");
+  }
+
+  let response: Response;
+  try {
+    response = await discordFetch(
+      new Request(
+        `${DISCORD_API}/channels/${env.GAME_DETECTION_CHANNEL_ID}/messages`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+            "content-type": "application/json",
+            "user-agent": "Dice-Witch",
+          },
+          body: JSON.stringify(gameDetectionPayload(detection)),
+        },
+      ),
+    );
+  } catch {
+    return { status: "retryable", httpStatus: null, retryAfterMs: null };
+  }
+  if (!response.ok) {
+    if (isRetryableDiscordStatus(response.status)) {
+      const retryAfterSeconds = numericResponseHeader(response, "retry-after");
+      return {
+        status: "retryable",
+        httpStatus: response.status,
+        retryAfterMs:
+          retryAfterSeconds === null
+            ? null
+            : Math.ceil(retryAfterSeconds * 1_000),
+      };
+    }
+    return { status: "failed", httpStatus: response.status };
+  }
+
+  const created: unknown = await response.json();
+  if (
+    !isRecord(created) ||
+    typeof created.id !== "string" ||
+    !SNOWFLAKE.test(created.id)
+  ) {
+    throw new Error("Discord game-detection response is invalid");
+  }
+  return {
+    status: "delivered",
+    messageId: created.id,
+    httpStatus: response.status,
+  };
+}
+
 function lifecycleAlertPresentation(
   state: RollLifecycleAlertV1["state"],
 ): { label: string; color: number } {
@@ -2265,6 +2390,10 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     input: DeliverRollLogInputV1,
   ): Promise<DeliverRollLogResultV1> {
     return deliverRollLogV1(await this.botEnv(), input);
+  }
+
+  async createGameDetectionAnnouncementV1(input: unknown) {
+    return createGameDetectionAnnouncementV1(await this.botEnv(), input);
   }
 
   async createRollLifecycleAlertV1(input: unknown) {

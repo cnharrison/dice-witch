@@ -35,6 +35,9 @@ function expectedBindings(config) {
   for (const value of config.d1_databases ?? []) {
     bindings.set(value.binding, { type: "d1", id: value.database_id });
   }
+  if (config.ai?.binding !== undefined) {
+    bindings.set(config.ai.binding, { type: "ai" });
+  }
   if (config.assets?.binding !== undefined) {
     bindings.set(config.assets.binding, { type: "assets" });
   }

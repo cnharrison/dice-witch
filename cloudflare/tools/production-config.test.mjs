@@ -29,6 +29,7 @@ function values(overrides = {}) {
     logOutputChannelId: "809246262888890419",
     rollLifecycleAlertChannelId: "809246262888890420",
     frontendOrigin: "https://dicewit.ch",
+    gameDetectionChannelId: "809246262888890421",
     ...overrides,
   };
 }
@@ -80,6 +81,11 @@ test("materializes exact production configs from source templates and bounded va
     discordRest.vars.ROLL_LIFECYCLE_ALERT_CHANNEL_ID,
     "809246262888890420",
   );
+  assert.equal(
+    discordRest.vars.GAME_DETECTION_CHANNEL_ID,
+    "809246262888890421",
+  );
+  assert.deepEqual(data.ai, { binding: "AI" });
   assert.equal(interactions.vars.DISCORD_TEST_GUILD_ID, undefined);
   assert.deepEqual(interactions.alias, {
     crypto: "./packages/roll-domain/src/worker-crypto.ts",
@@ -101,6 +107,7 @@ test("rejects malformed, incomplete, or wrong-target production values", async (
     "not-base64!",
     encode(values({ frontendOrigin: "https://staging.example.com" })),
     encode(values({ d1DatabaseId: "11111111-1111-4111-8111-111111111111" })),
+    encode(values({ gameDetectionChannelId: "809246262888890419" })),
     encode(Object.fromEntries(Object.entries(values()).filter(([key]) => key !== "secretsStoreId"))),
     Buffer.alloc(20_000).toString("base64"),
   ]) {

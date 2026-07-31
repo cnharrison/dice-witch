@@ -8,6 +8,9 @@
   "alias": {
     "crypto": "./packages/roll-domain/src/worker-crypto.ts"
   },
+  "ai": {
+    "binding": "AI"
+  },
   "services": [
     {
       "binding": "DISCORD_REST",
