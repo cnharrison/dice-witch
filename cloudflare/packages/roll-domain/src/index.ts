@@ -115,6 +115,7 @@ export {
   NARRATION_GAME_CATALOG_V1,
   type NarrationGameCatalogV1,
   type NarrationGameConfidenceV1,
+  type NarrationGameEvidencePolicyV1,
   type NarrationGameFeatureV1,
   type NarrationGameFingerprintV1,
   type NarrationGameSourceAuthorityV1,

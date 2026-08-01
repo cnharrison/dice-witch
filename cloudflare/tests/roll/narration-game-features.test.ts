@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractNarrationGameFeaturesV1,
+  NARRATION_GAME_CATALOG_V1,
   type NarrationGameFeatureRequestV1,
 } from "../../packages/roll-domain/src";
 
@@ -22,6 +23,10 @@ describe("extractNarrationGameFeaturesV1", () => {
           kind: "four-d6-keep-highest-three",
           occurrences: 6,
         },
+        {
+          kind: "observed-roll-expression",
+          occurrences: 6,
+        },
       ],
     });
   });
@@ -38,6 +43,7 @@ describe("extractNarrationGameFeaturesV1", () => {
     expect(result.features).toEqual([
       { kind: "d6-pool-keep-highest", occurrences: 1 },
       { kind: "four-fate-dice", occurrences: 1 },
+      { kind: "observed-roll-expression", occurrences: 6 },
       { kind: "percentile-roll-under-threshold", occurrences: 1 },
       { kind: "single-d20-plus-modifier", occurrences: 1 },
       { kind: "single-d20-roll", occurrences: 1 },
@@ -45,6 +51,52 @@ describe("extractNarrationGameFeaturesV1", () => {
       { kind: "two-d6-keep-lowest", occurrences: 1 },
     ]);
     expect(JSON.stringify(result)).not.toMatch(/1d20|d100|55|result|total/iu);
+  });
+
+  it("counts compound mechanics by matching expression, not inner dice", () => {
+    expect(
+      extractNarrationGameFeaturesV1({
+        version: 1,
+        rolls: [{ notation: ["{d8!,d6!}kh1"], repetitions: 2 }],
+      }).features,
+    ).toEqual([
+      { kind: "exploding-step-die", occurrences: 2 },
+      {
+        kind: "exploding-trait-plus-wild-d6-keep-highest",
+        occurrences: 2,
+      },
+      { kind: "observed-roll-expression", occurrences: 2 },
+    ]);
+  });
+
+  it("recognizes a diverse DCC dice chain without confusing other unusual dice", () => {
+    expect(
+      extractNarrationGameFeaturesV1({
+        version: 1,
+        rolls: [
+          {
+            notation: ["1d3", "1d30+10", "2d14", "4d18+22", "1d50+30"],
+            repetitions: 1,
+          },
+        ],
+      }).features,
+    ).toEqual([
+      { kind: "dcc-dice-chain", occurrences: 3 },
+      { kind: "dcc-diverse-dice-chain", occurrences: 1 },
+      { kind: "observed-roll-expression", occurrences: 5 },
+    ]);
+  });
+
+  it("does not treat two rare DCC dice in one expression as a repeated pattern", () => {
+    expect(
+      extractNarrationGameFeaturesV1({
+        version: 1,
+        rolls: [{ notation: ["{d14,d30}"], repetitions: 1 }],
+      }).features,
+    ).toEqual([
+      { kind: "dcc-dice-chain", occurrences: 1 },
+      { kind: "observed-roll-expression", occurrences: 1 },
+    ]);
   });
 
   it("counts repeated expressions as repeated mechanical observations", () => {
@@ -89,6 +141,7 @@ describe("extractNarrationGameFeaturesV1", () => {
       { kind: "d20-with-plot-d6", occurrences: 1 },
       { kind: "dcc-dice-chain", occurrences: 1 },
       { kind: "mixed-step-dice-pool", occurrences: 1 },
+      { kind: "observed-roll-expression", occurrences: 14 },
       { kind: "plain-d10-pool", occurrences: 1 },
       { kind: "plain-d6-pool", occurrences: 2 },
       { kind: "single-d10-plus-modifier", occurrences: 1 },
@@ -103,13 +156,61 @@ describe("extractNarrationGameFeaturesV1", () => {
     expect(JSON.stringify(result)).not.toMatch(/d10\+7|2d20|d14|notation/iu);
   });
 
-  it("ignores unsupported notation instead of manufacturing a feature", () => {
+  it("can extract every mechanic used by a catalogue fingerprint", () => {
+    const extracted = extractNarrationGameFeaturesV1({
+      version: 1,
+      rolls: [{
+        notation: [
+          "4d6kh3",
+          "3d6kh1",
+          "{d8!,d6!}kh1",
+          "4df",
+          "d100<50",
+          "2d6kl1",
+          "d20<12",
+          "{d20,2d6kh1}",
+          "{d20,d6}",
+          "d30",
+          "d14",
+          "{d8,d10}",
+          "8d10",
+          "8d6",
+          "d10+3",
+          "d20+3",
+          "3d6",
+          "3d20",
+          "2d10+3",
+          "2d12+3",
+          "2d20<13",
+          "2d6+3",
+        ],
+        repetitions: 2,
+      }],
+    });
+    const extractedKinds = new Set(
+      extracted.features.map(({ kind }) => kind),
+    );
+    const fingerprintKinds = new Set(
+      NARRATION_GAME_CATALOG_V1.systems.flatMap(({ fingerprints }) =>
+        fingerprints.flatMap(({ features }) => features)
+      ),
+    );
+
+    expect(
+      [...fingerprintKinds].filter((kind) => !extractedKinds.has(kind)),
+    ).toEqual([]);
+  });
+
+  it("counts unsupported expressions without manufacturing mechanics", () => {
     expect(
       extractNarrationGameFeaturesV1({
         version: 1,
         rolls: [{ notation: ["not dice"], repetitions: 1 }],
       }),
-    ).toEqual({ version: 1, features: [] });
+    ).toEqual({
+      version: 1,
+      features: [{ kind: "observed-roll-expression", occurrences: 1 }],
+    });
   });
 
   it("rejects malformed, oversized, and sensitive input shapes", () => {

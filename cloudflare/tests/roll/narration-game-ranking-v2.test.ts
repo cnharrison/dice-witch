@@ -13,6 +13,7 @@ import { NARRATION_GAME_SESSION_FIXTURES_V1 } from "./fixtures/narration-game-se
 const PERCENTILE_REQUEST = {
   version: 1,
   features: [
+    { kind: "observed-roll-expression", occurrences: 2 },
     { kind: "single-percentile-roll", occurrences: 2 },
     { kind: "percentile-roll-under-threshold", occurrences: 2 },
   ],
@@ -54,6 +55,7 @@ describe("prepareNarrationGameRankingV2", () => {
       version: 2,
       evidenceScope: "current-session-observed-mechanics",
       observedMechanics: [
+        { kind: "observed-roll-expression", occurrences: 2 },
         { kind: "percentile-roll-under-threshold", occurrences: 2 },
         { kind: "single-percentile-roll", occurrences: 2 },
       ],
@@ -164,7 +166,7 @@ describe("prepareNarrationGameRankingV2", () => {
     });
   });
 
-  it("keeps all seven eligible reviewed packets bounded and prompt-ready", () => {
+  it("keeps all eight eligible reviewed packets bounded and prompt-ready", () => {
     let promptReady = 0;
     for (const fixture of NARRATION_GAME_SESSION_FIXTURES_V1) {
       const request = extractNarrationGameFeaturesV1(fixture.request);
@@ -176,6 +178,6 @@ describe("prepareNarrationGameRankingV2", () => {
         MAX_NARRATION_GAME_RANKING_PACKET_BYTES,
       );
     }
-    expect(promptReady).toBe(7);
+    expect(promptReady).toBe(8);
   });
 });

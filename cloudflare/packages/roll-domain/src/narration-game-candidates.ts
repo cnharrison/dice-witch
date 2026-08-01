@@ -89,11 +89,12 @@ const CONFIDENCE_RANK: Readonly<Record<NarrationGameConfidenceV1, number>> = {
 
 const CATALOG_SYSTEMS: readonly NarrationGameSystemV1[] =
   NARRATION_GAME_CATALOG_V1.systems;
-const CATALOG_FEATURES = new Set<NarrationGameFeatureV1>(
-  CATALOG_SYSTEMS.flatMap(({ fingerprints }) =>
+const CATALOG_FEATURES = new Set<NarrationGameFeatureV1>([
+  "observed-roll-expression",
+  ...CATALOG_SYSTEMS.flatMap(({ fingerprints }) =>
     fingerprints.flatMap(({ features }) => features),
   ),
-);
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -178,6 +179,32 @@ function matchesFingerprint(
   );
 }
 
+function fingerprintEvidenceTier(
+  fingerprint: NarrationGameFingerprintV1,
+  observations: ReadonlyMap<NarrationGameFeatureV1, number>,
+): NarrationGameConfidenceV1 {
+  const configuredTier = lowerConfidence(
+    fingerprint.evidenceStrength,
+    fingerprint.confidenceCeiling,
+  );
+  switch (fingerprint.evidencePolicy) {
+    case "standalone":
+      return configuredTier;
+    case "corroborating":
+      return "weak";
+    case "representative": {
+      const total = observations.get("observed-roll-expression") ?? 0;
+      const support = Math.min(
+        total,
+        ...fingerprint.features.map(
+          (feature) => observations.get(feature) ?? 0,
+        ),
+      );
+      return support > total - support ? configuredTier : "weak";
+    }
+  }
+}
+
 function buildCandidate(
   system: NarrationGameSystemV1,
   observations: ReadonlyMap<NarrationGameFeatureV1, number>,
@@ -187,13 +214,11 @@ function buildCandidate(
   );
   if (fingerprints.length === 0) return undefined;
 
-  const evidence = fingerprints.map(
-    ({ claim, confidenceCeiling, evidenceStrength, sourceIds }) => ({
-      claim,
-      evidenceTier: lowerConfidence(evidenceStrength, confidenceCeiling),
-      sourceIds,
-    }),
-  );
+  const evidence = fingerprints.map((fingerprint) => ({
+    claim: fingerprint.claim,
+    evidenceTier: fingerprintEvidenceTier(fingerprint, observations),
+    sourceIds: fingerprint.sourceIds,
+  }));
   const evidenceTier = highestConfidence(
     evidence.map(({ evidenceTier: tier }) => tier),
   );
@@ -507,7 +532,7 @@ export function retrieveNarrationGameCandidatesV2(
   const required = matches.filter(
     ({ candidate, contextMatched }) =>
       contextMatched ||
-      CONFIDENCE_RANK[candidate.evidenceTier] >= CONFIDENCE_RANK.strong,
+      CONFIDENCE_RANK[candidate.evidenceTier] >= CONFIDENCE_RANK.plausible,
   );
   const selected = [...required];
   for (const match of matches) {
@@ -593,7 +618,7 @@ export function retrieveNarrationGameCandidatesV3(
   const required = matches.filter(
     ({ candidate, locationMatched }) =>
       locationMatched ||
-      CONFIDENCE_RANK[candidate.evidenceTier] >= CONFIDENCE_RANK.strong,
+      CONFIDENCE_RANK[candidate.evidenceTier] >= CONFIDENCE_RANK.plausible,
   );
   const selected = [...required];
   for (const match of matches) {

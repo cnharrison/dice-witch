@@ -12,7 +12,10 @@ import {
 
 const ranking = {
   version: 1,
-  features: [{ kind: "exploding-step-die", occurrences: 2 }],
+  features: [
+    { kind: "observed-roll-expression", occurrences: 2 },
+    { kind: "exploding-step-die", occurrences: 2 },
+  ],
 } as const satisfies NarrationGameRankingRequestV1;
 
 const context = {
@@ -256,7 +259,10 @@ describe("game-detection prompt contract", () => {
     expect(buildGameDetectionCandidateSignatureInputV1(ranking)).toBe(
       buildGameDetectionCandidateSignatureInputV1({
         version: 1,
-        features: [{ kind: "exploding-step-die", occurrences: 9 }],
+        features: [
+          { kind: "observed-roll-expression", occurrences: 9 },
+          { kind: "exploding-step-die", occurrences: 9 },
+        ],
       }),
     );
   });

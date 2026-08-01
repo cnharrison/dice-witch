@@ -16,6 +16,7 @@ const DND_REQUEST = {
 const PERCENTILE_REQUEST = {
   version: 1,
   features: [
+    { kind: "observed-roll-expression", occurrences: 2 },
     { kind: "single-percentile-roll", occurrences: 2 },
     { kind: "percentile-roll-under-threshold", occurrences: 2 },
   ],
@@ -359,6 +360,85 @@ describe("validateNarrationGameRankingResponseV1", () => {
       validateNarrationGameRankingResponseV1(DND_RESPONSE, {
         version: 1,
         features: [{ kind: "single-d20-plus-modifier", occurrences: 12 }],
+      }),
+    ).toEqual({ status: "rejected", reason: "ranking-not-eligible" });
+  });
+
+  it("caps a diverse DCC dice-chain selection at plausible", () => {
+    const request = {
+      version: 3,
+      features: [
+        { kind: "observed-roll-expression", occurrences: 39 },
+        { kind: "dcc-dice-chain", occurrences: 4 },
+        { kind: "dcc-diverse-dice-chain", occurrences: 1 },
+      ],
+      context: {
+        locationNames: ["Campaign", "dice-rolls"],
+        rollLabels: [],
+      },
+    } as const;
+    const response = {
+      version: 1,
+      disposition: "select",
+      selectedSystemId: "dungeon-crawl-classics",
+      assessments: {
+        "dungeon-crawl-classics": {
+          confidenceTier: "plausible",
+          evidenceCitations: [{
+            claimId: "repeated-use-of-different-rare-dcc-dice-is-a-dice-chain-pattern",
+            sourceIds: ["dungeon-crawl-classics-rules"],
+          }],
+        },
+      },
+      abstentionReason: null,
+    } as const satisfies NarrationGameRankingResponseV1;
+
+    expect(validateNarrationGameRankingResponseV1(response, request)).toEqual({
+      status: "accepted",
+      value: response,
+    });
+    expect(
+      validateNarrationGameRankingResponseV1({
+        ...response,
+        assessments: {
+          "dungeon-crawl-classics": {
+            ...response.assessments["dungeon-crawl-classics"],
+            confidenceTier: "distinctive",
+          },
+        },
+      }, request),
+    ).toEqual({ status: "rejected", reason: "confidence-exceeds-bound" });
+  });
+
+  it("rejects a selection supported only by a minority mechanic", () => {
+    const response = {
+      version: 1,
+      disposition: "select",
+      selectedSystemId: "draw-steel",
+      assessments: {
+        "draw-steel": {
+          confidenceTier: "plausible",
+          evidenceCitations: [{
+            claimId: "draw-steel-uses-2d10-power-rolls-with-tiered-outcomes",
+            sourceIds: ["draw-steel-rules"],
+          }],
+        },
+      },
+      abstentionReason: null,
+    } as const;
+
+    expect(
+      validateNarrationGameRankingResponseV1(response, {
+        version: 3,
+        features: [
+          { kind: "observed-roll-expression", occurrences: 16 },
+          { kind: "plain-d10-pool", occurrences: 11 },
+          { kind: "two-d10-plus-modifier", occurrences: 2 },
+        ],
+        context: {
+          locationNames: ["Friday game", "dice-rolls"],
+          rollLabels: [],
+        },
       }),
     ).toEqual({ status: "rejected", reason: "ranking-not-eligible" });
   });

@@ -206,8 +206,8 @@ export const NARRATION_GAME_SESSION_FIXTURES_V1 = [
     },
   },
   {
-    id: "conflict-fitd-and-savage-worlds-strong",
-    description: "Concurrent strong d6-pool families require mixed-system abstention.",
+    id: "candidate-savage-worlds-with-minority-fitd",
+    description: "A standalone Wild Die workflow outranks a non-representative d6-pool pattern.",
     request: {
       version: 1,
       rolls: [
@@ -216,7 +216,7 @@ export const NARRATION_GAME_SESSION_FIXTURES_V1 = [
       ],
     },
     expected: {
-      state: "conflicting-evidence",
+      state: "candidate-set",
       candidateIds: ["savage-worlds", "forged-in-the-dark-family"],
       topEvidenceTier: "strong",
     },

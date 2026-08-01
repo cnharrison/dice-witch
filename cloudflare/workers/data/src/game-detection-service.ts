@@ -200,7 +200,12 @@ export async function processGameDetectionMinute(
         if (validation.status === "accepted") {
           await repository.completeRankJob(
             job,
-            validation,
+            {
+              status: "accepted",
+              value: validation.value,
+              modelId: GAME_DETECTION_MODEL_ID,
+              promptRevision: preparation.prompt.systemPromptRevision,
+            },
             completedAt,
             completedAt - startedAt,
           );

@@ -12,12 +12,12 @@ export type NarrationGameSourceAuthorityV1 =
   | "publisher";
 
 export type NarrationGameFeatureV1 =
+  | "observed-roll-expression"
   | "d6-pool-keep-highest"
   | "exploding-step-die"
   | "exploding-trait-plus-wild-d6-keep-highest"
   | "four-d6-keep-highest-three"
   | "four-fate-dice"
-  | "pathfinder-multiple-attack-sequence"
   | "percentile-roll-under-threshold"
   | "single-d20-plus-modifier"
   | "single-percentile-roll"
@@ -26,6 +26,7 @@ export type NarrationGameFeatureV1 =
   | "d20-with-accuracy-d6"
   | "d20-with-plot-d6"
   | "dcc-dice-chain"
+  | "dcc-diverse-dice-chain"
   | "mixed-step-dice-pool"
   | "plain-d10-pool"
   | "plain-d6-pool"
@@ -47,11 +48,17 @@ export type NarrationGameSourceV1 = Readonly<{
   accessedOn: string;
 }>;
 
+export type NarrationGameEvidencePolicyV1 =
+  | "standalone"
+  | "representative"
+  | "corroborating";
+
 export type NarrationGameFingerprintV1 = Readonly<{
   id: string;
   claim: string;
   features: readonly NarrationGameFeatureV1[];
   minimumOccurrences: number;
+  evidencePolicy: NarrationGameEvidencePolicyV1;
   evidenceStrength: NarrationGameConfidenceV1;
   confidenceCeiling: NarrationGameConfidenceV1;
   sourceIds: readonly string[];
@@ -89,6 +96,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "ordinary-percentile-check",
           features: ["single-percentile-roll"],
           minimumOccurrences: 1,
+          evidencePolicy: "corroborating",
           evidenceStrength: "weak",
           confidenceCeiling: "weak",
           sourceIds: ["basic-roleplaying-universal-game-engine-2023"],
@@ -99,6 +107,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "percentile-roll-under-procedure",
           features: ["percentile-roll-under-threshold"],
           minimumOccurrences: 2,
+          evidencePolicy: "representative",
           evidenceStrength: "plausible",
           confidenceCeiling: "plausible",
           sourceIds: ["basic-roleplaying-universal-game-engine-2023"],
@@ -132,6 +141,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "ability-score-generation-workflow",
           features: ["four-d6-keep-highest-three"],
           minimumOccurrences: 6,
+          evidencePolicy: "standalone",
           evidenceStrength: "strong",
           confidenceCeiling: "strong",
           sourceIds: ["dnd-5e-2014-basic-rules-ability-scores"],
@@ -142,6 +152,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "ordinary-d20-check",
           features: ["single-d20-plus-modifier"],
           minimumOccurrences: 1,
+          evidencePolicy: "corroborating",
           evidenceStrength: "weak",
           confidenceCeiling: "weak",
           sourceIds: ["dnd-5e-2014-basic-rules-ability-checks"],
@@ -179,24 +190,15 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "ordinary-d20-check",
           features: ["single-d20-plus-modifier"],
           minimumOccurrences: 1,
+          evidencePolicy: "corroborating",
           evidenceStrength: "weak",
           confidenceCeiling: "weak",
           sourceIds: ["pathfinder-2e-player-core-checks"],
           commentaryTopics: ["d20-checks"],
         },
-        {
-          id: "multiple-attack-penalty-sequence",
-          claim: "repeated-attack-penalty-pattern",
-          features: ["pathfinder-multiple-attack-sequence"],
-          minimumOccurrences: 1,
-          evidenceStrength: "plausible",
-          confidenceCeiling: "plausible",
-          sourceIds: ["pathfinder-2e-player-core-checks"],
-          commentaryTopics: ["multiple-attacks"],
-        },
       ],
       confusableWith: ["dungeons-and-dragons-5e-2014", "other-d20-systems"],
-      commentaryTopics: ["d20-checks", "multiple-attacks"],
+      commentaryTopics: ["d20-checks"],
       sources: [
         {
           id: "pathfinder-2e-player-core-checks",
@@ -218,6 +220,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "four-fate-dice-roll",
           features: ["four-fate-dice"],
           minimumOccurrences: 1,
+          evidencePolicy: "standalone",
           evidenceStrength: "strong",
           confidenceCeiling: "strong",
           sourceIds: ["fate-core-taking-action"],
@@ -247,6 +250,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "d6-pool-highest-die-procedure",
           features: ["d6-pool-keep-highest"],
           minimumOccurrences: 2,
+          evidencePolicy: "representative",
           evidenceStrength: "strong",
           confidenceCeiling: "strong",
           sourceIds: ["blades-in-the-dark-core-system"],
@@ -257,6 +261,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "zero-rating-lowest-die-procedure",
           features: ["two-d6-keep-lowest"],
           minimumOccurrences: 1,
+          evidencePolicy: "corroborating",
           evidenceStrength: "strong",
           confidenceCeiling: "strong",
           sourceIds: ["blades-in-the-dark-core-system"],
@@ -286,6 +291,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "ordinary-percentile-check",
           features: ["single-percentile-roll"],
           minimumOccurrences: 1,
+          evidencePolicy: "corroborating",
           evidenceStrength: "weak",
           confidenceCeiling: "weak",
           sourceIds: ["call-of-cthulhu-game-system"],
@@ -296,6 +302,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "percentile-roll-under-procedure",
           features: ["percentile-roll-under-threshold"],
           minimumOccurrences: 2,
+          evidencePolicy: "representative",
           evidenceStrength: "plausible",
           confidenceCeiling: "plausible",
           sourceIds: ["call-of-cthulhu-game-system"],
@@ -330,6 +337,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "ordinary-percentile-check",
           features: ["single-percentile-roll"],
           minimumOccurrences: 1,
+          evidencePolicy: "corroborating",
           evidenceStrength: "weak",
           confidenceCeiling: "weak",
           sourceIds: ["mothership-1e-player-survival-guide"],
@@ -340,6 +348,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "percentile-roll-under-procedure",
           features: ["percentile-roll-under-threshold"],
           minimumOccurrences: 2,
+          evidencePolicy: "representative",
           evidenceStrength: "plausible",
           confidenceCeiling: "plausible",
           sourceIds: ["mothership-1e-player-survival-guide"],
@@ -374,6 +383,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "open-ended-step-die-rolls",
           features: ["exploding-step-die"],
           minimumOccurrences: 2,
+          evidencePolicy: "representative",
           evidenceStrength: "plausible",
           confidenceCeiling: "plausible",
           sourceIds: ["savage-worlds-test-drive-2015"],
@@ -384,6 +394,7 @@ export const NARRATION_GAME_CATALOG_V1 = {
           claim: "trait-and-wild-die-pair",
           features: ["exploding-trait-plus-wild-d6-keep-highest"],
           minimumOccurrences: 2,
+          evidencePolicy: "standalone",
           evidenceStrength: "strong",
           confidenceCeiling: "strong",
           sourceIds: ["savage-worlds-test-drive-2015"],

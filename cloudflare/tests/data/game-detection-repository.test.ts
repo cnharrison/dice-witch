@@ -15,6 +15,10 @@ const dataEnv = env as unknown as {
 const hour = 60 * 60 * 1_000;
 const day = 24 * hour;
 const baseTime = 1_767_225_600_000;
+const detectionProvenance = {
+  modelId: "@cf/zai-org/glm-5.2",
+  promptRevision: "dice-witch-game-detection-v3",
+} as const;
 
 function snapshot(input: {
   interactionId: string;
@@ -465,7 +469,7 @@ describe("D1GameDetectionRepository", () => {
 
     await repository.completeRankJob(
       job,
-      { status: "accepted", value: dndResponse },
+      { status: "accepted", value: dndResponse, ...detectionProvenance },
       baseTime + 180_020,
       10,
     );
@@ -550,7 +554,7 @@ describe("D1GameDetectionRepository", () => {
 
     await repository.completeRankJob(
       job,
-      { status: "accepted", value: dndResponse },
+      { status: "accepted", value: dndResponse, ...detectionProvenance },
       baseTime + 180_004,
       1,
     );
@@ -585,7 +589,11 @@ describe("D1GameDetectionRepository", () => {
     if (savageJob === null) throw new Error("Expected a Savage Worlds rank job");
     await repository.completeRankJob(
       savageJob,
-      { status: "accepted", value: savageWorldsResponse },
+      {
+        status: "accepted",
+        value: savageWorldsResponse,
+        ...detectionProvenance,
+      },
       baseTime + 180_002,
       1,
     );
@@ -608,6 +616,7 @@ describe("D1GameDetectionRepository", () => {
       dndJob,
       {
         status: "accepted",
+        ...detectionProvenance,
         value: {
           ...dndResponse,
           assessments: {
@@ -656,7 +665,7 @@ describe("D1GameDetectionRepository", () => {
     if (job === null) throw new Error("Expected a rank job");
     await repository.completeRankJob(
       job,
-      { status: "accepted", value: dndResponse },
+      { status: "accepted", value: dndResponse, ...detectionProvenance },
       baseTime + 180_002,
       1,
     );
@@ -707,7 +716,7 @@ describe("D1GameDetectionRepository", () => {
     if (job === null) throw new Error("Expected a rank job");
     await repository.completeRankJob(
       job,
-      { status: "accepted", value: dndResponse },
+      { status: "accepted", value: dndResponse, ...detectionProvenance },
       baseTime + 180_002,
       1,
     );
@@ -751,7 +760,7 @@ describe("D1GameDetectionRepository", () => {
     if (first === null) throw new Error("Expected a rank job");
     await repository.completeRankJob(
       first,
-      { status: "accepted", value: dndResponse },
+      { status: "accepted", value: dndResponse, ...detectionProvenance },
       baseTime + 180_002,
       1,
     );
@@ -787,7 +796,7 @@ describe("D1GameDetectionRepository", () => {
     if (first === null) throw new Error("Expected the first episode rank job");
     await repository.completeRankJob(
       first,
-      { status: "accepted", value: dndResponse },
+      { status: "accepted", value: dndResponse, ...detectionProvenance },
       baseTime + 180_002,
       1,
     );

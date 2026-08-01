@@ -188,6 +188,144 @@ describe("processGameDetectionMinute", () => {
     expect(announce).not.toHaveBeenCalled();
   });
 
+  it("does not rank an incidental mechanic from a heterogeneous active episode", async () => {
+    const notations = [
+      ...Array.from({ length: 7 }, () => "4d10"),
+      ...Array.from({ length: 2 }, () => "8d10"),
+      ...Array.from({ length: 2 }, () => "2d10"),
+      ...Array.from({ length: 5 }, () => "d10"),
+    ];
+    const lifecycle = new D1RollLifecycleRepository(dataEnv.DATA);
+    const first = deliveredRoll("100000000000000201");
+    if (
+      first.acceptedAt === null ||
+      first.deliveryStartedAt === null ||
+      first.terminalAt === null
+    ) {
+      throw new Error("Heterogeneous episode fixture must be delivered");
+    }
+    for (const [index, notation] of notations.entries()) {
+      const offset = index * 15_000;
+      await lifecycle.record({
+        ...first,
+        interactionId: String(BigInt(first.interactionId) + BigInt(index)),
+        receivedAt: first.receivedAt + offset,
+        deferredAt: first.deferredAt + offset,
+        acceptedAt: first.acceptedAt + offset,
+        deliveryStartedAt: first.deliveryStartedAt + offset,
+        terminalAt: first.terminalAt + offset,
+        context: {
+          ...first.context,
+          notation,
+          request: { notation: [notation], repetitions: 1 },
+          title: null,
+          userId: index % 2 === 0
+            ? "100000000000000002"
+            : "100000000000000099",
+          guildName: "Friday table",
+          channelName: "dice-rolls",
+          outcome: {
+            version: 1,
+            seed: 99 + index,
+            outcomes: [{
+              notation,
+              output: `${notation}: [1] = 1`,
+              total: 1,
+            }],
+            errors: [],
+          },
+        },
+      });
+    }
+    const aiRun = vi.fn();
+    const announce = vi.fn();
+
+    await expect(
+      processGameDetectionMinute({
+        DATA: dataEnv.DATA,
+        AI: { run: aiRun } as unknown as Ai,
+        DISCORD_REST: {
+          createGameDetectionAnnouncementV1: announce,
+          resolveGameDetectionChannelContextV1: vi.fn(),
+        },
+      }, observedAt + 240_000),
+    ).resolves.toMatchObject({
+      ingested: 16,
+      rankJob: "none",
+      announcement: "none",
+    });
+    expect(aiRun).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+    await expect(
+      dataEnv.DATA.prepare(
+        "SELECT COUNT(*) AS count FROM game_detection_rank_jobs",
+      ).first(),
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it("keeps a diverse DCC dice-chain episode eligible at plausible confidence", async () => {
+    const first = deliveredRoll("100000000000000025");
+    const notations = ["d14+15", "d30+10", "2d14", "d30"];
+    const lifecycle = new D1RollLifecycleRepository(dataEnv.DATA);
+    for (const [index, roll] of activeMultiplayerRolls(first).entries()) {
+      const notation = notations[index];
+      if (notation === undefined) throw new Error("Missing DCC notation");
+      await lifecycle.record({
+        ...roll,
+        context: {
+          ...roll.context,
+          notation,
+          request: { notation: [notation], repetitions: 1 },
+          title: null,
+          guildName: "Friday table",
+          channelName: "dice-rolls",
+        },
+      });
+    }
+    const aiRun = vi.fn(() => Promise.resolve({
+      response: JSON.stringify({
+        version: 1,
+        disposition: "select",
+        selectedSystemId: "dungeon-crawl-classics",
+        assessments: {
+          "dungeon-crawl-classics": {
+            confidenceTier: "plausible",
+            evidenceCitations: [{
+              claimId: "repeated-use-of-different-rare-dcc-dice-is-a-dice-chain-pattern",
+              sourceIds: ["dungeon-crawl-classics-rules"],
+            }],
+          },
+        },
+        abstentionReason: null,
+      }),
+    }));
+    const announce = vi.fn(() => Promise.resolve({
+      status: "delivered" as const,
+      messageId: "100000000000000097",
+      httpStatus: 200,
+    }));
+
+    await expect(
+      processGameDetectionMinute({
+        DATA: dataEnv.DATA,
+        AI: { run: aiRun } as unknown as Ai,
+        DISCORD_REST: {
+          createGameDetectionAnnouncementV1: announce,
+          resolveGameDetectionChannelContextV1: vi.fn(),
+        },
+      }, activeAt),
+    ).resolves.toMatchObject({
+      ingested: 4,
+      rankJob: "selected",
+      announcement: "sent",
+    });
+    expect(aiRun).toHaveBeenCalledOnce();
+    expect(announce).toHaveBeenCalledWith(expect.objectContaining({
+      gameId: "dungeon-crawl-classics",
+      confidence: "plausible",
+    }));
+  });
+
   it("ranks in the background with all useful context and posts only the validated detection", async () => {
     await recordActiveMultiplayer(
       deliveredRoll("100000000000000031"),
@@ -239,6 +377,14 @@ describe("processGameDetectionMinute", () => {
         channelName: "curse-of-strahd",
       }),
     );
+    await expect(
+      dataEnv.DATA.prepare(
+        `SELECT model_id, prompt_revision FROM game_detections`,
+      ).first(),
+    ).resolves.toEqual({
+      model_id: "@cf/zai-org/glm-5.2",
+      prompt_revision: "dice-witch-game-detection-v3",
+    });
   });
 
   it("ranks a context-named popular system with otherwise generic mechanics", async () => {

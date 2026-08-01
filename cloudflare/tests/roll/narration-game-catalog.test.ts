@@ -91,6 +91,10 @@ describe("NARRATION_GAME_CATALOG_V1", () => {
         ).toBe(fingerprint.features.length);
         expect(fingerprint.minimumOccurrences, fingerprint.id).toBeGreaterThan(0);
         expect(
+          ["standalone", "representative", "corroborating"],
+          fingerprint.id,
+        ).toContain(fingerprint.evidencePolicy);
+        expect(
           fingerprint.sourceIds.every((sourceId) => sourceIds.has(sourceId)),
           fingerprint.id,
         ).toBe(true);
@@ -111,6 +115,7 @@ describe("NARRATION_GAME_CATALOG_V1", () => {
       claim: "ability-score-generation-workflow",
       features: ["four-d6-keep-highest-three"],
       minimumOccurrences: 6,
+      evidencePolicy: "standalone",
       evidenceStrength: "strong",
       confidenceCeiling: "strong",
       sourceIds: ["dnd-5e-2014-basic-rules-ability-scores"],
@@ -130,6 +135,7 @@ describe("NARRATION_GAME_CATALOG_V1", () => {
         claim: "ordinary-percentile-check",
         features: ["single-percentile-roll"],
         minimumOccurrences: 1,
+        evidencePolicy: "corroborating",
         evidenceStrength: "weak",
         confidenceCeiling: "weak",
         sourceIds: ["mothership-1e-player-survival-guide"],
@@ -140,6 +146,7 @@ describe("NARRATION_GAME_CATALOG_V1", () => {
         claim: "percentile-roll-under-procedure",
         features: ["percentile-roll-under-threshold"],
         minimumOccurrences: 2,
+        evidencePolicy: "representative",
         evidenceStrength: "plausible",
         confidenceCeiling: "plausible",
         sourceIds: ["mothership-1e-player-survival-guide"],

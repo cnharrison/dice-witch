@@ -2,11 +2,26 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_NARRATION_GAME_CANDIDATES_V1,
   NARRATION_GAME_CATALOG_V1,
+  extractNarrationGameFeaturesV1,
   retrieveNarrationGameCandidatesV1,
   retrieveNarrationGameCandidatesV2,
   retrieveNarrationGameCandidatesV3,
   type NarrationGameCandidateRequestV1,
 } from "../../packages/roll-domain/src";
+
+type FeatureRoll = Readonly<{
+  notation: readonly string[];
+  repetitions: number;
+}>;
+
+function retrieveV3CandidatesForRolls(rolls: readonly FeatureRoll[]) {
+  const features = extractNarrationGameFeaturesV1({ version: 1, rolls });
+  return retrieveNarrationGameCandidatesV3({
+    version: 3,
+    features: features.features,
+    context: { locationNames: [], rollLabels: [] },
+  });
+}
 
 describe("narration game candidate retrieval", () => {
   it("abstains when no catalogue fingerprint qualifies", () => {
@@ -61,10 +76,165 @@ describe("narration game candidate retrieval", () => {
     expect(result.candidates[0]?.commentaryTopics).not.toContain("wild-die");
   });
 
+  it("caps a minority mechanic when unrelated rolls dominate the episode", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [
+        { kind: "observed-roll-expression", occurrences: 16 },
+        { kind: "plain-d10-pool", occurrences: 11 },
+        { kind: "two-d10-plus-modifier", occurrences: 2 },
+      ],
+      context: {
+        locationNames: ["Friday game", "dice-rolls"],
+        rollLabels: [],
+      },
+    });
+
+    expect(result.state).toBe("weak-only");
+    expect(result.candidates.find(
+      ({ systemId }) => systemId === "draw-steel",
+    )).toMatchObject({
+      evidenceTier: "weak",
+      confidenceCeiling: "strong",
+    });
+  });
+
+  it("applies minority capping across representative mechanic families", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [
+        { kind: "observed-roll-expression", occurrences: 10 },
+        { kind: "plain-d6-pool", occurrences: 8 },
+        { kind: "three-d6", occurrences: 2 },
+      ],
+      context: {
+        locationNames: ["Friday game", "dice-rolls"],
+        rollLabels: [],
+      },
+    });
+
+    expect(result.state).toBe("weak-only");
+    expect(result.candidates.find(
+      ({ systemId }) => systemId === "gurps-4e",
+    )).toMatchObject({ evidenceTier: "weak" });
+  });
+
+  it("requires a strict majority for representative mechanics", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [
+        { kind: "observed-roll-expression", occurrences: 4 },
+        { kind: "plain-d10-pool", occurrences: 4 },
+        { kind: "two-d10-plus-modifier", occurrences: 2 },
+      ],
+      context: {
+        locationNames: ["Friday game", "dice-rolls"],
+        rollLabels: [],
+      },
+    });
+
+    expect(result.state).toBe("weak-only");
+    expect(result.candidates.find(
+      ({ systemId }) => systemId === "draw-steel",
+    )).toMatchObject({ evidenceTier: "weak" });
+  });
+
+  it("keeps a representative mechanic eligible when it dominates the episode", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [
+        { kind: "observed-roll-expression", occurrences: 6 },
+        { kind: "plain-d10-pool", occurrences: 6 },
+        { kind: "two-d10-plus-modifier", occurrences: 4 },
+      ],
+      context: {
+        locationNames: ["Friday game", "dice-rolls"],
+        rollLabels: [],
+      },
+    });
+
+    expect(result.state).toBe("candidate-set");
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "draw-steel",
+      evidenceTier: "plausible",
+    });
+  });
+
+  it("keeps a precise occasional workflow eligible without requiring a majority", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [
+        { kind: "observed-roll-expression", occurrences: 20 },
+        { kind: "d20-with-accuracy-d6", occurrences: 1 },
+        { kind: "single-d20-plus-modifier", occurrences: 16 },
+        { kind: "single-d20-roll", occurrences: 16 },
+      ],
+      context: {
+        locationNames: ["Friday game", "dice-rolls"],
+        rollLabels: [],
+      },
+    });
+
+    expect(result.state).toBe("candidate-set");
+    expect(result.truncated).toBe(false);
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "lancer",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+  });
+
+  it("keeps corroborating mechanics below the inference boundary", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [
+        { kind: "observed-roll-expression", occurrences: 3 },
+        { kind: "dcc-dice-chain", occurrences: 3 },
+      ],
+      context: {
+        locationNames: ["Friday game", "dice-rolls"],
+        rollLabels: [],
+      },
+    });
+
+    expect(result.state).toBe("weak-only");
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "dungeon-crawl-classics",
+      evidenceTier: "weak",
+    });
+  });
+
+  it("recognizes different rare DCC dice without overstating confidence", () => {
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: [
+        { kind: "observed-roll-expression", occurrences: 39 },
+        { kind: "dcc-dice-chain", occurrences: 4 },
+        { kind: "dcc-diverse-dice-chain", occurrences: 1 },
+        { kind: "single-d20-plus-modifier", occurrences: 21 },
+        { kind: "single-d20-roll", occurrences: 25 },
+        { kind: "two-d10-plus-modifier", occurrences: 1 },
+      ],
+      context: {
+        locationNames: ["Campaign", "dice-rolls"],
+        rollLabels: ["Dodge"],
+      },
+    });
+
+    expect(result.state).toBe("candidate-set");
+    expect(result.truncated).toBe(false);
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "dungeon-crawl-classics",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+  });
+
   it("ranks the six-roll ability workflow above generic d20 alternatives", () => {
     const result = retrieveNarrationGameCandidatesV1({
       version: 1,
       features: [
+        { kind: "observed-roll-expression", occurrences: 20 },
         { kind: "four-d6-keep-highest-three", occurrences: 6 },
         { kind: "single-d20-plus-modifier", occurrences: 3 },
       ],
@@ -97,10 +267,13 @@ describe("narration game candidate retrieval", () => {
     });
   });
 
-  it("requires repeated three-d20 checks before treating The Dark Eye as strong", () => {
+  it("requires coherent three-d20 checks before treating The Dark Eye as strong", () => {
     const oneCheck = retrieveNarrationGameCandidatesV2({
       version: 2,
-      features: [{ kind: "three-d20", occurrences: 1 }],
+      features: [
+        { kind: "observed-roll-expression", occurrences: 1 },
+        { kind: "three-d20", occurrences: 1 },
+      ],
       context: [],
     });
     expect(oneCheck.candidates[0]).toMatchObject({
@@ -111,10 +284,88 @@ describe("narration game candidate retrieval", () => {
 
     const repeatedChecks = retrieveNarrationGameCandidatesV2({
       version: 2,
-      features: [{ kind: "three-d20", occurrences: 2 }],
+      features: [
+        { kind: "observed-roll-expression", occurrences: 2 },
+        { kind: "three-d20", occurrences: 2 },
+      ],
       context: [],
     });
     expect(repeatedChecks.candidates[0]).toMatchObject({
+      systemId: "the-dark-eye-5e",
+      evidenceTier: "strong",
+      confidenceCeiling: "strong",
+    });
+  });
+
+  it.each([
+    {
+      label: "balanced d20 pool sizes",
+      rolls: [
+        { notation: ["d20"], repetitions: 2 },
+        { notation: ["2d20"], repetitions: 2 },
+        { notation: ["3d20"], repetitions: 2 },
+      ],
+      expectedTier: "weak",
+    },
+    {
+      label: "a small three-d20 minority in a broad d20 episode",
+      rolls: [
+        { notation: ["1d20"], repetitions: 11 },
+        { notation: ["2d20"], repetitions: 7 },
+        { notation: ["d20"], repetitions: 4 },
+        { notation: ["3d20"], repetitions: 3 },
+        { notation: ["2d20+5"], repetitions: 1 },
+        { notation: ["3", "d20"], repetitions: 1 },
+      ],
+      expectedTier: "weak",
+    },
+    {
+      label: "summed three-d20 rolls with one modifier",
+      rolls: [
+        { notation: ["2d20+1"], repetitions: 2 },
+        { notation: ["3d20+8"], repetitions: 2 },
+        { notation: ["d20+1"], repetitions: 2 },
+        { notation: ["d20+11"], repetitions: 2 },
+        { notation: ["d20+9"], repetitions: 2 },
+        { notation: ["d6+9"], repetitions: 2 },
+        { notation: ["2d10+8"], repetitions: 1 },
+        { notation: ["2d20+8"], repetitions: 1 },
+        { notation: ["2d20+9"], repetitions: 1 },
+        { notation: ["2d6"], repetitions: 1 },
+        { notation: ["4d8"], repetitions: 1 },
+        { notation: ["5d4+5"], repetitions: 1 },
+        { notation: ["8d6"], repetitions: 1 },
+        { notation: ["d20"], repetitions: 1 },
+        { notation: ["d20+10"], repetitions: 1 },
+        { notation: ["d20+5"], repetitions: 1 },
+        { notation: ["d6+6"], repetitions: 1 },
+      ],
+      expectedTier: null,
+    },
+  ])("suppresses the natural Dark Eye false positive from $label", ({
+    rolls,
+    expectedTier,
+  }) => {
+    const result = retrieveV3CandidatesForRolls(rolls);
+    const darkEye = result.candidates.find(
+      ({ systemId }) => systemId === "the-dark-eye-5e",
+    );
+
+    expect(result.state).toBe("weak-only");
+    if (expectedTier === null) {
+      expect(darkEye).toBeUndefined();
+    } else {
+      expect(darkEye).toMatchObject({ evidenceTier: expectedTier });
+    }
+  });
+
+  it("keeps repeated three-d20 checks strong when they dominate the episode", () => {
+    const result = retrieveV3CandidatesForRolls([
+      { notation: ["3d20"], repetitions: 4 },
+      { notation: ["d20"], repetitions: 2 },
+    ]);
+
+    expect(result.candidates[0]).toMatchObject({
       systemId: "the-dark-eye-5e",
       evidenceTier: "strong",
       confidenceCeiling: "strong",
@@ -125,6 +376,7 @@ describe("narration game candidate retrieval", () => {
     const result = retrieveNarrationGameCandidatesV1({
       version: 1,
       features: [
+        { kind: "observed-roll-expression", occurrences: 9 },
         { kind: "percentile-roll-under-threshold", occurrences: 7 },
         { kind: "single-percentile-roll", occurrences: 9 },
       ],
@@ -150,6 +402,7 @@ describe("narration game candidate retrieval", () => {
     const result = retrieveNarrationGameCandidatesV1({
       version: 1,
       features: [
+        { kind: "observed-roll-expression", occurrences: 2 },
         { kind: "d6-pool-keep-highest", occurrences: 2 },
         { kind: "exploding-step-die", occurrences: 2 },
         {
@@ -158,7 +411,6 @@ describe("narration game candidate retrieval", () => {
         },
         { kind: "four-d6-keep-highest-three", occurrences: 6 },
         { kind: "four-fate-dice", occurrences: 1 },
-        { kind: "pathfinder-multiple-attack-sequence", occurrences: 1 },
         { kind: "percentile-roll-under-threshold", occurrences: 2 },
         { kind: "single-d20-plus-modifier", occurrences: 1 },
         { kind: "single-percentile-roll", occurrences: 1 },
@@ -169,8 +421,8 @@ describe("narration game candidate retrieval", () => {
     expect(result.truncated).toBe(true);
     expect(result.candidates).toHaveLength(MAX_NARRATION_GAME_CANDIDATES_V1);
     expect(result.candidates.map(({ systemId }) => systemId)).toEqual([
-      "forged-in-the-dark-family",
       "dungeons-and-dragons-5e-2014",
+      "forged-in-the-dark-family",
       "savage-worlds",
     ]);
   });
@@ -240,7 +492,10 @@ describe("narration game candidate retrieval", () => {
   it("uses a matching roll label only to corroborate mechanics evidence", () => {
     const result = retrieveNarrationGameCandidatesV3({
       version: 3,
-      features: [{ kind: "single-d10-plus-modifier", occurrences: 4 }],
+      features: [
+        { kind: "observed-roll-expression", occurrences: 4 },
+        { kind: "single-d10-plus-modifier", occurrences: 4 },
+      ],
       context: {
         locationNames: ["Friday game", "dice-rolls"],
         rollLabels: ["Cyberpunk RED init", "Handgun skillz"],
@@ -262,7 +517,10 @@ describe("narration game candidate retrieval", () => {
   it("retrieves a named popular system while keeping the three-candidate cap", () => {
     const result = retrieveNarrationGameCandidatesV2({
       version: 2,
-      features: [{ kind: "two-d12-plus-modifier", occurrences: 4 }],
+      features: [
+        { kind: "observed-roll-expression", occurrences: 4 },
+        { kind: "two-d12-plus-modifier", occurrences: 4 },
+      ],
       context: ["Daggerheart: Session 12", "Hope roll"],
     });
 
