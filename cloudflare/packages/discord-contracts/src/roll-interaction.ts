@@ -28,16 +28,25 @@ export function isDiscordRollChannelType(
   );
 }
 
+export type GuildRollLoggingContext = {
+  kind: "guild";
+  guildId: string;
+  guildName: string | null;
+  channelId: string;
+  channelName: string | null;
+  channelType: DiscordRollChannelType | null;
+};
+
 export type RollLoggingContext =
   | { kind: "dm"; channelId: string }
-  | {
-      kind: "guild";
-      guildId: string;
-      guildName: string;
-      channelId: string;
-      channelName: string;
-      channelType: DiscordRollChannelType;
-    };
+  | GuildRollLoggingContext;
+
+export type RollInteractionContextMissingReason =
+  | "guild-object-missing"
+  | "guild-name-missing"
+  | "channel-object-missing"
+  | "channel-name-missing"
+  | "channel-type-missing";
 
 export type RollInteraction = {
   id: string;
@@ -88,46 +97,157 @@ function parseUser(interaction: Record<string, unknown>): {
   };
 }
 
-function parseLoggingContext(
-  interaction: Record<string, unknown>,
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  const sorted = [...expected].sort();
+  return actual.length === sorted.length &&
+    actual.every((key, index) => key === sorted[index]);
+}
+
+function optionalDisplayName(
+  value: unknown,
+  minimumLength: number,
+): string | null {
+  return typeof value === "string" &&
+      value.length >= minimumLength &&
+      value.length <= 100
+    ? value
+    : null;
+}
+
+function isNullableDisplayName(
+  value: unknown,
+  minimumLength: number,
+): value is string | null {
+  return value === null || optionalDisplayName(value, minimumLength) !== null;
+}
+
+export function parseRollLoggingContext(
+  value: unknown,
   guildId: string | null,
   channelId: string,
-): RollLoggingContext | null {
-  if (!isRecord(interaction.channel)) return null;
-  const channel = interaction.channel;
-  if (requireSnowflake(channel.id, "Interaction channel id") !== channelId) {
-    throw new Error("Interaction channel does not match channel_id");
+): RollLoggingContext {
+  if (!isRecord(value) || value.channelId !== channelId) {
+    throw new Error("Roll logging context is invalid");
   }
-  if (guildId === null) {
-    if (channel.type !== 1) throw new Error("Interaction DM channel is invalid");
+  if (
+    value.kind === "dm" &&
+    guildId === null &&
+    hasExactKeys(value, ["channelId", "kind"])
+  ) {
     return { kind: "dm", channelId };
   }
-  if (!isRecord(interaction.guild)) return null;
-  const guild = interaction.guild;
   if (
-    requireSnowflake(guild.id, "Interaction guild id") !== guildId ||
-    (channel.guild_id !== undefined && channel.guild_id !== guildId)
+    value.kind !== "guild" ||
+    guildId === null ||
+    value.guildId !== guildId ||
+    !hasExactKeys(value, [
+      "channelId",
+      "channelName",
+      "channelType",
+      "guildId",
+      "guildName",
+      "kind",
+    ])
   ) {
-    throw new Error("Interaction guild channel identity is invalid");
+    throw new Error("Roll logging context is invalid");
   }
+  const { guildName, channelName, channelType } = value;
   if (
-    typeof guild.name !== "string" ||
-    guild.name.length < 2 ||
-    guild.name.length > 100 ||
-    typeof channel.name !== "string" ||
-    channel.name.length < 1 ||
-    channel.name.length > 100 ||
-    !isDiscordRollChannelType(channel.type)
+    !isNullableDisplayName(guildName, 2) ||
+    !isNullableDisplayName(channelName, 1) ||
+    (channelType !== null && !isDiscordRollChannelType(channelType))
   ) {
-    return null;
+    throw new Error("Roll logging context is invalid");
   }
   return {
     kind: "guild",
     guildId,
-    guildName: guild.name,
+    guildName,
     channelId,
-    channelName: channel.name,
-    channelType: channel.type,
+    channelName,
+    channelType,
+  };
+}
+
+export function isCompleteGuildRollLoggingContext(
+  context: RollLoggingContext | null | undefined,
+): context is GuildRollLoggingContext & {
+  guildName: string;
+  channelName: string;
+  channelType: DiscordRollChannelType;
+} {
+  return context?.kind === "guild" &&
+    context.guildName !== null &&
+    context.channelName !== null &&
+    context.channelType !== null;
+}
+
+export function rollInteractionContextMissingReasons(
+  interaction: Record<string, unknown>,
+  guildId: string | null,
+): RollInteractionContextMissingReason[] {
+  if (guildId === null) return [];
+
+  const reasons: RollInteractionContextMissingReason[] = [];
+  const guild = isRecord(interaction.guild) ? interaction.guild : null;
+  if (guild === null) reasons.push("guild-object-missing");
+  else if (optionalDisplayName(guild.name, 2) === null) {
+    reasons.push("guild-name-missing");
+  }
+
+  const channel = isRecord(interaction.channel) ? interaction.channel : null;
+  if (channel === null) reasons.push("channel-object-missing");
+  else {
+    if (optionalDisplayName(channel.name, 1) === null) {
+      reasons.push("channel-name-missing");
+    }
+    if (!isDiscordRollChannelType(channel.type)) {
+      reasons.push("channel-type-missing");
+    }
+  }
+  return reasons;
+}
+
+export function extractRollLoggingContext(
+  interaction: Record<string, unknown>,
+  guildId: string | null,
+  channelId: string,
+): RollLoggingContext {
+  const channel = isRecord(interaction.channel) ? interaction.channel : null;
+  if (
+    channel !== null &&
+    requireSnowflake(channel.id, "Interaction channel id") !== channelId
+  ) {
+    throw new Error("Interaction channel does not match channel_id");
+  }
+  if (guildId === null) {
+    if (channel?.type !== undefined && channel.type !== 1) {
+      throw new Error("Interaction DM channel is invalid");
+    }
+    return { kind: "dm", channelId };
+  }
+
+  const guild = isRecord(interaction.guild) ? interaction.guild : null;
+  if (
+    (guild !== null &&
+      requireSnowflake(guild.id, "Interaction guild id") !== guildId) ||
+    (channel?.guild_id !== undefined && channel.guild_id !== guildId)
+  ) {
+    throw new Error("Interaction guild channel identity is invalid");
+  }
+  return {
+    kind: "guild",
+    guildId,
+    guildName: optionalDisplayName(guild?.name, 2),
+    channelId,
+    channelName: optionalDisplayName(channel?.name, 1),
+    channelType: isDiscordRollChannelType(channel?.type)
+      ? channel.type
+      : null,
   };
 }
 
@@ -223,7 +343,7 @@ export function parseRollInteraction(
     applicationId,
     guildId,
     channelId,
-    loggingContext: parseLoggingContext(value, guildId, channelId),
+    loggingContext: extractRollLoggingContext(value, guildId, channelId),
     userId: user.id,
     username: user.username,
     token,

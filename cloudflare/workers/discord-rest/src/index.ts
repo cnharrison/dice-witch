@@ -4,22 +4,24 @@ import {
   buildRollHelperMessage,
   DISCORD_AUDIENCE_SNAPSHOT_VERSION,
   DISCORD_GLOBAL_COMMANDS,
+  isCompleteGuildRollLoggingContext,
   isDiscordRollChannelType,
+  parseRollLoggingContext,
   rollLogContextDescription,
   rollLogMetadataDescription,
   rollLogResultDescription,
+  parseDiscordChannelContextRequestV1,
+  parseDiscordChannelContextResponseV1,
   parseGameDetectionAnnouncementV1,
-  parseGameDetectionChannelContextRequestV1,
-  parseGameDetectionChannelContextResponseV1,
   parseRollLifecycleAlert,
   rollLogTelemetryContext,
   validateRollLogArtifact,
   type DeliverRollLogInputV1,
   type DeliverRollLogResultV1,
   type DiscordAudienceCaptureV1,
+  type DiscordChannelContextResultV1,
   type DiscordRollChannelType,
   type GameDetectionAnnouncementV1,
-  type GameDetectionChannelContextResultV1,
   type RollLifecycleAlertV1,
   type RollLoggingContext,
   type RollLogArtifactV1,
@@ -183,23 +185,12 @@ function isRollLoggingContext(
   guildId: string | null,
   channelId: string,
 ): value is RollLoggingContext {
-  if (!isRecord(value) || value.channelId !== channelId) return false;
-  if (value.kind === "dm") {
-    return guildId === null && Object.keys(value).length === 2;
+  try {
+    const context = parseRollLoggingContext(value, guildId, channelId);
+    return context.kind === "dm" || isCompleteGuildRollLoggingContext(context);
+  } catch {
+    return false;
   }
-  return (
-    value.kind === "guild" &&
-    guildId !== null &&
-    value.guildId === guildId &&
-    typeof value.guildName === "string" &&
-    value.guildName.length >= 2 &&
-    value.guildName.length <= 100 &&
-    typeof value.channelName === "string" &&
-    value.channelName.length >= 1 &&
-    value.channelName.length <= 100 &&
-    isDiscordRollChannelType(value.channelType) &&
-    Object.keys(value).length === 6
-  );
 }
 
 function isRollLogInput(value: unknown): value is RollLogInput {
@@ -1223,6 +1214,9 @@ function escapeDiscordMarkdown(value: string): string {
 
 function rollLogLocation(context: RollLoggingContext): string {
   if (context.kind === "dm") return "**DM** [HTTP]";
+  if (!isCompleteGuildRollLoggingContext(context)) {
+    throw new Error("Roll log display context is incomplete");
+  }
   const channelType = [10, 11, 12].includes(context.channelType)
     ? "thread"
     : "channel";
@@ -1507,24 +1501,46 @@ async function resolveRollLogContext(
   artifact: RollLogArtifactV1,
   discordFetch: RequestFetch,
 ): Promise<RollLogContextResolution> {
-  if (artifact.guildId === null || artifact.context !== null) {
+  if (
+    artifact.guildId === null ||
+    isCompleteGuildRollLoggingContext(artifact.context)
+  ) {
     return { status: "resolved", artifact, displayContext: null };
   }
+  const guildId = artifact.guildId;
+  const existing = artifact.context?.kind === "guild"
+    ? artifact.context
+    : null;
+  const needsChannel =
+    existing === null ||
+    existing.channelName === null ||
+    existing.channelType === null;
+  const needsGuild = existing === null || existing.guildName === null;
   const headers = {
     authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
     "user-agent": "Dice-Witch",
   };
   const [channelResponse, guildResponse] = await Promise.all([
-    discordFetch(
-      new Request(`${DISCORD_API}/channels/${artifact.channelId}`, { headers }),
-    ),
-    discordFetch(
-      new Request(`${DISCORD_API}/guilds/${artifact.guildId}`, { headers }),
-    ),
+    needsChannel
+      ? discordFetch(
+          new Request(`${DISCORD_API}/channels/${artifact.channelId}`, {
+            headers,
+          }),
+        )
+      : null,
+    needsGuild
+      ? discordFetch(
+          new Request(`${DISCORD_API}/guilds/${guildId}`, { headers }),
+        )
+      : null,
   ]);
   const failedResponses = [channelResponse, guildResponse].filter(
-    (response) => !response.ok,
+    (response): response is Response => response !== null && !response.ok,
   );
+  const responseStatuses = {
+    channelHttpStatus: channelResponse?.status ?? null,
+    guildHttpStatus: guildResponse?.status ?? null,
+  };
   if (failedResponses.length > 0) {
     const retryableResponse = failedResponses.find(({ status }) =>
       isRetryableDiscordStatus(status),
@@ -1547,8 +1563,7 @@ async function resolveRollLogContext(
           ...rollLogTelemetryContext(artifact, null),
           userImpact: "none",
           failureKind: "context-retryable",
-          channelHttpStatus: channelResponse.status,
-          guildHttpStatus: guildResponse.status,
+          ...responseStatuses,
           httpStatus: retryableResponse.status,
           retryAfterMs,
         }),
@@ -1572,23 +1587,22 @@ async function resolveRollLogContext(
           ...rollLogTelemetryContext(artifact, null),
           userImpact: "none",
           failureKind: "context-rejected",
-          channelHttpStatus: channelResponse.status,
-          guildHttpStatus: guildResponse.status,
+          ...responseStatuses,
           httpStatus: rejectedResponse.status,
         }),
       );
       return { status: "failed", httpStatus: rejectedResponse.status };
     }
-    const channel = channelResponse.ok
+    const channel = channelResponse?.ok
       ? await rollLogChannelContext(channelResponse, artifact)
       : null;
-    const guildName = guildResponse.ok
-      ? await rollLogGuildName(guildResponse, artifact.guildId)
+    const guildName = guildResponse?.ok
+      ? await rollLogGuildName(guildResponse, guildId)
       : null;
     const displayContext: ResolvedRollLogDisplayContext = {
-      guildName,
-      channelName: channel?.name ?? null,
-      channelType: channel?.type ?? null,
+      guildName: existing?.guildName ?? guildName,
+      channelName: existing?.channelName ?? channel?.name ?? null,
+      channelType: existing?.channelType ?? channel?.type ?? null,
     };
     console.warn(
       JSON.stringify({
@@ -1600,27 +1614,32 @@ async function resolveRollLogContext(
         ...rollLogDisplayTelemetry(artifact, displayContext),
         userImpact: "none",
         failureKind: "context-inaccessible",
-        channelHttpStatus: channelResponse.status,
-        guildHttpStatus: guildResponse.status,
+        ...responseStatuses,
       }),
     );
     return { status: "resolved", artifact, displayContext };
   }
-  const channel = await rollLogChannelContext(channelResponse, artifact);
-  const guildName = await rollLogGuildName(guildResponse, artifact.guildId);
+
+  const channel = channelResponse === null
+    ? null
+    : await rollLogChannelContext(channelResponse, artifact);
+  const guildName = guildResponse === null
+    ? null
+    : await rollLogGuildName(guildResponse, guildId);
+  const resolvedContext: RollLoggingContext = {
+    kind: "guild",
+    guildId,
+    guildName: existing?.guildName ?? guildName,
+    channelId: artifact.channelId,
+    channelName: existing?.channelName ?? channel?.name ?? null,
+    channelType: existing?.channelType ?? channel?.type ?? null,
+  };
+  if (!isCompleteGuildRollLoggingContext(resolvedContext)) {
+    throw new Error("Discord roll log context resolution is incomplete");
+  }
   return {
     status: "resolved",
-    artifact: {
-      ...artifact,
-      context: {
-        kind: "guild",
-        guildId: artifact.guildId,
-        guildName,
-        channelId: artifact.channelId,
-        channelName: channel.name,
-        channelType: channel.type,
-      },
-    },
+    artifact: { ...artifact, context: resolvedContext },
     displayContext: null,
   };
 }
@@ -1969,12 +1988,12 @@ export async function deliverWebRoll(
   return { status: "delivered" };
 }
 
-export async function resolveGameDetectionChannelContextV1(
+export async function resolveDiscordChannelContextV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
   value: unknown,
   discordFetch: RequestFetch = (request) => fetch(request),
-): Promise<GameDetectionChannelContextResultV1> {
-  const input = parseGameDetectionChannelContextRequestV1(value);
+): Promise<DiscordChannelContextResultV1> {
+  const input = parseDiscordChannelContextRequestV1(value);
   let response: Response;
   try {
     response = await discordFetch(
@@ -1990,10 +2009,7 @@ export async function resolveGameDetectionChannelContextV1(
   }
 
   if (response.ok) {
-    return parseGameDetectionChannelContextResponseV1(
-      await response.json(),
-      input,
-    );
+    return parseDiscordChannelContextResponseV1(await response.json(), input);
   }
   if (response.status === 403 || response.status === 404) {
     return { status: "unavailable", httpStatus: response.status };
@@ -2012,10 +2028,32 @@ export async function resolveGameDetectionChannelContextV1(
   return { status: "failed", httpStatus: response.status };
 }
 
+// Keep the original RPC during coordinated Worker rollouts so an older Data
+// revision can still resolve context while Discord REST deploys first. Remove
+// it after every Data environment uses resolveDiscordChannelContextV1.
+export function resolveGameDetectionChannelContextV1(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
+  value: unknown,
+  discordFetch: RequestFetch = (request) => fetch(request),
+): Promise<DiscordChannelContextResultV1> {
+  return resolveDiscordChannelContextV1(env, value, discordFetch);
+}
+
+function gameDetectionDestination(
+  detection: GameDetectionAnnouncementV1,
+): string {
+  if (detection.scope === "dm") {
+    return `Direct message channel ${detection.channelId}`;
+  }
+  const guild = detection.guildName ?? `Guild ${detection.guildId}`;
+  const channel = detection.channelName === null
+    ? `<#${detection.channelId}>`
+    : `${detection.channelName} (<#${detection.channelId}>)`;
+  return `${guild} / ${channel}`;
+}
+
 function gameDetectionPayload(detection: GameDetectionAnnouncementV1) {
-  const destination = detection.scope === "dm"
-    ? `Direct message channel ${detection.channelId}`
-    : `${detection.guildName ?? "Unknown guild"} / ${detection.channelName ?? "Unknown channel"} (<#${detection.channelId}>)`;
+  const destination = gameDetectionDestination(detection);
   const fields = [
     {
       name: "Game",
@@ -2138,6 +2176,19 @@ function lifecycleAlertPresentation(
   }
 }
 
+function lifecycleAlertDestination(
+  context: RollLifecycleAlertV1["context"],
+): string {
+  if (context.guildId === null) return `DM channel ${context.channelId}`;
+  const guild = context.guildName === null
+    ? `Guild ${context.guildId}`
+    : `${context.guildName} (${context.guildId})`;
+  const channel = context.channelName === null
+    ? `<#${context.channelId}> (${context.channelId})`
+    : `${context.channelName} (${context.channelId})`;
+  return `${guild} / ${channel}`;
+}
+
 function lifecycleAlertPayload(alert: RollLifecycleAlertV1) {
   const { context } = alert;
   const presentation = lifecycleAlertPresentation(alert.state);
@@ -2160,10 +2211,7 @@ function lifecycleAlertPayload(alert: RollLifecycleAlertV1) {
           },
           {
             name: "Destination",
-            value:
-              context.guildId === null
-                ? `DM channel ${context.channelId}`
-                : `${context.guildName ?? "Unknown guild"} (${context.guildId}) / ${context.channelName ?? "Unknown channel"} (${context.channelId})`,
+            value: lifecycleAlertDestination(context),
             inline: false,
           },
           {
@@ -2442,8 +2490,12 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     return createGameDetectionAnnouncementV1(await this.botEnv(), input);
   }
 
+  async resolveDiscordChannelContextV1(input: unknown) {
+    return resolveDiscordChannelContextV1(await this.botEnv(), input);
+  }
+
   async resolveGameDetectionChannelContextV1(input: unknown) {
-    return resolveGameDetectionChannelContextV1(await this.botEnv(), input);
+    return resolveDiscordChannelContextV1(await this.botEnv(), input);
   }
 
   async createRollLifecycleAlertV1(input: unknown) {

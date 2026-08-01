@@ -1,5 +1,5 @@
 import {
-  isDiscordRollChannelType,
+  extractRollLoggingContext,
   type RollLoggingContext,
 } from "./roll-interaction";
 
@@ -95,39 +95,11 @@ function parseContext(
   }
   const userId = requireSnowflake(user.id, "Saved roll user id");
   const channelId = requireSnowflake(value.channel_id, "Saved roll channel id");
-  if (!isRecord(value.channel) || value.channel.id !== channelId) {
+  let loggingContext: RollLoggingContext;
+  try {
+    loggingContext = extractRollLoggingContext(value, guildId, channelId);
+  } catch {
     throw new Error("Saved roll channel is invalid");
-  }
-  const channel = value.channel;
-  let loggingContext: RollLoggingContext | null;
-  if (guildId === null) {
-    if (channel.type !== 1) throw new Error("Saved roll channel is invalid");
-    loggingContext = { kind: "dm", channelId };
-  } else {
-    if (
-      (channel.guild_id !== undefined && channel.guild_id !== guildId) ||
-      (isRecord(value.guild) && value.guild.id !== guildId)
-    ) {
-      throw new Error("Saved roll channel is invalid");
-    }
-    loggingContext =
-      isRecord(value.guild) &&
-      typeof value.guild.name === "string" &&
-      value.guild.name.length >= 2 &&
-      value.guild.name.length <= 100 &&
-      typeof channel.name === "string" &&
-      channel.name.length >= 1 &&
-      channel.name.length <= 100 &&
-      isDiscordRollChannelType(channel.type)
-        ? {
-            kind: "guild",
-            guildId,
-            guildName: value.guild.name,
-            channelId,
-            channelName: channel.name,
-            channelType: channel.type,
-          }
-        : null;
   }
   return {
     id: requireSnowflake(value.id, "Saved roll interaction id"),

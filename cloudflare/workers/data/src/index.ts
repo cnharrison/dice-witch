@@ -1,4 +1,8 @@
 import {
+  cleanDiscordChannelDirectory,
+  recordDiscordChannelDirectoryMutation,
+} from "./discord-channel-directory-service";
+import {
   processGameDetectionMinute,
   type GameDetectionServiceEnv,
 } from "./game-detection-service";
@@ -106,6 +110,7 @@ async function runDailyMaintenance(
   const repository = new D1GameDetectionRepository(env.DATA);
   await repository.aggregateAndDeleteExpired(scheduledTime);
   await cleanRollLifecycleRecords(env, scheduledTime);
+  await cleanDiscordChannelDirectory(env.DATA, scheduledTime);
 }
 
 const worker = {
@@ -138,6 +143,12 @@ const worker = {
       url.pathname === "/internal/roll-lifecycle"
     ) {
       return recordRollLifecycle(request, env, ctx);
+    }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/internal/discord-channel-context"
+    ) {
+      return recordDiscordChannelDirectoryMutation(request, env);
     }
     const appearanceResponse = handleAppearanceRequest(request, env.DATA);
     if (appearanceResponse !== null) return appearanceResponse;

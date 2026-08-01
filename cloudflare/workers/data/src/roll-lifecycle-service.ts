@@ -1,7 +1,15 @@
 import {
+  buildDiscordChannelDirectoryUpsertV1,
   parseRollLifecycleSnapshot,
+  type DiscordChannelContextResultV1,
   type RollLifecycleAlertV1,
+  type RollLifecycleContextV1,
+  type RollLifecycleSnapshotV1,
 } from "../../../packages/discord-contracts/src";
+import {
+  applyDiscordChannelDirectoryMutation,
+  resolveDiscordChannelContextCachedV1,
+} from "./discord-channel-directory-service";
 import {
   D1RollLifecycleRepository,
   type RollLifecycleAlertWorkItem,
@@ -18,6 +26,9 @@ const MAX_LIFECYCLE_BODY_BYTES = 80 * 1_024;
 export type RollLifecycleAlertService = {
   createRollLifecycleAlertV1(value: unknown): Promise<unknown>;
   updateRollLifecycleAlertV1(value: unknown): Promise<unknown>;
+  resolveDiscordChannelContextV1(
+    value: unknown,
+  ): Promise<DiscordChannelContextResultV1>;
 };
 
 export type RollLifecycleServiceEnv = {
@@ -80,7 +91,10 @@ function parseAlertResult(value: unknown): AlertDeliveryResult {
   throw new Error("Roll lifecycle alert response is invalid");
 }
 
-function alertValue(item: RollLifecycleAlertWorkItem): RollLifecycleAlertV1 {
+function alertValue(
+  item: RollLifecycleAlertWorkItem,
+  context: RollLifecycleContextV1,
+): RollLifecycleAlertV1 {
   return {
     version: 1,
     interactionId: item.interactionId,
@@ -94,11 +108,82 @@ function alertValue(item: RollLifecycleAlertWorkItem): RollLifecycleAlertV1 {
     httpStatus: item.httpStatus,
     failurePhase: item.failurePhase,
     failureCode: item.failureCode,
-    context: item.context,
+    context,
+  };
+}
+
+async function enrichAlertContext(
+  db: D1Database,
+  service: RollLifecycleAlertService,
+  item: RollLifecycleAlertWorkItem,
+  now: number,
+): Promise<RollLifecycleContextV1> {
+  const context = item.context;
+  if (context.guildId === null) return context;
+
+  let guildName = context.guildName;
+  if (guildName === null) {
+    try {
+      const guild = await db.prepare(
+        `SELECT name FROM guilds
+         WHERE id = ? AND length(name) BETWEEN 1 AND 100`,
+      ).bind(context.guildId).first<{ name: string }>();
+      guildName = guild?.name ?? null;
+    } catch {
+      console.warn(JSON.stringify({
+        level: "warn",
+        message: "Roll lifecycle guild display context is unavailable",
+        interactionId: item.interactionId,
+      }));
+    }
+  }
+
+  let channelName = context.channelName;
+  let channelType = context.channelType;
+  if (channelName === null || channelType === null) {
+    try {
+      const result = await resolveDiscordChannelContextCachedV1(
+        { DATA: db, DISCORD_REST: service },
+        {
+          version: 1,
+          guildId: context.guildId,
+          channelId: context.channelId,
+        },
+        now,
+      );
+      if (result.status === "resolved") {
+        channelName ??= result.channelName;
+        channelType ??= result.channelType;
+      } else {
+        console.warn(JSON.stringify({
+          level: "warn",
+          message: "Roll lifecycle channel display context is unavailable",
+          interactionId: item.interactionId,
+          status: result.status,
+          httpStatus: result.httpStatus,
+        }));
+      }
+    } catch {
+      console.warn(JSON.stringify({
+        level: "warn",
+        message: "Roll lifecycle channel display context is unavailable",
+        interactionId: item.interactionId,
+        status: "request-failed",
+        httpStatus: null,
+      }));
+    }
+  }
+
+  return {
+    ...context,
+    guildName,
+    channelName,
+    channelType,
   };
 }
 
 async function processAlert(
+  db: D1Database,
   repository: D1RollLifecycleRepository,
   service: RollLifecycleAlertService,
   item: RollLifecycleAlertWorkItem,
@@ -107,7 +192,8 @@ async function processAlert(
 ): Promise<void> {
   let result: AlertDeliveryResult;
   try {
-    const value = alertValue(item);
+    const context = await enrichAlertContext(db, service, item, now);
+    const value = alertValue(item, context);
     result = parseAlertResult(
       operation === "send"
         ? await service.createRollLifecycleAlertV1(value)
@@ -168,6 +254,33 @@ async function processAlert(
   );
 }
 
+function cacheLifecycleDisplayContext(
+  snapshot: RollLifecycleSnapshotV1,
+  db: D1Database,
+  ctx?: ExecutionContext,
+): void {
+  if (ctx === undefined) return;
+  const warn = () => {
+    console.warn(JSON.stringify({
+      level: "warn",
+      message: "Roll lifecycle channel context cache write failed",
+    }));
+  };
+  try {
+    const mutation = buildDiscordChannelDirectoryUpsertV1(
+      snapshot.context,
+      "lifecycle",
+      snapshot.receivedAt,
+    );
+    if (mutation === null) return;
+    ctx.waitUntil(
+      applyDiscordChannelDirectoryMutation(db, mutation, Date.now()).catch(warn),
+    );
+  } catch {
+    warn();
+  }
+}
+
 export async function recordRollLifecycle(
   request: Request,
   env: RollLifecycleServiceEnv,
@@ -199,6 +312,7 @@ export async function recordRollLifecycle(
   try {
     const snapshot = parseRollLifecycleSnapshot(value);
     const result = await new D1RollLifecycleRepository(env.DATA).record(snapshot);
+    cacheLifecycleDisplayContext(snapshot, env.DATA, ctx);
     if (snapshot.state === "failed" && ctx !== undefined) {
       ctx.waitUntil(processRollLifecycleAlerts(env, Date.now()));
     }
@@ -225,7 +339,14 @@ export async function processRollLifecycleAlerts(
     ALERT_BATCH_SIZE,
   );
   for (const item of creates) {
-    await processAlert(repository, env.DISCORD_REST, item, "send", now);
+    await processAlert(
+      env.DATA,
+      repository,
+      env.DISCORD_REST,
+      item,
+      "send",
+      now,
+    );
   }
   const updates = await repository.claimAlertUpdates(
     now,
@@ -233,7 +354,14 @@ export async function processRollLifecycleAlerts(
     ALERT_BATCH_SIZE,
   );
   for (const item of updates) {
-    await processAlert(repository, env.DISCORD_REST, item, "update", now);
+    await processAlert(
+      env.DATA,
+      repository,
+      env.DISCORD_REST,
+      item,
+      "update",
+      now,
+    );
   }
 }
 

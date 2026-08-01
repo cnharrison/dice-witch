@@ -14,6 +14,7 @@ const timestamp = 1_767_225_600_123;
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM discord_channel_directory"),
     dataEnv.DATA.prepare("DELETE FROM game_detections"),
     dataEnv.DATA.prepare("DELETE FROM game_detection_rank_jobs"),
     dataEnv.DATA.prepare("DELETE FROM game_detection_rolls"),
@@ -93,6 +94,7 @@ describe("D1 business schema migration", () => {
     expect(await tableNames()).toEqual(
       expect.arrayContaining([
         "discord_audience_snapshot",
+        "discord_channel_directory",
         "game_detection_control",
         "game_detection_daily_aggregates",
         "game_detection_rank_jobs",
@@ -118,6 +120,7 @@ describe("D1 business schema migration", () => {
     }>();
     for (const name of [
       "discord_audience_snapshot",
+      "discord_channel_directory",
       "game_detection_control",
       "game_detection_daily_aggregates",
       "game_detection_rank_jobs",
@@ -158,6 +161,16 @@ describe("D1 business schema migration", () => {
       "known_dice_witch_users",
       "shard_count",
       "guild_counts_by_shard_json",
+    ]);
+    await expect(columns("discord_channel_directory")).resolves.toEqual([
+      "channel_id",
+      "guild_id",
+      "channel_name",
+      "channel_type",
+      "source",
+      "is_deleted",
+      "observed_at",
+      "expires_at",
     ]);
     await expect(columns("guilds")).resolves.toEqual([
       "id",
@@ -288,6 +301,7 @@ describe("D1 business schema migration", () => {
       { name: "0010_game_detection_telemetry.sql" },
       { name: "0011_game_detection_display_context.sql" },
       { name: "0012_game_detection_active_play.sql" },
+      { name: "0013_discord_channel_directory.sql" },
     ]);
   });
 

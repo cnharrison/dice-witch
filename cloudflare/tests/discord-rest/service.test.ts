@@ -23,6 +23,7 @@ import {
   registerDevelopmentGuildCommands,
   registerGlobalCommands,
   reportBotListStats,
+  resolveDiscordChannelContextV1,
   resolveGameDetectionChannelContextV1,
   sendRollHelper,
   updateRollLifecycleAlertV1,
@@ -197,8 +198,10 @@ describe("Discord REST service", () => {
       const payload: {
         embeds: Array<{ fields: Array<{ name: string; value: string }> }>;
       } = await request.json();
-      expect(JSON.stringify(payload)).toContain("Unknown guild");
-      expect(JSON.stringify(payload)).toContain("Unknown channel");
+      const serialized = JSON.stringify(payload);
+      expect(serialized).toContain(`Guild ${guildId}`);
+      expect(serialized).toContain("<#100000000000000010>");
+      expect(serialized).not.toContain("Unknown");
       return Response.json({ id: "100000000000000086" });
     });
 
@@ -215,7 +218,7 @@ describe("Discord REST service", () => {
     ).resolves.toMatchObject({ status: "delivered" });
   });
 
-  it("resolves a game-detection channel through the authenticated Discord boundary", async () => {
+  it("resolves a channel through the shared authenticated Discord boundary", async () => {
     const discordFetch = vi.fn((request: Request) => {
       expect(request.method).toBe("GET");
       expect(request.url).toBe(
@@ -230,7 +233,7 @@ describe("Discord REST service", () => {
     });
 
     await expect(
-      resolveGameDetectionChannelContextV1(
+      resolveDiscordChannelContextV1(
         env,
         {
           version: 1,
@@ -304,6 +307,36 @@ describe("Discord REST service", () => {
       messageId: "100000000000000088",
       httpStatus: 200,
     });
+  });
+
+  it("uses stable destination identifiers when lifecycle names are unavailable", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      const form = await request.formData();
+      const payloadValue = form.get("payload_json");
+      if (typeof payloadValue !== "string") {
+        throw new Error("Lifecycle alert payload is invalid");
+      }
+      expect(payloadValue).toContain(`Guild ${guildId}`);
+      expect(payloadValue).toContain("<#100000000000000010>");
+      expect(payloadValue).not.toContain("Unknown");
+      return Response.json({ id: "100000000000000088" });
+    });
+    const alert = lifecycleAlert();
+    await expect(
+      createRollLifecycleAlertV1(
+        env,
+        {
+          ...alert,
+          context: {
+            ...alert.context,
+            guildName: null,
+            channelName: null,
+            channelType: null,
+          },
+        },
+        discordFetch,
+      ),
+    ).resolves.toMatchObject({ status: "delivered" });
   });
 
   it("edits the original lifecycle alert when delivery recovers", async () => {
@@ -582,6 +615,61 @@ describe("Discord REST service", () => {
       ),
     ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
     expect(discordFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("resolves only the missing part of signed roll-log context", async () => {
+    const artifact = rollLogArtifact();
+    const discordFetch = vi.fn(async (request: Request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname.endsWith(`/guilds/${guildId}`)) {
+        return Response.json({ id: guildId, name: "Resolved Guild" });
+      }
+      expect(pathname).toBe(
+        `/api/v10/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`,
+      );
+      const form = await request.formData();
+      const payloadValue = form.get("payload_json");
+      if (typeof payloadValue !== "string") {
+        throw new Error("Multipart log fixture is invalid");
+      }
+      const payload = JSON.parse(payloadValue) as {
+        embeds: Array<{ description: string }>;
+      };
+      expect(payload.embeds[0]?.description).toContain(
+        "channel: **signed\\-rolls**\nguild: **Resolved Guild**",
+      );
+      return Response.json({ id: "100000000000000088" });
+    });
+
+    await expect(
+      deliverRollLogV1(
+        env,
+        {
+          artifact: {
+            ...artifact,
+            context: {
+              kind: "guild",
+              guildId,
+              guildName: null,
+              channelId: artifact.channelId,
+              channelName: "signed-rolls",
+              channelType: 0,
+            },
+          },
+          logicalShard: {
+            status: "available",
+            shardId: 0,
+            shardCount: 1,
+            generation: 16,
+          },
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
+    expect(discordFetch).toHaveBeenCalledTimes(2);
+    expect(discordFetch.mock.calls.map(([request]) => request.url)).not.toContain(
+      `https://discord.com/api/v10/channels/${artifact.channelId}`,
+    );
   });
 
   it("emits complete roll-log telemetry without credentials or PNG bytes", async () => {

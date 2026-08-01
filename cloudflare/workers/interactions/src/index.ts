@@ -1,5 +1,6 @@
 import { readWorkerSecret, type WorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
+  buildDiscordChannelDirectoryUpsertV1,
   buildEditOriginalResponse,
   buildInvalidRollHelpMessage,
   buildKnowledgeBaseResponse,
@@ -11,10 +12,12 @@ import {
   parseRollHelperDmInteraction,
   parseRollInteraction,
   parseSavedRollInteraction,
+  rollInteractionContextMissingReasons,
   parseStaticInteractionCommand,
   parseStatusCommandInteraction,
   verifyDiscordRequestSignature,
   type RollHelperDmInteraction,
+  type RollLoggingContext,
   type StatusGatewaySnapshot,
 } from "../../../packages/discord-contracts/src";
 import {
@@ -193,6 +196,62 @@ async function acceptDeferredRoll(
   }
 }
 
+function cacheInteractionDisplayContext(
+  context: RollLoggingContext | null,
+  observedAt: number,
+  dataService: Fetcher,
+  ctx?: ExecutionContext,
+): void {
+  if (ctx === undefined) return;
+  const warn = () => {
+    console.warn(JSON.stringify({
+      level: "warn",
+      message: "Signed roll interaction context cache write failed",
+    }));
+  };
+  try {
+    const mutation = buildDiscordChannelDirectoryUpsertV1(
+      context,
+      "interaction",
+      observedAt,
+    );
+    if (mutation === null) return;
+    ctx.waitUntil(
+      dataService.fetch(
+        new Request("https://data.internal/internal/discord-channel-context", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(mutation),
+        }),
+      ).then((response) => {
+        if (!response.ok) {
+          throw new Error("Discord channel context cache write failed");
+        }
+      }).catch(warn),
+    );
+  } catch {
+    warn();
+  }
+}
+
+function warnIncompleteDisplayContext(
+  interaction: Record<string, unknown>,
+  guildId: string | null,
+  commandName: "library" | "roll",
+): void {
+  const reasons = rollInteractionContextMissingReasons(interaction, guildId);
+  if (reasons.length === 0) return;
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      message: "Signed roll interaction display context is incomplete",
+      scope: "guild",
+      reasons,
+      commandName,
+    }),
+  );
+}
+
 export async function handleInteractionRequest(
   request: Request,
   env: InteractionEnv,
@@ -269,6 +328,13 @@ export async function handleInteractionRequest(
     );
   }
   if (savedRoll !== null) {
+    warnIncompleteDisplayContext(interaction, savedRoll.guildId, "library");
+    cacheInteractionDisplayContext(
+      savedRoll.loggingContext,
+      Date.now(),
+      env.DATA_SERVICE,
+      ctx,
+    );
     console.info(
       JSON.stringify({
         telemetryVersion: 1,
@@ -375,15 +441,7 @@ export async function handleInteractionRequest(
       return json(buildStatusUnavailableResponse(links));
     }
   }
-  if (roll.loggingContext === null) {
-    console.warn(
-      JSON.stringify({
-        level: "warn",
-        message: "Signed roll interaction context is unavailable",
-        scope: roll.guildId === null ? "dm" : "guild",
-      }),
-    );
-  }
+  warnIncompleteDisplayContext(interaction, roll.guildId, "roll");
   console.info(
     JSON.stringify({
       telemetryVersion: 1,
@@ -397,6 +455,12 @@ export async function handleInteractionRequest(
     roll.id,
   ) as unknown as RollWorkAcceptanceStub;
   const deferredAt = Date.now();
+  cacheInteractionDisplayContext(
+    roll.loggingContext,
+    deferredAt,
+    env.DATA_SERVICE,
+    ctx,
+  );
   let payload: ReturnType<typeof buildRollDeliveryPayload>;
   let acknowledgement: Record<string, unknown>;
   try {

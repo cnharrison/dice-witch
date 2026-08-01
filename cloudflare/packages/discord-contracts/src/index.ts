@@ -8,6 +8,17 @@ export {
 } from "./audience-snapshot";
 export { DISCORD_GLOBAL_COMMANDS } from "./commands";
 export {
+  buildDiscordChannelDirectoryUpsertV1,
+  parseDiscordChannelContextRequestV1,
+  parseDiscordChannelContextResponseV1,
+  parseDiscordChannelDirectoryDispatchV1,
+  parseDiscordChannelDirectoryMutationV1,
+  type DiscordChannelContextRequestV1,
+  type DiscordChannelContextResultV1,
+  type DiscordChannelContextSourceV1,
+  type DiscordChannelDirectoryMutationV1,
+} from "./discord-channel-context";
+export {
   parseGameDetectionAnnouncementV1,
   parseGameDetectionChannelContextRequestV1,
   parseGameDetectionChannelContextResponseV1,
@@ -116,10 +127,16 @@ export {
 } from "./saved-roll-interaction";
 export {
   DISCORD_ROLL_CHANNEL_TYPES,
+  extractRollLoggingContext,
+  isCompleteGuildRollLoggingContext,
   isDiscordRollChannelType,
   parseRollInteraction,
+  parseRollLoggingContext,
+  rollInteractionContextMissingReasons,
   type DiscordRollChannelType,
+  type GuildRollLoggingContext,
   type RollInteraction,
+  type RollInteractionContextMissingReason,
   type RollInteractionScope,
   type RollLoggingContext,
 } from "./roll-interaction";

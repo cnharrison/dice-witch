@@ -1,11 +1,12 @@
 import type {
-  GameDetectionChannelContextResultV1,
+  DiscordChannelContextResultV1,
 } from "../../../packages/discord-contracts/src";
 import {
   buildGameDetectionCandidateRequestV3,
   prepareGameDetectionV3,
   validateNarrationGameRankingResponseV1,
 } from "../../../packages/roll-domain/src";
+import { resolveDiscordChannelContextCachedV1 } from "./discord-channel-directory-service";
 import { D1GameDetectionRepository } from "./game-detection-repository";
 
 export const GAME_DETECTION_MODEL_ID = "@cf/zai-org/glm-5.2";
@@ -29,9 +30,9 @@ export type GameDetectionServiceEnv = Readonly<{
     createGameDetectionAnnouncementV1(
       input: unknown,
     ): Promise<DiscordAnnouncementResult>;
-    resolveGameDetectionChannelContextV1(
+    resolveDiscordChannelContextV1(
       input: unknown,
-    ): Promise<GameDetectionChannelContextResultV1>;
+    ): Promise<DiscordChannelContextResultV1>;
   }>;
 }>;
 
@@ -108,13 +109,17 @@ export async function processGameDetectionMinute(
   const pendingContext = await repository.nextPendingChannelContext(now);
   let channelContext: GameDetectionMinuteResult["channelContext"] = "none";
   if (pendingContext !== null) {
-    let result: GameDetectionChannelContextResultV1;
+    let result: DiscordChannelContextResultV1;
     try {
-      result = await env.DISCORD_REST.resolveGameDetectionChannelContextV1({
-        version: 1,
-        guildId: pendingContext.guildId,
-        channelId: pendingContext.channelId,
-      });
+      result = await resolveDiscordChannelContextCachedV1(
+        env,
+        {
+          version: 1,
+          guildId: pendingContext.guildId,
+          channelId: pendingContext.channelId,
+        },
+        now,
+      );
     } catch {
       result = { status: "retryable", httpStatus: null, retryAfterMs: null };
     }

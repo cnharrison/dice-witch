@@ -2,6 +2,7 @@ import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RollLifecycleSnapshotV1 } from "../../packages/discord-contracts/src";
+import { D1DiscordChannelDirectoryRepository } from "../../workers/data/src/discord-channel-directory-repository";
 import { D1RollLifecycleRepository } from "../../workers/data/src/roll-lifecycle-repository";
 import { processRollLifecycleAlerts } from "../../workers/data/src/roll-lifecycle-service";
 
@@ -56,9 +57,34 @@ function snapshot(
   };
 }
 
+function failedGuildSnapshot(
+  guildId: string,
+  channelId: string,
+): RollLifecycleSnapshotV1 {
+  const base = snapshot();
+  return snapshot({
+    scope: "guild",
+    state: "failed",
+    terminalAt: acceptedAt + 10,
+    failurePhase: "record",
+    failureCode: "stored-record-invalid",
+    context: {
+      ...base.context,
+      guildId,
+      channelId,
+      guildName: null,
+      channelName: null,
+      channelType: null,
+    },
+  });
+}
+
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
-  await dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts").run();
+  await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM discord_channel_directory"),
+    dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts"),
+  ]);
 });
 
 describe("Data Worker roll lifecycle service", () => {
@@ -81,6 +107,103 @@ describe("Data Worker roll lifecycle service", () => {
     expect(row).toEqual({ state: "accepted", scope: "dm", guild_id: null });
   });
 
+  it("enriches a guild lifecycle alert from shared cache without changing its stored snapshot", async () => {
+    const repository = new D1RollLifecycleRepository(dataEnv.DATA);
+    const guildId = "100000000000000015";
+    const channelId = "100000000000000016";
+    await dataEnv.DATA.prepare(
+      "INSERT INTO guilds (id, name) VALUES (?, ?)",
+    ).bind(guildId, "Stored Fixture Guild").run();
+    await repository.record(failedGuildSnapshot(guildId, channelId));
+    await new D1DiscordChannelDirectoryRepository(dataEnv.DATA).apply({
+      version: 1,
+      operation: "upsert",
+      source: "interaction",
+      guildId,
+      channelId,
+      channelName: "resolved-rolls",
+      channelType: 0,
+      observedAt: acceptedAt,
+    }, acceptedAt);
+    const createRollLifecycleAlertV1 = vi.fn((value: unknown) => {
+      void value;
+      return Promise.resolve({
+        status: "delivered",
+        messageId: "100000000000000099",
+        httpStatus: 200,
+      });
+    });
+    const resolveDiscordChannelContextV1 = vi.fn();
+
+    await processRollLifecycleAlerts(
+      {
+        DATA: dataEnv.DATA,
+        DISCORD_REST: {
+          createRollLifecycleAlertV1,
+          updateRollLifecycleAlertV1: vi.fn(),
+          resolveDiscordChannelContextV1,
+        },
+      },
+      acceptedAt + 11,
+    );
+
+    expect(resolveDiscordChannelContextV1).not.toHaveBeenCalled();
+    expect(createRollLifecycleAlertV1.mock.calls[0]?.[0]).toMatchObject({
+      context: {
+        guildName: "Stored Fixture Guild",
+        channelName: "resolved-rolls",
+        channelType: 0,
+      },
+    });
+    const stored = await dataEnv.DATA.prepare(
+      "SELECT context_json FROM roll_lifecycle_receipts WHERE interaction_id = ?",
+    ).bind(interactionId).first<{ context_json: string }>();
+    expect(JSON.parse(stored?.context_json ?? "null")).toMatchObject({
+      guildName: null,
+      channelName: null,
+      channelType: null,
+    });
+  });
+
+  it("does not delay a safe alert when display enrichment is retryable", async () => {
+    const repository = new D1RollLifecycleRepository(dataEnv.DATA);
+    const guildId = "100000000000000017";
+    const channelId = "100000000000000018";
+    await repository.record(failedGuildSnapshot(guildId, channelId));
+    const createRollLifecycleAlertV1 = vi.fn((value: unknown) => {
+      void value;
+      return Promise.resolve({
+        status: "delivered",
+        messageId: "100000000000000099",
+        httpStatus: 200,
+      });
+    });
+
+    await processRollLifecycleAlerts(
+      {
+        DATA: dataEnv.DATA,
+        DISCORD_REST: {
+          createRollLifecycleAlertV1,
+          updateRollLifecycleAlertV1: vi.fn(),
+          resolveDiscordChannelContextV1: vi.fn(() => Promise.resolve({
+            status: "retryable" as const,
+            httpStatus: 429,
+            retryAfterMs: 500,
+          })),
+        },
+      },
+      acceptedAt + 11,
+    );
+
+    expect(createRollLifecycleAlertV1.mock.calls[0]?.[0]).toMatchObject({
+      context: {
+        guildName: null,
+        channelName: null,
+        channelType: null,
+      },
+    });
+  });
+
   it("retries rejected alerts without creating a permanent blind spot", async () => {
     const repository = new D1RollLifecycleRepository(dataEnv.DATA);
     await repository.record(snapshot({
@@ -98,6 +221,7 @@ describe("Data Worker roll lifecycle service", () => {
       DISCORD_REST: {
         createRollLifecycleAlertV1,
         updateRollLifecycleAlertV1: vi.fn(),
+        resolveDiscordChannelContextV1: vi.fn(),
       },
     };
 
@@ -126,6 +250,7 @@ describe("Data Worker roll lifecycle service", () => {
       DISCORD_REST: {
         createRollLifecycleAlertV1,
         updateRollLifecycleAlertV1,
+        resolveDiscordChannelContextV1: vi.fn(),
       },
     };
 

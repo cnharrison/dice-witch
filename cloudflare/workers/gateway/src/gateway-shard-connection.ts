@@ -8,7 +8,10 @@ import {
   type GatewayMachine,
   type GatewaySessionCheckpoint,
 } from "../../../packages/gateway-protocol/src";
-import { parseGuildLifecycleDispatch } from "../../../packages/discord-contracts/src";
+import {
+  parseDiscordChannelDirectoryDispatchV1,
+  parseGuildLifecycleDispatch,
+} from "../../../packages/discord-contracts/src";
 import {
   buildGatewayHeartbeat,
   buildGatewayIdentify,
@@ -476,6 +479,7 @@ export class GatewayShardConnection {
   private reconnectAttempt = 0;
   private readonly activationId = crypto.randomUUID();
   private readonly socketEventQueue = new GatewayEventQueue();
+  private readonly channelDirectoryQueue = new GatewayEventQueue();
   private readonly initialGuilds: InitialGuildTracker;
   private readonly guildInventory: GuildInventory;
   private lifecycleMutationScope: string | null = null;
@@ -975,6 +979,13 @@ export class GatewayShardConnection {
               this.initialGuilds.needsSync(initialGuildId),
           ),
         );
+        if (active) {
+          this.syncDiscordChannelDirectory(
+            message.eventType,
+            message.data,
+            now,
+          );
+        }
         this.guildInventory.apply(lifecycleEvent);
         await this.apply(
           {
@@ -988,6 +999,55 @@ export class GatewayShardConnection {
         if (initialGuildId !== null) this.initialGuilds.complete(initialGuildId);
         return;
       }
+    }
+  }
+
+  private syncDiscordChannelDirectory(
+    eventType: string,
+    data: unknown,
+    receivedAt: number,
+  ): void {
+    const warn = () => {
+      console.warn(JSON.stringify({
+        level: "warn",
+        message: "Gateway channel context cache write failed",
+        eventType,
+      }));
+    };
+    let mutation: ReturnType<typeof parseDiscordChannelDirectoryDispatchV1>;
+    try {
+      mutation = parseDiscordChannelDirectoryDispatchV1(
+        eventType,
+        data,
+        receivedAt,
+      );
+    } catch {
+      warn();
+      return;
+    }
+    if (mutation === null) return;
+
+    const synchronization = this.channelDirectoryQueue.enqueue(async () => {
+      const response = await this.env.DATA_SERVICE.fetch(
+        new Request("https://data.internal/internal/discord-channel-context", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(mutation),
+        }),
+      );
+      const result: unknown = response.ok ? await response.json() : null;
+      if (
+        !response.ok ||
+        !isRecord(result) ||
+        !["applied", "existing", "stale"].includes(String(result.status))
+      ) {
+        throw new Error("Discord channel directory synchronization failed");
+      }
+    });
+    try {
+      this.ctx.waitUntil(synchronization.catch(warn));
+    } catch {
+      warn();
     }
   }
 

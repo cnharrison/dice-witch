@@ -1,7 +1,7 @@
 import { MAX_NOTATION_LENGTH } from "../../roll-domain/src/constants";
 import type { DiscordEmbed, DiscordMessage } from "./responses";
 import {
-  isDiscordRollChannelType,
+  parseRollLoggingContext,
   type RollLoggingContext,
 } from "./roll-interaction";
 
@@ -338,46 +338,11 @@ function validateContext(
   channelId: string,
 ): RollLoggingContext | null {
   if (value === null) return null;
-  if (!isRecord(value) || value.channelId !== channelId) {
+  try {
+    return parseRollLoggingContext(value, guildId, channelId);
+  } catch {
     throw new Error("Roll log artifact context is invalid");
   }
-  if (
-    value.kind === "dm" &&
-    guildId === null &&
-    hasExactKeys(value, ["channelId", "kind"])
-  ) {
-    return { kind: "dm", channelId };
-  }
-  if (
-    value.kind !== "guild" ||
-    guildId === null ||
-    value.guildId !== guildId ||
-    !hasExactKeys(value, [
-      "channelId",
-      "channelName",
-      "channelType",
-      "guildId",
-      "guildName",
-      "kind",
-    ]) ||
-    typeof value.guildName !== "string" ||
-    value.guildName.length < 2 ||
-    value.guildName.length > 100 ||
-    typeof value.channelName !== "string" ||
-    value.channelName.length < 1 ||
-    value.channelName.length > 100 ||
-    !isDiscordRollChannelType(value.channelType)
-  ) {
-    throw new Error("Roll log artifact context is invalid");
-  }
-  return {
-    kind: "guild",
-    guildId,
-    guildName: value.guildName,
-    channelId,
-    channelName: value.channelName,
-    channelType: value.channelType,
-  };
 }
 
 function escapeDiscordMarkdown(value: string): string {
