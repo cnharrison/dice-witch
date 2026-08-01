@@ -14,6 +14,15 @@ type FeatureRoll = Readonly<{
   repetitions: number;
 }>;
 
+const ARBITRARY_DIE_EXPLORATION_WITH_DCC_ROLLS = [
+  { notation: ["d7"], repetitions: 1 },
+  { notation: ["d8"], repetitions: 1 },
+  { notation: ["d9"], repetitions: 1 },
+  { notation: ["d12"], repetitions: 1 },
+  { notation: ["d15"], repetitions: 1 },
+  { notation: ["d30"], repetitions: 1 },
+] as const satisfies readonly FeatureRoll[];
+
 function retrieveV3CandidatesForRolls(rolls: readonly FeatureRoll[]) {
   const features = extractNarrationGameFeaturesV1({ version: 1, rolls });
   return retrieveNarrationGameCandidatesV3({
@@ -223,6 +232,86 @@ describe("narration game candidate retrieval", () => {
 
     expect(result.state).toBe("candidate-set");
     expect(result.truncated).toBe(false);
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "dungeon-crawl-classics",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+  });
+
+  it("applies competing neutral episode counterevidence to a fingerprint", () => {
+    const features = extractNarrationGameFeaturesV1({
+      version: 1,
+      rolls: ARBITRARY_DIE_EXPLORATION_WITH_DCC_ROLLS,
+    });
+    expect(features.features).toEqual([
+      { kind: "dcc-dice-chain", occurrences: 2 },
+      { kind: "dcc-diverse-dice-chain", occurrences: 1 },
+      { kind: "diverse-uncatalogued-die-sides", occurrences: 2 },
+      { kind: "observed-roll-expression", occurrences: 6 },
+    ]);
+
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: features.features,
+      context: { locationNames: [], rollLabels: [] },
+    });
+    expect(result.state).toBe("weak-only");
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "dungeon-crawl-classics",
+      evidenceTier: "weak",
+    });
+  });
+
+  it("lets independent location evidence outweigh mechanics counterevidence", () => {
+    const features = extractNarrationGameFeaturesV1({
+      version: 1,
+      rolls: ARBITRARY_DIE_EXPLORATION_WITH_DCC_ROLLS,
+    });
+    const result = retrieveNarrationGameCandidatesV3({
+      version: 3,
+      features: features.features,
+      context: {
+        locationNames: ["Dungeon Crawl Classics campaign"],
+        rollLabels: [],
+      },
+    });
+
+    expect(result.state).toBe("candidate-set");
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "dungeon-crawl-classics",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+  });
+
+  it("keeps mechanics-only DCC evidence among ordinary RPG dice", () => {
+    const result = retrieveV3CandidatesForRolls([
+      { notation: ["d20+3"], repetitions: 12 },
+      { notation: ["d8"], repetitions: 2 },
+      { notation: ["d12"], repetitions: 2 },
+      { notation: ["d30"], repetitions: 1 },
+      { notation: ["d7"], repetitions: 1 },
+    ]);
+
+    expect(result.state).toBe("candidate-set");
+    expect(result.candidates[0]).toMatchObject({
+      systemId: "dungeon-crawl-classics",
+      evidenceTier: "plausible",
+      confidenceCeiling: "plausible",
+    });
+  });
+
+  it("keeps DCC when neutral counterevidence is less frequent than support", () => {
+    const result = retrieveV3CandidatesForRolls([
+      { notation: ["d7"], repetitions: 1 },
+      { notation: ["d14"], repetitions: 1 },
+      { notation: ["d30"], repetitions: 1 },
+      { notation: ["d9"], repetitions: 1 },
+      { notation: ["d15"], repetitions: 1 },
+    ]);
+
+    expect(result.state).toBe("candidate-set");
     expect(result.candidates[0]).toMatchObject({
       systemId: "dungeon-crawl-classics",
       evidenceTier: "plausible",

@@ -54,9 +54,22 @@ const PLAIN_D10_POOL = /^(?:[2-9]|[1-9]\d+)d10$/u;
 const TWO_D20_ROLL_UNDER = /^2d20(?:<=|<)\d+$/u;
 const D20_WITH_ACCURACY_D6 = /^\{(?=[^}]*(?:1)?d20)(?=[^}]*(?:[2-9]|[1-9]\d+)d6(?:kh1|k1))[^}]+\}$/u;
 const D20_WITH_PLOT_D6 = /^\{(?:(?:1)?d20,(?:1)?d6|(?:1)?d6,(?:1)?d20)\}$/u;
-const DCC_DIE_TERM = /(?:^|[^a-z0-9_])(?:\d*)d(3|5|7|14|16|24|30)(?=[^0-9]|$)/gu;
+const DIE_TERM = /(?:^|[^a-z0-9_])(?:\d*)d(\d+)(?=[^0-9]|$)/gu;
 // A d3 is common outside DCC, so diversity requires the rarer chain sizes.
 const RARE_DCC_DIE_SIDES = new Set(["5", "7", "14", "16", "24", "30"]);
+const DCC_DIE_SIDES = new Set(["3", ...RARE_DCC_DIE_SIDES]);
+// Sides represented by common RPG dice or a curated catalogue mechanic.
+const CATALOGUED_DIE_SIDES = new Set([
+  "2",
+  "4",
+  "6",
+  "8",
+  "10",
+  "12",
+  "20",
+  "100",
+  ...DCC_DIE_SIDES,
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -125,25 +138,61 @@ function addObservation(
   observations.set(kind, (observations.get(kind) ?? 0) + occurrences);
 }
 
-function dccDieSides(notation: string): ReadonlySet<string> {
+function dieSides(notation: string): ReadonlySet<string> {
   const sides = new Set<string>();
-  for (const match of notation.matchAll(DCC_DIE_TERM)) {
+  for (const match of notation.matchAll(DIE_TERM)) {
     const side = match[1];
     if (side !== undefined) sides.add(side);
   }
   return sides;
 }
 
-type DccDiceChainObservation = {
-  rareSides: Set<string>;
-  rareExpressionCount: number;
+type DiceSideObservation = {
+  rareDccSides: Set<string>;
+  rareDccExpressionCount: number;
+  uncataloguedSides: Set<string>;
+  uncataloguedExpressionCount: number;
 };
+
+function observeDiceSides(
+  notation: string,
+  repetitions: number,
+  observations: Map<NarrationGameFeatureV1, number>,
+  diceSideObservation: DiceSideObservation,
+): void {
+  const observedDieSides = dieSides(notation);
+  let containsDccDie = false;
+  let containsRareDccDie = false;
+  let containsUncataloguedDie = false;
+  for (const side of observedDieSides) {
+    if (DCC_DIE_SIDES.has(side)) {
+      containsDccDie = true;
+    }
+    if (RARE_DCC_DIE_SIDES.has(side)) {
+      containsRareDccDie = true;
+      diceSideObservation.rareDccSides.add(side);
+    }
+    if (!CATALOGUED_DIE_SIDES.has(side)) {
+      containsUncataloguedDie = true;
+      diceSideObservation.uncataloguedSides.add(side);
+    }
+  }
+  if (containsDccDie) {
+    addObservation(observations, "dcc-dice-chain", repetitions);
+  }
+  if (containsRareDccDie) {
+    diceSideObservation.rareDccExpressionCount += repetitions;
+  }
+  if (containsUncataloguedDie) {
+    diceSideObservation.uncataloguedExpressionCount += repetitions;
+  }
+}
 
 function observeNotation(
   notation: string,
   repetitions: number,
   observations: Map<NarrationGameFeatureV1, number>,
-  dccObservation: DccDiceChainObservation,
+  diceSideObservation: DiceSideObservation,
 ): void {
   if (ABILITY_SCORE_ROLL.test(notation)) {
     addObservation(
@@ -228,19 +277,12 @@ function observeNotation(
   if (D20_WITH_PLOT_D6.test(notation)) {
     addObservation(observations, "d20-with-plot-d6", repetitions);
   }
-  const observedDccSides = dccDieSides(notation);
-  if (observedDccSides.size > 0) {
-    addObservation(observations, "dcc-dice-chain", repetitions);
-    let containsRareDccDie = false;
-    for (const side of observedDccSides) {
-      if (!RARE_DCC_DIE_SIDES.has(side)) continue;
-      containsRareDccDie = true;
-      dccObservation.rareSides.add(side);
-    }
-    if (containsRareDccDie) {
-      dccObservation.rareExpressionCount += repetitions;
-    }
-  }
+  observeDiceSides(
+    notation,
+    repetitions,
+    observations,
+    diceSideObservation,
+  );
   if (isMixedStepDicePool(notation)) {
     addObservation(observations, "mixed-step-dice-pool", repetitions);
   }
@@ -274,9 +316,11 @@ export function extractNarrationGameFeaturesV1(
   }
 
   const observations = new Map<NarrationGameFeatureV1, number>();
-  const dccObservation: DccDiceChainObservation = {
-    rareSides: new Set(),
-    rareExpressionCount: 0,
+  const diceSideObservation: DiceSideObservation = {
+    rareDccSides: new Set(),
+    rareDccExpressionCount: 0,
+    uncataloguedSides: new Set(),
+    uncataloguedExpressionCount: 0,
   };
   for (const value of request.rolls) {
     const roll = validateRoll(value);
@@ -290,16 +334,23 @@ export function extractNarrationGameFeaturesV1(
         normalizeNotation(value),
         roll.repetitions,
         observations,
-        dccObservation,
+        diceSideObservation,
       );
     }
   }
 
   if (
-    dccObservation.rareSides.size >= 2 &&
-    dccObservation.rareExpressionCount >= 2
+    diceSideObservation.rareDccSides.size >= 2 &&
+    diceSideObservation.rareDccExpressionCount >= 2
   ) {
     addObservation(observations, "dcc-diverse-dice-chain", 1);
+  }
+  if (diceSideObservation.uncataloguedSides.size >= 2) {
+    addObservation(
+      observations,
+      "diverse-uncatalogued-die-sides",
+      diceSideObservation.uncataloguedExpressionCount,
+    );
   }
 
   return {

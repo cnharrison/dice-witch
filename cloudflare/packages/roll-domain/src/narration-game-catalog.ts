@@ -27,6 +27,7 @@ export type NarrationGameFeatureV1 =
   | "d20-with-plot-d6"
   | "dcc-dice-chain"
   | "dcc-diverse-dice-chain"
+  | "diverse-uncatalogued-die-sides"
   | "mixed-step-dice-pool"
   | "plain-d10-pool"
   | "plain-d6-pool"
@@ -53,6 +54,14 @@ export type NarrationGameEvidencePolicyV1 =
   | "representative"
   | "corroborating";
 
+// Caps a fingerprint when an incompatible episode feature is at least as
+// frequent as the configured supporting comparison feature.
+export type NarrationGameCounterevidenceV1 = Readonly<{
+  feature: NarrationGameFeatureV1;
+  atLeastAsFrequentAsFeature: NarrationGameFeatureV1;
+  confidenceCeiling: NarrationGameConfidenceV1;
+}>;
+
 export type NarrationGameFingerprintV1 = Readonly<{
   id: string;
   claim: string;
@@ -61,6 +70,7 @@ export type NarrationGameFingerprintV1 = Readonly<{
   evidencePolicy: NarrationGameEvidencePolicyV1;
   evidenceStrength: NarrationGameConfidenceV1;
   confidenceCeiling: NarrationGameConfidenceV1;
+  counterevidence?: readonly NarrationGameCounterevidenceV1[];
   sourceIds: readonly string[];
   commentaryTopics: readonly string[];
 }>;

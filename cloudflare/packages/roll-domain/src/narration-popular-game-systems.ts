@@ -1,5 +1,6 @@
 import type {
   NarrationGameConfidenceV1,
+  NarrationGameCounterevidenceV1,
   NarrationGameEvidencePolicyV1,
   NarrationGameFeatureV1,
   NarrationGameSourceAuthorityV1,
@@ -15,6 +16,7 @@ type AdditionalFingerprintDefinition = Readonly<{
   evidenceStrength: NarrationGameConfidenceV1;
   confidenceCeiling: NarrationGameConfidenceV1;
   claim: string;
+  counterevidence?: readonly NarrationGameCounterevidenceV1[];
 }>;
 
 type PopularGameDefinition = Readonly<{
@@ -27,6 +29,7 @@ type PopularGameDefinition = Readonly<{
   evidenceStrength: NarrationGameConfidenceV1;
   confidenceCeiling: NarrationGameConfidenceV1;
   claim: string;
+  counterevidence?: readonly NarrationGameCounterevidenceV1[];
   additionalFingerprint?: AdditionalFingerprintDefinition;
   confusableWith: readonly string[];
   commentaryTopics: readonly string[];
@@ -468,6 +471,11 @@ const DEFINITIONS = [
       evidenceStrength: "plausible",
       confidenceCeiling: "plausible",
       claim: "Repeated use of different rare DCC dice is a dice-chain pattern.",
+      counterevidence: [{
+        feature: "diverse-uncatalogued-die-sides",
+        atLeastAsFrequentAsFeature: "dcc-dice-chain",
+        confidenceCeiling: "weak",
+      }],
     },
     confusableWith: ["other-unusual-dice-games"],
     commentaryTopics: ["dice-chain", "zocchi-dice"],
@@ -725,6 +733,9 @@ function toSystem(definition: PopularGameDefinition): NarrationGameSystemV1 {
       evidencePolicy: definition.evidencePolicy,
       evidenceStrength: definition.evidenceStrength,
       confidenceCeiling: definition.confidenceCeiling,
+      ...(definition.counterevidence === undefined
+        ? {}
+        : { counterevidence: definition.counterevidence }),
       sourceIds: [sourceId],
       commentaryTopics: definition.commentaryTopics,
     },
@@ -740,6 +751,12 @@ function toSystem(definition: PopularGameDefinition): NarrationGameSystemV1 {
           evidencePolicy: definition.additionalFingerprint.evidencePolicy,
           evidenceStrength: definition.additionalFingerprint.evidenceStrength,
           confidenceCeiling: definition.additionalFingerprint.confidenceCeiling,
+          ...(definition.additionalFingerprint.counterevidence === undefined
+            ? {}
+            : {
+                counterevidence:
+                  definition.additionalFingerprint.counterevidence,
+              }),
           sourceIds: [sourceId],
           commentaryTopics: definition.commentaryTopics,
         }]),

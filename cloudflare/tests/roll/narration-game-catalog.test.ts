@@ -50,6 +50,13 @@ const expectedSystemIds = [
   "year-zero-engine-family",
 ] as const;
 
+const confidenceRank = {
+  weak: 1,
+  plausible: 2,
+  strong: 3,
+  distinctive: 4,
+} as const;
+
 describe("NARRATION_GAME_CATALOG_V1", () => {
   it("provides a versioned initial game-mechanics catalogue", () => {
     expect(NARRATION_GAME_CATALOG_V1.version).toBe(1);
@@ -74,7 +81,9 @@ describe("NARRATION_GAME_CATALOG_V1", () => {
         system.id,
       ).toBe(true);
 
-      for (const fingerprint of system.fingerprints) {
+      const fingerprints: readonly NarrationGameFingerprintV1[] =
+        system.fingerprints;
+      for (const fingerprint of fingerprints) {
         expect(
           fingerprint.commentaryTopics.every((topic) =>
             systemTopics.has(topic),
@@ -94,6 +103,16 @@ describe("NARRATION_GAME_CATALOG_V1", () => {
           ["standalone", "representative", "corroborating"],
           fingerprint.id,
         ).toContain(fingerprint.evidencePolicy);
+        for (const counterevidence of fingerprint.counterevidence ?? []) {
+          expect(
+            counterevidence.feature,
+            fingerprint.id,
+          ).not.toBe(counterevidence.atLeastAsFrequentAsFeature);
+          expect(
+            confidenceRank[counterevidence.confidenceCeiling],
+            fingerprint.id,
+          ).toBeLessThan(confidenceRank[fingerprint.evidenceStrength]);
+        }
         expect(
           fingerprint.sourceIds.every((sourceId) => sourceIds.has(sourceId)),
           fingerprint.id,

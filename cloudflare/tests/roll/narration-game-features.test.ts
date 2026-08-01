@@ -3,6 +3,7 @@ import {
   extractNarrationGameFeaturesV1,
   NARRATION_GAME_CATALOG_V1,
   type NarrationGameFeatureRequestV1,
+  type NarrationGameFingerprintV1,
 } from "../../packages/roll-domain/src";
 
 describe("extractNarrationGameFeaturesV1", () => {
@@ -83,6 +84,7 @@ describe("extractNarrationGameFeaturesV1", () => {
     ).toEqual([
       { kind: "dcc-dice-chain", occurrences: 3 },
       { kind: "dcc-diverse-dice-chain", occurrences: 1 },
+      { kind: "diverse-uncatalogued-die-sides", occurrences: 2 },
       { kind: "observed-roll-expression", occurrences: 5 },
     ]);
   });
@@ -172,6 +174,8 @@ describe("extractNarrationGameFeaturesV1", () => {
           "{d20,d6}",
           "d30",
           "d14",
+          "d9",
+          "d15",
           "{d8,d10}",
           "8d10",
           "8d6",
@@ -190,10 +194,18 @@ describe("extractNarrationGameFeaturesV1", () => {
     const extractedKinds = new Set(
       extracted.features.map(({ kind }) => kind),
     );
+    const fingerprints: readonly NarrationGameFingerprintV1[] =
+      NARRATION_GAME_CATALOG_V1.systems.flatMap(
+        ({ fingerprints }) => fingerprints,
+      );
     const fingerprintKinds = new Set(
-      NARRATION_GAME_CATALOG_V1.systems.flatMap(({ fingerprints }) =>
-        fingerprints.flatMap(({ features }) => features)
-      ),
+      fingerprints.flatMap(({ features, counterevidence = [] }) => [
+        ...features,
+        ...counterevidence.flatMap(({
+          feature,
+          atLeastAsFrequentAsFeature,
+        }) => [feature, atLeastAsFrequentAsFeature]),
+      ]),
     );
 
     expect(

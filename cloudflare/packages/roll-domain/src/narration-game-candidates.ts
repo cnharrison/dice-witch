@@ -89,10 +89,23 @@ const CONFIDENCE_RANK: Readonly<Record<NarrationGameConfidenceV1, number>> = {
 
 const CATALOG_SYSTEMS: readonly NarrationGameSystemV1[] =
   NARRATION_GAME_CATALOG_V1.systems;
+
+function fingerprintFeatureKinds(
+  fingerprint: NarrationGameFingerprintV1,
+): readonly NarrationGameFeatureV1[] {
+  return [
+    ...fingerprint.features,
+    ...(fingerprint.counterevidence ?? []).flatMap(({
+      feature,
+      atLeastAsFrequentAsFeature,
+    }) => [feature, atLeastAsFrequentAsFeature]),
+  ];
+}
+
 const CATALOG_FEATURES = new Set<NarrationGameFeatureV1>([
   "observed-roll-expression",
   ...CATALOG_SYSTEMS.flatMap(({ fingerprints }) =>
-    fingerprints.flatMap(({ features }) => features),
+    fingerprints.flatMap(fingerprintFeatureKinds),
   ),
 ]);
 
@@ -187,11 +200,14 @@ function fingerprintEvidenceTier(
     fingerprint.evidenceStrength,
     fingerprint.confidenceCeiling,
   );
+  let evidenceTier: NarrationGameConfidenceV1;
   switch (fingerprint.evidencePolicy) {
     case "standalone":
-      return configuredTier;
+      evidenceTier = configuredTier;
+      break;
     case "corroborating":
-      return "weak";
+      evidenceTier = "weak";
+      break;
     case "representative": {
       const total = observations.get("observed-roll-expression") ?? 0;
       const support = Math.min(
@@ -200,9 +216,26 @@ function fingerprintEvidenceTier(
           (feature) => observations.get(feature) ?? 0,
         ),
       );
-      return support > total - support ? configuredTier : "weak";
+      evidenceTier = support > total - support ? configuredTier : "weak";
+      break;
     }
   }
+
+  for (const counterevidence of fingerprint.counterevidence ?? []) {
+    const counterevidenceCount = observations.get(counterevidence.feature) ?? 0;
+    const comparisonCount =
+      observations.get(counterevidence.atLeastAsFrequentAsFeature) ?? 0;
+    if (
+      counterevidenceCount > 0 &&
+      counterevidenceCount >= comparisonCount
+    ) {
+      evidenceTier = lowerConfidence(
+        evidenceTier,
+        counterevidence.confidenceCeiling,
+      );
+    }
+  }
+  return evidenceTier;
 }
 
 function buildCandidate(
