@@ -14,7 +14,7 @@
     "INVITE_LINK": "https://example.com/replace-with-staging-discord-invite",
     "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
     "WEB_APP_URL": "https://REPLACE_WITH_STAGING_HOSTNAME/app",
-    "ROLL_LIFECYCLE_TELEMETRY_VERSION": "1"
+    "ROLL_LIFECYCLE_TELEMETRY_VERSION": "2"
   },
   "services": [
     {

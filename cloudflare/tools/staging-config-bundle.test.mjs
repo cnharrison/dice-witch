@@ -59,7 +59,7 @@ test("materializes only known configs and stamps exact build metadata", async ()
   assert.equal(web.vars.ENVIRONMENT, "staging");
   assert.equal(web.vars.BUILD_SHA, sha);
   assert.equal(web.vars.BUILD_TIME, buildTime);
-  assert.equal(interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION, "1");
+  assert.equal(interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION, "2");
   assert.deepEqual(interactions.observability, {
     enabled: true,
     logs: { invocation_logs: true, head_sampling_rate: 1 },

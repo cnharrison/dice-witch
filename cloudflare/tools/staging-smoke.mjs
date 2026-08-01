@@ -6,6 +6,10 @@ const CLI_USAGE =
   "Usage: node tools/staging-smoke.mjs --web-origin <url> --roll-origin <url> --gateway-origin <url> --expected-sha <full-sha>";
 const PROPAGATION_ATTEMPTS = 12;
 const PROPAGATION_RETRY_MS = 5_000;
+const PROPAGATION_ERRORS = new Set([
+  "metadata SHA does not match the expected source SHA",
+  "interaction boundary expected HTTP 404, received 500",
+]);
 
 function parseHttpsOrigin(name, value) {
   if (typeof value !== "string") {
@@ -197,8 +201,7 @@ export async function runStagingSmokeWithPropagationRetry(
       return await runStagingSmoke(targets, fetchImplementation);
     } catch (error) {
       const isPropagationMismatch =
-        error instanceof Error &&
-        error.message === "metadata SHA does not match the expected source SHA";
+        error instanceof Error && PROPAGATION_ERRORS.has(error.message);
       if (!isPropagationMismatch || attempt === PROPAGATION_ATTEMPTS) {
         throw error;
       }
