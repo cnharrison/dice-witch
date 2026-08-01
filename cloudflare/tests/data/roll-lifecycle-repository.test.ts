@@ -1,7 +1,10 @@
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { RollLifecycleSnapshotV1 } from "../../packages/discord-contracts/src";
+import type {
+  RollLifecycleSnapshotV1,
+  RollLifecycleSnapshotV2,
+} from "../../packages/discord-contracts/src";
 import { D1RollLifecycleRepository } from "../../workers/data/src/roll-lifecycle-repository";
 
 const dataEnv = env as unknown as {
@@ -60,6 +63,27 @@ function snapshot(
   };
 }
 
+function snapshotV2(
+  overrides: Partial<RollLifecycleSnapshotV2> = {},
+): RollLifecycleSnapshotV2 {
+  return {
+    ...snapshot(),
+    version: 2,
+    diagnostics: {
+      handlerStartedAt: acceptedAt - 19,
+      acknowledgementPreparedAt: acceptedAt - 9,
+      acknowledgementType: 5,
+      firstProviderAttemptAt: null,
+      clatterSucceededAt: null,
+      discordErrorCode: null,
+      discordOperation: null,
+      originalResponseMessageId: null,
+      originalResponseProbe: null,
+    },
+    ...overrides,
+  };
+}
+
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts").run();
@@ -103,6 +127,77 @@ describe("D1RollLifecycleRepository", () => {
         failureCode: "stored-record-invalid",
       })),
     ).resolves.toEqual({ status: "conflict" });
+  });
+
+  it("expands a V1 receipt with monotonic V2 diagnostics", async () => {
+    const repository = new D1RollLifecycleRepository(dataEnv.DATA);
+    await expect(repository.record(snapshot({
+      acceptedAt: null,
+      state: "deferred",
+    }))).resolves.toEqual({ status: "applied" });
+
+    const accepted = snapshotV2({ revision: 2 });
+    await expect(repository.record(accepted)).resolves.toEqual({ status: "applied" });
+    const failed = snapshotV2({
+      revision: 3,
+      state: "failed",
+      terminalAt: acceptedAt + 20,
+      attempts: 1,
+      httpStatus: 404,
+      failurePhase: "discord",
+      failureCode: "discord-rejected",
+      diagnostics: {
+        ...accepted.diagnostics,
+        firstProviderAttemptAt: acceptedAt + 10,
+        discordErrorCode: 10_015,
+        discordOperation: "edit-original-result",
+      },
+    });
+    await expect(repository.record(failed)).resolves.toEqual({ status: "applied" });
+
+    const row = await dataEnv.DATA.prepare(
+      `SELECT lifecycle_version, handler_started_at,
+              acknowledgement_prepared_at, acknowledgement_type,
+              first_provider_attempt_at, clatter_succeeded_at,
+              discord_error_code, discord_operation
+       FROM roll_lifecycle_receipts WHERE interaction_id = ?`,
+    ).bind(interactionId).first();
+    expect(row).toEqual({
+      lifecycle_version: 2,
+      handler_started_at: acceptedAt - 19,
+      acknowledgement_prepared_at: acceptedAt - 9,
+      acknowledgement_type: 5,
+      first_provider_attempt_at: acceptedAt + 10,
+      clatter_succeeded_at: null,
+      discord_error_code: 10_015,
+      discord_operation: "edit-original-result",
+    });
+    await expect(repository.record(snapshot({
+      revision: 4,
+      state: "failed",
+      terminalAt: acceptedAt + 20,
+      attempts: 1,
+      httpStatus: 404,
+      failurePhase: "discord",
+      failureCode: "discord-rejected",
+    }))).resolves.toEqual({ status: "applied" });
+    await expect(repository.record(snapshotV2({
+      ...failed,
+      revision: 5,
+      diagnostics: {
+        ...failed.diagnostics,
+        handlerStartedAt: acceptedAt - 18,
+      },
+    }))).resolves.toEqual({ status: "conflict" });
+    const alerts = await repository.claimAlerts(acceptedAt + 21, 120_000, 60_000, 10);
+    expect(alerts[0]).toMatchObject({
+      version: 2,
+      receivedAt: acceptedAt - 20,
+      diagnostics: {
+        discordErrorCode: 10_015,
+        discordOperation: "edit-original-result",
+      },
+    });
   });
 
   it("rejects conflicting immutable context and forbidden credentials", async () => {

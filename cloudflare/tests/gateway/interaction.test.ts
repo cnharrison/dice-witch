@@ -43,7 +43,12 @@ describe("buildRollDeliveryPayload", () => {
     if (parsed === null) throw new Error("Roll interaction was ignored");
 
     expect(
-      buildRollDeliveryPayload(parsed, 1_753_856_410_750, 4_294_967_295),
+      buildRollDeliveryPayload(parsed, 1_753_856_410_750, 4_294_967_295, {
+        version: 2,
+        handlerStartedAt: 1_753_856_410_745,
+        acknowledgementPreparedAt: 1_753_856_410_755,
+        acknowledgementType: 5,
+      }),
     ).toEqual({
       interaction: {
         id: "1400000000000000000",
@@ -59,6 +64,12 @@ describe("buildRollDeliveryPayload", () => {
       },
       deferredAt: 1_753_856_410_750,
       rollSeed: 4_294_967_295,
+      telemetry: {
+        version: 2,
+        handlerStartedAt: 1_753_856_410_745,
+        acknowledgementPreparedAt: 1_753_856_410_755,
+        acknowledgementType: 5,
+      },
       logging: {
         source: "discord",
         channelId: "1400000000000000002",

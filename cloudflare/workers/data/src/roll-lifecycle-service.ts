@@ -2,9 +2,11 @@ import {
   buildDiscordChannelDirectoryUpsertV1,
   parseRollLifecycleSnapshot,
   type DiscordChannelContextResultV1,
+  type RollLifecycleAlert,
   type RollLifecycleAlertV1,
+  type RollLifecycleAlertV2,
   type RollLifecycleContextV1,
-  type RollLifecycleSnapshotV1,
+  type RollLifecycleSnapshot,
 } from "../../../packages/discord-contracts/src";
 import {
   applyDiscordChannelDirectoryMutation,
@@ -26,6 +28,8 @@ const MAX_LIFECYCLE_BODY_BYTES = 80 * 1_024;
 export type RollLifecycleAlertService = {
   createRollLifecycleAlertV1(value: unknown): Promise<unknown>;
   updateRollLifecycleAlertV1(value: unknown): Promise<unknown>;
+  createRollLifecycleAlertV2(value: unknown): Promise<unknown>;
+  updateRollLifecycleAlertV2(value: unknown): Promise<unknown>;
   resolveDiscordChannelContextV1(
     value: unknown,
   ): Promise<DiscordChannelContextResultV1>;
@@ -94,9 +98,8 @@ function parseAlertResult(value: unknown): AlertDeliveryResult {
 function alertValue(
   item: RollLifecycleAlertWorkItem,
   context: RollLifecycleContextV1,
-): RollLifecycleAlertV1 {
-  return {
-    version: 1,
+): RollLifecycleAlert {
+  const common = {
     interactionId: item.interactionId,
     alertMessageId: item.alertMessageId,
     state: item.state,
@@ -110,6 +113,18 @@ function alertValue(
     failureCode: item.failureCode,
     context,
   };
+  if (item.version === 1) {
+    return { version: 1, ...common } satisfies RollLifecycleAlertV1;
+  }
+  if (item.diagnostics === null) {
+    throw new Error("Roll lifecycle diagnostics are missing");
+  }
+  return {
+    version: 2,
+    ...common,
+    receivedAt: item.receivedAt,
+    diagnostics: item.diagnostics,
+  } satisfies RollLifecycleAlertV2;
 }
 
 async function enrichAlertContext(
@@ -182,6 +197,21 @@ async function enrichAlertContext(
   };
 }
 
+function deliverAlert(
+  service: RollLifecycleAlertService,
+  value: RollLifecycleAlert,
+  operation: "send" | "update",
+): Promise<unknown> {
+  if (value.version === 1) {
+    return operation === "send"
+      ? service.createRollLifecycleAlertV1(value)
+      : service.updateRollLifecycleAlertV1(value);
+  }
+  return operation === "send"
+    ? service.createRollLifecycleAlertV2(value)
+    : service.updateRollLifecycleAlertV2(value);
+}
+
 async function processAlert(
   db: D1Database,
   repository: D1RollLifecycleRepository,
@@ -194,11 +224,7 @@ async function processAlert(
   try {
     const context = await enrichAlertContext(db, service, item, now);
     const value = alertValue(item, context);
-    result = parseAlertResult(
-      operation === "send"
-        ? await service.createRollLifecycleAlertV1(value)
-        : await service.updateRollLifecycleAlertV1(value),
-    );
+    result = parseAlertResult(await deliverAlert(service, value, operation));
   } catch {
     await repository.releaseAlert(
       item.interactionId,
@@ -255,7 +281,7 @@ async function processAlert(
 }
 
 function cacheLifecycleDisplayContext(
-  snapshot: RollLifecycleSnapshotV1,
+  snapshot: RollLifecycleSnapshot,
   db: D1Database,
   ctx?: ExecutionContext,
 ): void {

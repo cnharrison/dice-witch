@@ -72,12 +72,14 @@ const REQUIRED_BINDINGS = {
     DISCORD_REST: "service",
     GATEWAY_STATUS: "service",
     INVITE_LINK: "plain_text",
+    ROLL_LIFECYCLE_TELEMETRY_VERSION: "plain_text",
     ROLL_WORK: "durable_object_namespace",
     SUPPORT_SERVER_LINK: "plain_text",
     WEB_APP_URL: "plain_text",
   },
   roll: {
     DATA_SERVICE: "service",
+    DISCORD_MESSAGE_PROBE: "service",
     DISCORD_REST: "service",
     GATEWAY_STATUS: "service",
     LOG_WORK: "durable_object_namespace",
@@ -263,6 +265,8 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
   );
 
   configs.interactions.vars = {
+    ROLL_LIFECYCLE_TELEMETRY_VERSION:
+      configs.interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION,
     DISCORD_APPLICATION_ID: values.discordApplicationId,
     INVITE_LINK: values.inviteLink,
     SUPPORT_SERVER_LINK: values.supportServerLink,
@@ -373,6 +377,12 @@ export function validateProductionConfigs(configs, expectedSha) {
   }
   if (configs.interactions?.durable_objects?.bindings?.[0]?.script_name !== productionName("roll")) {
     errors.push("Interactions Roll Durable Object target is invalid");
+  }
+  if (
+    configs.interactions?.vars?.ROLL_LIFECYCLE_TELEMETRY_VERSION !== "1" &&
+    configs.interactions?.vars?.ROLL_LIFECYCLE_TELEMETRY_VERSION !== "2"
+  ) {
+    errors.push("Interactions lifecycle telemetry version is invalid");
   }
   if (configs["web-api"]?.vars?.ENVIRONMENT !== "production") {
     errors.push("Web API environment must be production");

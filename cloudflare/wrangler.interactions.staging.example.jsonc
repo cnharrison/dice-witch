@@ -13,7 +13,8 @@
     "DISCORD_TEST_GUILD_ID": "100000000000000002",
     "INVITE_LINK": "https://example.com/replace-with-staging-discord-invite",
     "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
-    "WEB_APP_URL": "https://REPLACE_WITH_STAGING_HOSTNAME/app"
+    "WEB_APP_URL": "https://REPLACE_WITH_STAGING_HOSTNAME/app",
+    "ROLL_LIFECYCLE_TELEMETRY_VERSION": "1"
   },
   "services": [
     {
@@ -50,7 +51,8 @@
   "observability": {
     "enabled": true,
     "logs": {
-      "invocation_logs": false
+      "invocation_logs": true,
+      "head_sampling_rate": 1
     }
   }
 }

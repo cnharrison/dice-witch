@@ -49,8 +49,32 @@ export type RollLifecycleContextV1 = {
   destinationPayload: unknown;
 };
 
-export type RollLifecycleAlertV1 = {
-  version: 1;
+export type RollLifecycleDiscordOperation =
+  | "create-followup-clatter"
+  | "create-followup-result"
+  | "edit-followup-result"
+  | "edit-original-clatter"
+  | "edit-original-result";
+
+export type RollLifecycleMessageProbeOutcome =
+  | "exists"
+  | "missing"
+  | "inaccessible"
+  | "probe-failed";
+
+export type RollLifecycleDiagnosticsV2 = {
+  handlerStartedAt: number;
+  acknowledgementPreparedAt: number;
+  acknowledgementType: 4 | 5 | 6;
+  firstProviderAttemptAt: number | null;
+  clatterSucceededAt: number | null;
+  discordErrorCode: number | null;
+  discordOperation: RollLifecycleDiscordOperation | null;
+  originalResponseMessageId: string | null;
+  originalResponseProbe: RollLifecycleMessageProbeOutcome | null;
+};
+
+type RollLifecycleAlertBase = {
   interactionId: string;
   alertMessageId: string | null;
   state: RollLifecycleState;
@@ -65,8 +89,19 @@ export type RollLifecycleAlertV1 = {
   context: RollLifecycleContextV1;
 };
 
-export type RollLifecycleSnapshotV1 = {
+export type RollLifecycleAlertV1 = RollLifecycleAlertBase & {
   version: 1;
+};
+
+export type RollLifecycleAlertV2 = RollLifecycleAlertBase & {
+  version: 2;
+  receivedAt: number;
+  diagnostics: RollLifecycleDiagnosticsV2;
+};
+
+export type RollLifecycleAlert = RollLifecycleAlertV1 | RollLifecycleAlertV2;
+
+type RollLifecycleSnapshotBase = {
   interactionId: string;
   revision: number;
   commandName: "roll" | "library";
@@ -83,6 +118,19 @@ export type RollLifecycleSnapshotV1 = {
   failureCode: string | null;
   context: RollLifecycleContextV1;
 };
+
+export type RollLifecycleSnapshotV1 = RollLifecycleSnapshotBase & {
+  version: 1;
+};
+
+export type RollLifecycleSnapshotV2 = RollLifecycleSnapshotBase & {
+  version: 2;
+  diagnostics: RollLifecycleDiagnosticsV2;
+};
+
+export type RollLifecycleSnapshot =
+  | RollLifecycleSnapshotV1
+  | RollLifecycleSnapshotV2;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -276,30 +324,115 @@ export function parseRollLifecycleContext(
   return context;
 }
 
-export function parseRollLifecycleSnapshot(
+const DISCORD_OPERATIONS = new Set<RollLifecycleDiscordOperation>([
+  "create-followup-clatter",
+  "create-followup-result",
+  "edit-followup-result",
+  "edit-original-clatter",
+  "edit-original-result",
+]);
+const MESSAGE_PROBE_OUTCOMES = new Set<RollLifecycleMessageProbeOutcome>([
+  "exists",
+  "missing",
+  "inaccessible",
+  "probe-failed",
+]);
+
+function parseRollLifecycleDiagnostics(
   value: unknown,
-): RollLifecycleSnapshotV1 {
+  receivedAt: number,
+  deferredAt: number,
+  acceptedAt: number | null,
+): RollLifecycleDiagnosticsV2 {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
-      "acceptedAt",
-      "attempts",
-      "commandName",
-      "context",
-      "deferredAt",
-      "deliveryStartedAt",
-      "failureCode",
-      "failurePhase",
-      "httpStatus",
-      "interactionId",
-      "receivedAt",
-      "revision",
-      "scope",
-      "state",
-      "terminalAt",
-      "version",
+      "acknowledgementPreparedAt",
+      "acknowledgementType",
+      "clatterSucceededAt",
+      "discordErrorCode",
+      "discordOperation",
+      "firstProviderAttemptAt",
+      "handlerStartedAt",
+      "originalResponseMessageId",
+      "originalResponseProbe",
     ]) ||
-    value.version !== 1 ||
+    !timestamp(value.handlerStartedAt) ||
+    value.handlerStartedAt < receivedAt ||
+    value.handlerStartedAt > deferredAt ||
+    !timestamp(value.acknowledgementPreparedAt) ||
+    value.acknowledgementPreparedAt < deferredAt ||
+    (acceptedAt !== null && value.acknowledgementPreparedAt > acceptedAt) ||
+    (value.acknowledgementType !== 4 &&
+      value.acknowledgementType !== 5 &&
+      value.acknowledgementType !== 6) ||
+    (value.firstProviderAttemptAt !== null &&
+      (!timestamp(value.firstProviderAttemptAt) ||
+        value.firstProviderAttemptAt < (acceptedAt ?? value.acknowledgementPreparedAt))) ||
+    (value.clatterSucceededAt !== null &&
+      (!timestamp(value.clatterSucceededAt) ||
+        value.firstProviderAttemptAt === null ||
+        value.clatterSucceededAt < value.firstProviderAttemptAt)) ||
+    (value.discordErrorCode !== null &&
+      (!Number.isSafeInteger(value.discordErrorCode) ||
+        Number(value.discordErrorCode) < 1)) ||
+    (value.discordOperation !== null &&
+      (typeof value.discordOperation !== "string" ||
+        !DISCORD_OPERATIONS.has(value.discordOperation as RollLifecycleDiscordOperation))) ||
+    !nullableSnowflake(value.originalResponseMessageId) ||
+    (value.originalResponseProbe !== null &&
+      (typeof value.originalResponseProbe !== "string" ||
+        !MESSAGE_PROBE_OUTCOMES.has(
+          value.originalResponseProbe as RollLifecycleMessageProbeOutcome,
+        ))) ||
+    (value.originalResponseMessageId !== null &&
+      value.clatterSucceededAt === null) ||
+    (value.originalResponseProbe !== null &&
+      value.originalResponseMessageId === null)
+  ) {
+    throw new Error("Roll lifecycle diagnostics are invalid");
+  }
+  return {
+    handlerStartedAt: value.handlerStartedAt,
+    acknowledgementPreparedAt: value.acknowledgementPreparedAt,
+    acknowledgementType: value.acknowledgementType,
+    firstProviderAttemptAt: value.firstProviderAttemptAt,
+    clatterSucceededAt: value.clatterSucceededAt,
+    discordErrorCode: value.discordErrorCode as number | null,
+    discordOperation:
+      value.discordOperation as RollLifecycleDiscordOperation | null,
+    originalResponseMessageId: value.originalResponseMessageId,
+    originalResponseProbe:
+      value.originalResponseProbe as RollLifecycleMessageProbeOutcome | null,
+  };
+}
+
+export function parseRollLifecycleSnapshot(
+  value: unknown,
+): RollLifecycleSnapshot {
+  const expectedKeys = [
+    "acceptedAt",
+    "attempts",
+    "commandName",
+    "context",
+    "deferredAt",
+    "deliveryStartedAt",
+    "failureCode",
+    "failurePhase",
+    "httpStatus",
+    "interactionId",
+    "receivedAt",
+    "revision",
+    "scope",
+    "state",
+    "terminalAt",
+    "version",
+    ...(isRecord(value) && value.version === 2 ? ["diagnostics"] : []),
+  ];
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, expectedKeys) ||
+    (value.version !== 1 && value.version !== 2) ||
     typeof value.interactionId !== "string" ||
     !SNOWFLAKE.test(value.interactionId) ||
     !Number.isSafeInteger(value.revision) ||
@@ -365,8 +498,7 @@ export function parseRollLifecycleSnapshot(
   ) {
     throw new Error("Roll lifecycle snapshot is invalid");
   }
-  return {
-    version: 1,
+  const common: RollLifecycleSnapshotBase = {
     interactionId: value.interactionId,
     revision: Number(value.revision),
     commandName: value.commandName,
@@ -383,27 +515,43 @@ export function parseRollLifecycleSnapshot(
     failureCode: value.failureCode,
     context,
   };
+  return value.version === 1
+    ? { version: 1, ...common }
+    : {
+        version: 2,
+        ...common,
+        diagnostics: parseRollLifecycleDiagnostics(
+          value.diagnostics,
+          value.receivedAt,
+          value.deferredAt,
+          value.acceptedAt,
+        ),
+      };
 }
 
-export function parseRollLifecycleAlert(value: unknown): RollLifecycleAlertV1 {
+export function parseRollLifecycleAlert(value: unknown): RollLifecycleAlert {
+  const expectedKeys = [
+    "acceptedAt",
+    "alertMessageId",
+    "attempts",
+    "context",
+    "deferredAt",
+    "deliveryStartedAt",
+    "failureCode",
+    "failurePhase",
+    "httpStatus",
+    "interactionId",
+    "state",
+    "terminalAt",
+    "version",
+    ...(isRecord(value) && value.version === 2
+      ? ["diagnostics", "receivedAt"]
+      : []),
+  ];
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
-      "acceptedAt",
-      "alertMessageId",
-      "attempts",
-      "context",
-      "deferredAt",
-      "deliveryStartedAt",
-      "failureCode",
-      "failurePhase",
-      "httpStatus",
-      "interactionId",
-      "state",
-      "terminalAt",
-      "version",
-    ]) ||
-    value.version !== 1 ||
+    !hasExactKeys(value, expectedKeys) ||
+    (value.version !== 1 && value.version !== 2) ||
     typeof value.interactionId !== "string" ||
     !SNOWFLAKE.test(value.interactionId) ||
     !nullableSnowflake(value.alertMessageId) ||
@@ -455,8 +603,7 @@ export function parseRollLifecycleAlert(value: unknown): RollLifecycleAlertV1 {
   ) {
     throw new Error("Roll lifecycle alert is invalid");
   }
-  return {
-    version: 1,
+  const common: RollLifecycleAlertBase = {
     interactionId: value.interactionId,
     alertMessageId: value.alertMessageId,
     state: value.state,
@@ -469,6 +616,21 @@ export function parseRollLifecycleAlert(value: unknown): RollLifecycleAlertV1 {
     failurePhase: value.failurePhase,
     failureCode: value.failureCode,
     context: parseRollLifecycleContext(value.context),
+  };
+  if (value.version === 1) return { version: 1, ...common };
+  if (!timestamp(value.receivedAt) || value.receivedAt > value.deferredAt) {
+    throw new Error("Roll lifecycle alert is invalid");
+  }
+  return {
+    version: 2,
+    ...common,
+    receivedAt: value.receivedAt,
+    diagnostics: parseRollLifecycleDiagnostics(
+      value.diagnostics,
+      value.receivedAt,
+      value.deferredAt,
+      value.acceptedAt,
+    ),
   };
 }
 

@@ -90,9 +90,16 @@ export {
   parseRollLifecycleContext,
   parseRollLifecycleSnapshot,
   rollLifecycleContextJson,
+  type RollLifecycleAlert,
   type RollLifecycleAlertV1,
+  type RollLifecycleAlertV2,
   type RollLifecycleContextV1,
+  type RollLifecycleDiagnosticsV2,
+  type RollLifecycleDiscordOperation,
+  type RollLifecycleMessageProbeOutcome,
+  type RollLifecycleSnapshot,
   type RollLifecycleSnapshotV1,
+  type RollLifecycleSnapshotV2,
   type RollLifecycleState,
 } from "./roll-lifecycle";
 export {
@@ -104,6 +111,7 @@ export {
 export {
   buildRollDeliveryPayload,
   type RollDeliveryPayload,
+  type RollDeliveryTelemetryV2,
 } from "./roll-delivery";
 export {
   buildStatusCommandResponse,

@@ -5,6 +5,47 @@ import type {
 
 const DISCORD_EPOCH_MS = 1_420_070_400_000;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export type RollDeliveryTelemetryV2 = {
+  version: 2;
+  handlerStartedAt: number;
+  acknowledgementPreparedAt: number;
+  acknowledgementType: 4 | 5 | 6;
+};
+
+function parseRollDeliveryTelemetry(
+  value: unknown,
+  receivedAt: number,
+  deferredAt: number,
+): RollDeliveryTelemetryV2 | null {
+  if (value === null) return null;
+  if (
+    !isRecord(value) ||
+    value.version !== 2 ||
+    typeof value.handlerStartedAt !== "number" ||
+    !Number.isSafeInteger(value.handlerStartedAt) ||
+    value.handlerStartedAt < receivedAt ||
+    value.handlerStartedAt > deferredAt ||
+    typeof value.acknowledgementPreparedAt !== "number" ||
+    !Number.isSafeInteger(value.acknowledgementPreparedAt) ||
+    value.acknowledgementPreparedAt < deferredAt ||
+    (value.acknowledgementType !== 4 &&
+      value.acknowledgementType !== 5 &&
+      value.acknowledgementType !== 6)
+  ) {
+    throw new Error("Roll delivery telemetry is invalid");
+  }
+  return {
+    version: 2,
+    handlerStartedAt: value.handlerStartedAt,
+    acknowledgementPreparedAt: value.acknowledgementPreparedAt,
+    acknowledgementType: value.acknowledgementType,
+  };
+}
+
 export type RollDeliveryPayload = {
   interaction: {
     id: string;
@@ -26,6 +67,7 @@ export type RollDeliveryPayload = {
   };
   deferredAt: number;
   rollSeed: number;
+  telemetry?: RollDeliveryTelemetryV2;
   logging: {
     source: "discord";
     channelId: string;
@@ -38,6 +80,7 @@ export function buildRollDeliveryPayload(
   interaction: RollInteraction,
   deferredAt: number,
   rollSeed: number,
+  telemetry: unknown,
 ): RollDeliveryPayload {
   if (
     !Number.isSafeInteger(rollSeed) ||
@@ -46,6 +89,14 @@ export function buildRollDeliveryPayload(
   ) {
     throw new Error("Roll delivery seed is invalid");
   }
+  const receivedAt = Number(
+    (BigInt(interaction.id) >> 22n) + BigInt(DISCORD_EPOCH_MS),
+  );
+  const parsedTelemetry = parseRollDeliveryTelemetry(
+    telemetry,
+    receivedAt,
+    deferredAt,
+  );
   return {
     interaction: {
       id: interaction.id,
@@ -63,12 +114,11 @@ export function buildRollDeliveryPayload(
     accounting: {
       guildId: interaction.guildId,
       userId: interaction.userId,
-      receivedAt: Number(
-        (BigInt(interaction.id) >> 22n) + BigInt(DISCORD_EPOCH_MS),
-      ),
+      receivedAt,
     },
     deferredAt,
     rollSeed,
+    ...(parsedTelemetry === null ? {} : { telemetry: parsedTelemetry }),
     logging: {
       source: "discord",
       channelId: interaction.channelId,

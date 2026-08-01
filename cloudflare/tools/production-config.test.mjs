@@ -69,6 +69,9 @@ test("materializes exact production configs from source templates and bounded va
   const interactions = JSON.parse(
     await readFile(path.join(directory, "wrangler.interactions.jsonc"), "utf8"),
   );
+  const roll = JSON.parse(
+    await readFile(path.join(directory, "wrangler.roll.jsonc"), "utf8"),
+  );
   assert.equal(web.vars.BUILD_SHA, sha);
   assert.equal(
     data.services.find(({ binding }) => binding === "DISCORD_REST")?.service,
@@ -87,9 +90,19 @@ test("materializes exact production configs from source templates and bounded va
   );
   assert.deepEqual(data.ai, { binding: "AI" });
   assert.equal(interactions.vars.DISCORD_TEST_GUILD_ID, undefined);
+  assert.equal(interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION, "1");
+  assert.deepEqual(interactions.observability, {
+    enabled: true,
+    logs: { invocation_logs: true, head_sampling_rate: 1 },
+  });
   assert.deepEqual(interactions.alias, {
     crypto: "./packages/roll-domain/src/worker-crypto.ts",
   });
+  assert.equal(
+    roll.services.find(({ binding }) => binding === "DISCORD_MESSAGE_PROBE")
+      ?.entrypoint,
+    "DiscordMessageProbeService",
+  );
   assert.equal(web.vars.ENVIRONMENT, "production");
   assert.deepEqual(web.routes, [{ pattern: "dicewit.ch", custom_domain: true }]);
   assert.deepEqual(gateway.triggers, {

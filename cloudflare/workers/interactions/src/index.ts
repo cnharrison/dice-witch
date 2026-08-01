@@ -16,6 +16,7 @@ import {
   parseStaticInteractionCommand,
   parseStatusCommandInteraction,
   verifyDiscordRequestSignature,
+  type RollDeliveryTelemetryV2,
   type RollHelperDmInteraction,
   type RollLoggingContext,
   type StatusGatewaySnapshot,
@@ -33,6 +34,7 @@ export type InteractionEnv = {
   INVITE_LINK: string;
   SUPPORT_SERVER_LINK: string;
   WEB_APP_URL: string;
+  ROLL_LIFECYCLE_TELEMETRY_VERSION: string;
   DATA_SERVICE: Fetcher;
   GATEWAY_STATUS: {
     getStatusSnapshot(): Promise<unknown>;
@@ -257,6 +259,13 @@ export async function handleInteractionRequest(
   env: InteractionEnv,
   ctx?: ExecutionContext,
 ): Promise<Response> {
+  const handlerStartedAt = Date.now();
+  if (
+    env.ROLL_LIFECYCLE_TELEMETRY_VERSION !== "1" &&
+    env.ROLL_LIFECYCLE_TELEMETRY_VERSION !== "2"
+  ) {
+    throw new Error("Roll lifecycle telemetry version is invalid");
+  }
   const url = new URL(request.url);
   if (request.method !== "POST" || url.pathname !== "/interactions") {
     return json({ error: "Not found" }, 404);
@@ -463,6 +472,7 @@ export async function handleInteractionRequest(
   );
   let payload: ReturnType<typeof buildRollDeliveryPayload>;
   let acknowledgement: Record<string, unknown>;
+  let acknowledgementTelemetry: RollDeliveryTelemetryV2;
   try {
     const rollSeed = randomSeed();
     const outcome = executeRoll({
@@ -472,30 +482,49 @@ export async function handleInteractionRequest(
       stableAppearanceIdentities: true,
       preserveOutOfRangePhysicalFaces: true,
     });
-    payload = buildRollDeliveryPayload(roll, deferredAt, rollSeed);
-    acknowledgement = outcome.outcomes.length === 0
+    const acknowledgementType = outcome.outcomes.length === 0 ? 4 : 5;
+    acknowledgement = acknowledgementType === 4
       ? {
-          type: 4,
+          type: acknowledgementType,
           data: {
             ...buildInvalidRollHelpMessage(outcome, roll.id),
             flags: 64,
             allowed_mentions: { parse: [] },
           },
         }
-      : { type: 5 };
+      : { type: acknowledgementType };
+    acknowledgementTelemetry = {
+      version: 2,
+      handlerStartedAt,
+      acknowledgementPreparedAt: Date.now(),
+      acknowledgementType,
+    };
+    payload = buildRollDeliveryPayload(
+      roll,
+      deferredAt,
+      rollSeed,
+      env.ROLL_LIFECYCLE_TELEMETRY_VERSION === "2"
+        ? acknowledgementTelemetry
+        : null,
+    );
   } catch {
     return interactionError("This roll could not be accepted. Please try again.");
   }
-  console.info(
-    JSON.stringify({
-      telemetryVersion: 1,
-      level: "info",
-      message: "Discord roll lifecycle advanced",
-      interactionId: roll.id,
-      stage: "deferred",
-      deferredAt,
-    }),
-  );
+  console.info({
+    telemetryVersion: 2,
+    level: "info",
+    message: "Discord roll lifecycle advanced",
+    interactionId: roll.id,
+    stage: "acknowledgement-prepared",
+    interactionCreatedAt: payload.accounting.receivedAt,
+    handlerStartedAt: acknowledgementTelemetry.handlerStartedAt,
+    acknowledgementPreparedAt:
+      acknowledgementTelemetry.acknowledgementPreparedAt,
+    acknowledgementType: acknowledgementTelemetry.acknowledgementType,
+    acknowledgementPreparationExceeded3Seconds:
+      acknowledgementTelemetry.acknowledgementPreparedAt -
+        payload.accounting.receivedAt >= 3_000,
+  });
   if (ctx !== undefined) {
     ctx.waitUntil(acceptDeferredRoll(stub, payload, roll));
     return json(acknowledgement);
