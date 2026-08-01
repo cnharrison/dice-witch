@@ -141,6 +141,8 @@ describe("Data Worker roll lifecycle service", () => {
         DISCORD_REST: {
           createRollLifecycleAlertV1,
           updateRollLifecycleAlertV1: vi.fn(),
+          createRollLifecycleAlertV2: vi.fn(),
+          updateRollLifecycleAlertV2: vi.fn(),
           resolveDiscordChannelContextV1,
         },
       },
@@ -185,6 +187,8 @@ describe("Data Worker roll lifecycle service", () => {
         DISCORD_REST: {
           createRollLifecycleAlertV1,
           updateRollLifecycleAlertV1: vi.fn(),
+          createRollLifecycleAlertV2: vi.fn(),
+          updateRollLifecycleAlertV2: vi.fn(),
           resolveDiscordChannelContextV1: vi.fn(() => Promise.resolve({
             status: "retryable" as const,
             httpStatus: 429,

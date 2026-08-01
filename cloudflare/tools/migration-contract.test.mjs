@@ -14,3 +14,19 @@ test("keeps the applied appearance-profile migration byte-immutable", async () =
 
   assert.equal(actual, APPLIED_APPEARANCE_MIGRATION_SHA256);
 });
+
+test("keeps both applied 0013 migrations byte-immutable", async () => {
+  const expected = {
+    "0013_discord_channel_directory.sql":
+      "05ed17950b00beec9053a8fe0f959309ae19f16b2a56b4267b318601f44b9cc2",
+    "0013_roll_lifecycle_diagnostics.sql":
+      "730c9eb5fdb14ec2895442602391add23f54737c62eabbce3708fee2279a7f8f",
+  };
+
+  for (const [filename, digest] of Object.entries(expected)) {
+    const migration = await readFile(
+      new URL(`../migrations/data/${filename}`, import.meta.url),
+    );
+    assert.equal(createHash("sha256").update(migration).digest("hex"), digest);
+  }
+});

@@ -2035,6 +2035,27 @@ describe("RollWork Durable Object", () => {
     }
   });
 
+  it("normalizes a non-domain Discord error code without breaking lifecycle persistence", async () => {
+    const id = snowflakeAt(Date.now(), 68);
+    const stub = work(id);
+
+    await expect(
+      stub.deliver(telemetryDeliveryRequest(id, "delivery-zero-code")),
+    ).resolves.toEqual({ status: "failed" });
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{ snapshot_json: string }>(
+          "SELECT snapshot_json FROM roll_lifecycle_outbox",
+        )
+        .one();
+      expect(JSON.parse(row.snapshot_json)).toMatchObject({
+        version: 2,
+        state: "failed",
+        diagnostics: { discordErrorCode: null },
+      });
+    });
+  });
+
   it("logs only the numeric Discord error code for rejected clatter", async () => {
     const id = snowflakeAt(Date.now(), 69);
     const input = deliveryRequest(id, "delivery-clatter-rejected");

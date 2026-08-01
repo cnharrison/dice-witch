@@ -245,7 +245,7 @@ async function readDiscordErrorCode(response: Response): Promise<number | null> 
   const parsed = await readBoundedDiscordJson(response);
   if (!isRecord(parsed) || !Number.isSafeInteger(parsed.code)) return null;
   const code = Number(parsed.code);
-  return code >= 0 ? code : null;
+  return code > 0 ? code : null;
 }
 
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {

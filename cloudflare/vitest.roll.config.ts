@@ -370,6 +370,9 @@ async function discordTestResponse(request: Request): Promise<Response> {
       { status: 404 },
     );
   }
+  if (token === "delivery-zero-code") {
+    return Response.json({ code: 0 }, { status: 404 });
+  }
   if (token === "delivery-clatter-rejected") {
     return Response.json(
       {

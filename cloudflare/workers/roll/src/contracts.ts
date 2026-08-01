@@ -15,7 +15,6 @@ import {
 } from "../../../packages/dice-svg/src";
 import type { RenderedDiceRequestV4 } from "../../../packages/dice-canvaskit/src";
 import {
-  isDiscordRollChannelType,
   parseRollLoggingContext,
   type RollDeliveryTelemetryV2,
   type RollLoggingContext,
