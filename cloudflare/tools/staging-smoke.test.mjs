@@ -123,6 +123,30 @@ test("retries delayed metadata propagation without weakening SHA validation", as
   assert.deepEqual(waits, Array(7).fill(5_000));
 });
 
+test("retries an interaction boundary while the service binding converges", async () => {
+  let interactionRequests = 0;
+  const waits = [];
+  const result = await runStagingSmokeWithPropagationRetry(
+    targets,
+    async (url) => {
+      if (url.endsWith("/interactions")) {
+        interactionRequests += 1;
+        if (interactionRequests < 5) {
+          return Response.json({ error: "stale deployment" }, { status: 500 });
+        }
+      }
+      return responseFor(url);
+    },
+    async (milliseconds) => {
+      waits.push(milliseconds);
+    },
+  );
+
+  assert.equal(result.status, "passed");
+  assert.equal(interactionRequests, 5);
+  assert.deepEqual(waits, Array(4).fill(5_000));
+});
+
 test("rejects a different deployed SHA", async () => {
   await assert.rejects(
     runStagingSmoke(targets, async (url) => {

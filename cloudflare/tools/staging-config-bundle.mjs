@@ -14,7 +14,7 @@ const WORKERS = [
 const MAX_BUNDLE_BYTES = 64 * 1024;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-const ROLL_LIFECYCLE_TELEMETRY_VERSION = "1";
+const ROLL_LIFECYCLE_TELEMETRY_VERSION = "2";
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);

@@ -22,6 +22,7 @@ const DATABASE_NAME = "dice-witch-production";
 const DATABASE_ID = "9a8f7de1-8fa6-400b-8694-609fde81f2db";
 const SECRETS_STORE_ID = "68e7aff3814e40d0afbcf2a9f4357d8f";
 const DISCORD_APPLICATION_ID = "808161585876697108";
+const ROLL_LIFECYCLE_TELEMETRY_VERSION = "1";
 const REQUIRED_VALUE_KEYS = [
   "d1DatabaseId",
   "d1DatabaseName",
@@ -265,8 +266,7 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
   );
 
   configs.interactions.vars = {
-    ROLL_LIFECYCLE_TELEMETRY_VERSION:
-      configs.interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION,
+    ROLL_LIFECYCLE_TELEMETRY_VERSION,
     DISCORD_APPLICATION_ID: values.discordApplicationId,
     INVITE_LINK: values.inviteLink,
     SUPPORT_SERVER_LINK: values.supportServerLink,
