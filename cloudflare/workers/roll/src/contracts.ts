@@ -15,7 +15,7 @@ import {
 } from "../../../packages/dice-svg/src";
 import type { RenderedDiceRequestV4 } from "../../../packages/dice-canvaskit/src";
 import {
-  isDiscordRollChannelType,
+  parseRollLoggingContext,
   type RollLoggingContext,
 } from "../../../packages/discord-contracts/src";
 import { renderedRollFaceV4 } from "../../../packages/roll-render-model/src";
@@ -255,53 +255,6 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   );
 }
 
-function parseLoggingContext(
-  value: unknown,
-  guildId: string | null,
-  channelId: string,
-): RollLoggingContext {
-  if (!isRecord(value) || value.channelId !== channelId) {
-    throw new Error("Roll logging context is invalid");
-  }
-  if (
-    value.kind === "dm" &&
-    guildId === null &&
-    hasExactKeys(value, ["channelId", "kind"])
-  ) {
-    return { kind: "dm", channelId };
-  }
-  if (
-    value.kind !== "guild" ||
-    guildId === null ||
-    !hasExactKeys(value, [
-      "channelId",
-      "channelName",
-      "channelType",
-      "guildId",
-      "guildName",
-      "kind",
-    ]) ||
-    value.guildId !== guildId ||
-    typeof value.guildName !== "string" ||
-    value.guildName.length < 2 ||
-    value.guildName.length > 100 ||
-    typeof value.channelName !== "string" ||
-    value.channelName.length < 1 ||
-    value.channelName.length > 100 ||
-    !isDiscordRollChannelType(value.channelType)
-  ) {
-    throw new Error("Roll logging context is invalid");
-  }
-  return {
-    kind: "guild",
-    guildId,
-    guildName: value.guildName,
-    channelId,
-    channelName: value.channelName,
-    channelType: value.channelType,
-  };
-}
-
 export function validateRequest(value: unknown): RollWorkRequest {
   if (
     !isRecord(value) ||
@@ -528,7 +481,7 @@ export function validateDeliveryRequest(
       ...(value.logging.context === undefined
         ? {}
         : {
-            context: parseLoggingContext(
+            context: parseRollLoggingContext(
               value.logging.context,
               accounting?.guildId ?? null,
               value.logging.channelId,
@@ -1185,7 +1138,7 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
             ...(parsed.logging.context === undefined
               ? {}
               : {
-                  context: parseLoggingContext(
+                  context: parseRollLoggingContext(
                     parsed.logging.context,
                     parsed.accounting === null
                       ? null

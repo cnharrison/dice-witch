@@ -1,7 +1,9 @@
 import {
-  isDiscordRollChannelType,
-  type DiscordRollChannelType,
-} from "./roll-interaction";
+  parseDiscordChannelContextRequestV1,
+  parseDiscordChannelContextResponseV1,
+  type DiscordChannelContextRequestV1,
+  type DiscordChannelContextResultV1,
+} from "./discord-channel-context";
 
 export type GameDetectionAnnouncementV1 = Readonly<{
   version: 1;
@@ -22,25 +24,12 @@ export type GameDetectionAnnouncementV1 = Readonly<{
   sessionLastRollAt: number;
 }>;
 
-export type GameDetectionChannelContextRequestV1 = Readonly<{
-  version: 1;
-  guildId: string;
-  channelId: string;
-}>;
-
+// Remove these compatibility aliases with the legacy Discord REST RPC after
+// every Data environment uses the generic channel-context contract.
+export type GameDetectionChannelContextRequestV1 =
+  DiscordChannelContextRequestV1;
 export type GameDetectionChannelContextResultV1 =
-  | Readonly<{
-      status: "resolved";
-      channelName: string;
-      channelType: DiscordRollChannelType;
-    }>
-  | Readonly<{ status: "unavailable"; httpStatus: 403 | 404 }>
-  | Readonly<{
-      status: "retryable";
-      httpStatus: number | null;
-      retryAfterMs: number | null;
-    }>
-  | Readonly<{ status: "failed"; httpStatus: number }>;
+  DiscordChannelContextResultV1;
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/u;
 const DETECTION_ID = /^[1-9][0-9]{16,19}:[a-f0-9]{16}$/u;
@@ -70,48 +59,10 @@ function nullableName(value: unknown): value is string | null {
   );
 }
 
-export function parseGameDetectionChannelContextRequestV1(
-  value: unknown,
-): GameDetectionChannelContextRequestV1 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["channelId", "guildId", "version"]) ||
-    value.version !== 1 ||
-    typeof value.guildId !== "string" ||
-    !SNOWFLAKE.test(value.guildId) ||
-    typeof value.channelId !== "string" ||
-    !SNOWFLAKE.test(value.channelId)
-  ) {
-    throw new Error("Game-detection channel context request is invalid");
-  }
-  return {
-    version: 1,
-    guildId: value.guildId,
-    channelId: value.channelId,
-  };
-}
-
-export function parseGameDetectionChannelContextResponseV1(
-  value: unknown,
-  request: GameDetectionChannelContextRequestV1,
-): Extract<GameDetectionChannelContextResultV1, { status: "resolved" }> {
-  if (
-    !isRecord(value) ||
-    value.id !== request.channelId ||
-    value.guild_id !== request.guildId ||
-    typeof value.name !== "string" ||
-    value.name.length < 1 ||
-    value.name.length > 100 ||
-    !isDiscordRollChannelType(value.type)
-  ) {
-    throw new Error("Discord game-detection channel response is invalid");
-  }
-  return {
-    status: "resolved",
-    channelName: value.name,
-    channelType: value.type,
-  };
-}
+export const parseGameDetectionChannelContextRequestV1 =
+  parseDiscordChannelContextRequestV1;
+export const parseGameDetectionChannelContextResponseV1 =
+  parseDiscordChannelContextResponseV1;
 
 export function parseGameDetectionAnnouncementV1(
   value: unknown,

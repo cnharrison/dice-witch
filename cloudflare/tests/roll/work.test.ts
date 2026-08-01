@@ -1192,6 +1192,25 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("accepts independently available signed display metadata", () => {
+    const id = snowflakeAt(Date.now(), 32);
+    const request = deliveryRequest(id, "delivery-partial-context");
+    const context = {
+      kind: "guild" as const,
+      guildId: "100000000000000003",
+      guildName: null,
+      channelId: "100000000000000010",
+      channelName: "dice-rolls",
+      channelType: 0,
+    };
+    const input = {
+      ...request,
+      logging: { ...request.logging, context },
+    };
+
+    expect(validateDeliveryRequest(input).logging?.context).toEqual(context);
+  });
+
   it("upgrades version 3 metadata on a version 4 retry without conflict", async () => {
     const id = snowflakeAt(Date.now(), 31);
     const stub = work(id);
@@ -2479,7 +2498,7 @@ describe("RollWork Durable Object", () => {
     );
   });
 
-  it.each(["0", null, false])(
+  it.each(["0", false])(
     "rejects malformed persisted channel type %j",
     (channelType) => {
       const id = snowflakeAt(Date.now(), 33);

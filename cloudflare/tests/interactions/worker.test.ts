@@ -92,6 +92,11 @@ async function signedRequest(
 }
 
 function savedRollDataFetch(request: Request): Promise<Response> {
+  if (
+    new URL(request.url).pathname === "/internal/discord-channel-context"
+  ) {
+    return Promise.resolve(Response.json({ status: "applied" }));
+  }
   const body = request.json<{
     owner: { type: "user" | "guild"; userId?: string; guildId?: string };
   }>();
@@ -551,7 +556,7 @@ describe("Discord HTTP interaction Worker", () => {
     });
   });
 
-  it("preflights and publicly defers a valid roll before durable delivery", async () => {
+  it("preflights a valid roll with independently available channel context", async () => {
     const interactionTimestamp = 1_783_800_000_000;
     const interactionId = String(
       (BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n,
@@ -564,6 +569,23 @@ describe("Discord HTTP interaction Worker", () => {
         expiresAt: interactionTimestamp + 15 * 60 * 1_000,
       });
     });
+    const cacheContext = vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe(
+        "/internal/discord-channel-context",
+      );
+      const mutation = await request.json<Record<string, unknown>>();
+      expect(mutation).toMatchObject({
+        version: 1,
+        operation: "upsert",
+        source: "interaction",
+        guildId: "100000000000000002",
+        channelId: "100000000000000003",
+        channelName: "dice-rolls",
+        channelType: 0,
+      });
+      expect(typeof mutation.observedAt).toBe("number");
+      return new Response(null, { status: 503 });
+    });
     const { env, request } = await signedRequest(
       JSON.stringify({
         id: interactionId,
@@ -571,7 +593,6 @@ describe("Discord HTTP interaction Worker", () => {
         type: 2,
         token: "fixture.interaction.token",
         guild_id: "100000000000000002",
-        guild: { id: "100000000000000002", name: "Fixture Guild" },
         channel_id: "100000000000000003",
         channel: {
           id: "100000000000000003",
@@ -596,13 +617,40 @@ describe("Discord HTTP interaction Worker", () => {
           ],
         },
       }),
-      { rollWork: { acceptDelivery } },
+      { rollWork: { acceptDelivery }, dataFetch: cacheContext },
     );
+    const pending: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil(promise: Promise<unknown>) {
+        pending.push(promise);
+      },
+    } as ExecutionContext;
 
-    const response = await handleInteractionRequest(request, env);
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(
+      () => undefined,
+    );
+    let response: Response;
+    try {
+      response = await handleInteractionRequest(request, env, ctx);
+      await Promise.all(pending);
+      expect(consoleWarn).toHaveBeenCalledWith(JSON.stringify({
+        level: "warn",
+        message: "Signed roll interaction display context is incomplete",
+        scope: "guild",
+        reasons: ["guild-object-missing"],
+        commandName: "roll",
+      }));
+      expect(consoleWarn).toHaveBeenCalledWith(JSON.stringify({
+        level: "warn",
+        message: "Signed roll interaction context cache write failed",
+      }));
+    } finally {
+      consoleWarn.mockRestore();
+    }
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ type: 5 });
+    expect(cacheContext).toHaveBeenCalledOnce();
     expect(acceptDelivery).toHaveBeenCalledOnce();
     const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
     if (
@@ -639,7 +687,7 @@ describe("Discord HTTP interaction Worker", () => {
         context: {
           kind: "guild",
           guildId: "100000000000000002",
-          guildName: "Fixture Guild",
+          guildName: null,
           channelId: "100000000000000003",
           channelName: "dice-rolls",
           channelType: 0,

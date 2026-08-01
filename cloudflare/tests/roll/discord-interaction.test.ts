@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseRollInteraction } from "../../packages/discord-contracts/src";
+import {
+  parseRollInteraction,
+  rollInteractionContextMissingReasons,
+} from "../../packages/discord-contracts/src";
 
 const applicationId = "100000000000000001";
 const guildId = "100000000000000002";
@@ -115,6 +118,13 @@ describe("parseRollInteraction", () => {
       title: null,
       repetitions: 1,
     });
+
+    expect(
+      parseRollInteraction(
+        { ...dm, channel: { id: "1400000000000000002" } },
+        { applicationId, guildId },
+      )?.loggingContext,
+    ).toEqual({ kind: "dm", channelId: "1400000000000000002" });
   });
 
   it.each([
@@ -132,24 +142,65 @@ describe("parseRollInteraction", () => {
   });
 
   it.each([
-    { guild: { id: guildId } },
     {
-      channel: {
-        id: "1400000000000000002",
-        guild_id: guildId,
-        name: "dice-rolls",
-        type: "0",
+      overrides: { guild: undefined },
+      expected: {
+        guildName: null,
+        channelName: "dice-rolls",
+        channelType: 0,
       },
+      reasons: ["guild-object-missing"],
+    },
+    {
+      overrides: {
+        channel: {
+          id: "1400000000000000002",
+          guild_id: guildId,
+        },
+      },
+      expected: {
+        guildName: "Fixture Guild",
+        channelName: null,
+        channelType: null,
+      },
+      reasons: ["channel-name-missing", "channel-type-missing"],
+    },
+    {
+      overrides: { channel: undefined },
+      expected: {
+        guildName: "Fixture Guild",
+        channelName: null,
+        channelType: null,
+      },
+      reasons: ["channel-object-missing"],
+    },
+    {
+      overrides: { guild: undefined, channel: undefined },
+      expected: {
+        guildName: null,
+        channelName: null,
+        channelType: null,
+      },
+      reasons: ["guild-object-missing", "channel-object-missing"],
     },
   ])(
-    "accepts a roll without optional logging metadata",
-    (overrides) => {
+    "preserves independently available guild interaction metadata %#",
+    ({ overrides, expected, reasons }) => {
+      const value = interaction(overrides);
       expect(
-        parseRollInteraction(interaction(overrides), {
+        parseRollInteraction(value, {
           applicationId,
           guildId,
         })?.loggingContext,
-      ).toBeNull();
+      ).toEqual({
+        kind: "guild",
+        guildId,
+        channelId: "1400000000000000002",
+        ...expected,
+      });
+      expect(rollInteractionContextMissingReasons(value, guildId)).toEqual(
+        reasons,
+      );
     },
   );
 

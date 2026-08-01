@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseRollInteraction } from "../../packages/discord-contracts/src";
-import { buildRollDeliveryPayload } from "../../packages/discord-contracts/src";
+import {
+  buildRollDeliveryPayload,
+  parseRollInteraction,
+} from "../../packages/discord-contracts/src";
 
 const applicationId = "100000000000000001";
 const guildId = "100000000000000002";
@@ -18,7 +20,7 @@ function interaction(overrides: Record<string, unknown> = {}) {
 }
 
 describe("buildRollDeliveryPayload", () => {
-  it("passes only delivery-required fields to the roll Worker", () => {
+  it("passes delivery fields with partial logging context to the roll Worker", () => {
     const parsed = parseRollInteraction(
       {
         ...interaction(),
@@ -61,6 +63,14 @@ describe("buildRollDeliveryPayload", () => {
         source: "discord",
         channelId: "1400000000000000002",
         notation: "2d20 1d10",
+        context: {
+          kind: "guild",
+          guildId,
+          guildName: null,
+          channelId: "1400000000000000002",
+          channelName: null,
+          channelType: null,
+        },
       },
     });
   });

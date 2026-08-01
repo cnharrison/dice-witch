@@ -16,7 +16,7 @@ it("starts a clean active-play policy epoch without deleting prior telemetry", a
   }
   await applyD1Migrations(
     dataEnv.DATA,
-    dataEnv.TEST_MIGRATIONS.filter(({ name }) => name !== migration.name),
+    dataEnv.TEST_MIGRATIONS.filter(({ name }) => name < migration.name),
   );
 
   const timestamp = 1_767_225_600_000;

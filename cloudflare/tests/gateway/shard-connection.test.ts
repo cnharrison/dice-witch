@@ -25,6 +25,10 @@ const identity: GatewayShardIdentity = {
 };
 const checkpointKey = "gateway-fleet-checkpoint-v1:3:0:23";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function identifyMachine(): GatewayMachine {
   let machine = createGatewayMachine(initialGatewayCheckpoint(identity, 1));
   machine = transitionGateway(machine, { type: "start" }).machine;
@@ -86,12 +90,14 @@ type TestableConnection = {
 };
 
 function connection(activeGuild: boolean, dispatchActive = false) {
+  const background: Promise<unknown>[] = [];
+  const channelMutations: unknown[] = [];
   const storagePut = vi.fn((entries: Record<string, unknown>) => {
     void entries;
     return Promise.resolve();
   });
   const waitUntil = vi.fn((promise: Promise<unknown>) => {
-    void promise;
+    background.push(promise);
   });
   const dataFetch = vi.fn((request: Request) => {
     const path = new URL(request.url).pathname;
@@ -104,6 +110,12 @@ function connection(activeGuild: boolean, dispatchActive = false) {
       return Promise.resolve(
         Response.json({ status: "applied", guildName: "Test Guild" }),
       );
+    }
+    if (path === "/internal/discord-channel-context") {
+      return request.json().then((mutation) => {
+        channelMutations.push(mutation);
+        return Response.json({ status: "applied" });
+      });
     }
     return Promise.resolve(new Response(null, { status: 404 }));
   });
@@ -135,6 +147,8 @@ function connection(activeGuild: boolean, dispatchActive = false) {
     send: socketSend,
   } as unknown as WebSocket;
   return {
+    background,
+    channelMutations,
     dataFetch,
     logGuildLifecycle,
     shard,
@@ -281,6 +295,85 @@ describe("GatewayShardConnection initial guild inventory", () => {
     expect(resolved).toBe(false);
     release();
     await expect(snapshot).resolves.toMatchObject({ guildIds: [guildId] });
+  });
+
+  it("feeds channel lifecycle context without making Gateway depend on the cache", async () => {
+    const { background, channelMutations, dataFetch, testable } = connection(
+      true,
+      true,
+    );
+    await testable.handleGatewayMessage(readyMessage());
+    const channelId = "100000000000000004";
+
+    await testable.handleGatewayMessage({
+      type: "dispatch",
+      sequence: 2,
+      eventType: "CHANNEL_CREATE",
+      data: {
+        id: channelId,
+        guild_id: guildId,
+        name: "dice-rolls",
+        type: 0,
+      },
+    });
+    await Promise.all(background);
+    expect(channelMutations).toHaveLength(1);
+    const created = channelMutations[0];
+    if (!isRecord(created)) throw new Error("Channel mutation is invalid");
+    expect(created).toMatchObject({
+      version: 1,
+      operation: "upsert",
+      source: "gateway",
+      guildId,
+      channelId,
+      channelName: "dice-rolls",
+      channelType: 0,
+    });
+    expect(typeof created.observedAt).toBe("number");
+
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(
+      () => undefined,
+    );
+    dataFetch.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    try {
+      await expect(testable.handleGatewayMessage({
+        type: "dispatch",
+        sequence: 3,
+        eventType: "CHANNEL_UPDATE",
+        data: {
+          id: channelId,
+          guild_id: guildId,
+          name: "renamed-rolls",
+          type: 0,
+        },
+      })).resolves.toBeUndefined();
+      await Promise.all(background);
+      expect(consoleWarn).toHaveBeenCalledWith(JSON.stringify({
+        level: "warn",
+        message: "Gateway channel context cache write failed",
+        eventType: "CHANNEL_UPDATE",
+      }));
+    } finally {
+      consoleWarn.mockRestore();
+    }
+
+    await testable.handleGatewayMessage({
+      type: "dispatch",
+      sequence: 4,
+      eventType: "CHANNEL_DELETE",
+      data: { id: channelId, guild_id: guildId },
+    });
+    await Promise.all(background);
+    const deleted = channelMutations[1];
+    if (!isRecord(deleted)) throw new Error("Channel deletion is invalid");
+    expect(deleted).toMatchObject({
+      version: 1,
+      operation: "delete",
+      source: "gateway",
+      guildId,
+      channelId,
+    });
+    expect(typeof deleted.observedAt).toBe("number");
   });
 
   it("tracks active guild creates and available deletes after READY", async () => {

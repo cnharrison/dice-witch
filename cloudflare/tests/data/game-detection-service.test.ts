@@ -125,6 +125,7 @@ const dndResponse = {
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM discord_channel_directory"),
     dataEnv.DATA.prepare("DELETE FROM game_detections"),
     dataEnv.DATA.prepare("DELETE FROM game_detection_rank_jobs"),
     dataEnv.DATA.prepare("DELETE FROM game_detection_rolls"),
@@ -174,7 +175,7 @@ describe("processGameDetectionMinute", () => {
         AI: { run: aiRun } as unknown as Ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveGameDetectionChannelContextV1: resolveContext,
+          resolveDiscordChannelContextV1: resolveContext,
         },
       }, observedAt + 120_000),
     ).resolves.toMatchObject({
@@ -246,7 +247,7 @@ describe("processGameDetectionMinute", () => {
         AI: { run: aiRun } as unknown as Ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveGameDetectionChannelContextV1: vi.fn(),
+          resolveDiscordChannelContextV1: vi.fn(),
         },
       }, observedAt + 240_000),
     ).resolves.toMatchObject({
@@ -311,7 +312,7 @@ describe("processGameDetectionMinute", () => {
         AI: { run: aiRun } as unknown as Ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveGameDetectionChannelContextV1: vi.fn(),
+          resolveDiscordChannelContextV1: vi.fn(),
         },
       }, activeAt),
     ).resolves.toMatchObject({
@@ -346,7 +347,7 @@ describe("processGameDetectionMinute", () => {
         AI: { run: aiRun } as unknown as Ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveGameDetectionChannelContextV1: vi.fn(),
+          resolveDiscordChannelContextV1: vi.fn(),
         },
       }, activeAt),
     ).resolves.toMatchObject({
@@ -439,7 +440,7 @@ describe("processGameDetectionMinute", () => {
         AI: { run: aiRun } as unknown as Ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveGameDetectionChannelContextV1: vi.fn(),
+          resolveDiscordChannelContextV1: vi.fn(),
         },
       }, activeAt),
     ).resolves.toMatchObject({ rankJob: "selected", announcement: "sent" });
@@ -493,7 +494,7 @@ describe("processGameDetectionMinute", () => {
         AI: { run: aiRun } as unknown as Ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveGameDetectionChannelContextV1: resolveContext,
+          resolveDiscordChannelContextV1: resolveContext,
         },
       }, activeAt),
     ).resolves.toMatchObject({
@@ -553,7 +554,7 @@ describe("processGameDetectionMinute", () => {
       AI: { run: aiRun } as unknown as Ai,
       DISCORD_REST: {
         createGameDetectionAnnouncementV1: announce,
-        resolveGameDetectionChannelContextV1: resolveContext,
+        resolveDiscordChannelContextV1: resolveContext,
       },
     };
 
@@ -594,7 +595,7 @@ describe("processGameDetectionMinute", () => {
       AI: { run: aiRun } as unknown as Ai,
       DISCORD_REST: {
         createGameDetectionAnnouncementV1: announce,
-        resolveGameDetectionChannelContextV1: vi.fn(),
+        resolveDiscordChannelContextV1: vi.fn(),
       },
     };
 

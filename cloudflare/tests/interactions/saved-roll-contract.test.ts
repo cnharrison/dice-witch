@@ -103,6 +103,23 @@ describe("saved-roll Discord contract", () => {
     ).toBeNull();
   });
 
+  it("preserves channel metadata when Discord omits the optional guild object", () => {
+    const value = interaction(2, { name: "library", type: 1 });
+    delete value.guild;
+
+    expect(parseSavedRollInteraction(value, scope)).toMatchObject({
+      kind: "command",
+      loggingContext: {
+        kind: "guild",
+        guildId: scope.guildId,
+        guildName: null,
+        channelId: "100000000000000003",
+        channelName: "dice-rolls",
+        channelType: 0,
+      },
+    });
+  });
+
   it("parses actor-bound one-click runs and rejects malformed component values", () => {
     const sessionId = "100000000000000020";
     expect(
