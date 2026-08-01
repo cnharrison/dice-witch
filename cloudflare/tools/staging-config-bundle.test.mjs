@@ -18,16 +18,18 @@ const buildTime = "2026-07-15T20:00:00.000Z";
 
 function bundle() {
   return Object.fromEntries(
-    workers.map((worker) => [
-      worker,
-      {
-        name: `dice-witch-${worker}-staging`,
-        vars:
-          worker === "web-api"
-            ? { BUILD_SHA: "old", BUILD_TIME: "old" }
-            : undefined,
-      },
-    ]),
+    workers.map((worker) => {
+      const config = { name: `dice-witch-${worker}-staging` };
+      if (worker === "web-api") {
+        config.vars = { BUILD_SHA: "old", BUILD_TIME: "old" };
+      } else if (worker === "interactions") {
+        config.vars = {};
+      }
+      if (worker === "roll") {
+        config.services = [];
+      }
+      return [worker, config];
+    }),
   );
 }
 
@@ -48,9 +50,27 @@ test("materializes only known configs and stamps exact build metadata", async ()
   const web = JSON.parse(
     await readFile(path.join(directory, "wrangler.web-api.jsonc"), "utf8"),
   );
+  const interactions = JSON.parse(
+    await readFile(path.join(directory, "wrangler.interactions.jsonc"), "utf8"),
+  );
+  const roll = JSON.parse(
+    await readFile(path.join(directory, "wrangler.roll.jsonc"), "utf8"),
+  );
   assert.equal(web.vars.ENVIRONMENT, "staging");
   assert.equal(web.vars.BUILD_SHA, sha);
   assert.equal(web.vars.BUILD_TIME, buildTime);
+  assert.equal(interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION, "1");
+  assert.deepEqual(interactions.observability, {
+    enabled: true,
+    logs: { invocation_logs: true, head_sampling_rate: 1 },
+  });
+  assert.deepEqual(roll.services, [
+    {
+      binding: "DISCORD_MESSAGE_PROBE",
+      service: "dice-witch-discord-rest-staging",
+      entrypoint: "DiscordMessageProbeService",
+    },
+  ]);
   assert.equal((await stat(path.join(directory, "wrangler.data.jsonc"))).mode & 0o777, 0o600);
 });
 

@@ -14,6 +14,7 @@ const WORKERS = [
 const MAX_BUNDLE_BYTES = 64 * 1024;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+const ROLL_LIFECYCLE_TELEMETRY_VERSION = "1";
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -54,6 +55,33 @@ function decodeBundle(encodedBundle) {
   return bundle;
 }
 
+function applyReleaseConfiguration(configs) {
+  if (!isRecord(configs.interactions.vars)) {
+    throw new Error("Interactions staging vars are required");
+  }
+  if (!Array.isArray(configs.roll.services)) {
+    throw new Error("Roll staging services are required");
+  }
+
+  configs.interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION =
+    ROLL_LIFECYCLE_TELEMETRY_VERSION;
+  configs.interactions.observability = {
+    enabled: true,
+    logs: { invocation_logs: true, head_sampling_rate: 1 },
+  };
+
+  const messageProbe = configs.roll.services.find(
+    ({ binding }) => binding === "DISCORD_MESSAGE_PROBE",
+  );
+  if (messageProbe === undefined) {
+    configs.roll.services.push({
+      binding: "DISCORD_MESSAGE_PROBE",
+      service: configs["discord-rest"].name,
+      entrypoint: "DiscordMessageProbeService",
+    });
+  }
+}
+
 export async function materializeStagingConfigs({
   encodedBundle,
   buildSha,
@@ -71,6 +99,7 @@ export async function materializeStagingConfigs({
     throw new Error("Staging build time must be an ISO 8601 timestamp");
   }
   const configs = decodeBundle(encodedBundle);
+  applyReleaseConfiguration(configs);
   if (!isRecord(configs["web-api"].vars)) {
     throw new Error("Web API staging vars are required");
   }

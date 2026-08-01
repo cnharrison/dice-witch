@@ -69,6 +69,7 @@ function validConfigs() {
       services: [
         service("DATA_SERVICE", dataName),
         service("DISCORD_REST", restName, "DiscordRestService"),
+        service("DISCORD_MESSAGE_PROBE", restName, "DiscordMessageProbeService"),
         service("GATEWAY_STATUS", gatewayName, "GatewayStatusService"),
       ],
       durable_objects: {
@@ -124,6 +125,10 @@ function validConfigs() {
     interactions: {
       ...baseConfig(interactionsName, "workers/interactions/src/index.ts"),
       workers_dev: true,
+      observability: {
+        enabled: true,
+        logs: { invocation_logs: true, head_sampling_rate: 1 },
+      },
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
       vars: {
         DISCORD_APPLICATION_ID: applicationId,
@@ -131,6 +136,7 @@ function validConfigs() {
         INVITE_LINK: `https://discord.com/api/oauth2/authorize?client_id=${applicationId}`,
         SUPPORT_SERVER_LINK: "https://example.com/support",
         WEB_APP_URL: `${origin}/app`,
+        ROLL_LIFECYCLE_TELEMETRY_VERSION: "1",
       },
       services: [
         service("DATA_SERVICE", dataName),
@@ -240,7 +246,7 @@ test("rejects routes, unsafe Crons, and undeclared bindings outside the staging 
   });
   assert.throws(
     () => validateStagingConfigs(extraBinding),
-    /roll service bindings must be exactly DATA_SERVICE, DISCORD_REST, GATEWAY_STATUS/,
+    /roll service bindings must be exactly DATA_SERVICE, DISCORD_MESSAGE_PROBE, DISCORD_REST, GATEWAY_STATUS/,
   );
 
   const legacyRollEmission = validConfigs();
@@ -355,6 +361,20 @@ test("requires the Interactions crypto alias for roll preflight", () => {
   assert.throws(
     () => validateStagingConfigs(configs),
     /interactions crypto alias is invalid/,
+  );
+});
+
+test("requires staging roll lifecycle diagnostics configuration", () => {
+  const configs = validConfigs();
+  configs.interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION = "3";
+  configs.interactions.observability.logs.invocation_logs = false;
+  configs.roll.services = configs.roll.services.filter(
+    ({ binding }) => binding !== "DISCORD_MESSAGE_PROBE",
+  );
+
+  assert.throws(
+    () => validateStagingConfigs(configs),
+    /lifecycle telemetry version is invalid|invocation logs are invalid|service bindings must be exactly/,
   );
 });
 
