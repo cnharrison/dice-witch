@@ -90,7 +90,7 @@ test("materializes exact production configs from source templates and bounded va
   );
   assert.deepEqual(data.ai, { binding: "AI" });
   assert.equal(interactions.vars.DISCORD_TEST_GUILD_ID, undefined);
-  assert.equal(interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION, "1");
+  assert.equal(interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION, "2");
   assert.deepEqual(interactions.observability, {
     enabled: true,
     logs: { invocation_logs: true, head_sampling_rate: 1 },

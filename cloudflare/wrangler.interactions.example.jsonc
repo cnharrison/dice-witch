@@ -13,7 +13,7 @@
     "INVITE_LINK": "https://example.com/replace-with-discord-invite",
     "SUPPORT_SERVER_LINK": "https://example.com/replace-with-support-link",
     "WEB_APP_URL": "https://example.com/app",
-    "ROLL_LIFECYCLE_TELEMETRY_VERSION": "1"
+    "ROLL_LIFECYCLE_TELEMETRY_VERSION": "2"
   },
   "services": [
     {
