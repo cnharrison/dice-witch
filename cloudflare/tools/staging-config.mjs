@@ -102,6 +102,7 @@ const WORKER_VAR_NAMES = {
     "INVITE_LINK",
     "SUPPORT_SERVER_LINK",
     "WEB_APP_URL",
+    "ROLL_LIFECYCLE_TELEMETRY_VERSION",
   ],
   roll: ["ROLL_RENDER_VERSION"],
   "web-api": [
@@ -304,6 +305,22 @@ function validateStaticWorkerConfiguration(errors, configs) {
     errors.push("Staging Roll ROLL_RENDER_VERSION must equal 4");
   }
 
+  if (
+    configs.interactions?.vars?.ROLL_LIFECYCLE_TELEMETRY_VERSION !== "1" &&
+    configs.interactions?.vars?.ROLL_LIFECYCLE_TELEMETRY_VERSION !== "2"
+  ) {
+    errors.push("Interactions lifecycle telemetry version is invalid");
+  }
+  if (
+    JSON.stringify(configs.interactions?.observability) !==
+    JSON.stringify({
+      enabled: true,
+      logs: { invocation_logs: true, head_sampling_rate: 1 },
+    })
+  ) {
+    errors.push("Interactions invocation logs are invalid");
+  }
+
   const rules = configs.roll?.rules;
   const expectedRules = [
     {
@@ -458,6 +475,7 @@ function validateTopology(errors, configs, suffix) {
   requireExactBindings(errors, "roll", configs.roll?.services, [
     "DATA_SERVICE",
     "DISCORD_REST",
+    "DISCORD_MESSAGE_PROBE",
     "GATEWAY_STATUS",
   ]);
   requireExactBindings(errors, "gateway", configs.gateway?.services, [
@@ -511,6 +529,14 @@ function validateTopology(errors, configs, suffix) {
     "DISCORD_REST",
     names["discord-rest"],
     "DiscordRestService",
+  );
+  requireService(
+    errors,
+    configs.roll,
+    "roll",
+    "DISCORD_MESSAGE_PROBE",
+    names["discord-rest"],
+    "DiscordMessageProbeService",
   );
   requireService(
     errors,
