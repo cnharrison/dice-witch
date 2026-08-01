@@ -16,6 +16,7 @@ import {
 import type { RenderedDiceRequestV4 } from "../../../packages/dice-canvaskit/src";
 import {
   isDiscordRollChannelType,
+  type RollDeliveryTelemetryV2,
   type RollLoggingContext,
 } from "../../../packages/discord-contracts/src";
 import { renderedRollFaceV4 } from "../../../packages/roll-render-model/src";
@@ -111,6 +112,7 @@ export type RollDeliveryRequest = {
   };
   deferredAt?: number;
   rollSeed?: number;
+  telemetry?: RollDeliveryTelemetryV2;
   logging: {
     source: "discord" | "web";
     channelId: string;
@@ -233,11 +235,13 @@ type ValidatedRollDeliveryRequest = Omit<
   | "responseMode"
   | "rollSeed"
   | "savedRoll"
+  | "telemetry"
 > & {
   request: RollWorkRequest;
   accounting: RollDeliveryRequest["accounting"] | null;
   deferredAt: number;
   rollSeed: number | null;
+  telemetry: RollDeliveryTelemetryV2 | null;
   logging: RollDeliveryRequest["logging"] | null;
   responseMode: "edit-original" | "followup";
   savedRoll: SavedRollInvocationV1 | null;
@@ -372,8 +376,10 @@ export function validateDeliveryRequest(
 ): ValidatedRollDeliveryRequest {
   if (!isRecord(value)) throw new Error("Roll delivery request is invalid");
   const hasDeferredAt = Object.hasOwn(value, "deferredAt");
+  const hasTelemetry = Object.hasOwn(value, "telemetry");
   const shape = { ...value };
   delete shape.deferredAt;
+  delete shape.telemetry;
   const hasPreflightedDirectRoll = hasExactKeys(shape, [
     "accounting",
     "interaction",
@@ -482,6 +488,39 @@ export function validateDeliveryRequest(
     throw new Error("Roll delivery deferred timestamp is invalid");
   }
 
+  let telemetry: RollDeliveryTelemetryV2 | null = null;
+  if (hasTelemetry) {
+    if (
+      accounting === null ||
+      !isRecord(value.telemetry) ||
+      !hasExactKeys(value.telemetry, [
+        "acknowledgementPreparedAt",
+        "acknowledgementType",
+        "handlerStartedAt",
+        "version",
+      ]) ||
+      value.telemetry.version !== 2 ||
+      !Number.isSafeInteger(value.telemetry.handlerStartedAt) ||
+      Number(value.telemetry.handlerStartedAt) < accounting.receivedAt ||
+      Number(value.telemetry.handlerStartedAt) > deferredAt ||
+      !Number.isSafeInteger(value.telemetry.acknowledgementPreparedAt) ||
+      Number(value.telemetry.acknowledgementPreparedAt) < deferredAt ||
+      (value.telemetry.acknowledgementType !== 4 &&
+        value.telemetry.acknowledgementType !== 5 &&
+        value.telemetry.acknowledgementType !== 6)
+    ) {
+      throw new Error("Roll delivery telemetry is invalid");
+    }
+    telemetry = {
+      version: 2,
+      handlerStartedAt: Number(value.telemetry.handlerStartedAt),
+      acknowledgementPreparedAt: Number(
+        value.telemetry.acknowledgementPreparedAt,
+      ),
+      acknowledgementType: value.telemetry.acknowledgementType,
+    };
+  }
+
   let rollSeed: number | null = null;
   if (hasPreflightedDirectRoll) {
     const candidate = value.rollSeed;
@@ -582,6 +621,7 @@ export function validateDeliveryRequest(
     accounting,
     deferredAt,
     rollSeed,
+    telemetry,
     logging,
     responseMode,
     savedRoll,

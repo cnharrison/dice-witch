@@ -34,6 +34,11 @@
       "entrypoint": "DiscordRestService"
     },
     {
+      "binding": "DISCORD_MESSAGE_PROBE",
+      "service": "dice-witch-discord-rest",
+      "entrypoint": "DiscordMessageProbeService"
+    },
+    {
       "binding": "GATEWAY_STATUS",
       "service": "dice-witch-gateway",
       "entrypoint": "GatewayStatusService"

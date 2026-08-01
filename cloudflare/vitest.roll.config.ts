@@ -354,6 +354,16 @@ async function discordTestResponse(request: Request): Promise<Response> {
     }
     return Response.json({ message: "temporary" }, { status: 503 });
   }
+  if (token === "delivery-result-message-missing") {
+    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
+    resultDeliveryAttempts.set(token, attempts);
+    return attempts === 1
+      ? Response.json({ id: "100000000000000087" })
+      : Response.json(
+          { code: 10_008, message: "unknown message" },
+          { status: 404 },
+        );
+  }
   if (token === "delivery-terminal-failure") {
     return Response.json(
       { code: 10_015, message: "invalid interaction" },
@@ -426,6 +436,9 @@ export default defineConfig({
                 contents: `
                   import { WorkerEntrypoint } from "cloudflare:workers";
                   const logAttempts = new Map();
+                  export class DiscordMessageProbeService extends WorkerEntrypoint {
+                    inspectDiscordMessageExistence() { return { outcome: "missing" }; }
+                  }
                   export class DiscordRestService extends WorkerEntrypoint {
                     sendRollHelper() { return { status: "delivered" }; }
                     deliverWebRoll(value) {

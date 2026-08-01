@@ -98,6 +98,25 @@ function deliveryRequest(
   };
 }
 
+function telemetryDeliveryRequest(
+  id: string,
+  token: string,
+): RollDeliveryRequest {
+  const input = deliveryRequest(id, token);
+  const receivedAt = input.accounting.receivedAt;
+  return {
+    ...input,
+    deferredAt: receivedAt,
+    rollSeed: 1,
+    telemetry: {
+      version: 2,
+      handlerStartedAt: receivedAt,
+      acknowledgementPreparedAt: receivedAt,
+      acknowledgementType: 5,
+    },
+  };
+}
+
 describe("RollWork Durable Object", () => {
   it("upgrades pre-clatter delivery tables in place", async () => {
     const stub = work("1400000000000000021");
@@ -1879,9 +1898,32 @@ describe("RollWork Durable Object", () => {
       ).resolves.toEqual({ status: "delivered" });
       await expect(
         work(failedId).deliver(
-          deliveryRequest(failedId, "delivery-terminal-failure"),
+          telemetryDeliveryRequest(failedId, "delivery-terminal-failure"),
         ),
       ).resolves.toEqual({ status: "failed" });
+      await runInDurableObject(work(failedId), (_instance, state) => {
+        const row = state.storage.sql
+          .exec<{ snapshot_json: string }>(
+            "SELECT snapshot_json FROM roll_lifecycle_outbox",
+          )
+          .one();
+        const snapshot = JSON.parse(row.snapshot_json) as {
+          version: number;
+          state: string;
+          diagnostics: Record<string, unknown>;
+        };
+        expect(snapshot).toMatchObject({
+          version: 2,
+          state: "failed",
+          diagnostics: {
+            discordErrorCode: 10_015,
+            discordOperation: "edit-original-result",
+          },
+        });
+        expect(typeof snapshot.diagnostics.firstProviderAttemptAt).toBe(
+          "number",
+        );
+      });
 
       const delivered = consoleInfo.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
@@ -2005,6 +2047,61 @@ describe("RollWork Durable Object", () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it("persists V2 timing, Discord failure, and a read-only missing-message probe", async () => {
+    const id = snowflakeAt(Date.now(), 70);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(
+      id,
+      "delivery-result-message-missing",
+    );
+    input.accounting.guildId = "100000000000000002";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+
+    await expect(stub.deliver(input)).resolves.toMatchObject({
+      status: "pending",
+    });
+    await runInDurableObject(stub, async (instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE interaction_delivery SET result_not_before = 0",
+      );
+      await callAlarm(instance);
+      const row = state.storage.sql
+        .exec<{ snapshot_json: string }>(
+          "SELECT snapshot_json FROM roll_lifecycle_outbox",
+        )
+        .one();
+      const snapshot = JSON.parse(row.snapshot_json) as Record<string, unknown>;
+      expect(snapshot).toMatchObject({
+        version: 2,
+        state: "failed",
+        httpStatus: 404,
+        diagnostics: {
+          acknowledgementType: 5,
+          discordErrorCode: 10_008,
+          discordOperation: "edit-original-result",
+          originalResponseMessageId: "100000000000000087",
+          originalResponseProbe: "missing",
+        },
+      });
+      const diagnostics = snapshot.diagnostics;
+      if (
+        typeof diagnostics !== "object" ||
+        diagnostics === null ||
+        !("firstProviderAttemptAt" in diagnostics) ||
+        !("clatterSucceededAt" in diagnostics)
+      ) {
+        throw new Error("Roll lifecycle diagnostics are missing");
+      }
+      expect(typeof diagnostics.firstProviderAttemptAt).toBe("number");
+      expect(typeof diagnostics.clatterSucceededAt).toBe("number");
+      expect(JSON.stringify(snapshot)).not.toMatch(
+        /delivery-result-message-missing|unknown message|authorization/i,
+      );
+    });
   });
 
   it("keeps a maximum-dice diagnostic event below the Workers Logs limit", async () => {

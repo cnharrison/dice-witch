@@ -36,6 +36,7 @@ import {
   validateRollLogArtifact,
   type DiscordMessage,
   type RollLifecycleContextV1,
+  type RollLifecycleDiagnosticsV2,
   type RollLogArtifactV1,
 } from "../../../packages/discord-contracts/src";
 import { buildRollRenderRequest } from "../../../packages/roll-render-model/src";
@@ -109,7 +110,8 @@ function randomSeed(): number {
 
 const DELIVERY_FINALIZATION_BUFFER_MS = 60_000;
 const DELIVERY_LAST_ATTEMPT_BUFFER_MS = 1_000;
-const MAX_DISCORD_ERROR_BODY_BYTES = 8 * 1_024;
+const MAX_DISCORD_RESPONSE_BODY_BYTES = 8 * 1_024;
+const MESSAGE_PROBE_TIMEOUT_MS = 1_500;
 const ROLL_DELIVERY_FAILURE_MESSAGE =
   "This roll could not be completed. Please try again.";
 
@@ -135,6 +137,31 @@ type DiscordFailureDetails = Readonly<{
   code: number | null;
   operation: DiscordOperation;
 }>;
+
+function mergeLifecycleDiagnostics(
+  current: RollLifecycleDiagnosticsV2,
+  incoming: Partial<RollLifecycleDiagnosticsV2>,
+): RollLifecycleDiagnosticsV2 {
+  return {
+    handlerStartedAt: current.handlerStartedAt,
+    acknowledgementPreparedAt: current.acknowledgementPreparedAt,
+    acknowledgementType: current.acknowledgementType,
+    firstProviderAttemptAt:
+      current.firstProviderAttemptAt ?? incoming.firstProviderAttemptAt ?? null,
+    clatterSucceededAt:
+      current.clatterSucceededAt ?? incoming.clatterSucceededAt ?? null,
+    discordErrorCode:
+      current.discordErrorCode ?? incoming.discordErrorCode ?? null,
+    discordOperation:
+      current.discordOperation ?? incoming.discordOperation ?? null,
+    originalResponseMessageId:
+      current.originalResponseMessageId ??
+      incoming.originalResponseMessageId ??
+      null,
+    originalResponseProbe:
+      current.originalResponseProbe ?? incoming.originalResponseProbe ?? null,
+  };
+}
 
 type RollDeliveryTarget = Readonly<{
   id: string;
@@ -167,7 +194,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function readDiscordErrorCode(response: Response): Promise<number | null> {
+async function readBoundedDiscordJson(
+  response: Response,
+): Promise<unknown> {
   const contentType = response.headers.get("content-type")
     ?.split(";", 1)[0]
     ?.trim()
@@ -177,12 +206,11 @@ async function readDiscordErrorCode(response: Response): Promise<number | null> 
   if (
     contentLength !== null &&
     (!/^(0|[1-9][0-9]*)$/.test(contentLength) ||
-      Number(contentLength) > MAX_DISCORD_ERROR_BODY_BYTES)
+      Number(contentLength) > MAX_DISCORD_RESPONSE_BODY_BYTES)
   ) {
     return null;
   }
   const reader = (response.body as ReadableStream<Uint8Array>).getReader();
-
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
   try {
@@ -190,7 +218,7 @@ async function readDiscordErrorCode(response: Response): Promise<number | null> 
       const chunk = await reader.read();
       if (chunk.done) break;
       byteLength += chunk.value.byteLength;
-      if (byteLength > MAX_DISCORD_ERROR_BODY_BYTES) {
+      if (byteLength > MAX_DISCORD_RESPONSE_BODY_BYTES) {
         await reader.cancel();
         return null;
       }
@@ -207,13 +235,17 @@ async function readDiscordErrorCode(response: Response): Promise<number | null> 
     offset += chunk.byteLength;
   }
   try {
-    const parsed: unknown = JSON.parse(new TextDecoder().decode(body));
-    if (!isRecord(parsed) || !Number.isSafeInteger(parsed.code)) return null;
-    const code = Number(parsed.code);
-    return code >= 0 ? code : null;
+    return JSON.parse(new TextDecoder().decode(body)) as unknown;
   } catch {
     return null;
   }
+}
+
+async function readDiscordErrorCode(response: Response): Promise<number | null> {
+  const parsed = await readBoundedDiscordJson(response);
+  if (!isRecord(parsed) || !Number.isSafeInteger(parsed.code)) return null;
+  const code = Number(parsed.code);
+  return code >= 0 ? code : null;
 }
 
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
@@ -1531,8 +1563,7 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       return;
     }
-    const snapshot = parseRollLifecycleSnapshot({
-      version: 1,
+    const common = {
       interactionId: delivery.interaction.id,
       revision: 1,
       commandName: delivery.savedRoll === null ? "roll" : "library",
@@ -1548,7 +1579,27 @@ export class RollWork extends DurableObject<RollEnv> {
       failurePhase: null,
       failureCode: null,
       context: this.lifecycleContext(delivery, record),
-    });
+    } as const;
+    const snapshot = parseRollLifecycleSnapshot(
+      delivery.telemetry === null
+        ? { version: 1, ...common }
+        : {
+            version: 2,
+            ...common,
+            diagnostics: {
+              handlerStartedAt: delivery.telemetry.handlerStartedAt,
+              acknowledgementPreparedAt:
+                delivery.telemetry.acknowledgementPreparedAt,
+              acknowledgementType: delivery.telemetry.acknowledgementType,
+              firstProviderAttemptAt: null,
+              clatterSucceededAt: null,
+              discordErrorCode: null,
+              discordOperation: null,
+              originalResponseMessageId: null,
+              originalResponseProbe: null,
+            },
+          },
+    );
     this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO roll_lifecycle_outbox (
          singleton, snapshot_json, next_sync_at
@@ -1595,6 +1646,7 @@ export class RollWork extends DurableObject<RollEnv> {
     failurePhase?: string | null;
     failureCode?: string | null;
     destinationPayload?: unknown;
+    diagnostics?: Partial<RollLifecycleDiagnosticsV2>;
   }): void {
     const row = this.readLifecycleOutbox();
     if (row === undefined) return;
@@ -1622,6 +1674,14 @@ export class RollWork extends DurableObject<RollEnv> {
         input.state === "failed" ? input.failurePhase ?? "unknown" : null,
       failureCode:
         input.state === "failed" ? input.failureCode ?? "internal-failure" : null,
+      ...(current.version === 2
+        ? {
+            diagnostics: mergeLifecycleDiagnostics(
+              current.diagnostics,
+              input.diagnostics ?? {},
+            ),
+          }
+        : {}),
       context: {
         ...current.context,
         ...(input.destinationPayload === undefined
@@ -1636,6 +1696,47 @@ export class RollWork extends DurableObject<RollEnv> {
       JSON.stringify(next),
       input.occurredAt,
     );
+  }
+
+  private updateLifecycleDiagnostics(
+    diagnostics: Partial<RollLifecycleDiagnosticsV2>,
+    occurredAt: number,
+  ): void {
+    const row = this.readLifecycleOutbox();
+    if (row === undefined) return;
+    const current = parseRollLifecycleSnapshot(JSON.parse(row.snapshot_json));
+    if (current.version === 1) return;
+    const next = parseRollLifecycleSnapshot({
+      ...current,
+      revision: current.revision + 1,
+      diagnostics: mergeLifecycleDiagnostics(
+        current.diagnostics,
+        diagnostics,
+      ),
+    });
+    this.ctx.storage.sql.exec(
+      `UPDATE roll_lifecycle_outbox
+       SET snapshot_json = ?, next_sync_at = ?
+       WHERE singleton = 1`,
+      JSON.stringify(next),
+      occurredAt,
+    );
+  }
+
+  private recordProviderAttempt(): void {
+    const row = this.readLifecycleOutbox();
+    if (row === undefined) return;
+    const current = parseRollLifecycleSnapshot(JSON.parse(row.snapshot_json));
+    if (
+      current.version === 2 &&
+      current.diagnostics.firstProviderAttemptAt === null
+    ) {
+      const occurredAt = Date.now();
+      this.updateLifecycleDiagnostics(
+        { firstProviderAttemptAt: occurredAt },
+        occurredAt,
+      );
+    }
   }
 
   private async syncLifecycle(): Promise<void> {
@@ -2538,6 +2639,7 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       let response: Response;
       try {
+        this.recordProviderAttempt();
         response = await fetch(
           buildEditOriginalResponse(target, {
             content: "Preparing your roll.",
@@ -2600,6 +2702,7 @@ export class RollWork extends DurableObject<RollEnv> {
           const request = metadata.responseMode === "followup"
             ? buildPublicFollowupResponse(target, { content: clatter })
             : buildEditOriginalResponse(target, { content: clatter });
+          this.recordProviderAttempt();
           clatterResponse = await fetch(request);
         } catch {
           return this.scheduleRetry(
@@ -2630,9 +2733,10 @@ export class RollWork extends DurableObject<RollEnv> {
             { code, operation: discordOperation },
           );
         }
+        let originalResponseMessageId: string | null = null;
         if (metadata.responseMode === "followup") {
           try {
-            const message: unknown = await clatterResponse.json();
+            const message = await readBoundedDiscordJson(clatterResponse);
             if (
               !isRecord(message) ||
               typeof message.id !== "string" ||
@@ -2649,6 +2753,19 @@ export class RollWork extends DurableObject<RollEnv> {
               "response",
             );
           }
+        } else {
+          try {
+            const message = await readBoundedDiscordJson(clatterResponse);
+            if (
+              isRecord(message) &&
+              typeof message.id === "string" &&
+              SAVED_ROLL_SNOWFLAKE.test(message.id)
+            ) {
+              originalResponseMessageId = message.id;
+            }
+          } catch {
+            // Diagnostics must not alter successful delivery behavior.
+          }
         }
         if (delayMs === null) {
           return this.terminateDelivery(
@@ -2660,16 +2777,27 @@ export class RollWork extends DurableObject<RollEnv> {
         }
         const clatterSentAt = Date.now();
         resultNotBefore = clatterSentAt + delayMs;
-        this.ctx.storage.sql.exec(
-          `UPDATE interaction_delivery
-           SET clatter_sent_at = ?, followup_message_id = ?,
-               result_not_before = ?, last_http_status = ?
-           WHERE singleton = 1`,
-          clatterSentAt,
-          followupMessageId,
-          resultNotBefore,
-          clatterResponse.status,
-        );
+        this.ctx.storage.transactionSync(() => {
+          this.updateLifecycleDiagnostics(
+            {
+              clatterSucceededAt: clatterSentAt,
+              ...(originalResponseMessageId === null
+                ? {}
+                : { originalResponseMessageId }),
+            },
+            clatterSentAt,
+          );
+          this.ctx.storage.sql.exec(
+            `UPDATE interaction_delivery
+             SET clatter_sent_at = ?, followup_message_id = ?,
+                 result_not_before = ?, last_http_status = ?
+             WHERE singleton = 1`,
+            clatterSentAt,
+            followupMessageId,
+            resultNotBefore,
+            clatterResponse.status,
+          );
+        });
       }
       if (
         !skipDiceDelay &&
@@ -2827,6 +2955,7 @@ export class RollWork extends DurableObject<RollEnv> {
 
     let response: Response;
     try {
+      this.recordProviderAttempt();
       response = await fetch(request);
     } catch {
       return this.scheduleRetry(
@@ -2990,6 +3119,7 @@ export class RollWork extends DurableObject<RollEnv> {
     );
     let response: Response;
     try {
+      this.recordProviderAttempt();
       response = await fetch(
         buildEditOriginalResponse(target, {
           content: ROLL_DELIVERY_FAILURE_MESSAGE,
@@ -3056,6 +3186,72 @@ export class RollWork extends DurableObject<RollEnv> {
     );
   }
 
+  private async probeOriginalResponse(
+    discordFailure: DiscordFailureDetails,
+  ): Promise<RollLifecycleDiagnosticsV2["originalResponseProbe"]> {
+    if (
+      discordFailure.code !== 10_008 ||
+      discordFailure.operation !== "edit-original-result"
+    ) {
+      return null;
+    }
+    const lifecycle = this.readLifecycleOutbox();
+    const delivery = this.readDelivery();
+    if (lifecycle === undefined || delivery === undefined) return null;
+    const snapshot = parseRollLifecycleSnapshot(
+      JSON.parse(lifecycle.snapshot_json),
+    );
+    if (
+      snapshot.version === 1 ||
+      snapshot.diagnostics.originalResponseMessageId === null
+    ) {
+      return null;
+    }
+    let metadata: DeliveryMetadata;
+    try {
+      metadata = parseDeliveryMetadata(delivery.metadata_json);
+    } catch {
+      return null;
+    }
+    if (metadata.logging?.source !== "discord") return null;
+    try {
+      const service = this.env.DISCORD_MESSAGE_PROBE as unknown as {
+        inspectDiscordMessageExistence(value: unknown): Promise<unknown>;
+      };
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const timeoutResult = new Promise<unknown>((resolve) => {
+        timeout = setTimeout(
+          () => {
+            resolve({ outcome: "probe-failed" });
+          },
+          MESSAGE_PROBE_TIMEOUT_MS,
+        );
+      });
+      const probe = service.inspectDiscordMessageExistence({
+        channelId: metadata.logging.channelId,
+        messageId: snapshot.diagnostics.originalResponseMessageId,
+      });
+      let result: unknown;
+      try {
+        result = await Promise.race([probe, timeoutResult]);
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout);
+      }
+      if (
+        isRecord(result) &&
+        (result.outcome === "exists" ||
+          result.outcome === "missing" ||
+          result.outcome === "inaccessible" ||
+          result.outcome === "probe-failed")
+      ) {
+        return result.outcome;
+      }
+    } catch {
+      // The diagnostic probe must never change delivery behavior.
+    }
+    return "probe-failed";
+  }
+
   private async failDelivery(
     rollId: string,
     attempts: number,
@@ -3064,6 +3260,9 @@ export class RollWork extends DurableObject<RollEnv> {
     failurePhase: DestinationCompletionPhase,
     discordFailure?: DiscordFailureDetails,
   ): Promise<DeliverRollWorkResult> {
+    const originalResponseProbe = discordFailure === undefined
+      ? null
+      : await this.probeOriginalResponse(discordFailure);
     this.ctx.storage.sql.exec(
       `UPDATE interaction_delivery
        SET token = NULL, state = 'failed', last_http_status = ?
@@ -3078,6 +3277,17 @@ export class RollWork extends DurableObject<RollEnv> {
       httpStatus,
       failurePhase,
       failureCode: `${failurePhase}-rejected`,
+      ...(discordFailure === undefined
+        ? {}
+        : {
+            diagnostics: {
+              discordErrorCode: discordFailure.code,
+              discordOperation: discordFailure.operation,
+              ...(originalResponseProbe === null
+                ? {}
+                : { originalResponseProbe }),
+            },
+          }),
     });
     this.logDestinationCompletion({
       rollId,

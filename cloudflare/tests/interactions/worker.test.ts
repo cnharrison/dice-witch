@@ -44,6 +44,7 @@ async function signedRequest(
         "https://discord.com/api/oauth2/authorize?client_id=100000000000000001&permissions=0&scope=bot%20applications.commands",
       SUPPORT_SERVER_LINK: "https://discord.gg/example",
       WEB_APP_URL: "https://example.com/app",
+      ROLL_LIFECYCLE_TELEMETRY_VERSION: "1",
       DATA_SERVICE: {
         fetch: overrides.dataFetch ?? (() =>
           Promise.resolve(
@@ -598,6 +599,7 @@ describe("Discord HTTP interaction Worker", () => {
       }),
       { rollWork: { acceptDelivery } },
     );
+    env.ROLL_LIFECYCLE_TELEMETRY_VERSION = "2";
 
     const response = await handleInteractionRequest(request, env);
 
@@ -609,12 +611,14 @@ describe("Discord HTTP interaction Worker", () => {
       typeof acceptedRequest !== "object" ||
       acceptedRequest === null ||
       !("deferredAt" in acceptedRequest) ||
-      !("rollSeed" in acceptedRequest)
+      !("rollSeed" in acceptedRequest) ||
+      !("telemetry" in acceptedRequest)
     ) {
       throw new Error("Accepted roll request is missing preflight metadata");
     }
     const deferredAt = acceptedRequest.deferredAt;
     const rollSeed = acceptedRequest.rollSeed;
+    const telemetry = acceptedRequest.telemetry;
     expect(typeof deferredAt).toBe("number");
     expect(rollSeed).toEqual(expect.any(Number));
     expect(acceptDelivery).toHaveBeenCalledWith({
@@ -632,6 +636,7 @@ describe("Discord HTTP interaction Worker", () => {
       },
       deferredAt,
       rollSeed,
+      telemetry,
       logging: {
         source: "discord",
         channelId: "100000000000000003",
@@ -717,6 +722,7 @@ describe("Discord HTTP interaction Worker", () => {
       throw new Error("Accepted invalid roll is missing its preflight seed");
     }
     expect(typeof acceptedRequest.rollSeed).toBe("number");
+    expect(acceptedRequest).not.toHaveProperty("telemetry");
   });
 
   it("durably accepts a bot-DM roll without guild accounting", async () => {

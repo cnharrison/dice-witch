@@ -98,6 +98,8 @@ describe("Data Worker roll lifecycle service", () => {
       DISCORD_REST: {
         createRollLifecycleAlertV1,
         updateRollLifecycleAlertV1: vi.fn(),
+        createRollLifecycleAlertV2: vi.fn(),
+        updateRollLifecycleAlertV2: vi.fn(),
       },
     };
 
@@ -126,6 +128,8 @@ describe("Data Worker roll lifecycle service", () => {
       DISCORD_REST: {
         createRollLifecycleAlertV1,
         updateRollLifecycleAlertV1,
+        createRollLifecycleAlertV2: vi.fn(),
+        updateRollLifecycleAlertV2: vi.fn(),
       },
     };
 

@@ -288,6 +288,7 @@ describe("D1 business schema migration", () => {
       { name: "0010_game_detection_telemetry.sql" },
       { name: "0011_game_detection_display_context.sql" },
       { name: "0012_game_detection_active_play.sql" },
+      { name: "0013_roll_lifecycle_diagnostics.sql" },
     ]);
   });
 

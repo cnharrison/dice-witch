@@ -1,6 +1,8 @@
 import {
   parseRollLifecycleSnapshot,
+  type RollLifecycleAlert,
   type RollLifecycleAlertV1,
+  type RollLifecycleAlertV2,
 } from "../../../packages/discord-contracts/src";
 import {
   D1RollLifecycleRepository,
@@ -18,6 +20,8 @@ const MAX_LIFECYCLE_BODY_BYTES = 80 * 1_024;
 export type RollLifecycleAlertService = {
   createRollLifecycleAlertV1(value: unknown): Promise<unknown>;
   updateRollLifecycleAlertV1(value: unknown): Promise<unknown>;
+  createRollLifecycleAlertV2(value: unknown): Promise<unknown>;
+  updateRollLifecycleAlertV2(value: unknown): Promise<unknown>;
 };
 
 export type RollLifecycleServiceEnv = {
@@ -80,9 +84,8 @@ function parseAlertResult(value: unknown): AlertDeliveryResult {
   throw new Error("Roll lifecycle alert response is invalid");
 }
 
-function alertValue(item: RollLifecycleAlertWorkItem): RollLifecycleAlertV1 {
-  return {
-    version: 1,
+function alertValue(item: RollLifecycleAlertWorkItem): RollLifecycleAlert {
+  const common = {
     interactionId: item.interactionId,
     alertMessageId: item.alertMessageId,
     state: item.state,
@@ -96,6 +99,33 @@ function alertValue(item: RollLifecycleAlertWorkItem): RollLifecycleAlertV1 {
     failureCode: item.failureCode,
     context: item.context,
   };
+  if (item.version === 1) {
+    return { version: 1, ...common } satisfies RollLifecycleAlertV1;
+  }
+  if (item.diagnostics === null) {
+    throw new Error("Roll lifecycle diagnostics are missing");
+  }
+  return {
+    version: 2,
+    ...common,
+    receivedAt: item.receivedAt,
+    diagnostics: item.diagnostics,
+  } satisfies RollLifecycleAlertV2;
+}
+
+function deliverAlert(
+  service: RollLifecycleAlertService,
+  value: RollLifecycleAlert,
+  operation: "send" | "update",
+): Promise<unknown> {
+  if (value.version === 1) {
+    return operation === "send"
+      ? service.createRollLifecycleAlertV1(value)
+      : service.updateRollLifecycleAlertV1(value);
+  }
+  return operation === "send"
+    ? service.createRollLifecycleAlertV2(value)
+    : service.updateRollLifecycleAlertV2(value);
 }
 
 async function processAlert(
@@ -108,11 +138,7 @@ async function processAlert(
   let result: AlertDeliveryResult;
   try {
     const value = alertValue(item);
-    result = parseAlertResult(
-      operation === "send"
-        ? await service.createRollLifecycleAlertV1(value)
-        : await service.updateRollLifecycleAlertV1(value),
-    );
+    result = parseAlertResult(await deliverAlert(service, value, operation));
   } catch {
     await repository.releaseAlert(
       item.interactionId,

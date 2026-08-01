@@ -3,7 +3,8 @@ import {
   parseRollLifecycleSnapshot,
   rollLifecycleContextJson,
   type RollLifecycleContextV1,
-  type RollLifecycleSnapshotV1,
+  type RollLifecycleDiagnosticsV2,
+  type RollLifecycleSnapshot,
 } from "../../../packages/discord-contracts/src";
 
 export type RecordRollLifecycleResult = {
@@ -11,9 +12,11 @@ export type RecordRollLifecycleResult = {
 };
 
 export type RollLifecycleAlertWorkItem = {
+  version: 1 | 2;
   interactionId: string;
   revision: number;
-  state: RollLifecycleSnapshotV1["state"];
+  state: RollLifecycleSnapshot["state"];
+  receivedAt: number;
   deferredAt: number;
   acceptedAt: number | null;
   deliveryStartedAt: number | null;
@@ -23,11 +26,13 @@ export type RollLifecycleAlertWorkItem = {
   failurePhase: string | null;
   failureCode: string | null;
   alertMessageId: string | null;
+  diagnostics: RollLifecycleDiagnosticsV2 | null;
   context: RollLifecycleContextV1;
 };
 
 type StoredLifecycle = {
   revision: number;
+  lifecycle_version: 1 | 2;
   request_fingerprint: string;
   command_name: "roll" | "library";
   scope: "guild" | "dm";
@@ -36,11 +41,20 @@ type StoredLifecycle = {
   accepted_at: number | null;
   delivery_started_at: number | null;
   terminal_at: number | null;
-  state: RollLifecycleSnapshotV1["state"];
+  state: RollLifecycleSnapshot["state"];
   attempts: number;
   http_status: number | null;
   failure_phase: string | null;
   failure_code: string | null;
+  handler_started_at: number | null;
+  acknowledgement_prepared_at: number | null;
+  acknowledgement_type: 4 | 5 | 6 | null;
+  first_provider_attempt_at: number | null;
+  clatter_succeeded_at: number | null;
+  discord_error_code: number | null;
+  discord_operation: RollLifecycleDiagnosticsV2["discordOperation"];
+  original_response_message_id: string | null;
+  original_response_probe: RollLifecycleDiagnosticsV2["originalResponseProbe"];
   context_json: string;
   alert_state:
     | "none"
@@ -53,7 +67,7 @@ type StoredLifecycle = {
   alert_message_id: string | null;
 };
 
-const STATE_RANK: Record<RollLifecycleSnapshotV1["state"], number> = {
+const STATE_RANK: Record<RollLifecycleSnapshot["state"], number> = {
   deferred: 0,
   accepted: 1,
   delivery_started: 2,
@@ -66,7 +80,7 @@ function identityContext(context: RollLifecycleContextV1): unknown {
 }
 
 async function fingerprintSnapshot(
-  snapshot: RollLifecycleSnapshotV1,
+  snapshot: RollLifecycleSnapshot,
 ): Promise<string> {
   const identity = JSON.stringify({
     interactionId: snapshot.interactionId,
@@ -85,9 +99,90 @@ async function fingerprintSnapshot(
     .join("");
 }
 
+function storedDiagnostics(
+  stored: StoredLifecycle,
+): RollLifecycleDiagnosticsV2 | null {
+  if (stored.lifecycle_version === 1) return null;
+  if (
+    stored.handler_started_at === null ||
+    stored.acknowledgement_prepared_at === null ||
+    stored.acknowledgement_type === null
+  ) {
+    throw new Error("Stored roll lifecycle diagnostics are invalid");
+  }
+  return {
+    handlerStartedAt: stored.handler_started_at,
+    acknowledgementPreparedAt: stored.acknowledgement_prepared_at,
+    acknowledgementType: stored.acknowledgement_type,
+    firstProviderAttemptAt: stored.first_provider_attempt_at,
+    clatterSucceededAt: stored.clatter_succeeded_at,
+    discordErrorCode: stored.discord_error_code,
+    discordOperation: stored.discord_operation,
+    originalResponseMessageId: stored.original_response_message_id,
+    originalResponseProbe: stored.original_response_probe,
+  };
+}
+
+function sameDiagnostics(
+  stored: StoredLifecycle,
+  snapshot: RollLifecycleSnapshot,
+): boolean {
+  if (snapshot.version === 1) return true;
+  const diagnostics = storedDiagnostics(stored);
+  return diagnostics !== null &&
+    diagnostics.handlerStartedAt === snapshot.diagnostics.handlerStartedAt &&
+    diagnostics.acknowledgementPreparedAt ===
+      snapshot.diagnostics.acknowledgementPreparedAt &&
+    diagnostics.acknowledgementType ===
+      snapshot.diagnostics.acknowledgementType &&
+    diagnostics.firstProviderAttemptAt ===
+      snapshot.diagnostics.firstProviderAttemptAt &&
+    diagnostics.clatterSucceededAt ===
+      snapshot.diagnostics.clatterSucceededAt &&
+    diagnostics.discordErrorCode === snapshot.diagnostics.discordErrorCode &&
+    diagnostics.discordOperation === snapshot.diagnostics.discordOperation &&
+    diagnostics.originalResponseMessageId ===
+      snapshot.diagnostics.originalResponseMessageId &&
+    diagnostics.originalResponseProbe ===
+      snapshot.diagnostics.originalResponseProbe;
+}
+
+function canFillDiagnostic<T>(stored: T | null, incoming: T | null): boolean {
+  return stored === null || stored === incoming;
+}
+
+function canAdvanceDiagnostics(
+  stored: StoredLifecycle,
+  snapshot: RollLifecycleSnapshot,
+): boolean {
+  if (snapshot.version === 1 || stored.lifecycle_version === 1) return true;
+  const incoming = snapshot.diagnostics;
+  return stored.handler_started_at === incoming.handlerStartedAt &&
+    stored.acknowledgement_prepared_at === incoming.acknowledgementPreparedAt &&
+    stored.acknowledgement_type === incoming.acknowledgementType &&
+    canFillDiagnostic(
+      stored.first_provider_attempt_at,
+      incoming.firstProviderAttemptAt,
+    ) &&
+    canFillDiagnostic(
+      stored.clatter_succeeded_at,
+      incoming.clatterSucceededAt,
+    ) &&
+    canFillDiagnostic(stored.discord_error_code, incoming.discordErrorCode) &&
+    canFillDiagnostic(stored.discord_operation, incoming.discordOperation) &&
+    canFillDiagnostic(
+      stored.original_response_message_id,
+      incoming.originalResponseMessageId,
+    ) &&
+    canFillDiagnostic(
+      stored.original_response_probe,
+      incoming.originalResponseProbe,
+    );
+}
+
 function sameSnapshot(
   stored: StoredLifecycle,
-  snapshot: RollLifecycleSnapshotV1,
+  snapshot: RollLifecycleSnapshot,
   contextJson: string,
 ): boolean {
   return stored.revision === snapshot.revision &&
@@ -103,12 +198,13 @@ function sameSnapshot(
     stored.http_status === snapshot.httpStatus &&
     stored.failure_phase === snapshot.failurePhase &&
     stored.failure_code === snapshot.failureCode &&
-    stored.context_json === contextJson;
+    stored.context_json === contextJson &&
+    sameDiagnostics(stored, snapshot);
 }
 
 function canAdvance(
   stored: StoredLifecycle,
-  snapshot: RollLifecycleSnapshotV1,
+  snapshot: RollLifecycleSnapshot,
 ): boolean {
   if (STATE_RANK[snapshot.state] < STATE_RANK[stored.state]) return false;
   if (
@@ -117,14 +213,16 @@ function canAdvance(
   ) {
     return false;
   }
-  return true;
+  return canAdvanceDiagnostics(stored, snapshot);
 }
 
 function workItem(row: StoredLifecycle & { interaction_id: string }): RollLifecycleAlertWorkItem {
   return {
+    version: row.lifecycle_version,
     interactionId: row.interaction_id,
     revision: row.revision,
     state: row.state,
+    receivedAt: row.received_at,
     deferredAt: row.deferred_at,
     acceptedAt: row.accepted_at,
     deliveryStartedAt: row.delivery_started_at,
@@ -134,6 +232,7 @@ function workItem(row: StoredLifecycle & { interaction_id: string }): RollLifecy
     failurePhase: row.failure_phase,
     failureCode: row.failure_code,
     alertMessageId: row.alert_message_id,
+    diagnostics: storedDiagnostics(row),
     context: parseRollLifecycleContext(JSON.parse(row.context_json)),
   };
 }
@@ -143,6 +242,7 @@ export class D1RollLifecycleRepository {
 
   async record(value: unknown): Promise<RecordRollLifecycleResult> {
     const snapshot = parseRollLifecycleSnapshot(value);
+    const diagnostics = snapshot.version === 2 ? snapshot.diagnostics : null;
     const contextJson = rollLifecycleContextJson(snapshot.context);
     const fingerprint = await fingerprintSnapshot(snapshot);
     const existing = await this.read(snapshot.interactionId);
@@ -151,16 +251,25 @@ export class D1RollLifecycleRepository {
         const result = await this.db
           .prepare(
             `INSERT INTO roll_lifecycle_receipts (
-               interaction_id, revision, request_fingerprint, command_name,
-               scope, guild_id, user_id, channel_id, received_at, deferred_at,
-               accepted_at, delivery_started_at, terminal_at, state, attempts,
-               http_status, failure_phase, failure_code, context_json,
-               updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               interaction_id, revision, lifecycle_version,
+               request_fingerprint, command_name, scope, guild_id, user_id,
+               channel_id, received_at, deferred_at, accepted_at,
+               delivery_started_at, terminal_at, state, attempts, http_status,
+               failure_phase, failure_code, handler_started_at,
+               acknowledgement_prepared_at, acknowledgement_type,
+               first_provider_attempt_at, clatter_succeeded_at,
+               discord_error_code, discord_operation,
+               original_response_message_id, original_response_probe,
+               context_json, updated_at
+             ) VALUES (
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+             )`,
           )
           .bind(
             snapshot.interactionId,
             snapshot.revision,
+            snapshot.version,
             fingerprint,
             snapshot.commandName,
             snapshot.scope,
@@ -177,6 +286,15 @@ export class D1RollLifecycleRepository {
             snapshot.httpStatus,
             snapshot.failurePhase,
             snapshot.failureCode,
+            diagnostics?.handlerStartedAt ?? null,
+            diagnostics?.acknowledgementPreparedAt ?? null,
+            diagnostics?.acknowledgementType ?? null,
+            diagnostics?.firstProviderAttemptAt ?? null,
+            diagnostics?.clatterSucceededAt ?? null,
+            diagnostics?.discordErrorCode ?? null,
+            diagnostics?.discordOperation ?? null,
+            diagnostics?.originalResponseMessageId ?? null,
+            diagnostics?.originalResponseProbe ?? null,
             contextJson,
             Math.max(
               snapshot.acceptedAt ?? snapshot.deferredAt,
@@ -205,9 +323,22 @@ export class D1RollLifecycleRepository {
     const update = await this.db
       .prepare(
         `UPDATE roll_lifecycle_receipts
-         SET revision = ?, accepted_at = ?, delivery_started_at = ?,
-             terminal_at = ?, state = ?, attempts = ?, http_status = ?,
-             failure_phase = ?, failure_code = ?,
+         SET revision = ?, lifecycle_version = MAX(lifecycle_version, ?),
+             accepted_at = ?, delivery_started_at = ?, terminal_at = ?,
+             state = ?, attempts = ?, http_status = ?, failure_phase = ?,
+             failure_code = ?,
+             handler_started_at = COALESCE(?, handler_started_at),
+             acknowledgement_prepared_at =
+               COALESCE(?, acknowledgement_prepared_at),
+             acknowledgement_type = COALESCE(?, acknowledgement_type),
+             first_provider_attempt_at =
+               COALESCE(?, first_provider_attempt_at),
+             clatter_succeeded_at = COALESCE(?, clatter_succeeded_at),
+             discord_error_code = COALESCE(?, discord_error_code),
+             discord_operation = COALESCE(?, discord_operation),
+             original_response_message_id =
+               COALESCE(?, original_response_message_id),
+             original_response_probe = COALESCE(?, original_response_probe),
              context_json = ?, updated_at = ?,
              alert_state = CASE
                WHEN alert_state = 'sent' AND ? IN ('delivered', 'failed')
@@ -218,6 +349,7 @@ export class D1RollLifecycleRepository {
       )
       .bind(
         snapshot.revision,
+        snapshot.version,
         snapshot.acceptedAt,
         snapshot.deliveryStartedAt,
         snapshot.terminalAt,
@@ -226,6 +358,15 @@ export class D1RollLifecycleRepository {
         snapshot.httpStatus,
         snapshot.failurePhase,
         snapshot.failureCode,
+        diagnostics?.handlerStartedAt ?? null,
+        diagnostics?.acknowledgementPreparedAt ?? null,
+        diagnostics?.acknowledgementType ?? null,
+        diagnostics?.firstProviderAttemptAt ?? null,
+        diagnostics?.clatterSucceededAt ?? null,
+        diagnostics?.discordErrorCode ?? null,
+        diagnostics?.discordOperation ?? null,
+        diagnostics?.originalResponseMessageId ?? null,
+        diagnostics?.originalResponseProbe ?? null,
         contextJson,
         Math.max(
           snapshot.acceptedAt ?? snapshot.deferredAt,
@@ -483,7 +624,7 @@ export class D1RollLifecycleRepository {
 
   private existingResult(
     stored: StoredLifecycle,
-    snapshot: RollLifecycleSnapshotV1,
+    snapshot: RollLifecycleSnapshot,
     fingerprint: string,
     contextJson: string,
   ): RecordRollLifecycleResult {
@@ -499,10 +640,16 @@ export class D1RollLifecycleRepository {
     return this.db
       .withSession("first-primary")
       .prepare(
-        `SELECT revision, request_fingerprint, command_name, scope,
-                received_at, deferred_at, accepted_at, delivery_started_at,
-                terminal_at, state, attempts, http_status, failure_phase,
-                failure_code, context_json, alert_state, alert_message_id
+        `SELECT revision, lifecycle_version, request_fingerprint, command_name,
+                scope, received_at, deferred_at, accepted_at,
+                delivery_started_at, terminal_at, state, attempts, http_status,
+                failure_phase, failure_code, handler_started_at,
+                acknowledgement_prepared_at, acknowledgement_type,
+                first_provider_attempt_at, clatter_succeeded_at,
+                discord_error_code, discord_operation,
+                original_response_message_id,
+                original_response_probe, context_json, alert_state,
+                alert_message_id
          FROM roll_lifecycle_receipts WHERE interaction_id = ?`,
       )
       .bind(interactionId)
@@ -515,11 +662,15 @@ export class D1RollLifecycleRepository {
     return this.db
       .withSession("first-primary")
       .prepare(
-        `SELECT interaction_id, revision, request_fingerprint, command_name,
-                scope, received_at, deferred_at, accepted_at,
-                delivery_started_at, terminal_at, state, attempts, http_status,
-                failure_phase, failure_code, context_json, alert_state,
-                alert_message_id
+        `SELECT interaction_id, revision, lifecycle_version,
+                request_fingerprint, command_name, scope, received_at,
+                deferred_at, accepted_at, delivery_started_at, terminal_at,
+                state, attempts, http_status, failure_phase, failure_code,
+                handler_started_at, acknowledgement_prepared_at,
+                acknowledgement_type, first_provider_attempt_at,
+                clatter_succeeded_at, discord_error_code, discord_operation,
+                original_response_message_id, original_response_probe,
+                context_json, alert_state, alert_message_id
          FROM roll_lifecycle_receipts WHERE interaction_id = ?`,
       )
       .bind(interactionId)

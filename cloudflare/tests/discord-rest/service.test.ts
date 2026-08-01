@@ -9,9 +9,11 @@ import {
   captureAudienceSnapshot,
   createGameDetectionAnnouncementV1,
   createRollLifecycleAlertV1,
+  createRollLifecycleAlertV2,
   deliverRollLogV1,
   deliverWebRoll,
   fetchPublicStats,
+  inspectDiscordMessageExistence,
   inspectMembership,
   inspectRollerGuild,
   listCurrentGuildIds,
@@ -26,6 +28,7 @@ import {
   resolveGameDetectionChannelContextV1,
   sendRollHelper,
   updateRollLifecycleAlertV1,
+  updateRollLifecycleAlertV2,
 } from "../../workers/discord-rest/src";
 
 const guildId = "100000000000000001";
@@ -144,6 +147,26 @@ function lifecycleAlert(alertMessageId: string | null = null) {
       renderVersion: 4,
       rendererRevision: "canvaskit-v4-r8",
       destinationPayload: null,
+    },
+  };
+}
+
+function lifecycleAlertV2(alertMessageId: string | null = null) {
+  return {
+    ...lifecycleAlert(alertMessageId),
+    version: 2 as const,
+    receivedAt: 1_749_999_999_980,
+    diagnostics: {
+      handlerStartedAt: 1_749_999_999_985,
+      acknowledgementPreparedAt: 1_749_999_999_995,
+      acknowledgementType: 5 as const,
+      firstProviderAttemptAt: 1_750_000_000_010,
+      clatterSucceededAt: 1_750_000_000_020,
+      discordErrorCode: alertMessageId === null ? 10_015 : null,
+      discordOperation:
+        alertMessageId === null ? "edit-original-result" as const : null,
+      originalResponseMessageId: "100000000000000087",
+      originalResponseProbe: alertMessageId === null ? "missing" as const : null,
     },
   };
 }
@@ -304,6 +327,85 @@ describe("Discord REST service", () => {
       messageId: "100000000000000088",
       httpStatus: 200,
     });
+  });
+
+  it("creates a V2 alert with safe timing and destination diagnostics", async () => {
+    const discordFetch = vi.fn(async (request: Request) => {
+      const form = await request.formData();
+      const payloadValue = form.get("payload_json");
+      const file = form.get("files[0]");
+      if (typeof payloadValue !== "string" || !(file instanceof File)) {
+        throw new Error("Lifecycle alert multipart body is invalid");
+      }
+      expect(payloadValue).toContain("Created → handler 5 ms");
+      if (request.method === "POST") {
+        expect(payloadValue).toContain("Discord 10015");
+        expect(payloadValue).toContain("original message missing");
+      } else {
+        expect(payloadValue).toContain("No Discord error code");
+      }
+      expect(await file.text()).not.toMatch(/fixture\.interaction\.token|authorization/i);
+      return Response.json({ id: "100000000000000088" });
+    });
+
+    await expect(
+      createRollLifecycleAlertV2(env, lifecycleAlertV2(), discordFetch),
+    ).resolves.toMatchObject({ status: "delivered" });
+    await expect(
+      updateRollLifecycleAlertV2(
+        env,
+        lifecycleAlertV2("100000000000000088"),
+        discordFetch,
+      ),
+    ).resolves.toMatchObject({ status: "delivered" });
+  });
+
+  it.each([
+    [200, null, "exists"],
+    [403, null, "inaccessible"],
+    [404, 10_008, "missing"],
+    [404, 10_003, "inaccessible"],
+    [429, null, "probe-failed"],
+  ] as const)(
+    "classifies a read-only message probe (%s)",
+    async (status, code, outcome) => {
+      const discordFetch = vi.fn((request: Request) => {
+        expect(request.method).toBe("GET");
+        expect(request.url).toBe(
+          "https://discord.com/api/v10/channels/100000000000000010/messages/100000000000000087",
+        );
+        return Promise.resolve(
+          code === null
+            ? new Response(null, { status })
+            : Response.json({ code }, { status }),
+        );
+      });
+      await expect(inspectDiscordMessageExistence(
+        env,
+        {
+          channelId: "100000000000000010",
+          messageId: "100000000000000087",
+        },
+        discordFetch,
+      )).resolves.toEqual({ outcome });
+    },
+  );
+
+  it("bounds a malformed message-probe response", async () => {
+    const discordFetch = vi.fn(() => Promise.resolve(
+      new Response(JSON.stringify({ code: 10_008, padding: "x".repeat(9_000) }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    await expect(inspectDiscordMessageExistence(
+      env,
+      {
+        channelId: "100000000000000010",
+        messageId: "100000000000000087",
+      },
+      discordFetch,
+    )).resolves.toEqual({ outcome: "probe-failed" });
   });
 
   it("edits the original lifecycle alert when delivery recovers", async () => {

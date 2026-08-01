@@ -20,7 +20,7 @@ import {
   type DiscordRollChannelType,
   type GameDetectionAnnouncementV1,
   type GameDetectionChannelContextResultV1,
-  type RollLifecycleAlertV1,
+  type RollLifecycleAlert,
   type RollLoggingContext,
   type RollLogArtifactV1,
   type RollLogDisplayContextV1,
@@ -50,6 +50,8 @@ export type DiscordRestBindings = Omit<
 };
 
 const DISCORD_API = "https://discord.com/api/v10";
+const MESSAGE_PROBE_TIMEOUT_MS = 1_000;
+const MAX_MESSAGE_PROBE_BODY_BYTES = 8 * 1_024;
 const DICE_WITCH_ADMIN_ROLE = "Dice Witch Admin";
 const ADMINISTRATOR_PERMISSION = 1n << 3n;
 const VIEW_CHANNEL_PERMISSION = 1n << 10n;
@@ -169,6 +171,55 @@ type RequestFetch = (request: Request) => Promise<Response>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  return actual.length === expected.length &&
+    actual.every((key, index) => key === expected[index]);
+}
+
+async function readMessageProbeError(response: Response): Promise<unknown> {
+  if (response.body === null) return null;
+  const contentLength = response.headers.get("content-length");
+  if (
+    contentLength !== null &&
+    (!/^(0|[1-9][0-9]*)$/.test(contentLength) ||
+      Number(contentLength) > MAX_MESSAGE_PROBE_BODY_BYTES)
+  ) {
+    return null;
+  }
+  const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      byteLength += chunk.value.byteLength;
+      if (byteLength > MAX_MESSAGE_PROBE_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(chunk.value);
+    }
+  } catch {
+    return null;
+  }
+  const body = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(body)) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 function isAdvancingGuildCursor(
@@ -2126,7 +2177,7 @@ export async function createGameDetectionAnnouncementV1(
 }
 
 function lifecycleAlertPresentation(
-  state: RollLifecycleAlertV1["state"],
+  state: RollLifecycleAlert["state"],
 ): { label: string; color: number } {
   switch (state) {
     case "delivered":
@@ -2138,7 +2189,37 @@ function lifecycleAlertPresentation(
   }
 }
 
-function lifecycleAlertPayload(alert: RollLifecycleAlertV1) {
+function lifecycleDiagnosticFields(alert: RollLifecycleAlert) {
+  if (alert.version === 1) return [];
+  const { diagnostics } = alert;
+  const acknowledgementAge =
+    diagnostics.acknowledgementPreparedAt - alert.receivedAt;
+  const providerAttempt = diagnostics.firstProviderAttemptAt === null
+    ? "not observed"
+    : `${diagnostics.firstProviderAttemptAt - alert.receivedAt} ms after creation`;
+  const clatter = diagnostics.clatterSucceededAt === null
+    ? "not observed"
+    : `${diagnostics.clatterSucceededAt - alert.receivedAt} ms after creation`;
+  const destinationError = diagnostics.discordErrorCode === null
+    ? "No Discord error code"
+    : `Discord ${diagnostics.discordErrorCode}`;
+  const messageState = diagnostics.originalResponseProbe ??
+    (diagnostics.originalResponseMessageId === null ? "not observed" : "observed");
+  return [
+    {
+      name: "Interaction timing",
+      value: `Created → handler ${diagnostics.handlerStartedAt - alert.receivedAt} ms · handler → acknowledgement ${diagnostics.acknowledgementPreparedAt - diagnostics.handlerStartedAt} ms · total ${acknowledgementAge} ms (${acknowledgementAge >= 3_000 ? "prepared after 3 s" : "prepared before 3 s"}; edge delivery requires invocation logs) · type ${diagnostics.acknowledgementType}`,
+      inline: false,
+    },
+    {
+      name: "Discord destination",
+      value: `${destinationError} · ${diagnostics.discordOperation ?? "no failed operation"} · provider attempt ${providerAttempt} · clatter ${clatter} · original message ${messageState}`,
+      inline: false,
+    },
+  ];
+}
+
+function lifecycleAlertPayload(alert: RollLifecycleAlert) {
   const { context } = alert;
   const presentation = lifecycleAlertPresentation(alert.state);
   const resultSummary = JSON.stringify(context.outcome);
@@ -2184,6 +2265,7 @@ function lifecycleAlertPayload(alert: RollLifecycleAlertV1) {
             value: resultSummary.slice(0, 1_024),
             inline: false,
           },
+          ...lifecycleDiagnosticFields(alert),
         ],
         footer: {
           text: `${alert.acceptedAt === null ? "Deferred" : "Accepted"} ${new Date(alert.acceptedAt ?? alert.deferredAt).toISOString()} · HTTP ${alert.httpStatus === null ? "n/a" : String(alert.httpStatus)}`,
@@ -2193,7 +2275,7 @@ function lifecycleAlertPayload(alert: RollLifecycleAlertV1) {
   };
 }
 
-function lifecycleAlertForm(alert: RollLifecycleAlertV1, create: boolean): FormData {
+function lifecycleAlertForm(alert: RollLifecycleAlert, create: boolean): FormData {
   const filename = `roll-lifecycle-${alert.interactionId}.json`;
   const payload = {
     ...lifecycleAlertPayload(alert),
@@ -2296,6 +2378,75 @@ export function updateRollLifecycleAlertV1(
   discordFetch?: RequestFetch,
 ): Promise<RollLifecycleAlertDeliveryResult> {
   return deliverRollLifecycleAlert(env, value, "update", discordFetch);
+}
+
+export function createRollLifecycleAlertV2(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
+  value: unknown,
+  discordFetch?: RequestFetch,
+): Promise<RollLifecycleAlertDeliveryResult> {
+  return deliverRollLifecycleAlert(env, value, "create", discordFetch);
+}
+
+export function updateRollLifecycleAlertV2(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
+  value: unknown,
+  discordFetch?: RequestFetch,
+): Promise<RollLifecycleAlertDeliveryResult> {
+  return deliverRollLifecycleAlert(env, value, "update", discordFetch);
+}
+
+export type DiscordMessageExistenceResult = {
+  outcome: "exists" | "missing" | "inaccessible" | "probe-failed";
+};
+
+export async function inspectDiscordMessageExistence(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
+  value: unknown,
+  discordFetch: RequestFetch = (request) => fetch(request),
+): Promise<DiscordMessageExistenceResult> {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["channelId", "messageId"]) ||
+    typeof value.channelId !== "string" ||
+    !SNOWFLAKE.test(value.channelId) ||
+    typeof value.messageId !== "string" ||
+    !SNOWFLAKE.test(value.messageId)
+  ) {
+    throw new Error("Discord message existence request is invalid");
+  }
+  let response: Response;
+  try {
+    response = await discordFetch(
+      new Request(
+        `${DISCORD_API}/channels/${value.channelId}/messages/${value.messageId}`,
+        {
+          headers: {
+            authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+            "user-agent": "Dice-Witch",
+          },
+          signal: AbortSignal.timeout(MESSAGE_PROBE_TIMEOUT_MS),
+        },
+      ),
+    );
+  } catch {
+    return { outcome: "probe-failed" };
+  }
+  if (response.ok) return { outcome: "exists" };
+  if (response.status === 403) return { outcome: "inaccessible" };
+  if (response.status !== 404) return { outcome: "probe-failed" };
+  try {
+    const error = await readMessageProbeError(response);
+    if (isRecord(error) && error.code === 10_008) {
+      return { outcome: "missing" };
+    }
+    if (isRecord(error) && (error.code === 10_003 || error.code === 50_001)) {
+      return { outcome: "inaccessible" };
+    }
+  } catch {
+    // A malformed provider response is inconclusive.
+  }
+  return { outcome: "probe-failed" };
 }
 
 export async function inspectMembership(
@@ -2454,6 +2605,14 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     return updateRollLifecycleAlertV1(await this.botEnv(), input);
   }
 
+  async createRollLifecycleAlertV2(input: unknown) {
+    return createRollLifecycleAlertV2(await this.botEnv(), input);
+  }
+
+  async updateRollLifecycleAlertV2(input: unknown) {
+    return updateRollLifecycleAlertV2(await this.botEnv(), input);
+  }
+
   async deliverWebRoll(input: Parameters<typeof deliverWebRoll>[1]) {
     return deliverWebRoll(await this.botEnv(), input);
   }
@@ -2480,6 +2639,21 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     userId: string,
   ): Promise<RollerGuildInspection> {
     return inspectRollerGuild(await this.botEnv(), guildId, userId);
+  }
+}
+
+export class DiscordMessageProbeService extends WorkerEntrypoint<DiscordRestBindings> {
+  async inspectDiscordMessageExistence(input: unknown) {
+    return inspectDiscordMessageExistence(
+      {
+        ...this.env,
+        DISCORD_BOT_TOKEN: await readWorkerSecret(
+          this.env.DISCORD_BOT_TOKEN,
+          "DISCORD_BOT_TOKEN",
+        ),
+      },
+      input,
+    );
   }
 }
 
