@@ -18,6 +18,7 @@ function promptFor(request: NarrationGameRankingRequestV1) {
 const PERCENTILE_REQUEST = {
   version: 1,
   features: [
+    { kind: "observed-roll-expression", occurrences: 2 },
     { kind: "single-percentile-roll", occurrences: 2 },
     { kind: "percentile-roll-under-threshold", occurrences: 2 },
   ],
@@ -271,9 +272,9 @@ describe("prepareNarrationGameRankingV1", () => {
         request: {
           version: 1,
           features: [
-            { kind: "exploding-step-die", occurrences: 2 },
-            { kind: "pathfinder-multiple-attack-sequence", occurrences: 1 },
-            { kind: "percentile-roll-under-threshold", occurrences: 2 },
+            { kind: "observed-roll-expression", occurrences: 4 },
+            { kind: "exploding-step-die", occurrences: 4 },
+            { kind: "percentile-roll-under-threshold", occurrences: 4 },
           ],
         } as const,
         candidateState: "candidate-set",
@@ -349,6 +350,6 @@ describe("prepareNarrationGameRankingV1", () => {
         value.id,
       ).toBeLessThanOrEqual(MAX_NARRATION_GAME_RANKING_PACKET_BYTES);
     }
-    expect(eligiblePackets).toBe(7);
+    expect(eligiblePackets).toBe(8);
   });
 });

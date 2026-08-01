@@ -46,14 +46,17 @@ const D20_ROLL_UNDER = /^(?:1)?d20(?:<=|<)\d+$/u;
 const TWO_D6_WITH_MODIFIER = /^2d6[+-]\d+$/u;
 const TWO_D10_WITH_MODIFIER = /^2d10(?:[+-]\d+)?$/u;
 const THREE_D6 = /^3d6(?:[+-]\d+)?$/u;
-const THREE_D20 = /^3d20(?:[+-]\d+)?$/u;
+// The Dark Eye compares three separate d20 results; one shared modifier is not that check.
+const THREE_D20 = /^3d20$/u;
 const TWO_D12_WITH_MODIFIER = /^2d12(?:[+-]\d+)?$/u;
 const PLAIN_D6_POOL = /^(?:[2-9]|[1-9]\d+)d6$/u;
 const PLAIN_D10_POOL = /^(?:[2-9]|[1-9]\d+)d10$/u;
 const TWO_D20_ROLL_UNDER = /^2d20(?:<=|<)\d+$/u;
 const D20_WITH_ACCURACY_D6 = /^\{(?=[^}]*(?:1)?d20)(?=[^}]*(?:[2-9]|[1-9]\d+)d6(?:kh1|k1))[^}]+\}$/u;
 const D20_WITH_PLOT_D6 = /^\{(?:(?:1)?d20,(?:1)?d6|(?:1)?d6,(?:1)?d20)\}$/u;
-const DCC_DIE = /^(?:1)?d(?:3|5|7|14|16|24|30)$/u;
+const DCC_DIE_TERM = /(?:^|[^a-z0-9_])(?:\d*)d(3|5|7|14|16|24|30)(?=[^0-9]|$)/gu;
+// A d3 is common outside DCC, so diversity requires the rarer chain sizes.
+const RARE_DCC_DIE_SIDES = new Set(["5", "7", "14", "16", "24", "30"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -122,10 +125,25 @@ function addObservation(
   observations.set(kind, (observations.get(kind) ?? 0) + occurrences);
 }
 
+function dccDieSides(notation: string): ReadonlySet<string> {
+  const sides = new Set<string>();
+  for (const match of notation.matchAll(DCC_DIE_TERM)) {
+    const side = match[1];
+    if (side !== undefined) sides.add(side);
+  }
+  return sides;
+}
+
+type DccDiceChainObservation = {
+  rareSides: Set<string>;
+  rareExpressionCount: number;
+};
+
 function observeNotation(
   notation: string,
   repetitions: number,
   observations: Map<NarrationGameFeatureV1, number>,
+  dccObservation: DccDiceChainObservation,
 ): void {
   if (ABILITY_SCORE_ROLL.test(notation)) {
     addObservation(
@@ -144,7 +162,7 @@ function observeNotation(
     addObservation(observations, "exploding-step-die", repetitions);
   }
   if (EXPLODING_TRAIT_AND_WILD_DIE.test(notation)) {
-    addObservation(observations, "exploding-step-die", repetitions * 2);
+    addObservation(observations, "exploding-step-die", repetitions);
     addObservation(
       observations,
       "exploding-trait-plus-wild-d6-keep-highest",
@@ -210,8 +228,18 @@ function observeNotation(
   if (D20_WITH_PLOT_D6.test(notation)) {
     addObservation(observations, "d20-with-plot-d6", repetitions);
   }
-  if (DCC_DIE.test(notation)) {
+  const observedDccSides = dccDieSides(notation);
+  if (observedDccSides.size > 0) {
     addObservation(observations, "dcc-dice-chain", repetitions);
+    let containsRareDccDie = false;
+    for (const side of observedDccSides) {
+      if (!RARE_DCC_DIE_SIDES.has(side)) continue;
+      containsRareDccDie = true;
+      dccObservation.rareSides.add(side);
+    }
+    if (containsRareDccDie) {
+      dccObservation.rareExpressionCount += repetitions;
+    }
   }
   if (isMixedStepDicePool(notation)) {
     addObservation(observations, "mixed-step-dice-pool", repetitions);
@@ -246,15 +274,32 @@ export function extractNarrationGameFeaturesV1(
   }
 
   const observations = new Map<NarrationGameFeatureV1, number>();
+  const dccObservation: DccDiceChainObservation = {
+    rareSides: new Set(),
+    rareExpressionCount: 0,
+  };
   for (const value of request.rolls) {
     const roll = validateRoll(value);
     for (const value of roll.notation) {
+      addObservation(
+        observations,
+        "observed-roll-expression",
+        roll.repetitions,
+      );
       observeNotation(
         normalizeNotation(value),
         roll.repetitions,
         observations,
+        dccObservation,
       );
     }
+  }
+
+  if (
+    dccObservation.rareSides.size >= 2 &&
+    dccObservation.rareExpressionCount >= 2
+  ) {
+    addObservation(observations, "dcc-diverse-dice-chain", 1);
   }
 
   return {

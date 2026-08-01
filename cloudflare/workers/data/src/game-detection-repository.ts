@@ -912,6 +912,8 @@ export class D1GameDetectionRepository {
       | Readonly<{
           status: "accepted";
           value: NarrationGameRankingResponseV1;
+          modelId: string;
+          promptRevision: string;
         }>
       | Readonly<{
           status: "rejected" | "failed";
@@ -951,6 +953,13 @@ export class D1GameDetectionRepository {
       );
       return;
     }
+
+    const modelId = requiredString(outcome.modelId, "model ID", 100);
+    const promptRevision = requiredString(
+      outcome.promptRevision,
+      "prompt revision",
+      100,
+    );
 
     if (outcome.value.disposition === "abstain") {
       await this.classifyPendingUnresolved(
@@ -1033,8 +1042,8 @@ export class D1GameDetectionRepository {
         job.candidateSignature,
         JSON.stringify(assessment.evidenceCitations),
         completedAt,
-        "@cf/zai-org/glm-5.2",
-        "dice-witch-game-detection-v2",
+        modelId,
+        promptRevision,
         completedAt,
         job.episodeStartedAt,
       ).run();

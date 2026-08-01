@@ -8,7 +8,10 @@ import { buildNarrationGameRankingExpectationV1 } from "./fixtures/narration-gam
 
 const UNIQUE_PLAUSIBLE_REQUEST = {
   version: 1,
-  features: [{ kind: "exploding-step-die", occurrences: 2 }],
+  features: [
+    { kind: "observed-roll-expression", occurrences: 2 },
+    { kind: "exploding-step-die", occurrences: 2 },
+  ],
 } as const satisfies NarrationGameRankingRequestV1;
 
 function promptFor(

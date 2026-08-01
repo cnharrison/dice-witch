@@ -38,18 +38,18 @@ describe("narration game-ranking calibration v1", () => {
     });
   });
 
-  it("partitions the reviewed corpus into six bounded selections and one abstention", () => {
+  it("partitions the reviewed corpus into seven bounded selections and one abstention", () => {
     const cases = promptReadyCases();
     const expectations = cases.map(({ request }) =>
       buildNarrationGameRankingExpectationV1(request),
     );
 
-    expect(cases).toHaveLength(7);
+    expect(cases).toHaveLength(8);
     expect(
       expectations.filter(
         ({ expectedDisposition }) => expectedDisposition === "select",
       ),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
     expect(
       expectations.filter(
         ({ expectedDisposition }) => expectedDisposition === "abstain",
@@ -68,7 +68,7 @@ describe("narration game-ranking calibration v1", () => {
     ).toBeNull();
   });
 
-  it("scores the seven reference decisions and eleven candidate tiers exactly", () => {
+  it("scores the eight reference decisions and thirteen candidate tiers exactly", () => {
     const scores = promptReadyCases().map(({ request }) =>
       scoreNarrationGameRankingResponseV1(
         buildNarrationGameRankingReferenceResponseV1(request),
@@ -79,14 +79,14 @@ describe("narration game-ranking calibration v1", () => {
 
     expect(summarizeNarrationGameRankingScoresV1(scores)).toEqual({
       version: 1,
-      totalResponses: 7,
-      validResponses: 7,
+      totalResponses: 8,
+      validResponses: 8,
       invalidResponses: 0,
-      correctDecisions: 7,
+      correctDecisions: 8,
       incorrectDecisions: 0,
-      tierAssessments: 11,
+      tierAssessments: 13,
       tierAlignment: {
-        aligned: 11,
+        aligned: 13,
         underTarget: 0,
         overTarget: 0,
       },
