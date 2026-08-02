@@ -173,8 +173,6 @@ export async function openSaveRollModal(
   return buildSaveRollModalResponse(interaction.source, {
     defaultName: state.defaultName,
     nameConflict: state.nameConflict,
-    sourceKind: resolved.intent.source,
-    sourceTitle: resolved.intent.title,
   });
 }
 

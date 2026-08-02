@@ -117,40 +117,40 @@ describe("Save roll interaction contract", () => {
       },
     }, { applicationId: baseInteraction.application_id })).toBeNull();
 
-    expect(parseSaveRollInteraction({
-      ...baseInteraction,
-      type: 5,
-      data: {
-        custom_id: "save-roll:v2:d:1400000000000000000:submit",
-        components: [
-          {
-            type: 18,
-            component: {
-              type: 4,
-              custom_id: "save-roll-name",
-              value: "Attack",
+    for (const titleMode of ["custom", "keep"]) {
+      expect(parseSaveRollInteraction({
+        ...baseInteraction,
+        type: 5,
+        data: {
+          custom_id: "save-roll:v2:d:1400000000000000000:submit",
+          components: [
+            {
+              type: 18,
+              component: {
+                type: 4,
+                custom_id: "save-roll-name",
+                value: "Attack",
+              },
             },
-          },
-          {
-            type: 18,
-            component: {
-              type: 3,
-              custom_id: "save-roll-title-mode",
-              values: ["custom"],
+            {
+              type: 18,
+              component: {
+                type: 3,
+                custom_id: "save-roll-title-mode",
+                values: [titleMode],
+              },
             },
-          },
-        ],
-      },
-    }, { applicationId: baseInteraction.application_id })).toBeNull();
+          ],
+        },
+      }, { applicationId: baseInteraction.application_id })).toBeNull();
+    }
   });
 
-  it("builds and parses the title-aware Discord modal", () => {
+  it("builds and parses the simplified Discord modal", () => {
     expect(
       buildSaveRollModalResponse(source, {
         defaultName: "Initiative",
         nameConflict: false,
-        sourceKind: "fresh",
-        sourceTitle: "Current initiative",
       }),
     ).toEqual({
       type: 9,
@@ -160,8 +160,7 @@ describe("Save roll interaction contract", () => {
         components: [
           {
             type: 18,
-            label: "Personal library roll name",
-            description: "You can edit this name before saving.",
+            label: "Name",
             component: {
               type: 4,
               custom_id: "save-roll-name",
@@ -174,8 +173,7 @@ describe("Save roll interaction contract", () => {
           },
           {
             type: 18,
-            label: "Roll title",
-            description: "Choose how the saved roll should be titled.",
+            label: "Displayed rolled title",
             component: {
               type: 3,
               custom_id: "save-roll-title-mode",
@@ -183,9 +181,8 @@ describe("Save roll interaction contract", () => {
               min_values: 1,
               max_values: 1,
               options: [
-                { label: "Keep current title", value: "keep", default: true },
-                { label: "Use name above as title", value: "name" },
-                { label: "No roll title", value: "none" },
+                { label: "Use name above as title", value: "name", default: true },
+                { label: "No title", value: "none" },
               ],
             },
           },
@@ -257,13 +254,10 @@ describe("Save roll interaction contract", () => {
     const response = buildSaveRollModalResponse(source, {
       defaultName: null,
       nameConflict: true,
-      sourceKind: "fresh",
-      sourceTitle: null,
     });
 
     expect(response.data.components[0]).toMatchObject({
       type: 18,
-      description: "That name is already used. Choose a different name.",
       component: {
         type: 4,
         placeholder: "Choose a different name",
@@ -271,23 +265,11 @@ describe("Save roll interaction contract", () => {
     });
     const label = response.data.components[0];
     if (label === undefined) throw new Error("Save roll modal Label is missing");
+    expect(label).not.toHaveProperty("description");
     expect(label.component).not.toHaveProperty("value");
     const titleMode = response.data.components[1]?.component;
     if (titleMode?.type !== 3) throw new Error("Expected title mode select");
     expect(titleMode.options[0]).toMatchObject({ value: "name", default: true });
-
-    const libraryModal = buildSaveRollModalResponse(source, {
-      defaultName: "Ambush",
-      nameConflict: false,
-      sourceKind: "library",
-      sourceTitle: null,
-    });
-    const libraryTitleMode = libraryModal.data.components[1]?.component;
-    if (libraryTitleMode?.type !== 3) throw new Error("Expected title mode select");
-    expect(libraryTitleMode.options.at(-1)).toMatchObject({
-      value: "none",
-      default: true,
-    });
   });
 
   it("escapes user-controlled names in private errors", () => {
@@ -449,7 +431,7 @@ describe("Save roll interaction contract", () => {
     });
     const titleMode = response.data.components[1]?.component;
     if (titleMode?.type !== 3) throw new Error("Expected title mode select");
-    expect(titleMode.options[0]).toMatchObject({ value: "keep", default: true });
+    expect(titleMode.options[0]).toMatchObject({ value: "name", default: true });
   });
 
   it("returns the existing copy name and Library link before opening a modal", async () => {
@@ -581,7 +563,7 @@ describe("Save roll interaction contract", () => {
       ...baseInteraction,
       type: 5,
       data: {
-        custom_id: "save-roll:v2:d:1400000000000000000:submit",
+        custom_id: "save-roll:v1:d:1400000000000000000:submit",
         components: [
           {
             type: 18,
@@ -589,14 +571,6 @@ describe("Save roll interaction contract", () => {
               type: 4,
               custom_id: "save-roll-name",
               value: "My attack",
-            },
-          },
-          {
-            type: 18,
-            component: {
-              type: 3,
-              custom_id: "save-roll-title-mode",
-              values: ["keep"],
             },
           },
         ],

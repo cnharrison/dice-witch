@@ -16,7 +16,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const SAVE_ROLL_CUSTOM_ID = /^save-roll:v([12]):([dw]):([^:]+)(?::(retry|submit))?$/;
 const SAVE_ROLL_NAME_CUSTOM_ID = "save-roll-name";
 const SAVE_ROLL_TITLE_MODE_CUSTOM_ID = "save-roll-title-mode";
-const SAVE_ROLL_TITLE_MODES = ["keep", "name", "none"] as const;
+const SAVE_ROLL_TITLE_MODES = ["name", "none"] as const;
 const MAX_TITLE_LENGTH = 256;
 
 export const ROLL_SAVE_INTENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
@@ -53,7 +53,7 @@ export type ParsedSaveRollInteractionV1 = {
   source: SaveRollSourceV1;
   retry: boolean;
   name: string | null;
-  titleMode: SaveRollTitleMode | null;
+  titleMode: SaveRollTitleMode | "keep" | null;
   interactionId: string;
   applicationId: string;
   token: string;
@@ -95,7 +95,6 @@ type SaveRollModalResponseV2 = {
     components: Array<{
       type: 18;
       label: string;
-      description: string;
       component: DiscordModalTextInput | DiscordModalStringSelect;
     }>;
   };
@@ -394,22 +393,11 @@ export function saveRollIntentIdentity(intent: SaveRollIntent): string {
   });
 }
 
-function defaultSaveRollTitleMode(
-  sourceKind: "fresh" | "library",
-  sourceTitle: string | null,
-): "keep" | "name" | "none" {
-  if (sourceTitle !== null) return "keep";
-  if (sourceKind === "fresh") return "name";
-  return "none";
-}
-
 export function buildSaveRollModalResponse(
   source: SaveRollSourceV1,
   options: {
     defaultName: string | null;
     nameConflict: boolean;
-    sourceKind: "fresh" | "library";
-    sourceTitle: string | null;
   },
 ): SaveRollModalResponseV2 {
   const nameInput: DiscordModalTextInput = {
@@ -425,31 +413,6 @@ export function buildSaveRollModalResponse(
     ? "Choose a different name"
     : "Name this roll";
 
-  const defaultTitleMode = defaultSaveRollTitleMode(
-    options.sourceKind,
-    options.sourceTitle,
-  );
-  const titleOptions: DiscordModalStringSelect["options"] = [];
-  if (options.sourceTitle !== null) {
-    titleOptions.push({
-      label: "Keep current title",
-      value: "keep",
-      ...(defaultTitleMode === "keep" ? { default: true as const } : {}),
-    });
-  }
-  titleOptions.push(
-    {
-      label: "Use name above as title",
-      value: "name",
-      ...(defaultTitleMode === "name" ? { default: true as const } : {}),
-    },
-    {
-      label: "No roll title",
-      value: "none",
-      ...(defaultTitleMode === "none" ? { default: true as const } : {}),
-    },
-  );
-
   return {
     type: 9,
     data: {
@@ -458,23 +421,29 @@ export function buildSaveRollModalResponse(
       components: [
         {
           type: 18,
-          label: "Personal library roll name",
-          description: options.nameConflict
-            ? "That name is already used. Choose a different name."
-            : "You can edit this name before saving.",
+          label: "Name",
           component: nameInput,
         },
         {
           type: 18,
-          label: "Roll title",
-          description: "Choose how the saved roll should be titled.",
+          label: "Displayed rolled title",
           component: {
             type: 3,
             custom_id: SAVE_ROLL_TITLE_MODE_CUSTOM_ID,
             required: true,
             min_values: 1,
             max_values: 1,
-            options: titleOptions,
+            options: [
+              {
+                label: "Use name above as title",
+                value: "name",
+                default: true,
+              },
+              {
+                label: "No title",
+                value: "none",
+              },
+            ],
           },
         },
       ],
