@@ -3,8 +3,12 @@ import {
   LOG_WORK_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   MAX_LOG_ARTIFACT_PNG_BYTES,
+  buildSaveRollCustomId,
+  parseSaveRollIntentV1,
+  ROLL_SAVE_INTENT_RETENTION_MS,
   validateRollLogArtifact,
-  type RollLogArtifactV1,
+  type RollLogArtifactV2,
+  type SaveRollIntentV1,
 } from "../../../packages/discord-contracts/src";
 import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
 import {
@@ -271,6 +275,7 @@ function serializeResult(result: WebRollResult & { status: "rolled" }): string {
     discord: {
       payload: result.discord.payload,
       clatter: result.discord.clatter,
+      resultText: result.discord.resultText,
       filename: result.discord.filename,
     },
   };
@@ -294,6 +299,9 @@ function restoreResult(
     !isRecord(parsed.discord) ||
     typeof parsed.discord.filename !== "string" ||
     typeof parsed.discord.clatter !== "string" ||
+    typeof parsed.discord.resultText !== "string" ||
+    parsed.discord.resultText.length < 1 ||
+    parsed.discord.resultText.length > 4_096 ||
     !Number.isSafeInteger(parsed.renderedImage.width) ||
     Number(parsed.renderedImage.width) < 1 ||
     !Number.isSafeInteger(parsed.renderedImage.height) ||
@@ -319,9 +327,9 @@ function sourceLogArtifact(
   rollId: string,
   result: WebRollResult & { status: "rolled" },
   destinationDeliveredAt: number,
-): RollLogArtifactV1 {
+): RollLogArtifactV2 {
   const artifact = validateRollLogArtifact({
-    version: 1,
+    version: 2,
     rollId,
     source: "web",
     notation: input.notation,
@@ -330,6 +338,18 @@ function sourceLogArtifact(
     channelId: input.channelId,
     context: null,
     destinationDeliveredAt,
+    presentation: {
+      title: input.title,
+      result: result.discord.resultText,
+      savedRoll:
+        input.savedRoll === undefined
+          ? null
+          : {
+              scope:
+                input.savedRoll.scope === "personal" ? "personal" : "server",
+              name: input.savedRoll.name,
+            },
+    },
     payload: result.discord.payload,
     image: {
       status: "available",
@@ -337,6 +357,9 @@ function sourceLogArtifact(
       png: result.discord.png,
     },
   });
+  if (artifact.version !== 2) {
+    throw new Error("Web roll log artifact version is invalid");
+  }
   return {
     version: artifact.version,
     rollId: artifact.rollId,
@@ -347,6 +370,7 @@ function sourceLogArtifact(
     channelId: artifact.channelId,
     context: artifact.context,
     destinationDeliveredAt: artifact.destinationDeliveredAt,
+    presentation: artifact.presentation,
     payload: artifact.payload,
     image: artifact.image,
   };
@@ -358,6 +382,11 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
   constructor(ctx: DurableObjectState, env: RollBindings) {
     super(ctx, env);
     this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS save_roll_intent (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        intent_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS web_delivery (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         identity_sha256 TEXT NOT NULL,
@@ -442,6 +471,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     input: WebDeliveryInput,
     row: StoredWebDeliveryRow,
   ): Promise<WebDeliveryExecutionResult> {
+    const saveRollEligible = input.savedRoll !== undefined || input.title !== null;
     const roll = await executeWebRoll(
       {
         notation: input.notation,
@@ -450,6 +480,15 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
         title: input.title,
         userId: input.userId,
         guildId: input.guildId,
+        ...(saveRollEligible
+          ? {
+              saveRollCustomId: buildSaveRollCustomId({
+                kind: "web",
+                id: input.deliveryId,
+                userId: input.userId,
+              }),
+            }
+          : {}),
         ...(input.savedRoll === undefined ? {} : { savedRoll: input.savedRoll }),
         ...(input.appearanceDigest === undefined
           ? {}
@@ -485,6 +524,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     if (roll.renderedImage.png.byteLength > MAX_LOG_ARTIFACT_PNG_BYTES) {
       throw new Error("Web delivery PNG exceeds the durable artifact limit");
     }
+    if (saveRollEligible) this.ensureSaveRollIntent(input, row.accepted_at);
 
     sourceLogArtifact(input, row.roll_id, roll, 0);
     const resultJson = serializeResult(roll);
@@ -517,11 +557,15 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
 
   private async runAlarm(): Promise<void> {
     const row = this.readRow();
-    if (row === undefined) return;
+    if (row === undefined) {
+      await this.scheduleSaveRollIntentExpiry();
+      return;
+    }
     await this.verifyIdentity(row);
     const now = Date.now();
     if (now >= row.expires_at) {
       this.ctx.storage.sql.exec("DELETE FROM web_delivery WHERE singleton = 1");
+      await this.scheduleSaveRollIntentExpiry();
       return;
     }
     if (row.state === "preparing") {
@@ -769,6 +813,62 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
       return;
     }
     await this.ctx.storage.setAlarm(row.artifact_cleanup_at);
+  }
+
+  private ensureSaveRollIntent(
+    input: WebDeliveryInput,
+    createdAt: number,
+  ): SaveRollIntentV1 {
+    const intent = parseSaveRollIntentV1({
+      version: 1,
+      source: input.savedRoll === undefined ? "fresh" : "library",
+      notation: input.notation,
+      title: input.title,
+      repetitions: input.repetitions,
+      defaultName: input.savedRoll?.name ?? input.title,
+      nameColor: input.savedRoll?.nameColor ?? null,
+      createdAt,
+      expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
+    });
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO save_roll_intent (singleton, intent_json, expires_at)
+       VALUES (1, ?, ?)`,
+      JSON.stringify(intent),
+      intent.expiresAt,
+    );
+    const stored = this.readSaveRollIntent();
+    if (stored === undefined || JSON.stringify(stored) !== JSON.stringify(intent)) {
+      throw new Error("Save roll intent conflicts with stored web delivery");
+    }
+    return stored;
+  }
+
+  private readSaveRollIntent(): SaveRollIntentV1 | undefined {
+    const row = this.ctx.storage.sql
+      .exec<{ intent_json: string }>(
+        "SELECT intent_json FROM save_roll_intent WHERE singleton = 1",
+      )
+      .toArray()[0];
+    return row === undefined
+      ? undefined
+      : parseSaveRollIntentV1(JSON.parse(row.intent_json));
+  }
+
+  getSaveRollIntent() {
+    const intent = this.readSaveRollIntent();
+    if (intent === undefined) return { status: "missing" as const };
+    if (intent.expiresAt <= Date.now()) return { status: "expired" as const };
+    return { status: "available" as const, intent };
+  }
+
+  private async scheduleSaveRollIntentExpiry(): Promise<void> {
+    const intent = this.readSaveRollIntent();
+    if (intent !== undefined && intent.expiresAt > Date.now()) {
+      await this.ctx.storage.setAlarm(intent.expiresAt);
+      return;
+    }
+    this.ctx.storage.sql.exec("DELETE FROM save_roll_intent");
+    await this.ctx.storage.deleteAlarm();
   }
 
   private serialize<T>(operation: () => Promise<T>): Promise<T> {

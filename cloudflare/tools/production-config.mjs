@@ -77,6 +77,7 @@ const REQUIRED_BINDINGS = {
     ROLL_WORK: "durable_object_namespace",
     SUPPORT_SERVER_LINK: "plain_text",
     WEB_APP_URL: "plain_text",
+    WEB_DELIVERY_WORK: "durable_object_namespace",
   },
   roll: {
     DATA_SERVICE: "service",
@@ -276,8 +277,9 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
     "interactions",
     values.secretsStoreId,
   );
-  configs.interactions.durable_objects.bindings[0].script_name =
-    productionName("roll");
+  for (const binding of configs.interactions.durable_objects.bindings) {
+    binding.script_name = productionName("roll");
+  }
 
   configs["web-api"].routes = [
     { pattern: new URL(values.frontendOrigin).hostname, custom_domain: true },
@@ -375,8 +377,13 @@ export function validateProductionConfigs(configs, expectedSha) {
   if (configs.roll?.vars?.ROLL_RENDER_VERSION !== "4") {
     errors.push("Production Roll render version must be 4");
   }
-  if (configs.interactions?.durable_objects?.bindings?.[0]?.script_name !== productionName("roll")) {
-    errors.push("Interactions Roll Durable Object target is invalid");
+  if (
+    configs.interactions?.durable_objects?.bindings?.length !== 2 ||
+    configs.interactions.durable_objects.bindings.some(
+      (binding) => binding.script_name !== productionName("roll"),
+    )
+  ) {
+    errors.push("Interactions Roll Durable Object targets are invalid");
   }
   if (
     configs.interactions?.vars?.ROLL_LIFECYCLE_TELEMETRY_VERSION !== "1" &&

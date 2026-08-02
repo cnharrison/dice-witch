@@ -8,9 +8,11 @@ import {
   buildStaticCommandResponse,
   buildStatusCommandResponse,
   buildStatusUnavailableResponse,
+  DISCORD_COMPONENTS_V2_FLAG,
   parseKnowledgeBaseInteraction,
   parseRollHelperDmInteraction,
   parseRollInteraction,
+  parseSaveRollInteraction,
   parseSavedRollInteraction,
   rollInteractionContextMissingReasons,
   parseStaticInteractionCommand,
@@ -26,6 +28,10 @@ import {
   parseNotationArgs,
 } from "../../../packages/roll-domain/src";
 import { handleSavedRollInteraction } from "./saved-roll-handler";
+import {
+  completeSaveRollSubmit,
+  openSaveRollModal,
+} from "./save-roll-handler";
 
 export type InteractionEnv = {
   DISCORD_APPLICATION_ID: string;
@@ -43,6 +49,7 @@ export type InteractionEnv = {
     sendRollHelper(value: unknown): Promise<unknown>;
   };
   ROLL_WORK: DurableObjectNamespace;
+  WEB_DELIVERY_WORK: DurableObjectNamespace;
 };
 
 const RESPONSE_HEADERS = {
@@ -65,13 +72,26 @@ function invalidInteraction(reason: string): Response {
   return json({ error: "Invalid interaction" }, 400);
 }
 
+function componentsV2TextMessage(content: string, color = 0xe7_4c_3c) {
+  return {
+    flags: DISCORD_COMPONENTS_V2_FLAG,
+    components: [
+      {
+        type: 17 as const,
+        accent_color: color,
+        components: [{ type: 10 as const, content }],
+      },
+    ],
+    allowed_mentions: { parse: [] as string[] },
+  };
+}
+
 function interactionError(content: string): Response {
   return json({
     type: 4,
     data: {
-      content,
-      flags: 64,
-      allowed_mentions: { parse: [] },
+      ...componentsV2TextMessage(content),
+      flags: DISCORD_COMPONENTS_V2_FLAG | 64,
     },
   });
 }
@@ -123,7 +143,10 @@ async function deliverRequestedRollHelper(
   }
   try {
     const response = await fetch(
-      buildEditOriginalResponse(interaction, { content }),
+      buildEditOriginalResponse(
+        interaction,
+        componentsV2TextMessage(content, 0x1e_90_ff),
+      ),
     );
     if (!response.ok) {
       console.error(
@@ -175,9 +198,12 @@ async function acceptDeferredRoll(
   );
   try {
     const response = await fetch(
-      buildEditOriginalResponse(roll, {
-        content: "This roll could not be accepted. Please try again.",
-      }),
+      buildEditOriginalResponse(
+        roll,
+        componentsV2TextMessage(
+          "This roll could not be accepted. Please try again.",
+        ),
+      ),
     );
     if (!response.ok) {
       console.error(
@@ -323,6 +349,19 @@ export async function handleInteractionRequest(
     else ctx.waitUntil(delivery);
     return json({ type: 6 });
   }
+  const saveRoll = parseSaveRollInteraction(interaction, {
+    applicationId: env.DISCORD_APPLICATION_ID,
+  });
+  if (saveRoll !== null) {
+    if (saveRoll.kind === "open") {
+      return json(await openSaveRollModal(saveRoll, env));
+    }
+    const completion = completeSaveRollSubmit(saveRoll, env);
+    if (ctx === undefined) await completion;
+    else ctx.waitUntil(completion);
+    return json({ type: 5, data: { flags: 64 } });
+  }
+
   let savedRoll;
   try {
     savedRoll = parseSavedRollInteraction(interaction, {
@@ -483,16 +522,17 @@ export async function handleInteractionRequest(
       preserveOutOfRangePhysicalFaces: true,
     });
     const acknowledgementType = outcome.outcomes.length === 0 ? 4 : 5;
-    acknowledgement = acknowledgementType === 4
-      ? {
-          type: acknowledgementType,
-          data: {
-            ...buildInvalidRollHelpMessage(outcome, roll.id),
-            flags: 64,
-            allowed_mentions: { parse: [] },
-          },
-        }
-      : { type: acknowledgementType };
+    if (acknowledgementType === 4) {
+      const invalidRoll = buildInvalidRollHelpMessage(outcome, roll.id);
+      acknowledgement = {
+        type: acknowledgementType,
+        data: {
+          ...invalidRoll,
+          flags: invalidRoll.flags | 64,
+          allowed_mentions: { parse: [] },
+        },
+      };
+    } else acknowledgement = { type: acknowledgementType };
     acknowledgementTelemetry = {
       version: 2,
       handlerStartedAt,

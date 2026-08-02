@@ -16,6 +16,7 @@ import {
   buildAppearancePreviewRenderRequestV3,
   buildAppearancePreviewRenderRequestV4,
   executeWebRoll,
+  parseWebSavedRollAttribution,
   prepareWebRoll,
   renderAppearancePreview,
   renderAppearancePreviewV2,
@@ -661,23 +662,33 @@ describe("WebRollService", () => {
     });
   });
 
+  it("keeps pending V1 web Library attribution readable", () => {
+    expect(parseWebSavedRollAttribution({
+      scope: "personal",
+      name: "Legacy attack",
+    })).toEqual({
+      scope: "personal",
+      name: "Legacy attack",
+      nameColor: null,
+    });
+  });
+
   it("includes authoritative Library attribution in web-initiated Discord results", async () => {
     const dataService = appearanceService();
     const value = await preparedRequest(dataService, "4", {
-      savedRoll: { scope: "personal", name: "Initiative" },
+      savedRoll: {
+        scope: "personal",
+        name: "Initiative",
+        nameColor: "#AABBCC",
+      },
     });
     const result = await executeWebRoll(value, dataService, "4");
 
     if (result.status !== "rolled") throw new Error("Expected a rolled result");
-    expect(result.discord.payload).toMatchObject({
-      embeds: [
-        {
-          footer: {
-            text: "sent to fixture-user via web · from personal library · Initiative",
-          },
-        },
-      ],
-    });
+    expect(result.discord.payload).toMatchObject({ flags: 1 << 15 });
+    expect(JSON.stringify(result.discord.payload)).toContain(
+      "-# sent to fixture\\\\-user via web · from personal library · Initiative",
+    );
   });
 
   it("executes staging rolls once and uses one exact renderer-v4 PNG for web and Discord", async () => {

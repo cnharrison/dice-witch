@@ -2,6 +2,8 @@ import {
   buildDeleteOriginalResponse,
   buildEditOriginalResponse,
   buildWebAppRouteUrl,
+  DISCORD_COMPONENTS_V2_FLAG,
+  type DiscordComponentsV2Message,
   type SavedRollInteraction,
 } from "../../../packages/discord-contracts/src";
 import {
@@ -41,15 +43,37 @@ type SavedRollWorkStub = {
   copySavedRollToMine(value: unknown): Promise<unknown>;
 };
 
-function errorResponse(content: string) {
+function escapeDiscordMarkdown(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("`", "\\`")
+    .replace(/([*_~|])/g, "\\$1")
+    .replaceAll("<", "\\<")
+    .replaceAll(">", "\\>");
+}
+
+function messageResponse(content: string, color = 0xe7_4c_3c): {
+  type: 4;
+  data: DiscordComponentsV2Message & { allowed_mentions: { parse: string[] } };
+} {
   return {
     type: 4,
     data: {
-      content,
-      flags: 64,
-      allowed_mentions: { parse: [] as string[] },
+      flags: DISCORD_COMPONENTS_V2_FLAG | 64,
+      components: [
+        {
+          type: 17,
+          accent_color: color,
+          components: [{ type: 10, content: escapeDiscordMarkdown(content) }],
+        },
+      ],
+      allowed_mentions: { parse: [] },
     },
   };
+}
+
+function errorResponse(content: string) {
+  return messageResponse(content);
 }
 
 function pickerContext(interaction: SavedRollInteraction) {
@@ -108,19 +132,18 @@ function copyResponse(result: unknown, sessionId: string) {
         title: "Rename Library roll",
         components: [
           {
-            type: 1,
-            components: [
-              {
-                type: 4,
-                custom_id: "saved-roll-name",
-                label: "Personal Library roll name",
-                style: 1,
-                min_length: 1,
-                max_length: 4_000,
-                required: true,
-                value: result.name,
-              },
-            ],
+            type: 18,
+            label: "Personal Library roll name",
+            description: "That name is already used. Choose a different name.",
+            component: {
+              type: 4,
+              custom_id: "saved-roll-name",
+              style: 1,
+              min_length: 1,
+              max_length: 4_000,
+              required: true,
+              value: result.name,
+            },
           },
         ],
       },
@@ -141,7 +164,10 @@ function copyResponse(result: unknown, sessionId: string) {
       typeof result.name === "string"
         ? result.name
         : "Library roll";
-    return errorResponse(`Copied “${name}” to your Personal Library.`);
+    return messageResponse(
+      `Copied “${name}” to your Personal Library.`,
+      0x2e_cc_71,
+    );
   }
   const messages: Record<string, string> = {
     cap_reached: "Your Personal Library already has the maximum of 50 rolls.",
@@ -250,9 +276,10 @@ async function acceptDeferredSavedRoll(
   }
   try {
     await fetch(
-      buildEditOriginalResponse(interaction, {
-        content: runError(status),
-      }),
+      buildEditOriginalResponse(
+        interaction,
+        messageResponse(runError(status)).data,
+      ),
     );
   } catch {
     console.error(
@@ -300,7 +327,9 @@ async function prepareDeferredSavedRoll(
     // The private original response below is the terminal user-facing failure.
   }
   try {
-    await fetch(buildEditOriginalResponse(interaction, { content }));
+    await fetch(
+      buildEditOriginalResponse(interaction, messageResponse(content).data),
+    );
   } catch {
     console.error(
       JSON.stringify({
@@ -337,7 +366,8 @@ export async function handleSavedRollInteraction(
 
   const shouldDeferPreparation =
     (interaction.kind === "command" && interaction.selection !== null) ||
-    (interaction.kind === "component" && interaction.action === "run");
+    (interaction.kind === "component" &&
+      (interaction.action === "run" || interaction.action === "select"));
   if (ctx !== undefined && shouldDeferPreparation) {
     const capturedDeferredAt = Date.now();
     console.info(
@@ -445,7 +475,7 @@ export async function handleSavedRollInteraction(
     return savedRollRunDefer(interaction);
   }
 
-  if (interaction.action === "run") {
+  if (interaction.action === "run" || interaction.action === "select") {
     if (interaction.selection !== null) {
       try {
         lists = await fetchVisibleSavedRolls(
@@ -507,21 +537,10 @@ export async function handleSavedRollInteraction(
   } catch {
     return errorResponse("The Library is unavailable. Please try again.");
   }
-  const selection =
-    interaction.action === "select" && interaction.selection !== null
-      ? selectedRecord(
-          interaction.selection,
-          lists.mine.savedRolls,
-          lists.server.savedRolls,
-        )
-      : null;
-  if (selection !== null && "status" in selection) {
-    return errorResponse("That Library roll is no longer available.");
-  }
   const state = await stub.updateSavedRollPicker({
     ...pickerContext(interaction),
     action: interaction.action,
-    selection,
+    selection: null,
   });
   if (
     state.status !== "updated" ||

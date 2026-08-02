@@ -93,16 +93,30 @@ export function buildStaticCommandResponse(
   return {
     type: 4,
     data: {
-      flags: EPHEMERAL_FLAG,
-      embeds: [
+      flags: EPHEMERAL_FLAG | (1 << 15),
+      components: [
         {
-          color: PANACHE_COLOR,
-          title: content.title,
-          description: content.description,
-          thumbnail: { url: THUMBNAIL_URL },
+          type: 17,
+          accent_color: PANACHE_COLOR,
+          components: [
+            {
+              type: 9,
+              components: [
+                {
+                  type: 10,
+                  content: `## ${content.title}\n${content.description}`,
+                },
+              ],
+              accessory: {
+                type: 11,
+                media: { url: THUMBNAIL_URL },
+                description: "Dice Witch",
+              },
+            },
+            ...buildFooterComponents(links),
+          ],
         },
       ],
-      components: buildFooterComponents(links),
       allowed_mentions: { parse: [] },
     },
   };

@@ -78,7 +78,7 @@ describe("saved-roll picker model", () => {
     ).toEqual({ status: "found", scope: "server", savedRoll: server });
   });
 
-  it("builds one-click saved-roll buttons with actor-session custom ids", () => {
+  it("builds a private V2 picker whose selection runs immediately", () => {
     const response = buildSavedRollPickerResponse({
       sessionId: "100000000000000020",
       scope: "mine",
@@ -87,32 +87,20 @@ describe("saved-roll picker model", () => {
       server: [server],
     });
 
-    const rows = response.data.components as Array<{
-      components: Array<Record<string, unknown>>;
-    }>;
     expect(response.type).toBe(4);
-    expect(response.data.flags).toBe(64);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.components[0]).toMatchObject({ label: "Personal" });
-    expect(rows[0]?.components[2]).toMatchObject({
-      label: "│",
-      disabled: true,
-    });
-    expect(rows[0]?.components).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          custom_id: "saved-roll:v1:100000000000000020:mine",
-        }),
-      ]),
+    expect(response.data.flags).toBe((1 << 15) | 64);
+    expect(response.data).not.toHaveProperty("content");
+    const serialized = JSON.stringify(response.data.components);
+    expect(serialized).toContain("## Personal Library\\nPage 1 of 1");
+    expect(serialized).toContain(
+      '"label":"Personal","custom_id":"saved-roll:v1:100000000000000020:mine"',
     );
-    expect(rows[1]?.components).toEqual([
-      {
-        type: 2,
-        style: 2,
-        label: "Attack",
-        custom_id: `saved-roll:v1:100000000000000020:run:mine:${mine.id}`,
-      },
-    ]);
+    expect(serialized).toContain(
+      '"custom_id":"saved-roll:v1:100000000000000020:select"',
+    );
+    expect(serialized).toContain(
+      `"label":"Attack","value":"mine:${mine.id}","description":"2d20+5"`,
+    );
   });
 
   it("links directly to the web Library without empty picker controls", () => {
@@ -125,25 +113,16 @@ describe("saved-roll picker model", () => {
       libraryUrl: "https://example.com/app/library",
     });
 
-    expect(response.data.content).toBe(
-      "Your Library is empty. Log in to Dice Witch to add a saved roll.",
+    expect(response.data.flags).toBe((1 << 15) | 64);
+    expect(response.data).not.toHaveProperty("content");
+    const serialized = JSON.stringify(response.data.components);
+    expect(serialized).toContain("Your Library is empty");
+    expect(serialized).toContain(
+      '"label":"Open Library","url":"https://example.com/app/library"',
     );
-    expect(response.data.components).toEqual([
-      {
-        type: 1,
-        components: [
-          {
-            type: 2,
-            style: 5,
-            label: "Open Library",
-            url: "https://example.com/app/library",
-          },
-        ],
-      },
-    ]);
   });
 
-  it("packs at most 20 saved-roll buttons into the five Discord rows", () => {
+  it("paginates at most 20 saved rolls into one select menu", () => {
     const records = Array.from({ length: 21 }, (_, index) => ({
       ...mine,
       id: `${String(index).padStart(8, "0")}-e89b-42d3-a456-426614174000`,
@@ -165,9 +144,23 @@ describe("saved-roll picker model", () => {
       server: [],
     });
 
-    expect(firstPage.data.components).toHaveLength(5);
-    expect(firstPage.data.components.slice(1).flatMap((row) => row.components)).toHaveLength(20);
-    expect(secondPage.data.components).toHaveLength(2);
-    expect(secondPage.data.content).toBe("Personal · page 2 of 2");
+    const firstContainer = firstPage.data.components[0] as {
+      components: Array<Record<string, unknown>>;
+    };
+    const secondContainer = secondPage.data.components[0] as {
+      components: Array<Record<string, unknown>>;
+    };
+    const firstSelectRow = firstContainer.components[2] as {
+      components: Array<{ options: unknown[] }>;
+    };
+    const secondSelectRow = secondContainer.components[2] as {
+      components: Array<{ options: unknown[] }>;
+    };
+    expect(firstSelectRow.components[0]?.options).toHaveLength(20);
+    expect(secondSelectRow.components[0]?.options).toHaveLength(1);
+    expect(secondContainer.components[0]).toEqual({
+      type: 10,
+      content: "## Personal Library\nPage 2 of 2",
+    });
   });
 });

@@ -49,27 +49,37 @@ describe("invalid-roll helper contract", () => {
       headline: "🚫 Potentially infinite modifier",
     },
   ] as const)("uses the specific headline: $headline", ({ error, headline }) => {
-    expect(helpMessage(error).content).toBe(headline);
+    const container = helpMessage(error).components[0];
+    if (container?.type !== 17) throw new Error("Help Container is missing");
+    expect(container.components[0]).toEqual({ type: 10, content: headline });
   });
 
   it("always links invalid rolls to the Dice notation guide", () => {
     expect(
       helpMessage({ code: "UNSAFE_EXPLOSION", message: "Unsafe explosion" }),
     ).toMatchObject({
+      flags: 1 << 15,
       components: [
         {
+          type: 17,
           components: [
+            { type: 10 },
             {
-              type: 2,
-              style: 5,
-              label: "Dice notation guide",
-              url: "https://dicewit.ch/docs/dice-notation",
-            },
-            {
-              type: 2,
-              style: 2,
-              label: "DM me the knowledge base",
-              custom_id: `roll-help:dm-knowledgebase:${rollId}`,
+              type: 1,
+              components: [
+                {
+                  type: 2,
+                  style: 5,
+                  label: "Dice notation guide",
+                  url: "https://dicewit.ch/docs/dice-notation",
+                },
+                {
+                  type: 2,
+                  style: 2,
+                  label: "DM me the knowledge base",
+                  custom_id: `roll-help:dm-knowledgebase:${rollId}`,
+                },
+              ],
             },
           ],
         },
@@ -83,12 +93,8 @@ describe("invalid-roll helper contract", () => {
       supportUrl: "https://discord.gg/fixture",
     });
     expect(message).toMatchObject({
-      embeds: [
-        {
-          color: 255,
-          title: "🎲 Dice notation",
-        },
-      ],
+      flags: 1 << 15,
+      components: [{ type: 17, accent_color: 255 }],
       allowed_mentions: { parse: [] },
     });
     const serialized = JSON.stringify(message);
@@ -107,7 +113,7 @@ describe("invalid-roll helper contract", () => {
       "unique",
       "fudge",
     ]) {
-      expect(serialized).toContain(`knowledgebase-${topic}`);
+      expect(serialized).toContain(`"value":"${topic}"`);
     }
     expect(serialized).toContain("`2d6`");
     expect(serialized).toContain("`4d6k3`");

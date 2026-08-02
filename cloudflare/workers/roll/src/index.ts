@@ -17,7 +17,7 @@ import {
   selectRollDelayMs,
 } from "../../../packages/roll-domain/src";
 import {
-  parseSavedRollDraftV1,
+  parseSavedRollDraftV2,
   parseSavedRollNameColorV2,
   parseSavedRollNameV1,
 } from "../../../packages/saved-rolls/src";
@@ -31,13 +31,20 @@ import {
   buildInvalidRollHelpMessage,
   buildRollClatterMessage,
   buildRollResultMessage,
+  rollResultText,
+  buildSaveRollCustomId,
+  DISCORD_COMPONENTS_V2_FLAG,
+  DISCORD_EPHEMERAL_FLAG,
+  parseSaveRollIntentV1,
+  ROLL_SAVE_INTENT_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   parseRollLifecycleSnapshot,
   validateRollLogArtifact,
-  type DiscordMessage,
+  type DiscordComponentsV2Message,
   type RollLifecycleContextV1,
   type RollLifecycleDiagnosticsV2,
-  type RollLogArtifactV1,
+  type RollLogArtifact,
+  type SaveRollIntentV1,
 } from "../../../packages/discord-contracts/src";
 import { buildRollRenderRequest } from "../../../packages/roll-render-model/src";
 import {
@@ -78,7 +85,9 @@ export type {
 } from "./log-work";
 export type {
   LogArtifactImageV1,
+  RollLogArtifact,
   RollLogArtifactV1,
+  RollLogArtifactV2,
 } from "../../../packages/discord-contracts/src";
 export { WebDeliveryWork } from "./web-delivery-work";
 export type { WebDeliveryExecutionResult } from "./web-delivery-work";
@@ -114,6 +123,26 @@ const MAX_DISCORD_RESPONSE_BODY_BYTES = 8 * 1_024;
 const MESSAGE_PROBE_TIMEOUT_MS = 1_500;
 const ROLL_DELIVERY_FAILURE_MESSAGE =
   "This roll could not be completed. Please try again.";
+
+function privateTextMessage(
+  content: string,
+  accentColor: number,
+): DiscordComponentsV2Message {
+  return {
+    flags: DISCORD_COMPONENTS_V2_FLAG | DISCORD_EPHEMERAL_FLAG,
+    components: [
+      {
+        type: 17,
+        accent_color: accentColor,
+        components: [{ type: 10, content }],
+      },
+    ],
+  };
+}
+
+function rollDeliveryFailureMessage(): DiscordComponentsV2Message {
+  return privateTextMessage(ROLL_DELIVERY_FAILURE_MESSAGE, 0xe7_4c_3c);
+}
 
 type RetryableDeliveryPhase =
   | "settings"
@@ -309,6 +338,7 @@ type SavedRollInvocationV1 = {
   title: string | null;
   repetitions: number;
   revision: number;
+  nameColor: string | null;
 };
 
 function parseSavedRollPickerContext(value: unknown): SavedRollPickerContext {
@@ -421,7 +451,7 @@ type StoredSourceLogRow = {
   handoff_until: number | null;
 };
 
-type SourceLogArtifact = { artifact: RollLogArtifactV1 };
+type SourceLogArtifact = { artifact: RollLogArtifact };
 
 async function sha256Hex(value: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", value);
@@ -430,21 +460,10 @@ async function sha256Hex(value: Uint8Array): Promise<string> {
     .join("");
 }
 
-function rollLogArtifact(value: unknown): RollLogArtifactV1 {
-  const validated = validateRollLogArtifact(value);
-  return {
-    version: validated.version,
-    rollId: validated.rollId,
-    source: validated.source,
-    notation: validated.notation,
-    user: validated.user,
-    guildId: validated.guildId,
-    channelId: validated.channelId,
-    context: validated.context,
-    destinationDeliveredAt: validated.destinationDeliveredAt,
-    payload: validated.payload,
-    image: validated.image,
-  };
+function rollLogArtifact(value: unknown): RollLogArtifact {
+  const artifact = { ...validateRollLogArtifact(value) };
+  Reflect.deleteProperty(artifact, "payloadJson");
+  return artifact;
 }
 
 export class RollWork extends DurableObject<RollEnv> {
@@ -525,6 +544,11 @@ export class RollWork extends DurableObject<RollEnv> {
         mutation_id TEXT NOT NULL,
         expected_list_revision INTEGER NOT NULL,
         display_name TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS save_roll_intent (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        intent_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
       );
     `);
     const savedRollPickerSchema = this.ctx.storage.sql
@@ -826,9 +850,15 @@ export class RollWork extends DurableObject<RollEnv> {
         "SELECT invocation_json FROM saved_roll_invocation WHERE singleton = 1",
       )
       .toArray()[0];
-    return row === undefined
-      ? undefined
-      : JSON.parse(row.invocation_json) as SavedRollInvocationV1;
+    if (row === undefined) return undefined;
+    const invocation = JSON.parse(row.invocation_json) as Omit<
+      SavedRollInvocationV1,
+      "nameColor"
+    > & { nameColor?: string | null };
+    return {
+      ...invocation,
+      nameColor: parseSavedRollNameColorV2(invocation.nameColor ?? null),
+    };
   }
 
   private async resolveSavedRollInvocation(
@@ -857,7 +887,7 @@ export class RollWork extends DurableObject<RollEnv> {
     let response: Response;
     try {
       response = await this.env.DATA_SERVICE.fetch(
-        new Request("https://data.internal/internal/saved-rolls/v1/get", {
+        new Request("https://data.internal/internal/saved-rolls/v2/get", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ owner, id: selection.id }),
@@ -891,6 +921,7 @@ export class RollWork extends DurableObject<RollEnv> {
         "displayName",
         "id",
         "manualOrder",
+        "nameColor",
         "notation",
         "owner",
         "pinned",
@@ -912,12 +943,13 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     let draft;
     try {
-      draft = parseSavedRollDraftV1({
+      draft = parseSavedRollDraftV2({
         version: savedRoll.version,
         name: savedRoll.displayName,
         notation: savedRoll.notation,
         title: savedRoll.title,
         repetitions: savedRoll.repetitions,
+        nameColor: savedRoll.nameColor,
       });
     } catch {
       return "unavailable";
@@ -932,6 +964,7 @@ export class RollWork extends DurableObject<RollEnv> {
       title: draft.title,
       repetitions: draft.repetitions,
       revision: selection.revision,
+      nameColor: draft.nameColor,
     };
     if (!persist) return invocation;
     this.ctx.storage.sql.exec(
@@ -1875,6 +1908,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private async processAlarm(): Promise<void> {
+    this.deleteExpiredSaveRollIntent();
     if (await this.rescheduleAlarmForActiveAcceptance()) return;
     await this.syncLifecycle();
     const delivery = this.readDelivery();
@@ -1890,7 +1924,7 @@ export class RollWork extends DurableObject<RollEnv> {
         return;
       }
       this.deleteStoredWork();
-      await this.ctx.storage.deleteAlarm();
+      await this.scheduleSaveRollIntentExpiry();
       return;
     }
     if (Date.now() >= delivery.expires_at) {
@@ -1948,7 +1982,7 @@ export class RollWork extends DurableObject<RollEnv> {
         return;
       }
       this.deleteStoredWork();
-      await this.ctx.storage.deleteAlarm();
+      await this.scheduleSaveRollIntentExpiry();
       return;
     }
     await this.runAccounting();
@@ -2448,7 +2482,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private async ensureSourceLogArtifact(
-    artifact: RollLogArtifactV1,
+    artifact: RollLogArtifact,
   ): Promise<SourceLogArtifact> {
     const validated = rollLogArtifact(artifact);
     const image =
@@ -2471,6 +2505,9 @@ export class RollWork extends DurableObject<RollEnv> {
       guildId: validated.guildId,
       channelId: validated.channelId,
       context: validated.context,
+      ...(validated.version === 2
+        ? { presentation: validated.presentation }
+        : {}),
       payload: validated.payload,
       image,
     });
@@ -2502,15 +2539,16 @@ export class RollWork extends DurableObject<RollEnv> {
 
   private async prepareSourceLogArtifact(
     metadata: ReturnType<typeof parseDeliveryMetadata>,
-    payload: DiscordMessage,
-    image: RollLogArtifactV1["image"],
+    payload: DiscordComponentsV2Message,
+    image: RollLogArtifact["image"],
+    result: string | null,
   ): Promise<SourceLogArtifact | undefined> {
     if (metadata.logging === null || metadata.accounting === null) {
       return undefined;
     }
     try {
       return await this.ensureSourceLogArtifact({
-        version: 1,
+        version: 2,
         rollId: metadata.interactionId,
         source: metadata.logging.source,
         notation: metadata.logging.notation,
@@ -2522,6 +2560,20 @@ export class RollWork extends DurableObject<RollEnv> {
         channelId: metadata.logging.channelId,
         context: metadata.logging.context ?? null,
         destinationDeliveredAt: 0,
+        presentation: {
+          title: metadata.message.title,
+          result,
+          savedRoll:
+            metadata.savedRoll === null
+              ? null
+              : {
+                  scope:
+                    metadata.savedRoll.scope === "personal"
+                      ? "personal"
+                      : "server",
+                  name: metadata.savedRoll.name,
+                },
+        },
         payload,
         image,
       });
@@ -2552,7 +2604,7 @@ export class RollWork extends DurableObject<RollEnv> {
     if (delivery === undefined) return { status: "conflict" };
     if (Date.now() >= delivery.expires_at) {
       this.deleteStoredWork();
-      await this.ctx.storage.deleteAlarm();
+      await this.scheduleSaveRollIntentExpiry();
       return { status: "expired" };
     }
     if (delivery.state !== "pending") return { status: delivery.state };
@@ -2629,6 +2681,7 @@ export class RollWork extends DurableObject<RollEnv> {
     }
 
     let clatter: string | undefined;
+    let clatterPayload: DiscordComponentsV2Message | undefined;
     let followupMessageId = delivery.followup_message_id;
     const legacyDirectPrivateDefer =
       metadata.responseMode === "followup" && metadata.savedRoll === null;
@@ -2642,7 +2695,8 @@ export class RollWork extends DurableObject<RollEnv> {
         this.recordProviderAttempt();
         response = await fetch(
           buildEditOriginalResponse(target, {
-            content: "Preparing your roll.",
+            flags: DISCORD_COMPONENTS_V2_FLAG,
+            components: [{ type: 10, content: "Preparing your roll." }],
           }),
         );
       } catch {
@@ -2677,13 +2731,15 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     if (record.outcome.outcomes.length > 0) {
       try {
-        clatter = buildRollClatterMessage(
+        clatterPayload = buildRollClatterMessage(
           record.outcome,
           record.renderSeed,
-        ).content;
-        if (clatter === undefined) {
-          throw new Error("Roll clatter message has no content");
+        );
+        const clatterComponent = clatterPayload.components[0];
+        if (clatterComponent?.type !== 10) {
+          throw new Error("Roll clatter message has no text display");
         }
+        clatter = clatterComponent.content;
       } catch {
         return this.terminateDelivery(
           target,
@@ -2700,8 +2756,8 @@ export class RollWork extends DurableObject<RollEnv> {
         let clatterResponse: Response;
         try {
           const request = metadata.responseMode === "followup"
-            ? buildPublicFollowupResponse(target, { content: clatter })
-            : buildEditOriginalResponse(target, { content: clatter });
+            ? buildPublicFollowupResponse(target, clatterPayload)
+            : buildEditOriginalResponse(target, clatterPayload);
           this.recordProviderAttempt();
           clatterResponse = await fetch(request);
         } catch {
@@ -2818,10 +2874,12 @@ export class RollWork extends DurableObject<RollEnv> {
     if (record.outcome.outcomes.length === 0) {
       try {
         const payload = buildInvalidRollHelpMessage(record.outcome, target.id);
-        await this.prepareSourceLogArtifact(metadata, payload, {
-          status: "unavailable",
-          reason: "not-applicable",
-        });
+        await this.prepareSourceLogArtifact(
+          metadata,
+          payload,
+          { status: "unavailable", reason: "not-applicable" },
+          null,
+        );
         if (metadata.preflighted) {
           return await this.completeDelivery(
             target,
@@ -2846,6 +2904,10 @@ export class RollWork extends DurableObject<RollEnv> {
       let sourceArtifact: SourceLogArtifact | undefined;
       try {
         sourceArtifact = await this.readSourceLogArtifact();
+        if (sourceArtifact?.artifact.version === 1) {
+          this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
+          sourceArtifact = undefined;
+        }
       } catch {
         this.ctx.storage.transactionSync(() => {
           this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
@@ -2857,10 +2919,13 @@ export class RollWork extends DurableObject<RollEnv> {
         });
       }
 
-      let payload: DiscordMessage;
+      let payload: DiscordComponentsV2Message;
       let filename: string;
       let png: Uint8Array;
       if (sourceArtifact !== undefined) {
+        if (sourceArtifact.artifact.version !== 2) {
+          throw new Error("Source roll log artifact was not upgraded");
+        }
         payload = sourceArtifact.artifact.payload;
         filename = sourceArtifact.artifact.image.status === "available"
           ? sourceArtifact.artifact.image.filename
@@ -2890,11 +2955,20 @@ export class RollWork extends DurableObject<RollEnv> {
           }
           filename = `dice-${metadata.interactionId}.png`;
           png = rendered.png;
+          const saveRollIntent = this.ensureSaveRollIntent(record, metadata);
           payload = buildRollResultMessage(record.outcome, {
             ...metadata.message,
             source: "discord",
             filename,
             ...(skipDiceDelay ? {} : { clatter }),
+            ...(saveRollIntent === null
+              ? {}
+              : {
+                  saveRollCustomId: buildSaveRollCustomId({
+                    kind: "discord",
+                    id: metadata.interactionId,
+                  }),
+                }),
             ...(metadata.savedRoll === null
               ? {}
               : {
@@ -2902,19 +2976,18 @@ export class RollWork extends DurableObject<RollEnv> {
                     scope: metadata.savedRoll.scope === "personal" ? "Mine" : "Server",
                     name: metadata.savedRoll.name,
                   },
-                  ...(metadata.savedRoll.scope === "guild"
-                    ? {
-                        copyCustomId: `saved-roll:v1:${this.ctx.id.name}:copy`,
-                      }
-                    : {}),
                 }),
           });
           sourceArtifact = await this.prepareSourceLogArtifact(
             metadata,
             payload,
             { status: "available", filename, png },
+            rollResultText(record.outcome),
           );
           if (sourceArtifact !== undefined) {
+            if (sourceArtifact.artifact.version !== 2) {
+              throw new Error("Source roll log artifact version is invalid");
+            }
             payload = sourceArtifact.artifact.payload;
             if (sourceArtifact.artifact.image.status === "available") {
               filename = sourceArtifact.artifact.image.filename;
@@ -2974,9 +3047,10 @@ export class RollWork extends DurableObject<RollEnv> {
           const cleanupResponse = await fetch(
             legacyDirectPrivateDefer
               ? buildDeleteOriginalResponse(target)
-              : buildEditOriginalResponse(target, {
-                  content: "Saved roll posted.",
-                }),
+              : buildEditOriginalResponse(
+                  target,
+                  privateTextMessage("Saved roll posted.", 0x2e_cc_71),
+                ),
           );
           if (!cleanupResponse.ok) {
             throw new Error("Private interaction cleanup failed");
@@ -3089,7 +3163,7 @@ export class RollWork extends DurableObject<RollEnv> {
       httpStatus: null,
       failurePhase: phase,
       failureCode: lifecycleFailureCode(phase),
-      destinationPayload: { content: ROLL_DELIVERY_FAILURE_MESSAGE },
+      destinationPayload: rollDeliveryFailureMessage(),
     });
     console.error(
       JSON.stringify({
@@ -3121,9 +3195,7 @@ export class RollWork extends DurableObject<RollEnv> {
     try {
       this.recordProviderAttempt();
       response = await fetch(
-        buildEditOriginalResponse(target, {
-          content: ROLL_DELIVERY_FAILURE_MESSAGE,
-        }),
+        buildEditOriginalResponse(target, rollDeliveryFailureMessage()),
       );
     } catch {
       return this.scheduleRetry(
@@ -3153,7 +3225,7 @@ export class RollWork extends DurableObject<RollEnv> {
         httpStatus: response.status,
         failurePhase: phase,
         failureCode: lifecycleFailureCode(phase),
-        destinationPayload: { content: ROLL_DELIVERY_FAILURE_MESSAGE },
+        destinationPayload: rollDeliveryFailureMessage(),
       });
       this.logDestinationCompletion({
         rollId: target.id,
@@ -3569,6 +3641,76 @@ export class RollWork extends DurableObject<RollEnv> {
     } catch {
       return undefined;
     }
+  }
+
+  private ensureSaveRollIntent(
+    record: RollWorkRecord,
+    metadata: DeliveryMetadata,
+  ): SaveRollIntentV1 | null {
+    const savedRoll = metadata.savedRoll;
+    if (savedRoll === null && metadata.message.title === null) return null;
+    const notation = savedRoll?.notation ?? metadata.logging?.notation;
+    if (notation === undefined) {
+      throw new Error("Save roll notation is unavailable");
+    }
+    const createdAt = record.createdAt;
+    const intent = parseSaveRollIntentV1({
+      version: 1,
+      source: savedRoll === null ? "fresh" : "library",
+      notation,
+      title: metadata.message.title,
+      repetitions: record.request.repetitions,
+      defaultName: savedRoll?.name ?? metadata.message.title,
+      nameColor: savedRoll?.nameColor ?? null,
+      createdAt,
+      expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
+    });
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO save_roll_intent (singleton, intent_json, expires_at)
+       VALUES (1, ?, ?)`,
+      JSON.stringify(intent),
+      intent.expiresAt,
+    );
+    const stored = this.readSaveRollIntent();
+    if (stored === undefined || JSON.stringify(stored) !== JSON.stringify(intent)) {
+      throw new Error("Save roll intent conflicts with stored delivery");
+    }
+    return stored;
+  }
+
+  private readSaveRollIntent(): SaveRollIntentV1 | undefined {
+    const row = this.ctx.storage.sql
+      .exec<{ intent_json: string }>(
+        "SELECT intent_json FROM save_roll_intent WHERE singleton = 1",
+      )
+      .toArray()[0];
+    return row === undefined
+      ? undefined
+      : parseSaveRollIntentV1(JSON.parse(row.intent_json));
+  }
+
+  getSaveRollIntent() {
+    const intent = this.readSaveRollIntent();
+    if (intent === undefined) return { status: "missing" as const };
+    if (intent.expiresAt <= Date.now()) return { status: "expired" as const };
+    return { status: "available" as const, intent };
+  }
+
+  private deleteExpiredSaveRollIntent(): void {
+    this.ctx.storage.sql.exec(
+      "DELETE FROM save_roll_intent WHERE expires_at <= ?",
+      Date.now(),
+    );
+  }
+
+  private async scheduleSaveRollIntentExpiry(): Promise<void> {
+    const intent = this.readSaveRollIntent();
+    if (intent !== undefined && intent.expiresAt > Date.now()) {
+      await this.ctx.storage.setAlarm(intent.expiresAt);
+      return;
+    }
+    this.ctx.storage.sql.exec("DELETE FROM save_roll_intent");
+    await this.ctx.storage.deleteAlarm();
   }
 
   private deleteSensitiveWorkPreservingLifecycle(): void {

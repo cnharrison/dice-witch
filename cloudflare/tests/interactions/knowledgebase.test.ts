@@ -60,52 +60,40 @@ describe("knowledgebase interaction contract", () => {
     }
   });
 
-  it("builds the exact public Fudge article and required link row", () => {
-    expect(buildKnowledgeBaseResponse("fudge", links)).toEqual({
-      type: 4,
+  it("builds the public V2 Fudge article, topic select, and required links", () => {
+    const response = buildKnowledgeBaseResponse("fudge", links) as {
       data: {
-        embeds: [
-          {
-            color: 2003199,
-            title: "👩‍🎓 Knowledge base",
-            fields: [
-              {
-                name: "Fate or Fudge dice",
-                value:
-                  "Fate or Fudge dice have six faces: two plus (+), two minus (-), and two blank (0).\n\n`/roll notation:4dF`: Roll four Fate or Fudge dice.\n`/roll notation:4dF+2`: Roll four and add 2.",
-                inline: false,
-              },
-              {
-                name: "Read the results",
-                value:
-                  "Each + adds 1, each - subtracts 1, and each blank is 0.\n\n`[+, -, 0, +] = +1`\n`[-, -, +, 0] = -1`",
-                inline: false,
-              },
-            ],
-          },
-        ],
-        components: [
-          {
-            type: 1,
-            components: [
-              {
-                type: 2,
-                style: 5,
-                label: "Invite me",
-                url: links.inviteUrl,
-              },
-              {
-                type: 2,
-                style: 5,
-                label: "Questions? Join the support server",
-                url: links.supportUrl,
-              },
-            ],
-          },
-        ],
-        allowed_mentions: { parse: [] },
-      },
+        flags: number;
+        components: Array<{ type: number; accent_color: number }>;
+      };
+    };
+    expect(response.data.flags).toBe(1 << 15);
+    expect(response).not.toHaveProperty("data.embeds");
+    expect(response.data.components[0]).toMatchObject({
+      type: 17,
+      accent_color: 2003199,
     });
+    const serialized = JSON.stringify(response.data.components);
+    expect(serialized).toContain("## 👩‍🎓 Knowledge base");
+    expect(serialized).toContain("### Fate or Fudge dice");
+    expect(serialized).toContain('"custom_id":"knowledgebase-topic"');
+    expect(serialized).toContain(
+      '"value":"fudge","label":"Fate or Fudge dice","default":true',
+    );
+    expect(serialized).toContain(`"url":"${links.inviteUrl}"`);
+    expect(serialized).toContain(`"url":"${links.supportUrl}"`);
+  });
+
+  it("parses the V2 topic select while preserving legacy button handling", () => {
+    expect(parseKnowledgeBaseInteraction({
+      ...identity,
+      type: 3,
+      data: {
+        custom_id: "knowledgebase-topic",
+        component_type: 3,
+        values: ["fudge"],
+      },
+    }, applicationId)).toEqual({ topic: "fudge" });
   });
 
   it("uses the same exhaustive modifier language as the player guide", () => {

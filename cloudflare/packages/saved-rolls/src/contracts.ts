@@ -4,7 +4,10 @@ import {
   parseNotationArgs,
   prepareRollAppearance,
 } from "../../roll-domain/src";
+import { parseSavedRollNameColorV2 } from "./color";
 import { parseSavedRollNameV1 } from "./name";
+
+export { parseSavedRollNameColorV2 } from "./color";
 
 const MAX_TITLE_LENGTH = 256;
 
@@ -21,16 +24,6 @@ export type SavedRollDraftV2 = Omit<SavedRollDraftV1, "version"> & {
   version: 2;
   nameColor: string | null;
 };
-
-const HEX_COLOR = /^#[0-9A-F]{6}$/u;
-
-export function parseSavedRollNameColorV2(value: unknown): string | null {
-  if (value === null) return null;
-  if (typeof value !== "string" || !HEX_COLOR.test(value)) {
-    throw new Error("Library roll name color must be null or uppercase #RRGGBB");
-  }
-  return value;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

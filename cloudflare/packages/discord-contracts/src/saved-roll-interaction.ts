@@ -168,14 +168,24 @@ export function parseSavedRollInteraction(
       matchedAction !== "rename" ||
       !Array.isArray(data.components) ||
       data.components.length !== 1 ||
-      !isRecord(data.components[0]) ||
-      !Array.isArray(data.components[0].components) ||
-      data.components[0].components.length !== 1 ||
-      !isRecord(data.components[0].components[0])
+      !isRecord(data.components[0])
     ) {
       throw new Error("Saved roll rename modal is invalid");
     }
-    const input = data.components[0].components[0];
+    const wrapper = data.components[0];
+    let input: Record<string, unknown> | null = null;
+    if (wrapper.type === 18 && isRecord(wrapper.component)) {
+      input = wrapper.component;
+    } else if (
+      Array.isArray(wrapper.components) &&
+      wrapper.components.length === 1 &&
+      isRecord(wrapper.components[0])
+    ) {
+      input = wrapper.components[0];
+    }
+    if (input === null) {
+      throw new Error("Saved roll rename modal is invalid");
+    }
     if (
       input.type !== 4 ||
       input.custom_id !== "saved-roll-name" ||

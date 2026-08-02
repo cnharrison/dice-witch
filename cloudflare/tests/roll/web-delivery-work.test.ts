@@ -55,6 +55,23 @@ describe("WebDeliveryWork Durable Object", () => {
     }
     const roll = result.roll;
     expect(roll.renderedImage.png).toEqual(roll.discord.png);
+    expect(roll.discord.payload).toMatchObject({ flags: 1 << 15 });
+    const serializedPayload = JSON.stringify(roll.discord.payload);
+    expect(serializedPayload).toContain('"label":"Save roll"');
+    expect(serializedPayload).toContain(
+      `"custom_id":"save-roll:v1:w:${USER_ID}.${deliveryId}"`,
+    );
+    await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
+      status: "available",
+      intent: {
+        source: "fresh",
+        notation: "1d20",
+        title: "web-result",
+        repetitions: 1,
+        defaultName: "web-result",
+        nameColor: null,
+      },
+    });
     expect(roll.renderedImage.png.byteLength).toBeGreaterThan(0);
 
     let rollId = "";
@@ -130,7 +147,7 @@ describe("WebDeliveryWork Durable Object", () => {
   it("reuses the exact stored result when a retryable destination recovers", async () => {
     const deliveryId = "33333333-3333-4333-8333-333333333333";
     const stub = work(deliveryId);
-    const input = request(deliveryId, { title: "web-retry" });
+    const input = request(deliveryId, { title: "web retry" });
     const first = await executeWork(stub, input);
     expect(first).toMatchObject({ status: "pending", roll: { status: "rolled" } });
     if (!("roll" in first) || first.roll.status !== "rolled") {
@@ -244,12 +261,50 @@ describe("WebDeliveryWork Durable Object", () => {
   it("keeps permission failure terminal without rerolling", async () => {
     const deliveryId = "44444444-4444-4444-8444-444444444444";
     const stub = work(deliveryId);
-    const input = request(deliveryId, { title: "web-permission" });
+    const input = request(deliveryId, { title: "web permission" });
 
     const first = await executeWork(stub, input);
     const replay = await executeWork(stub, input);
     expect(first).toMatchObject({ status: "permission_error" });
     expect(replay).toEqual(first);
+  });
+
+  it("omits Save roll for untitled fresh results", async () => {
+    const deliveryId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const stub = work(deliveryId);
+    const result = await executeWork(stub, request(deliveryId, { title: null }));
+
+    expect(result).toMatchObject({ status: "delivered" });
+    if (!("roll" in result) || result.roll.status !== "rolled") {
+      throw new Error("Expected a delivered web roll");
+    }
+    expect(JSON.stringify(result.roll.discord.payload)).not.toContain("Save roll");
+    await expect(stub.getSaveRollIntent()).resolves.toEqual({ status: "missing" });
+  });
+
+  it("preserves Library color in the authoritative Save roll intent", async () => {
+    const deliveryId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const stub = work(deliveryId);
+    await executeWork(stub, request(deliveryId, {
+      title: null,
+      savedRoll: {
+        scope: "guild",
+        name: "Ambush",
+        nameColor: "#AABBCC",
+      },
+    }));
+
+    await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
+      status: "available",
+      intent: {
+        source: "library",
+        notation: "1d20",
+        title: null,
+        repetitions: 1,
+        defaultName: "Ambush",
+        nameColor: "#AABBCC",
+      },
+    });
   });
 
   it("removes result bytes after bounded replay retention", async () => {
@@ -271,9 +326,50 @@ describe("WebDeliveryWork Durable Object", () => {
         )
         .one();
       expect(row).toEqual({ image_bytes: null, result_json: null });
+      expect(state.storage.sql
+        .exec<{ count: number }>("SELECT COUNT(*) AS count FROM save_roll_intent")
+        .one().count).toBe(1);
+    });
+    await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
+      status: "available",
     });
     await expect(executeWork(stub, request(deliveryId))).resolves.toEqual({
       status: "expired",
+    });
+
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE web_delivery SET expires_at = 0 WHERE singleton = 1",
+      );
+    });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
+      status: "available",
+    });
+
+    await runInDurableObject(stub, (_instance, state) => {
+      const expiredIntent = {
+        version: 1,
+        source: "fresh",
+        notation: "1d20",
+        title: "web-result",
+        repetitions: 1,
+        defaultName: "web-result",
+        nameColor: null,
+        createdAt: 0,
+        expiresAt: 90 * 24 * 60 * 60 * 1_000,
+      };
+      state.storage.sql.exec(
+        `UPDATE save_roll_intent
+         SET intent_json = ?, expires_at = ?
+         WHERE singleton = 1`,
+        JSON.stringify(expiredIntent),
+        expiredIntent.expiresAt,
+      );
+    });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.getSaveRollIntent()).resolves.toEqual({
+      status: "missing",
     });
   });
 });

@@ -1,3 +1,5 @@
+import type { DiscordActionRow } from "./responses";
+
 export type DiscordFooterLinks = {
   inviteUrl: string;
   supportUrl: string;
@@ -18,7 +20,7 @@ function validateLink(value: string): string {
 
 export function buildFooterComponents(
   links: DiscordFooterLinks,
-): Record<string, unknown>[] {
+): DiscordActionRow[] {
   return [
     {
       type: 1,

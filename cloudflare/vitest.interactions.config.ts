@@ -73,11 +73,13 @@ export default defineConfig({
                 contents: `
                   import { DurableObject } from "cloudflare:workers";
                   export class RollWork extends DurableObject {}
+                  export class WebDeliveryWork extends DurableObject {}
                 `,
               },
             ],
             additionalUnboundDurableObjects: [
               { className: "RollWork", useSQLite: true },
+              { className: "WebDeliveryWork", useSQLite: true },
             ],
           },
         ],

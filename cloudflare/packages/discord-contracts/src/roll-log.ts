@@ -1,5 +1,12 @@
 import { MAX_NOTATION_LENGTH } from "../../roll-domain/src/constants";
-import type { DiscordEmbed, DiscordMessage } from "./responses";
+import {
+  isComponentsV2Message,
+  validateDiscordMessage,
+  type DiscordComponentsV2Message,
+  type DiscordEmbed,
+  type DiscordLegacyMessage,
+  type DiscordTopLevelComponent,
+} from "./responses";
 import {
   parseRollLoggingContext,
   type RollLoggingContext,
@@ -64,26 +71,59 @@ export type RollLogArtifactV1 = {
   channelId: string;
   context: RollLoggingContext | null;
   destinationDeliveredAt: number;
-  payload: DiscordMessage;
+  payload: DiscordLegacyMessage;
   image: LogArtifactImageV1;
 };
+
+export type RollLogPresentationV2 = {
+  title: string | null;
+  result: string | null;
+  savedRoll: { scope: "personal" | "server"; name: string } | null;
+};
+
+export type RollLogArtifactV2 = Omit<RollLogArtifactV1, "payload" | "version"> & {
+  version: 2;
+  presentation: RollLogPresentationV2;
+  payload: DiscordComponentsV2Message;
+};
+
+export type RollLogArtifact = RollLogArtifactV1 | RollLogArtifactV2;
 
 export type ValidatedRollLogArtifactV1 = RollLogArtifactV1 & {
   payloadJson: string;
 };
 
+export type ValidatedRollLogArtifactV2 = RollLogArtifactV2 & {
+  payloadJson: string;
+};
+
+export type ValidatedRollLogArtifact =
+  | ValidatedRollLogArtifactV1
+  | ValidatedRollLogArtifactV2;
+
+type StoredImageV1 =
+  | { status: "available"; filename: string; sha256: string; bytes: number }
+  | { status: "unavailable"; reason: LogArtifactUnavailableReasonV1 };
+
 export type StoredLogArtifactV1 = Omit<
   RollLogArtifactV1,
   "image" | "payload"
 > & {
-  payload: DiscordMessage;
-  image:
-    | { status: "available"; filename: string; sha256: string; bytes: number }
-    | { status: "unavailable"; reason: LogArtifactUnavailableReasonV1 };
+  payload: DiscordLegacyMessage;
+  image: StoredImageV1;
 };
 
-type RollLogTelemetryArtifactV1 = Pick<
-  RollLogArtifactV1,
+export type StoredLogArtifactV2 = Omit<
+  RollLogArtifactV2,
+  "image" | "payload"
+> & {
+  payload: DiscordComponentsV2Message;
+  image: StoredImageV1;
+};
+
+export type StoredLogArtifact = StoredLogArtifactV1 | StoredLogArtifactV2;
+
+type RollLogTelemetryKeys =
   | "channelId"
   | "context"
   | "destinationDeliveredAt"
@@ -93,14 +133,19 @@ type RollLogTelemetryArtifactV1 = Pick<
   | "rollId"
   | "source"
   | "user"
-> & {
+  | "version";
+
+type RollLogTelemetryArtifact = (
+  | Pick<RollLogArtifactV1, RollLogTelemetryKeys>
+  | Pick<RollLogArtifactV2, RollLogTelemetryKeys | "presentation">
+) & {
   image:
     | { status: "available"; filename: string }
     | { status: "unavailable"; reason: LogArtifactUnavailableReasonV1 };
 };
 
 export function rollLogTelemetryContext(
-  artifact: RollLogTelemetryArtifactV1,
+  artifact: RollLogTelemetryArtifact,
   logicalShard: RollLogShardV1 | null,
 ) {
   const guildContext = artifact.context?.kind === "guild"
@@ -119,7 +164,10 @@ export function rollLogTelemetryContext(
     guildName: guildContext?.guildName ?? null,
     channelName: guildContext?.channelName ?? null,
     channelType: guildContext?.channelType ?? null,
-    title: artifact.payload.embeds?.[0]?.title ?? null,
+    title:
+      artifact.version === 2
+        ? artifact.presentation.title
+        : artifact.payload.embeds?.[0]?.title ?? null,
     destinationPayload: artifact.payload,
     destinationDeliveredAt: artifact.destinationDeliveredAt,
     imageStatus: artifact.image.status,
@@ -280,7 +328,7 @@ function isValidMessageComponent(value: unknown): boolean {
 
 function validateComponents(
   value: unknown,
-): NonNullable<DiscordMessage["components"]> {
+): NonNullable<DiscordLegacyMessage["components"]> {
   if (
     !Array.isArray(value) ||
     value.length < 1 ||
@@ -298,10 +346,10 @@ function validateComponents(
   ) {
     throw new Error("Roll log artifact payload is invalid");
   }
-  return value as NonNullable<DiscordMessage["components"]>;
+  return value as NonNullable<DiscordLegacyMessage["components"]>;
 }
 
-function validatePayload(value: unknown): DiscordMessage {
+function validatePayload(value: unknown): DiscordLegacyMessage {
   if (
     !isRecord(value) ||
     Object.keys(value).some(
@@ -393,7 +441,7 @@ function rollLogDisplayLine(
 }
 
 export function rollLogContextDescription(
-  artifact: RollLogArtifactV1,
+  artifact: RollLogArtifact,
   shard: RollLogShardV1,
   displayContext?: RollLogDisplayContextV1,
 ): string {
@@ -422,8 +470,18 @@ export function rollLogContextDescription(
 }
 
 export function rollLogResultDescription(
-  artifact: RollLogArtifactV1,
+  artifact: RollLogArtifact,
 ): string | null {
+  if (artifact.version === 2) {
+    return [
+      artifact.presentation.title === null
+        ? null
+        : `**${escapeDiscordMarkdown(artifact.presentation.title)}**`,
+      artifact.presentation.result,
+    ]
+      .filter((line): line is string => line !== null)
+      .join("\n") || null;
+  }
   const result = artifact.payload.embeds?.[0];
   if (result === undefined) return null;
   const lines = [
@@ -436,7 +494,7 @@ export function rollLogResultDescription(
 }
 
 export function rollLogMetadataDescription(
-  artifact: RollLogArtifactV1,
+  artifact: RollLogArtifact,
   shard: RollLogShardV1,
   maximumLength = MAX_EMBED_DESCRIPTION_LENGTH,
   displayContext?: RollLogDisplayContextV1,
@@ -504,9 +562,150 @@ function validateImage(value: unknown): LogArtifactImageV1 {
   throw new Error("Roll log artifact image is invalid");
 }
 
+function componentAttachmentUrls(
+  component: DiscordTopLevelComponent,
+): string[] {
+  switch (component.type) {
+    case 17:
+      return component.components.flatMap(componentAttachmentUrls);
+    case 9:
+      return component.accessory.type === 11 &&
+        component.accessory.media.url.startsWith("attachment://")
+        ? [component.accessory.media.url]
+        : [];
+    case 12:
+      return component.items
+        .map((item) => item.media.url)
+        .filter((url) => url.startsWith("attachment://"));
+    case 13:
+      return [component.file.url];
+    default:
+      return [];
+  }
+}
+
+function validatePresentationV2(value: unknown): RollLogPresentationV2 {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["result", "savedRoll", "title"]) ||
+    (value.title !== null &&
+      (typeof value.title !== "string" ||
+        value.title.length < 1 ||
+        value.title.length > MAX_EMBED_TITLE_LENGTH)) ||
+    (value.result !== null &&
+      (typeof value.result !== "string" ||
+        value.result.length < 1 ||
+        value.result.length > MAX_EMBED_DESCRIPTION_LENGTH)) ||
+    (value.savedRoll !== null &&
+      (!isRecord(value.savedRoll) ||
+        !hasExactKeys(value.savedRoll, ["name", "scope"]) ||
+        (value.savedRoll.scope !== "personal" &&
+          value.savedRoll.scope !== "server") ||
+        typeof value.savedRoll.name !== "string" ||
+        value.savedRoll.name.length < 1 ||
+        value.savedRoll.name.length > 1_024))
+  ) {
+    throw new Error("Roll log artifact presentation is invalid");
+  }
+  return {
+    title: value.title,
+    result: value.result,
+    savedRoll:
+      value.savedRoll === null
+        ? null
+        : {
+            scope: value.savedRoll.scope as "personal" | "server",
+            name: value.savedRoll.name as string,
+          },
+  };
+}
+
+function validateRollLogArtifactV2(
+  value: Record<string, unknown>,
+): ValidatedRollLogArtifactV2 {
+  if (
+    !hasExactKeys(value, [
+      "channelId",
+      "context",
+      "destinationDeliveredAt",
+      "guildId",
+      "image",
+      "notation",
+      "payload",
+      "presentation",
+      "rollId",
+      "source",
+      "user",
+      "version",
+    ]) ||
+    value.version !== 2 ||
+    typeof value.rollId !== "string" ||
+    !SNOWFLAKE.test(value.rollId) ||
+    (value.source !== "discord" && value.source !== "web") ||
+    typeof value.notation !== "string" ||
+    value.notation.length < 1 ||
+    value.notation.length > MAX_NOTATION_LENGTH ||
+    !isRecord(value.user) ||
+    !hasExactKeys(value.user, ["id", "username"]) ||
+    typeof value.user.id !== "string" ||
+    !SNOWFLAKE.test(value.user.id) ||
+    typeof value.user.username !== "string" ||
+    value.user.username.length < 1 ||
+    value.user.username.length > MAX_USERNAME_LENGTH ||
+    (value.guildId !== null &&
+      (typeof value.guildId !== "string" || !SNOWFLAKE.test(value.guildId))) ||
+    typeof value.channelId !== "string" ||
+    !SNOWFLAKE.test(value.channelId) ||
+    !Number.isSafeInteger(value.destinationDeliveredAt) ||
+    Number(value.destinationDeliveredAt) < 0
+  ) {
+    throw new Error("Roll log artifact is invalid");
+  }
+  const payload = validateDiscordMessage(value.payload);
+  if (!isComponentsV2Message(payload)) {
+    throw new Error("Roll log artifact V2 payload is invalid");
+  }
+  const payloadJson = JSON.stringify(payload);
+  if (
+    payloadJson.length === 0 ||
+    new TextEncoder().encode(payloadJson).byteLength > MAX_ARTIFACT_JSON_BYTES
+  ) {
+    throw new Error("Roll log artifact payload is invalid");
+  }
+  const presentation = validatePresentationV2(value.presentation);
+  const image = validateImage(value.image);
+  const attachmentUrls = payload.components.flatMap(componentAttachmentUrls);
+  if (
+    (image.status === "available" &&
+      (attachmentUrls.length !== 1 ||
+        attachmentUrls[0] !== `attachment://${image.filename}`)) ||
+    (image.status === "unavailable" && attachmentUrls.length !== 0)
+  ) {
+    throw new Error("Roll log artifact payload does not match its image");
+  }
+  return {
+    version: 2,
+    rollId: value.rollId,
+    source: value.source,
+    notation: value.notation,
+    user: { id: value.user.id, username: value.user.username },
+    guildId: value.guildId,
+    channelId: value.channelId,
+    context: validateContext(value.context, value.guildId, value.channelId),
+    destinationDeliveredAt: Number(value.destinationDeliveredAt),
+    presentation,
+    payload,
+    payloadJson,
+    image,
+  };
+}
+
 export function validateRollLogArtifact(
   value: unknown,
-): ValidatedRollLogArtifactV1 {
+): ValidatedRollLogArtifact {
+  if (isRecord(value) && value.version === 2) {
+    return validateRollLogArtifactV2(value);
+  }
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -622,7 +821,7 @@ export function validateRollLogArtifact(
 }
 
 export type DeliverRollLogInputV1 = {
-  artifact: RollLogArtifactV1;
+  artifact: RollLogArtifact;
   logicalShard: RollLogShardV1;
 };
 
@@ -636,10 +835,52 @@ export type DeliverRollLogResultV1 =
   | { status: "image-rejected"; httpStatus: number }
   | { status: "failed"; httpStatus: number };
 
+function v2PayloadWithoutImage(
+  payload: DiscordComponentsV2Message,
+): DiscordComponentsV2Message {
+  let markerAdded = false;
+  const components: DiscordTopLevelComponent[] = [];
+  for (const component of payload.components) {
+    if (component.type === 12 || component.type === 13) continue;
+    if (component.type !== 17) {
+      components.push(component);
+      continue;
+    }
+    const children = component.components.filter(
+      (child) => child.type !== 12 && child.type !== 13,
+    );
+    const separatorIndex = children.findIndex((child) => child.type === 14);
+    children.splice(
+      separatorIndex < 0 ? children.length : separatorIndex,
+      0,
+      { type: 10, content: IMAGE_UNAVAILABLE_MARKER },
+    );
+    markerAdded = true;
+    components.push({ ...component, components: children });
+  }
+  if (!markerAdded) {
+    components.push({ type: 10, content: IMAGE_UNAVAILABLE_MARKER });
+  }
+  return { ...payload, components };
+}
+
 export function imageUnavailableLogArtifact(
-  artifact: RollLogArtifactV1,
+  artifact: RollLogArtifact,
   reason: LogArtifactUnavailableReasonV1,
-): RollLogArtifactV1 {
+): RollLogArtifact {
+  if (artifact.version === 2) {
+    const validated = validateRollLogArtifact({
+      ...artifact,
+      payload: v2PayloadWithoutImage(artifact.payload),
+      image: { status: "unavailable", reason },
+    });
+    if (validated.version !== 2) {
+      throw new Error("Roll log artifact version changed unexpectedly");
+    }
+    const result = { ...validated };
+    Reflect.deleteProperty(result, "payloadJson");
+    return result;
+  }
   const originalContent = artifact.payload.content;
   const markerFitsContent =
     originalContent !== undefined &&
@@ -648,7 +889,7 @@ export function imageUnavailableLogArtifact(
   if (content === undefined) content = IMAGE_UNAVAILABLE_MARKER;
   else if (markerFitsContent) content += `\n\n${IMAGE_UNAVAILABLE_MARKER}`;
 
-  const payload: DiscordMessage = {
+  const payload: DiscordLegacyMessage = {
     content,
     embeds: [
       ...(artifact.payload.embeds
@@ -669,6 +910,9 @@ export function imageUnavailableLogArtifact(
     payload,
     image: { status: "unavailable", reason },
   });
+  if (validated.version !== 1) {
+    throw new Error("Roll log artifact version changed unexpectedly");
+  }
   return {
     version: validated.version,
     rollId: validated.rollId,
@@ -685,9 +929,9 @@ export function imageUnavailableLogArtifact(
 }
 
 export async function storedLogArtifact(
-  artifact: ValidatedRollLogArtifactV1,
+  artifact: ValidatedRollLogArtifact,
 ): Promise<{
-  artifact: StoredLogArtifactV1;
+  artifact: StoredLogArtifact;
   identity: string;
   png: Uint8Array | null;
 }> {
@@ -701,11 +945,18 @@ export async function storedLogArtifact(
           bytes: value.image.png.byteLength,
         }
       : value.image;
-  const stored: StoredLogArtifactV1 = {
-    ...value,
-    payload: JSON.parse(payloadJson) as DiscordMessage,
-    image,
-  };
+  const stored: StoredLogArtifact =
+    value.version === 2
+      ? {
+          ...value,
+          payload: JSON.parse(payloadJson) as DiscordComponentsV2Message,
+          image,
+        }
+      : {
+          ...value,
+          payload: JSON.parse(payloadJson) as DiscordLegacyMessage,
+          image,
+        };
   return {
     artifact: stored,
     identity: JSON.stringify(stored),

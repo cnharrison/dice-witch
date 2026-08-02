@@ -427,6 +427,17 @@ describe("RollWork Durable Object", () => {
       state: "delivered",
       lastHttpStatus: 200,
     });
+    await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
+      status: "available",
+      intent: {
+        source: "library",
+        notation: "2d20+5",
+        title: "Sword",
+        repetitions: 2,
+        defaultName: "Attack",
+        nameColor: "#AABBCC",
+      },
+    });
     await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql
         .exec<{ invocation_json: string }>("SELECT invocation_json FROM saved_roll_invocation")
@@ -438,8 +449,29 @@ describe("RollWork Durable Object", () => {
         name: "Attack",
         notation: "2d20+5",
         revision: 3,
+        nameColor: "#AABBCC",
       });
+      const expiredIntent = {
+        version: 1,
+        source: "library",
+        notation: "2d20+5",
+        title: "Sword",
+        repetitions: 2,
+        defaultName: "Attack",
+        nameColor: "#AABBCC",
+        createdAt: 0,
+        expiresAt: 90 * 24 * 60 * 60 * 1_000,
+      };
+      state.storage.sql.exec(
+        `UPDATE save_roll_intent
+         SET intent_json = ?, expires_at = ?
+         WHERE singleton = 1`,
+        JSON.stringify(expiredIntent),
+        expiredIntent.expiresAt,
+      );
     });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.getSaveRollIntent()).resolves.toEqual({ status: "missing" });
   });
 
   it("creates one public saved-roll clatter message and edits it with the result", async () => {
@@ -1603,19 +1635,28 @@ describe("RollWork Durable Object", () => {
         )
         .one();
       expect(JSON.parse(outbox.artifact_json)).toMatchObject({
+        version: 2,
         rollId: id,
         notation,
+        presentation: { title: "Initiative", result: null, savedRoll: null },
         payload: {
-          content: "🚫 Invalid notation",
+          flags: 1 << 15,
           components: [
             {
+              type: 17,
               components: [
+                { type: 10, content: "🚫 Invalid notation" },
                 {
-                  style: 5,
-                  label: "Dice notation guide",
-                  url: "https://dicewit.ch/docs/dice-notation",
+                  type: 1,
+                  components: [
+                    {
+                      style: 5,
+                      label: "Dice notation guide",
+                      url: "https://dicewit.ch/docs/dice-notation",
+                    },
+                    { custom_id: `roll-help:dm-knowledgebase:${id}` },
+                  ],
                 },
-                { custom_id: `roll-help:dm-knowledgebase:${id}` },
               ],
             },
           ],
@@ -1981,14 +2022,14 @@ describe("RollWork Durable Object", () => {
         outcomes: [{ notation: "1d20" }],
         errors: [],
       });
-      expect(delivered?.destinationPayload).toMatchObject({
-        embeds: [
-          {
-            title: "Initiative",
-            footer: { text: "sent to roller via discord" },
-          },
-        ],
-      });
+      expect(delivered?.destinationPayload).toMatchObject({ flags: 1 << 15 });
+      const destinationPayload = JSON.stringify(delivered?.destinationPayload);
+      expect(destinationPayload).toContain("## Initiative");
+      expect(destinationPayload).toContain('"label":"Save roll"');
+      expect(destinationPayload).toContain(
+        `"custom_id":"save-roll:v1:d:${deliveredId}"`,
+      );
+      expect(destinationPayload).toContain("-# sent to roller via discord");
       expect(delivered?.rollSeed).toBeTypeOf("number");
       expect(delivered?.renderSeed).toBeTypeOf("number");
       expect(delivered?.elapsedMs).toBeTypeOf("number");
@@ -2205,15 +2246,23 @@ describe("RollWork Durable Object", () => {
       sourceArtifact = JSON.parse(row.artifact_json) as Record<string, unknown>;
       expect(row.destination_delivered_at).toBeNull();
       expect(sourceArtifact).toMatchObject({
-        version: 1,
+        version: 2,
         rollId: id,
         user: { id: input.accounting.userId },
         context: input.logging.context,
+        presentation: {
+          title: "Initiative",
+          savedRoll: null,
+        },
         image: {
           status: "available",
           filename: `dice-${id}.png`,
         },
       });
+      const presentation = sourceArtifact.presentation as
+        | { result?: unknown }
+        | undefined;
+      expect(presentation?.result).toMatch(/^1d20:/);
       expect(sourcePng.byteLength).toBeGreaterThan(0);
     });
 

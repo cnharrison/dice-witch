@@ -150,6 +150,11 @@ function validConfigs() {
             class_name: "RollWork",
             script_name: rollName,
           },
+          {
+            name: "WEB_DELIVERY_WORK",
+            class_name: "WebDeliveryWork",
+            script_name: rollName,
+          },
         ],
       },
     },
@@ -289,7 +294,7 @@ test("rejects routes, unsafe Crons, and undeclared bindings outside the staging 
   });
   assert.throws(
     () => validateStagingConfigs(extraDurableObject),
-    /interactions Durable Object bindings must be exactly ROLL_WORK/,
+    /interactions Durable Object bindings must be exactly ROLL_WORK, WEB_DELIVERY_WORK/,
   );
 });
 

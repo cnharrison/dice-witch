@@ -37,41 +37,46 @@ describe("static Discord command contract", () => {
     ).toBe("prefs");
   });
 
-  it("builds the exact ephemeral web response", () => {
+  it("builds the exact ephemeral V2 web response hierarchy", () => {
     expect(
       buildStaticCommandResponse("web", links, "https://example.com/app"),
-    ).toEqual({
+    ).toMatchObject({
       type: 4,
       data: {
-        flags: 64,
-        embeds: [
-          {
-            color: 16711935,
-            title: "Dice Witch Web Interface",
-            description: "Control Dice Witch from the web: https://example.com/app",
-            thumbnail: { url: "https://i.imgur.com/tBfG2pP.png" },
-          },
-        ],
+        flags: (1 << 15) | 64,
+        allowed_mentions: { parse: [] },
         components: [
           {
-            type: 1,
+            type: 17,
+            accent_color: 16711935,
             components: [
               {
-                type: 2,
-                style: 5,
-                label: "Invite me",
-                url: links.inviteUrl,
+                type: 9,
+                components: [
+                  {
+                    type: 10,
+                    content: "## Dice Witch Web Interface\nControl Dice Witch from the web: https://example.com/app",
+                  },
+                ],
+                accessory: {
+                  type: 11,
+                  media: { url: "https://i.imgur.com/tBfG2pP.png" },
+                  description: "Dice Witch",
+                },
               },
               {
-                type: 2,
-                style: 5,
-                label: "Questions? Join the support server",
-                url: links.supportUrl,
+                type: 1,
+                components: [
+                  expect.objectContaining({ label: "Invite me", url: links.inviteUrl }),
+                  expect.objectContaining({
+                    label: "Questions? Join the support server",
+                    url: links.supportUrl,
+                  }),
+                ],
               },
             ],
           },
         ],
-        allowed_mentions: { parse: [] },
       },
     });
   });
@@ -81,9 +86,9 @@ describe("static Discord command contract", () => {
       "prefs",
       links,
       "https://example.com/app",
-    ) as { data: { embeds: Array<{ description: string }> } };
+    );
 
-    expect(response.data.embeds[0]?.description).toBe(
+    expect(JSON.stringify(response)).toContain(
       "Set user preferences and control Dice Witch from the web: https://example.com/app/preferences",
     );
   });

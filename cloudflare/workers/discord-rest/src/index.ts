@@ -3,6 +3,7 @@ import { readWorkerSecret, type WorkerSecretSource } from "../../../packages/wor
 import {
   buildRollHelperMessage,
   DISCORD_AUDIENCE_SNAPSHOT_VERSION,
+  DISCORD_COMPONENTS_V2_FLAG,
   DISCORD_GLOBAL_COMMANDS,
   isCompleteGuildRollLoggingContext,
   isDiscordRollChannelType,
@@ -24,7 +25,7 @@ import {
   type GameDetectionAnnouncementV1,
   type RollLifecycleAlert,
   type RollLoggingContext,
-  type RollLogArtifactV1,
+  type RollLogArtifact,
   type RollLogDisplayContextV1,
   type RollLogShardV1,
 } from "../../../packages/discord-contracts/src";
@@ -68,7 +69,6 @@ const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const ROLL_LOG_TITLE = "receivedCommand: /roll";
 const INVALID_ROLL_LOG_TITLE = "invalidRoll: /roll";
-const MAX_EMBED_CHARACTERS = 6_000;
 
 export type MembershipInspection =
   | {
@@ -1170,11 +1170,17 @@ export async function logGuildLifecycle(
     {
       nonce,
       enforce_nonce: true,
-      embeds: [
+      flags: 1 << 15,
+      components: [
         {
-          color: input.eventType === "guildAdd" ? 0x00_ff_00 : 0xff_00_00,
-          title: input.eventType,
-          description: input.guildName,
+          type: 17,
+          accent_color: input.eventType === "guildAdd" ? 0x00_ff_00 : 0xff_00_00,
+          components: [
+            {
+              type: 10,
+              content: `## ${input.eventType}\n${escapeDiscordMarkdown(input.guildName)}`,
+            },
+          ],
         },
       ],
       allowed_mentions: { parse: [] },
@@ -1253,6 +1259,7 @@ function escapeDiscordMarkdown(value: string): string {
     ".",
     "!",
     "|",
+    "<",
     ">",
     "~",
   ];
@@ -1370,8 +1377,9 @@ export async function logRoll(
   }
 
   const source = input.source === "web" ? "Web" : "Discord";
-  const description = `${input.notation} from **${input.username}** [${source}] in ${location}`;
-  if (description.length > 4_096) {
+  const description = `${escapeDiscordMarkdown(input.notation)} from **${escapeDiscordMarkdown(input.username)}** [${source}] in ${location}`;
+  const logContent = `## receivedCommand: /roll\n${description}`;
+  if (logContent.length > 4_000) {
     throw new Error("Roll log description is invalid");
   }
   const response = await discordJson(
@@ -1380,11 +1388,17 @@ export async function logRoll(
     {
       nonce: `log:${input.rollId}`,
       enforce_nonce: true,
-      embeds: [
+      flags: 1 << 15,
+      components: [
         {
-          color: 0x99_99_99,
-          title: "receivedCommand: /roll",
-          description,
+          type: 17,
+          accent_color: 0x99_99_99,
+          components: [
+            {
+              type: 10,
+              content: logContent,
+            },
+          ],
         },
       ],
       allowed_mentions: { parse: [] },
@@ -1485,13 +1499,13 @@ type ResolvedRollLogDisplayContext = RollLogDisplayContextV1 & {
 type RollLogContextResolution =
   | {
       status: "resolved";
-      artifact: RollLogArtifactV1;
+      artifact: RollLogArtifact;
       displayContext: ResolvedRollLogDisplayContext | null;
     }
   | Extract<DeliverRollLogResultV1, { status: "retryable" | "failed" }>;
 
 function rollLogDisplayTelemetry(
-  artifact: RollLogArtifactV1,
+  artifact: RollLogArtifact,
   displayContext: ResolvedRollLogDisplayContext | null,
 ) {
   if (displayContext === null) return {};
@@ -1515,7 +1529,7 @@ function rollLogDisplayTelemetry(
 
 async function rollLogChannelContext(
   response: Response,
-  artifact: RollLogArtifactV1,
+  artifact: RollLogArtifact,
 ): Promise<{ name: string; type: DiscordRollChannelType }> {
   const channel: unknown = await response.json();
   if (
@@ -1549,7 +1563,7 @@ async function rollLogGuildName(
 
 async function resolveRollLogContext(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
-  artifact: RollLogArtifactV1,
+  artifact: RollLogArtifact,
   discordFetch: RequestFetch,
 ): Promise<RollLogContextResolution> {
   if (
@@ -1695,7 +1709,12 @@ async function resolveRollLogContext(
   };
 }
 
-function savedRollLogAttribution(artifact: RollLogArtifactV1): string | null {
+function savedRollLogAttribution(artifact: RollLogArtifact): string | null {
+  if (artifact.version === 2) {
+    return artifact.presentation.savedRoll === null
+      ? null
+      : `from ${artifact.presentation.savedRoll.scope} library · ${escapeDiscordMarkdown(artifact.presentation.savedRoll.name)}`;
+  }
   const resultFooter = artifact.payload.embeds?.[0]?.footer?.text;
   if (resultFooter === undefined) return null;
   const prefix = `sent to ${artifact.user.username} via ${artifact.source} · `;
@@ -1706,8 +1725,8 @@ function savedRollLogAttribution(artifact: RollLogArtifactV1): string | null {
     : null;
 }
 
-function buildRollLogEmbed(
-  artifact: RollLogArtifactV1,
+function buildRollLogComponents(
+  artifact: RollLogArtifact,
   shard: RollLogShardV1,
   displayContext: RollLogDisplayContextV1 | undefined,
 ) {
@@ -1715,7 +1734,10 @@ function buildRollLogEmbed(
   const isInvalidRoll =
     artifact.image.status === "unavailable" &&
     artifact.image.reason === "not-applicable";
-  const errorDescription = isInvalidRoll ? artifact.payload.content : undefined;
+  const errorDescription =
+    isInvalidRoll && artifact.version === 1
+      ? artifact.payload.content
+      : undefined;
   const errorSuffix =
     errorDescription === undefined ? "" : `\n\n${errorDescription}`;
   const description =
@@ -1723,37 +1745,43 @@ function buildRollLogEmbed(
       ? `${rollLogMetadataDescription(
           artifact,
           shard,
-          4_096 - errorSuffix.length,
+          4_000 - errorSuffix.length,
           displayContext,
         )}${errorSuffix}`
       : `${rollLogContextDescription(artifact, shard, displayContext)}\n\n${resultDescription}`;
   const title = isInvalidRoll ? INVALID_ROLL_LOG_TITLE : ROLL_LOG_TITLE;
-  const footerParts = [
+  const footer = [
     savedRollLogAttribution(artifact),
     artifact.image.status === "unavailable" &&
     artifact.image.reason !== "not-applicable"
       ? "Image unavailable"
       : null,
-  ].filter((part): part is string => part !== null);
-  const footer = footerParts.length === 0
-    ? undefined
-    : { text: footerParts.join(" · ") };
-  if (
-    description.length > 4_096 ||
-    title.length + description.length + (footer?.text.length ?? 0) >
-      MAX_EMBED_CHARACTERS
-  ) {
-    throw new Error("Roll log embed exceeds Discord's limits");
+  ].filter((part): part is string => part !== null).join(" · ");
+  if (description.length > 4_000 || footer.length > 4_000) {
+    throw new Error("Roll log components exceed Discord's limits");
   }
-  return {
-    color: isInvalidRoll ? 0xff_00_00 : 0x99_99_99,
-    title,
-    description,
-    ...(footer === undefined ? {} : { footer }),
-    ...(artifact.image.status === "available"
-      ? { image: { url: `attachment://${artifact.image.filename}` } }
-      : {}),
-  };
+  return [
+    {
+      type: 17,
+      accent_color: isInvalidRoll ? 0xff_00_00 : 0x99_99_99,
+      components: [
+        { type: 10, content: `## ${title}` },
+        { type: 10, content: description },
+        ...(artifact.image.status === "available"
+          ? [{
+              type: 12,
+              items: [{
+                media: { url: `attachment://${artifact.image.filename}` },
+                description: "Rendered dice result",
+              }],
+            }]
+          : []),
+        ...(footer.length === 0
+          ? []
+          : [{ type: 10, content: `-# ${footer}` }]),
+      ],
+    },
+  ];
 }
 
 export async function deliverRollLogV1(
@@ -1782,13 +1810,12 @@ export async function deliverRollLogV1(
     ...rollLogDisplayTelemetry(artifact, context.displayContext),
   };
   const payload = {
-    embeds: [
-      buildRollLogEmbed(
-        artifact,
-        shard,
-        context.displayContext ?? undefined,
-      ),
-    ],
+    flags: 1 << 15,
+    components: buildRollLogComponents(
+      artifact,
+      shard,
+      context.displayContext ?? undefined,
+    ),
     nonce: `log:${artifact.rollId}`,
     enforce_nonce: true,
     allowed_mentions: { parse: [] },
@@ -1954,7 +1981,9 @@ export async function deliverWebRoll(
       messagesUrl,
       env.DISCORD_BOT_TOKEN,
       {
-        content: input.clatter,
+        flags: DISCORD_COMPONENTS_V2_FLAG,
+        components: [{ type: 10, content: input.clatter }],
+        allowed_mentions: { parse: [] },
         ...(input.rollId === undefined
           ? {}
           : { nonce: `c${input.rollId}`, enforce_nonce: true }),
@@ -1991,15 +2020,22 @@ export async function deliverWebRoll(
     await wait(input.delayMs);
   }
 
+  // Empty legacy fields are edit controls for a retained pre-rollout clatter;
+  // they do not add legacy content to the resulting Components V2 message.
   const payload = {
     ...input.payload,
     ...(referenceId !== null || input.rollId === undefined
       ? {}
       : { nonce: input.rollId, enforce_nonce: true }),
     allowed_mentions: { parse: [] },
-    ...(referenceId === null
-      ? {}
-      : { attachments: [{ id: 0, filename: input.filename }] }),
+    ...(referenceId === null ? {} : { content: null, embeds: [] }),
+    attachments: [
+      {
+        id: 0,
+        filename: input.filename,
+        description: "Rendered dice result",
+      },
+    ],
   };
   const form = new FormData();
   form.set("payload_json", JSON.stringify(payload));
@@ -2096,10 +2132,12 @@ function gameDetectionDestination(
   if (detection.scope === "dm") {
     return `Direct message channel ${detection.channelId}`;
   }
-  const guild = detection.guildName ?? `Guild ${detection.guildId}`;
+  const guild = detection.guildName === null
+    ? `Guild ${detection.guildId}`
+    : escapeDiscordMarkdown(detection.guildName);
   const channel = detection.channelName === null
     ? `<#${detection.channelId}>`
-    : `${detection.channelName} (<#${detection.channelId}>)`;
+    : `${escapeDiscordMarkdown(detection.channelName)} (<#${detection.channelId}>)`;
   return `${guild} / ${channel}`;
 }
 
@@ -2108,7 +2146,7 @@ function gameDetectionPayload(detection: GameDetectionAnnouncementV1) {
   const fields = [
     {
       name: "Game",
-      value: `${detection.gameName} (\`${detection.gameId}\`)`,
+      value: `${escapeDiscordMarkdown(detection.gameName)} (\`${detection.gameId}\`)`,
       inline: false,
     },
     {
@@ -2134,22 +2172,29 @@ function gameDetectionPayload(detection: GameDetectionAnnouncementV1) {
       inline: false,
     });
   }
+  const title = detection.previousGameId === null
+    ? "Game detected"
+    : "New game detected";
   return {
-    flags: 1 << 12,
+    flags: (1 << 12) | (1 << 15),
     allowed_mentions: { parse: [] },
     nonce: `g${detection.sessionId.slice(-8)}${detection.detectionId.slice(-16)}`,
     enforce_nonce: true,
-    embeds: [
+    components: [
       {
-        title:
-          detection.previousGameId === null
-            ? "Game detected"
-            : "New game detected",
-        color: 0x9b_59_b6,
-        fields,
-        footer: {
-          text: `Session ${new Date(detection.sessionStartedAt).toISOString()} – ${new Date(detection.sessionLastRollAt).toISOString()} · detected ${new Date(detection.detectedAt).toISOString()}`,
-        },
+        type: 17,
+        accent_color: 0x9b_59_b6,
+        components: [
+          { type: 10, content: `## ${title}` },
+          ...fields.map((field) => ({
+            type: 10,
+            content: `**${field.name}**\n${field.value}`,
+          })),
+          {
+            type: 10,
+            content: `-# Session ${new Date(detection.sessionStartedAt).toISOString()} – ${new Date(detection.sessionLastRollAt).toISOString()} · detected ${new Date(detection.detectedAt).toISOString()}`,
+          },
+        ],
       },
     ],
   };
@@ -2233,10 +2278,10 @@ function lifecycleAlertDestination(
   if (context.guildId === null) return `DM channel ${context.channelId}`;
   const guild = context.guildName === null
     ? `Guild ${context.guildId}`
-    : `${context.guildName} (${context.guildId})`;
+    : `${escapeDiscordMarkdown(context.guildName)} (${context.guildId})`;
   const channel = context.channelName === null
     ? `<#${context.channelId}> (${context.channelId})`
-    : `${context.channelName} (${context.channelId})`;
+    : `${escapeDiscordMarkdown(context.channelName)} (${context.channelId})`;
   return `${guild} / ${channel}`;
 }
 
@@ -2274,51 +2319,57 @@ function lifecycleAlertPayload(alert: RollLifecycleAlert) {
   const { context } = alert;
   const presentation = lifecycleAlertPresentation(alert.state);
   const resultSummary = JSON.stringify(context.outcome);
+  const fields = [
+    { name: "Interaction", value: alert.interactionId },
+    { name: "State", value: alert.state },
+    { name: "Attempts", value: String(alert.attempts) },
+    {
+      name: "User",
+      value: `${escapeDiscordMarkdown(context.username)} (${context.userId})`,
+    },
+    { name: "Destination", value: lifecycleAlertDestination(context) },
+    {
+      name: "Notation",
+      value: escapeDiscordMarkdown(context.notation).slice(0, 1_024),
+    },
+    {
+      name: "Failure",
+      value: alert.failureCode === null
+        ? "No terminal failure code"
+        : `${alert.failureCode} · ${alert.failurePhase ?? "unknown phase"}`,
+    },
+    {
+      name: "Result snapshot",
+      value: escapeDiscordMarkdown(resultSummary).slice(0, 1_024),
+    },
+    ...lifecycleDiagnosticFields(alert),
+  ];
+  const filename = `roll-lifecycle-${alert.interactionId}.json`;
+  const textComponents = [
+    { type: 10, content: `## Roll lifecycle alert: ${presentation.label}` },
+    ...fields.map((field) => ({
+      type: 10,
+      content: `**${field.name}**\n${field.value}`,
+    })),
+    {
+      type: 10,
+      content: `-# ${alert.acceptedAt === null ? "Deferred" : "Accepted"} ${new Date(alert.acceptedAt ?? alert.deferredAt).toISOString()} · HTTP ${alert.httpStatus === null ? "n/a" : String(alert.httpStatus)}`,
+    },
+  ];
+  const containers = [];
+  for (let index = 0; index < textComponents.length; index += 10) {
+    containers.push({
+      type: 17,
+      accent_color: presentation.color,
+      components: textComponents.slice(index, index + 10),
+    });
+  }
   return {
-    flags: 1 << 12,
+    flags: (1 << 12) | DISCORD_COMPONENTS_V2_FLAG,
     allowed_mentions: { parse: [] },
-    embeds: [
-      {
-        title: `Roll lifecycle alert: ${presentation.label}`,
-        color: presentation.color,
-        fields: [
-          { name: "Interaction", value: alert.interactionId, inline: true },
-          { name: "State", value: alert.state, inline: true },
-          { name: "Attempts", value: String(alert.attempts), inline: true },
-          {
-            name: "User",
-            value: `${context.username} (${context.userId})`,
-            inline: false,
-          },
-          {
-            name: "Destination",
-            value: lifecycleAlertDestination(context),
-            inline: false,
-          },
-          {
-            name: "Notation",
-            value: context.notation.slice(0, 1_024),
-            inline: false,
-          },
-          {
-            name: "Failure",
-            value:
-              alert.failureCode === null
-                ? "No terminal failure code"
-                : `${alert.failureCode} · ${alert.failurePhase ?? "unknown phase"}`,
-            inline: false,
-          },
-          {
-            name: "Result snapshot",
-            value: resultSummary.slice(0, 1_024),
-            inline: false,
-          },
-          ...lifecycleDiagnosticFields(alert),
-        ],
-        footer: {
-          text: `${alert.acceptedAt === null ? "Deferred" : "Accepted"} ${new Date(alert.acceptedAt ?? alert.deferredAt).toISOString()} · HTTP ${alert.httpStatus === null ? "n/a" : String(alert.httpStatus)}`,
-        },
-      },
+    components: [
+      ...containers,
+      { type: 13, file: { url: `attachment://${filename}` } },
     ],
   };
 }
@@ -2329,7 +2380,7 @@ function lifecycleAlertForm(alert: RollLifecycleAlert, create: boolean): FormDat
     ...lifecycleAlertPayload(alert),
     ...(create
       ? { nonce: `l${alert.interactionId}`, enforce_nonce: true }
-      : {}),
+      : { content: null, embeds: [] }),
     attachments: [
       {
         id: "0",

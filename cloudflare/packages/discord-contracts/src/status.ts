@@ -136,14 +136,20 @@ export function buildStatusCommandResponse(
   return {
     type: 4,
     data: {
-      embeds: [
+      flags: 1 << 15,
+      components: [
         {
-          color: STATUS_COLOR,
-          title: "Status",
-          description: `Latency: **${now - interaction.createdAt}ms**\nI'm in **${snapshot.liveGuilds}** discord servers with **${snapshot.knownDiceWitchUsers}** users 😈${shardStatusText}`,
+          type: 17,
+          accent_color: STATUS_COLOR,
+          components: [
+            {
+              type: 10,
+              content: `## Status\nLatency: **${now - interaction.createdAt}ms**\nI'm in **${snapshot.liveGuilds}** discord servers with **${snapshot.knownDiceWitchUsers}** users 😈${shardStatusText}`,
+            },
+            ...buildFooterComponents(links),
+          ],
         },
       ],
-      components: buildFooterComponents(links),
       allowed_mentions: { parse: [] },
     },
   };
@@ -155,14 +161,20 @@ export function buildStatusUnavailableResponse(
   return {
     type: 4,
     data: {
-      embeds: [
+      flags: 1 << 15,
+      components: [
         {
-          color: 0xff_00_00,
-          title: "Error",
-          description: "Failed to fetch status information",
+          type: 17,
+          accent_color: 0xff_00_00,
+          components: [
+            {
+              type: 10,
+              content: "## Error\nFailed to fetch status information",
+            },
+            ...buildFooterComponents(links),
+          ],
         },
       ],
-      components: buildFooterComponents(links),
       allowed_mentions: { parse: [] },
     },
   };

@@ -7,6 +7,7 @@ const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
 const INFO_COLOR = 0x1e_90_ff;
 const TITLE = "👩‍🎓 Knowledge base";
+export const KNOWLEDGE_BASE_SELECT_CUSTOM_ID = "knowledgebase-topic";
 
 export type KnowledgeBaseLinks = DiscordFooterLinks;
 
@@ -129,6 +130,19 @@ const ARTICLES: Record<string, KnowledgeBaseField[]> = {
   ],
 };
 
+export const KNOWLEDGE_BASE_TOPIC_OPTIONS = [
+  ["exploding", "Exploding dice"],
+  ["reroll", "Reroll dice"],
+  ["keepdrop", "Keep and drop"],
+  ["target", "Count successes"],
+  ["crit", "Critical highlights"],
+  ["math", "Arithmetic and groups"],
+  ["sort", "Sort results"],
+  ["repeating", "Repeating rolls"],
+  ["unique", "Unique dice"],
+  ["fudge", "Fate or Fudge dice"],
+] as const;
+
 const BUTTON_TOPICS = new Set([
   "exploding",
   "reroll",
@@ -200,11 +214,23 @@ export function parseKnowledgeBaseInteraction(
     return { topic: parseCommandTopic(value.data) };
   }
   if (value.type === 3) {
-    if (
-      value.data.component_type !== 2 ||
-      typeof value.data.custom_id !== "string"
-    ) {
-      throw new Error("Knowledgebase button is invalid");
+    if (typeof value.data.custom_id !== "string") {
+      throw new Error("Knowledgebase component is invalid");
+    }
+    if (value.data.component_type === 3) {
+      if (
+        value.data.custom_id !== KNOWLEDGE_BASE_SELECT_CUSTOM_ID ||
+        !Array.isArray(value.data.values) ||
+        value.data.values.length !== 1 ||
+        typeof value.data.values[0] !== "string" ||
+        !BUTTON_TOPICS.has(value.data.values[0])
+      ) {
+        throw new Error("Knowledgebase select is invalid");
+      }
+      return { topic: value.data.values[0] };
+    }
+    if (value.data.component_type !== 2) {
+      throw new Error("Knowledgebase component is invalid");
     }
     const match = /^knowledgebase-([a-z]+)$/.exec(value.data.custom_id);
     if (match === null) return null;
@@ -229,8 +255,38 @@ export function buildKnowledgeBaseResponse(
   return {
     type: 4,
     data: {
-      embeds: [{ color: INFO_COLOR, title: TITLE, fields }],
-      components: buildFooterComponents(links),
+      flags: 1 << 15,
+      components: [
+        {
+          type: 17,
+          accent_color: INFO_COLOR,
+          components: [
+            { type: 10, content: `## ${TITLE}` },
+            ...fields.map((field) => ({
+              type: 10,
+              content: `### ${field.name}\n${field.value}`,
+            })),
+            {
+              type: 1,
+              components: [
+                {
+                  type: 3,
+                  custom_id: KNOWLEDGE_BASE_SELECT_CUSTOM_ID,
+                  placeholder: "Choose a knowledge-base topic",
+                  min_values: 1,
+                  max_values: 1,
+                  options: KNOWLEDGE_BASE_TOPIC_OPTIONS.map(([value, label]) => ({
+                    value,
+                    label,
+                    ...(value === topic ? { default: true } : {}),
+                  })),
+                },
+              ],
+            },
+            ...buildFooterComponents(links),
+          ],
+        },
+      ],
       allowed_mentions: { parse: [] },
     },
   };

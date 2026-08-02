@@ -1,9 +1,16 @@
 import type { RollDie, RollExecutionResult } from "../../roll-domain/src";
 import { createDeterministicRandom } from "../../roll-domain/src/random";
-import type { DiscordMessage } from "./responses";
+import {
+  DISCORD_COMPONENTS_V2_FLAG,
+  type DiscordComponentsV2Message,
+  type DiscordContainerChild,
+  type DiscordTextDisplay,
+} from "./responses";
 
-const TABLETOP_COLOR = 0x966f33;
-const MAX_EMBED_DESCRIPTION_LENGTH = 4_096;
+const TABLETOP_COLOR = 0x96_6f_33;
+const ERROR_COLOR = 0xe7_4c_3c;
+const MAX_RESULT_DESCRIPTION_LENGTH = 4_096;
+const MAX_TEXT_DISPLAY_LENGTH = 4_000;
 const MAX_TITLE_LENGTH = 256;
 const MAX_USERNAME_LENGTH = 32;
 const PNG_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/i;
@@ -15,15 +22,43 @@ export type RollResultMessageOptions = {
   filename: string;
   clatter?: string;
   savedRoll?: { scope: "Mine" | "Server"; name: string };
-  copyCustomId?: string;
+  saveRollCustomId?: string;
 };
+
+function escapeDiscordMarkdown(value: string): string {
+  let escaped = value;
+  for (const character of [
+    "\\",
+    "`",
+    "*",
+    "_",
+    "{",
+    "}",
+    "[",
+    "]",
+    "(",
+    ")",
+    "<",
+    ">",
+    "#",
+    "+",
+    "-",
+    ".",
+    "!",
+    "|",
+    "~",
+  ]) {
+    escaped = escaped.split(character).join(`\\${character}`);
+  }
+  return escaped;
+}
 
 function savedRollAttributionSuffix(
   savedRoll: RollResultMessageOptions["savedRoll"],
 ): string {
   if (savedRoll === undefined) return "";
   const owner = savedRoll.scope === "Server" ? "server" : "personal";
-  return ` · from ${owner} library · ${savedRoll.name}`;
+  return ` · from ${owner} library · ${escapeDiscordMarkdown(savedRoll.name)}`;
 }
 
 function clatterMessages(single: boolean): string[] {
@@ -72,10 +107,10 @@ function clatterTotals(dice: RollDie[]): {
   return { total, minimum, maximum };
 }
 
-export function buildRollClatterMessage(
+export function rollClatterText(
   result: RollExecutionResult,
   seed: number,
-): DiscordMessage {
+): string {
   const groups = result.outcomes.map((outcome) => outcome.dice);
   const dice = groups.flat();
   if (dice.length === 0) {
@@ -88,7 +123,7 @@ export function buildRollClatterMessage(
     throw new Error("Roll clatter messages are unavailable");
   }
   const { total, minimum, maximum } = clatterTotals(dice);
-  if (maximum <= minimum) return { content: defaultMessage };
+  if (maximum <= minimum) return defaultMessage;
 
   const percentile = ((total - minimum) / (maximum - minimum)) * 100;
   const first = groups[0]?.[0];
@@ -98,7 +133,7 @@ export function buildRollClatterMessage(
     ((first.sides === 4 && total === 4) ||
       (first.sides === 6 && total === 6));
   if (!extremeSingle && percentile < 99 && total !== maximum && percentile > 5) {
-    return { content: defaultMessage };
+    return defaultMessage;
   }
 
   const random = createDeterministicRandom((seed ^ 0x434c_4154) >>> 0);
@@ -107,32 +142,114 @@ export function buildRollClatterMessage(
   if (message === undefined) {
     throw new Error("Roll clatter variant is unavailable");
   }
-  return { content: message };
+  return message;
 }
 
-export function buildRollErrorMessage(
+function textMessage(content: string): DiscordComponentsV2Message {
+  return {
+    flags: DISCORD_COMPONENTS_V2_FLAG,
+    components: [{ type: 10, content }],
+  };
+}
+
+export function buildRollClatterMessage(
   result: RollExecutionResult,
-): DiscordMessage {
+  seed: number,
+): DiscordComponentsV2Message {
+  return textMessage(rollClatterText(result, seed));
+}
+
+export function rollErrorText(result: RollExecutionResult): string {
   if (result.outcomes.length > 0 || result.errors.length === 0) {
     throw new Error("Roll result does not contain a terminal display error");
   }
   const overLimit = result.errors.some((error) =>
     ["TOO_MANY_DICE", "TOO_MANY_SIDES", "UNSAFE_EXPLOSION"].includes(error.code),
   );
+  return overLimit
+    ? "50 dice max and 999 sides max, sorry 😅"
+    : "🚫🎲 Invalid dice notation!";
+}
+
+export function buildRollErrorMessage(
+  result: RollExecutionResult,
+): DiscordComponentsV2Message {
   return {
-    content: overLimit
-      ? "50 dice max and 999 sides max, sorry 😅"
-      : "🚫🎲 Invalid dice notation!",
+    flags: DISCORD_COMPONENTS_V2_FLAG,
+    components: [
+      {
+        type: 17,
+        accent_color: ERROR_COLOR,
+        components: [
+          {
+            type: 10,
+            content: rollErrorText(result),
+          },
+        ],
+      },
+    ],
   };
+}
+
+function textDisplays(content: string): DiscordTextDisplay[] {
+  const displays: DiscordTextDisplay[] = [];
+  let remaining = content;
+  while (remaining.length > MAX_TEXT_DISPLAY_LENGTH) {
+    const newline = remaining.lastIndexOf("\n", MAX_TEXT_DISPLAY_LENGTH);
+    const splitAt = newline > 0 ? newline : MAX_TEXT_DISPLAY_LENGTH;
+    displays.push({ type: 10, content: remaining.slice(0, splitAt) });
+    remaining = remaining.slice(splitAt + (newline > 0 ? 1 : 0));
+  }
+  if (remaining.length > 0) displays.push({ type: 10, content: remaining });
+  return displays;
+}
+
+export function rollResultText(result: RollExecutionResult): string {
+  const grandTotal = result.outcomes.reduce(
+    (total, outcome) => total + outcome.total,
+    0,
+  );
+  const description = `${result.outcomes
+    .map((outcome) => outcome.output)
+    .join("\n")} ${
+    result.outcomes.length > 1 ? `\ngrand total = ${String(grandTotal)}` : ""
+  }`;
+  return description.length > MAX_RESULT_DESCRIPTION_LENGTH
+    ? "Roll result exceeds Discord's 4,096-character message limit."
+    : description;
+}
+
+function resultHeading(
+  options: RollResultMessageOptions,
+): DiscordContainerChild[] {
+  const heading = options.title ?? options.savedRoll?.name ?? null;
+  if (heading === null) return [];
+  const content = `## ${escapeDiscordMarkdown(heading)}`;
+  if (options.saveRollCustomId === undefined) {
+    return [{ type: 10, content }];
+  }
+  return [
+    {
+      type: 9,
+      components: [{ type: 10, content }],
+      accessory: {
+        type: 2,
+        style: 2,
+        label: "Save roll",
+        custom_id: options.saveRollCustomId,
+      },
+    },
+  ];
 }
 
 export function buildRollResultMessage(
   result: RollExecutionResult,
   options: RollResultMessageOptions,
-): DiscordMessage {
+): DiscordComponentsV2Message {
   if (result.outcomes.length === 0) {
     throw new Error("Roll result has no displayable outcomes");
   }
+  const heading = options.title ?? options.savedRoll?.name ?? null;
   if (
     (options.title !== null &&
       (options.title.length === 0 || options.title.length > MAX_TITLE_LENGTH)) ||
@@ -144,56 +261,39 @@ export function buildRollResultMessage(
     (options.savedRoll !== undefined &&
       (options.savedRoll.name.length === 0 ||
         options.savedRoll.name.length > 1_024)) ||
-    (options.copyCustomId !== undefined &&
-      (options.savedRoll?.scope !== "Server" ||
-        options.copyCustomId.length < 1 ||
-        options.copyCustomId.length > 100))
+    (options.saveRollCustomId !== undefined &&
+      (heading === null ||
+        options.saveRollCustomId.length < 1 ||
+        options.saveRollCustomId.length > 100))
   ) {
     throw new Error("Roll result message options are invalid");
   }
-  const grandTotal = result.outcomes.reduce(
-    (total, outcome) => total + outcome.total,
-    0,
-  );
-  const description = `${result.outcomes
-    .map((outcome) => outcome.output)
-    .join("\n")} ${
-    result.outcomes.length > 1 ? `\ngrand total = ${String(grandTotal)}` : ""
-  }`;
-  if (description.length > MAX_EMBED_DESCRIPTION_LENGTH) {
-    return {
-      content: "Roll result exceeds Discord's 4,096-character message limit.",
-    };
-  }
-  return {
-    ...(options.clatter === undefined ? {} : { content: options.clatter }),
-    embeds: [
-      {
-        ...(options.title === null ? {} : { title: options.title }),
-        description,
-        color: TABLETOP_COLOR,
-        footer: {
-          text: `sent to ${options.username} via ${options.source}${savedRollAttributionSuffix(options.savedRoll)}`,
+  const resultText = rollResultText(result);
+  const container: DiscordContainerChild[] = [
+    ...resultHeading(options),
+    ...textDisplays(resultText),
+    {
+      type: 12,
+      items: [
+        {
+          media: { url: `attachment://${options.filename}` },
+          description: "Rendered dice result",
         },
-        image: { url: `attachment://${options.filename}` },
-      },
+      ],
+    },
+    { type: 14, divider: true, spacing: 1 },
+    {
+      type: 10,
+      content: `-# sent to ${escapeDiscordMarkdown(options.username)} via ${options.source}${savedRollAttributionSuffix(options.savedRoll)}`,
+    },
+  ];
+  return {
+    flags: DISCORD_COMPONENTS_V2_FLAG,
+    components: [
+      ...(options.clatter === undefined
+        ? []
+        : [{ type: 10 as const, content: options.clatter }]),
+      { type: 17, accent_color: TABLETOP_COLOR, components: container },
     ],
-    ...(options.copyCustomId === undefined
-      ? {}
-      : {
-          components: [
-            {
-              type: 1 as const,
-              components: [
-                {
-                  type: 2 as const,
-                  style: 2 as const,
-                  label: "Copy to Personal",
-                  custom_id: options.copyCustomId,
-                },
-              ],
-            },
-          ],
-        }),
   };
 }

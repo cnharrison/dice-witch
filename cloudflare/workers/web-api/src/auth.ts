@@ -9,6 +9,7 @@ import {
   APPEARANCE_CATALOG_V3,
 } from "../../../packages/dice-appearance/src";
 import { MAX_NOTATION_LENGTH } from "../../../packages/roll-domain/src/constants";
+import { parseSavedRollNameColorV2 } from "../../../packages/saved-rolls/src/color";
 import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
 import {
   DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS,
@@ -1510,7 +1511,9 @@ async function resolveWebLibraryRoll(
     repetitions: unknown;
     title: unknown;
   },
-): Promise<{ scope: "personal" | "guild"; name: string } | Response> {
+): Promise<
+  { scope: "personal" | "guild"; name: string; nameColor: string | null } | Response
+> {
   const owner = selection.scope === "personal"
     ? { type: "user", userId }
     : { type: "guild", guildId };
@@ -1552,9 +1555,16 @@ async function resolveWebLibraryRoll(
   ) {
     return json({ error: "That Library roll changed. Roll it again." }, 409);
   }
+  let nameColor: string | null;
+  try {
+    nameColor = parseSavedRollNameColorV2(result.savedRoll.nameColor);
+  } catch {
+    return json({ error: "Library roll response is invalid" }, 502);
+  }
   return {
     scope: selection.scope === "personal" ? "personal" : "guild",
     name: result.savedRoll.displayName,
+    nameColor,
   };
 }
 

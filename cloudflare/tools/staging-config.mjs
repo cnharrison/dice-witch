@@ -500,6 +500,7 @@ function validateTopology(errors, configs, suffix) {
   ]);
   requireExactDurableObjects(errors, "interactions", configs.interactions, [
     "ROLL_WORK",
+    "WEB_DELIVERY_WORK",
   ]);
   requireExactDurableObjects(errors, "roll", configs.roll, [
     "LOG_WORK",
@@ -631,6 +632,16 @@ function validateTopology(errors, configs, suffix) {
     interactionRollWork?.script_name !== names.roll
   ) {
     errors.push(`Interactions ROLL_WORK must target ${names.roll}`);
+  }
+  const interactionWebDeliveryWork = durableBinding(
+    configs.interactions,
+    "WEB_DELIVERY_WORK",
+  );
+  if (
+    interactionWebDeliveryWork?.class_name !== "WebDeliveryWork" ||
+    interactionWebDeliveryWork?.script_name !== names.roll
+  ) {
+    errors.push(`Interactions WEB_DELIVERY_WORK must target ${names.roll}`);
   }
   const rollWork = durableBinding(configs.roll, "ROLL_WORK");
   if (

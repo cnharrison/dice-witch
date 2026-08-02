@@ -3,6 +3,7 @@ import {
   buildRollClatterMessage,
   buildRollErrorMessage,
   buildRollResultMessage,
+  DISCORD_COMPONENTS_V2_FLAG,
 } from "../../packages/discord-contracts/src";
 import { executeRoll } from "../../packages/roll-domain/src";
 
@@ -10,8 +11,14 @@ function result(notation: string[]) {
   return executeRoll({ notation, seed: 0 });
 }
 
+function clatterText(message: ReturnType<typeof buildRollClatterMessage>): string {
+  const component = message.components[0];
+  if (component?.type !== 10) throw new Error("Clatter text is missing");
+  return component.content;
+}
+
 describe("buildRollClatterMessage", () => {
-  it("preserves the legacy singular and plural default phrases", () => {
+  it("preserves the legacy singular and plural default phrases as V2 text", () => {
     const single = result(["1d20"]);
     const multiple = result(["2d20"]);
     const singleDie = single.outcomes[0]?.dice[0];
@@ -25,10 +32,16 @@ describe("buildRollClatterMessage", () => {
     });
 
     expect(buildRollClatterMessage(single, 1)).toEqual({
-      content: "_...the die clatters across the table..._",
+      flags: DISCORD_COMPONENTS_V2_FLAG,
+      components: [
+        { type: 10, content: "_...the die clatters across the table..._" },
+      ],
     });
     expect(buildRollClatterMessage(multiple, 1)).toEqual({
-      content: "_...the dice clatter across the table..._",
+      flags: DISCORD_COMPONENTS_V2_FLAG,
+      components: [
+        { type: 10, content: "_...the dice clatter across the table..._" },
+      ],
     });
   });
 
@@ -42,7 +55,9 @@ describe("buildRollClatterMessage", () => {
     const retry = buildRollClatterMessage(roll, 0x1234_abcd);
 
     expect(retry).toEqual(first);
-    expect(first.content).not.toBe("_...the die clatters across the table..._");
+    expect(clatterText(first)).not.toBe(
+      "_...the die clatters across the table..._",
+    );
   });
 
   it("accepts persisted seeds with the unsigned high bit set", () => {
@@ -56,8 +71,11 @@ describe("buildRollClatterMessage", () => {
 });
 
 describe("buildRollResultMessage", () => {
-  it("preserves the production result embed and attachment semantics", () => {
+  it("renders clatter, heading, result, image, and attribution as V2 components", () => {
     const roll = result(["1d20+5", "2d6"]);
+    const description = `${roll.outcomes[0]?.output}\n${roll.outcomes[1]?.output} \ngrand total = ${String(
+      roll.outcomes.reduce((total, outcome) => total + outcome.total, 0),
+    )}`;
 
     expect(
       buildRollResultMessage(roll, {
@@ -66,107 +84,175 @@ describe("buildRollResultMessage", () => {
         username: "roller",
         filename: "dice-1400000000000000000.png",
         clatter: "_...the dice clatter across the table..._",
+        saveRollCustomId: "save-roll:v1:d:1400000000000000000",
       }),
     ).toEqual({
-      content: "_...the dice clatter across the table..._",
-      embeds: [
+      flags: DISCORD_COMPONENTS_V2_FLAG,
+      components: [
+        { type: 10, content: "_...the dice clatter across the table..._" },
         {
-          title: "Enchanted sword",
-          description: `${roll.outcomes[0]?.output}\n${roll.outcomes[1]?.output} \ngrand total = ${String(
-            roll.outcomes.reduce((total, outcome) => total + outcome.total, 0),
-          )}`,
-          color: 0x966f33,
-          footer: { text: "sent to roller via discord" },
-          image: { url: "attachment://dice-1400000000000000000.png" },
+          type: 17,
+          accent_color: 0x96_6f_33,
+          components: [
+            {
+              type: 9,
+              components: [{ type: 10, content: "## Enchanted sword" }],
+              accessory: {
+                type: 2,
+                style: 2,
+                label: "Save roll",
+                custom_id: "save-roll:v1:d:1400000000000000000",
+              },
+            },
+            { type: 10, content: description },
+            {
+              type: 12,
+              items: [
+                {
+                  media: {
+                    url: "attachment://dice-1400000000000000000.png",
+                  },
+                  description: "Rendered dice result",
+                },
+              ],
+            },
+            { type: 14, divider: true, spacing: 1 },
+            { type: 10, content: "-# sent to roller via discord" },
+          ],
         },
       ],
     });
   });
 
-  it("attributes a saved roll in the footer without replacing its title", () => {
+  it("uses a Library name as the heading and preserves Library attribution", () => {
     const message = buildRollResultMessage(result(["1d20"]), {
       source: "discord",
-      title: "Initiative",
+      title: null,
       username: "roller",
       filename: "dice.png",
-      savedRoll: { scope: "Server", name: "Opening attack" },
-      copyCustomId: "saved-roll:v1:1400000000000000000:copy",
+      savedRoll: { scope: "Mine", name: "Initiative" },
+      saveRollCustomId: "save-roll:v1:d:1400000000000000000",
     });
+    const container = message.components[0];
+    if (container?.type !== 17) throw new Error("Result Container is missing");
 
-    expect(message.embeds?.[0]).toMatchObject({
-      title: "Initiative",
-      footer: {
-        text: "sent to roller via discord · from server library · Opening attack",
+    expect(container.components[0]).toEqual({
+      type: 9,
+      components: [{ type: 10, content: "## Initiative" }],
+      accessory: {
+        type: 2,
+        style: 2,
+        label: "Save roll",
+        custom_id: "save-roll:v1:d:1400000000000000000",
       },
     });
-    expect(
-      buildRollResultMessage(result(["1d20"]), {
-        source: "discord",
-        title: null,
-        username: "roller",
-        filename: "dice.png",
-        savedRoll: { scope: "Mine", name: "Initiative" },
-      }).embeds?.[0]?.footer,
-    ).toEqual({
-      text: "sent to roller via discord · from personal library · Initiative",
+    expect(container.components.at(-1)).toEqual({
+      type: 10,
+      content:
+        "-# sent to roller via discord · from personal library · Initiative",
     });
-    expect(message.components).toEqual([
-      {
-        type: 1,
-        components: [
-          {
-            type: 2,
-            style: 2,
-            label: "Copy to Personal",
-            custom_id: "saved-roll:v1:1400000000000000000:copy",
-          },
-        ],
-      },
-    ]);
   });
 
-  it("omits only an absent optional title", () => {
+  it("keeps an untitled fresh result full width without a Save roll action", () => {
     const message = buildRollResultMessage(result(["1d20"]), {
       source: "web",
       title: null,
       username: "roller",
       filename: "dice.png",
     });
+    const container = message.components[0];
+    if (container?.type !== 17) throw new Error("Result Container is missing");
 
-    expect(message.embeds?.[0]).not.toHaveProperty("title");
-    expect(message.embeds?.[0]?.description).toMatch(/^1d20:/);
-    expect(message.embeds?.[0]?.footer).toEqual({
-      text: "sent to roller via web",
+    const resultText = container.components[0];
+    expect(resultText?.type).toBe(10);
+    if (resultText?.type !== 10) throw new Error("Result text is missing");
+    expect(resultText.content).toMatch(/^1d20:/);
+    expect(container.components.some((component) => component.type === 9)).toBe(
+      false,
+    );
+    expect(container.components.at(-1)).toEqual({
+      type: 10,
+      content: "-# sent to roller via web",
+    });
+  });
+
+  it("escapes user-authored Markdown in headings and attribution", () => {
+    const message = buildRollResultMessage(result(["1d20"]), {
+      source: "discord",
+      title: "# **Attack**",
+      username: "_roller_",
+      filename: "dice.png",
+      savedRoll: { scope: "Server", name: "[Opening](https://example.com)" },
+      saveRollCustomId: "save-roll:v1:d:1400000000000000000",
+    });
+    const container = message.components[0];
+    if (container?.type !== 17) throw new Error("Result Container is missing");
+
+    expect(container.components[0]).toMatchObject({
+      type: 9,
+      components: [{ type: 10, content: "## \\# \\*\\*Attack\\*\\*" }],
+    });
+    expect(container.components.at(-1)).toEqual({
+      type: 10,
+      content:
+        "-# sent to \\_roller\\_ via discord · from server library · \\[Opening\\]\\(https://example\\.com\\)",
     });
   });
 
   it("uses the current limit message for rejected oversized rolls", () => {
     expect(buildRollErrorMessage(result(["51d6"]))).toEqual({
-      content: "50 dice max and 999 sides max, sorry 😅",
+      flags: DISCORD_COMPONENTS_V2_FLAG,
+      components: [
+        {
+          type: 17,
+          accent_color: 0xe7_4c_3c,
+          components: [
+            { type: 10, content: "50 dice max and 999 sides max, sorry 😅" },
+          ],
+        },
+      ],
     });
   });
 
   it("uses the current invalid-notation message without promising an unavailable DM", () => {
     expect(buildRollErrorMessage(result(["not-dice"]))).toEqual({
-      content: "🚫🎲 Invalid dice notation!",
+      flags: DISCORD_COMPONENTS_V2_FLAG,
+      components: [
+        {
+          type: 17,
+          accent_color: 0xe7_4c_3c,
+          components: [{ type: 10, content: "🚫🎲 Invalid dice notation!" }],
+        },
+      ],
     });
   });
 
-  it("returns an explicit Discord limit response instead of retrying forever", () => {
+  it("keeps the rendered image in an explicit V2 limit response", () => {
     const roll = result(["1d20"]);
     const outcome = roll.outcomes[0];
     if (outcome === undefined) throw new Error("Fixture outcome is missing");
     outcome.output = "x".repeat(4_097);
 
-    expect(
-      buildRollResultMessage(roll, {
-        source: "discord",
-        title: null,
-        username: "roller",
-        filename: "dice.png",
-      }),
-    ).toEqual({
+    const message = buildRollResultMessage(roll, {
+      source: "discord",
+      title: null,
+      username: "roller",
+      filename: "dice.png",
+    });
+    const container = message.components[0];
+    if (container?.type !== 17) throw new Error("Result Container is missing");
+    expect(container.components).toContainEqual({
+      type: 10,
       content: "Roll result exceeds Discord's 4,096-character message limit.",
+    });
+    expect(container.components).toContainEqual({
+      type: 12,
+      items: [
+        {
+          media: { url: "attachment://dice.png" },
+          description: "Rendered dice result",
+        },
+      ],
     });
   });
 

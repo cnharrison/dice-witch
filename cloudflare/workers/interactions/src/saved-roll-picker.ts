@@ -1,3 +1,4 @@
+import type { DiscordContainerChild } from "../../../packages/discord-contracts/src";
 import { parseSavedRollNameV1 } from "../../../packages/saved-rolls/src/name";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -5,7 +6,6 @@ const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const AUTOCOMPLETE_CHOICE_LIMIT = 25;
 const PICKER_PAGE_SIZE = 20;
 const MAX_CHOICE_LABEL_UTF16_LENGTH = 100;
-const MAX_BUTTON_LABEL_UTF16_LENGTH = 80;
 
 export type SavedRollOwnerV1 =
   | { type: "user"; userId: string }
@@ -315,18 +315,27 @@ export function buildSavedRollPickerResponse(input: {
     return {
       type: input.update === true ? 7 : 4,
       data: {
-        ...(input.update === true ? {} : { flags: 64 }),
-        content: "Your Library is empty. Log in to Dice Witch to add a saved roll.",
+        flags: (1 << 15) | 64,
         allowed_mentions: { parse: [] as string[] },
         components: [
           {
-            type: 1,
+            type: 17,
+            accent_color: 0x99_99_99,
             components: [
               {
-                type: 2,
-                style: 5,
-                label: "Open Library",
-                url: libraryUrl.href,
+                type: 10,
+                content: "## Personal Library\nYour Library is empty. Log in to Dice Witch to add a saved roll.",
+              },
+              {
+                type: 1,
+                components: [
+                  {
+                    type: 2,
+                    style: 5,
+                    label: "Open Library",
+                    url: libraryUrl.href,
+                  },
+                ],
               },
             ],
           },
@@ -342,44 +351,63 @@ export function buildSavedRollPickerResponse(input: {
     page * PICKER_PAGE_SIZE,
     (page + 1) * PICKER_PAGE_SIZE,
   );
-  const components: Array<Record<string, unknown>> = [
+  const containerComponents: DiscordContainerChild[] = [
+    {
+      type: 10,
+      content: `## ${input.scope === "mine" ? "Personal" : "Server"} Library\nPage ${String(page + 1)} of ${String(pageCount)}`,
+    },
     {
       type: 1,
       components: [
         { type: 2, style: input.scope === "mine" ? 1 : 2, label: "Personal", custom_id: customId(input.sessionId, "mine") },
         { type: 2, style: input.scope === "server" ? 1 : 2, label: "Server", custom_id: customId(input.sessionId, "server"), disabled: input.server.length === 0 },
-        { type: 2, style: 2, label: "│", custom_id: customId(input.sessionId, "separator"), disabled: true },
         { type: 2, style: 2, label: "Previous", custom_id: customId(input.sessionId, "previous"), disabled: page === 0 },
         { type: 2, style: 2, label: "Next", custom_id: customId(input.sessionId, "next"), disabled: page + 1 >= pageCount },
       ],
     },
   ];
-  for (let offset = 0; offset < visible.length; offset += 5) {
-    components.push({
+  if (visible.length > 0) {
+    containerComponents.push({
       type: 1,
-      components: visible.slice(offset, offset + 5).map((savedRoll) => ({
-        type: 2,
-        style: 2,
-        label: boundedDiscordText(
-          savedRoll.displayName,
-          MAX_BUTTON_LABEL_UTF16_LENGTH,
-        ),
-        custom_id: customId(
-          input.sessionId,
-          `run:${selectionValue(input.scope, savedRoll.id)}`,
-        ),
-      })),
+      components: [
+        {
+          type: 3,
+          custom_id: customId(input.sessionId, "select"),
+          placeholder: "Choose a roll to run",
+          min_values: 1,
+          max_values: 1,
+          options: visible.map((savedRoll) => ({
+            label: boundedDiscordText(
+              savedRoll.displayName,
+              MAX_CHOICE_LABEL_UTF16_LENGTH,
+            ),
+            value: selectionValue(input.scope, savedRoll.id),
+            description: boundedDiscordText(
+              savedRoll.notation,
+              MAX_CHOICE_LABEL_UTF16_LENGTH,
+            ),
+          })),
+        },
+      ],
+    });
+  } else {
+    containerComponents.push({
+      type: 10,
+      content: `No ${input.scope === "mine" ? "Personal" : "Server"} Library rolls are available.`,
     });
   }
   return {
     type: input.update === true ? 7 : 4,
     data: {
-      ...(input.update === true ? {} : { flags: 64 }),
-      content: records.length === 0
-        ? `No ${input.scope === "mine" ? "Personal" : "Server"} Library rolls are available.`
-        : `${input.scope === "mine" ? "Personal" : "Server"} · page ${String(page + 1)} of ${String(pageCount)}`,
+      flags: (1 << 15) | 64,
       allowed_mentions: { parse: [] as string[] },
-      components,
+      components: [
+        {
+          type: 17,
+          accent_color: 0x99_99_99,
+          components: containerComponents,
+        },
+      ],
     },
   };
 }

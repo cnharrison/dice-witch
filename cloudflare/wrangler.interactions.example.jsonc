@@ -37,6 +37,11 @@
         "name": "ROLL_WORK",
         "class_name": "RollWork",
         "script_name": "dice-witch-roll"
+      },
+      {
+        "name": "WEB_DELIVERY_WORK",
+        "class_name": "WebDeliveryWork",
+        "script_name": "dice-witch-roll"
       }
     ]
   },

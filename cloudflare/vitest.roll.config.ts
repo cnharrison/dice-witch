@@ -15,6 +15,16 @@ const accountingAttempts = new Map<string, number>();
 const appearanceAttempts = new Map<string, number>();
 const resultDeliveryAttempts = new Map<string, number>();
 
+function v2TopLevelText(payload: unknown): string | null {
+  if (!isRecord(payload) || !Array.isArray(payload.components)) return null;
+  const text = (payload.components as unknown[]).find(
+    (component) => isRecord(component) && component.type === 10,
+  );
+  return isRecord(text) && typeof text.content === "string"
+    ? text.content
+    : null;
+}
+
 function effectiveRecipesV2(primary: string | null): Record<string, unknown> {
   const recipe =
     primary === null
@@ -221,9 +231,9 @@ async function discordTestResponse(request: Request): Promise<Response> {
     }
     if (
       !isRecord(payload) ||
-      typeof payload.content !== "string" ||
-      !payload.content.startsWith("_...") ||
-      !payload.content.endsWith("..._")
+      (payload.flags as number) !== (1 << 15) ||
+      !v2TopLevelText(payload)?.startsWith("_...") ||
+      !v2TopLevelText(payload)?.endsWith("..._")
     ) {
       return Response.json({ message: "clatter missing" }, { status: 400 });
     }
@@ -262,8 +272,8 @@ async function discordTestResponse(request: Request): Promise<Response> {
         request.method !== "POST" ||
         url.searchParams.get("wait") !== "true" ||
         !isRecord(payload) ||
-        typeof payload.content !== "string" ||
-        !payload.content.startsWith("_...") ||
+        (payload.flags as number) !== (1 << 15) ||
+        !v2TopLevelText(payload)?.startsWith("_...") ||
         typeof payload.nonce !== "string" ||
         !/^c[1-9][0-9]{16,19}$/u.test(payload.nonce) ||
         payload.enforce_nonce !== true
@@ -347,7 +357,10 @@ async function discordTestResponse(request: Request): Promise<Response> {
       const payload: unknown = await request.json();
       if (
         isRecord(payload) &&
-        payload.content === "This roll could not be completed. Please try again."
+        payload.flags === ((1 << 15) | 64) &&
+        JSON.stringify(payload.components).includes(
+          "This roll could not be completed. Please try again.",
+        )
       ) {
         return Response.json({ id: "development-message" });
       }
@@ -448,13 +461,14 @@ export default defineConfig({
                       const key = "web:" + value.rollId;
                       const attempts = (logAttempts.get(key) ?? 0) + 1;
                       logAttempts.set(key, attempts);
-                      if (value.payload?.embeds?.[0]?.title === "web-retry" && attempts === 1) {
+                      const payloadJson = JSON.stringify(value.payload);
+                      if (payloadJson.includes("## web retry") && attempts === 1) {
                         return { status: "retryable", httpStatus: 503, retryAfterMs: 1000 };
                       }
-                      if (value.payload?.embeds?.[0]?.title === "web-permission") {
+                      if (payloadJson.includes("## web permission")) {
                         return { status: "permission_error" };
                       }
-                      if (value.payload?.embeds?.[0]?.title === "web-failed") {
+                      if (payloadJson.includes("## web failed")) {
                         return { status: "failed", httpStatus: 400 };
                       }
                       return { status: "delivered" };

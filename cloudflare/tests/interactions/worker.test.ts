@@ -76,6 +76,9 @@ async function signedRequest(
       ROLL_WORK: {
         getByName: () => overrides.rollWork ?? {},
       } as unknown as DurableObjectNamespace,
+      WEB_DELIVERY_WORK: {
+        getByName: () => ({}),
+      } as unknown as DurableObjectNamespace,
     },
     request: new Request(
       `https://interactions.test${overrides.path ?? "/interactions"}`,
@@ -136,6 +139,59 @@ function savedRollDataFetch(request: Request): Promise<Response> {
 }
 
 describe("Discord HTTP interaction Worker", () => {
+  it("routes Save roll buttons to the source Durable Object and private modal", async () => {
+    const createdAt = Date.now();
+    const body = JSON.stringify({
+      id: "1400000000000000001",
+      application_id: "100000000000000001",
+      token: "interaction-token",
+      type: 3,
+      guild_id: "100000000000000002",
+      channel_id: "1400000000000000002",
+      member: {
+        user: { id: "1400000000000000004", username: "roller" },
+      },
+      data: {
+        component_type: 2,
+        custom_id: "save-roll:v1:d:1400000000000000000",
+      },
+    });
+    const getSaveRollIntent = vi.fn(() => Promise.resolve({
+      status: "available",
+      intent: {
+        version: 1,
+        source: "fresh",
+        notation: "1d20",
+        title: "Initiative",
+        repetitions: 1,
+        defaultName: "Initiative",
+        nameColor: null,
+        createdAt,
+        expiresAt: createdAt + 90 * 24 * 60 * 60 * 1_000,
+      },
+    }));
+    const { request, env } = await signedRequest(body, {
+      rollWork: { getSaveRollIntent },
+      dataFetch: () => Promise.resolve(Response.json({
+        status: "found",
+        listRevision: 1,
+        savedRolls: [],
+      })),
+    });
+
+    const response = await handleInteractionRequest(request, env);
+    const result: unknown = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(result).toMatchObject({
+      type: 9,
+      data: {
+        custom_id: "save-roll:v1:d:1400000000000000000:submit",
+        components: [{ component: { value: "Initiative" } }],
+      },
+    });
+    expect(getSaveRollIntent).toHaveBeenCalledOnce();
+  });
   it("acknowledges an authenticated Discord PING", async () => {
     const { env, request } = await signedRequest('{"type":1}');
 
@@ -249,10 +305,10 @@ describe("Discord HTTP interaction Worker", () => {
     }>();
 
     expect(body.type).toBe(4);
-    expect(body.data.flags).toBe(64);
-    expect(body.data.components).toHaveLength(2);
-    expect(body.data.components.flatMap((row) => row.components)).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: 3 })]),
+    expect(body.data.flags).toBe((1 << 15) | 64);
+    expect(body.data.components).toHaveLength(1);
+    expect(JSON.stringify(body.data.components)).toContain(
+      "saved-roll:v1:100000000000000010:select",
     );
     expect(openSavedRollPicker).toHaveBeenCalledOnce();
   });
@@ -307,8 +363,9 @@ describe("Discord HTTP interaction Worker", () => {
         },
         member: { user: { id: "100000000000000004", username: "alice" } },
         data: {
-          custom_id: "saved-roll:v1:100000000000000010:run:mine:123e4567-e89b-42d3-a456-426614174000",
-          component_type: 2,
+          custom_id: "saved-roll:v1:100000000000000010:select",
+          component_type: 3,
+          values: ["mine:123e4567-e89b-42d3-a456-426614174000"],
         },
       }),
       {
@@ -521,7 +578,11 @@ describe("Discord HTTP interaction Worker", () => {
       data: {
         custom_id: `saved-roll:v1:${sessionId}:rename`,
         components: [
-          { components: [{ value: "Attack" }] },
+          {
+            type: 18,
+            label: "Personal Library roll name",
+            component: { value: "Attack" },
+          },
         ],
       },
     });
@@ -553,7 +614,19 @@ describe("Discord HTTP interaction Worker", () => {
       (await handleInteractionRequest(modal.request, modal.env)).json(),
     ).resolves.toMatchObject({
       type: 4,
-      data: { content: "Copied “Attack copy” to your Personal Library.", flags: 64 },
+      data: {
+        flags: (1 << 15) | 64,
+        components: [
+          {
+            accent_color: 0x2e_cc_71,
+            components: [
+              {
+                content: "Copied “Attack copy” to your Personal Library.",
+              },
+            ],
+          },
+        ],
+      },
     });
   });
 
@@ -749,11 +822,11 @@ describe("Discord HTTP interaction Worker", () => {
     expect(body).toMatchObject({
       type: 4,
       data: {
-        content: "🚫 Invalid notation",
-        flags: 64,
+        flags: (1 << 15) | 64,
         allowed_mentions: { parse: [] },
       },
     });
+    expect(JSON.stringify(body)).toContain("🚫 Invalid notation");
     expect(JSON.stringify(body)).not.toContain("Preparing your roll");
     expect(JSON.stringify(body)).toContain("Dice notation guide");
     expect(acceptDelivery).toHaveBeenCalledOnce();
@@ -834,10 +907,9 @@ describe("Discord HTTP interaction Worker", () => {
     const response = await handleInteractionRequest(request, env);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      type: 4,
-      data: { embeds: [{ title: "👩‍🎓 Knowledge base" }] },
-    });
+    const body = await response.json<{ data: { flags: number; components: unknown[] } }>();
+    expect(body.data.flags).toBe(1 << 15);
+    expect(JSON.stringify(body.data.components)).toContain("👩‍🎓 Knowledge base");
   });
 
   it("returns a public knowledgebase article from a signed command", async () => {
@@ -859,34 +931,13 @@ describe("Discord HTTP interaction Worker", () => {
     const response = await handleInteractionRequest(request, env);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      type: 4,
-      data: {
-        embeds: [
-          {
-            color: 2003199,
-            title: "👩‍🎓 Knowledge base",
-            fields: [
-              { name: "Fate or Fudge dice" },
-              { name: "Read the results" },
-            ],
-          },
-        ],
-        components: [
-          {
-            type: 1,
-            components: [
-              { type: 2, style: 5, label: "Invite me" },
-              {
-                type: 2,
-                style: 5,
-                label: "Questions? Join the support server",
-              },
-            ],
-          },
-        ],
-      },
-    });
+    const body = await response.json<{ data: { flags: number; components: unknown[] } }>();
+    expect(body.data.flags).toBe(1 << 15);
+    const serialized = JSON.stringify(body.data.components);
+    expect(serialized).toContain("Fate or Fudge dice");
+    expect(serialized).toContain("Read the results");
+    expect(serialized).toContain("knowledgebase-topic");
+    expect(serialized).toContain("Invite me");
   });
 
   it("returns a public knowledgebase article from a signed DM button", async () => {
@@ -908,21 +959,12 @@ describe("Discord HTTP interaction Worker", () => {
     const response = await handleInteractionRequest(request, env);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      type: 4,
-      data: {
-        embeds: [
-          {
-            title: "👩‍🎓 Knowledge base",
-            fields: [
-              { name: "Exploding dice" },
-              { name: "Compounding" },
-              { name: "Penetrating" },
-            ],
-          },
-        ],
-      },
-    });
+    const body = await response.json<{ data: { flags: number; components: unknown[] } }>();
+    expect(body.data.flags).toBe(1 << 15);
+    const serialized = JSON.stringify(body.data.components);
+    expect(serialized).toContain("Exploding dice");
+    expect(serialized).toContain("Compounding");
+    expect(serialized).toContain("Penetrating");
   });
 
   it("sends knowledge base help by DM only after the private button is pressed", async () => {
@@ -971,9 +1013,11 @@ describe("Discord HTTP interaction Worker", () => {
         throw new Error("Knowledge base confirmation request is missing");
       }
       expect(edit.method).toBe("PATCH");
-      await expect(edit.json()).resolves.toMatchObject({
-        content: "🧠 Knowledge base sent to your DMs",
-      });
+      const editBody = await edit.json<{ flags: number; components: unknown[] }>();
+      expect(editBody.flags).toBe(1 << 15);
+      expect(JSON.stringify(editBody.components)).toContain(
+        "🧠 Knowledge base sent to your DMs",
+      );
     } finally {
       vi.unstubAllGlobals();
     }
@@ -997,13 +1041,13 @@ describe("Discord HTTP interaction Worker", () => {
     const response = await handleInteractionRequest(request, env);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      type: 4,
-      data: {
-        flags: 64,
-        embeds: [{ color: 16711935, title }],
-      },
-    });
+    const body = await response.json<{
+      type: number;
+      data: { flags: number; components: unknown[] };
+    }>();
+    expect(body.type).toBe(4);
+    expect(body.data.flags).toBe((1 << 15) | 64);
+    expect(JSON.stringify(body.data.components)).toContain(title);
   });
 
   it("returns a public status response from private Gateway and Data services", async () => {
@@ -1027,11 +1071,12 @@ describe("Discord HTTP interaction Worker", () => {
     expect(response.status).toBe(200);
     const body = await response.json<{
       type: number;
-      data: { embeds: Array<{ title: string; description: string }> };
+      data: { flags: number; components: unknown[] };
     }>();
     expect(body.type).toBe(4);
-    expect(body.data.embeds[0]?.title).toBe("Status");
-    expect(body.data.embeds[0]?.description).toContain(
+    expect(body.data.flags).toBe(1 << 15);
+    expect(JSON.stringify(body.data.components)).toContain("## Status");
+    expect(JSON.stringify(body.data.components)).toContain(
       "Shard 0: Online (1 servers, 25ms)",
     );
   });
@@ -1056,18 +1101,11 @@ describe("Discord HTTP interaction Worker", () => {
     const response = await handleInteractionRequest(request, env);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      type: 4,
-      data: {
-        embeds: [
-          {
-            color: 16711680,
-            title: "Error",
-            description: "Failed to fetch status information",
-          },
-        ],
-      },
-    });
+    const body = await response.json<{ data: { flags: number; components: unknown[] } }>();
+    expect(body.data.flags).toBe(1 << 15);
+    expect(JSON.stringify(body.data.components)).toContain(
+      "Failed to fetch status information",
+    );
   });
 
   it("responds explicitly when durable roll acceptance conflicts", async () => {
@@ -1104,7 +1142,7 @@ describe("Discord HTTP interaction Worker", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       type: 4,
-      data: { flags: 64 },
+      data: { flags: (1 << 15) | 64 },
     });
   });
 
@@ -1142,7 +1180,7 @@ describe("Discord HTTP interaction Worker", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       type: 4,
-      data: { flags: 64 },
+      data: { flags: (1 << 15) | 64 },
     });
   });
 

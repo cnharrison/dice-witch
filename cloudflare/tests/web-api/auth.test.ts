@@ -718,6 +718,7 @@ describe("web API Discord OAuth", () => {
           status: "found",
           savedRoll: {
             displayName: "Initiative",
+            nameColor: "#AABBCC",
             revision: 2,
             notation: "1d20",
             title: null,
@@ -818,7 +819,11 @@ describe("web API Discord OAuth", () => {
       title: null,
       userId: "100000000000000003",
       guildId: "100000000000000001",
-      savedRoll: { scope: "guild", name: "Initiative" },
+      savedRoll: {
+        scope: "guild",
+        name: "Initiative",
+        nameColor: "#AABBCC",
+      },
       deliveryId,
       channelId: "100000000000000010",
       skipDelay: false,

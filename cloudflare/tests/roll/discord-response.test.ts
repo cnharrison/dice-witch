@@ -63,6 +63,89 @@ describe("Discord interaction response requests", () => {
     });
   });
 
+  it("builds a Components V2 response without legacy content or embeds", async () => {
+    const request = buildEditOriginalResponse(target, {
+      flags: 1 << 15,
+      components: [
+        { type: 10, content: "_the dice clatter across the table_" },
+        {
+          type: 17,
+          accent_color: 0x96_6f_33,
+          components: [
+            {
+              type: 9,
+              components: [{ type: 10, content: "## Attack" }],
+              accessory: {
+                type: 2,
+                style: 2,
+                label: "Save roll",
+                custom_id: "save-roll:v1:d:1400000000000000000",
+              },
+            },
+            { type: 10, content: "1d20+5: [12]+5 = 17" },
+          ],
+        },
+      ],
+    });
+
+    await expect(request.json()).resolves.toEqual({
+      flags: 1 << 15,
+      components: [
+        { type: 10, content: "_the dice clatter across the table_" },
+        {
+          type: 17,
+          accent_color: 0x96_6f_33,
+          components: [
+            {
+              type: 9,
+              components: [{ type: 10, content: "## Attack" }],
+              accessory: {
+                type: 2,
+                style: 2,
+                label: "Save roll",
+                custom_id: "save-roll:v1:d:1400000000000000000",
+              },
+            },
+            { type: 10, content: "1d20+5: [12]+5 = 17" },
+          ],
+        },
+      ],
+      allowed_mentions: { parse: [] },
+      content: null,
+      embeds: [],
+    });
+  });
+
+  it("combines Components V2 with the ephemeral followup flag", async () => {
+    const request = buildFollowupResponse(
+      target,
+      {
+        flags: 1 << 15,
+        components: [{ type: 10, content: "Private diagnostic" }],
+      },
+      true,
+    );
+
+    await expect(request.json()).resolves.toEqual({
+      flags: (1 << 15) | 64,
+      components: [{ type: 10, content: "Private diagnostic" }],
+      allowed_mentions: { parse: [] },
+    });
+  });
+
+  it("rejects legacy fields on Components V2 messages", () => {
+    expect(() =>
+      buildEditOriginalResponse(
+        target,
+        {
+          flags: 1 << 15,
+          content: "legacy content",
+          components: [{ type: 10, content: "V2 text" }],
+        } as never,
+      ),
+    ).toThrow("Components V2 messages cannot contain content or embeds");
+  });
+
   it("creates an explicitly ephemeral followup", async () => {
     const request = buildFollowupResponse(
       target,
@@ -151,6 +234,61 @@ describe("Discord interaction response requests", () => {
       type: "image/png",
     });
     await expect((file as File).arrayBuffer()).resolves.toEqual(png.buffer);
+  });
+
+  it("builds a V2 media gallery attachment response", async () => {
+    const request = buildEditOriginalResponseWithFile(
+      target,
+      {
+        flags: 1 << 15,
+        components: [
+          {
+            type: 12,
+            items: [
+              {
+                media: { url: "attachment://dice.png" },
+                description: "Rendered dice result",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        filename: "dice.png",
+        contentType: "image/png",
+        bytes: new Uint8Array([137, 80, 78, 71]),
+        description: "Rendered dice result",
+      },
+    );
+
+    const form = await request.formData();
+    const payload = form.get("payload_json");
+    if (typeof payload !== "string") {
+      throw new Error("Multipart payload_json is missing");
+    }
+    expect(JSON.parse(payload)).toMatchObject({
+      flags: 1 << 15,
+      content: null,
+      embeds: [],
+      components: [
+        {
+          type: 12,
+          items: [
+            {
+              media: { url: "attachment://dice.png" },
+              description: "Rendered dice result",
+            },
+          ],
+        },
+      ],
+      attachments: [
+        {
+          id: 0,
+          filename: "dice.png",
+          description: "Rendered dice result",
+        },
+      ],
+    });
   });
 
   it("edits an identified public followup with the final attachment", async () => {

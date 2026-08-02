@@ -8,9 +8,9 @@ import {
   validateRollLogArtifact,
   type DeliverRollLogInputV1,
   type DeliverRollLogResultV1,
-  type RollLogArtifactV1,
+  type RollLogArtifact,
   type RollLogShardV1,
-  type StoredLogArtifactV1,
+  type StoredLogArtifact,
 } from "../../../packages/discord-contracts/src";
 
 const INITIAL_DELIVERY_DELAY_MS = 1_000;
@@ -299,9 +299,9 @@ export class LogWork extends DurableObject<RollBindings> {
 
   private async deliveryArtifact(
     row: StoredLogRow,
-  ): Promise<RollLogArtifactV1> {
+  ): Promise<RollLogArtifact> {
     const stored = this.parseStoredArtifact(row.artifact_json);
-    let image: RollLogArtifactV1["image"];
+    let image: RollLogArtifact["image"];
     if (stored.image.status === "available") {
       if (row.image_bytes === null) {
         throw new Error("Stored roll log PNG is missing");
@@ -322,23 +322,13 @@ export class LogWork extends DurableObject<RollBindings> {
     if (verified.identity !== row.artifact_identity_json) {
       throw new Error("Stored roll log artifact identity is invalid");
     }
-    return {
-      version: validated.version,
-      rollId: validated.rollId,
-      source: validated.source,
-      notation: validated.notation,
-      user: validated.user,
-      guildId: validated.guildId,
-      channelId: validated.channelId,
-      context: validated.context,
-      destinationDeliveredAt: validated.destinationDeliveredAt,
-      payload: validated.payload,
-      image: validated.image,
-    };
+    const artifact = { ...validated };
+    Reflect.deleteProperty(artifact, "payloadJson");
+    return artifact;
   }
 
   private async resolveLogicalShard(
-    artifact: RollLogArtifactV1,
+    artifact: RollLogArtifact,
   ): Promise<RollLogShardV1> {
     if (artifact.guildId === null) return { status: "not-applicable" };
     try {
@@ -389,7 +379,7 @@ export class LogWork extends DurableObject<RollBindings> {
     state: "delivered" | "failed";
     httpStatus: number | null;
     completedAt: number;
-    artifact: StoredLogArtifactV1;
+    artifact: StoredLogArtifact;
     attempts: number;
     acceptedAt: number;
     logicalShard: RollLogShardV1 | null;
@@ -479,8 +469,8 @@ export class LogWork extends DurableObject<RollBindings> {
     );
   }
 
-  private parseStoredArtifact(value: string): StoredLogArtifactV1 {
-    return JSON.parse(value) as StoredLogArtifactV1;
+  private parseStoredArtifact(value: string): StoredLogArtifact {
+    return JSON.parse(value) as StoredLogArtifact;
   }
 
   private acceptedResult(

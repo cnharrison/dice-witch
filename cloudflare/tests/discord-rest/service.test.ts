@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DISCORD_GLOBAL_COMMANDS,
   rollLogContextDescription,
+  validateDiscordMessage,
   type RollLogArtifactV1,
 } from "../../packages/discord-contracts/src";
 import {
@@ -36,6 +37,16 @@ const guildId = "100000000000000001";
 const audienceCapturedAt = 1_767_225_600_123;
 const userId = "100000000000000003";
 const adminRoleId = "100000000000000005";
+function componentText(value: unknown): string {
+  if (Array.isArray(value)) return value.map(componentText).join("\n");
+  if (typeof value !== "object" || value === null) return "";
+  const record = value as Record<string, unknown>;
+  return [
+    typeof record.content === "string" ? record.content : "",
+    componentText(record.components),
+  ].filter(Boolean).join("\n");
+}
+
 const logPng = Uint8Array.from(
   atob(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -184,18 +195,15 @@ describe("Discord REST service", () => {
         nonce: string;
         enforce_nonce: boolean;
         allowed_mentions: { parse: string[] };
-        embeds: Array<{
-          title: string;
-          fields: Array<{ name: string; value: string }>;
-        }>;
+        components: unknown[];
       } = await request.json();
       expect(payload).toMatchObject({
-        flags: 1 << 12,
+        flags: (1 << 12) | (1 << 15),
         nonce: "g000000010123456789abcdef",
         enforce_nonce: true,
         allowed_mentions: { parse: [] },
       });
-      expect(payload.embeds[0]?.title).toBe("Game detected");
+      expect(JSON.stringify(payload.components)).toContain("Game detected");
       expect(JSON.stringify(payload)).toContain("Dungeons & Dragons");
       expect(JSON.stringify(payload)).toContain("Fixture Guild");
       expect(JSON.stringify(payload)).not.toMatch(/Attack|Initiative|fixture-player/);
@@ -218,9 +226,7 @@ describe("Discord REST service", () => {
 
   it("renders a detection with genuinely unavailable display names", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
-      const payload: {
-        embeds: Array<{ fields: Array<{ name: string; value: string }> }>;
-      } = await request.json();
+      const payload: { components: unknown[] } = await request.json();
       const serialized = JSON.stringify(payload);
       expect(serialized).toContain(`Guild ${guildId}`);
       expect(serialized).toContain("<#100000000000000010>");
@@ -311,11 +317,21 @@ describe("Discord REST service", () => {
       }
       const payload = JSON.parse(payloadValue) as Record<string, unknown>;
       expect(payload).toMatchObject({
-        flags: 1 << 12,
+        flags: (1 << 12) | (1 << 15),
         allowed_mentions: { parse: [] },
         nonce: "l1400000000000000001",
         enforce_nonce: true,
       });
+      expect(JSON.stringify(payload.components)).toContain(
+        "attachment://roll-lifecycle-1400000000000000001.json",
+      );
+      expect(JSON.stringify(payload.components)).toContain(
+        "\\\\*\\\\*\\\\<@140000000000000099\\\\>\\\\*\\\\*",
+      );
+      expect(() => validateDiscordMessage({
+        flags: payload.flags,
+        components: payload.components,
+      })).not.toThrow();
       expect(file.name).toBe("roll-lifecycle-1400000000000000001.json");
       const diagnostic = await file.text();
       expect(diagnostic).toContain('"notation": "1d20"');
@@ -323,8 +339,15 @@ describe("Discord REST service", () => {
       return Response.json({ id: "100000000000000088" });
     });
 
+    const alert = lifecycleAlert();
     await expect(
-      createRollLifecycleAlertV1(env, lifecycleAlert(), discordFetch),
+      createRollLifecycleAlertV1(env, {
+        ...alert,
+        context: {
+          ...alert.context,
+          username: "**<@140000000000000099>**",
+        },
+      }, discordFetch),
     ).resolves.toEqual({
       status: "delivered",
       messageId: "100000000000000088",
@@ -371,11 +394,13 @@ describe("Discord REST service", () => {
         throw new Error("Lifecycle alert multipart body is invalid");
       }
       expect(payloadValue).toContain("Created → handler 5 ms");
+      const payload = JSON.parse(payloadValue) as Record<string, unknown>;
       if (request.method === "POST") {
         expect(payloadValue).toContain("Discord 10015");
         expect(payloadValue).toContain("original message missing");
       } else {
         expect(payloadValue).toContain("No Discord error code");
+        expect(payload).toMatchObject({ content: null, embeds: [] });
       }
       expect(await file.text()).not.toMatch(/fixture\.interaction\.token|authorization/i);
       return Response.json({ id: "100000000000000088" });
@@ -500,13 +525,8 @@ describe("Discord REST service", () => {
           filename: string;
           description: string;
         }>;
-        embeds: Array<{
-          title?: string;
-          color?: number;
-          description?: string;
-          footer?: { text: string };
-          image?: { url: string };
-        }>;
+        flags: number;
+        components: unknown[];
       };
       expect(payload).toMatchObject({
         nonce: "log:1400000000000000001",
@@ -519,19 +539,14 @@ describe("Discord REST service", () => {
             description: "Rendered dice result",
           },
         ],
-        embeds: [
-          {
-            title: "receivedCommand: /roll",
-            color: 0x99_99_99,
-            description:
-              "user: **roller** [Discord]\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 3]\n\n1d20: [20] = 20",
-            image: {
-              url: "attachment://dice-1400000000000000001.png",
-            },
-          },
-        ],
+        flags: 1 << 15,
       });
-      expect(payload.embeds).toHaveLength(1);
+      expect(payload.components).toHaveLength(1);
+      const serializedComponents = JSON.stringify(payload.components);
+      expect(serializedComponents).toContain("## receivedCommand: /roll");
+      expect(serializedComponents).toContain(
+        "attachment://dice-1400000000000000001.png",
+      );
       expect(payload).not.toHaveProperty("content");
       expect(JSON.stringify(payload)).not.toContain("[HTTP]");
       expect(new Uint8Array(await file.arrayBuffer())).toEqual(logPng);
@@ -566,22 +581,19 @@ describe("Discord REST service", () => {
         throw new Error("Multipart log fixture is invalid");
       }
       const payload = JSON.parse(payloadValue) as {
-        embeds: Array<{
-          title?: string;
-          description?: string;
-          footer?: { text: string };
-        }>;
+        flags: number;
+        components: unknown[];
       };
-      expect(payload.embeds).toHaveLength(1);
-      expect(payload.embeds[0]).toMatchObject({
-        title: "receivedCommand: /roll",
-        description:
-          "user: **roller** [Web]\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 1]\n\n**Enchanted sword**\n1d20: [20] = 20",
-        footer: {
-          text:
-            "from personal library · Initiative · from server library · Decoy",
-        },
-      });
+      expect(payload.flags).toBe(1 << 15);
+      expect(payload.components).toHaveLength(1);
+      const text = componentText(payload.components);
+      expect(text).toContain("## receivedCommand: /roll");
+      expect(text).toContain(
+        "user: **roller** [Web]\nchannel: **dice\\-rolls**\nguild: **Fixture Guild** [Shard 1]\n\n**Enchanted sword**\n1d20: [20] = 20",
+      );
+      expect(text).toContain(
+        "-# from personal library · Initiative · from server library · Decoy",
+      );
       return Response.json({ id: "100000000000000088" });
     });
 
@@ -622,28 +634,24 @@ describe("Discord REST service", () => {
       expect(request.headers.get("content-type")).toBe("application/json");
       const payload = await request.json<{
         attachments?: unknown;
-        embeds: Array<{
-          color?: number;
-          title?: string;
-          description?: string;
-          footer?: { text: string };
-        }>;
+        flags: number;
+        components: Array<{ components: Array<{ type: number; content?: string }> }>;
       }>();
       expect(payload.attachments).toBeUndefined();
-      expect(payload.embeds).toHaveLength(1);
-      expect(payload.embeds[0]).toMatchObject({
-        color: 0xff_00_00,
-        title: "invalidRoll: /roll",
+      expect(payload.flags).toBe(1 << 15);
+      expect(payload.components).toHaveLength(1);
+      expect(payload.components[0]).toMatchObject({
+        type: 17,
+        accent_color: 0xff_00_00,
       });
-      expect(payload.embeds[0]?.description).toHaveLength(4_096);
-      expect(payload.embeds[0]?.description).toMatch(
-        /^user: \*\*roller\*\* \[Discord\]\nchannel:/,
-      );
-      expect(payload.embeds[0]?.description).toContain("\nroll: ");
-      expect(payload.embeds[0]?.description).toContain(
-        "\n\n🚫🎲 Invalid dice notation!",
-      );
-      expect(payload.embeds[0]?.footer).toBeUndefined();
+      const description = payload.components[0]?.components.find(
+        (component) => component.type === 10 &&
+          component.content !== "## invalidRoll: /roll",
+      )?.content;
+      expect(description).toHaveLength(4_000);
+      expect(description).toMatch(/^user: \*\*roller\*\* \[Discord\]\nchannel:/);
+      expect(description).toContain("\nroll: ");
+      expect(description).toContain("\n\n🚫🎲 Invalid dice notation!");
       return Response.json({ id: "100000000000000088" });
     });
     const artifact = rollLogArtifact();
@@ -690,11 +698,9 @@ describe("Discord REST service", () => {
       if (typeof payloadValue !== "string") {
         throw new Error("Multipart log fixture is invalid");
       }
-      const payload = JSON.parse(payloadValue) as {
-        embeds: Array<{ description: string }>;
-      };
-      expect(payload.embeds).toHaveLength(1);
-      expect(payload.embeds[0]?.description).toContain(
+      const payload = JSON.parse(payloadValue) as { components: unknown[] };
+      expect(payload.components).toHaveLength(1);
+      expect(componentText(payload.components)).toContain(
         "channel: **live\\-rolls**\nguild: **Live Guild** [Shard 1]",
       );
       return Response.json({ id: "100000000000000088" });
@@ -734,10 +740,8 @@ describe("Discord REST service", () => {
       if (typeof payloadValue !== "string") {
         throw new Error("Multipart log fixture is invalid");
       }
-      const payload = JSON.parse(payloadValue) as {
-        embeds: Array<{ description: string }>;
-      };
-      expect(payload.embeds[0]?.description).toContain(
+      const payload = JSON.parse(payloadValue) as { components: unknown[] };
+      expect(componentText(payload.components)).toContain(
         "channel: **signed\\-rolls**\nguild: **Resolved Guild**",
       );
       return Response.json({ id: "100000000000000088" });
@@ -914,10 +918,8 @@ describe("Discord REST service", () => {
         if (typeof payloadValue !== "string") {
           throw new Error("Multipart log fixture is invalid");
         }
-        const payload = JSON.parse(payloadValue) as {
-          embeds: Array<{ description: string }>;
-        };
-        expect(payload.embeds[0]?.description).toContain(
+        const payload = JSON.parse(payloadValue) as { components: unknown[] };
+        expect(componentText(payload.components)).toContain(
           "unknown channel\nguild: **Fixture Guild** [Shard 1]",
         );
         return Response.json({ id: "100000000000000088" });
@@ -1508,6 +1510,13 @@ describe("Discord REST service", () => {
         nonce: "1400000000000000001",
         enforce_nonce: true,
         allowed_mentions: { parse: [] },
+        attachments: [
+          {
+            id: 0,
+            filename: "dice-witch-roll.png",
+            description: "Rendered dice result",
+          },
+        ],
       });
       expect(form.get("files[0]")).toBeInstanceOf(File);
       return Response.json({ id: "100000000000000020" });
@@ -1547,7 +1556,9 @@ describe("Discord REST service", () => {
         expect(request.method).toBe("POST");
         expect(path).toBe(`/api/v10/channels/${channelId}/messages`);
         await expect(request.json()).resolves.toEqual({
-          content: "_clatter_",
+          flags: 1 << 15,
+          components: [{ type: 10, content: "_clatter_" }],
+          allowed_mentions: { parse: [] },
           nonce: "c1400000000000000001",
           enforce_nonce: true,
         });
@@ -1564,8 +1575,15 @@ describe("Discord REST service", () => {
       }
       expect(JSON.parse(payloadJson)).toEqual({
         embeds: [],
+        content: null,
         allowed_mentions: { parse: [] },
-        attachments: [{ id: 0, filename: "dice-witch-roll.png" }],
+        attachments: [
+          {
+            id: 0,
+            filename: "dice-witch-roll.png",
+            description: "Rendered dice result",
+          },
+        ],
       });
       return Response.json({ id: clatterMessageId });
     });
@@ -1592,13 +1610,20 @@ describe("Discord REST service", () => {
     expect(deliveryAttempt).toBe(2);
   });
 
-  it("logs the exact legacy guild lifecycle embed", async () => {
+  it("logs the exact V2 guild lifecycle container", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
       const payload = await request.json<Record<string, unknown>>();
       expect(payload).toMatchObject({
+        flags: 1 << 15,
         enforce_nonce: true,
-        embeds: [
-          { color: 65280, title: "guildAdd", description: "Fixture Guild" },
+        components: [
+          {
+            type: 17,
+            accent_color: 65280,
+            components: [
+              { type: 10, content: "## guildAdd\nFixture Guild" },
+            ],
+          },
         ],
         allowed_mentions: { parse: [] },
       });
@@ -1628,14 +1653,18 @@ describe("Discord REST service", () => {
       expect(url.pathname).toBe("/api/v10/channels/100000000000000010/messages");
       const payload = await request.json<Record<string, unknown>>();
       expect(payload).toMatchObject({
+        flags: 1 << 15,
         nonce: "100000000000000020",
         enforce_nonce: true,
-        embeds: [{ title: "🎲 Dice notation" }],
+        components: [
+          expect.objectContaining({ type: 17, accent_color: 0x00_00_ff }),
+        ],
       });
       expect(JSON.stringify(payload)).toContain(
         "https://dicewit.ch/docs/dice-notation",
       );
-      expect(payload.components).toHaveLength(3);
+      expect(payload.components).toHaveLength(1);
+      expect(JSON.stringify(payload.components)).toContain("knowledgebase-topic");
       return Response.json({ id: "100000000000000021" });
     });
 
@@ -1658,14 +1687,20 @@ describe("Discord REST service", () => {
         );
         const payload: unknown = await request.json();
         expect(payload).toEqual({
+          flags: 1 << 15,
           nonce: "log:100000000000000020",
           enforce_nonce: true,
-          embeds: [
+          components: [
             {
-              color: 10066329,
-              title: "receivedCommand: /roll",
-              description:
-                "2d20 + 5 from **alice** [Discord] in channel **general** on **Test Guild** [HTTP]",
+              type: 17,
+              accent_color: 10066329,
+              components: [
+                {
+                  type: 10,
+                  content:
+                    "## receivedCommand: /roll\n2d20 \\+ 5 from **alice** [Discord] in channel **general** on **Test Guild** [HTTP]",
+                },
+              ],
             },
           ],
           allowed_mentions: { parse: [] },
@@ -1705,10 +1740,8 @@ describe("Discord REST service", () => {
       expect(new URL(request.url).pathname).toBe(
         `/api/v10/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`,
       );
-      const payload = await request.json<{
-        embeds: Array<{ description: string }>;
-      }>();
-      expect(payload.embeds[0]?.description).toBe(
+      const payload = await request.json<{ components: unknown[] }>();
+      expect(componentText(payload.components)).toContain(
         "1d20 from **alice** [Discord] in thread **rules\\_\\*** on **Guild \\[One\\]** [HTTP]",
       );
       return Response.json({ id: "100000000000000021" });
@@ -1742,10 +1775,8 @@ describe("Discord REST service", () => {
   it("logs signed DM context without a Discord lookup", async () => {
     const channelId = "100000000000000010";
     const discordFetch = vi.fn(async (request: Request) => {
-      const payload = await request.json<{
-        embeds: Array<{ description: string }>;
-      }>();
-      expect(payload.embeds[0]?.description).toBe(
+      const payload = await request.json<{ components: unknown[] }>();
+      expect(componentText(payload.components)).toContain(
         "1d20 from **alice** [Discord] in **DM** [HTTP]",
       );
       return Response.json({ id: "100000000000000021" });
@@ -1843,16 +1874,13 @@ describe("Discord REST service", () => {
         );
         const payload = await request.json<Record<string, unknown>>();
         expect(payload).toMatchObject({
+          flags: 1 << 15,
           nonce: "log:100000000000000020",
           enforce_nonce: true,
-          embeds: [
-            {
-              title: "receivedCommand: /roll",
-              description:
-                "1d20 from **alice** [Discord] in an **inaccessible channel/server** [HTTP]",
-            },
-          ],
         });
+        expect(componentText(payload.components)).toContain(
+          "1d20 from **alice** [Discord] in an **inaccessible channel/server** [HTTP]",
+        );
         return Response.json({ id: "100000000000000021" });
       });
 

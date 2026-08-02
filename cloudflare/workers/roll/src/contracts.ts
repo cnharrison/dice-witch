@@ -20,6 +20,7 @@ import {
   type RollLoggingContext,
 } from "../../../packages/discord-contracts/src";
 import { renderedRollFaceV4 } from "../../../packages/roll-render-model/src";
+import { parseSavedRollNameColorV2 } from "../../../packages/saved-rolls/src";
 import {
   MAX_DIE_SIDES,
   MAX_NOTATION_EXPRESSIONS,
@@ -89,6 +90,7 @@ export type SavedRollInvocationV1 = {
   title: string | null;
   repetitions: number;
   revision: number;
+  nameColor: string | null;
 };
 
 export type RollDeliveryRequest = {
@@ -276,18 +278,30 @@ export function validateRequest(value: unknown): RollWorkRequest {
 }
 
 function parseSavedRollInvocation(value: unknown): SavedRollInvocationV1 {
+  const keys = [
+    "id",
+    "name",
+    "notation",
+    "repetitions",
+    "revision",
+    "scope",
+    "title",
+    "version",
+  ];
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
-      "id",
-      "name",
-      "notation",
-      "repetitions",
-      "revision",
-      "scope",
-      "title",
-      "version",
-    ]) ||
+    (!hasExactKeys(value, keys) &&
+      !hasExactKeys(value, [
+        "id",
+        "name",
+        "nameColor",
+        "notation",
+        "repetitions",
+        "revision",
+        "scope",
+        "title",
+        "version",
+      ])) ||
     value.version !== 1 ||
     typeof value.id !== "string" ||
     !UUID_V4.test(value.id) ||
@@ -321,6 +335,7 @@ function parseSavedRollInvocation(value: unknown): SavedRollInvocationV1 {
     title: value.title,
     repetitions: value.repetitions,
     revision: value.revision,
+    nameColor: parseSavedRollNameColorV2(value.nameColor ?? null),
   };
 }
 

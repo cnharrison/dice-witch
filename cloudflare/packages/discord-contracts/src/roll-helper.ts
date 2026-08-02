@@ -3,27 +3,17 @@ import {
   buildFooterComponents,
   type DiscordFooterLinks,
 } from "./footer-links";
-import type { DiscordMessage } from "./responses";
+import {
+  DISCORD_COMPONENTS_V2_FLAG,
+  type DiscordComponentsV2Message,
+} from "./responses";
+import {
+  KNOWLEDGE_BASE_SELECT_CUSTOM_ID,
+  KNOWLEDGE_BASE_TOPIC_OPTIONS,
+} from "./knowledgebase";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
-
-const BUTTON_ROWS = [
-  [
-    ["knowledgebase-exploding", "Exploding 💥"],
-    ["knowledgebase-reroll", "Re-roll ♻"],
-    ["knowledgebase-keepdrop", "Keep/drop 🚮"],
-    ["knowledgebase-target", "Targets 🎯"],
-    ["knowledgebase-crit", "Criticals ⚔"],
-  ],
-  [
-    ["knowledgebase-math", "Math 🧮"],
-    ["knowledgebase-sort", "Sorting ↕"],
-    ["knowledgebase-repeating", "Repeating 👯‍♀️"],
-    ["knowledgebase-unique", "Unique ❄️"],
-    ["knowledgebase-fudge", "Fudge 🎲"],
-  ],
-] as const;
 
 export const ROLL_HELPER_DM_CUSTOM_ID = "roll-help:dm-knowledgebase";
 
@@ -113,7 +103,7 @@ const NOTATION_ARTICLE = [
 export function buildInvalidRollHelpMessage(
   result: RollExecutionResult,
   rollId: string,
-): DiscordMessage {
+): DiscordComponentsV2Message {
   const firstError = result.errors[0];
   if (
     !SNOWFLAKE.test(rollId) ||
@@ -126,22 +116,29 @@ export function buildInvalidRollHelpMessage(
     ({ code }) => code === "UNSAFE_EXPLOSION",
   ) ?? firstError;
   return {
-    content: ERROR_HEADLINES[error.code],
+    flags: DISCORD_COMPONENTS_V2_FLAG,
     components: [
       {
-        type: 1,
+        type: 17,
+        accent_color: 0xe7_4c_3c,
         components: [
+          { type: 10, content: ERROR_HEADLINES[error.code] },
           {
-            type: 2,
-            style: 5,
-            label: "Dice notation guide",
-            url: NOTATION_HELP_URL,
-          },
-          {
-            type: 2,
-            style: 2,
-            label: "DM me the knowledge base",
-            custom_id: `${ROLL_HELPER_DM_CUSTOM_ID}:${rollId}`,
+            type: 1,
+            components: [
+              {
+                type: 2,
+                style: 5,
+                label: "Dice notation guide",
+                url: NOTATION_HELP_URL,
+              },
+              {
+                type: 2,
+                style: 2,
+                label: "DM me the knowledge base",
+                custom_id: `${ROLL_HELPER_DM_CUSTOM_ID}:${rollId}`,
+              },
+            ],
           },
         ],
       },
@@ -151,26 +148,34 @@ export function buildInvalidRollHelpMessage(
 
 export function buildRollHelperMessage(
   links: DiscordFooterLinks,
-): Record<string, unknown> {
+): DiscordComponentsV2Message & { allowed_mentions: { parse: [] } } {
   return {
-    embeds: [
-      {
-        color: 0x00_00_ff,
-        title: "🎲 Dice notation",
-        description: NOTATION_ARTICLE,
-      },
-    ],
+    flags: DISCORD_COMPONENTS_V2_FLAG,
     components: [
-      ...BUTTON_ROWS.map((buttons) => ({
-        type: 1,
-        components: buttons.map(([customId, label]) => ({
-          type: 2,
-          style: 1,
-          custom_id: customId,
-          label,
-        })),
-      })),
-      ...buildFooterComponents(links),
+      {
+        type: 17,
+        accent_color: 0x00_00_ff,
+        components: [
+          { type: 10, content: `## 🎲 Dice notation\n${NOTATION_ARTICLE}` },
+          {
+            type: 1,
+            components: [
+              {
+                type: 3,
+                custom_id: KNOWLEDGE_BASE_SELECT_CUSTOM_ID,
+                placeholder: "Choose a knowledge-base topic",
+                min_values: 1,
+                max_values: 1,
+                options: KNOWLEDGE_BASE_TOPIC_OPTIONS.map(([value, label]) => ({
+                  value,
+                  label,
+                })),
+              },
+            ],
+          },
+          ...buildFooterComponents(links),
+        ],
+      },
     ],
     allowed_mentions: { parse: [] },
   };

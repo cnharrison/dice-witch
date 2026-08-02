@@ -39,42 +39,35 @@ describe("HTTP status command contract", () => {
   });
 
   it("builds public status from one versioned audience snapshot", () => {
-    expect(
-      buildStatusCommandResponse(
-        { createdAt },
-        {
-          phase: "idle",
-          shardCount: 2,
-          shards: [
-            { id: 0, state: "ready", ping: 25 },
-            { id: 1, state: "connecting", ping: -1 },
-          ],
-        },
-        {
-          version: 1,
-          capturedAt: snapshotCapturedAt,
-          liveGuilds: 3,
-          estimatedGuildMemberships: 50,
-          knownDiceWitchUsers: 7,
-          shardCount: 2,
-          guildCountsByShard: [2, 1],
-        },
-        links,
-        createdAt + 30,
-      ),
-    ).toMatchObject({
-      type: 4,
-      data: {
-        embeds: [
-          {
-            color: 10066329,
-            title: "Status",
-            description:
-              "Latency: **30ms**\nI'm in **3** discord servers with **7** users 😈\n\n__Shard Status:__\n🟢 Shard 0: Online (2 servers, 25ms)\n🟢 Shard 1: Online (1 servers, unknown)\n",
-          },
+    const response = buildStatusCommandResponse(
+      { createdAt },
+      {
+        phase: "idle",
+        shardCount: 2,
+        shards: [
+          { id: 0, state: "ready", ping: 25 },
+          { id: 1, state: "connecting", ping: -1 },
         ],
       },
+      {
+        version: 1,
+        capturedAt: snapshotCapturedAt,
+        liveGuilds: 3,
+        estimatedGuildMemberships: 50,
+        knownDiceWitchUsers: 7,
+        shardCount: 2,
+        guildCountsByShard: [2, 1],
+      },
+      links,
+      createdAt + 30,
+    );
+    expect(response).toMatchObject({
+      type: 4,
+      data: { flags: 1 << 15 },
     });
+    expect(JSON.stringify(response)).toContain(
+      "## Status\\nLatency: **30ms**\\nI'm in **3** discord servers with **7** users 😈\\n\\n__Shard Status:__\\n🟢 Shard 0: Online (2 servers, 25ms)\\n🟢 Shard 1: Online (1 servers, unknown)\\n",
+    );
   });
 
   it("rejects audience snapshots beyond the freshness window", () => {

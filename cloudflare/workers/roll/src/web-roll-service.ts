@@ -34,9 +34,10 @@ import {
   type RenderResultV3,
 } from "../../../packages/dice-svg/src";
 import {
-  buildRollClatterMessage,
-  buildRollErrorMessage,
   buildRollResultMessage,
+  rollClatterText,
+  rollErrorText,
+  rollResultText,
 } from "../../../packages/discord-contracts/src";
 import {
   executeRoll,
@@ -98,6 +99,7 @@ export type WebRollResult =
       discord: {
         payload: unknown;
         clatter: string;
+        resultText: string;
         filename: string;
         png: Uint8Array;
       };
@@ -106,6 +108,7 @@ export type WebRollResult =
 export type WebSavedRollAttribution = {
   scope: "personal" | "guild";
   name: string;
+  nameColor: string | null;
 };
 
 type WebRollRequest = {
@@ -116,6 +119,7 @@ type WebRollRequest = {
   userId: string;
   guildId: string;
   savedRoll?: WebSavedRollAttribution;
+  saveRollCustomId?: string;
   renderSeed?: number;
   appearanceDigest?: string;
 };
@@ -181,17 +185,28 @@ const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 export function parseWebSavedRollAttribution(
   value: unknown,
 ): WebSavedRollAttribution {
+  if (!isRecord(value)) {
+    throw new Error("Web Library roll attribution is invalid");
+  }
   if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["name", "scope"]) ||
+    (!hasExactKeys(value, ["name", "scope"]) &&
+      !hasExactKeys(value, ["name", "nameColor", "scope"])) ||
     (value.scope !== "personal" && value.scope !== "guild") ||
     typeof value.name !== "string" ||
     value.name.length < 1 ||
-    value.name.length > 1_024
+    value.name.length > 1_024 ||
+    (value.nameColor !== undefined &&
+      value.nameColor !== null &&
+      (typeof value.nameColor !== "string" ||
+        !/^#[0-9A-F]{6}$/.test(value.nameColor)))
   ) {
     throw new Error("Web Library roll attribution is invalid");
   }
-  return { scope: value.scope, name: value.name };
+  return {
+    scope: value.scope,
+    name: value.name,
+    nameColor: typeof value.nameColor === "string" ? value.nameColor : null,
+  };
 }
 
 function validateRequest(value: unknown): WebRollRequest {
@@ -204,7 +219,13 @@ function validateRequest(value: unknown): WebRollRequest {
     "username",
   ] as const;
   const hasSavedRoll = isRecord(value) && value.savedRoll !== undefined;
-  const requestKeys = hasSavedRoll ? [...legacyKeys, "savedRoll"] : legacyKeys;
+  const hasSaveRollCustomId = isRecord(value) &&
+    value.saveRollCustomId !== undefined;
+  const requestKeys = [
+    ...legacyKeys,
+    ...(hasSavedRoll ? ["savedRoll" as const] : []),
+    ...(hasSaveRollCustomId ? ["saveRollCustomId" as const] : []),
+  ];
   const prepared =
     isRecord(value) &&
     hasExactKeys(value, [...requestKeys, "appearanceDigest", "renderSeed"]);
@@ -233,6 +254,11 @@ function validateRequest(value: unknown): WebRollRequest {
     !SNOWFLAKE.test(value.userId) ||
     typeof value.guildId !== "string" ||
     !SNOWFLAKE.test(value.guildId) ||
+    (hasSaveRollCustomId &&
+      (typeof value.saveRollCustomId !== "string" ||
+        value.saveRollCustomId.length < 1 ||
+        value.saveRollCustomId.length > 100 ||
+        !value.saveRollCustomId.startsWith("save-roll:v1:w:"))) ||
     (value.title !== null &&
       (typeof value.title !== "string" ||
         value.title.length < 1 ||
@@ -249,6 +275,9 @@ function validateRequest(value: unknown): WebRollRequest {
     guildId: value.guildId,
     ...(hasSavedRoll
       ? { savedRoll: parseWebSavedRollAttribution(value.savedRoll) }
+      : {}),
+    ...(hasSaveRollCustomId
+      ? { saveRollCustomId: value.saveRollCustomId as string }
       : {}),
     ...(prepared
       ? {
@@ -698,7 +727,7 @@ export async function prepareWebRoll(
   if (outcome.outcomes.length === 0) {
     return {
       status: "invalid",
-      message: buildRollErrorMessage(outcome).content ?? "Invalid dice notation",
+      message: rollErrorText(outcome),
     };
   }
   const renderRequest = buildWebRenderRequest(
@@ -750,8 +779,7 @@ export async function executeWebRoll(
   if (validation.outcomes.length === 0) {
     return {
       status: "invalid",
-      message:
-        buildRollErrorMessage(validation).content ?? "Invalid dice notation",
+      message: rollErrorText(validation),
     };
   }
   const appearance = await loadWebAppearance(
@@ -770,7 +798,7 @@ export async function executeWebRoll(
   if (outcome.outcomes.length === 0) {
     return {
       status: "invalid",
-      message: buildRollErrorMessage(outcome).content ?? "Invalid dice notation",
+      message: rollErrorText(outcome),
     };
   }
 
@@ -797,8 +825,7 @@ export async function executeWebRoll(
           createCanvasKitRequestRendererV4,
         );
   const filename = "dice-witch-roll.png";
-  const clatter = buildRollClatterMessage(outcome, outcome.seed).content;
-  if (clatter === undefined) throw new Error("Roll clatter is unavailable");
+  const clatter = rollClatterText(outcome, outcome.seed);
   return {
     status: "rolled",
     message: "Roll processed successfully",
@@ -822,6 +849,9 @@ export async function executeWebRoll(
         title: request.title,
         username: request.username,
         filename,
+        ...(request.saveRollCustomId === undefined
+          ? {}
+          : { saveRollCustomId: request.saveRollCustomId }),
         ...(request.savedRoll === undefined
           ? {}
           : {
@@ -832,6 +862,7 @@ export async function executeWebRoll(
             }),
       }),
       clatter,
+      resultText: rollResultText(outcome),
       filename,
       png: rendered.png,
     },
