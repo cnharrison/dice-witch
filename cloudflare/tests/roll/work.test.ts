@@ -406,7 +406,7 @@ describe("RollWork Durable Object", () => {
       interaction: {
         id: runId,
         applicationId: "100000000000000001",
-        token: "saved-followup",
+        token: "saved-channel-result",
       },
       actor: {
         ...context,
@@ -421,7 +421,7 @@ describe("RollWork Durable Object", () => {
         },
       },
       sourceInteraction: "component" as const,
-      responseMode: "followup" as const,
+      responseMode: "channel-message" as const,
     };
     await expect(stub.acceptSavedRollDelivery(request)).resolves.toMatchObject({
       status: "created",
@@ -514,7 +514,7 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("creates one public saved-roll clatter message and edits it with the result", async () => {
+  it("creates one standalone saved-roll clatter message and edits it with the result", async () => {
     const runId = snowflakeAt(Date.now(), 44);
     const stub = work(runId);
     const context = {
@@ -541,7 +541,7 @@ describe("RollWork Durable Object", () => {
       interaction: {
         id: runId,
         applicationId: "100000000000000001",
-        token: "saved-public-clatter",
+        token: "saved-channel-message",
       },
       actor: {
         ...context,
@@ -556,7 +556,7 @@ describe("RollWork Durable Object", () => {
         },
       },
       sourceInteraction: "component",
-      responseMode: "followup",
+      responseMode: "channel-message",
     })).resolves.toMatchObject({ status: "created" });
 
     await runDurableObjectAlarm(stub);
@@ -602,7 +602,7 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("rejects a saved selection whose record revision changed before acceptance", async () => {
+  it("accepts pre-rollout component response modes before rejecting a stale selection", async () => {
     const runId = snowflakeAt(Date.now(), 43);
     const sessionId = runId;
     const stub = work(sessionId);
@@ -618,33 +618,35 @@ describe("RollWork Durable Object", () => {
       revision: 3,
     };
     await stub.reserveDirectSavedRoll({ ...context, interactionId: runId, selection });
-    await expect(
-      stub.acceptSavedRollDelivery({
-        version: 1,
-        sessionId,
-        selection,
-        deferredAt: Date.now(),
-        interaction: {
-          id: runId,
-          applicationId: "100000000000000001",
-          token: "delivery-success",
+    const request = {
+      version: 1 as const,
+      sessionId,
+      selection,
+      deferredAt: Date.now(),
+      interaction: {
+        id: runId,
+        applicationId: "100000000000000001",
+        token: "delivery-success",
+      },
+      actor: {
+        ...context,
+        username: "roller",
+        loggingContext: {
+          kind: "guild" as const,
+          guildId: "100000000000000002",
+          guildName: "Fixture Guild",
+          channelId: "100000000000000010",
+          channelName: "dice-rolls",
+          channelType: 0,
         },
-        actor: {
-          ...context,
-          username: "roller",
-          loggingContext: {
-            kind: "guild",
-            guildId: "100000000000000002",
-            guildName: "Fixture Guild",
-            channelId: "100000000000000010",
-            channelName: "dice-rolls",
-            channelType: 0,
-          },
-        },
-        sourceInteraction: "component",
-        responseMode: "followup",
-      }),
-    ).resolves.toEqual({ status: "stale" });
+      },
+      sourceInteraction: "component" as const,
+    };
+    for (const responseMode of ["followup", "edit-original"] as const) {
+      await expect(
+        stub.acceptSavedRollDelivery({ ...request, responseMode }),
+      ).resolves.toEqual({ status: "stale" });
+    }
   });
 
   it("stores a fully resolved renderer-v4 snapshot at staging delivery acceptance", async () => {

@@ -93,6 +93,11 @@ export type SavedRollInvocationV1 = {
   nameColor: string | null;
 };
 
+export type RollDeliveryResponseMode =
+  | "channel-message"
+  | "edit-original"
+  | "followup";
+
 export type RollDeliveryRequest = {
   interaction: {
     id: string;
@@ -121,7 +126,7 @@ export type RollDeliveryRequest = {
     notation: string;
     context?: RollLoggingContext;
   };
-  responseMode?: "edit-original" | "followup";
+  responseMode?: RollDeliveryResponseMode;
   savedRoll?: SavedRollInvocationV1;
 };
 
@@ -198,7 +203,7 @@ export type DeliveryMetadata = {
   accounting: RollDeliveryRequest["accounting"] | null;
   logging: RollDeliveryRequest["logging"] | null;
   preflighted: boolean;
-  responseMode: "edit-original" | "followup";
+  responseMode: RollDeliveryResponseMode;
   savedRoll: SavedRollInvocationV1 | null;
 };
 
@@ -245,7 +250,7 @@ type ValidatedRollDeliveryRequest = Omit<
   rollSeed: number | null;
   telemetry: RollDeliveryTelemetryV2 | null;
   logging: RollDeliveryRequest["logging"] | null;
-  responseMode: "edit-original" | "followup";
+  responseMode: RollDeliveryResponseMode;
   savedRoll: SavedRollInvocationV1 | null;
 };
 
@@ -544,20 +549,21 @@ export function validateDeliveryRequest(
     };
   }
 
-  let responseMode: "edit-original" | "followup" = "edit-original";
+  let responseMode: RollDeliveryResponseMode = "edit-original";
   let savedRoll: SavedRollInvocationV1 | null = null;
   if (
     (hasPreflightedDirectRoll && logging?.source !== "discord") ||
     (hasLegacyPrivateDirectRoll && logging?.source !== "discord") ||
     (hasLegacyPrivateDirectRoll && value.responseMode !== "followup") ||
     (hasSavedRoll &&
+      value.responseMode !== "channel-message" &&
       value.responseMode !== "followup" &&
       value.responseMode !== "edit-original")
   ) {
     throw new Error("Roll delivery response mode is invalid");
   }
   if (hasSavedRoll || hasLegacyPrivateDirectRoll) {
-    responseMode = value.responseMode as "edit-original" | "followup";
+    responseMode = value.responseMode as RollDeliveryResponseMode;
   }
   if (hasSavedRoll) {
     savedRoll = parseSavedRollInvocation(value.savedRoll);
@@ -1025,8 +1031,9 @@ export async function tokenFingerprint(token: string): Promise<string> {
 
 function deliveryMetadataVersion(
   request: ValidatedRollDeliveryRequest,
-): 3 | 4 | 5 | 6 | 7 {
+): 3 | 4 | 5 | 6 | 7 | 8 {
   if (request.rollSeed !== null) return 7;
+  if (request.responseMode === "channel-message") return 8;
   if (request.savedRoll !== null) return 5;
   if (request.responseMode === "followup") return 6;
   return request.logging?.context === undefined ? 3 : 4;
@@ -1067,6 +1074,18 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
     "message",
     "version",
   ];
+  const version8 =
+    parsed.version === 8 &&
+    hasExactKeys(parsed, [
+      "accounting",
+      "applicationId",
+      "interactionId",
+      "logging",
+      "message",
+      "responseMode",
+      "savedRoll",
+      "version",
+    ]);
   const version7 =
     parsed.version === 7 &&
     hasExactKeys(parsed, [
@@ -1116,7 +1135,8 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
     parsed.version === undefined &&
     hasExactKeys(parsed, ["applicationId", "interactionId", "message"]);
   if (
-    (!version7 &&
+    (!version8 &&
+      !version7 &&
       !version6 &&
       !version5 &&
       !version4 &&
@@ -1149,11 +1169,16 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
         parsed.logging.notation.length < 1 ||
         parsed.logging.notation.length > MAX_NOTATION_LENGTH ||
         (version4 && parsed.logging.context === undefined) ||
-        (!version7 &&
+        (!version8 &&
+          !version7 &&
           !version6 &&
           !version5 &&
           !version4 &&
           parsed.logging.context !== undefined))) ||
+    (version8 &&
+      (parsed.responseMode !== "channel-message" ||
+        !isRecord(parsed.logging) ||
+        parsed.logging.source !== "discord")) ||
     (version7 &&
       (parsed.preflighted !== true ||
         !isRecord(parsed.logging) ||
@@ -1203,10 +1228,12 @@ export function parseDeliveryMetadata(value: string): DeliveryMetadata {
                 }),
           },
     preflighted: version7,
-    responseMode: version6 || version5
-      ? (parsed.responseMode as "edit-original" | "followup")
+    responseMode: version8 || version6 || version5
+      ? (parsed.responseMode as RollDeliveryResponseMode)
       : "edit-original",
-    savedRoll: version5 ? parseSavedRollInvocation(parsed.savedRoll) : null,
+    savedRoll: version8 || version5
+      ? parseSavedRollInvocation(parsed.savedRoll)
+      : null,
   };
 }
 

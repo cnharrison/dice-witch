@@ -168,6 +168,104 @@ type DiscordFailureDetails = Readonly<{
   operation: DiscordOperation;
 }>;
 
+type ChannelRollMessageDeliveryResult =
+  | { status: "delivered"; messageId: string; httpStatus: number }
+  | { status: "invalid_response" }
+  | {
+      status: "retryable";
+      httpStatus: number | null;
+      retryAfterMs: number | null;
+    }
+  | {
+      status: "failed";
+      httpStatus: number;
+      discordErrorCode: number | null;
+    };
+
+type ChannelRollMessageDeliveryService = {
+  deliverChannelRollMessageV1(value: unknown): Promise<unknown>;
+};
+
+type ChannelRollMessageAttempt =
+  | {
+      delivery: Extract<
+        ChannelRollMessageDeliveryResult,
+        { status: "delivered" }
+      >;
+    }
+  | { result: DeliverRollWorkResult };
+
+function parseChannelRollMessageDeliveryResult(
+  value: unknown,
+): ChannelRollMessageDeliveryResult {
+  if (!isRecord(value) || typeof value.status !== "string") {
+    throw new Error("Channel roll message delivery response is invalid");
+  }
+  if (
+    value.status === "delivered" &&
+    hasExactKeys(value, ["httpStatus", "messageId", "status"]) &&
+    typeof value.messageId === "string" &&
+    SAVED_ROLL_SNOWFLAKE.test(value.messageId) &&
+    Number.isSafeInteger(value.httpStatus) &&
+    Number(value.httpStatus) >= 200 &&
+    Number(value.httpStatus) < 300
+  ) {
+    return {
+      status: value.status,
+      messageId: value.messageId,
+      httpStatus: Number(value.httpStatus),
+    };
+  }
+  if (
+    value.status === "invalid_response" &&
+    hasExactKeys(value, ["status"])
+  ) {
+    return { status: value.status };
+  }
+  if (
+    value.status === "retryable" &&
+    hasExactKeys(value, ["httpStatus", "retryAfterMs", "status"]) &&
+    (value.httpStatus === null ||
+      (Number.isSafeInteger(value.httpStatus) &&
+        isRetryableHttpStatus(Number(value.httpStatus)))) &&
+    (value.retryAfterMs === null ||
+      (Number.isSafeInteger(value.retryAfterMs) &&
+        Number(value.retryAfterMs) >= 0))
+  ) {
+    return {
+      status: value.status,
+      httpStatus:
+        value.httpStatus === null ? null : Number(value.httpStatus),
+      retryAfterMs:
+        value.retryAfterMs === null ? null : Number(value.retryAfterMs),
+    };
+  }
+  if (
+    value.status === "failed" &&
+    hasExactKeys(value, [
+      "discordErrorCode",
+      "httpStatus",
+      "status",
+    ]) &&
+    Number.isSafeInteger(value.httpStatus) &&
+    Number(value.httpStatus) >= 400 &&
+    Number(value.httpStatus) <= 599 &&
+    !isRetryableHttpStatus(Number(value.httpStatus)) &&
+    (value.discordErrorCode === null ||
+      (Number.isSafeInteger(value.discordErrorCode) &&
+        Number(value.discordErrorCode) >= 1))
+  ) {
+    return {
+      status: value.status,
+      httpStatus: Number(value.httpStatus),
+      discordErrorCode: value.discordErrorCode === null
+        ? null
+        : Number(value.discordErrorCode),
+    };
+  }
+  throw new Error("Channel roll message delivery response is invalid");
+}
+
 function mergeLifecycleDiagnostics(
   current: RollLifecycleDiagnosticsV2,
   incoming: Partial<RollLifecycleDiagnosticsV2>,
@@ -1041,7 +1139,9 @@ export class RollWork extends DurableObject<RollEnv> {
       value.sessionId !== this.ctx.id.name ||
       !Number.isSafeInteger(value.deferredAt) ||
       Number(value.deferredAt) < 0 ||
-      (value.responseMode !== "followup" && value.responseMode !== "edit-original") ||
+      (value.responseMode !== "channel-message" &&
+        value.responseMode !== "followup" &&
+        value.responseMode !== "edit-original") ||
       (value.sourceInteraction !== "command" &&
         value.sourceInteraction !== "component") ||
       !isRecord(value.interaction) ||
@@ -1067,11 +1167,11 @@ export class RollWork extends DurableObject<RollEnv> {
       guildId: value.actor.guildId,
       channelId: value.actor.channelId,
     });
-    const expectedResponseMode =
-      context.guildId !== null && value.sourceInteraction === "component"
-        ? "followup"
-        : "edit-original";
-    if (value.responseMode !== expectedResponseMode) {
+    // Components accept both legacy modes during the independently deployed
+    // Interactions-to-Roll contract transition.
+    const validResponseMode = value.sourceInteraction === "component" ||
+      value.responseMode === "edit-original";
+    if (!validResponseMode) {
       throw new Error("Saved roll delivery response mode is invalid");
     }
     const picker = this.readSavedRollPicker();
@@ -2600,6 +2700,75 @@ export class RollWork extends DurableObject<RollEnv> {
     }
   }
 
+  private async deliverChannelRollMessage(
+    value: unknown,
+  ): Promise<ChannelRollMessageDeliveryResult> {
+    const service = this.env.DISCORD_REST as unknown as
+      ChannelRollMessageDeliveryService;
+    return parseChannelRollMessageDeliveryResult(
+      await service.deliverChannelRollMessageV1(value),
+    );
+  }
+
+  private async attemptChannelRollMessage(
+    value: unknown,
+    target: RollDeliveryTarget,
+    attempts: number,
+    expiresAt: number,
+    phase: "clatter" | "discord",
+    operation: DiscordOperation,
+  ): Promise<ChannelRollMessageAttempt> {
+    let delivery: ChannelRollMessageDeliveryResult;
+    try {
+      this.recordProviderAttempt();
+      delivery = await this.deliverChannelRollMessage(value);
+    } catch {
+      return {
+        result: await this.scheduleRetry(
+          target.id,
+          attempts,
+          expiresAt,
+          phase,
+        ),
+      };
+    }
+    if (delivery.status === "retryable") {
+      return {
+        result: await this.scheduleRetry(
+          target.id,
+          attempts,
+          expiresAt,
+          phase,
+          delivery.retryAfterMs ?? retryDelayMs(attempts),
+          delivery.httpStatus,
+        ),
+      };
+    }
+    if (delivery.status === "invalid_response") {
+      return {
+        result: await this.terminateDelivery(
+          target,
+          attempts,
+          expiresAt,
+          "response",
+        ),
+      };
+    }
+    if (delivery.status === "failed") {
+      return {
+        result: await this.failDelivery(
+          target.id,
+          attempts,
+          delivery.httpStatus,
+          expiresAt,
+          phase,
+          { code: delivery.discordErrorCode, operation },
+        ),
+      };
+    }
+    return { delivery };
+  }
+
   private async attemptDelivery(): Promise<DeliverRollWorkResult> {
     const delivery = this.readDelivery();
     if (delivery === undefined) return { status: "conflict" };
@@ -2751,58 +2920,13 @@ export class RollWork extends DurableObject<RollEnv> {
       }
       if (!skipDiceDelay && delivery.clatter_sent_at === null) {
         const discordOperation: DiscordOperation =
-          metadata.responseMode === "followup"
-            ? "create-followup-clatter"
-            : "edit-original-clatter";
-        let clatterResponse: Response;
-        try {
-          const request = metadata.responseMode === "followup"
-            ? buildPublicFollowupResponse(target, clatterPayload)
-            : buildEditOriginalResponse(target, clatterPayload);
-          this.recordProviderAttempt();
-          clatterResponse = await fetch(request);
-        } catch {
-          return this.scheduleRetry(
-            target.id,
-            attempts,
-            delivery.expires_at,
-            "clatter",
-          );
-        }
-        if (!clatterResponse.ok) {
-          if (isRetryableHttpStatus(clatterResponse.status)) {
-            return this.scheduleRetry(
-              target.id,
-              attempts,
-              delivery.expires_at,
-              "clatter",
-              retryAfterMs(clatterResponse, attempts),
-              clatterResponse.status,
-            );
-          }
-          const code = await readDiscordErrorCode(clatterResponse);
-          return this.failDelivery(
-            target.id,
-            attempts,
-            clatterResponse.status,
-            delivery.expires_at,
-            "clatter",
-            { code, operation: discordOperation },
-          );
-        }
+          metadata.responseMode === "edit-original"
+            ? "edit-original-clatter"
+            : "create-followup-clatter";
+        let clatterHttpStatus: number;
         let originalResponseMessageId: string | null = null;
-        if (metadata.responseMode === "followup") {
-          try {
-            const message = await readBoundedDiscordJson(clatterResponse);
-            if (
-              !isRecord(message) ||
-              typeof message.id !== "string" ||
-              !SAVED_ROLL_SNOWFLAKE.test(message.id)
-            ) {
-              throw new Error("Discord followup response is invalid");
-            }
-            followupMessageId = message.id;
-          } catch {
+        if (metadata.responseMode === "channel-message") {
+          if (metadata.logging === null) {
             return this.terminateDelivery(
               target,
               attempts,
@@ -2810,18 +2934,93 @@ export class RollWork extends DurableObject<RollEnv> {
               "response",
             );
           }
+          const attempt = await this.attemptChannelRollMessage(
+            {
+              version: 1,
+              operation: "create-clatter",
+              rollId: target.id,
+              channelId: metadata.logging.channelId,
+              payload: clatterPayload,
+            },
+            target,
+            attempts,
+            delivery.expires_at,
+            "clatter",
+            discordOperation,
+          );
+          if ("result" in attempt) return attempt.result;
+          followupMessageId = attempt.delivery.messageId;
+          clatterHttpStatus = attempt.delivery.httpStatus;
         } else {
+          let clatterResponse: Response;
           try {
-            const message = await readBoundedDiscordJson(clatterResponse);
-            if (
-              isRecord(message) &&
-              typeof message.id === "string" &&
-              SAVED_ROLL_SNOWFLAKE.test(message.id)
-            ) {
-              originalResponseMessageId = message.id;
-            }
+            const request = metadata.responseMode === "followup"
+              ? buildPublicFollowupResponse(target, clatterPayload)
+              : buildEditOriginalResponse(target, clatterPayload);
+            this.recordProviderAttempt();
+            clatterResponse = await fetch(request);
           } catch {
-            // Diagnostics must not alter successful delivery behavior.
+            return this.scheduleRetry(
+              target.id,
+              attempts,
+              delivery.expires_at,
+              "clatter",
+            );
+          }
+          if (!clatterResponse.ok) {
+            if (isRetryableHttpStatus(clatterResponse.status)) {
+              return this.scheduleRetry(
+                target.id,
+                attempts,
+                delivery.expires_at,
+                "clatter",
+                retryAfterMs(clatterResponse, attempts),
+                clatterResponse.status,
+              );
+            }
+            const code = await readDiscordErrorCode(clatterResponse);
+            return this.failDelivery(
+              target.id,
+              attempts,
+              clatterResponse.status,
+              delivery.expires_at,
+              "clatter",
+              { code, operation: discordOperation },
+            );
+          }
+          clatterHttpStatus = clatterResponse.status;
+          if (metadata.responseMode === "followup") {
+            try {
+              const message = await readBoundedDiscordJson(clatterResponse);
+              if (
+                !isRecord(message) ||
+                typeof message.id !== "string" ||
+                !SAVED_ROLL_SNOWFLAKE.test(message.id)
+              ) {
+                throw new Error("Discord followup response is invalid");
+              }
+              followupMessageId = message.id;
+            } catch {
+              return this.terminateDelivery(
+                target,
+                attempts,
+                delivery.expires_at,
+                "response",
+              );
+            }
+          } else {
+            try {
+              const message = await readBoundedDiscordJson(clatterResponse);
+              if (
+                isRecord(message) &&
+                typeof message.id === "string" &&
+                SAVED_ROLL_SNOWFLAKE.test(message.id)
+              ) {
+                originalResponseMessageId = message.id;
+              }
+            } catch {
+              // Diagnostics must not alter successful delivery behavior.
+            }
           }
         }
         if (delayMs === null) {
@@ -2852,7 +3051,7 @@ export class RollWork extends DurableObject<RollEnv> {
             clatterSentAt,
             followupMessageId,
             resultNotBefore,
-            clatterResponse.status,
+            clatterHttpStatus,
           );
         });
       }
@@ -3011,7 +3210,69 @@ export class RollWork extends DurableObject<RollEnv> {
         bytes: png,
         description: "Rendered dice result",
       };
-      if (metadata.responseMode !== "followup") {
+      if (metadata.responseMode === "channel-message") {
+        if (metadata.logging === null) {
+          return this.terminateDelivery(
+            target,
+            attempts,
+            delivery.expires_at,
+            "response",
+          );
+        }
+        discordOperation = followupMessageId === null
+          ? "create-followup-result"
+          : "edit-followup-result";
+        const attempt = await this.attemptChannelRollMessage(
+          followupMessageId === null
+            ? {
+                version: 1,
+                operation: "create-result",
+                rollId: target.id,
+                channelId: metadata.logging.channelId,
+                payload,
+                filename,
+                png,
+              }
+            : {
+                version: 1,
+                operation: "edit-result",
+                channelId: metadata.logging.channelId,
+                messageId: followupMessageId,
+                payload,
+                filename,
+                png,
+              },
+          target,
+          attempts,
+          delivery.expires_at,
+          "discord",
+          discordOperation,
+        );
+        if ("result" in attempt) return attempt.result;
+        try {
+          const cleanupResponse = await fetch(buildDeleteOriginalResponse(target));
+          if (!cleanupResponse.ok) {
+            throw new Error("Saved roll picker cleanup failed");
+          }
+        } catch {
+          console.warn(
+            JSON.stringify({
+              level: "warn",
+              message: "Saved roll picker cleanup failed",
+              rollId: target.id,
+            }),
+          );
+        }
+        return this.completeDelivery(
+          target,
+          attempts,
+          delivery,
+          record,
+          attempt.delivery.httpStatus,
+          skipDiceDelay ? 0 : delayMs,
+        );
+      }
+      if (metadata.responseMode === "edit-original") {
         request = buildEditOriginalResponseWithFile(target, payload, attachment);
         discordOperation = "edit-original-result";
       } else if (followupMessageId !== null) {

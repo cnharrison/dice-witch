@@ -125,7 +125,7 @@ describe("buildRollResultMessage", () => {
     });
   });
 
-  it("uses a Library name as the heading and preserves Library attribution", () => {
+  it("keeps an untitled library replay untitled with Save and attribution", () => {
     const message = buildRollResultMessage(result(["1d20"]), {
       source: "discord",
       title: null,
@@ -138,15 +138,22 @@ describe("buildRollResultMessage", () => {
     const container = message.components[0];
     if (container?.type !== 17) throw new Error("Result Container is missing");
 
-    expect(container.components[0]).toEqual({
-      type: 9,
-      components: [{ type: 10, content: "## Initiative" }],
-      accessory: {
-        type: 2,
-        style: 2,
-        label: "Save",
-        custom_id: "save-roll:v1:d:1400000000000000000",
-      },
+    expect(container.components).not.toContainEqual(
+      expect.objectContaining({
+        type: 9,
+        components: [{ type: 10, content: "## Initiative" }],
+      }),
+    );
+    expect(container.components).toContainEqual({
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 2,
+          label: "Save",
+          custom_id: "save-roll:v1:d:1400000000000000000",
+        },
+      ],
     });
     expect(container.components.at(-1)).toEqual({
       type: 10,
@@ -177,6 +184,19 @@ describe("buildRollResultMessage", () => {
       type: 10,
       content: "-# sent to roller via web",
     });
+  });
+
+  it("rejects Save on an untitled single fresh roll", () => {
+    expect(() =>
+      buildRollResultMessage(result(["1d20"]), {
+        source: "discord",
+        title: null,
+        repetitions: 1,
+        username: "roller",
+        filename: "dice.png",
+        saveRollCustomId: "save-roll:v2:d:1400000000000000000",
+      })
+    ).toThrow("Roll result message options are invalid");
   });
 
   it("gives an untitled repeated roll a presentation-only Save heading", () => {

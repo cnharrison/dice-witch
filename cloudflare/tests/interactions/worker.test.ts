@@ -314,7 +314,7 @@ describe("Discord HTTP interaction Worker", () => {
     expect(openSavedRollPicker).toHaveBeenCalledOnce();
   });
 
-  it("runs a saved roll and deletes its consumed picker", async () => {
+  it("hands a picker launch to standalone channel delivery", async () => {
     const deletePicker = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(null, { status: 204 }));
@@ -397,15 +397,12 @@ describe("Discord HTTP interaction Worker", () => {
     );
     expect(reserveSavedRollRun).toHaveBeenCalledOnce();
     expect(acceptSavedRollDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ selection, responseMode: "followup" }),
+      expect.objectContaining({
+        selection,
+        responseMode: "channel-message",
+      }),
     );
-    expect(deletePicker).toHaveBeenCalledOnce();
-    const deleteRequest = deletePicker.mock.calls[0]?.[0];
-    expect(deleteRequest).toBeInstanceOf(Request);
-    expect((deleteRequest as Request).method).toBe("DELETE");
-    expect((deleteRequest as Request).url).toBe(
-      "https://discord.com/api/v10/webhooks/100000000000000001/fixture.interaction.token/messages/@original",
-    );
+    expect(deletePicker).not.toHaveBeenCalled();
     deletePicker.mockRestore();
   });
 

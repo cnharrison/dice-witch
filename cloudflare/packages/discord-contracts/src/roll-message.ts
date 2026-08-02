@@ -223,8 +223,16 @@ export function rollResultText(result: RollExecutionResult): string {
 
 function resultHeadingText(options: RollResultMessageOptions): string | null {
   if (options.title !== null) return options.title;
-  if (options.savedRoll !== undefined) return options.savedRoll.name;
   return options.repetitions > 1 ? `Repeated ×${String(options.repetitions)}` : null;
+}
+
+function saveRollButton(customId: string) {
+  return {
+    type: 2 as const,
+    style: 2 as const,
+    label: "Save",
+    custom_id: customId,
+  };
 }
 
 function resultHeading(
@@ -240,12 +248,24 @@ function resultHeading(
     {
       type: 9,
       components: [{ type: 10, content }],
-      accessory: {
-        type: 2,
-        style: 2,
-        label: "Save",
-        custom_id: options.saveRollCustomId,
-      },
+      accessory: saveRollButton(options.saveRollCustomId),
+    },
+  ];
+}
+
+function standaloneSaveAction(
+  options: RollResultMessageOptions,
+): DiscordContainerChild[] {
+  if (
+    resultHeadingText(options) !== null ||
+    options.saveRollCustomId === undefined
+  ) {
+    return [];
+  }
+  return [
+    {
+      type: 1,
+      components: [saveRollButton(options.saveRollCustomId)],
     },
   ];
 }
@@ -273,7 +293,7 @@ export function buildRollResultMessage(
       (options.savedRoll.name.length === 0 ||
         options.savedRoll.name.length > 1_024)) ||
     (options.saveRollCustomId !== undefined &&
-      (heading === null ||
+      ((heading === null && options.savedRoll === undefined) ||
         options.saveRollCustomId.length < 1 ||
         options.saveRollCustomId.length > 100))
   ) {
@@ -292,6 +312,7 @@ export function buildRollResultMessage(
         },
       ],
     },
+    ...standaloneSaveAction(options),
     { type: 14, divider: true, spacing: 1 },
     {
       type: 10,

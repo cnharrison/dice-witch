@@ -262,83 +262,18 @@ async function discordTestResponse(request: Request): Promise<Response> {
     }
     return Response.json({ id: "development-message" });
   }
-  if (token === "saved-public-clatter") {
-    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
-    resultDeliveryAttempts.set(token, attempts);
-    const url = new URL(request.url);
-    if (attempts === 1) {
-      const payload: unknown = await request.json();
-      if (
-        request.method !== "POST" ||
-        url.searchParams.get("wait") !== "true" ||
-        !isRecord(payload) ||
-        (payload.flags as number) !== (1 << 15) ||
-        !v2TopLevelText(payload)?.startsWith("_...") ||
-        typeof payload.nonce !== "string" ||
-        !/^c[1-9][0-9]{16,19}$/u.test(payload.nonce) ||
-        payload.enforce_nonce !== true
-      ) {
-        return Response.json({ message: "public clatter is invalid" }, { status: 400 });
-      }
-      return Response.json({ id: "100000000000000099" });
-    }
-    if (attempts === 2) {
-      if (
-        request.method !== "PATCH" ||
-        !url.pathname.endsWith("/messages/100000000000000099")
-      ) {
-        return Response.json({ message: "public result edit is invalid" }, { status: 400 });
-      }
-      const form = await request.formData();
-      const rawPayload = form.get("payload_json");
-      const payload = typeof rawPayload === "string"
-        ? JSON.parse(rawPayload) as unknown
-        : null;
-      if (!isRecord(payload) || !Array.isArray(payload.components)) {
-        return Response.json({ message: "saved result is invalid" }, { status: 400 });
-      }
-      return Response.json({ id: "100000000000000099" });
-    }
-    if (
-      attempts !== 3 ||
-      request.method !== "PATCH" ||
-      !url.pathname.endsWith("/messages/@original")
-    ) {
-      return Response.json({ message: "private confirmation is invalid" }, { status: 400 });
-    }
-    return Response.json({ id: "100000000000000098" });
-  }
-  if (token === "saved-followup") {
-    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
-    resultDeliveryAttempts.set(token, attempts);
+  if (token.startsWith("saved-channel-")) {
     const pathname = new URL(request.url).pathname;
     if (
-      (attempts === 1 &&
-        (request.method !== "POST" || pathname.endsWith("/messages/@original"))) ||
-      (attempts === 2 &&
-        (request.method !== "PATCH" || !pathname.endsWith("/messages/@original")))
+      request.method !== "DELETE" ||
+      !pathname.endsWith("/messages/@original")
     ) {
-      return Response.json({ message: "invalid saved-roll delivery mode" }, { status: 400 });
+      return Response.json(
+        { message: "standalone picker cleanup is invalid" },
+        { status: 400 },
+      );
     }
-    if (attempts === 1) {
-      const form = await request.formData();
-      const rawPayload = form.get("payload_json");
-      const payload =
-        typeof rawPayload === "string" ? JSON.parse(rawPayload) as unknown : null;
-      if (
-        new URL(request.url).searchParams.get("wait") !== "true" ||
-        !isRecord(payload) ||
-        payload.nonce === undefined ||
-        payload.enforce_nonce !== true ||
-        !Array.isArray(payload.components)
-      ) {
-        return Response.json(
-          { message: "saved-roll followup is not replay-safe" },
-          { status: 400 },
-        );
-      }
-    }
-    return Response.json({ id: "development-message" });
+    return new Response(null, { status: 204 });
   }
   if (token.startsWith("delivery-result-temporary-")) {
     const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
@@ -457,6 +392,36 @@ export default defineConfig({
                   }
                   export class DiscordRestService extends WorkerEntrypoint {
                     sendRollHelper() { return { status: "delivered" }; }
+                    deliverChannelRollMessageV1(value) {
+                      const validCreate = value.version === 1 &&
+                        value.operation === "create-clatter" &&
+                        value.channelId === "100000000000000010" &&
+                        value.payload?.flags === (1 << 15);
+                      const validResultCreate = value.version === 1 &&
+                        value.operation === "create-result" &&
+                        value.channelId === "100000000000000010" &&
+                        value.payload?.flags === (1 << 15) &&
+                        value.filename?.endsWith(".png") &&
+                        value.png instanceof Uint8Array;
+                      const validEdit = value.version === 1 &&
+                        value.operation === "edit-result" &&
+                        value.channelId === "100000000000000010" &&
+                        value.messageId === "100000000000000099" &&
+                        value.payload?.flags === (1 << 15) &&
+                        value.filename?.endsWith(".png") &&
+                        value.png instanceof Uint8Array;
+                      return validCreate || validResultCreate || validEdit
+                        ? {
+                            status: "delivered",
+                            messageId: "100000000000000099",
+                            httpStatus: 200
+                          }
+                        : {
+                            status: "failed",
+                            httpStatus: 400,
+                            discordErrorCode: null
+                          };
+                    }
                     deliverWebRoll(value) {
                       const key = "web:" + value.rollId;
                       const attempts = (logAttempts.get(key) ?? 0) + 1;

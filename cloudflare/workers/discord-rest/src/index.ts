@@ -4,7 +4,9 @@ import {
   buildRollHelperMessage,
   DISCORD_AUDIENCE_SNAPSHOT_VERSION,
   DISCORD_COMPONENTS_V2_FLAG,
+  DISCORD_EPHEMERAL_FLAG,
   DISCORD_GLOBAL_COMMANDS,
+  isComponentsV2Message,
   isCompleteGuildRollLoggingContext,
   isDiscordRollChannelType,
   parseRollLoggingContext,
@@ -12,6 +14,7 @@ import {
   rollLogMetadataDescription,
   rollLogResultDescription,
   parseDiscordChannelContextRequestV1,
+  validateDiscordMessage,
   parseDiscordChannelContextResponseV1,
   parseGameDetectionAnnouncementV1,
   parseRollLifecycleAlert,
@@ -21,6 +24,7 @@ import {
   type DeliverRollLogResultV1,
   type DiscordAudienceCaptureV1,
   type DiscordChannelContextResultV1,
+  type DiscordComponentsV2Message,
   type DiscordRollChannelType,
   type GameDetectionAnnouncementV1,
   type RollLifecycleAlert,
@@ -54,7 +58,8 @@ export type DiscordRestBindings = Omit<
 
 const DISCORD_API = "https://discord.com/api/v10";
 const MESSAGE_PROBE_TIMEOUT_MS = 1_000;
-const MAX_MESSAGE_PROBE_BODY_BYTES = 8 * 1_024;
+const MAX_DISCORD_RESPONSE_BODY_BYTES = 8 * 1_024;
+const MAX_ROLL_PNG_BYTES = 10 * 1_024 * 1_024;
 const DICE_WITCH_ADMIN_ROLE = "Dice Witch Admin";
 const ADMINISTRATOR_PERMISSION = 1n << 3n;
 const VIEW_CHANNEL_PERMISSION = 1n << 10n;
@@ -67,6 +72,7 @@ const INVOKE_DICE_WITCH_PERMISSIONS =
 const MAX_GUILDS_PER_STATS_RUN = 100_000;
 const MAX_SHARDS_PER_STATS_RUN = 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const PNG_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/i;
 const ROLL_LOG_TITLE = "receivedCommand: /roll";
 const INVALID_ROLL_LOG_TITLE = "invalidRoll: /roll";
 
@@ -119,6 +125,47 @@ export type WebRollDeliveryResult =
       status: "retryable";
       httpStatus: number;
       retryAfterMs: number | null;
+    };
+
+export type ChannelRollMessageDeliveryResultV1 =
+  | { status: "delivered"; messageId: string; httpStatus: number }
+  | { status: "invalid_response" }
+  | {
+      status: "retryable";
+      httpStatus: number | null;
+      retryAfterMs: number | null;
+    }
+  | {
+      status: "failed";
+      httpStatus: number;
+      discordErrorCode: number | null;
+    };
+
+export type ChannelRollMessageDeliveryInputV1 =
+  | {
+      version: 1;
+      operation: "create-clatter";
+      rollId: string;
+      channelId: string;
+      payload: DiscordComponentsV2Message;
+    }
+  | {
+      version: 1;
+      operation: "create-result";
+      rollId: string;
+      channelId: string;
+      payload: DiscordComponentsV2Message;
+      filename: string;
+      png: Uint8Array;
+    }
+  | {
+      version: 1;
+      operation: "edit-result";
+      channelId: string;
+      messageId: string;
+      payload: DiscordComponentsV2Message;
+      filename: string;
+      png: Uint8Array;
     };
 
 type LegacyPublicDiscordStats = { servers: number; users: number };
@@ -184,13 +231,13 @@ function hasExactKeys(
     actual.every((key, index) => key === expected[index]);
 }
 
-async function readMessageProbeError(response: Response): Promise<unknown> {
+async function readBoundedDiscordJson(response: Response): Promise<unknown> {
   if (response.body === null) return null;
   const contentLength = response.headers.get("content-length");
   if (
     contentLength !== null &&
     (!/^(0|[1-9][0-9]*)$/.test(contentLength) ||
-      Number(contentLength) > MAX_MESSAGE_PROBE_BODY_BYTES)
+      Number(contentLength) > MAX_DISCORD_RESPONSE_BODY_BYTES)
   ) {
     return null;
   }
@@ -202,7 +249,7 @@ async function readMessageProbeError(response: Response): Promise<unknown> {
       const chunk = await reader.read();
       if (chunk.done) break;
       byteLength += chunk.value.byteLength;
-      if (byteLength > MAX_MESSAGE_PROBE_BODY_BYTES) {
+      if (byteLength > MAX_DISCORD_RESPONSE_BODY_BYTES) {
         await reader.cancel();
         return null;
       }
@@ -1935,6 +1982,182 @@ export async function deliverRollLogV1(
   return { status: "delivered", httpStatus: response.status };
 }
 
+function parseChannelRollMessageDeliveryInputV1(
+  value: unknown,
+): ChannelRollMessageDeliveryInputV1 {
+  if (!isRecord(value) || value.version !== 1) {
+    throw new Error("Channel roll message delivery request is invalid");
+  }
+  const commonValid =
+    typeof value.channelId === "string" &&
+    SNOWFLAKE.test(value.channelId) &&
+    isRecord(value.payload);
+  const isCreateClatter =
+    value.operation === "create-clatter" &&
+    hasExactKeys(value, [
+      "channelId",
+      "operation",
+      "payload",
+      "rollId",
+      "version",
+    ]);
+  const isCreateResult =
+    value.operation === "create-result" &&
+    hasExactKeys(value, [
+      "channelId",
+      "filename",
+      "operation",
+      "payload",
+      "png",
+      "rollId",
+      "version",
+    ]);
+  const isEditResult =
+    value.operation === "edit-result" &&
+    hasExactKeys(value, [
+      "channelId",
+      "filename",
+      "messageId",
+      "operation",
+      "payload",
+      "png",
+      "version",
+    ]);
+  if (
+    !commonValid ||
+    (!isCreateClatter && !isCreateResult && !isEditResult) ||
+    ((isCreateClatter || isCreateResult) &&
+      (typeof value.rollId !== "string" || !SNOWFLAKE.test(value.rollId))) ||
+    (isEditResult &&
+      (typeof value.messageId !== "string" ||
+        !SNOWFLAKE.test(value.messageId))) ||
+    ((isCreateResult || isEditResult) &&
+      (typeof value.filename !== "string" ||
+        !PNG_FILENAME.test(value.filename) ||
+        !(value.png instanceof Uint8Array) ||
+        value.png.byteLength === 0 ||
+        value.png.byteLength > MAX_ROLL_PNG_BYTES))
+  ) {
+    throw new Error("Channel roll message delivery request is invalid");
+  }
+  let payload;
+  try {
+    payload = validateDiscordMessage(value.payload);
+  } catch {
+    throw new Error("Channel roll message delivery request is invalid");
+  }
+  if (
+    !isComponentsV2Message(payload) ||
+    (payload.flags & DISCORD_EPHEMERAL_FLAG) !== 0
+  ) {
+    throw new Error("Channel roll message delivery request is invalid");
+  }
+  return { ...value, payload } as ChannelRollMessageDeliveryInputV1;
+}
+
+function channelRollResultForm(
+  input: Extract<
+    ChannelRollMessageDeliveryInputV1,
+    { operation: "create-result" | "edit-result" }
+  >,
+): FormData {
+  const form = new FormData();
+  form.set(
+    "payload_json",
+    JSON.stringify({
+      ...input.payload,
+      allowed_mentions: { parse: [] },
+      ...(input.operation === "create-result"
+        ? { nonce: input.rollId, enforce_nonce: true }
+        : { content: null, embeds: [] }),
+      attachments: [
+        {
+          id: 0,
+          filename: input.filename,
+          description: "Rendered dice result",
+        },
+      ],
+    }),
+  );
+  form.set(
+    "files[0]",
+    new Blob([input.png], { type: "image/png" }),
+    input.filename,
+  );
+  return form;
+}
+
+export async function deliverChannelRollMessageV1(
+  env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
+  value: unknown,
+  discordFetch: RequestFetch = (request) => fetch(request),
+): Promise<ChannelRollMessageDeliveryResultV1> {
+  const input = parseChannelRollMessageDeliveryInputV1(value);
+  const messagesUrl = `${DISCORD_API}/channels/${input.channelId}/messages`;
+  let response: Response;
+  try {
+    if (input.operation === "create-clatter") {
+      response = await discordJson(
+        messagesUrl,
+        env.DISCORD_BOT_TOKEN,
+        {
+          ...input.payload,
+          allowed_mentions: { parse: [] },
+          nonce: `c${input.rollId}`,
+          enforce_nonce: true,
+        },
+        discordFetch,
+      );
+    } else {
+      const url = input.operation === "create-result"
+        ? messagesUrl
+        : `${messagesUrl}/${input.messageId}`;
+      response = await discordFetch(
+        new Request(url, {
+          method: input.operation === "create-result" ? "POST" : "PATCH",
+          headers: {
+            authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+            "user-agent": "Dice-Witch",
+          },
+          body: channelRollResultForm(input),
+        }),
+      );
+    }
+  } catch {
+    return { status: "retryable", httpStatus: null, retryAfterMs: null };
+  }
+  if (!response.ok) {
+    if (isRetryableDiscordStatus(response.status)) {
+      const retryAfterSeconds = numericResponseHeader(response, "retry-after");
+      return {
+        status: "retryable",
+        httpStatus: response.status,
+        retryAfterMs: retryAfterSeconds === null
+          ? null
+          : Math.ceil(retryAfterSeconds * 1_000),
+      };
+    }
+    return {
+      status: "failed",
+      httpStatus: response.status,
+      discordErrorCode: await discordErrorCode(response),
+    };
+  }
+  const responseBody = await readBoundedDiscordJson(response);
+  if (
+    !isRecord(responseBody) ||
+    typeof responseBody.id !== "string" ||
+    !SNOWFLAKE.test(responseBody.id)
+  ) {
+    return { status: "invalid_response" };
+  }
+  return {
+    status: "delivered",
+    messageId: responseBody.id,
+    httpStatus: response.status,
+  };
+}
+
 export async function deliverWebRoll(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
   input: {
@@ -2535,7 +2758,7 @@ export async function inspectDiscordMessageExistence(
   if (response.status === 403) return { outcome: "inaccessible" };
   if (response.status !== 404) return { outcome: "probe-failed" };
   try {
-    const error = await readMessageProbeError(response);
+    const error = await readBoundedDiscordJson(response);
     if (isRecord(error) && error.code === 10_008) {
       return { outcome: "missing" };
     }
@@ -2714,6 +2937,10 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
 
   async updateRollLifecycleAlertV2(input: unknown) {
     return updateRollLifecycleAlertV2(await this.botEnv(), input);
+  }
+
+  async deliverChannelRollMessageV1(input: unknown) {
+    return deliverChannelRollMessageV1(await this.botEnv(), input);
   }
 
   async deliverWebRoll(input: Parameters<typeof deliverWebRoll>[1]) {

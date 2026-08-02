@@ -1,5 +1,4 @@
 import {
-  buildDeleteOriginalResponse,
   buildEditOriginalResponse,
   buildWebAppRouteUrl,
   DISCORD_COMPONENTS_V2_FLAG,
@@ -95,9 +94,9 @@ function savedRollRunDefer(interaction: SavedRollInteraction) {
 
 function savedRollResponseMode(
   interaction: SavedRollInteraction,
-): "edit-original" | "followup" {
-  return interaction.guildId !== null && interaction.kind === "component"
-    ? "followup"
+): "channel-message" | "edit-original" {
+  return interaction.kind === "component"
+    ? "channel-message"
     : "edit-original";
 }
 
@@ -200,24 +199,6 @@ function runError(status: string): string {
   }
 }
 
-async function deleteConsumedPicker(
-  interaction: SavedRollInteraction,
-): Promise<void> {
-  if (interaction.kind !== "component") return;
-  try {
-    const response = await fetch(buildDeleteOriginalResponse(interaction));
-    if (!response.ok) throw new Error("Discord rejected picker deletion");
-  } catch {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        message: "Consumed library picker deletion failed",
-        interactionId: interaction.id,
-      }),
-    );
-  }
-}
-
 async function acceptDeferredSavedRoll(
   stub: SavedRollWorkStub,
   interaction: SavedRollInteraction,
@@ -267,7 +248,6 @@ async function acceptDeferredSavedRoll(
             commandName: "library",
           }),
         );
-        await deleteConsumedPicker(interaction);
         return;
       }
     }

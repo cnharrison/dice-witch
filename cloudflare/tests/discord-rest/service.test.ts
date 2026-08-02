@@ -11,6 +11,7 @@ import {
   createGameDetectionAnnouncementV1,
   createRollLifecycleAlertV1,
   createRollLifecycleAlertV2,
+  deliverChannelRollMessageV1,
   deliverRollLogV1,
   deliverWebRoll,
   fetchPublicStats,
@@ -1490,6 +1491,247 @@ describe("Discord REST service", () => {
       isDiceWitchAdmin: false,
       hasUsableChannel: true,
     });
+  });
+
+  it("creates and edits a standalone channel roll message", async () => {
+    const channelId = "100000000000000010";
+    const rollId = "1400000000000000001";
+    const messageId = "100000000000000020";
+    let attempt = 0;
+    const discordFetch = vi.fn(async (request: Request) => {
+      attempt += 1;
+      expect(request.headers.get("authorization")).toBe(
+        `Bot ${env.DISCORD_BOT_TOKEN}`,
+      );
+      const path = new URL(request.url).pathname;
+      if (attempt === 1) {
+        expect(request.method).toBe("POST");
+        expect(path).toBe(`/api/v10/channels/${channelId}/messages`);
+        await expect(request.json()).resolves.toEqual({
+          flags: 1 << 15,
+          components: [{ type: 10, content: "_clatter_" }],
+          allowed_mentions: { parse: [] },
+          nonce: `c${rollId}`,
+          enforce_nonce: true,
+        });
+      } else {
+        expect(request.method).toBe("PATCH");
+        expect(path).toBe(
+          `/api/v10/channels/${channelId}/messages/${messageId}`,
+        );
+        const form = await request.formData();
+        const payloadJson = form.get("payload_json");
+        if (typeof payloadJson !== "string") {
+          throw new Error("Discord payload is missing");
+        }
+        expect(JSON.parse(payloadJson)).toEqual({
+          flags: 1 << 15,
+          components: [
+            {
+              type: 12,
+              items: [
+                {
+                  media: { url: "attachment://dice.png" },
+                  description: "Rendered dice result",
+                },
+              ],
+            },
+          ],
+          allowed_mentions: { parse: [] },
+          content: null,
+          embeds: [],
+          attachments: [
+            {
+              id: 0,
+              filename: "dice.png",
+              description: "Rendered dice result",
+            },
+          ],
+        });
+        expect(form.get("files[0]")).toBeInstanceOf(File);
+      }
+      return Response.json({ id: messageId });
+    });
+
+    await expect(
+      deliverChannelRollMessageV1(
+        env,
+        {
+          version: 1,
+          operation: "create-clatter",
+          rollId,
+          channelId,
+          payload: {
+            flags: 1 << 15,
+            components: [{ type: 10, content: "_clatter_" }],
+          },
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({
+      status: "delivered",
+      messageId,
+      httpStatus: 200,
+    });
+    await expect(
+      deliverChannelRollMessageV1(
+        env,
+        {
+          version: 1,
+          operation: "edit-result",
+          channelId,
+          messageId,
+          payload: {
+            flags: 1 << 15,
+            components: [
+              {
+                type: 12,
+                items: [
+                  {
+                    media: { url: "attachment://dice.png" },
+                    description: "Rendered dice result",
+                  },
+                ],
+              },
+            ],
+          },
+          filename: "dice.png",
+          png: new Uint8Array([137, 80, 78, 71]),
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({
+      status: "delivered",
+      messageId,
+      httpStatus: 200,
+    });
+    expect(attempt).toBe(2);
+  });
+
+  it("creates a standalone result directly when dice delay is disabled", async () => {
+    const channelId = "100000000000000010";
+    const rollId = "1400000000000000001";
+    const discordFetch = vi.fn(async (request: Request) => {
+      expect(request.method).toBe("POST");
+      expect(new URL(request.url).pathname).toBe(
+        `/api/v10/channels/${channelId}/messages`,
+      );
+      const form = await request.formData();
+      const payloadJson = form.get("payload_json");
+      if (typeof payloadJson !== "string") {
+        throw new Error("Discord payload is missing");
+      }
+      expect(JSON.parse(payloadJson)).toMatchObject({
+        flags: 1 << 15,
+        nonce: rollId,
+        enforce_nonce: true,
+        allowed_mentions: { parse: [] },
+      });
+      expect(JSON.parse(payloadJson)).not.toHaveProperty("message_reference");
+      return Response.json({ id: "100000000000000020" });
+    });
+
+    await expect(
+      deliverChannelRollMessageV1(
+        env,
+        {
+          version: 1,
+          operation: "create-result",
+          rollId,
+          channelId,
+          payload: {
+            flags: 1 << 15,
+            components: [
+              {
+                type: 12,
+                items: [
+                  {
+                    media: { url: "attachment://dice.png" },
+                    description: "Rendered dice result",
+                  },
+                ],
+              },
+            ],
+          },
+          filename: "dice.png",
+          png: new Uint8Array([137, 80, 78, 71]),
+        },
+        discordFetch,
+      ),
+    ).resolves.toEqual({
+      status: "delivered",
+      messageId: "100000000000000020",
+      httpStatus: 200,
+    });
+  });
+
+  it("classifies standalone channel delivery failures", async () => {
+    const input = {
+      version: 1 as const,
+      operation: "create-clatter" as const,
+      rollId: "1400000000000000001",
+      channelId: "100000000000000010",
+      payload: {
+        flags: 1 << 15,
+        components: [{ type: 10 as const, content: "_clatter_" }],
+      },
+    };
+
+    await expect(
+      deliverChannelRollMessageV1(env, {
+        ...input,
+        payload: { ...input.payload, flags: (1 << 15) | (1 << 6) },
+      }),
+    ).rejects.toThrow("Channel roll message delivery request is invalid");
+    await expect(
+      deliverChannelRollMessageV1(
+        env,
+        input,
+        vi.fn(() => Promise.reject(new Error("network unavailable"))),
+      ),
+    ).resolves.toEqual({
+      status: "retryable",
+      httpStatus: null,
+      retryAfterMs: null,
+    });
+    await expect(
+      deliverChannelRollMessageV1(
+        env,
+        input,
+        vi.fn(() =>
+          Promise.resolve(
+            new Response(null, {
+              status: 429,
+              headers: { "retry-after": "1.25" },
+            }),
+          )
+        ),
+      ),
+    ).resolves.toEqual({
+      status: "retryable",
+      httpStatus: 429,
+      retryAfterMs: 1_250,
+    });
+    await expect(
+      deliverChannelRollMessageV1(
+        env,
+        input,
+        vi.fn(() =>
+          Promise.resolve(Response.json({ code: 50_013 }, { status: 403 }))
+        ),
+      ),
+    ).resolves.toEqual({
+      status: "failed",
+      httpStatus: 403,
+      discordErrorCode: 50_013,
+    });
+    await expect(
+      deliverChannelRollMessageV1(
+        env,
+        input,
+        vi.fn(() => Promise.resolve(Response.json({ id: "invalid" }))),
+      ),
+    ).resolves.toEqual({ status: "invalid_response" });
   });
 
   it("delivers a rendered web roll only to a channel in the guild", async () => {
