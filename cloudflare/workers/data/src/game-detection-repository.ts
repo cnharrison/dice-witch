@@ -188,13 +188,14 @@ function parseOutcomeTotal(value: unknown): number {
     if (
       !isRecord(outcome) ||
       typeof outcome.total !== "number" ||
-      !Number.isSafeInteger(outcome.total)
+      !Number.isFinite(outcome.total) ||
+      Math.abs(outcome.total) > Number.MAX_SAFE_INTEGER
     ) {
       throw new Error("Stored game-detection outcome total is invalid");
     }
     return sum + outcome.total;
   }, 0);
-  if (!Number.isSafeInteger(total) || Math.abs(total) > 1_000_000_000) {
+  if (!Number.isFinite(total) || Math.abs(total) > 1_000_000_000) {
     throw new Error("Stored game-detection combined total is invalid");
   }
   return total;

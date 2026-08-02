@@ -193,7 +193,7 @@ function validateContextRoll(value: unknown): GameDetectionContextRollV1 {
   }
   if (
     typeof value.total !== "number" ||
-    !Number.isSafeInteger(value.total) ||
+    !Number.isFinite(value.total) ||
     Math.abs(value.total) > 1_000_000_000
   ) {
     throw new Error("Game-detection total is invalid");

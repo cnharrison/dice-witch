@@ -26,6 +26,7 @@ function snapshot(input: {
   channelId?: string;
   notation?: readonly string[];
   repetitions?: number;
+  outcomeTotal?: number;
   title?: string | null;
   userId?: string;
   guildName?: string | null;
@@ -74,7 +75,7 @@ function snapshot(input: {
         outcomes: notation.map((value) => ({
           notation: value,
           output: `${value}: [6] = 6`,
-          total: 6,
+          total: input.outcomeTotal ?? 6,
         })),
         errors: [],
       },
@@ -162,6 +163,45 @@ async function record(...values: RollLifecycleSnapshotV1[]): Promise<void> {
 }
 
 describe("D1GameDetectionRepository", () => {
+  it("ingests fractional outcome totals through rank-job preparation", async () => {
+    await record(
+      snapshot({
+        interactionId: "100000000000000100",
+        receivedAt: baseTime,
+        notation: ["1d20/2"],
+        outcomeTotal: 14.5,
+      }),
+      snapshot({
+        interactionId: "100000000000000101",
+        receivedAt: baseTime + 60_000,
+      }),
+      snapshot({
+        interactionId: "100000000000000102",
+        receivedAt: baseTime + 120_000,
+        userId: "100000000000000099",
+      }),
+      snapshot({
+        interactionId: "100000000000000103",
+        receivedAt: baseTime + 180_000,
+        userId: "100000000000000099",
+      }),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+
+    await expect(
+      repository.ingestDeliveredRolls(baseTime + 180_000),
+    ).resolves.toEqual({
+      ingested: 4,
+      backlog: false,
+      closedSessions: 0,
+    });
+    await expect(
+      dataEnv.DATA.prepare(
+        "SELECT active_play_state FROM game_detection_sessions",
+      ).first("active_play_state"),
+    ).resolves.toBe("active");
+  });
+
   it("does not rank one participant's three-roll staging acceptance sequence", async () => {
     await record(
       snapshot({
