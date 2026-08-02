@@ -35,7 +35,8 @@ import {
   buildSaveRollCustomId,
   DISCORD_COMPONENTS_V2_FLAG,
   DISCORD_EPHEMERAL_FLAG,
-  parseSaveRollIntentV1,
+  parseSaveRollIntent,
+  saveRollIntentIdentity,
   ROLL_SAVE_INTENT_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   parseRollLifecycleSnapshot,
@@ -44,7 +45,7 @@ import {
   type RollLifecycleContextV1,
   type RollLifecycleDiagnosticsV2,
   type RollLogArtifact,
-  type SaveRollIntentV1,
+  type SaveRollIntent,
 } from "../../../packages/discord-contracts/src";
 import { buildRollRenderRequest } from "../../../packages/roll-render-model/src";
 import {
@@ -2959,6 +2960,7 @@ export class RollWork extends DurableObject<RollEnv> {
           payload = buildRollResultMessage(record.outcome, {
             ...metadata.message,
             source: "discord",
+            repetitions: record.request.repetitions,
             filename,
             ...(skipDiceDelay ? {} : { clatter }),
             ...(saveRollIntent === null
@@ -2966,7 +2968,7 @@ export class RollWork extends DurableObject<RollEnv> {
               : {
                   saveRollCustomId: buildSaveRollCustomId({
                     kind: "discord",
-                    id: metadata.interactionId,
+                    id: this.saveRollSourceId(),
                   }),
                 }),
             ...(metadata.savedRoll === null
@@ -3643,19 +3645,31 @@ export class RollWork extends DurableObject<RollEnv> {
     }
   }
 
+  private saveRollSourceId(): string {
+    const id = this.ctx.id.name;
+    if (id === undefined) throw new Error("RollWork must have a named id");
+    return id;
+  }
+
   private ensureSaveRollIntent(
     record: RollWorkRecord,
     metadata: DeliveryMetadata,
-  ): SaveRollIntentV1 | null {
+  ): SaveRollIntent | null {
     const savedRoll = metadata.savedRoll;
-    if (savedRoll === null && metadata.message.title === null) return null;
+    if (
+      savedRoll === null &&
+      metadata.message.title === null &&
+      record.request.repetitions === 1
+    ) {
+      return null;
+    }
     const notation = savedRoll?.notation ?? metadata.logging?.notation;
     if (notation === undefined) {
       throw new Error("Save roll notation is unavailable");
     }
     const createdAt = record.createdAt;
-    const intent = parseSaveRollIntentV1({
-      version: 1,
+    const intent = parseSaveRollIntent({
+      version: 2,
       source: savedRoll === null ? "fresh" : "library",
       notation,
       title: metadata.message.title,
@@ -3672,13 +3686,16 @@ export class RollWork extends DurableObject<RollEnv> {
       intent.expiresAt,
     );
     const stored = this.readSaveRollIntent();
-    if (stored === undefined || JSON.stringify(stored) !== JSON.stringify(intent)) {
+    if (
+      stored === undefined ||
+      saveRollIntentIdentity(stored) !== saveRollIntentIdentity(intent)
+    ) {
       throw new Error("Save roll intent conflicts with stored delivery");
     }
     return stored;
   }
 
-  private readSaveRollIntent(): SaveRollIntentV1 | undefined {
+  private readSaveRollIntent(): SaveRollIntent | undefined {
     const row = this.ctx.storage.sql
       .exec<{ intent_json: string }>(
         "SELECT intent_json FROM save_roll_intent WHERE singleton = 1",
@@ -3686,7 +3703,7 @@ export class RollWork extends DurableObject<RollEnv> {
       .toArray()[0];
     return row === undefined
       ? undefined
-      : parseSaveRollIntentV1(JSON.parse(row.intent_json));
+      : parseSaveRollIntent(JSON.parse(row.intent_json));
   }
 
   getSaveRollIntent() {

@@ -66,15 +66,21 @@ export {
 } from "./responses";
 export {
   buildSaveRollCustomId,
+  buildSaveRollDuplicateResponse,
   buildSaveRollErrorResponse,
   buildSaveRollModalResponse,
   buildSaveRollSuccessResponse,
   parseSaveRollInteraction,
+  parseSaveRollIntent,
   parseSaveRollIntentV1,
+  saveRollIntentIdentity,
   ROLL_SAVE_INTENT_RETENTION_MS,
   type ParsedSaveRollInteractionV1,
+  type SaveRollIntent,
   type SaveRollIntentV1,
+  type SaveRollIntentV2,
   type SaveRollSourceV1,
+  type SaveRollTitleMode,
 } from "./save-roll-interaction";
 export {
   parseGuildLifecycleDispatch,

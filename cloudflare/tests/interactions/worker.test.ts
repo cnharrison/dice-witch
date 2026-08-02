@@ -186,10 +186,11 @@ describe("Discord HTTP interaction Worker", () => {
     expect(result).toMatchObject({
       type: 9,
       data: {
-        custom_id: "save-roll:v1:d:1400000000000000000:submit",
-        components: [{ component: { value: "Initiative" } }],
+        custom_id: "save-roll:v2:d:1400000000000000000:submit",
       },
     });
+    expect(JSON.stringify(result)).toContain('"custom_id":"save-roll-title-mode"');
+    expect(JSON.stringify(result)).toContain('"value":"Initiative"');
     expect(getSaveRollIntent).toHaveBeenCalledOnce();
   });
   it("acknowledges an authenticated Discord PING", async () => {

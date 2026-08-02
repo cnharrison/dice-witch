@@ -847,6 +847,7 @@ export async function executeWebRoll(
       payload: buildRollResultMessage(outcome, {
         source: "web",
         title: request.title,
+        repetitions: request.repetitions,
         username: request.username,
         filename,
         ...(request.saveRollCustomId === undefined

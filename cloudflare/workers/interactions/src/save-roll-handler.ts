@@ -1,10 +1,11 @@
 import {
+  buildSaveRollDuplicateResponse,
   buildSaveRollErrorResponse,
   buildSaveRollModalResponse,
   buildSaveRollSuccessResponse,
   buildWebAppRouteUrl,
   type ParsedSaveRollInteractionV1,
-  type SaveRollIntentV1,
+  type SaveRollIntent,
   type SaveRollSourceV1,
 } from "../../../packages/discord-contracts/src";
 import { parseSavedRollNameV1 } from "../../../packages/saved-rolls/src/name";
@@ -17,7 +18,7 @@ import {
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 
 type SaveRollIntentResult =
-  | { status: "available"; intent: SaveRollIntentV1 }
+  | { status: "available"; intent: SaveRollIntent }
   | { status: "expired" | "missing" };
 
 type SaveRollIntentStub = {
@@ -43,20 +44,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function exactComposition(
   savedRoll: VisibleSavedRollV1,
-  intent: SaveRollIntentV1,
+  intent: SaveRollIntent,
+  title: string | null,
 ): boolean {
   return savedRoll.notation === intent.notation &&
-    savedRoll.title === intent.title &&
+    savedRoll.title === title &&
     savedRoll.repetitions === intent.repetitions;
 }
 
 export function personalLibraryState(
   library: VisibleSavedRollList,
-  intent: SaveRollIntentV1,
+  intent: SaveRollIntent,
+  title = intent.title,
 ): PersonalLibraryState {
   const duplicate = library.savedRolls.find((savedRoll) =>
-    exactComposition(savedRoll, intent)
+    exactComposition(savedRoll, intent, title)
   ) ?? null;
+  if (intent.defaultName === null) {
+    return { duplicate, defaultName: null, nameConflict: false };
+  }
   let parsedDefault;
   try {
     parsedDefault = parseSavedRollNameV1(intent.defaultName);
@@ -66,7 +72,7 @@ export function personalLibraryState(
   const nameConflict = library.savedRolls.some(
     (savedRoll) =>
       savedRoll.comparisonKey === parsedDefault.comparisonKey &&
-      !exactComposition(savedRoll, intent),
+      !exactComposition(savedRoll, intent, title),
   );
   return {
     duplicate,
@@ -107,6 +113,40 @@ function unavailableMessage(status: "expired" | "missing"): string {
     : "This roll is no longer available to save.";
 }
 
+function libraryUrl(env: SaveRollHandlerEnv): string {
+  return buildWebAppRouteUrl(env.WEB_APP_URL, "library");
+}
+
+function duplicateResponse(
+  env: SaveRollHandlerEnv,
+  duplicate: VisibleSavedRollV1,
+): ReturnType<typeof buildSaveRollDuplicateResponse> {
+  return buildSaveRollDuplicateResponse(duplicate.displayName, libraryUrl(env));
+}
+
+function selectedTitle(
+  interaction: ParsedSaveRollInteractionV1,
+  intent: SaveRollIntent,
+  name: string,
+): { status: "valid"; title: string | null } | { status: "invalid"; message: string } {
+  if (interaction.titleMode === "keep") {
+    return { status: "valid", title: intent.title };
+  }
+  if (interaction.titleMode === "none") {
+    return { status: "valid", title: null };
+  }
+  const title = interaction.titleMode === "name" ? name : interaction.customTitle;
+  if (typeof title !== "string" || title.length < 1 || title.length > 256) {
+    return {
+      status: "invalid",
+      message: interaction.titleMode === "name"
+        ? "That saved-roll name is too long to use as a title. Choose another title option."
+        : "Enter a custom roll title using 1 through 256 characters.",
+    };
+  }
+  return { status: "valid", title };
+}
+
 export async function openSaveRollModal(
   interaction: ParsedSaveRollInteractionV1,
   env: SaveRollHandlerEnv,
@@ -128,13 +168,13 @@ export async function openSaveRollModal(
   }
   const state = personalLibraryState(library, resolved.intent);
   if (state.duplicate !== null) {
-    return buildSaveRollErrorResponse(
-      `This exact roll is already in your Personal Library as “${state.duplicate.displayName}”.`,
-    );
+    return duplicateResponse(env, state.duplicate);
   }
   return buildSaveRollModalResponse(interaction.source, {
     defaultName: state.defaultName,
     nameConflict: state.nameConflict,
+    sourceKind: resolved.intent.source,
+    sourceTitle: resolved.intent.title,
   });
 }
 
@@ -236,11 +276,17 @@ async function submitSaveRoll(
     return buildSaveRollErrorResponse(unavailableMessage(resolved.status));
   }
   const intent = resolved.intent;
-  const state = personalLibraryState(library, intent);
-  if (state.duplicate !== null) {
+  const titleSelection = selectedTitle(interaction, intent, name.displayName);
+  if (titleSelection.status === "invalid") {
     return buildSaveRollErrorResponse(
-      `This exact roll is already in your Personal Library as “${state.duplicate.displayName}”.`,
+      titleSelection.message,
+      interaction.source,
+      "Try again",
     );
+  }
+  const state = personalLibraryState(library, intent, titleSelection.title);
+  if (state.duplicate !== null) {
+    return duplicateResponse(env, state.duplicate);
   }
   if (
     library.savedRolls.some(
@@ -272,7 +318,7 @@ async function submitSaveRoll(
           version: 2,
           name: name.displayName,
           notation: intent.notation,
-          title: intent.title,
+          title: titleSelection.title,
           repetitions: intent.repetitions,
           nameColor: intent.nameColor,
         },
@@ -293,7 +339,7 @@ async function submitSaveRoll(
   if (isRecord(result) && (result.status === "applied" || result.status === "existing")) {
     return buildSaveRollSuccessResponse(
       name.displayName,
-      buildWebAppRouteUrl(env.WEB_APP_URL, "library"),
+      libraryUrl(env),
     );
   }
   if (isRecord(result) && result.status === "name_conflict") {
@@ -305,9 +351,21 @@ async function submitSaveRoll(
     );
   }
   if (isRecord(result) && result.status === "list_revision_conflict") {
+    try {
+      const latest = await fetchPersonalLibrary(env, interaction.userId);
+      const duplicate = personalLibraryState(
+        latest,
+        intent,
+        titleSelection.title,
+      ).duplicate;
+      if (duplicate !== null) return duplicateResponse(env, duplicate);
+    } catch {
+      return buildSaveRollErrorResponse("Your Personal Library is temporarily unavailable.");
+    }
     return buildSaveRollErrorResponse(
       "Your Personal Library changed while saving. Try Save roll again.",
       interaction.source,
+      "Try again",
     );
   }
   return buildSaveRollErrorResponse("Save roll is temporarily unavailable.");

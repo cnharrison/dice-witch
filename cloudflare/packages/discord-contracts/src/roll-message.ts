@@ -1,4 +1,8 @@
-import type { RollDie, RollExecutionResult } from "../../roll-domain/src";
+import {
+  MAX_REPETITIONS,
+  type RollDie,
+  type RollExecutionResult,
+} from "../../roll-domain/src";
 import { createDeterministicRandom } from "../../roll-domain/src/random";
 import {
   DISCORD_COMPONENTS_V2_FLAG,
@@ -18,6 +22,7 @@ const PNG_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/i;
 export type RollResultMessageOptions = {
   source: "discord" | "web";
   title: string | null;
+  repetitions: number;
   username: string;
   filename: string;
   clatter?: string;
@@ -219,10 +224,16 @@ export function rollResultText(result: RollExecutionResult): string {
     : description;
 }
 
+function resultHeadingText(options: RollResultMessageOptions): string | null {
+  if (options.title !== null) return options.title;
+  if (options.savedRoll !== undefined) return options.savedRoll.name;
+  return options.repetitions > 1 ? `Repeated ×${String(options.repetitions)}` : null;
+}
+
 function resultHeading(
   options: RollResultMessageOptions,
 ): DiscordContainerChild[] {
-  const heading = options.title ?? options.savedRoll?.name ?? null;
+  const heading = resultHeadingText(options);
   if (heading === null) return [];
   const content = `## ${escapeDiscordMarkdown(heading)}`;
   if (options.saveRollCustomId === undefined) {
@@ -249,10 +260,13 @@ export function buildRollResultMessage(
   if (result.outcomes.length === 0) {
     throw new Error("Roll result has no displayable outcomes");
   }
-  const heading = options.title ?? options.savedRoll?.name ?? null;
+  const heading = resultHeadingText(options);
   if (
     (options.title !== null &&
       (options.title.length === 0 || options.title.length > MAX_TITLE_LENGTH)) ||
+    !Number.isSafeInteger(options.repetitions) ||
+    options.repetitions < 1 ||
+    options.repetitions > MAX_REPETITIONS ||
     options.username.length === 0 ||
     options.username.length > MAX_USERNAME_LENGTH ||
     !PNG_FILENAME.test(options.filename) ||

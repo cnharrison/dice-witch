@@ -4,11 +4,12 @@ import {
   LOG_WORK_RETRY_WINDOW_MS,
   MAX_LOG_ARTIFACT_PNG_BYTES,
   buildSaveRollCustomId,
-  parseSaveRollIntentV1,
+  parseSaveRollIntent,
+  saveRollIntentIdentity,
   ROLL_SAVE_INTENT_RETENTION_MS,
   validateRollLogArtifact,
   type RollLogArtifactV2,
-  type SaveRollIntentV1,
+  type SaveRollIntent,
 } from "../../../packages/discord-contracts/src";
 import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
 import {
@@ -471,7 +472,9 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     input: WebDeliveryInput,
     row: StoredWebDeliveryRow,
   ): Promise<WebDeliveryExecutionResult> {
-    const saveRollEligible = input.savedRoll !== undefined || input.title !== null;
+    const saveRollEligible = input.savedRoll !== undefined ||
+      input.title !== null ||
+      input.repetitions > 1;
     const roll = await executeWebRoll(
       {
         notation: input.notation,
@@ -818,9 +821,9 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
   private ensureSaveRollIntent(
     input: WebDeliveryInput,
     createdAt: number,
-  ): SaveRollIntentV1 {
-    const intent = parseSaveRollIntentV1({
-      version: 1,
+  ): SaveRollIntent {
+    const intent = parseSaveRollIntent({
+      version: 2,
       source: input.savedRoll === undefined ? "fresh" : "library",
       notation: input.notation,
       title: input.title,
@@ -837,13 +840,16 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
       intent.expiresAt,
     );
     const stored = this.readSaveRollIntent();
-    if (stored === undefined || JSON.stringify(stored) !== JSON.stringify(intent)) {
+    if (
+      stored === undefined ||
+      saveRollIntentIdentity(stored) !== saveRollIntentIdentity(intent)
+    ) {
       throw new Error("Save roll intent conflicts with stored web delivery");
     }
     return stored;
   }
 
-  private readSaveRollIntent(): SaveRollIntentV1 | undefined {
+  private readSaveRollIntent(): SaveRollIntent | undefined {
     const row = this.ctx.storage.sql
       .exec<{ intent_json: string }>(
         "SELECT intent_json FROM save_roll_intent WHERE singleton = 1",
@@ -851,7 +857,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
       .toArray()[0];
     return row === undefined
       ? undefined
-      : parseSaveRollIntentV1(JSON.parse(row.intent_json));
+      : parseSaveRollIntent(JSON.parse(row.intent_json));
   }
 
   getSaveRollIntent() {

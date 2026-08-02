@@ -81,6 +81,7 @@ describe("buildRollResultMessage", () => {
       buildRollResultMessage(roll, {
         source: "discord",
         title: "Enchanted sword",
+        repetitions: 1,
         username: "roller",
         filename: "dice-1400000000000000000.png",
         clatter: "_...the dice clatter across the table..._",
@@ -128,6 +129,7 @@ describe("buildRollResultMessage", () => {
     const message = buildRollResultMessage(result(["1d20"]), {
       source: "discord",
       title: null,
+      repetitions: 1,
       username: "roller",
       filename: "dice.png",
       savedRoll: { scope: "Mine", name: "Initiative" },
@@ -157,6 +159,7 @@ describe("buildRollResultMessage", () => {
     const message = buildRollResultMessage(result(["1d20"]), {
       source: "web",
       title: null,
+      repetitions: 1,
       username: "roller",
       filename: "dice.png",
     });
@@ -176,10 +179,39 @@ describe("buildRollResultMessage", () => {
     });
   });
 
+  it("gives an untitled repeated roll a presentation-only Save heading", () => {
+    const message = buildRollResultMessage(result(["1d20"]), {
+      source: "discord",
+      title: null,
+      repetitions: 3,
+      username: "roller",
+      filename: "dice.png",
+      saveRollCustomId: "save-roll:v2:d:1400000000000000000",
+    });
+    const container = message.components[0];
+    if (container?.type !== 17) throw new Error("Result Container is missing");
+
+    expect(container.components[0]).toEqual({
+      type: 9,
+      components: [{ type: 10, content: "## Repeated ×3" }],
+      accessory: {
+        type: 2,
+        style: 2,
+        label: "Save roll",
+        custom_id: "save-roll:v2:d:1400000000000000000",
+      },
+    });
+    expect(container.components.at(-1)).toEqual({
+      type: 10,
+      content: "-# sent to roller via discord",
+    });
+  });
+
   it("escapes user-authored Markdown in headings and attribution", () => {
     const message = buildRollResultMessage(result(["1d20"]), {
       source: "discord",
       title: "# **Attack**",
+      repetitions: 1,
       username: "_roller_",
       filename: "dice.png",
       savedRoll: { scope: "Server", name: "[Opening](https://example.com)" },
@@ -236,6 +268,7 @@ describe("buildRollResultMessage", () => {
     const message = buildRollResultMessage(roll, {
       source: "discord",
       title: null,
+      repetitions: 1,
       username: "roller",
       filename: "dice.png",
     });
@@ -261,6 +294,7 @@ describe("buildRollResultMessage", () => {
       buildRollResultMessage(result(["not-dice"]), {
         source: "discord",
         title: null,
+        repetitions: 1,
         username: "roller",
         filename: "dice.png",
       }),

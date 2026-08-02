@@ -282,6 +282,34 @@ describe("WebDeliveryWork Durable Object", () => {
     await expect(stub.getSaveRollIntent()).resolves.toEqual({ status: "missing" });
   });
 
+  it("offers Save roll for an untitled repeated result with a blank default name", async () => {
+    const deliveryId = "abababab-abab-4bab-8bab-abababababab";
+    const stub = work(deliveryId);
+    const result = await executeWork(stub, request(deliveryId, {
+      title: null,
+      repetitions: 3,
+    }));
+
+    expect(result).toMatchObject({ status: "delivered" });
+    if (!("roll" in result) || result.roll.status !== "rolled") {
+      throw new Error("Expected a delivered web roll");
+    }
+    expect(JSON.stringify(result.roll.discord.payload)).toContain("## Repeated ×3");
+    expect(JSON.stringify(result.roll.discord.payload)).toContain("Save roll");
+    await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
+      status: "available",
+      intent: {
+        version: 2,
+        source: "fresh",
+        notation: "1d20",
+        title: null,
+        repetitions: 3,
+        defaultName: null,
+        nameColor: null,
+      },
+    });
+  });
+
   it("preserves Library color in the authoritative Save roll intent", async () => {
     const deliveryId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const stub = work(deliveryId);

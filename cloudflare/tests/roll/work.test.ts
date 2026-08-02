@@ -369,8 +369,8 @@ describe("RollWork Durable Object", () => {
   });
 
   it("resolves and persists one immutable saved invocation before delivery", async () => {
-    const runId = snowflakeAt(Date.now(), 39);
-    const sessionId = runId;
+    const sessionId = snowflakeAt(Date.now(), 39);
+    const runId = snowflakeAt(Date.now(), 40);
     const stub = work(sessionId);
     const context = {
       version: 1 as const,
@@ -383,11 +383,20 @@ describe("RollWork Durable Object", () => {
       id: "223e4567-e89b-42d3-a456-426614174000",
       revision: 3,
     };
-    await stub.reserveDirectSavedRoll({
+    await stub.openSavedRollPicker({ ...context, interactionId: sessionId });
+    await stub.updateSavedRollPicker({
       ...context,
       interactionId: runId,
+      action: "server",
+      selection: null,
+    });
+    await stub.updateSavedRollPicker({
+      ...context,
+      interactionId: runId,
+      action: "select",
       selection,
     });
+    await stub.reserveSavedRollRun({ ...context, interactionId: runId });
 
     const request = {
       version: 1 as const,
@@ -422,7 +431,17 @@ describe("RollWork Durable Object", () => {
       status: "existing",
       savedRoll: { name: "Attack", notation: "2d20+5", revision: 3 },
     });
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await runDurableObjectAlarm(stub);
+    const completed = consoleInfo.mock.calls
+      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      .find(({ message, rollId }) =>
+        message === "Roll destination delivery completed" && rollId === runId
+      );
+    consoleInfo.mockRestore();
+    const destinationPayload = JSON.stringify(completed?.destinationPayload);
+    expect(destinationPayload).toContain(`save-roll:v1:d:${sessionId}`);
+    expect(destinationPayload).not.toContain(`save-roll:v1:d:${runId}`);
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
       lastHttpStatus: 200,
@@ -472,6 +491,27 @@ describe("RollWork Durable Object", () => {
     });
     await runDurableObjectAlarm(stub);
     await expect(stub.getSaveRollIntent()).resolves.toEqual({ status: "missing" });
+  });
+
+  it("offers Save roll for an untitled repeated Discord result", async () => {
+    const interactionId = snowflakeAt(Date.now(), 43);
+    const stub = work(interactionId);
+    const input = deliveryRequest(interactionId, "delivery-success");
+    input.request.repetitions = 3;
+    input.message.title = null;
+
+    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+    await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
+      status: "available",
+      intent: {
+        version: 2,
+        source: "fresh",
+        notation: "1d20",
+        title: null,
+        repetitions: 3,
+        defaultName: null,
+      },
+    });
   });
 
   it("creates one public saved-roll clatter message and edits it with the result", async () => {
