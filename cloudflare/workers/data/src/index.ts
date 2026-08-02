@@ -170,6 +170,7 @@ const worker = {
   },
   scheduled(controller, env): Promise<void> {
     if (controller.cron === "* * * * *") {
+      controller.noRetry();
       return runMinuteMaintenance(env, controller.scheduledTime);
     }
     if (controller.cron === "0 3 * * *") {

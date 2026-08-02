@@ -163,6 +163,23 @@ async function record(...values: RollLifecycleSnapshotV1[]): Promise<void> {
 }
 
 describe("D1GameDetectionRepository", () => {
+  it("bounds each default ingestion batch below the minute schedule", async () => {
+    await record(
+      ...Array.from({ length: 26 }, (_, index) => snapshot({
+        interactionId: String(100000000000000200n + BigInt(index)),
+        receivedAt: baseTime + index,
+        channelId: String(100000000000000200n + BigInt(index)),
+      })),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+
+    await expect(repository.ingestDeliveredRolls(baseTime + 26)).resolves.toEqual({
+      ingested: 25,
+      backlog: true,
+      closedSessions: 0,
+    });
+  });
+
   it("ingests fractional outcome totals through rank-job preparation", async () => {
     await record(
       snapshot({

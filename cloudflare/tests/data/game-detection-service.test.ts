@@ -3,6 +3,7 @@ import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RollLifecycleSnapshotV1 } from "../../packages/discord-contracts/src";
 import { processGameDetectionMinute } from "../../workers/data/src/game-detection-service";
+import dataWorker, { type DataEnv } from "../../workers/data/src/index";
 import { D1RollLifecycleRepository } from "../../workers/data/src/roll-lifecycle-repository";
 
 const dataEnv = env as unknown as {
@@ -139,6 +140,26 @@ beforeEach(async () => {
        WHERE singleton = 1`,
     ),
   ]);
+});
+
+describe("Data minute maintenance", () => {
+  it("disables platform retries because the next minute is the next attempt", async () => {
+    const noRetry = vi.fn();
+
+    await expect(dataWorker.scheduled(
+      {
+        cron: "* * * * *",
+        scheduledTime: observedAt,
+        noRetry,
+      },
+      {
+        DATA: dataEnv.DATA,
+        AI: { run: vi.fn() } as unknown as Ai,
+        DISCORD_REST: {},
+      } as unknown as DataEnv,
+    )).resolves.toBeUndefined();
+    expect(noRetry).toHaveBeenCalledOnce();
+  });
 });
 
 describe("processGameDetectionMinute", () => {
