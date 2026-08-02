@@ -1,8 +1,5 @@
-import {
-  MAX_REPETITIONS,
-  type RollDie,
-  type RollExecutionResult,
-} from "../../roll-domain/src";
+import type { RollDie, RollExecutionResult } from "../../roll-domain/src";
+import { MAX_REPETITIONS } from "../../roll-domain/src/constants";
 import { createDeterministicRandom } from "../../roll-domain/src/random";
 import {
   DISCORD_COMPONENTS_V2_FLAG,
