@@ -4,6 +4,7 @@ import {
   buildRollErrorMessage,
   buildRollResultMessage,
   DISCORD_COMPONENTS_V2_FLAG,
+  rollResultText,
 } from "../../packages/discord-contracts/src";
 import { executeRoll } from "../../packages/roll-domain/src";
 
@@ -126,7 +127,8 @@ describe("buildRollResultMessage", () => {
   });
 
   it("keeps an untitled library replay untitled with Save and attribution", () => {
-    const message = buildRollResultMessage(result(["1d20"]), {
+    const roll = result(["1d20"]);
+    const message = buildRollResultMessage(roll, {
       source: "discord",
       title: null,
       repetitions: 1,
@@ -144,17 +146,18 @@ describe("buildRollResultMessage", () => {
         components: [{ type: 10, content: "## Initiative" }],
       }),
     );
-    expect(container.components).toContainEqual({
-      type: 1,
-      components: [
-        {
+    expect(container.components).toContainEqual(
+      expect.objectContaining({
+        type: 9,
+        components: [{ type: 10, content: rollResultText(roll) }],
+        accessory: {
           type: 2,
           style: 2,
           label: "Save",
           custom_id: "save-roll:v1:d:1400000000000000000",
         },
-      ],
-    });
+      }),
+    );
     expect(container.components.at(-1)).toEqual({
       type: 10,
       content:

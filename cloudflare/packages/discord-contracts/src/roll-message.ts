@@ -253,19 +253,22 @@ function resultHeading(
   ];
 }
 
-function standaloneSaveAction(
+function resultContent(
+  content: string,
   options: RollResultMessageOptions,
 ): DiscordContainerChild[] {
+  const displays = textDisplays(content);
   if (
     resultHeadingText(options) !== null ||
     options.saveRollCustomId === undefined
   ) {
-    return [];
+    return displays;
   }
   return [
     {
-      type: 1,
-      components: [saveRollButton(options.saveRollCustomId)],
+      type: 9,
+      components: displays,
+      accessory: saveRollButton(options.saveRollCustomId),
     },
   ];
 }
@@ -302,7 +305,7 @@ export function buildRollResultMessage(
   const resultText = rollResultText(result);
   const container: DiscordContainerChild[] = [
     ...resultHeading(options),
-    ...textDisplays(resultText),
+    ...resultContent(resultText, options),
     {
       type: 12,
       items: [
@@ -312,7 +315,6 @@ export function buildRollResultMessage(
         },
       ],
     },
-    ...standaloneSaveAction(options),
     { type: 14, divider: true, spacing: 1 },
     {
       type: 10,
