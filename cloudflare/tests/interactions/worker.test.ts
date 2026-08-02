@@ -193,6 +193,100 @@ describe("Discord HTTP interaction Worker", () => {
     expect(JSON.stringify(result)).toContain('"value":"Initiative"');
     expect(getSaveRollIntent).toHaveBeenCalledOnce();
   });
+
+  it("logs only the parsed title mode for Save roll submissions", async () => {
+    const createdAt = Date.now();
+    const body = JSON.stringify({
+      id: "1400000000000000001",
+      application_id: "100000000000000001",
+      token: "interaction-token",
+      type: 5,
+      guild_id: "100000000000000002",
+      channel_id: "1400000000000000002",
+      member: {
+        user: { id: "1400000000000000004", username: "roller" },
+      },
+      data: {
+        custom_id: "save-roll:v2:d:1400000000000000000:submit",
+        components: [
+          {
+            type: 18,
+            component: {
+              type: 4,
+              custom_id: "save-roll-name",
+              value: "Initiative",
+            },
+          },
+          {
+            type: 18,
+            component: {
+              type: 3,
+              custom_id: "save-roll-title-mode",
+              values: ["none"],
+            },
+          },
+        ],
+      },
+    });
+    const { request, env } = await signedRequest(body, {
+      rollWork: {
+        getSaveRollIntent: () => Promise.resolve({
+          status: "available",
+          intent: {
+            version: 2,
+            source: "fresh",
+            notation: "1d20",
+            title: "Initiative",
+            repetitions: 1,
+            defaultName: "Initiative",
+            nameColor: null,
+            createdAt,
+            expiresAt: createdAt + 90 * 24 * 60 * 60 * 1_000,
+          },
+        }),
+      },
+      dataFetch: () => Promise.resolve(Response.json({
+        status: "found",
+        listRevision: 1,
+        savedRolls: [{
+          version: 1,
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          owner: { type: "user", userId: "1400000000000000004" },
+          displayName: "Initiative",
+          comparisonKey: "initiative",
+          notation: "1d20",
+          title: null,
+          repetitions: 1,
+          pinned: false,
+          manualOrder: 0,
+          revision: 1,
+          createdByUserId: "1400000000000000004",
+          updatedByUserId: "1400000000000000004",
+          createdAt,
+          updatedAt: createdAt,
+        }],
+      })),
+    });
+    const discordFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 200 }),
+    );
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    try {
+      const response = await handleInteractionRequest(request, env);
+      expect(response.status).toBe(200);
+      expect(info).toHaveBeenCalledWith(JSON.stringify({
+        telemetryVersion: 1,
+        level: "info",
+        message: "Discord Save roll submission parsed",
+        titleMode: "none",
+      }));
+    } finally {
+      info.mockRestore();
+      discordFetch.mockRestore();
+    }
+  });
+
   it("acknowledges an authenticated Discord PING", async () => {
     const { env, request } = await signedRequest('{"type":1}');
 

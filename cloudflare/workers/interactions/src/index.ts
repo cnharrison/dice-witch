@@ -356,6 +356,14 @@ export async function handleInteractionRequest(
     if (saveRoll.kind === "open") {
       return json(await openSaveRollModal(saveRoll, env));
     }
+    console.info(
+      JSON.stringify({
+        telemetryVersion: 1,
+        level: "info",
+        message: "Discord Save roll submission parsed",
+        titleMode: saveRoll.titleMode,
+      }),
+    );
     const completion = completeSaveRollSubmit(saveRoll, env);
     if (ctx === undefined) await completion;
     else ctx.waitUntil(completion);
