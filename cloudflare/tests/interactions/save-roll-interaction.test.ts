@@ -150,6 +150,7 @@ describe("Save roll interaction contract", () => {
     expect(
       buildSaveRollModalResponse(source, {
         defaultName: "Initiative",
+        defaultTitleMode: "name",
         nameConflict: false,
       }),
     ).toEqual({
@@ -253,6 +254,7 @@ describe("Save roll interaction contract", () => {
   it("opens a blank warned modal when the default name conflicts", () => {
     const response = buildSaveRollModalResponse(source, {
       defaultName: null,
+      defaultTitleMode: "name",
       nameConflict: true,
     });
 
@@ -366,6 +368,7 @@ describe("Save roll interaction contract", () => {
     }, intent)).toEqual({
       duplicate: null,
       defaultName: null,
+      defaultTitleMode: "name",
       nameConflict: true,
     });
 
@@ -432,6 +435,62 @@ describe("Save roll interaction contract", () => {
     const titleMode = response.data.components[1]?.component;
     if (titleMode?.type !== 3) throw new Error("Expected title mode select");
     expect(titleMode.options[0]).toMatchObject({ value: "name", default: true });
+  });
+
+  it("reuses the title choice of a same-name personal copy", async () => {
+    const createdAt = Date.now();
+    const intent = parseSaveRollIntentV1({
+      version: 1,
+      source: "fresh",
+      notation: "1d20+5",
+      title: "Initiative",
+      repetitions: 1,
+      defaultName: "Initiative",
+      nameColor: null,
+      createdAt,
+      expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
+    });
+    const env = {
+      ROLL_WORK: {
+        getByName: () => ({
+          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
+        }),
+      } as unknown as DurableObjectNamespace,
+      WEB_DELIVERY_WORK: { getByName: () => ({}) } as unknown as DurableObjectNamespace,
+      DATA_SERVICE: {
+        fetch: () => Promise.resolve(Response.json({
+          status: "found",
+          listRevision: 4,
+          savedRolls: [visibleSavedRoll(createdAt, {
+            displayName: "Initiative",
+            comparisonKey: "initiative",
+            notation: "1d20+5",
+            title: null,
+          })],
+        })),
+      } as unknown as Fetcher,
+      WEB_APP_URL: "https://dicewit.ch",
+    };
+    const interaction = parseSaveRollInteraction({
+      ...baseInteraction,
+      type: 3,
+      data: { component_type: 2, custom_id: buildSaveRollCustomId(source) },
+    }, { applicationId: baseInteraction.application_id });
+    if (interaction === null) throw new Error("Expected Save roll interaction");
+
+    const response = await openSaveRollModal(interaction, env) as ReturnType<
+      typeof buildSaveRollModalResponse
+    >;
+
+    expect(response.data.components[0]).toMatchObject({
+      component: { value: "Initiative" },
+    });
+    const titleMode = response.data.components[1]?.component;
+    if (titleMode?.type !== 3) throw new Error("Expected title mode select");
+    expect(titleMode.options).toEqual([
+      { label: "Use name above as title", value: "name" },
+      { label: "No title", value: "none", default: true },
+    ]);
   });
 
   it("returns the existing copy name and Library link before opening a modal", async () => {

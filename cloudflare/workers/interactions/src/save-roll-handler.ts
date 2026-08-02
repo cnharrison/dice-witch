@@ -7,6 +7,7 @@ import {
   type ParsedSaveRollInteractionV1,
   type SaveRollIntent,
   type SaveRollSourceV1,
+  type SaveRollTitleMode,
 } from "../../../packages/discord-contracts/src";
 import { parseSavedRollNameV1 } from "../../../packages/saved-rolls/src/name";
 import {
@@ -35,6 +36,7 @@ type SaveRollHandlerEnv = {
 type PersonalLibraryState = {
   duplicate: VisibleSavedRollV1 | null;
   defaultName: string | null;
+  defaultTitleMode: SaveRollTitleMode;
   nameConflict: boolean;
 };
 
@@ -42,14 +44,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function matchingRoll(
+  savedRoll: VisibleSavedRollV1,
+  intent: SaveRollIntent,
+): boolean {
+  return savedRoll.notation === intent.notation &&
+    savedRoll.repetitions === intent.repetitions;
+}
+
 function exactComposition(
   savedRoll: VisibleSavedRollV1,
   intent: SaveRollIntent,
   title: string | null,
 ): boolean {
-  return savedRoll.notation === intent.notation &&
-    savedRoll.title === title &&
-    savedRoll.repetitions === intent.repetitions;
+  return matchingRoll(savedRoll, intent) && savedRoll.title === title;
+}
+
+function reusableTitleMode(
+  savedRoll: VisibleSavedRollV1,
+  intent: SaveRollIntent,
+): SaveRollTitleMode | null {
+  if (!matchingRoll(savedRoll, intent)) return null;
+  if (savedRoll.title === null) return "none";
+  return savedRoll.title === savedRoll.displayName ? "name" : null;
 }
 
 export function personalLibraryState(
@@ -60,23 +77,40 @@ export function personalLibraryState(
   const duplicate = library.savedRolls.find((savedRoll) =>
     exactComposition(savedRoll, intent, title)
   ) ?? null;
-  if (intent.defaultName === null) {
-    return { duplicate, defaultName: null, nameConflict: false };
-  }
+  const defaultState = {
+    duplicate,
+    defaultName: null,
+    defaultTitleMode: "name" as const,
+    nameConflict: false,
+  };
+  if (intent.defaultName === null) return defaultState;
+
   let parsedDefault;
   try {
     parsedDefault = parseSavedRollNameV1(intent.defaultName);
   } catch {
-    return { duplicate, defaultName: null, nameConflict: false };
+    return defaultState;
   }
-  const nameConflict = library.savedRolls.some(
-    (savedRoll) =>
-      savedRoll.comparisonKey === parsedDefault.comparisonKey &&
-      !exactComposition(savedRoll, intent, title),
+  const sameName = library.savedRolls.find(
+    (savedRoll) => savedRoll.comparisonKey === parsedDefault.comparisonKey,
   );
+  if (sameName !== undefined) {
+    const defaultTitleMode = reusableTitleMode(sameName, intent);
+    if (defaultTitleMode !== null) {
+      return {
+        duplicate,
+        defaultName: sameName.displayName,
+        defaultTitleMode,
+        nameConflict: false,
+      };
+    }
+  }
+  const nameConflict = sameName !== undefined &&
+    !exactComposition(sameName, intent, title);
   return {
     duplicate,
     defaultName: nameConflict ? null : parsedDefault.displayName,
+    defaultTitleMode: "name",
     nameConflict,
   };
 }
@@ -172,6 +206,7 @@ export async function openSaveRollModal(
   }
   return buildSaveRollModalResponse(interaction.source, {
     defaultName: state.defaultName,
+    defaultTitleMode: state.defaultTitleMode,
     nameConflict: state.nameConflict,
   });
 }

@@ -397,6 +397,7 @@ export function buildSaveRollModalResponse(
   source: SaveRollSourceV1,
   options: {
     defaultName: string | null;
+    defaultTitleMode: SaveRollTitleMode;
     nameConflict: boolean;
   },
 ): SaveRollModalResponseV2 {
@@ -437,11 +438,16 @@ export function buildSaveRollModalResponse(
               {
                 label: "Use name above as title",
                 value: "name",
-                default: true,
+                ...(options.defaultTitleMode === "name"
+                  ? { default: true as const }
+                  : {}),
               },
               {
                 label: "No title",
                 value: "none",
+                ...(options.defaultTitleMode === "none"
+                  ? { default: true as const }
+                  : {}),
               },
             ],
           },
