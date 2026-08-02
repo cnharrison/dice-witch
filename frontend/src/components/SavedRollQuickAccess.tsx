@@ -75,7 +75,7 @@ export function SavedRollQuickAccess({
         ? ["saved-rolls", "guild", "none"]
         : savedRollQueryKey(guildScope),
     queryFn: () => {
-      if (guildScope === null) throw new Error("Server Library is missing");
+      if (guildScope === null) throw new Error("Server library is missing");
       return listSavedRolls(guildScope);
     },
     enabled: guildScope !== null,
@@ -119,7 +119,7 @@ export function SavedRollQuickAccess({
             type="button"
             size="icon"
             variant="ghost"
-            aria-label="Collapse Library"
+            aria-label="Collapse library"
             onClick={onCollapse}
           >
             <PanelRightClose className="h-4 w-4" aria-hidden="true" />
@@ -175,7 +175,7 @@ export function SavedRollQuickAccess({
           />
           <Input
             type="search"
-            aria-label="Search Library"
+            aria-label="Search library"
             placeholder="Search"
             className="pl-9"
             value={search}
@@ -246,13 +246,13 @@ export function SavedRollQuickAccess({
         )}
 
         {activeQuery.isLoading && (
-          <SparkleLoadingIndicator label="Loading Library" className="min-h-24" />
+          <SparkleLoadingIndicator label="Loading library" className="min-h-24" />
         )}
         {activeQuery.error !== null && (
           <p role="alert" className="text-sm text-destructive">
             {activeQuery.error instanceof SavedRollApiError
               ? activeQuery.error.message
-              : "The Library is temporarily unavailable."}
+              : "The library is temporarily unavailable."}
           </p>
         )}
         <RollList

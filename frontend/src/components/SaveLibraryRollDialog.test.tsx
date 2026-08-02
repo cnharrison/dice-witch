@@ -52,7 +52,7 @@ describe("SaveLibraryRollDialog", () => {
       </QueryClientProvider>,
     );
 
-    const dialogHeading = screen.getByRole("heading", { name: "Save to Library" });
+    const dialogHeading = screen.getByRole("heading", { name: "Save to library" });
     expect(dialogHeading.className).toContain("sr-only");
     expect(screen.queryByText(
       "Name this composition and choose its destination and optional text color.",

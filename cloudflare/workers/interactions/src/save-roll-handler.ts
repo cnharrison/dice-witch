@@ -135,16 +135,16 @@ function selectedTitle(
   if (interaction.titleMode === "none") {
     return { status: "valid", title: null };
   }
-  const title = interaction.titleMode === "name" ? name : interaction.customTitle;
-  if (typeof title !== "string" || title.length < 1 || title.length > 256) {
+  if (interaction.titleMode !== "name") {
+    return { status: "invalid", message: "Choose a valid roll title option." };
+  }
+  if (name.length > 256) {
     return {
       status: "invalid",
-      message: interaction.titleMode === "name"
-        ? "That saved-roll name is too long to use as a title. Choose another title option."
-        : "Enter a custom roll title using 1 through 256 characters.",
+      message: "That library name is too long to use as a title. Choose another title option.",
     };
   }
-  return { status: "valid", title };
+  return { status: "valid", title: name };
 }
 
 export async function openSaveRollModal(
@@ -164,7 +164,7 @@ export async function openSaveRollModal(
   try {
     library = await fetchPersonalLibrary(env, interaction.userId);
   } catch {
-    return buildSaveRollErrorResponse("Your Personal Library is temporarily unavailable.");
+    return buildSaveRollErrorResponse("Your personal library is temporarily unavailable.");
   }
   const state = personalLibraryState(library, resolved.intent);
   if (state.duplicate !== null) {
@@ -243,7 +243,7 @@ function nameConflictResponse(
   interaction: ParsedSaveRollInteractionV1,
 ): ReturnType<typeof buildSaveRollErrorResponse> {
   return buildSaveRollErrorResponse(
-    "That name is already used by another roll in your Personal Library.",
+    "That name is already used by another roll in your personal library.",
     interaction.source,
   );
 }
@@ -257,7 +257,7 @@ async function submitSaveRoll(
     name = parseSavedRollNameV1(interaction.name);
   } catch {
     return buildSaveRollErrorResponse(
-      "Enter a valid Library name using 1 through 80 Unicode characters.",
+      "Enter a valid library name using 1 through 80 Unicode characters.",
       interaction.source,
     );
   }
@@ -298,7 +298,7 @@ async function submitSaveRoll(
 
   const occurredAt = Date.now();
   if (!(await ensureUser(env, interaction, occurredAt))) {
-    return buildSaveRollErrorResponse("Your Personal Library is temporarily unavailable.");
+    return buildSaveRollErrorResponse("Your personal library is temporarily unavailable.");
   }
   const id = await deterministicUuidV4(`save-roll:${interaction.interactionId}`);
   let response: Response;
@@ -347,7 +347,7 @@ async function submitSaveRoll(
   }
   if (isRecord(result) && result.status === "cap_reached") {
     return buildSaveRollErrorResponse(
-      "Your Personal Library is full. Remove a roll before saving another.",
+      "Your personal library is full. Remove a roll before saving another.",
     );
   }
   if (isRecord(result) && result.status === "list_revision_conflict") {
@@ -360,10 +360,10 @@ async function submitSaveRoll(
       ).duplicate;
       if (duplicate !== null) return duplicateResponse(env, duplicate);
     } catch {
-      return buildSaveRollErrorResponse("Your Personal Library is temporarily unavailable.");
+      return buildSaveRollErrorResponse("Your personal library is temporarily unavailable.");
     }
     return buildSaveRollErrorResponse(
-      "Your Personal Library changed while saving. Try Save roll again.",
+      "Your personal library changed while saving. Try Save roll again.",
       interaction.source,
       "Try again",
     );

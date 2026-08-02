@@ -57,14 +57,14 @@ export async function fetchVisibleSavedRolls(
     serverOwner === null ? null : request(serverOwner),
   ]);
   if (!mineResponse.ok && mineResponse.status !== 404) {
-    throw new Error("Personal Library is unavailable");
+    throw new Error("Personal library is unavailable");
   }
   if (
     serverResponse !== null &&
     !serverResponse.ok &&
     serverResponse.status !== 404
   ) {
-    throw new Error("Server Library is unavailable");
+    throw new Error("Server library is unavailable");
   }
   return {
     mine: parseVisibleSavedRollList(await mineResponse.json(), mineOwner),
@@ -324,7 +324,7 @@ export function buildSavedRollPickerResponse(input: {
             components: [
               {
                 type: 10,
-                content: "## Personal Library\nYour Library is empty. Log in to Dice Witch to add a saved roll.",
+                content: "## Personal library\nYour library is empty. Log in to Dice Witch to add a saved roll.",
               },
               {
                 type: 1,
@@ -332,7 +332,7 @@ export function buildSavedRollPickerResponse(input: {
                   {
                     type: 2,
                     style: 5,
-                    label: "Open Library",
+                    label: "Open library",
                     url: libraryUrl.href,
                   },
                 ],
@@ -354,7 +354,7 @@ export function buildSavedRollPickerResponse(input: {
   const containerComponents: DiscordContainerChild[] = [
     {
       type: 10,
-      content: `## ${input.scope === "mine" ? "Personal" : "Server"} Library\nPage ${String(page + 1)} of ${String(pageCount)}`,
+      content: `## ${input.scope === "mine" ? "Personal" : "Server"} library\nPage ${String(page + 1)} of ${String(pageCount)}`,
     },
     {
       type: 1,
@@ -393,7 +393,7 @@ export function buildSavedRollPickerResponse(input: {
   } else {
     containerComponents.push({
       type: 10,
-      content: `No ${input.scope === "mine" ? "Personal" : "Server"} Library rolls are available.`,
+      content: `No ${input.scope === "mine" ? "personal" : "server"} library rolls are available.`,
     });
   }
   return {

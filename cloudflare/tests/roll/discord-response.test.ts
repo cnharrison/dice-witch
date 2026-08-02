@@ -78,7 +78,7 @@ describe("Discord interaction response requests", () => {
               accessory: {
                 type: 2,
                 style: 2,
-                label: "Save roll",
+                label: "Save",
                 custom_id: "save-roll:v1:d:1400000000000000000",
               },
             },
@@ -102,7 +102,7 @@ describe("Discord interaction response requests", () => {
               accessory: {
                 type: 2,
                 style: 2,
-                label: "Save roll",
+                label: "Save",
                 custom_id: "save-roll:v1:d:1400000000000000000",
               },
             },

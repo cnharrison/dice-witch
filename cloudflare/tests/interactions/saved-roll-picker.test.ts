@@ -91,7 +91,7 @@ describe("saved-roll picker model", () => {
     expect(response.data.flags).toBe((1 << 15) | 64);
     expect(response.data).not.toHaveProperty("content");
     const serialized = JSON.stringify(response.data.components);
-    expect(serialized).toContain("## Personal Library\\nPage 1 of 1");
+    expect(serialized).toContain("## Personal library\\nPage 1 of 1");
     expect(serialized).toContain(
       '"label":"Personal","custom_id":"saved-roll:v1:100000000000000020:mine"',
     );
@@ -116,9 +116,9 @@ describe("saved-roll picker model", () => {
     expect(response.data.flags).toBe((1 << 15) | 64);
     expect(response.data).not.toHaveProperty("content");
     const serialized = JSON.stringify(response.data.components);
-    expect(serialized).toContain("Your Library is empty");
+    expect(serialized).toContain("Your library is empty");
     expect(serialized).toContain(
-      '"label":"Open Library","url":"https://example.com/app/library"',
+      '"label":"Open library","url":"https://example.com/app/library"',
     );
   });
 
@@ -160,7 +160,7 @@ describe("saved-roll picker model", () => {
     expect(secondSelectRow.components[0]?.options).toHaveLength(1);
     expect(secondContainer.components[0]).toEqual({
       type: 10,
-      content: "## Personal Library\nPage 2 of 2",
+      content: "## Personal library\nPage 2 of 2",
     });
   });
 });

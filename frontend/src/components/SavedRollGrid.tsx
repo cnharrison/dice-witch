@@ -273,7 +273,7 @@ function OrderHelp({
       {!manualOrder && (
         <Button type="button" size="sm" variant="outline" onClick={onRestore}>
           <GripVertical className="h-4 w-4" aria-hidden="true" />
-          Use Library order
+          Use library order
         </Button>
       )}
       <Tooltip>
@@ -283,7 +283,7 @@ function OrderHelp({
             size="icon"
             variant="ghost"
             className="h-8 w-8 text-brand"
-            aria-label="About Library order"
+            aria-label="About library order"
           >
             <Info className="h-4 w-4" aria-hidden="true" />
           </Button>

@@ -126,7 +126,7 @@ it("searches the complete local guide content", async () => {
   expect(within(navigation).queryByRole("link", { name: /^Modifiers/ })).toBeNull();
 
   await user.clear(search);
-  await user.type(search, "manage the Server Library, Server appearance");
+  await user.type(search, "manage the server library, server appearance");
 
   expect(
     within(navigation).getByRole("link", { name: /^Appearances and web rolling/ }),

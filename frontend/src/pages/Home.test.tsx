@@ -356,7 +356,7 @@ describe("Home roll preparation lifecycle", () => {
     );
   });
 
-  it("loads the selected ordinary member's Server Library in the Roller", () => {
+  it("loads the selected ordinary member's server library in the Roller", () => {
     mocks.selectedGuildId = "100000000000000002";
     render(<Home />);
 

@@ -61,15 +61,15 @@ function mutationMessage(result: SavedRollMutation): string | null {
     case "name_conflict":
       return "That name is already used in this library.";
     case "cap_reached":
-      return `This Library has reached its ${String(result.limit)} roll limit.`;
+      return `This library has reached its ${String(result.limit)} roll limit.`;
     case "list_revision_conflict":
     case "record_revision_conflict":
     case "record_set_conflict":
-      return "This Library changed in another session. It has been refreshed.";
+      return "This library changed in another session. It has been refreshed.";
     case "unauthorized":
-      return "Your permission to manage this Server Library changed.";
+      return "Your permission to manage this server library changed.";
     case "missing":
-      return "This Library roll no longer exists.";
+      return "This library roll no longer exists.";
     case "mutation_conflict":
       return "This action conflicts with an earlier request.";
   }
@@ -78,7 +78,7 @@ function mutationMessage(result: SavedRollMutation): string | null {
 function errorMessage(error: unknown): string {
   return error instanceof SavedRollApiError
     ? error.message
-    : "The Library is temporarily unavailable.";
+    : "The library is temporarily unavailable.";
 }
 
 function DraftEditor({
@@ -144,7 +144,7 @@ function DraftEditor({
               type="button"
               size="sm"
               variant="outline"
-              aria-label="Use Library name as roll title"
+              aria-label="Use library name as roll title"
               disabled={submitting || draft.name.trim() === ""}
               onClick={() => setDraft({ ...draft, title: draft.name })}
             >
@@ -318,7 +318,7 @@ function copyConflictName(
 ): string {
   if (source.type === "guild") return `${name} (${source.guildName})`;
   if (target.type === "guild") return `${name} (${target.guildName})`;
-  throw new Error("A Library copy must include one Server library");
+  throw new Error("A library copy must include one server library");
 }
 
 export default function SavedRolls() {
@@ -495,7 +495,7 @@ export default function SavedRolls() {
     }
     const currentRecord = list.savedRolls.find(({ id }) => id === editing.id);
     if (currentRecord === undefined) {
-      setMessage("This Library roll no longer exists.");
+      setMessage("This library roll no longer exists.");
       return;
     }
     runMutation.mutate(() =>
@@ -623,9 +623,9 @@ export default function SavedRolls() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename copied Library roll</DialogTitle>
+            <DialogTitle>Rename copied library roll</DialogTitle>
             <DialogDescription>
-              That name already exists in the destination Library. Choose a new
+              That name already exists in the destination library. Choose a new
               name; the copied roll remains independent.
             </DialogDescription>
           </DialogHeader>
@@ -686,7 +686,7 @@ export default function SavedRolls() {
         <DraggableLibraryDialog
           title={
             editing === null
-              ? "New Library roll"
+              ? "New library roll"
               : `Edit ${editing.displayName}`
           }
         >
@@ -709,7 +709,7 @@ export default function SavedRolls() {
           <DialogHeader>
             <DialogTitle>Copy to…</DialogTitle>
             <DialogDescription>
-              Copy {selectedRow?.savedRoll.displayName ?? "the selected roll"} into another Library.
+              Copy {selectedRow?.savedRoll.displayName ?? "the selected roll"} into another library.
             </DialogDescription>
           </DialogHeader>
           {selectedRow !== null && (
@@ -735,7 +735,7 @@ export default function SavedRolls() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Destination: Personal Library
+                  Destination: personal library
                 </p>
               )}
               <Button
@@ -806,7 +806,7 @@ export default function SavedRolls() {
               <div className="min-w-0 flex-1">
                 {libraryQuery.isError ? (
                   <p role="alert" className="text-sm text-destructive">
-                    Server Libraries are temporarily unavailable.
+                    Server libraries are temporarily unavailable.
                   </p>
                 ) : libraryGuilds.length > 0 ? (
                   <Tooltip>
@@ -825,11 +825,11 @@ export default function SavedRolls() {
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
-                      Switch between your Personal Library and a Server Library.
+                      Switch between your personal library and a server library.
                     </TooltipContent>
                   </Tooltip>
                 ) : (
-                  <p className="py-2 text-sm font-semibold">Personal Library</p>
+                  <p className="py-2 text-sm font-semibold">Personal library</p>
                 )}
               </div>
               <Tooltip>
@@ -847,7 +847,7 @@ export default function SavedRolls() {
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  Copy the selected roll between your Personal and Server Libraries.
+                  Copy the selected roll between your personal and server libraries.
                 </TooltipContent>
               </Tooltip>
               <Tooltip>
@@ -881,7 +881,7 @@ export default function SavedRolls() {
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  Delete the selected rolls from one Library.
+                  Delete the selected rolls from one library.
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -892,7 +892,7 @@ export default function SavedRolls() {
             )}
             {loading && (
               <SparkleLoadingIndicator
-                label="Loading Library"
+                label="Loading library"
                 className="min-h-48"
               />
             )}
@@ -903,7 +903,7 @@ export default function SavedRolls() {
             )}
             {!loading && !failed && rows.length === 0 && searchMode && (
               <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                No Library rolls match this search.
+                No library rolls match this search.
               </div>
             )}
             {!loading && !failed && rows.length > 0 && (

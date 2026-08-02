@@ -2065,7 +2065,7 @@ describe("RollWork Durable Object", () => {
       expect(delivered?.destinationPayload).toMatchObject({ flags: 1 << 15 });
       const destinationPayload = JSON.stringify(delivered?.destinationPayload);
       expect(destinationPayload).toContain("## Initiative");
-      expect(destinationPayload).toContain('"label":"Save roll"');
+      expect(destinationPayload).toContain('"label":"Save"');
       expect(destinationPayload).toContain(
         `"custom_id":"save-roll:v1:d:${deliveredId}"`,
       );

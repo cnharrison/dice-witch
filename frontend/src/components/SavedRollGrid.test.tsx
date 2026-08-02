@@ -99,7 +99,7 @@ describe("SavedRollGrid", () => {
     expect(names[1]).toContain("Acid Arrow");
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByRole("columnheader", { name: /Order/ })).toBeNull();
-    expect(screen.getByRole("button", { name: "About Library order" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "About library order" })).toBeDefined();
     const table = screen.getByRole("table");
     expect(table.parentElement?.className).toContain("overflow-y-hidden");
     expect(table.className).toContain("table-fixed");
@@ -107,7 +107,7 @@ describe("SavedRollGrid", () => {
 
     await user.click(screen.getByRole("button", { name: /Created/ }));
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(true);
-    await user.click(screen.getByRole("button", { name: "Use Library order" }));
+    await user.click(screen.getByRole("button", { name: "Use library order" }));
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(false);
   });
 

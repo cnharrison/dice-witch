@@ -57,7 +57,7 @@ describe("WebDeliveryWork Durable Object", () => {
     expect(roll.renderedImage.png).toEqual(roll.discord.png);
     expect(roll.discord.payload).toMatchObject({ flags: 1 << 15 });
     const serializedPayload = JSON.stringify(roll.discord.payload);
-    expect(serializedPayload).toContain('"label":"Save roll"');
+    expect(serializedPayload).toContain('"label":"Save"');
     expect(serializedPayload).toContain(
       `"custom_id":"save-roll:v1:w:${USER_ID}.${deliveryId}"`,
     );
@@ -278,7 +278,7 @@ describe("WebDeliveryWork Durable Object", () => {
     if (!("roll" in result) || result.roll.status !== "rolled") {
       throw new Error("Expected a delivered web roll");
     }
-    expect(JSON.stringify(result.roll.discord.payload)).not.toContain("Save roll");
+    expect(JSON.stringify(result.roll.discord.payload)).not.toContain('"label":"Save"');
     await expect(stub.getSaveRollIntent()).resolves.toEqual({ status: "missing" });
   });
 
@@ -295,7 +295,7 @@ describe("WebDeliveryWork Durable Object", () => {
       throw new Error("Expected a delivered web roll");
     }
     expect(JSON.stringify(result.roll.discord.payload)).toContain("## Repeated ×3");
-    expect(JSON.stringify(result.roll.discord.payload)).toContain("Save roll");
+    expect(JSON.stringify(result.roll.discord.payload)).toContain('"label":"Save"');
     await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
       status: "available",
       intent: {

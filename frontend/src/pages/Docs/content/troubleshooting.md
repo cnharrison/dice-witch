@@ -21,7 +21,7 @@ Servers and channels appear in the Roller only when all of these are true:
 - You can access the channel and have permission to send messages and use Dice Witch's slash commands there.
 - Dice Witch can access the channel and has permission to post messages there.
 
-Current members can use available Server Library rolls. Only Administrators and Dice Witch Admins can manage them.
+Current members can use available server library rolls. Only Administrators and Dice Witch Admins can manage them.
 
 ## The notation is rejected
 

@@ -581,7 +581,7 @@ describe("Discord HTTP interaction Worker", () => {
         components: [
           {
             type: 18,
-            label: "Personal Library roll name",
+            label: "Personal library roll name",
             component: { value: "Attack" },
           },
         ],
@@ -622,7 +622,7 @@ describe("Discord HTTP interaction Worker", () => {
             accent_color: 0x2e_cc_71,
             components: [
               {
-                content: "Copied “Attack copy” to your Personal Library.",
+                content: "Copied “Attack copy” to your personal library.",
               },
             ],
           },

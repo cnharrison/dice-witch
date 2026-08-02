@@ -24,7 +24,7 @@ Server designs can configure **All dice** and individual die types.
 
 ### Dice Witch Admin role
 
-A server can create a role named exactly **Dice Witch Admin**. Members with that role can manage the Server Library, Server appearance, and roll-delivery preference without receiving Discord's Administrator permission.
+A server can create a role named exactly **Dice Witch Admin**. Members with that role can manage the server library, server appearance, and roll-delivery preference without receiving Discord's Administrator permission.
 
 ## Roll delay
 

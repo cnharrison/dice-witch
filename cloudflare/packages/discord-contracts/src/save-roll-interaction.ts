@@ -16,8 +16,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const SAVE_ROLL_CUSTOM_ID = /^save-roll:v([12]):([dw]):([^:]+)(?::(retry|submit))?$/;
 const SAVE_ROLL_NAME_CUSTOM_ID = "save-roll-name";
 const SAVE_ROLL_TITLE_MODE_CUSTOM_ID = "save-roll-title-mode";
-const SAVE_ROLL_CUSTOM_TITLE_CUSTOM_ID = "save-roll-custom-title";
-const SAVE_ROLL_TITLE_MODES = ["keep", "name", "custom", "none"] as const;
+const SAVE_ROLL_TITLE_MODES = ["keep", "name", "none"] as const;
 const MAX_TITLE_LENGTH = 256;
 
 export const ROLL_SAVE_INTENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
@@ -55,7 +54,6 @@ export type ParsedSaveRollInteractionV1 = {
   retry: boolean;
   name: string | null;
   titleMode: SaveRollTitleMode | null;
-  customTitle: string | null;
   interactionId: string;
   applicationId: string;
   token: string;
@@ -197,44 +195,34 @@ function parseModalComponents(
 function parseLegacySubmission(value: unknown): {
   name: string;
   titleMode: "keep";
-  customTitle: null;
 } | null {
   const components = parseModalComponents(value, [SAVE_ROLL_NAME_CUSTOM_ID]);
   const name = components?.get(SAVE_ROLL_NAME_CUSTOM_ID);
   return name?.type === 4 && typeof name.value === "string"
-    ? { name: name.value, titleMode: "keep", customTitle: null }
+    ? { name: name.value, titleMode: "keep" }
     : null;
 }
 
 function parseTitleAwareSubmission(value: unknown): {
   name: string;
   titleMode: SaveRollTitleMode;
-  customTitle: string;
 } | null {
   const components = parseModalComponents(value, [
     SAVE_ROLL_NAME_CUSTOM_ID,
     SAVE_ROLL_TITLE_MODE_CUSTOM_ID,
-    SAVE_ROLL_CUSTOM_TITLE_CUSTOM_ID,
   ]);
   const name = components?.get(SAVE_ROLL_NAME_CUSTOM_ID);
   const mode = components?.get(SAVE_ROLL_TITLE_MODE_CUSTOM_ID);
-  const customTitle = components?.get(SAVE_ROLL_CUSTOM_TITLE_CUSTOM_ID);
   const selectedMode = selectedModalValue(mode?.values);
   if (
     name?.type !== 4 ||
     typeof name.value !== "string" ||
     mode?.type !== 3 ||
-    !isSaveRollTitleMode(selectedMode) ||
-    customTitle?.type !== 4 ||
-    typeof customTitle.value !== "string"
+    !isSaveRollTitleMode(selectedMode)
   ) {
     return null;
   }
-  return {
-    name: name.value,
-    titleMode: selectedMode,
-    customTitle: customTitle.value,
-  };
+  return { name: name.value, titleMode: selectedMode };
 }
 
 function buildVersionedSaveRollCustomId(
@@ -324,7 +312,6 @@ export function parseSaveRollInteraction(
     retry: action === "retry",
     name: submission?.name ?? null,
     titleMode: submission?.titleMode ?? null,
-    customTitle: submission?.customTitle ?? null,
     interactionId: value.id,
     applicationId: options.applicationId,
     token: value.token,
@@ -452,11 +439,10 @@ export function buildSaveRollModalResponse(
   }
   titleOptions.push(
     {
-      label: "Use saved-roll name",
+      label: "Use name above as title",
       value: "name",
       ...(defaultTitleMode === "name" ? { default: true as const } : {}),
     },
-    { label: "Type another title", value: "custom" },
     {
       label: "No roll title",
       value: "none",
@@ -472,7 +458,7 @@ export function buildSaveRollModalResponse(
       components: [
         {
           type: 18,
-          label: "Personal Library roll name",
+          label: "Personal library roll name",
           description: options.nameConflict
             ? "That name is already used. Choose a different name."
             : "You can edit this name before saving.",
@@ -491,19 +477,6 @@ export function buildSaveRollModalResponse(
             options: titleOptions,
           },
         },
-        {
-          type: 18,
-          label: "Custom roll title (optional)",
-          description: "Used only when “Type another title” is selected.",
-          component: {
-            type: 4,
-            custom_id: SAVE_ROLL_CUSTOM_TITLE_CUSTOM_ID,
-            style: 1,
-            max_length: MAX_TITLE_LENGTH,
-            required: false,
-            placeholder: "Type a different title",
-          },
-        },
       ],
     },
   };
@@ -520,7 +493,7 @@ function escapedTextDisplay(value: string): string {
 function validatedLibraryUrl(value: string): string {
   const url = new URL(value);
   if (url.protocol !== "https:" || url.username !== "" || url.password !== "") {
-    throw new Error("Save roll Library URL is invalid");
+    throw new Error("Save roll library URL is invalid");
   }
   return url.href;
 }
@@ -581,7 +554,7 @@ export function buildSaveRollDuplicateResponse(
         {
           type: 10,
           content: escapedTextDisplay(
-            `A copy of this roll already exists in your Personal Library as “${name}”.`,
+            `A copy of this roll already exists in your personal library as “${name}”.`,
           ),
         },
         {
@@ -590,7 +563,7 @@ export function buildSaveRollDuplicateResponse(
             {
               type: 2,
               style: 5,
-              label: "Open Library",
+              label: "Open library",
               url: validatedLibraryUrl(libraryUrl),
             },
           ],
@@ -612,7 +585,7 @@ export function buildSaveRollSuccessResponse(
         {
           type: 10,
           content: escapedTextDisplay(
-            `Saved “${name}” to your Personal Library.`,
+            `Saved “${name}” to your personal library.`,
           ),
         },
         {
@@ -621,7 +594,7 @@ export function buildSaveRollSuccessResponse(
             {
               type: 2,
               style: 5,
-              label: "Open Library",
+              label: "Open library",
               url: validatedLibraryUrl(libraryUrl),
             },
           ],

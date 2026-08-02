@@ -92,7 +92,7 @@ it("keeps personal management available without an administrable guild", async (
   expect(libraryRegion.parentElement?.className).not.toContain(
     "lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]",
   );
-  expect(screen.queryByText(/No Library rolls yet/)).toBeNull();
+  expect(screen.queryByText(/No library rolls yet/)).toBeNull();
   expect(screen.queryByText(/You don't have any mutual servers/)).toBeNull();
 
   const create = screen.getByRole("button", { name: "Create" });
@@ -101,7 +101,7 @@ it("keeps personal management available without an administrable guild", async (
     "Save a roll for quick access in Discord and the web roller.",
   );
   await user.click(create);
-  expect(screen.getByRole("heading", { name: "New Library roll" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "New library roll" })).toBeTruthy();
   const dialog = screen.getByRole("dialog");
   const dragHandle = screen.getByTestId("library-dialog-drag-handle");
   Object.defineProperty(dialog, "getBoundingClientRect", {
@@ -124,7 +124,7 @@ it("keeps personal management available without an administrable guild", async (
   expect(dialog.style.transform).not.toBe(centeredTransform);
   await user.type(screen.getByLabelText("Name"), "Initiative");
   await user.click(
-    screen.getByRole("button", { name: "Use Library name as roll title" }),
+    screen.getByRole("button", { name: "Use library name as roll title" }),
   );
   expect((screen.getByLabelText("Roll title (optional)") as HTMLInputElement).value).toBe(
     "Initiative",
@@ -234,7 +234,7 @@ it("suggests Library Name (Server Name) after a copy-name conflict", async () =>
   await user.hover(librarySelect);
   expect(
     await screen.findAllByText(
-      "Switch between your Personal Library and a Server Library.",
+      "Switch between your personal library and a server library.",
     ),
   ).not.toHaveLength(0);
   await user.unhover(librarySelect);
@@ -246,7 +246,7 @@ it("suggests Library Name (Server Name) after a copy-name conflict", async () =>
   await user.hover(copyButton);
   expect(
     await screen.findAllByText(
-      "Copy the selected roll between your Personal and Server Libraries.",
+      "Copy the selected roll between your personal and server libraries.",
     ),
   ).not.toHaveLength(0);
   await user.click(copyButton);
@@ -257,7 +257,7 @@ it("suggests Library Name (Server Name) after a copy-name conflict", async () =>
   ).toBe("Fireball (Friday Game)");
 });
 
-it("offers only managed Server Libraries in the Library tab", async () => {
+it("offers only managed server libraries in the Library tab", async () => {
   listSavedRollLibraries.mockResolvedValue([{
     guildId: "100000000000000001",
     guildName: "Member Server",
@@ -274,7 +274,7 @@ it("offers only managed Server Libraries in the Library tab", async () => {
     </QueryClientProvider>,
   );
 
-  expect(await screen.findByText("Personal Library")).toBeDefined();
+  expect(await screen.findByText("Personal library")).toBeDefined();
   expect(screen.queryByRole("combobox", { name: "Library" })).toBeNull();
 
   cleanup();
@@ -310,7 +310,7 @@ it("uses the sparkle state without visible loading copy", () => {
   );
 
   expect(screen.getByRole("status").querySelector('[data-loading-glyph="sparkles"]')).toBeTruthy();
-  expect(screen.queryByText("Loading Library…")).toBeNull();
+  expect(screen.queryByText("Loading library…")).toBeNull();
   expect(screen.queryByText("Loading library…")).toBeNull();
 });
 

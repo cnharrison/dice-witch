@@ -243,7 +243,7 @@ function resultHeading(
       accessory: {
         type: 2,
         style: 2,
-        label: "Save roll",
+        label: "Save",
         custom_id: options.saveRollCustomId,
       },
     },

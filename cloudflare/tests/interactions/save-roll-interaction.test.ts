@@ -104,7 +104,7 @@ describe("Save roll interaction contract", () => {
     expect(() => buildSaveRollCustomId({ kind: "discord", id: "invalid" }))
       .toThrow("Save roll source is invalid");
     expect(() => buildSaveRollSuccessResponse("Attack", "http://example.com/library"))
-      .toThrow("Save roll Library URL is invalid");
+      .toThrow("Save roll library URL is invalid");
   });
 
   it("rejects malformed modal submissions", () => {
@@ -136,15 +136,7 @@ describe("Save roll interaction contract", () => {
             component: {
               type: 3,
               custom_id: "save-roll-title-mode",
-              values: ["unknown"],
-            },
-          },
-          {
-            type: 18,
-            component: {
-              type: 4,
-              custom_id: "save-roll-custom-title",
-              value: "",
+              values: ["custom"],
             },
           },
         ],
@@ -168,7 +160,7 @@ describe("Save roll interaction contract", () => {
         components: [
           {
             type: 18,
-            label: "Personal Library roll name",
+            label: "Personal library roll name",
             description: "You can edit this name before saving.",
             component: {
               type: 4,
@@ -192,23 +184,9 @@ describe("Save roll interaction contract", () => {
               max_values: 1,
               options: [
                 { label: "Keep current title", value: "keep", default: true },
-                { label: "Use saved-roll name", value: "name" },
-                { label: "Type another title", value: "custom" },
+                { label: "Use name above as title", value: "name" },
                 { label: "No roll title", value: "none" },
               ],
-            },
-          },
-          {
-            type: 18,
-            label: "Custom roll title (optional)",
-            description: "Used only when “Type another title” is selected.",
-            component: {
-              type: 4,
-              custom_id: "save-roll-custom-title",
-              style: 1,
-              max_length: 256,
-              required: false,
-              placeholder: "Type a different title",
             },
           },
         ],
@@ -236,15 +214,7 @@ describe("Save roll interaction contract", () => {
                 component: {
                   type: 3,
                   custom_id: "save-roll-title-mode",
-                  values: ["custom"],
-                },
-              },
-              {
-                type: 18,
-                component: {
-                  type: 4,
-                  custom_id: "save-roll-custom-title",
-                  value: "My custom title",
+                  values: ["name"],
                 },
               },
             ],
@@ -256,8 +226,7 @@ describe("Save roll interaction contract", () => {
       kind: "submit",
       source,
       name: "My initiative",
-      titleMode: "custom",
-      customTitle: "My custom title",
+      titleMode: "name",
     });
   });
 
@@ -281,7 +250,6 @@ describe("Save roll interaction contract", () => {
       source,
       name: "Legacy save",
       titleMode: "keep",
-      customTitle: null,
     });
   });
 
@@ -332,20 +300,20 @@ describe("Save roll interaction contract", () => {
     expect(response.data.allowed_mentions).toEqual({ parse: [] });
   });
 
-  it("builds a copy-specific duplicate response with Open Library", () => {
+  it("builds a copy-specific duplicate response with Open library", () => {
     const response = buildSaveRollDuplicateResponse(
       "Existing attack",
       "https://dicewit.ch/app/library",
     );
 
     expect(componentText(response)).toContain(
-      "A copy of this roll already exists in your Personal Library as “Existing attack”.",
+      "A copy of this roll already exists in your personal library as “Existing attack”.",
     );
     expect(response.data.allowed_mentions).toEqual({ parse: [] });
     expect(JSON.stringify(response)).toContain("https://dicewit.ch/app/library");
   });
 
-  it("builds a private V2 success response with Open Library", () => {
+  it("builds a private V2 success response with Open library", () => {
     expect(
       buildSaveRollSuccessResponse("My initiative", "https://dicewit.ch/library"),
     ).toEqual({
@@ -360,7 +328,7 @@ describe("Save roll interaction contract", () => {
             components: [
               {
                 type: 10,
-                content: "Saved “My initiative” to your Personal Library.",
+                content: "Saved “My initiative” to your personal library.",
               },
               {
                 type: 1,
@@ -368,7 +336,7 @@ describe("Save roll interaction contract", () => {
                   {
                     type: 2,
                     style: 5,
-                    label: "Open Library",
+                    label: "Open library",
                     url: "https://dicewit.ch/library",
                   },
                 ],
@@ -528,7 +496,7 @@ describe("Save roll interaction contract", () => {
 
     const response = await openSaveRollModal(interaction, env);
     expect(componentText(response)).toContain(
-      "A copy of this roll already exists in your Personal Library as “Existing attack”.",
+      "A copy of this roll already exists in your personal library as “Existing attack”.",
     );
     expect(JSON.stringify(response)).toContain("https://dicewit.ch/app/library");
   });
@@ -628,15 +596,7 @@ describe("Save roll interaction contract", () => {
             component: {
               type: 3,
               custom_id: "save-roll-title-mode",
-              values: ["custom"],
-            },
-          },
-          {
-            type: 18,
-            component: {
-              type: 4,
-              custom_id: "save-roll-custom-title",
-              value: "Critical hit",
+              values: ["keep"],
             },
           },
         ],
@@ -658,7 +618,7 @@ describe("Save roll interaction contract", () => {
         version: 2,
         name: "My attack",
         notation: "2d20+5",
-        title: "Critical hit",
+        title: "Attack",
         repetitions: 2,
         nameColor: "#A1B2C3",
       },
@@ -740,14 +700,6 @@ describe("Save roll interaction contract", () => {
               values: ["name"],
             },
           },
-          {
-            type: 18,
-            component: {
-              type: 4,
-              custom_id: "save-roll-custom-title",
-              value: "",
-            },
-          },
         ],
       },
     }, { applicationId: baseInteraction.application_id });
@@ -769,63 +721,7 @@ describe("Save roll interaction contract", () => {
     }
   });
 
-  it("rejects custom-title mode when the custom title is blank", async () => {
-    const createdAt = Date.now();
-    const intent = {
-      version: 2 as const,
-      source: "fresh" as const,
-      notation: "2d6",
-      title: null,
-      repetitions: 2,
-      defaultName: null,
-      nameColor: null,
-      createdAt,
-      expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
-    };
-    const dataFetch = vi.fn(() => Promise.resolve(Response.json({
-      status: "found",
-      listRevision: 1,
-      savedRolls: [],
-    })));
-    const env = {
-      ROLL_WORK: {
-        getByName: () => ({
-          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
-        }),
-      } as unknown as DurableObjectNamespace,
-      WEB_DELIVERY_WORK: { getByName: () => ({}) } as unknown as DurableObjectNamespace,
-      DATA_SERVICE: { fetch: dataFetch } as unknown as Fetcher,
-      WEB_APP_URL: "https://dicewit.ch/app",
-    };
-    const interaction = parseSaveRollInteraction({
-      ...baseInteraction,
-      type: 5,
-      data: {
-        custom_id: "save-roll:v2:d:1400000000000000000:submit",
-        components: [
-          { type: 18, component: { type: 4, custom_id: "save-roll-name", value: "Damage" } },
-          { type: 18, component: { type: 3, custom_id: "save-roll-title-mode", values: ["custom"] } },
-          { type: 18, component: { type: 4, custom_id: "save-roll-custom-title", value: "" } },
-        ],
-      },
-    }, { applicationId: baseInteraction.application_id });
-    if (interaction === null) throw new Error("Expected Save roll submission");
-    const discordFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, { status: 200 }),
-    );
-
-    try {
-      await completeSaveRollSubmit(interaction, env);
-      expect(dataFetch).toHaveBeenCalledTimes(1);
-      const editBody = jsonRequestBody(discordFetch.mock.calls[0]?.[1]);
-      expect(componentText(editBody)).toContain("Enter a custom roll title");
-      expect(componentText(editBody)).toContain("Try again");
-    } finally {
-      discordFetch.mockRestore();
-    }
-  });
-
-  it("reports authoritative Personal Library capacity privately", async () => {
+  it("reports authoritative personal library capacity privately", async () => {
     const createdAt = Date.now();
     const intent = parseSaveRollIntentV1({
       version: 1,
@@ -907,7 +803,7 @@ describe("Save roll interaction contract", () => {
       await completeSaveRollSubmit(interaction, env);
       expect(dataFetch).toHaveBeenCalledTimes(3);
       const editBody = jsonRequestBody(discordFetch.mock.calls[0]?.[1]);
-      expect(componentText(editBody)).toContain("Personal Library is full");
+      expect(componentText(editBody)).toContain("personal library is full");
     } finally {
       discordFetch.mockRestore();
     }
@@ -917,7 +813,7 @@ describe("Save roll interaction contract", () => {
     { duplicateAfterRace: false, expectedText: "Try again" },
     {
       duplicateAfterRace: true,
-      expectedText: "A copy of this roll already exists in your Personal Library as “Concurrent copy”.",
+      expectedText: "A copy of this roll already exists in your personal library as “Concurrent copy”.",
     },
   ])("handles a submit-time list revision race ($duplicateAfterRace)", async ({
     duplicateAfterRace,

@@ -129,11 +129,11 @@ function copyResponse(result: unknown, sessionId: string) {
       type: 9,
       data: {
         custom_id: `saved-roll:v1:${sessionId}:rename`,
-        title: "Rename Library roll",
+        title: "Rename library roll",
         components: [
           {
             type: 18,
-            label: "Personal Library roll name",
+            label: "Personal library roll name",
             description: "That name is already used. Choose a different name.",
             component: {
               type: 4,
@@ -165,20 +165,20 @@ function copyResponse(result: unknown, sessionId: string) {
         ? result.name
         : "Library roll";
     return messageResponse(
-      `Copied “${name}” to your Personal Library.`,
+      `Copied “${name}” to your personal library.`,
       0x2e_cc_71,
     );
   }
   const messages: Record<string, string> = {
-    cap_reached: "Your Personal Library already has the maximum of 50 rolls.",
-    conflict: "Your Personal Library changed. Try Copy to Personal again.",
-    expired: "This Library picker expired. Run /library again.",
-    invalid_name: "Choose a valid Library roll name.",
-    invalid_selection: "Choose a Server Library roll before copying.",
-    missing: "That Server Library roll no longer exists.",
-    stale: "That Server Library roll changed. Reopen the picker.",
-    unauthorized: "This Library action belongs to another user.",
-    unavailable: "This Library roll could not be copied. Please try again.",
+    cap_reached: "Your personal library already has the maximum of 50 rolls.",
+    conflict: "Your personal library changed. Try Copy to Personal again.",
+    expired: "This library picker expired. Run /library again.",
+    invalid_name: "Choose a valid library roll name.",
+    invalid_selection: "Choose a server library roll before copying.",
+    missing: "That server library roll no longer exists.",
+    stale: "That server library roll changed. Reopen the picker.",
+    unauthorized: "This library action belongs to another user.",
+    unavailable: "This library roll could not be copied. Please try again.",
   };
   return errorResponse(messages[status] ?? messages.unavailable ?? "Copy failed.");
 }
@@ -186,17 +186,17 @@ function copyResponse(result: unknown, sessionId: string) {
 function runError(status: string): string {
   switch (status) {
     case "missing":
-      return "That Library roll no longer exists.";
+      return "That library roll no longer exists.";
     case "stale":
-      return "That Library roll changed. Reopen the picker and choose it again.";
+      return "That library roll changed. Reopen the picker and choose it again.";
     case "unauthorized":
-      return "This Library picker belongs to another user.";
+      return "This library picker belongs to another user.";
     case "expired":
-      return "This Library picker expired. Run /library again.";
+      return "This library picker expired. Run /library again.";
     case "consumed":
-      return "This Library picker has already been used.";
+      return "This library picker has already been used.";
     default:
-      return "This Library roll could not be run. Please try again.";
+      return "This library roll could not be run. Please try again.";
   }
 }
 
@@ -211,7 +211,7 @@ async function deleteConsumedPicker(
     console.error(
       JSON.stringify({
         level: "error",
-        message: "Consumed Library picker deletion failed",
+        message: "Consumed library picker deletion failed",
         interactionId: interaction.id,
       }),
     );
@@ -296,7 +296,7 @@ async function prepareDeferredSavedRoll(
   env: SavedRollHandlerEnv,
   deferredAt: number,
 ): Promise<void> {
-  let content = "This Library roll could not be run. Please try again.";
+  let content = "This library roll could not be run. Please try again.";
   try {
     const result = await handleSavedRollInteraction(
       interaction,
@@ -412,7 +412,7 @@ export async function handleSavedRollInteraction(
         interaction.guildId,
       );
     } catch {
-      return errorResponse("The Library is unavailable. Please try again.");
+      return errorResponse("The library is unavailable. Please try again.");
     }
     if (interaction.selection === null) {
       let state = await stub.openSavedRollPicker(pickerContext(interaction));
@@ -454,8 +454,8 @@ export async function handleSavedRollInteraction(
     if ("status" in selection) {
       return errorResponse(
         selection.status === "ambiguous"
-          ? "That name exists in both Personal and Server Libraries. Choose an autocomplete result."
-          : "No visible Library roll has that name.",
+          ? "That name exists in both personal and server libraries. Choose an autocomplete result."
+          : "No visible library roll has that name.",
       );
     }
     const reserved = await stub.reserveDirectSavedRoll({
@@ -484,7 +484,7 @@ export async function handleSavedRollInteraction(
           interaction.guildId,
         );
       } catch {
-        return errorResponse("The Library is unavailable. Please try again.");
+        return errorResponse("The library is unavailable. Please try again.");
       }
       const selection = selectedRecord(
         interaction.selection,
@@ -492,7 +492,7 @@ export async function handleSavedRollInteraction(
         lists.server.savedRolls,
       );
       if ("status" in selection) {
-        return errorResponse("That Library roll is no longer available.");
+        return errorResponse("That library roll is no longer available.");
       }
       const selected = await stub.updateSavedRollPicker({
         ...pickerContext(interaction),
@@ -535,7 +535,7 @@ export async function handleSavedRollInteraction(
       interaction.guildId,
     );
   } catch {
-    return errorResponse("The Library is unavailable. Please try again.");
+    return errorResponse("The library is unavailable. Please try again.");
   }
   const state = await stub.updateSavedRollPicker({
     ...pickerContext(interaction),

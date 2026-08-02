@@ -56,7 +56,7 @@ export function SaveLibraryRollDialog({
   const listQuery = useQuery({
     queryKey: scope === null ? ["saved-rolls", "invalid"] : savedRollQueryKey(scope),
     queryFn: () => {
-      if (scope === null) throw new Error("Choose an available Library");
+      if (scope === null) throw new Error("Choose an available library");
       return listSavedRolls(scope);
     },
     enabled: open && scope !== null,
@@ -72,8 +72,8 @@ export function SaveLibraryRollDialog({
 
   const save = useMutation({
     mutationFn: async () => {
-      if (scope === null) throw new Error("Choose an available Library");
-      if (listQuery.data === undefined) throw new Error("The Library is still loading");
+      if (scope === null) throw new Error("Choose an available library");
+      if (listQuery.data === undefined) throw new Error("The library is still loading");
       return createSavedRoll(scope, {
         expectedListRevision: listQuery.data.listRevision,
         draft: {
@@ -90,11 +90,11 @@ export function SaveLibraryRollDialog({
       if (result.status === "applied" || result.status === "existing") {
         onOpenChange(false);
       } else if (result.status === "name_conflict") {
-        setMessage("That name is already used in this Library.");
+        setMessage("That name is already used in this library.");
       } else if (result.status === "cap_reached") {
-        setMessage(`This Library has reached its ${String(result.limit)} roll limit.`);
+        setMessage(`This library has reached its ${String(result.limit)} roll limit.`);
       } else {
-        setMessage("The Library changed. Review the roll and try again.");
+        setMessage("The library changed. Review the roll and try again.");
       }
       await queryClient.invalidateQueries({ queryKey: ["saved-rolls"] });
     },
@@ -114,7 +114,7 @@ export function SaveLibraryRollDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-describedby={undefined}>
-        <DialogTitle className="sr-only">Save to Library</DialogTitle>
+        <DialogTitle className="sr-only">Save to library</DialogTitle>
         <form
           className="grid gap-4"
           onSubmit={(event) => {

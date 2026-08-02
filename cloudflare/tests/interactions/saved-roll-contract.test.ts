@@ -39,13 +39,13 @@ describe("saved-roll Discord contract", () => {
     expect(DISCORD_GLOBAL_COMMANDS.at(-1)).toEqual({
       type: 1,
       name: "library",
-      description: "Runs a roll from your Library",
+      description: "Runs a roll from your library",
       integration_types: [0],
       contexts: [0, 1],
       options: [
         {
           name: "name",
-          description: "Personal or Server Library roll",
+          description: "Personal or server library roll",
           type: 3,
           required: false,
           autocomplete: true,

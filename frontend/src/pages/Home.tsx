@@ -884,7 +884,7 @@ export const Home = () => {
                     size="icon"
                     variant="secondary"
                     className="absolute right-2 top-2 z-20 shadow-md"
-                    aria-label="Open Library"
+                    aria-label="Open library"
                     onClick={() => savedRollsPanel.current?.expand()}
                   >
                     <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
