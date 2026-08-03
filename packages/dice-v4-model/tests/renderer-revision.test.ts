@@ -28,10 +28,21 @@ describe("V4 renderer revision policies", () => {
     expect(revision7.modifierIcons).toBe("legacy-r1");
   });
 
+  it("inherits every r8 policy in r9 except the compact grid layout", () => {
+    const revision8 = rendererRevisionPolicyV4("canvaskit-v4-r8");
+    const revision9 = rendererRevisionPolicyV4("canvaskit-v4-r9");
+
+    expect(revision9).toEqual({
+      ...revision8,
+      gridLayout: "compact-r9",
+    });
+    expect(revision8.gridLayout).toBe("legacy");
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r9" as RendererRevisionV4,
+        "canvaskit-v4-r10" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

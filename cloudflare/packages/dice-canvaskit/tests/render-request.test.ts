@@ -191,7 +191,8 @@ function gradientScopeRequest(
     | "canvaskit-v4-r5"
     | "canvaskit-v4-r6"
     | "canvaskit-v4-r7"
-    | "canvaskit-v4-r8",
+    | "canvaskit-v4-r8"
+    | "canvaskit-v4-r9",
   scope?: "die-wide" | "face-local",
 ): RenderRequestV4 {
   return {
@@ -345,6 +346,47 @@ function transparentPixelCount(pixels: Uint8Array): number {
     if (pixels[alpha] === 0) count += 1;
   }
   return count;
+}
+
+function cropRgba(
+  pixels: Uint8Array,
+  sourceWidth: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Uint8Array {
+  const cropped = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row += 1) {
+    const start = (((y + row) * sourceWidth) + x) * 4;
+    cropped.set(pixels.subarray(start, start + (width * 4)), row * width * 4);
+  }
+  return cropped;
+}
+
+function maximumChannelDifference(
+  first: Uint8Array,
+  second: Uint8Array,
+): number {
+  if (first.length !== second.length) {
+    throw new Error("CanvasKit V4 test pixel lengths differ");
+  }
+  let maximum = 0;
+  for (let index = 0; index < first.length; index += 1) {
+    maximum = Math.max(
+      maximum,
+      Math.abs((first[index] as number) - (second[index] as number)),
+    );
+  }
+  return maximum;
+}
+
+function alphaChannels(pixels: Uint8Array): Uint8Array {
+  const alpha = new Uint8Array(pixels.length / 4);
+  for (let index = 3; index < pixels.length; index += 4) {
+    alpha[(index - 3) / 4] = pixels[index] as number;
+  }
+  return alpha;
 }
 
 function partialAlphaPixelCount(
@@ -1181,6 +1223,154 @@ describe("CanvasKit Render Request V4", () => {
     );
   });
 
+  it("frames every single-die type without changing its artwork", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const requestFor = (
+      target: RenderDieV4["target"],
+      result: number,
+      rendererRevision: "canvaskit-v4-r8" | "canvaskit-v4-r9",
+    ) => ({
+      version: 4 as const,
+      rendererRevision,
+      groups: [[{ ...die(target, result), appearance: scopedAppearance }]],
+    });
+
+    for (const [target, result] of [
+      ["d4", 4],
+      ["d6", 6],
+      ["d8", 8],
+      ["d10", 10],
+      ["d12", 12],
+      ["d20", 20],
+      ["percentile", 90],
+      ["fudge", -1],
+      ["other", 999],
+    ] as const) {
+      const [legacy, compact] = await Promise.all([
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r8"),
+          createRenderer,
+        ),
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r9"),
+          createRenderer,
+        ),
+      ]);
+      expect(compact).toMatchObject({
+        rendererRevision: "canvaskit-v4-r9",
+        width: 300,
+        height: 150,
+        diceCount: 1,
+        rowCount: 1,
+      });
+      const [legacyPixels, compactPixels] = await Promise.all([
+        decodePngRgba8(legacy.png),
+        decodePngRgba8(compact.png),
+      ]);
+      const compactDie = cropRgba(
+        compactPixels.pixels,
+        compact.width,
+        75,
+        0,
+        150,
+        150,
+      );
+      expect(alphaChannels(compactDie)).toEqual(
+        alphaChannels(legacyPixels.pixels),
+      );
+      expect(maximumChannelDifference(compactDie, legacyPixels.pixels))
+        .toBeLessThanOrEqual(1);
+    }
+
+    const modified = requestFor("d20", 20, "canvaskit-v4-r9");
+    const modifiedDie = modified.groups[0]?.[0];
+    if (modifiedDie === undefined) throw new Error("Modified test die is missing");
+    modifiedDie.icons = ["trashcan"];
+    await expect(
+      renderDiceRequestV4ToPng(modified, createRenderer),
+    ).resolves.toMatchObject({ width: 384, height: 192 });
+  });
+
+  it("packs three repeated 3-die groups into two centered r9 rows", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const groups = Array.from({ length: 3 }, (_, groupIndex) =>
+      Array.from({ length: 3 }, (_, dieIndex) => ({
+        ...die("d8", ((groupIndex * 3 + dieIndex) % 8) + 1),
+        appearance: scopedAppearance,
+      })),
+    );
+
+    const compact = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r9",
+        groups,
+      },
+      createRenderer,
+    );
+
+    expect(compact).toMatchObject({
+      rendererRevision: "canvaskit-v4-r9",
+      width: 900,
+      height: 300,
+      diceCount: 9,
+      rowCount: 2,
+    });
+    const decoded = await decodePngRgba8(compact.png);
+    const lowerRow = cropRgba(
+      decoded.pixels,
+      compact.width,
+      225,
+      150,
+      450,
+      150,
+    );
+    expect(transparentPixelCount(lowerRow)).toBeLessThan(lowerRow.length / 4);
+    for (const margin of [
+      cropRgba(decoded.pixels, compact.width, 0, 150, 225, 150),
+      cropRgba(decoded.pixels, compact.width, 675, 150, 225, 150),
+    ]) {
+      expect(transparentPixelCount(margin)).toBe(margin.length / 4);
+    }
+  });
+
+  it("compacts the maximum repeated modifier layout", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const compact = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r9",
+        groups: Array.from({ length: 50 }, (_, index) => [
+          {
+            ...die("d6", (index % 6) + 1),
+            appearance: scopedAppearance,
+            icons: ["trashcan"],
+          },
+        ]),
+      },
+      () => createRequestRenderer(canvasKit),
+    );
+
+    expect(compact).toMatchObject({
+      width: 1_500,
+      height: 960,
+      diceCount: 50,
+      rowCount: 5,
+    });
+    expect(compact.png.byteLength).toBeLessThan(10_000_000);
+  });
+
   it("renders every lighting treatment deterministically with physical directions", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
     const hashes = new Map<string, string>();
@@ -1616,7 +1806,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r9" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r10" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

@@ -24,6 +24,7 @@ export type RendererRevisionPolicyV4 = {
   sphereOutline: boolean;
   strongPhysicalEdges: boolean;
   modifierIcons: ModifierIconDesignV4;
+  gridLayout: "legacy" | "compact-r9";
 };
 
 function policy(
@@ -49,6 +50,7 @@ const r1 = policy({
   sphereOutline: false,
   strongPhysicalEdges: false,
   modifierIcons: "legacy-r1",
+  gridLayout: "legacy",
 });
 const r2 = policy({ ...r1, explicitTextureScope: true });
 const r3 = policy({ ...r2, d20Geometry: "r2" });
@@ -83,6 +85,7 @@ const r7 = policy({
   presentation: "standard-r7",
 });
 const r8 = policy({ ...r7, modifierIcons: "signal-disks-r8" });
+const r9 = policy({ ...r8, gridLayout: "compact-r9" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -93,6 +96,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r6": r6,
   "canvaskit-v4-r7": r7,
   "canvaskit-v4-r8": r8,
+  "canvaskit-v4-r9": r9,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

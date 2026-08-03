@@ -7,6 +7,7 @@ import {
   enhanceD4EngravingLayerRecipeV4,
   formatFaceLabelV4,
   projectPolyhedralGeometryV4,
+  rendererRevisionPolicyV4,
   requiresOrientationMarkV4,
   SOURCE_TEXTURE_SIZE_V4,
   modifierIconSizeV4,
@@ -26,6 +27,7 @@ import {
   type ProjectedPolyhedralGeometryV4,
   type RenderCriticalEffectV4,
   type RenderLightingV4,
+  type RendererRevisionPolicyV4,
   type RendererRevisionV4,
   type SphericalGeometryDescriptorV4,
   type TexturePlacementV4,
@@ -72,6 +74,7 @@ const MAX_RENDER_SIZE_V4 = 1_200;
 const GRID_DIE_SIZE_V4 = 150;
 const MAX_GRID_COLUMNS_V4 = 10;
 const MAX_GRID_DICE_V4 = 50;
+const COMPACT_GRID_TARGET_ASPECT_V4 = 2;
 const OCTAHEDRAL_ATLAS_MIN_DICE_V4 = 4;
 const OCTAHEDRAL_ATLAS_SIZE_V4 = 192;
 const SPHERE_BACKGROUND_MIN_DICE_V4 = 3;
@@ -449,13 +452,85 @@ function requireTextureRaster(texture: TextureRasterV4): void {
   }
 }
 
+function legacyGridRows<Die>(
+  groups: readonly (readonly Die[])[],
+): readonly (readonly Die[])[] {
+  return groups.flatMap((group) =>
+    Array.from(
+      { length: Math.ceil(group.length / MAX_GRID_COLUMNS_V4) },
+      (_, rowIndex) =>
+        group.slice(
+          rowIndex * MAX_GRID_COLUMNS_V4,
+          (rowIndex + 1) * MAX_GRID_COLUMNS_V4,
+        ),
+    ),
+  );
+}
+
+function packCompactGridRows<Die>(
+  groups: readonly (readonly Die[])[],
+  columnCount: number,
+): readonly (readonly Die[])[] {
+  const rows: Die[][] = [];
+  let row: Die[] = [];
+  for (const group of groups) {
+    if (row.length > 0 && group.length > columnCount - row.length) {
+      rows.push(row);
+      row = [];
+    }
+    for (let offset = 0; offset < group.length;) {
+      const take = Math.min(columnCount - row.length, group.length - offset);
+      row.push(...group.slice(offset, offset + take));
+      offset += take;
+      if (row.length === columnCount) {
+        rows.push(row);
+        row = [];
+      }
+    }
+  }
+  if (row.length > 0) rows.push(row);
+  return rows;
+}
+
+function compactGridRows<Die>(
+  groups: readonly (readonly Die[])[],
+  rowHeight: number,
+): readonly (readonly Die[])[] {
+  const minimumColumns = Math.min(
+    Math.max(...groups.map((group) => group.length)),
+    MAX_GRID_COLUMNS_V4,
+  );
+  const score = (rows: readonly (readonly Die[])[]) => {
+    const width = Math.max(...rows.map((row) => row.length)) * GRID_DIE_SIZE_V4;
+    const aspect = width / (rows.length * rowHeight);
+    return Math.abs(Math.log(aspect / COMPACT_GRID_TARGET_ASPECT_V4));
+  };
+  let bestRows = packCompactGridRows(groups, minimumColumns);
+  let bestScore = score(bestRows);
+  for (
+    let columnCount = minimumColumns + 1;
+    columnCount <= MAX_GRID_COLUMNS_V4;
+    columnCount += 1
+  ) {
+    const rows = packCompactGridRows(groups, columnCount);
+    const candidateScore = score(rows);
+    if (candidateScore < bestScore) {
+      bestRows = rows;
+      bestScore = candidateScore;
+    }
+  }
+  return bestRows;
+}
+
 function geometryGridLayout<Die>(
   groups: readonly (readonly Die[])[],
   name: "geometry grid" | "polyhedral grid",
   hasIcons: boolean,
   iconSize: number,
+  layout: RendererRevisionPolicyV4["gridLayout"],
 ): {
   rows: readonly (readonly Die[])[];
+  rowOffsets: readonly number[];
   diceCount: number;
   width: number;
   height: number;
@@ -475,21 +550,23 @@ function geometryGridLayout<Die>(
   if (diceCount > MAX_GRID_DICE_V4) {
     throw new Error(`CanvasKit V4 ${name} exceeds 50 dice`);
   }
-  const rows = groups.flatMap((group) =>
-    Array.from(
-      { length: Math.ceil(group.length / MAX_GRID_COLUMNS_V4) },
-      (_, rowIndex) =>
-        group.slice(
-          rowIndex * MAX_GRID_COLUMNS_V4,
-          (rowIndex + 1) * MAX_GRID_COLUMNS_V4,
-        ),
-    ),
-  );
   const rowHeight = GRID_DIE_SIZE_V4 + (hasIcons ? iconSize : 0);
+  const rows = layout === "legacy"
+    ? legacyGridRows(groups)
+    : compactGridRows(groups, rowHeight);
+  const contentWidth = Math.max(...rows.map((row) => row.length)) *
+    GRID_DIE_SIZE_V4;
+  const width = layout === "compact-r9" && diceCount === 1
+    ? Math.max(contentWidth, rowHeight * COMPACT_GRID_TARGET_ASPECT_V4)
+    : contentWidth;
+  const rowOffsets = layout === "legacy"
+    ? rows.map(() => 0)
+    : rows.map((row) => (width - (row.length * GRID_DIE_SIZE_V4)) / 2);
   return {
     rows,
+    rowOffsets,
     diceCount,
-    width: Math.max(...rows.map((row) => row.length)) * GRID_DIE_SIZE_V4,
+    width,
     height: rows.length * rowHeight,
     rowHeight,
   };
@@ -1976,12 +2053,14 @@ async function renderGeometryGridSurface<Die>(
   const hasIcons =
     iconsForDie !== undefined &&
     groups.some((group) => group.some((die) => iconsForDie(die).length > 0));
-  const { rows, diceCount, width, height, rowHeight } = geometryGridLayout(
-    groups,
-    name,
-    hasIcons,
-    modifierIconSizeV4(rendererRevision),
-  );
+  const { rows, rowOffsets, diceCount, width, height, rowHeight } =
+    geometryGridLayout(
+      groups,
+      name,
+      hasIcons,
+      modifierIconSizeV4(rendererRevision),
+      rendererRevisionPolicyV4(rendererRevision).gridLayout,
+    );
   const rendered = withCanvasKitResourcesSyncV4((scope) => {
     const surface = scope.own(
       canvasKit.MakeSurface(width, height),
@@ -2001,7 +2080,7 @@ async function renderGeometryGridSurface<Die>(
         canvas.save();
         try {
           canvas.translate(
-            columnIndex * GRID_DIE_SIZE_V4,
+            (rowOffsets[rowIndex] ?? 0) + (columnIndex * GRID_DIE_SIZE_V4),
             rowIndex * rowHeight,
           );
           visibleFaceCount += withCanvasKitResourcesSyncV4((dieScope) =>
