@@ -702,10 +702,41 @@ describe("Discord HTTP interaction Worker", () => {
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(
       () => undefined,
     );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(
+      () => undefined,
+    );
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(
+      (entry: unknown) => {
+        if (
+          typeof entry === "object" &&
+          entry !== null &&
+          !Array.isArray(entry) &&
+          (entry as Record<string, unknown>).message ===
+            "Discord roll lifecycle advanced" &&
+          (entry as Record<string, unknown>).stage === "accepted"
+        ) {
+          throw new Error("acceptance telemetry unavailable");
+        }
+      },
+    );
     let response: Response;
+    let acceptanceEvent: Record<string, unknown> | undefined;
     try {
       response = await handleInteractionRequest(request, env, ctx);
       await Promise.all(pending);
+      for (const [entry] of consoleInfo.mock.calls) {
+        if (
+          typeof entry === "object" &&
+          entry !== null &&
+          !Array.isArray(entry) &&
+          (entry as Record<string, unknown>).message ===
+            "Discord roll lifecycle advanced" &&
+          (entry as Record<string, unknown>).stage === "accepted"
+        ) {
+          acceptanceEvent = entry as Record<string, unknown>;
+          break;
+        }
+      }
       expect(consoleWarn).toHaveBeenCalledWith(JSON.stringify({
         level: "warn",
         message: "Signed roll interaction display context is incomplete",
@@ -717,11 +748,52 @@ describe("Discord HTTP interaction Worker", () => {
         level: "warn",
         message: "Signed roll interaction context cache write failed",
       }));
+      expect(consoleError).not.toHaveBeenCalled();
     } finally {
       consoleWarn.mockRestore();
+      consoleError.mockRestore();
+      consoleInfo.mockRestore();
     }
 
     expect(response.status).toBe(200);
+    expect(acceptanceEvent).toBeDefined();
+    if (acceptanceEvent === undefined) {
+      throw new Error("Acceptance RPC timing is missing");
+    }
+    expect(Object.keys(acceptanceEvent).sort()).toEqual(
+      [
+        "acceptanceRpcMs",
+        "acknowledgementToAcceptanceCompleteMs",
+        "acknowledgementToAcceptanceStartMs",
+        "interactionId",
+        "level",
+        "message",
+        "stage",
+        "status",
+        "telemetryVersion",
+        "timingClock",
+      ].sort(),
+    );
+    expect(acceptanceEvent).toMatchObject({
+      telemetryVersion: 2,
+      level: "info",
+      message: "Discord roll lifecycle advanced",
+      interactionId,
+      stage: "accepted",
+      status: "created",
+      timingClock: "workers-io",
+    });
+    for (const field of [
+      "acceptanceRpcMs",
+      "acknowledgementToAcceptanceCompleteMs",
+      "acknowledgementToAcceptanceStartMs",
+    ] as const) {
+      expect(Number.isSafeInteger(acceptanceEvent[field])).toBe(true);
+      expect(acceptanceEvent[field]).toBeGreaterThanOrEqual(0);
+    }
+    expect(JSON.stringify(acceptanceEvent)).not.toMatch(
+      /fixture\.interaction\.token|100000000000000004|100000000000000002|100000000000000003|2d20 \+ 5|Attack|alice/,
+    );
     await expect(response.json()).resolves.toEqual({ type: 5 });
     expect(cacheContext).toHaveBeenCalledOnce();
     expect(acceptDelivery).toHaveBeenCalledOnce();

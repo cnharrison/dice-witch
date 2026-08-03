@@ -2808,6 +2808,116 @@ describe("RollWork Durable Object", () => {
     expect(conflict).toEqual({ status: "conflict" });
   });
 
+  it("emits one privacy-safe timing event for a new durable acceptance", async () => {
+    const id = snowflakeAt(Date.now(), 12);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(id, "delivery-clatter-contract");
+    input.accounting.guildId = "100000000000000002";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(
+      (entry: unknown) => {
+        if (
+          typeof entry === "object" &&
+          entry !== null &&
+          !Array.isArray(entry) &&
+          (entry as Record<string, unknown>).message ===
+            "Roll durable acceptance completed"
+        ) {
+          throw new Error("acceptance telemetry unavailable");
+        }
+      },
+    );
+
+    try {
+      await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+        status: "created",
+        delivery: "pending",
+      });
+      await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+        status: "existing",
+      });
+
+      const events: Record<string, unknown>[] = [];
+      for (const [entry] of consoleInfo.mock.calls) {
+        if (
+          typeof entry === "object" &&
+          entry !== null &&
+          !Array.isArray(entry) &&
+          (entry as Record<string, unknown>).message ===
+            "Roll durable acceptance completed"
+        ) {
+          events.push(entry as Record<string, unknown>);
+        }
+      }
+      expect(events).toHaveLength(1);
+      const event = events[0];
+      expect(event).toBeDefined();
+      if (event === undefined) throw new Error("Acceptance timing is missing");
+      expect(Object.keys(event).sort()).toEqual(
+        [
+          "acceptanceStatus",
+          "acknowledgementToHandlerCompleteMs",
+          "acknowledgementToHandlerStartMs",
+          "acknowledgementType",
+          "deliveryAlarmWriteMs",
+          "expiryAlarmWriteMs",
+          "handlerElapsedMs",
+          "level",
+          "message",
+          "recordPreparationMs",
+          "recoveryAlarmWriteMs",
+          "renderSnapshotPreparationMs",
+          "subsystem",
+          "telemetryVersion",
+          "timingClock",
+        ].sort(),
+      );
+      expect(event).toMatchObject({
+        telemetryVersion: 1,
+        level: "info",
+        message: "Roll durable acceptance completed",
+        subsystem: "roll-acceptance",
+        acceptanceStatus: "created",
+        acknowledgementType: 5,
+        timingClock: "workers-io",
+      });
+      for (const field of [
+        "acknowledgementToHandlerCompleteMs",
+        "acknowledgementToHandlerStartMs",
+        "deliveryAlarmWriteMs",
+        "expiryAlarmWriteMs",
+        "handlerElapsedMs",
+        "recordPreparationMs",
+        "recoveryAlarmWriteMs",
+        "renderSnapshotPreparationMs",
+      ] as const) {
+        expect(Number.isSafeInteger(event[field])).toBe(true);
+        expect(event[field]).toBeGreaterThanOrEqual(0);
+      }
+      expect(event.handlerElapsedMs).toBeGreaterThanOrEqual(
+        event.recordPreparationMs as number,
+      );
+      const serialized = JSON.stringify(event);
+      for (const sensitive of [
+        id,
+        input.interaction.applicationId,
+        input.interaction.token,
+        input.accounting.userId,
+        input.accounting.guildId,
+        input.logging.channelId,
+        input.logging.notation,
+        input.message.title,
+        input.message.username,
+      ]) {
+        expect(serialized).not.toContain(String(sensitive));
+      }
+    } finally {
+      consoleInfo.mockRestore();
+    }
+  });
+
   it("rejects a changed preflight seed for an accepted direct roll", async () => {
     const id = snowflakeAt(Date.now(), 47);
     const stub = work(id);

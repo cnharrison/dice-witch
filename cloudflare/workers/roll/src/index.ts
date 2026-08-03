@@ -497,9 +497,70 @@ function pickerState(row: SavedRollPickerRow) {
 }
 
 type DeliveryRecordResolution =
-  | { status: "ready"; record: RollWorkRecord }
+  | {
+      status: "ready";
+      record: RollWorkRecord;
+      renderSnapshotPreparationMs: number | null;
+    }
   | { status: "conflict" }
   | { status: "unavailable" };
+
+type FinishedDeliveryAcceptance = Readonly<{
+  result: AcceptRollDeliveryResult;
+  recoveryAlarmWriteMs: number;
+  expiryAlarmWriteMs: number;
+}>;
+
+// Deployed Workers clocks advance only after I/O, so these spans do not
+// claim to measure CPU-only work.
+function elapsedMs(startedAt: number, completedAt = Date.now()): number {
+  return Math.max(0, completedAt - startedAt);
+}
+
+function logDurableAcceptanceTiming(input: Readonly<{
+  acknowledgementPreparedAt: number;
+  acknowledgementType: 4 | 5 | 6;
+  handlerStartedAt: number;
+  handlerCompletedAt: number;
+  recordPreparationMs: number;
+  renderSnapshotPreparationMs: number | null;
+  recoveryAlarmWriteMs: number;
+  expiryAlarmWriteMs: number;
+  deliveryAlarmWriteMs: number | null;
+}>): void {
+  // This new event starts at schema version 1 and is emitted only for
+  // validated RollDeliveryTelemetryV2 input.
+  try {
+    console.info({
+      telemetryVersion: 1,
+      level: "info",
+      message: "Roll durable acceptance completed",
+      subsystem: "roll-acceptance",
+      acceptanceStatus: "created",
+      acknowledgementType: input.acknowledgementType,
+      timingClock: "workers-io",
+      acknowledgementToHandlerStartMs: elapsedMs(
+        input.acknowledgementPreparedAt,
+        input.handlerStartedAt,
+      ),
+      recordPreparationMs: input.recordPreparationMs,
+      renderSnapshotPreparationMs: input.renderSnapshotPreparationMs,
+      recoveryAlarmWriteMs: input.recoveryAlarmWriteMs,
+      expiryAlarmWriteMs: input.expiryAlarmWriteMs,
+      deliveryAlarmWriteMs: input.deliveryAlarmWriteMs,
+      handlerElapsedMs: elapsedMs(
+        input.handlerStartedAt,
+        input.handlerCompletedAt,
+      ),
+      acknowledgementToHandlerCompleteMs: elapsedMs(
+        input.acknowledgementPreparedAt,
+        input.handlerCompletedAt,
+      ),
+    });
+  } catch {
+    // Observability must not turn durable acceptance into a failure.
+  }
+}
 
 function deliveryTelemetryContext(
   metadata: DeliveryMetadata | null,
@@ -1460,6 +1521,7 @@ export class RollWork extends DurableObject<RollEnv> {
     value: unknown,
     deliverInline: boolean,
   ): Promise<AcceptRollDeliveryResult> {
+    const handlerStartedAt = Date.now();
     const delivery = validateDeliveryRequest(value);
     if (this.ctx.id.name !== delivery.interaction.id) {
       const picker = this.readSavedRollPicker();
@@ -1474,31 +1536,56 @@ export class RollWork extends DurableObject<RollEnv> {
     const expiresAt = interactionExpiresAt(delivery.interaction.id);
     if (expiresAt <= Date.now()) return { status: "expired" };
 
+    const recordPreparationStartedAt = Date.now();
     const resolution = await this.recordForDelivery(delivery);
+    const recordPreparationMs = elapsedMs(recordPreparationStartedAt);
     if (resolution.status !== "ready") return resolution;
 
     this.activeAcceptances += 1;
-    const accepted = await this.finishDeliveryAcceptance(
+    const acceptance = await this.finishDeliveryAcceptance(
       delivery,
       resolution.record,
       expiresAt,
     ).finally(() => {
       this.activeAcceptances -= 1;
     });
+    const accepted = acceptance.result;
     const continuesInline =
       deliverInline &&
       (accepted.status === "created" || accepted.status === "existing") &&
       accepted.delivery === "pending";
+    let deliveryAlarmWriteMs: number | null = null;
     if (this.activeAcceptances === 0 && !continuesInline) {
       const pendingDelivery = this.readDelivery();
       if (pendingDelivery?.state === "pending") {
+        const alarmWriteStartedAt = Date.now();
         await this.ctx.storage.setAlarm(
           Math.min(
             Date.now(),
             deliveryFinalizationAt(pendingDelivery.expires_at),
           ),
         );
+        deliveryAlarmWriteMs = elapsedMs(alarmWriteStartedAt);
       }
+    }
+    if (
+      !deliverInline &&
+      accepted.status === "created" &&
+      delivery.telemetry !== null
+    ) {
+      logDurableAcceptanceTiming({
+        acknowledgementPreparedAt:
+          delivery.telemetry.acknowledgementPreparedAt,
+        acknowledgementType: delivery.telemetry.acknowledgementType,
+        handlerStartedAt,
+        handlerCompletedAt: Date.now(),
+        recordPreparationMs,
+        renderSnapshotPreparationMs:
+          resolution.renderSnapshotPreparationMs,
+        recoveryAlarmWriteMs: acceptance.recoveryAlarmWriteMs,
+        expiryAlarmWriteMs: acceptance.expiryAlarmWriteMs,
+        deliveryAlarmWriteMs,
+      });
     }
     return accepted;
   }
@@ -1507,9 +1594,11 @@ export class RollWork extends DurableObject<RollEnv> {
     delivery: ReturnType<typeof validateDeliveryRequest>,
     record: RollWorkRecord,
     expiresAt: number,
-  ): Promise<AcceptRollDeliveryResult> {
+  ): Promise<FinishedDeliveryAcceptance> {
     this.initializeLifecycleSnapshot(delivery, record);
+    const recoveryAlarmWriteStartedAt = Date.now();
     await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
+    const recoveryAlarmWriteMs = elapsedMs(recoveryAlarmWriteStartedAt);
     const metadataJson = deliveryMetadata(delivery);
     const fingerprint = await tokenFingerprint(delivery.interaction.token);
     const acceptedAt = Date.now();
@@ -1589,10 +1678,15 @@ export class RollWork extends DurableObject<RollEnv> {
       await this.syncLifecycle();
       throw error;
     }
+    const expiryAlarmWriteStartedAt = Date.now();
     if (accepted.status === "created" || accepted.status === "existing") {
       await this.ctx.storage.setAlarm(expiresAt);
     }
-    return accepted;
+    return {
+      result: accepted,
+      recoveryAlarmWriteMs,
+      expiryAlarmWriteMs: elapsedMs(expiryAlarmWriteStartedAt),
+    };
   }
 
   deliveryStatus(): RollDeliveryStatus {
@@ -3742,7 +3836,11 @@ export class RollWork extends DurableObject<RollEnv> {
       ) {
         return { status: "conflict" };
       }
-      return { status: "ready", record: existing.record };
+      return {
+        status: "ready",
+        record: existing.record,
+        renderSnapshotPreparationMs: null,
+      };
     }
 
     const rollSeed = delivery.rollSeed ?? randomSeed();
@@ -3764,7 +3862,11 @@ export class RollWork extends DurableObject<RollEnv> {
       createdAt: Date.now(),
     };
     if (accounting === null) {
-      return { status: "ready", record: { version: 1, ...common } };
+      return {
+        status: "ready",
+        record: { version: 1, ...common },
+        renderSnapshotPreparationMs: null,
+      };
     }
     if (renderVersion === null) {
       throw new Error("Roll render version is unavailable");
@@ -3776,9 +3878,11 @@ export class RollWork extends DurableObject<RollEnv> {
           renderVersion === 3
             ? { version: 3, ...common, renderRequest: null }
             : { version: 4, ...common, renderRequest: null },
+        renderSnapshotPreparationMs: null,
       };
     }
 
+    const renderSnapshotPreparationStartedAt = Date.now();
     try {
       const renderRequest = await buildRollRenderRequestForVersion(
         this.env.DATA_SERVICE,
@@ -3794,6 +3898,9 @@ export class RollWork extends DurableObject<RollEnv> {
           renderRequest.version === 3
             ? { version: 3, ...common, renderRequest }
             : { version: 4, ...common, renderRequest },
+        renderSnapshotPreparationMs: elapsedMs(
+          renderSnapshotPreparationStartedAt,
+        ),
       };
     } catch {
       console.error(
@@ -3826,7 +3933,11 @@ export class RollWork extends DurableObject<RollEnv> {
       const concurrent = this.storedPreparation(request);
       if (concurrent?.status === "conflict") return { status: "conflict" };
       if (concurrent?.status === "existing") {
-        return { status: "ready", record: concurrent.record };
+        return {
+          status: "ready",
+          record: concurrent.record,
+          renderSnapshotPreparationMs: null,
+        };
       }
       return { status: "unavailable" };
     }
