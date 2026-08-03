@@ -2,12 +2,35 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const EXCEPTION = {
+const REACT_ROUTER_EXCEPTION = {
   source: 1_124_282,
   package: "react-router",
   dependent: "react-router-dom",
-  url: "https://github.com/advisories/GHSA-qwww-vcr4-c8h2",
+  urls: ["https://github.com/advisories/GHSA-qwww-vcr4-c8h2"],
+  reason: "unstable RSC APIs are not used",
   expiresAt: Date.parse("2026-08-07T00:00:00Z"),
+};
+
+const UNDICI_EXCEPTION = {
+  package: "undici",
+  advisories: [
+    [1_130_715, "https://github.com/advisories/GHSA-8xcm-r25x-g524"],
+    [1_130_716, "https://github.com/advisories/GHSA-8xcm-r25x-g524"],
+    [1_130_718, "https://github.com/advisories/GHSA-4cwx-7wf7-3272"],
+  ],
+  range: "<=6.27.0 || 7.0.0 - 7.28.0",
+  effects: ["miniflare"],
+  nodes: [
+    "node_modules/node-gyp/node_modules/undici",
+    "node_modules/undici",
+  ],
+  urls: [
+    "https://github.com/advisories/GHSA-8xcm-r25x-g524",
+    "https://github.com/advisories/GHSA-4cwx-7wf7-3272",
+  ],
+  reason:
+    "the high-severity cache interceptor is not configured; retry interception may run only in development tooling and its advisory is moderate",
+  expiresAt: Date.parse("2026-08-05T00:00:00Z"),
 };
 
 function isRecord(value) {
@@ -18,18 +41,49 @@ function isAllowedReactRouterAdvisory(name, vulnerability) {
   if (!isRecord(vulnerability) || !Array.isArray(vulnerability.via)) {
     return false;
   }
-  if (name === EXCEPTION.package) {
+  if (name === REACT_ROUTER_EXCEPTION.package) {
     return (
       vulnerability.via.length === 1 &&
       isRecord(vulnerability.via[0]) &&
-      vulnerability.via[0].source === EXCEPTION.source &&
-      vulnerability.via[0].url === EXCEPTION.url
+      vulnerability.via[0].source === REACT_ROUTER_EXCEPTION.source &&
+      vulnerability.via[0].url === REACT_ROUTER_EXCEPTION.urls[0]
     );
   }
   return (
-    name === EXCEPTION.dependent &&
+    name === REACT_ROUTER_EXCEPTION.dependent &&
     vulnerability.via.length === 1 &&
-    vulnerability.via[0] === EXCEPTION.package
+    vulnerability.via[0] === REACT_ROUTER_EXCEPTION.package
+  );
+}
+
+function isAllowedUndiciAdvisory(name, vulnerability) {
+  if (
+    name !== UNDICI_EXCEPTION.package ||
+    !isRecord(vulnerability) ||
+    vulnerability.isDirect !== false ||
+    vulnerability.range !== UNDICI_EXCEPTION.range ||
+    !Array.isArray(vulnerability.via) ||
+    !Array.isArray(vulnerability.effects) ||
+    !Array.isArray(vulnerability.nodes)
+  ) {
+    return false;
+  }
+  const advisories = vulnerability.via
+    .map((advisory) =>
+      isRecord(advisory) &&
+        typeof advisory.source === "number" &&
+        typeof advisory.url === "string"
+        ? [advisory.source, advisory.url]
+        : null)
+    .filter((advisory) => advisory !== null)
+    .sort(([first], [second]) => first - second);
+  return (
+    advisories.length === vulnerability.via.length &&
+    JSON.stringify(advisories) === JSON.stringify(UNDICI_EXCEPTION.advisories) &&
+    JSON.stringify([...vulnerability.effects].sort()) ===
+      JSON.stringify(UNDICI_EXCEPTION.effects) &&
+    JSON.stringify([...vulnerability.nodes].sort()) ===
+      JSON.stringify(UNDICI_EXCEPTION.nodes)
   );
 }
 
@@ -47,7 +101,10 @@ export function evaluateAuditReport(report, now = Date.now()) {
     ) {
       continue;
     }
-    if (isAllowedReactRouterAdvisory(name, vulnerability)) {
+    if (
+      isAllowedReactRouterAdvisory(name, vulnerability) ||
+      isAllowedUndiciAdvisory(name, vulnerability)
+    ) {
       allowed.push(name);
     } else {
       blocking.push(name);
@@ -56,19 +113,34 @@ export function evaluateAuditReport(report, now = Date.now()) {
   if (blocking.length > 0) {
     throw new Error(`npm audit found blocking packages: ${blocking.sort().join(", ")}`);
   }
+  const allowsReactRouter = allowed.some((name) =>
+    name === REACT_ROUTER_EXCEPTION.package ||
+    name === REACT_ROUTER_EXCEPTION.dependent
+  );
   if (
-    allowed.length > 0 &&
-    (!allowed.includes(EXCEPTION.package) ||
-      !allowed.includes(EXCEPTION.dependent))
+    allowsReactRouter &&
+    (!allowed.includes(REACT_ROUTER_EXCEPTION.package) ||
+      !allowed.includes(REACT_ROUTER_EXCEPTION.dependent))
   ) {
     throw new Error("The React Router audit exception chain is incomplete");
   }
-  if (allowed.length > 0 && now >= EXCEPTION.expiresAt) {
-    throw new Error("The temporary React Router audit exception has expired");
+  const exceptions = [];
+  if (allowsReactRouter) exceptions.push(REACT_ROUTER_EXCEPTION);
+  if (allowed.includes(UNDICI_EXCEPTION.package)) {
+    exceptions.push(UNDICI_EXCEPTION);
+  }
+  for (const exception of exceptions) {
+    if (now >= exception.expiresAt) {
+      throw new Error(`The temporary ${exception.package} audit exception has expired`);
+    }
   }
   return {
     allowed: allowed.sort(),
-    expiresAt: new Date(EXCEPTION.expiresAt).toISOString(),
+    exceptions: exceptions.map(({ urls, reason, expiresAt }) => ({
+      urls,
+      reason,
+      expiresAt: new Date(expiresAt).toISOString(),
+    })),
   };
 }
 
@@ -82,9 +154,9 @@ function main() {
     throw new Error(`npm audit failed with exit code ${String(result.status)}`);
   }
   const evaluation = evaluateAuditReport(JSON.parse(result.stdout));
-  if (evaluation.allowed.length > 0) {
+  for (const exception of evaluation.exceptions) {
     process.stdout.write(
-      `Allowed ${EXCEPTION.url} only: unstable RSC APIs are not used; expires ${evaluation.expiresAt}.\n`,
+      `Allowed ${exception.urls.join(", ")}: ${exception.reason}; expires ${exception.expiresAt}.\n`,
     );
   }
 }
