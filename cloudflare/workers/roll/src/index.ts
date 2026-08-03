@@ -1431,7 +1431,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   async deliver(value: unknown): Promise<DeliverRollWorkResult> {
-    const accepted = await this.acceptDelivery(value);
+    const accepted = await this.acceptDeliveryInternal(value, true);
     if (
       accepted.status === "conflict" ||
       accepted.status === "expired" ||
@@ -1455,6 +1455,13 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   async acceptDelivery(value: unknown): Promise<AcceptRollDeliveryResult> {
+    return this.acceptDeliveryInternal(value, false);
+  }
+
+  private async acceptDeliveryInternal(
+    value: unknown,
+    deliverInline: boolean,
+  ): Promise<AcceptRollDeliveryResult> {
     const delivery = validateDeliveryRequest(value);
     if (this.ctx.id.name !== delivery.interaction.id) {
       const picker = this.readSavedRollPicker();
@@ -1473,15 +1480,29 @@ export class RollWork extends DurableObject<RollEnv> {
     if (resolution.status !== "ready") return resolution;
 
     this.activeAcceptances += 1;
-    try {
-      return await this.finishDeliveryAcceptance(
-        delivery,
-        resolution.record,
-        expiresAt,
-      );
-    } finally {
+    const accepted = await this.finishDeliveryAcceptance(
+      delivery,
+      resolution.record,
+      expiresAt,
+    ).finally(() => {
       this.activeAcceptances -= 1;
+    });
+    const continuesInline =
+      deliverInline &&
+      (accepted.status === "created" || accepted.status === "existing") &&
+      accepted.delivery === "pending";
+    if (this.activeAcceptances === 0 && !continuesInline) {
+      const pendingDelivery = this.readDelivery();
+      if (pendingDelivery?.state === "pending") {
+        await this.ctx.storage.setAlarm(
+          Math.min(
+            Date.now(),
+            deliveryFinalizationAt(pendingDelivery.expires_at),
+          ),
+        );
+      }
     }
+    return accepted;
   }
 
   private async finishDeliveryAcceptance(
@@ -1573,14 +1594,6 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     if (accepted.status === "created" || accepted.status === "existing") {
       await this.ctx.storage.setAlarm(expiresAt);
-      if (accepted.delivery === "pending") {
-        await this.ctx.storage.setAlarm(
-          Math.min(
-            Date.now() + retryDelayMs(1),
-            deliveryFinalizationAt(expiresAt),
-          ),
-        );
-      }
     }
     return accepted;
   }

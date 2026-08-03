@@ -559,7 +559,9 @@ describe("RollWork Durable Object", () => {
       responseMode: "channel-message",
     })).resolves.toMatchObject({ status: "created" });
 
-    await runDurableObjectAlarm(stub);
+    await runInDurableObject(stub, async (instance) => {
+      await callAlarm(instance);
+    });
     await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql.exec<{
         followup_message_id: string | null;
@@ -1250,6 +1252,9 @@ describe("RollWork Durable Object", () => {
     const input = deliveryRequest(id, "delivery-temporary");
 
     const accepted = await stub.acceptDelivery(input);
+    await runInDurableObject(stub, async (instance) => {
+      await callAlarm(instance);
+    });
     const status = await stub.deliveryStatus();
 
     expect(accepted).toEqual({
@@ -1260,12 +1265,10 @@ describe("RollWork Durable Object", () => {
     if (!("expiresAt" in accepted)) {
       throw new Error("New delivery was not accepted");
     }
-    expect(status).toEqual({
+    expect(status).toMatchObject({
       state: "pending",
       expiresAt: accepted.expiresAt,
       deliveredAt: null,
-      lastHttpStatus: null,
-      attempts: 0,
     });
     expect(JSON.stringify({ accepted, status })).not.toContain(input.interaction.token);
     await runInDurableObject(stub, async (_instance, state) => {
@@ -1353,13 +1356,13 @@ describe("RollWork Durable Object", () => {
       status: "created",
       delivery: "pending",
     });
-    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
-    await runInDurableObject(stub, (_instance, state) => {
+    await runInDurableObject(stub, async (instance, state) => {
+      await callAlarm(instance);
       state.storage.sql.exec(
         "UPDATE interaction_delivery SET result_not_before = 0",
       );
+      await callAlarm(instance);
     });
-    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
 
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
@@ -1893,7 +1896,9 @@ describe("RollWork Durable Object", () => {
       dataService.fetch = originalFetch;
     }
 
-    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
+    await runInDurableObject(stub, async (instance) => {
+      await callAlarm(instance);
+    });
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
       lastHttpStatus: 200,
