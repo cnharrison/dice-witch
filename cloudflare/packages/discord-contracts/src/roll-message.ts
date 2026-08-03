@@ -221,11 +221,6 @@ export function rollResultText(result: RollExecutionResult): string {
     : description;
 }
 
-function resultHeadingText(options: RollResultMessageOptions): string | null {
-  if (options.title !== null) return options.title;
-  return options.repetitions > 1 ? `Repeated ×${String(options.repetitions)}` : null;
-}
-
 function saveRollButton(customId: string) {
   return {
     type: 2 as const,
@@ -238,7 +233,7 @@ function saveRollButton(customId: string) {
 function resultHeading(
   options: RollResultMessageOptions,
 ): DiscordContainerChild[] {
-  const heading = resultHeadingText(options);
+  const heading = options.title;
   if (heading === null) return [];
   const content = `## ${escapeDiscordMarkdown(heading)}`;
   if (options.saveRollCustomId === undefined) {
@@ -259,7 +254,7 @@ function resultContent(
 ): DiscordContainerChild[] {
   const displays = textDisplays(content);
   if (
-    resultHeadingText(options) !== null ||
+    options.title !== null ||
     options.saveRollCustomId === undefined
   ) {
     return displays;
@@ -280,7 +275,6 @@ export function buildRollResultMessage(
   if (result.outcomes.length === 0) {
     throw new Error("Roll result has no displayable outcomes");
   }
-  const heading = resultHeadingText(options);
   if (
     (options.title !== null &&
       (options.title.length === 0 || options.title.length > MAX_TITLE_LENGTH)) ||
@@ -296,7 +290,9 @@ export function buildRollResultMessage(
       (options.savedRoll.name.length === 0 ||
         options.savedRoll.name.length > 1_024)) ||
     (options.saveRollCustomId !== undefined &&
-      ((heading === null && options.savedRoll === undefined) ||
+      ((options.title === null &&
+        options.savedRoll === undefined &&
+        options.repetitions === 1) ||
         options.saveRollCustomId.length < 1 ||
         options.saveRollCustomId.length > 100))
   ) {

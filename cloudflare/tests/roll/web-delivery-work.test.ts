@@ -282,7 +282,7 @@ describe("WebDeliveryWork Durable Object", () => {
     await expect(stub.getSaveRollIntent()).resolves.toEqual({ status: "missing" });
   });
 
-  it("offers Save roll for an untitled repeated result with a blank default name", async () => {
+  it("keeps an untitled repeated result untitled with Save and a blank default name", async () => {
     const deliveryId = "abababab-abab-4bab-8bab-abababababab";
     const stub = work(deliveryId);
     const result = await executeWork(stub, request(deliveryId, {
@@ -294,8 +294,9 @@ describe("WebDeliveryWork Durable Object", () => {
     if (!("roll" in result) || result.roll.status !== "rolled") {
       throw new Error("Expected a delivered web roll");
     }
-    expect(JSON.stringify(result.roll.discord.payload)).toContain("## Repeated ×3");
-    expect(JSON.stringify(result.roll.discord.payload)).toContain('"label":"Save"');
+    const payload = JSON.stringify(result.roll.discord.payload);
+    expect(payload).not.toContain("Repeated ×3");
+    expect(payload).toContain('"label":"Save"');
     await expect(stub.getSaveRollIntent()).resolves.toMatchObject({
       status: "available",
       intent: {

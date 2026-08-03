@@ -202,8 +202,9 @@ describe("buildRollResultMessage", () => {
     ).toThrow("Roll result message options are invalid");
   });
 
-  it("gives an untitled repeated roll a presentation-only Save heading", () => {
-    const message = buildRollResultMessage(result(["1d20"]), {
+  it("keeps an untitled repeated roll untitled with Save beside its result", () => {
+    const roll = result(["1d20"]);
+    const message = buildRollResultMessage(roll, {
       source: "discord",
       title: null,
       repetitions: 3,
@@ -216,7 +217,7 @@ describe("buildRollResultMessage", () => {
 
     expect(container.components[0]).toEqual({
       type: 9,
-      components: [{ type: 10, content: "## Repeated ×3" }],
+      components: [{ type: 10, content: rollResultText(roll) }],
       accessory: {
         type: 2,
         style: 2,
