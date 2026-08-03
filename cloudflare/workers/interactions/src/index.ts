@@ -65,6 +65,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Deployed Workers clocks advance only after I/O, so these spans do not
+// claim to measure CPU-only work.
+function elapsedMs(startedAt: number, completedAt = Date.now()): number {
+  return Math.max(0, completedAt - startedAt);
+}
+
 function invalidInteraction(reason: string): Response {
   console.warn(
     JSON.stringify({ level: "warn", message: "Invalid interaction", reason }),
@@ -169,22 +175,41 @@ async function deliverRequestedRollHelper(
 
 async function acceptDeferredRoll(
   stub: RollWorkAcceptanceStub,
-  payload: unknown,
+  payload: ReturnType<typeof buildRollDeliveryPayload>,
   roll: DeferredRoll,
 ): Promise<void> {
+  const acceptanceStartedAt = Date.now();
   try {
     const accepted = await stub.acceptDelivery(payload);
+    const acceptanceCompletedAt = Date.now();
     if (isAcceptedRollDelivery(accepted)) {
-      console.info(
-        JSON.stringify({
-          telemetryVersion: 1,
+      const acknowledgementPreparedAt =
+        payload.telemetry?.acknowledgementPreparedAt;
+      try {
+        console.info({
+          telemetryVersion: 2,
           level: "info",
           message: "Discord roll lifecycle advanced",
           interactionId: roll.id,
           stage: "accepted",
           status: (accepted as { status: string }).status,
-        }),
-      );
+          timingClock: "workers-io",
+          acceptanceRpcMs: elapsedMs(
+            acceptanceStartedAt,
+            acceptanceCompletedAt,
+          ),
+          acknowledgementToAcceptanceStartMs:
+            acknowledgementPreparedAt === undefined
+              ? null
+              : elapsedMs(acknowledgementPreparedAt, acceptanceStartedAt),
+          acknowledgementToAcceptanceCompleteMs:
+            acknowledgementPreparedAt === undefined
+              ? null
+              : elapsedMs(acknowledgementPreparedAt, acceptanceCompletedAt),
+        });
+      } catch {
+        // Observability must not turn durable acceptance into a failure.
+      }
       return;
     }
   } catch {
