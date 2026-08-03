@@ -45,6 +45,14 @@ async function callAlarm(instance: {
   await instance.alarm();
 }
 
+function controlledSignal(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 function snowflakeAt(timestamp: number, sequence = 0): string {
   return (
     (BigInt(timestamp - 1_420_070_400_000) << 22n) |
@@ -1249,25 +1257,62 @@ describe("RollWork Durable Object", () => {
   it("retains an interaction token privately until its Snowflake-based expiry", async () => {
     const id = snowflakeAt(Date.now(), 10);
     const stub = work(id);
-    const input = deliveryRequest(id, "delivery-temporary");
+    const token = `delivery-result-temporary-active-${id}`;
+    const input = deliveryRequest(id, token);
+    const expiresAt = interactionExpiresAt(id);
+    const providerStarted = controlledSignal();
+    const providerReleased = controlledSignal();
+    const fetch = globalThis.fetch.bind(globalThis);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (request, init): Promise<Response> => {
+        const url = new URL(request instanceof Request ? request.url : request);
+        if (url.pathname.includes(`/${token}/`)) {
+          providerStarted.resolve();
+          await providerReleased.promise;
+        }
+        return fetch(request, init);
+      },
+    );
 
-    const accepted = await stub.acceptDelivery(input);
-    await runInDurableObject(stub, async (instance) => {
-      await callAlarm(instance);
-    });
+    let accepted: Awaited<ReturnType<typeof stub.acceptDelivery>>;
+    try {
+      accepted = await stub.acceptDelivery(input);
+      if (!("expiresAt" in accepted)) {
+        throw new Error("New delivery was not accepted");
+      }
+      await runInDurableObject(stub, async (instance, state) => {
+        const deliveryAlarm = callAlarm(instance);
+        await providerStarted.promise;
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET expires_at = 0",
+        );
+        await callAlarm(instance);
+        expect(
+          state.storage.sql.exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM interaction_delivery",
+          ).one().count,
+        ).toBe(1);
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET expires_at = ?",
+          expiresAt,
+        );
+        providerReleased.resolve();
+        await deliveryAlarm;
+      });
+    } finally {
+      providerReleased.resolve();
+      fetchSpy.mockRestore();
+    }
     const status = await stub.deliveryStatus();
 
     expect(accepted).toEqual({
       status: "created",
       delivery: "pending",
-      expiresAt: interactionExpiresAt(id),
+      expiresAt,
     });
-    if (!("expiresAt" in accepted)) {
-      throw new Error("New delivery was not accepted");
-    }
     expect(status).toMatchObject({
       state: "pending",
-      expiresAt: accepted.expiresAt,
+      expiresAt,
       deliveredAt: null,
     });
     expect(JSON.stringify({ accepted, status })).not.toContain(input.interaction.token);
@@ -1284,7 +1329,7 @@ describe("RollWork Durable Object", () => {
       });
       const alarm = await state.storage.getAlarm();
       expect(alarm).not.toBeNull();
-      expect(alarm).toBeLessThanOrEqual(accepted.expiresAt);
+      expect(alarm).toBeLessThanOrEqual(expiresAt);
     });
   });
 
@@ -1351,19 +1396,63 @@ describe("RollWork Durable Object", () => {
     if (input.logging.context?.kind === "guild") {
       input.logging.context.guildId = "100000000000000002";
     }
-
-    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
-      status: "created",
-      delivery: "pending",
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    const lifecycleSyncStarted = controlledSignal();
+    const lifecycleSyncReleased = controlledSignal();
+    let firstLifecycleSnapshot: unknown;
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      if (
+        new URL(request.url).pathname === "/internal/roll-lifecycle" &&
+        firstLifecycleSnapshot === undefined
+      ) {
+        const snapshot = await request.clone().json<{ interactionId?: unknown }>();
+        if (snapshot.interactionId === id) {
+          firstLifecycleSnapshot = snapshot;
+          lifecycleSyncStarted.resolve();
+          await lifecycleSyncReleased.promise;
+          return Response.json({ status: "applied" });
+        }
+      }
+      return originalFetch.call(dataService, request);
     });
-    await runInDurableObject(stub, async (instance, state) => {
-      await callAlarm(instance);
-      state.storage.sql.exec(
-        "UPDATE interaction_delivery SET result_not_before = 0",
-      );
-      await callAlarm(instance);
-    });
 
+    try {
+      await runInDurableObject(stub, async (instance, state) => {
+        const roll = instance as unknown as {
+          acceptDelivery(value: unknown): Promise<unknown>;
+        };
+        await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+          status: "created",
+          delivery: "pending",
+        });
+        state.storage.sql.exec("DELETE FROM interaction_delivery");
+
+        const alarm = callAlarm(instance);
+        await lifecycleSyncStarted.promise;
+        await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+          status: "created",
+          delivery: "pending",
+        });
+        lifecycleSyncReleased.resolve();
+        await alarm;
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET result_not_before = 0",
+        );
+        await callAlarm(instance);
+      });
+    } finally {
+      lifecycleSyncReleased.resolve();
+      dataService.fetch = originalFetch;
+    }
+
+    expect(firstLifecycleSnapshot).toMatchObject({
+      interactionId: id,
+      revision: 2,
+      state: "accepted",
+    });
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
     });
@@ -1839,65 +1928,120 @@ describe("RollWork Durable Object", () => {
       fetch: (request: Request) => Promise<Response>;
     };
     const originalFetch = dataService.fetch;
-    let releaseInitialSync = (): void => undefined;
-    let markInitialSyncStarted = (): void => undefined;
-    const initialSyncReleased = new Promise<void>((resolve) => {
-      releaseInitialSync = resolve;
-    });
-    const initialSyncStarted = new Promise<void>((resolve) => {
-      markInitialSyncStarted = resolve;
-    });
-    let firstLifecycleRequest = true;
+    const acceptanceAlarmStarted = controlledSignal();
+    const acceptanceAlarmReleased = controlledSignal();
+    const lifecycleSyncStarted = controlledSignal();
+    const lifecycleSyncReleased = controlledSignal();
+    const accountingStarted = controlledSignal();
+    const accountingReleased = controlledSignal();
+    let acceptanceSettled = false;
+    const lifecycleSnapshots: Array<{
+      interactionId?: unknown;
+      revision?: unknown;
+      state?: unknown;
+    }> = [];
 
     dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
       const path = new URL(request.url).pathname;
-      if (path === "/internal/appearance/v3/effective") {
-        return Response.json({ version: 3, recipes: v4Recipes() });
-      }
       if (path === "/internal/roll-lifecycle") {
-        const snapshot = await request.json<{ interactionId?: unknown }>();
-        if (snapshot.interactionId === id && firstLifecycleRequest) {
-          firstLifecycleRequest = false;
-          markInitialSyncStarted();
-          await initialSyncReleased;
+        const snapshot = await request.clone().json<{
+          interactionId?: unknown;
+          revision?: unknown;
+          state?: unknown;
+        }>();
+        if (snapshot.interactionId === id) {
+          lifecycleSnapshots.push(snapshot);
+          if (acceptanceSettled && lifecycleSnapshots.length === 1) {
+            lifecycleSyncStarted.resolve();
+            await lifecycleSyncReleased.promise;
+          }
+          return Response.json({ status: "applied" });
         }
-        return Response.json({ status: "applied" });
       }
-      throw new Error(`Unexpected acceptance-race request: ${path}`);
+      if (path === "/internal/roll-accounting") {
+        const accounting = await request.clone().json<{
+          interactionId?: unknown;
+        }>();
+        if (accounting.interactionId === id) {
+          accountingStarted.resolve();
+          await accountingReleased.promise;
+          return Response.json({ status: "applied" });
+        }
+      }
+      return originalFetch.call(dataService, request);
     });
 
     try {
       await runInDurableObject(stub, async (instance, state) => {
-        const acceptance = (instance as unknown as {
-          acceptDelivery(value: unknown): Promise<unknown>;
-        }).acceptDelivery(deliveryRequest(id, "delivery-success"));
-        await initialSyncStarted;
-        await callAlarm(instance);
-        releaseInitialSync();
-        await expect(acceptance).resolves.toMatchObject({
-          status: "created",
-          delivery: "pending",
-        });
+        const setAlarm = state.storage.setAlarm.bind(state.storage);
+        const setAlarmSpy = vi.spyOn(state.storage, "setAlarm");
+        setAlarmSpy
+          .mockImplementationOnce(setAlarm)
+          .mockImplementationOnce(async (scheduledTime) => {
+            acceptanceAlarmStarted.resolve();
+            await acceptanceAlarmReleased.promise;
+            await setAlarm(scheduledTime);
+          });
+        try {
+          const acceptance = (instance as unknown as {
+            acceptDelivery(value: unknown): Promise<unknown>;
+          }).acceptDelivery(deliveryRequest(id, "delivery-success"));
+          await acceptanceAlarmStarted.promise;
+          await callAlarm(instance);
+          acceptanceAlarmReleased.resolve();
+          await expect(acceptance).resolves.toMatchObject({
+            status: "created",
+            delivery: "pending",
+          });
+          acceptanceSettled = true;
 
-        const rows = state.storage.sql
-          .exec<{ snapshot_json: string; synced_revision: number }>(
-            "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
-          )
-          .toArray();
-        expect(rows).toHaveLength(1);
-        expect(JSON.parse(rows[0]?.snapshot_json ?? "null")).toMatchObject({
-          state: "accepted",
-          revision: 2,
-        });
-        expect(rows[0]?.synced_revision).toBe(1);
+          expect(lifecycleSnapshots).toEqual([]);
+          const rows = state.storage.sql
+            .exec<{ snapshot_json: string; synced_revision: number }>(
+              "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
+            )
+            .toArray();
+          expect(rows).toHaveLength(1);
+          expect(JSON.parse(rows[0]?.snapshot_json ?? "null")).toMatchObject({
+            state: "accepted",
+            revision: 2,
+          });
+          expect(rows[0]?.synced_revision).toBe(0);
+
+          const alarm = callAlarm(instance);
+          await Promise.all([
+            lifecycleSyncStarted.promise,
+            accountingStarted.promise,
+          ]);
+          const delivery = (): { attempts: number; state: string } =>
+            state.storage.sql
+              .exec<{ attempts: number; state: string }>(
+                "SELECT attempts, state FROM interaction_delivery",
+              )
+              .one();
+          expect(delivery()).toEqual({ attempts: 0, state: "pending" });
+          lifecycleSyncReleased.resolve();
+          await Promise.resolve();
+          expect(delivery()).toEqual({ attempts: 0, state: "pending" });
+          accountingReleased.resolve();
+          await alarm;
+        } finally {
+          acceptanceAlarmReleased.resolve();
+          accountingReleased.resolve();
+          setAlarmSpy.mockRestore();
+        }
       });
     } finally {
-      releaseInitialSync();
+      acceptanceAlarmReleased.resolve();
+      lifecycleSyncReleased.resolve();
+      accountingReleased.resolve();
       dataService.fetch = originalFetch;
     }
 
-    await runInDurableObject(stub, async (instance) => {
-      await callAlarm(instance);
+    expect(lifecycleSnapshots[0]).toMatchObject({
+      interactionId: id,
+      state: "accepted",
+      revision: 2,
     });
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
@@ -2729,33 +2873,98 @@ describe("RollWork Durable Object", () => {
     },
   );
 
-  it("deletes the sensitive token and roll record at expiry", async () => {
+  it("deletes sensitive work at expiry without dropping lifecycle recovery", async () => {
     const id = snowflakeAt(Date.now(), 12);
     const stub = work(id);
     const request = deliveryRequest(id, "delivery-temporary");
     request.message.title = null;
-    await expect(stub.deliver(request)).resolves.toMatchObject({
-      status: "pending",
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    const accountingStarted = controlledSignal();
+    const accountingReleased = controlledSignal();
+    dataService.fetch = vi.fn(async (dataRequest: Request): Promise<Response> => {
+      const path = new URL(dataRequest.url).pathname;
+      if (path === "/internal/roll-lifecycle") {
+        const lifecycle = await dataRequest.clone().json<{
+          interactionId?: unknown;
+        }>();
+        if (lifecycle.interactionId === id) {
+          return Response.json({ error: "temporary" }, { status: 503 });
+        }
+      }
+      if (path === "/internal/roll-accounting") {
+        const accounting = await dataRequest.clone().json<{
+          interactionId?: unknown;
+        }>();
+        if (accounting.interactionId === id) {
+          accountingStarted.resolve();
+          await accountingReleased.promise;
+          return Response.json({ status: "applied" });
+        }
+      }
+      return originalFetch.call(dataService, dataRequest);
     });
 
+    try {
+      await runInDurableObject(stub, async (instance, state) => {
+        const roll = instance as unknown as {
+          acceptDelivery(value: unknown): Promise<unknown>;
+          deliver(value: unknown): Promise<unknown>;
+        };
+        await expect(roll.acceptDelivery(request)).resolves.toMatchObject({
+          status: "created",
+          delivery: "pending",
+        });
+        const delivery = roll.deliver(request);
+        await accountingStarted.promise;
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET expires_at = 0",
+        );
+        accountingReleased.resolve();
+        await expect(delivery).resolves.toEqual({ status: "expired" });
+      });
+    } finally {
+      accountingReleased.resolve();
+      dataService.fetch = originalFetch;
+    }
+
+    await expect(stub.deliveryStatus()).resolves.toEqual({ state: "missing" });
     await runInDurableObject(stub, async (instance, state) => {
-      state.storage.sql.exec(
-        "UPDATE interaction_delivery SET expires_at = 0",
-      );
-      await callAlarm(instance);
-      expect(
-        state.storage.sql.exec<{ count: number }>(
-          "SELECT COUNT(*) AS count FROM interaction_delivery",
-        ).one().count,
-      ).toBe(0);
       expect(
         state.storage.sql.exec<{ count: number }>(
           "SELECT COUNT(*) AS count FROM roll_work",
         ).one().count,
       ).toBe(0);
+      const lifecycle = state.storage.sql
+        .exec<{
+          next_sync_at: number;
+          snapshot_json: string;
+          synced_revision: number;
+        }>(
+          `SELECT next_sync_at, snapshot_json, synced_revision
+           FROM roll_lifecycle_outbox`,
+        )
+        .one();
+      expect(JSON.parse(lifecycle.snapshot_json)).toMatchObject({
+        state: "failed",
+        failureCode: "delivery-expired",
+      });
+      expect(lifecycle.synced_revision).toBe(0);
+      expect(await state.storage.getAlarm()).toBe(lifecycle.next_sync_at);
+
+      state.storage.sql.exec(
+        "UPDATE roll_lifecycle_outbox SET next_sync_at = 0",
+      );
+      await callAlarm(instance);
+      expect(
+        state.storage.sql.exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM roll_lifecycle_outbox",
+        ).one().count,
+      ).toBe(0);
       expect(await state.storage.getAlarm()).toBeNull();
     });
-    await expect(stub.deliveryStatus()).resolves.toEqual({ state: "missing" });
   });
 
   it("rejects expired and mismatched interaction identities", async () => {

@@ -1439,14 +1439,12 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       return accepted;
     }
+    await this.runPreDeliveryBookkeeping();
     if (accepted.delivery === "delivered" || accepted.delivery === "failed") {
-      await this.runAccounting();
-      await this.syncLifecycle();
       await this.runHelper();
       await this.scheduleAfterAttempts(accepted.expiresAt);
       return { status: accepted.delivery };
     }
-    await this.runAccounting();
     const result = await this.runDelivery();
     await this.syncLifecycle();
     await this.runHelper();
@@ -1512,7 +1510,6 @@ export class RollWork extends DurableObject<RollEnv> {
   ): Promise<AcceptRollDeliveryResult> {
     this.initializeLifecycleSnapshot(delivery, record);
     await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
-    await this.syncLifecycle();
     const metadataJson = deliveryMetadata(delivery);
     const fingerprint = await tokenFingerprint(delivery.interaction.token);
     const acceptedAt = Date.now();
@@ -2012,94 +2009,42 @@ export class RollWork extends DurableObject<RollEnv> {
     }
   }
 
-  private async rescheduleAlarmForActiveAcceptance(): Promise<boolean> {
-    // External lifecycle sync can yield to an alarm before acceptance is stored.
-    if (this.activeAcceptances === 0 || this.readDelivery() !== undefined) {
-      return false;
-    }
+  private async rescheduleAlarmForActiveWork(): Promise<boolean> {
+    // Alarm work must not overtake durable acceptance or provider side effects.
+    if (this.activeAcceptances === 0 && this.activeDelivery === null) return false;
     await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
     return true;
   }
 
   private async processAlarm(): Promise<void> {
     this.deleteExpiredSaveRollIntent();
-    if (await this.rescheduleAlarmForActiveAcceptance()) return;
-    await this.syncLifecycle();
-    const delivery = this.readDelivery();
+    if (await this.rescheduleAlarmForActiveWork()) return;
+    let delivery = this.readDelivery();
     if (delivery === undefined) {
-      if (await this.rescheduleAlarmForActiveAcceptance()) return;
-      const lifecycle = this.readLifecycleOutbox();
-      if (
-        lifecycle !== undefined &&
-        lifecycle.synced_revision <
-          parseRollLifecycleSnapshot(JSON.parse(lifecycle.snapshot_json)).revision
-      ) {
-        await this.ctx.storage.setAlarm(lifecycle.next_sync_at);
-        return;
-      }
-      this.deleteStoredWork();
-      await this.scheduleSaveRollIntentExpiry();
-      return;
-    }
-    if (Date.now() >= delivery.expires_at) {
-      if (
-        delivery.state === "delivered" &&
-        delivery.logging_state === "pending" &&
-        this.readSourceLogRow() !== undefined
-      ) {
-        await this.runLogging();
-        const current = this.readDelivery();
-        const source = this.readSourceLogRow();
+      await this.syncLifecycle();
+      if (await this.rescheduleAlarmForActiveWork()) return;
+      // Lifecycle I/O yields, so acceptance may have stored delivery meanwhile.
+      delivery = this.readDelivery();
+      if (delivery === undefined) {
+        const lifecycle = this.readLifecycleOutbox();
         if (
-          current?.logging_state === "pending" &&
-          source?.handoff_until !== null &&
-          source?.handoff_until !== undefined &&
-          Date.now() < source.handoff_until
+          lifecycle !== undefined &&
+          lifecycle.synced_revision <
+            parseRollLifecycleSnapshot(JSON.parse(lifecycle.snapshot_json)).revision
         ) {
-          await this.ctx.storage.setAlarm(
-            Math.min(
-              Date.now() + retryDelayMs(current.logging_attempts),
-              source.handoff_until,
-            ),
-          );
+          await this.ctx.storage.setAlarm(lifecycle.next_sync_at);
           return;
         }
-      }
-      if (delivery.state === "pending") {
-        const completedAt = Date.now();
-        this.advanceLifecycle({
-          state: "failed",
-          occurredAt: completedAt,
-          attempts: delivery.attempts,
-          httpStatus: delivery.last_http_status,
-          failurePhase: delivery.failure_phase ?? "expired",
-          failureCode: "delivery-expired",
-        });
-        this.logDestinationCompletion({
-          rollId: parseDeliveryMetadata(delivery.metadata_json).interactionId,
-          state: "failed",
-          attempts: delivery.attempts,
-          httpStatus: delivery.last_http_status,
-          failurePhase: delivery.failure_phase ?? "expired",
-          completedAt,
-        });
-      }
-      await this.syncLifecycle();
-      const lifecycle = this.readLifecycleOutbox();
-      if (
-        lifecycle !== undefined &&
-        lifecycle.synced_revision <
-          parseRollLifecycleSnapshot(JSON.parse(lifecycle.snapshot_json)).revision
-      ) {
-        this.deleteSensitiveWorkPreservingLifecycle();
-        await this.ctx.storage.setAlarm(lifecycle.next_sync_at);
+        this.deleteStoredWork();
+        await this.scheduleSaveRollIntentExpiry();
         return;
       }
-      this.deleteStoredWork();
-      await this.scheduleSaveRollIntentExpiry();
+    }
+    if (Date.now() >= delivery.expires_at) {
+      await this.finalizeExpiredDelivery(delivery);
       return;
     }
-    await this.runAccounting();
+    await this.runPreDeliveryBookkeeping();
     const current = this.readDelivery();
     if (current === undefined) return;
     if (current.state === "pending") {
@@ -2109,6 +2054,67 @@ export class RollWork extends DurableObject<RollEnv> {
     await this.runHelper();
     await this.runLogging();
     await this.scheduleAfterAttempts(current.expires_at);
+  }
+
+  private async finalizeExpiredDelivery(
+    delivery: StoredDeliveryRow,
+  ): Promise<void> {
+    if (
+      delivery.state === "delivered" &&
+      delivery.logging_state === "pending" &&
+      this.readSourceLogRow() !== undefined
+    ) {
+      await this.runLogging();
+      const current = this.readDelivery();
+      const source = this.readSourceLogRow();
+      if (
+        current?.logging_state === "pending" &&
+        source?.handoff_until !== null &&
+        source?.handoff_until !== undefined &&
+        Date.now() < source.handoff_until
+      ) {
+        await this.ctx.storage.setAlarm(
+          Math.min(
+            Date.now() + retryDelayMs(current.logging_attempts),
+            source.handoff_until,
+          ),
+        );
+        return;
+      }
+    }
+    if (delivery.state === "pending") {
+      const completedAt = Date.now();
+      const failurePhase = delivery.failure_phase ?? "expired";
+      this.advanceLifecycle({
+        state: "failed",
+        occurredAt: completedAt,
+        attempts: delivery.attempts,
+        httpStatus: delivery.last_http_status,
+        failurePhase,
+        failureCode: "delivery-expired",
+      });
+      this.logDestinationCompletion({
+        rollId: parseDeliveryMetadata(delivery.metadata_json).interactionId,
+        state: "failed",
+        attempts: delivery.attempts,
+        httpStatus: delivery.last_http_status,
+        failurePhase,
+        completedAt,
+      });
+    }
+    await this.syncLifecycle();
+    const lifecycle = this.readLifecycleOutbox();
+    if (
+      lifecycle !== undefined &&
+      lifecycle.synced_revision <
+        parseRollLifecycleSnapshot(JSON.parse(lifecycle.snapshot_json)).revision
+    ) {
+      this.deleteSensitiveWorkPreservingLifecycle();
+      await this.ctx.storage.setAlarm(lifecycle.next_sync_at);
+      return;
+    }
+    this.deleteStoredWork();
+    await this.scheduleSaveRollIntentExpiry();
   }
 
   private async handleUnexpectedAlarmFailure(): Promise<void> {
@@ -2148,6 +2154,11 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     await this.syncLifecycle();
     await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
+  }
+
+  private async runPreDeliveryBookkeeping(): Promise<void> {
+    // Both operations must settle before delivery, but neither depends on the other.
+    await Promise.all([this.syncLifecycle(), this.runAccounting()]);
   }
 
   private runAccounting(): Promise<void> {
@@ -2786,8 +2797,7 @@ export class RollWork extends DurableObject<RollEnv> {
     const delivery = this.readDelivery();
     if (delivery === undefined) return { status: "conflict" };
     if (Date.now() >= delivery.expires_at) {
-      this.deleteStoredWork();
-      await this.scheduleSaveRollIntentExpiry();
+      await this.finalizeExpiredDelivery(delivery);
       return { status: "expired" };
     }
     if (delivery.state !== "pending") return { status: delivery.state };
