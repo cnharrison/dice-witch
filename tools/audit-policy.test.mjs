@@ -10,14 +10,42 @@ function undiciAdvisory() {
       {
         source: 1_130_715,
         url: "https://github.com/advisories/GHSA-8xcm-r25x-g524",
+        severity: "moderate",
       },
       {
         source: 1_130_716,
         url: "https://github.com/advisories/GHSA-8xcm-r25x-g524",
+        severity: "moderate",
       },
       {
         source: 1_130_718,
         url: "https://github.com/advisories/GHSA-4cwx-7wf7-3272",
+        severity: "high",
+      },
+      {
+        source: 1_130_726,
+        url: "https://github.com/advisories/GHSA-m8rv-5g2x-5cg5",
+        severity: "moderate",
+      },
+      {
+        source: 1_130_727,
+        url: "https://github.com/advisories/GHSA-m8rv-5g2x-5cg5",
+        severity: "moderate",
+      },
+      {
+        source: 1_130_729,
+        url: "https://github.com/advisories/GHSA-jr45-8vmc-qm54",
+        severity: "moderate",
+      },
+      {
+        source: 1_130_731,
+        url: "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
+        severity: "moderate",
+      },
+      {
+        source: 1_130_732,
+        url: "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
+        severity: "moderate",
       },
     ],
     effects: ["miniflare"],
@@ -66,9 +94,12 @@ test("allows only bounded unreachable advisories before expiry", () => {
           urls: [
             "https://github.com/advisories/GHSA-8xcm-r25x-g524",
             "https://github.com/advisories/GHSA-4cwx-7wf7-3272",
+            "https://github.com/advisories/GHSA-m8rv-5g2x-5cg5",
+            "https://github.com/advisories/GHSA-jr45-8vmc-qm54",
+            "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
           ],
           reason:
-            "the high-severity cache interceptor is not configured; retry interception may run only in development tooling and its advisory is moderate",
+            "the high-severity cache interceptor is not configured; the remaining advisories are moderate and all affected packages are development-only",
           expiresAt: "2026-08-05T00:00:00.000Z",
         },
       ],
@@ -106,6 +137,20 @@ test("rejects any changed undici advisory chain", () => {
     () =>
       evaluateAuditReport(
         report({ undici: changed }),
+        Date.parse("2026-08-03T00:00:00Z"),
+      ),
+    /blocking packages: undici/,
+  );
+});
+
+test("rejects an undici advisory severity escalation", () => {
+  const escalated = undiciAdvisory();
+  escalated.via[0].severity = "critical";
+
+  assert.throws(
+    () =>
+      evaluateAuditReport(
+        report({ undici: escalated }),
         Date.parse("2026-08-03T00:00:00Z"),
       ),
     /blocking packages: undici/,

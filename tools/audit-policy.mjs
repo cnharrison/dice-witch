@@ -14,9 +14,46 @@ const REACT_ROUTER_EXCEPTION = {
 const UNDICI_EXCEPTION = {
   package: "undici",
   advisories: [
-    [1_130_715, "https://github.com/advisories/GHSA-8xcm-r25x-g524"],
-    [1_130_716, "https://github.com/advisories/GHSA-8xcm-r25x-g524"],
-    [1_130_718, "https://github.com/advisories/GHSA-4cwx-7wf7-3272"],
+    [
+      1_130_715,
+      "https://github.com/advisories/GHSA-8xcm-r25x-g524",
+      "moderate",
+    ],
+    [
+      1_130_716,
+      "https://github.com/advisories/GHSA-8xcm-r25x-g524",
+      "moderate",
+    ],
+    [
+      1_130_718,
+      "https://github.com/advisories/GHSA-4cwx-7wf7-3272",
+      "high",
+    ],
+    [
+      1_130_726,
+      "https://github.com/advisories/GHSA-m8rv-5g2x-5cg5",
+      "moderate",
+    ],
+    [
+      1_130_727,
+      "https://github.com/advisories/GHSA-m8rv-5g2x-5cg5",
+      "moderate",
+    ],
+    [
+      1_130_729,
+      "https://github.com/advisories/GHSA-jr45-8vmc-qm54",
+      "moderate",
+    ],
+    [
+      1_130_731,
+      "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
+      "moderate",
+    ],
+    [
+      1_130_732,
+      "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
+      "moderate",
+    ],
   ],
   range: "<=6.27.0 || 7.0.0 - 7.28.0",
   effects: ["miniflare"],
@@ -27,9 +64,12 @@ const UNDICI_EXCEPTION = {
   urls: [
     "https://github.com/advisories/GHSA-8xcm-r25x-g524",
     "https://github.com/advisories/GHSA-4cwx-7wf7-3272",
+    "https://github.com/advisories/GHSA-m8rv-5g2x-5cg5",
+    "https://github.com/advisories/GHSA-jr45-8vmc-qm54",
+    "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
   ],
   reason:
-    "the high-severity cache interceptor is not configured; retry interception may run only in development tooling and its advisory is moderate",
+    "the high-severity cache interceptor is not configured; the remaining advisories are moderate and all affected packages are development-only",
   expiresAt: Date.parse("2026-08-05T00:00:00Z"),
 };
 
@@ -72,8 +112,9 @@ function isAllowedUndiciAdvisory(name, vulnerability) {
     .map((advisory) =>
       isRecord(advisory) &&
         typeof advisory.source === "number" &&
-        typeof advisory.url === "string"
-        ? [advisory.source, advisory.url]
+        typeof advisory.url === "string" &&
+        typeof advisory.severity === "string"
+        ? [advisory.source, advisory.url, advisory.severity]
         : null)
     .filter((advisory) => advisory !== null)
     .sort(([first], [second]) => first - second);
