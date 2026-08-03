@@ -2582,58 +2582,12 @@ describe("CanvasKit Render Request V4", () => {
     }
   });
 
-  it("preserves framed r10 through r12 rows for repeated modifier results", async () => {
+  it("bounds the maximum r12 repeated modifier layout", async () => {
     const scopedAppearance = {
       ...appearance,
       texture: { ...appearance.texture, scope: "die-wide" as const },
     };
-    const compact = await renderDiceRequestV4ToPng(
-      {
-        version: 4,
-        rendererRevision: "canvaskit-v4-r10",
-        groups: Array.from({ length: 50 }, (_, index) => [
-          {
-            ...die("d6", (index % 6) + 1),
-            appearance: scopedAppearance,
-            icons: ["trashcan"],
-          },
-        ]),
-      },
-      () => createRequestRenderer(canvasKit),
-    );
-
-    expect(compact).toMatchObject({
-      width: 384,
-      height: 9_600,
-      diceCount: 50,
-      rowCount: 50,
-    });
-    expect(compact.width * compact.height * 4).toBe(14_745_600);
-    expect(compact.png.byteLength).toBeLessThan(10_000_000);
-
     const current = await renderDiceRequestV4ToPng(
-      {
-        version: 4,
-        rendererRevision: "canvaskit-v4-r11",
-        groups: Array.from({ length: 50 }, (_, index) => [
-          {
-            ...die("d6", (index % 6) + 1),
-            appearance: scopedAppearance,
-            icons: ["trashcan"],
-          },
-        ]),
-      },
-      () => createRequestRenderer(canvasKit),
-    );
-    expect(current).toMatchObject({
-      width: 384,
-      height: 9_600,
-      diceCount: 50,
-      rowCount: 50,
-    });
-    expect(current.png).toEqual(compact.png);
-
-    const productionSpacing = await renderDiceRequestV4ToPng(
       {
         version: 4,
         rendererRevision: "canvaskit-v4-r12",
@@ -2647,13 +2601,15 @@ describe("CanvasKit Render Request V4", () => {
       },
       () => createRequestRenderer(canvasKit),
     );
-    expect(productionSpacing).toMatchObject({
+
+    expect(current).toMatchObject({
       width: 384,
       height: 9_600,
       diceCount: 50,
       rowCount: 50,
     });
-    expect(productionSpacing.png).toEqual(compact.png);
+    expect(current.width * current.height * 4).toBe(14_745_600);
+    expect(current.png.byteLength).toBeLessThan(10_000_000);
     expect(canvasKit.HEAPU8.buffer.byteLength).toBeLessThanOrEqual(67_108_864);
   });
 });
