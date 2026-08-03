@@ -472,6 +472,22 @@ function wrappedGroupRows<Die>(
   );
 }
 
+function balancedGroupRows<Die>(
+  groups: readonly (readonly Die[])[],
+): readonly (readonly Die[])[] {
+  return groups.flatMap((group) => {
+    const rowCount = Math.ceil(group.length / MAX_GRID_COLUMNS_V4);
+    const shortRowLength = Math.floor(group.length / rowCount);
+    const longRowCount = group.length % rowCount;
+    return Array.from({ length: rowCount }, (_, rowIndex) => {
+      const offset =
+        rowIndex * shortRowLength + Math.min(rowIndex, longRowCount);
+      const rowLength = shortRowLength + (rowIndex < longRowCount ? 1 : 0);
+      return group.slice(offset, offset + rowLength);
+    });
+  });
+}
+
 function packCompactGridRows<Die>(
   groups: readonly (readonly Die[])[],
   columnCount: number,
@@ -540,7 +556,11 @@ function groupRowSpacingV4(
   if (layout === "group-rows-r11") {
     return { mode: "visual-gap", pixels: GROUP_ROW_DIE_GAP_R11_V4 };
   }
-  if (layout === "group-rows-r12" || layout === "group-rows-r13") {
+  if (
+    layout === "group-rows-r12" ||
+    layout === "group-rows-r13" ||
+    layout === "group-rows-r14"
+  ) {
     return { mode: "fixed-stride", pixels: GROUP_ROW_DIE_STRIDE_R12_V4 };
   }
   return undefined;
@@ -580,6 +600,8 @@ function geometryGridLayout<Die>(
   let rows: readonly (readonly Die[])[];
   if (layout === "legacy" || layout === "group-rows-r13") {
     rows = wrappedGroupRows(groups);
+  } else if (layout === "group-rows-r14") {
+    rows = balancedGroupRows(groups);
   } else if (layout === "compact-r9") {
     rows = compactGridRows(groups, rowHeight);
   } else {
