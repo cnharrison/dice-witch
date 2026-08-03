@@ -2732,7 +2732,11 @@ describe("RollWork Durable Object", () => {
   it("deletes the sensitive token and roll record at expiry", async () => {
     const id = snowflakeAt(Date.now(), 12);
     const stub = work(id);
-    await stub.acceptDelivery(deliveryRequest(id));
+    const request = deliveryRequest(id, "delivery-temporary");
+    request.message.title = null;
+    await expect(stub.deliver(request)).resolves.toMatchObject({
+      status: "pending",
+    });
 
     await runInDurableObject(stub, async (instance, state) => {
       state.storage.sql.exec(
