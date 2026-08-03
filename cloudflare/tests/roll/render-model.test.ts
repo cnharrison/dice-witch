@@ -724,7 +724,7 @@ describe("buildRollRenderRequestV4", () => {
     );
 
     expect(request.version).toBe(4);
-    expect(request.rendererRevision).toBe("canvaskit-v4-r8");
+    expect(request.rendererRevision).toBe("canvaskit-v4-r12");
     expect(
       request.groups.flatMap((group) =>
         group.map(({ target }) => target),

@@ -28,10 +28,51 @@ describe("V4 renderer revision policies", () => {
     expect(revision7.modifierIcons).toBe("legacy-r1");
   });
 
+  it("inherits every r8 policy in r9 except the compact grid layout", () => {
+    const revision8 = rendererRevisionPolicyV4("canvaskit-v4-r8");
+    const revision9 = rendererRevisionPolicyV4("canvaskit-v4-r9");
+
+    expect(revision9).toEqual({
+      ...revision8,
+      gridLayout: "compact-r9",
+    });
+    expect(revision8.gridLayout).toBe("legacy");
+  });
+
+  it("inherits every r9 policy in r10 except the grouped-row layout", () => {
+    const revision9 = rendererRevisionPolicyV4("canvaskit-v4-r9");
+    const revision10 = rendererRevisionPolicyV4("canvaskit-v4-r10");
+
+    expect(revision10).toEqual({
+      ...revision9,
+      gridLayout: "group-rows-r10",
+    });
+  });
+
+  it("inherits every r10 policy in r11 except the wider grouped-row gap", () => {
+    const revision10 = rendererRevisionPolicyV4("canvaskit-v4-r10");
+    const revision11 = rendererRevisionPolicyV4("canvaskit-v4-r11");
+
+    expect(revision11).toEqual({
+      ...revision10,
+      gridLayout: "group-rows-r11",
+    });
+  });
+
+  it("inherits every r11 policy in r12 except production center spacing", () => {
+    const revision11 = rendererRevisionPolicyV4("canvaskit-v4-r11");
+    const revision12 = rendererRevisionPolicyV4("canvaskit-v4-r12");
+
+    expect(revision12).toEqual({
+      ...revision11,
+      gridLayout: "group-rows-r12",
+    });
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r9" as RendererRevisionV4,
+        "canvaskit-v4-r13" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

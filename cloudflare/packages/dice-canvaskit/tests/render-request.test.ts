@@ -191,7 +191,8 @@ function gradientScopeRequest(
     | "canvaskit-v4-r5"
     | "canvaskit-v4-r6"
     | "canvaskit-v4-r7"
-    | "canvaskit-v4-r8",
+    | "canvaskit-v4-r8"
+    | "canvaskit-v4-r9",
   scope?: "die-wide" | "face-local",
 ): RenderRequestV4 {
   return {
@@ -347,6 +348,47 @@ function transparentPixelCount(pixels: Uint8Array): number {
   return count;
 }
 
+function cropRgba(
+  pixels: Uint8Array,
+  sourceWidth: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Uint8Array {
+  const cropped = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row += 1) {
+    const start = (((y + row) * sourceWidth) + x) * 4;
+    cropped.set(pixels.subarray(start, start + (width * 4)), row * width * 4);
+  }
+  return cropped;
+}
+
+function maximumChannelDifference(
+  first: Uint8Array,
+  second: Uint8Array,
+): number {
+  if (first.length !== second.length) {
+    throw new Error("CanvasKit V4 test pixel lengths differ");
+  }
+  let maximum = 0;
+  for (let index = 0; index < first.length; index += 1) {
+    maximum = Math.max(
+      maximum,
+      Math.abs((first[index] as number) - (second[index] as number)),
+    );
+  }
+  return maximum;
+}
+
+function alphaChannels(pixels: Uint8Array): Uint8Array {
+  const alpha = new Uint8Array(pixels.length / 4);
+  for (let index = 3; index < pixels.length; index += 4) {
+    alpha[(index - 3) / 4] = pixels[index] as number;
+  }
+  return alpha;
+}
+
 function partialAlphaPixelCount(
   pixels: Uint8Array,
   width: number,
@@ -406,6 +448,27 @@ function gridCellPixels(
     );
   }
   return cell;
+}
+
+function alphaColumnRuns(
+  pixels: Uint8Array,
+  width: number,
+): { left: number; right: number }[] {
+  const height = pixels.length / (width * 4);
+  const occupied = Array.from({ length: width }, (_, x) => {
+    for (let y = 0; y < height; y += 1) {
+      if (pixelAlpha(pixels, width, x, y) > 0) return true;
+    }
+    return false;
+  });
+  const runs: { left: number; right: number }[] = [];
+  for (let x = 0; x < width; x += 1) {
+    if (occupied[x] !== true) continue;
+    const left = x;
+    while (x + 1 < width && occupied[x + 1] === true) x += 1;
+    runs.push({ left, right: x });
+  }
+  return runs;
 }
 
 function alphaBounds(
@@ -1181,6 +1244,691 @@ describe("CanvasKit Render Request V4", () => {
     );
   });
 
+  it("frames every single-die type without changing its artwork", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const requestFor = (
+      target: RenderDieV4["target"],
+      result: number,
+      rendererRevision:
+        | "canvaskit-v4-r8"
+        | "canvaskit-v4-r9"
+        | "canvaskit-v4-r10"
+        | "canvaskit-v4-r11"
+        | "canvaskit-v4-r12",
+    ) => ({
+      version: 4 as const,
+      rendererRevision,
+      groups: [[{ ...die(target, result), appearance: scopedAppearance }]],
+    });
+
+    for (const [target, result] of [
+      ["d4", 4],
+      ["d6", 6],
+      ["d8", 8],
+      ["d10", 10],
+      ["d12", 12],
+      ["d20", 20],
+      ["percentile", 90],
+      ["fudge", -1],
+      ["other", 999],
+    ] as const) {
+      const [
+        legacy,
+        compact,
+        groupedRows,
+        wideGroupedRows,
+        productionSpacingRows,
+      ] = await Promise.all([
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r8"),
+          createRenderer,
+        ),
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r9"),
+          createRenderer,
+        ),
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r10"),
+          createRenderer,
+        ),
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r11"),
+          createRenderer,
+        ),
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r12"),
+          createRenderer,
+        ),
+      ]);
+      expect(compact).toMatchObject({
+        rendererRevision: "canvaskit-v4-r9",
+        width: 300,
+        height: 150,
+        diceCount: 1,
+        rowCount: 1,
+      });
+      expect(groupedRows).toMatchObject({
+        rendererRevision: "canvaskit-v4-r10",
+        width: 300,
+        height: 150,
+        diceCount: 1,
+        rowCount: 1,
+      });
+      expect(wideGroupedRows).toMatchObject({
+        rendererRevision: "canvaskit-v4-r11",
+        width: 300,
+        height: 150,
+        diceCount: 1,
+        rowCount: 1,
+      });
+      expect(productionSpacingRows).toMatchObject({
+        rendererRevision: "canvaskit-v4-r12",
+        width: 300,
+        height: 150,
+        diceCount: 1,
+        rowCount: 1,
+      });
+      expect(groupedRows.png).toEqual(compact.png);
+      expect(wideGroupedRows.png).toEqual(compact.png);
+      expect(productionSpacingRows.png).toEqual(compact.png);
+      const [legacyPixels, compactPixels] = await Promise.all([
+        decodePngRgba8(legacy.png),
+        decodePngRgba8(compact.png),
+      ]);
+      const compactDie = cropRgba(
+        compactPixels.pixels,
+        compact.width,
+        75,
+        0,
+        150,
+        150,
+      );
+      expect(alphaChannels(compactDie)).toEqual(
+        alphaChannels(legacyPixels.pixels),
+      );
+      expect(maximumChannelDifference(compactDie, legacyPixels.pixels))
+        .toBeLessThanOrEqual(1);
+    }
+
+    const modified = requestFor("d20", 20, "canvaskit-v4-r10");
+    const modifiedDie = modified.groups[0]?.[0];
+    if (modifiedDie === undefined) throw new Error("Modified test die is missing");
+    modifiedDie.icons = ["trashcan"];
+    await expect(
+      renderDiceRequestV4ToPng(modified, createRenderer),
+    ).resolves.toMatchObject({ width: 384, height: 192 });
+  });
+
+  it("packs three repeated 3-die groups into two centered r9 rows", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const groups = Array.from({ length: 3 }, (_, groupIndex) =>
+      Array.from({ length: 3 }, (_, dieIndex) => ({
+        ...die("d8", ((groupIndex * 3 + dieIndex) % 8) + 1),
+        appearance: scopedAppearance,
+      })),
+    );
+
+    const compact = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r9",
+        groups,
+      },
+      createRenderer,
+    );
+
+    expect(compact).toMatchObject({
+      rendererRevision: "canvaskit-v4-r9",
+      width: 900,
+      height: 300,
+      diceCount: 9,
+      rowCount: 2,
+    });
+    const decoded = await decodePngRgba8(compact.png);
+    const lowerRow = cropRgba(
+      decoded.pixels,
+      compact.width,
+      225,
+      150,
+      450,
+      150,
+    );
+    expect(transparentPixelCount(lowerRow)).toBeLessThan(lowerRow.length / 4);
+    for (const margin of [
+      cropRgba(decoded.pixels, compact.width, 0, 150, 225, 150),
+      cropRgba(decoded.pixels, compact.width, 675, 150, 225, 150),
+    ]) {
+      expect(transparentPixelCount(margin)).toBe(margin.length / 4);
+    }
+  });
+
+  it("uses one compact r10 row per repetition with a visible die gap", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const pairGap = async (
+      firstDie: RenderDieV4,
+      secondDie: RenderDieV4,
+    ): Promise<number> => {
+      const rendered = await renderDiceRequestV4ToPng(
+        {
+          version: 4,
+          rendererRevision: "canvaskit-v4-r10",
+          groups: [[firstDie, secondDie]],
+        },
+        createRenderer,
+      );
+      expect(rendered.rowCount).toBe(1);
+      const decoded = await decodePngRgba8(rendered.png);
+      const runs = alphaColumnRuns(decoded.pixels, decoded.width);
+      expect(runs).toHaveLength(2);
+      const first = runs[0];
+      const second = runs[1];
+      if (first === undefined || second === undefined) {
+        throw new Error("Expected two rendered dice");
+      }
+      return second.left - first.right - 1;
+    };
+    const targets = [
+      ["d4", 4],
+      ["d6", 6],
+      ["d8", 8],
+      ["d10", 10],
+      ["d12", 12],
+      ["d20", 20],
+      ["percentile", 90],
+      ["fudge", -1],
+      ["other", 999],
+    ] as const;
+
+    for (const [target, result] of targets) {
+      const alternateResult = target === "percentile" ? 0 : 1;
+      const gap = await pairGap(
+        { ...die(target, result), appearance: scopedAppearance },
+        { ...die(target, alternateResult), appearance: scopedAppearance },
+      );
+      expect(gap, target).toBe(8);
+    }
+
+    const criticalAppearance: RenderAppearanceV4 = {
+      ...scopedAppearance,
+      effect: {
+        state: "critical-success",
+        treatment: "classic-glow",
+        color: "#ffd447",
+        intensity: 72,
+      },
+    };
+    const criticalGap = await pairGap(
+      {
+        ...die("d20", 20),
+        appearance: criticalAppearance,
+        icons: ["critical-success"],
+      },
+      {
+        ...die("d20", 1),
+        appearance: criticalAppearance,
+        icons: ["critical-success"],
+      },
+    );
+    expect(criticalGap).toBeGreaterThanOrEqual(8);
+    expect(criticalGap).toBeLessThanOrEqual(12);
+
+    const separatedAppearance: RenderAppearanceV4 = {
+      ...scopedAppearance,
+      requiresLocalSeparation: true,
+    };
+    expect(
+      await pairGap(
+        { ...die("d8", 8), appearance: separatedAppearance },
+        { ...die("d8", 1), appearance: separatedAppearance },
+      ),
+    ).toBe(8);
+
+    const modifierGap = await pairGap(
+      {
+        ...die("d8", 8),
+        appearance: scopedAppearance,
+        icons: ["trashcan", "explosion", "recycle"],
+      },
+      {
+        ...die("d8", 1),
+        appearance: scopedAppearance,
+        icons: ["blank", "penetrate", "unique"],
+      },
+    );
+    expect(modifierGap).toBeGreaterThanOrEqual(8);
+    expect(modifierGap).toBeLessThanOrEqual(10);
+
+    const mixed = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r10",
+        groups: [targets.map(([target, result]) => ({
+          ...die(target, result),
+          appearance: scopedAppearance,
+        }))],
+      },
+      createRenderer,
+    );
+    const mixedPixels = await decodePngRgba8(mixed.png);
+    const mixedRuns = alphaColumnRuns(mixedPixels.pixels, mixedPixels.width);
+    expect(mixedRuns).toHaveLength(targets.length);
+    for (let index = 1; index < mixedRuns.length; index += 1) {
+      const previous = mixedRuns[index - 1];
+      const current = mixedRuns[index];
+      if (previous === undefined || current === undefined) {
+        throw new Error("Expected adjacent rendered dice");
+      }
+      expect(current.left - previous.right - 1).toBe(8);
+    }
+    const mixedFirst = mixedRuns[0];
+    const mixedLast = mixedRuns.at(-1);
+    if (mixedFirst === undefined || mixedLast === undefined) {
+      throw new Error("Expected mixed rendered dice");
+    }
+    expect(
+      Math.abs(mixedFirst.left - (mixed.width - mixedLast.right - 1)),
+    ).toBeLessThanOrEqual(1);
+
+    const groups = Array.from({ length: 3 }, (_, groupIndex) =>
+      Array.from({ length: 3 }, (_, dieIndex) => ({
+        ...die("d8", ((groupIndex * 3 + dieIndex) % 8) + 1),
+        appearance: scopedAppearance,
+      })),
+    );
+    const firstGroup = groups[0];
+    if (firstGroup === undefined) throw new Error("Expected a repetition group");
+    const singleRepetition = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r10",
+        groups: [firstGroup],
+      },
+      createRenderer,
+    );
+    expect(singleRepetition).toMatchObject({
+      width: 346,
+      height: 150,
+      diceCount: 3,
+      rowCount: 1,
+    });
+
+    const repeated = await renderDiceRequestV4ToPng(
+      { version: 4, rendererRevision: "canvaskit-v4-r10", groups },
+      createRenderer,
+    );
+    expect(repeated).toMatchObject({
+      width: 346,
+      height: 450,
+      diceCount: 9,
+      rowCount: 3,
+    });
+    const repeatedPixels = await decodePngRgba8(repeated.png);
+    for (let row = 0; row < 3; row += 1) {
+      const rowPixels = cropRgba(
+        repeatedPixels.pixels,
+        repeated.width,
+        0,
+        row * 150,
+        repeated.width,
+        150,
+      );
+      const runs = alphaColumnRuns(rowPixels, repeated.width);
+      expect(runs).toHaveLength(3);
+      for (let index = 1; index < runs.length; index += 1) {
+        const previous = runs[index - 1];
+        const current = runs[index];
+        if (previous === undefined || current === undefined) {
+          throw new Error("Expected adjacent repeated dice");
+        }
+        expect(current.left - previous.right - 1).toBe(8);
+      }
+      const first = runs[0];
+      const last = runs.at(-1);
+      if (first === undefined || last === undefined) {
+        throw new Error("Expected repeated dice");
+      }
+      expect(
+        Math.abs(first.left - (repeated.width - last.right - 1)),
+      ).toBeLessThanOrEqual(1);
+    }
+
+    const maximumSingleRepetition = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r10",
+        groups: [Array.from({ length: 50 }, (_, index) => ({
+          ...die("d6", (index % 6) + 1),
+          appearance: scopedAppearance,
+        }))],
+      },
+      createRenderer,
+    );
+    expect(maximumSingleRepetition).toMatchObject({
+      width: 5_736,
+      height: 150,
+      diceCount: 50,
+      rowCount: 1,
+    });
+
+    const maximumWideGapRepetition = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r11",
+        groups: [Array.from({ length: 50 }, (_, index) => ({
+          ...die("d6", (index % 6) + 1),
+          appearance: scopedAppearance,
+        }))],
+      },
+      createRenderer,
+    );
+    expect(maximumWideGapRepetition).toMatchObject({
+      width: 8_284,
+      height: 150,
+      diceCount: 50,
+      rowCount: 1,
+    });
+    expect(maximumWideGapRepetition.png.byteLength).toBeLessThan(10_000_000);
+
+    const maximumProductionSpacingRepetition = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r12",
+        groups: [Array.from({ length: 50 }, (_, index) => ({
+          ...die("d6", (index % 6) + 1),
+          appearance: scopedAppearance,
+        }))],
+      },
+      createRenderer,
+    );
+    expect(maximumProductionSpacingRepetition).toMatchObject({
+      width: 7_500,
+      height: 150,
+      diceCount: 50,
+      rowCount: 1,
+    });
+    expect(maximumProductionSpacingRepetition.png.byteLength)
+      .toBeLessThan(10_000_000);
+    expect(canvasKit.HEAPU8.buffer.byteLength).toBeLessThanOrEqual(67_108_864);
+  });
+
+  it("uses a 60px visual gap in r11 while preserving compact single-die framing", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const single = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r11",
+        groups: [[{ ...die("d8", 8), appearance: scopedAppearance }]],
+      },
+      createRenderer,
+    );
+    expect(single).toMatchObject({
+      width: 300,
+      height: 150,
+      diceCount: 1,
+      rowCount: 1,
+    });
+
+    const groups = Array.from({ length: 3 }, (_, groupIndex) =>
+      Array.from({ length: 3 }, (_, dieIndex) => ({
+        ...die("d8", ((groupIndex * 3 + dieIndex) % 8) + 1),
+        appearance: scopedAppearance,
+      })),
+    );
+    const repeated = await renderDiceRequestV4ToPng(
+      { version: 4, rendererRevision: "canvaskit-v4-r11", groups },
+      createRenderer,
+    );
+    expect(repeated).toMatchObject({
+      width: 450,
+      height: 450,
+      diceCount: 9,
+      rowCount: 3,
+    });
+    const repeatedPixels = await decodePngRgba8(repeated.png);
+    for (let row = 0; row < 3; row += 1) {
+      const rowPixels = cropRgba(
+        repeatedPixels.pixels,
+        repeated.width,
+        0,
+        row * 150,
+        repeated.width,
+        150,
+      );
+      const runs = alphaColumnRuns(rowPixels, repeated.width);
+      expect(runs).toHaveLength(3);
+      for (let index = 1; index < runs.length; index += 1) {
+        const previous = runs[index - 1];
+        const current = runs[index];
+        if (previous === undefined || current === undefined) {
+          throw new Error("Expected adjacent repeated dice");
+        }
+        expect(current.left - previous.right - 1).toBe(60);
+      }
+    }
+
+    const mixed = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r11",
+        groups: [[
+          { ...die("d4", 4), appearance: scopedAppearance },
+          { ...die("d8", 8), appearance: scopedAppearance },
+        ]],
+      },
+      createRenderer,
+    );
+    const mixedPixels = await decodePngRgba8(mixed.png);
+    const mixedRuns = alphaColumnRuns(mixedPixels.pixels, mixed.width);
+    expect(mixedRuns).toHaveLength(2);
+    const first = mixedRuns[0];
+    const second = mixedRuns[1];
+    if (first === undefined || second === undefined) {
+      throw new Error("Expected mixed rendered dice");
+    }
+    expect(second.left - first.right - 1).toBe(60);
+  });
+
+  it("matches production center spacing across grouped polyhedral dice in r12", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const targets = [
+      ["d4", 4],
+      ["d6", 6],
+      ["d8", 8],
+      ["d10", 10],
+      ["d12", 12],
+      ["d20", 20],
+    ] as const;
+
+    for (const [target, result] of targets) {
+      const groups = [[
+        { ...die(target, result), appearance: scopedAppearance },
+        { ...die(target, 1), appearance: scopedAppearance },
+      ]];
+      const [production, current] = await Promise.all([
+        renderDiceRequestV4ToPng(
+          { version: 4, rendererRevision: "canvaskit-v4-r8", groups },
+          createRenderer,
+        ),
+        renderDiceRequestV4ToPng(
+          { version: 4, rendererRevision: "canvaskit-v4-r12", groups },
+          createRenderer,
+        ),
+      ]);
+      const [productionPixels, currentPixels] = await Promise.all([
+        decodePngRgba8(production.png),
+        decodePngRgba8(current.png),
+      ]);
+      const productionRuns = alphaColumnRuns(
+        productionPixels.pixels,
+        production.width,
+      );
+      const currentRuns = alphaColumnRuns(currentPixels.pixels, current.width);
+      expect(productionRuns, target).toHaveLength(2);
+      expect(currentRuns, target).toHaveLength(2);
+      const productionFirst = productionRuns[0];
+      const productionSecond = productionRuns[1];
+      const currentFirst = currentRuns[0];
+      const currentSecond = currentRuns[1];
+      if (
+        productionFirst === undefined ||
+        productionSecond === undefined ||
+        currentFirst === undefined ||
+        currentSecond === undefined
+      ) {
+        throw new Error("Expected adjacent production-spaced dice");
+      }
+      expect(
+        currentSecond.left - currentFirst.right - 1,
+        target,
+      ).toBe(productionSecond.left - productionFirst.right - 1);
+    }
+
+    const modifierGroups = [[
+      {
+        ...die("d8", 8),
+        appearance: scopedAppearance,
+        icons: ["trashcan" as const],
+      },
+      {
+        ...die("d8", 1),
+        appearance: scopedAppearance,
+        icons: ["trashcan" as const],
+      },
+    ]];
+    const [productionModifiers, currentModifiers] = await Promise.all([
+      renderDiceRequestV4ToPng(
+        {
+          version: 4,
+          rendererRevision: "canvaskit-v4-r8",
+          groups: modifierGroups,
+        },
+        createRenderer,
+      ),
+      renderDiceRequestV4ToPng(
+        {
+          version: 4,
+          rendererRevision: "canvaskit-v4-r12",
+          groups: modifierGroups,
+        },
+        createRenderer,
+      ),
+    ]);
+    const [productionModifierPixels, currentModifierPixels] = await Promise.all([
+      decodePngRgba8(productionModifiers.png),
+      decodePngRgba8(currentModifiers.png),
+    ]);
+    for (const [top, height] of [[0, 150], [150, 42]] as const) {
+      const productionRuns = alphaColumnRuns(
+        cropRgba(
+          productionModifierPixels.pixels,
+          productionModifiers.width,
+          0,
+          top,
+          productionModifiers.width,
+          height,
+        ),
+        productionModifiers.width,
+      );
+      const currentRuns = alphaColumnRuns(
+        cropRgba(
+          currentModifierPixels.pixels,
+          currentModifiers.width,
+          0,
+          top,
+          currentModifiers.width,
+          height,
+        ),
+        currentModifiers.width,
+      );
+      expect(productionRuns).toHaveLength(2);
+      expect(currentRuns).toHaveLength(2);
+      const productionFirst = productionRuns[0];
+      const productionSecond = productionRuns[1];
+      const currentFirst = currentRuns[0];
+      const currentSecond = currentRuns[1];
+      if (
+        productionFirst === undefined ||
+        productionSecond === undefined ||
+        currentFirst === undefined ||
+        currentSecond === undefined
+      ) {
+        throw new Error("Expected adjacent production-spaced modifiers");
+      }
+      expect(currentSecond.left - currentFirst.right - 1).toBe(
+        productionSecond.left - productionFirst.right - 1,
+      );
+    }
+
+    const repeated = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r12",
+        groups: Array.from({ length: 3 }, () =>
+          Array.from({ length: 3 }, (_, index) => ({
+            ...die("d8", index + 1),
+            appearance: scopedAppearance,
+          })),
+        ),
+      },
+      createRenderer,
+    );
+    expect(repeated).toMatchObject({
+      width: 450,
+      height: 450,
+      diceCount: 9,
+      rowCount: 3,
+    });
+  });
+
+  it("preserves the compact r9 maximum repeated modifier layout", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const compact = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r9",
+        groups: Array.from({ length: 50 }, (_, index) => [
+          {
+            ...die("d6", (index % 6) + 1),
+            appearance: scopedAppearance,
+            icons: ["trashcan"],
+          },
+        ]),
+      },
+      () => createRequestRenderer(canvasKit),
+    );
+
+    expect(compact).toMatchObject({
+      width: 1_500,
+      height: 960,
+      diceCount: 50,
+      rowCount: 5,
+    });
+    expect(compact.png.byteLength).toBeLessThan(10_000_000);
+  });
+
   it("renders every lighting treatment deterministically with physical directions", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
     const hashes = new Map<string, string>();
@@ -1616,7 +2364,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r9" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r13" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),
@@ -1832,5 +2580,36 @@ describe("CanvasKit Render Request V4", () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it("bounds the maximum r12 repeated modifier layout", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const current = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r12",
+        groups: Array.from({ length: 50 }, (_, index) => [
+          {
+            ...die("d6", (index % 6) + 1),
+            appearance: scopedAppearance,
+            icons: ["trashcan"],
+          },
+        ]),
+      },
+      () => createRequestRenderer(canvasKit),
+    );
+
+    expect(current).toMatchObject({
+      width: 384,
+      height: 9_600,
+      diceCount: 50,
+      rowCount: 50,
+    });
+    expect(current.width * current.height * 4).toBe(14_745_600);
+    expect(current.png.byteLength).toBeLessThan(10_000_000);
+    expect(canvasKit.HEAPU8.buffer.byteLength).toBeLessThanOrEqual(67_108_864);
   });
 });

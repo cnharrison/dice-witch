@@ -7,8 +7,10 @@ import {
   enhanceD4EngravingLayerRecipeV4,
   formatFaceLabelV4,
   projectPolyhedralGeometryV4,
+  rendererRevisionPolicyV4,
   requiresOrientationMarkV4,
   SOURCE_TEXTURE_SIZE_V4,
+  modifierIconLeftV4,
   modifierIconSizeV4,
   isIdentityTexturePlacementV4,
   texturePlacementKeyV4,
@@ -26,6 +28,7 @@ import {
   type ProjectedPolyhedralGeometryV4,
   type RenderCriticalEffectV4,
   type RenderLightingV4,
+  type RendererRevisionPolicyV4,
   type RendererRevisionV4,
   type SphericalGeometryDescriptorV4,
   type TexturePlacementV4,
@@ -48,6 +51,7 @@ import {
   withCanvasKitResourcesSyncV4,
 } from "./resources";
 import {
+  criticalEffectOutsetV4,
   drawPolyhedralCriticalEffectV4,
   drawSphericalCriticalEffectV4,
 } from "./critical-effects";
@@ -70,8 +74,12 @@ import type { SphericalMaterialRasterV4 } from "./spherical-material-raster";
 const MIN_RENDER_SIZE_V4 = 64;
 const MAX_RENDER_SIZE_V4 = 1_200;
 const GRID_DIE_SIZE_V4 = 150;
+const GROUP_ROW_DIE_GAP_R10_V4 = 8;
+const GROUP_ROW_DIE_GAP_R11_V4 = 60;
+const GROUP_ROW_DIE_STRIDE_R12_V4 = 150;
 const MAX_GRID_COLUMNS_V4 = 10;
 const MAX_GRID_DICE_V4 = 50;
+const COMPACT_GRID_TARGET_ASPECT_V4 = 2;
 const OCTAHEDRAL_ATLAS_MIN_DICE_V4 = 4;
 const OCTAHEDRAL_ATLAS_SIZE_V4 = 192;
 const SPHERE_BACKGROUND_MIN_DICE_V4 = 3;
@@ -449,17 +457,110 @@ function requireTextureRaster(texture: TextureRasterV4): void {
   }
 }
 
+function legacyGridRows<Die>(
+  groups: readonly (readonly Die[])[],
+): readonly (readonly Die[])[] {
+  return groups.flatMap((group) =>
+    Array.from(
+      { length: Math.ceil(group.length / MAX_GRID_COLUMNS_V4) },
+      (_, rowIndex) =>
+        group.slice(
+          rowIndex * MAX_GRID_COLUMNS_V4,
+          (rowIndex + 1) * MAX_GRID_COLUMNS_V4,
+        ),
+    ),
+  );
+}
+
+function packCompactGridRows<Die>(
+  groups: readonly (readonly Die[])[],
+  columnCount: number,
+): readonly (readonly Die[])[] {
+  const rows: Die[][] = [];
+  let row: Die[] = [];
+  for (const group of groups) {
+    if (row.length > 0 && group.length > columnCount - row.length) {
+      rows.push(row);
+      row = [];
+    }
+    for (let offset = 0; offset < group.length;) {
+      const take = Math.min(columnCount - row.length, group.length - offset);
+      row.push(...group.slice(offset, offset + take));
+      offset += take;
+      if (row.length === columnCount) {
+        rows.push(row);
+        row = [];
+      }
+    }
+  }
+  if (row.length > 0) rows.push(row);
+  return rows;
+}
+
+function compactGridRows<Die>(
+  groups: readonly (readonly Die[])[],
+  rowHeight: number,
+): readonly (readonly Die[])[] {
+  const minimumColumns = Math.min(
+    Math.max(...groups.map((group) => group.length)),
+    MAX_GRID_COLUMNS_V4,
+  );
+  const score = (rows: readonly (readonly Die[])[]) => {
+    const width = Math.max(...rows.map((row) => row.length)) * GRID_DIE_SIZE_V4;
+    const aspect = width / (rows.length * rowHeight);
+    return Math.abs(Math.log(aspect / COMPACT_GRID_TARGET_ASPECT_V4));
+  };
+  let bestRows = packCompactGridRows(groups, minimumColumns);
+  let bestScore = score(bestRows);
+  for (
+    let columnCount = minimumColumns + 1;
+    columnCount <= MAX_GRID_COLUMNS_V4;
+    columnCount += 1
+  ) {
+    const rows = packCompactGridRows(groups, columnCount);
+    const candidateScore = score(rows);
+    if (candidateScore < bestScore) {
+      bestRows = rows;
+      bestScore = candidateScore;
+    }
+  }
+  return bestRows;
+}
+
+type GroupRowSpacingV4 =
+  | { mode: "visual-gap"; pixels: number }
+  | { mode: "fixed-stride"; pixels: number };
+
+function groupRowSpacingV4(
+  layout: RendererRevisionPolicyV4["gridLayout"],
+): GroupRowSpacingV4 | undefined {
+  if (layout === "group-rows-r10") {
+    return { mode: "visual-gap", pixels: GROUP_ROW_DIE_GAP_R10_V4 };
+  }
+  if (layout === "group-rows-r11") {
+    return { mode: "visual-gap", pixels: GROUP_ROW_DIE_GAP_R11_V4 };
+  }
+  if (layout === "group-rows-r12") {
+    return { mode: "fixed-stride", pixels: GROUP_ROW_DIE_STRIDE_R12_V4 };
+  }
+  return undefined;
+}
+
 function geometryGridLayout<Die>(
   groups: readonly (readonly Die[])[],
   name: "geometry grid" | "polyhedral grid",
   hasIcons: boolean,
   iconSize: number,
+  layout: RendererRevisionPolicyV4["gridLayout"],
+  visualBoundsForDie?: (die: Die) => { left: number; right: number },
 ): {
   rows: readonly (readonly Die[])[];
+  rowOffsets: readonly number[];
   diceCount: number;
   width: number;
   height: number;
   rowHeight: number;
+  columnOffsets: readonly (readonly number[])[];
 } {
   if (groups.length === 0) {
     throw new Error(
@@ -475,23 +576,114 @@ function geometryGridLayout<Die>(
   if (diceCount > MAX_GRID_DICE_V4) {
     throw new Error(`CanvasKit V4 ${name} exceeds 50 dice`);
   }
-  const rows = groups.flatMap((group) =>
-    Array.from(
-      { length: Math.ceil(group.length / MAX_GRID_COLUMNS_V4) },
-      (_, rowIndex) =>
-        group.slice(
-          rowIndex * MAX_GRID_COLUMNS_V4,
-          (rowIndex + 1) * MAX_GRID_COLUMNS_V4,
-        ),
-    ),
-  );
   const rowHeight = GRID_DIE_SIZE_V4 + (hasIcons ? iconSize : 0);
+  let rows: readonly (readonly Die[])[];
+  if (layout === "legacy") {
+    rows = legacyGridRows(groups);
+  } else if (layout === "compact-r9") {
+    rows = compactGridRows(groups, rowHeight);
+  } else {
+    rows = groups;
+  }
+  const groupRowSpacing = groupRowSpacingV4(layout);
+  if (groupRowSpacing !== undefined && visualBoundsForDie === undefined) {
+    throw new Error(`CanvasKit V4 ${name} visual bounds are required`);
+  }
+  const columnOffsets = rows.map((row) => {
+    if (groupRowSpacing === undefined || visualBoundsForDie === undefined) {
+      return row.map((_, index) => index * GRID_DIE_SIZE_V4);
+    }
+    const bounds = row.map(visualBoundsForDie);
+    for (const { left, right } of bounds) {
+      if (
+        !Number.isFinite(left) ||
+        !Number.isFinite(right) ||
+        right <= left ||
+        right - left > GRID_DIE_SIZE_V4 * 2
+      ) {
+        throw new Error(`CanvasKit V4 ${name} visual bounds are invalid`);
+      }
+    }
+    const offsets = [0];
+    for (let index = 1; index < row.length; index += 1) {
+      const previous = bounds[index - 1];
+      const current = bounds[index];
+      if (previous === undefined || current === undefined) {
+        throw new Error(`CanvasKit V4 ${name} row is invalid`);
+      }
+      const previousOffset = offsets[index - 1];
+      if (previousOffset === undefined) {
+        throw new Error(`CanvasKit V4 ${name} row offset is missing`);
+      }
+      offsets.push(
+        groupRowSpacing.mode === "fixed-stride"
+          ? previousOffset + groupRowSpacing.pixels
+          : previousOffset +
+            Math.ceil(
+              previous.right + groupRowSpacing.pixels - current.left,
+            ),
+      );
+    }
+    return offsets;
+  });
+  const fullRowWidths = columnOffsets.map((offsets) => {
+    const lastOffset = offsets.at(-1);
+    if (lastOffset === undefined) {
+      throw new Error(`CanvasKit V4 ${name} row offset is missing`);
+    }
+    return lastOffset + GRID_DIE_SIZE_V4;
+  });
+  const visualCenters = rows.map((row, rowIndex) => {
+    const fullWidth = fullRowWidths[rowIndex];
+    if (fullWidth === undefined) {
+      throw new Error(`CanvasKit V4 ${name} row width is missing`);
+    }
+    if (
+      groupRowSpacing === undefined ||
+      visualBoundsForDie === undefined ||
+      row.length === 1
+    ) {
+      return fullWidth / 2;
+    }
+    const first = row[0];
+    const last = row.at(-1);
+    const lastOffset = columnOffsets[rowIndex]?.at(-1);
+    if (first === undefined || last === undefined || lastOffset === undefined) {
+      throw new Error(`CanvasKit V4 ${name} visual center is invalid`);
+    }
+    return (
+      visualBoundsForDie(first).left +
+      lastOffset +
+      visualBoundsForDie(last).right
+    ) / 2;
+  });
+  const rowWidths = fullRowWidths.map((fullWidth, index) => {
+    const visualCenter = visualCenters[index];
+    if (visualCenter === undefined) {
+      throw new Error(`CanvasKit V4 ${name} visual center is missing`);
+    }
+    return groupRowSpacing === undefined
+      ? fullWidth
+      : 2 * Math.max(visualCenter, fullWidth - visualCenter);
+  });
+  const contentWidth = Math.max(...rowWidths);
+  const framed =
+    (layout === "compact-r9" && diceCount === 1) ||
+    groupRowSpacing !== undefined;
+  const width = framed
+    ? Math.max(contentWidth, rowHeight * COMPACT_GRID_TARGET_ASPECT_V4)
+    : contentWidth;
+  const rowOffsets = layout === "legacy"
+    ? rows.map(() => 0)
+    : visualCenters.map((visualCenter) => (width / 2) - visualCenter);
   return {
     rows,
+    rowOffsets,
     diceCount,
-    width: Math.max(...rows.map((row) => row.length)) * GRID_DIE_SIZE_V4,
+    width,
     height: rows.length * rowHeight,
     rowHeight,
+    columnOffsets,
   };
 }
 
@@ -1972,15 +2164,26 @@ async function renderGeometryGridSurface<Die>(
     die: Die,
   ) => number,
   iconsForDie?: (die: Die) => readonly IconNameV4[],
+  visualBoundsForDie?: (die: Die) => { left: number; right: number },
 ): Promise<RenderedGeometryGridV4> {
   const hasIcons =
     iconsForDie !== undefined &&
     groups.some((group) => group.some((die) => iconsForDie(die).length > 0));
-  const { rows, diceCount, width, height, rowHeight } = geometryGridLayout(
+  const {
+    rows,
+    rowOffsets,
+    diceCount,
+    width,
+    height,
+    rowHeight,
+    columnOffsets,
+  } = geometryGridLayout(
     groups,
     name,
     hasIcons,
     modifierIconSizeV4(rendererRevision),
+    rendererRevisionPolicyV4(rendererRevision).gridLayout,
+    visualBoundsForDie,
   );
   const rendered = withCanvasKitResourcesSyncV4((scope) => {
     const surface = scope.own(
@@ -1998,10 +2201,15 @@ async function renderGeometryGridSurface<Die>(
     let visibleFaceCount = 0;
     rows.forEach((row, rowIndex) => {
       row.forEach((die, columnIndex) => {
+        const rowOffset = rowOffsets[rowIndex];
+        const columnOffset = columnOffsets[rowIndex]?.[columnIndex];
+        if (rowOffset === undefined || columnOffset === undefined) {
+          throw new Error(`CanvasKit V4 ${name} die offset is missing`);
+        }
         canvas.save();
         try {
           canvas.translate(
-            columnIndex * GRID_DIE_SIZE_V4,
+            rowOffset + columnOffset,
             rowIndex * rowHeight,
           );
           visibleFaceCount += withCanvasKitResourcesSyncV4((dieScope) =>
@@ -3388,6 +3596,55 @@ function sphereBackgroundUses(
   return uses;
 }
 
+function geometryGridDieVisualBounds(
+  die: RenderGeometryGridDieV4,
+  rendererRevision: RendererRevisionV4,
+): { left: number; right: number } {
+  let artworkLeft: number;
+  let artworkRight: number;
+  if (die.kind === "sphere") {
+    const { center, radius } = sphericalGeometryMetrics({
+      geometry: die.geometry,
+      sides: die.sides,
+      result: die.result,
+      size: GRID_DIE_SIZE_V4,
+    });
+    artworkLeft = center - radius;
+    artworkRight = center + radius;
+  } else {
+    const projection = projectPolyhedralGeometryV4(die.geometry, die.result);
+    const horizontalPositions = projection.vertices.map(
+      ({ position }) => position[0] * GRID_DIE_SIZE_V4,
+    );
+    artworkLeft = Math.min(...horizontalPositions);
+    artworkRight = Math.max(...horizontalPositions);
+  }
+  const outlinePadding = 1;
+  const effectOutset = criticalEffectOutsetV4(
+    GRID_DIE_SIZE_V4,
+    die.criticalEffect,
+  );
+  let left = Math.floor(artworkLeft - outlinePadding - effectOutset);
+  let right = Math.ceil(artworkRight + outlinePadding + effectOutset);
+  const icons = die.icons ?? [];
+  if (icons.length > 3) {
+    throw new Error("CanvasKit V4 modifier icon count is invalid");
+  }
+  const iconCount = icons.length as 0 | 1 | 2 | 3;
+  const iconSize = modifierIconSizeV4(rendererRevision);
+  icons.forEach((icon, index) => {
+    if (icon === "blank") return;
+    const iconLeft = modifierIconLeftV4(
+      iconCount,
+      index,
+      rendererRevision,
+    );
+    left = Math.min(left, iconLeft);
+    right = Math.max(right, iconLeft + iconSize);
+  });
+  return { left, right };
+}
+
 function renderGeometryGridWithGeometryRenderer(
   canvasKit: CanvasKitRuntimeV4,
   resources: GeometryRendererResourcesV4,
@@ -3418,6 +3675,7 @@ function renderGeometryGridWithGeometryRenderer(
         die,
       ),
     (die) => die.icons ?? [],
+    (die) => geometryGridDieVisualBounds(die, rendererRevision),
   );
 }
 

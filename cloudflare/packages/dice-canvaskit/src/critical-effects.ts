@@ -8,6 +8,7 @@ import type { CanvasKitResourceScopeV4 } from "./resources";
 import type { CanvasKitRuntimeV4 } from "./runtime";
 
 const HEX_COLOR_V4 = /^#([0-9a-f]{6})$/i;
+const BLUR_ALPHA_EXTENT_SIGMAS_V4 = 2;
 
 type PointV4 = readonly [x: number, y: number];
 
@@ -165,6 +166,35 @@ function normalizeVector(vector: PointV4, label: string): PointV4 {
   return [vector[0] / length, vector[1] / length];
 }
 
+function outerGlowMetrics(
+  size: number,
+  intensity: number,
+): { strokeWidth: number; blurSigma: number } {
+  return {
+    strokeWidth: size * (0.02 + intensity * 0.02),
+    blurSigma: size * (0.01 + intensity * 0.016),
+  };
+}
+
+export function criticalEffectOutsetV4(
+  size: number,
+  effect: RenderCriticalEffectV4 | null | undefined,
+): number {
+  if (
+    effect === null ||
+    effect === undefined ||
+    effect.treatment !== "classic-glow"
+  ) {
+    return 0;
+  }
+  const intensity = effectIntensity(effect);
+  if (intensity === 0) return 0;
+  const { strokeWidth, blurSigma } = outerGlowMetrics(size, intensity);
+  return Math.ceil(
+    strokeWidth / 2 + blurSigma * BLUR_ALPHA_EXTENT_SIGMAS_V4,
+  );
+}
+
 function drawOuterGlow(
   canvasKit: CanvasKitRuntimeV4,
   canvas: Canvas,
@@ -173,17 +203,21 @@ function drawOuterGlow(
   effect: RenderCriticalEffectV4,
   intensity: number,
 ): void {
+  const { strokeWidth, blurSigma } = outerGlowMetrics(
+    geometry.size,
+    intensity,
+  );
   const paint = createEffectPaint(
     canvasKit,
     scope,
     effect,
     0.34 + intensity * 0.46,
-    geometry.size * (0.02 + intensity * 0.02),
+    strokeWidth,
   );
   const blur = scope.own(
     canvasKit.MaskFilter.MakeBlur(
       canvasKit.BlurStyle.Normal,
-      geometry.size * (0.01 + intensity * 0.016),
+      blurSigma,
       true,
     ),
     "critical outer glow mask filter",
