@@ -49,10 +49,20 @@ describe("V4 renderer revision policies", () => {
     });
   });
 
+  it("inherits every r10 policy in r11 except the wider grouped-row gap", () => {
+    const revision10 = rendererRevisionPolicyV4("canvaskit-v4-r10");
+    const revision11 = rendererRevisionPolicyV4("canvaskit-v4-r11");
+
+    expect(revision11).toEqual({
+      ...revision10,
+      gridLayout: "group-rows-r11",
+    });
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r11" as RendererRevisionV4,
+        "canvaskit-v4-r12" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

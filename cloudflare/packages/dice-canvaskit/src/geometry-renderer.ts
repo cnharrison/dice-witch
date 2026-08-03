@@ -74,7 +74,8 @@ import type { SphericalMaterialRasterV4 } from "./spherical-material-raster";
 const MIN_RENDER_SIZE_V4 = 64;
 const MAX_RENDER_SIZE_V4 = 1_200;
 const GRID_DIE_SIZE_V4 = 150;
-const GROUP_ROW_DIE_GAP_V4 = 8;
+const GROUP_ROW_DIE_GAP_R10_V4 = 8;
+const GROUP_ROW_DIE_GAP_R11_V4 = 60;
 const MAX_GRID_COLUMNS_V4 = 10;
 const MAX_GRID_DICE_V4 = 50;
 const COMPACT_GRID_TARGET_ASPECT_V4 = 2;
@@ -525,6 +526,14 @@ function compactGridRows<Die>(
   return bestRows;
 }
 
+function groupRowDieGapV4(
+  layout: RendererRevisionPolicyV4["gridLayout"],
+): number | undefined {
+  if (layout === "group-rows-r10") return GROUP_ROW_DIE_GAP_R10_V4;
+  if (layout === "group-rows-r11") return GROUP_ROW_DIE_GAP_R11_V4;
+  return undefined;
+}
+
 function geometryGridLayout<Die>(
   groups: readonly (readonly Die[])[],
   name: "geometry grid" | "polyhedral grid",
@@ -564,11 +573,12 @@ function geometryGridLayout<Die>(
   } else {
     rows = groups;
   }
-  if (layout === "group-rows-r10" && visualBoundsForDie === undefined) {
+  const groupRowDieGap = groupRowDieGapV4(layout);
+  if (groupRowDieGap !== undefined && visualBoundsForDie === undefined) {
     throw new Error(`CanvasKit V4 ${name} visual bounds are required`);
   }
   const columnOffsets = rows.map((row) => {
-    if (layout !== "group-rows-r10" || visualBoundsForDie === undefined) {
+    if (groupRowDieGap === undefined || visualBoundsForDie === undefined) {
       return row.map((_, index) => index * GRID_DIE_SIZE_V4);
     }
     const bounds = row.map(visualBoundsForDie);
@@ -596,7 +606,7 @@ function geometryGridLayout<Die>(
       offsets.push(
         previousOffset +
           Math.ceil(
-            previous.right + GROUP_ROW_DIE_GAP_V4 - current.left,
+            previous.right + groupRowDieGap - current.left,
           ),
       );
     }
@@ -615,7 +625,7 @@ function geometryGridLayout<Die>(
       throw new Error(`CanvasKit V4 ${name} row width is missing`);
     }
     if (
-      layout !== "group-rows-r10" ||
+      groupRowDieGap === undefined ||
       visualBoundsForDie === undefined ||
       row.length === 1
     ) {
@@ -638,14 +648,14 @@ function geometryGridLayout<Die>(
     if (visualCenter === undefined) {
       throw new Error(`CanvasKit V4 ${name} visual center is missing`);
     }
-    return layout === "group-rows-r10"
-      ? 2 * Math.max(visualCenter, fullWidth - visualCenter)
-      : fullWidth;
+    return groupRowDieGap === undefined
+      ? fullWidth
+      : 2 * Math.max(visualCenter, fullWidth - visualCenter);
   });
   const contentWidth = Math.max(...rowWidths);
   const framed =
     (layout === "compact-r9" && diceCount === 1) ||
-    layout === "group-rows-r10";
+    groupRowDieGap !== undefined;
   const width = framed
     ? Math.max(contentWidth, rowHeight * COMPACT_GRID_TARGET_ASPECT_V4)
     : contentWidth;
@@ -3574,6 +3584,7 @@ function sphereBackgroundUses(
 
 function geometryGridDieVisualBounds(
   die: RenderGeometryGridDieV4,
+  rendererRevision: RendererRevisionV4,
 ): { left: number; right: number } {
   let artworkLeft: number;
   let artworkRight: number;
@@ -3606,13 +3617,13 @@ function geometryGridDieVisualBounds(
     throw new Error("CanvasKit V4 modifier icon count is invalid");
   }
   const iconCount = icons.length as 0 | 1 | 2 | 3;
-  const iconSize = modifierIconSizeV4("canvaskit-v4-r10");
+  const iconSize = modifierIconSizeV4(rendererRevision);
   icons.forEach((icon, index) => {
     if (icon === "blank") return;
     const iconLeft = modifierIconLeftV4(
       iconCount,
       index,
-      "canvaskit-v4-r10",
+      rendererRevision,
     );
     left = Math.min(left, iconLeft);
     right = Math.max(right, iconLeft + iconSize);
@@ -3650,7 +3661,7 @@ function renderGeometryGridWithGeometryRenderer(
         die,
       ),
     (die) => die.icons ?? [],
-    geometryGridDieVisualBounds,
+    (die) => geometryGridDieVisualBounds(die, rendererRevision),
   );
 }
 

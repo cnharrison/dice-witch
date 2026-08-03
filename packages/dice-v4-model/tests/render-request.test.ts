@@ -199,6 +199,7 @@ describe("RenderRequestV4", () => {
       "canvaskit-v4-r8",
       "canvaskit-v4-r9",
       "canvaskit-v4-r10",
+      "canvaskit-v4-r11",
     ] as const) {
       expect(() =>
         validateRenderRequestV4({
