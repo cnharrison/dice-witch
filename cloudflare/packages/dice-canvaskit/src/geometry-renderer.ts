@@ -76,6 +76,7 @@ const MAX_RENDER_SIZE_V4 = 1_200;
 const GRID_DIE_SIZE_V4 = 150;
 const GROUP_ROW_DIE_GAP_R10_V4 = 8;
 const GROUP_ROW_DIE_GAP_R11_V4 = 60;
+const GROUP_ROW_DIE_STRIDE_R12_V4 = 150;
 const MAX_GRID_COLUMNS_V4 = 10;
 const MAX_GRID_DICE_V4 = 50;
 const COMPACT_GRID_TARGET_ASPECT_V4 = 2;
@@ -526,11 +527,22 @@ function compactGridRows<Die>(
   return bestRows;
 }
 
-function groupRowDieGapV4(
+type GroupRowSpacingV4 =
+  | { mode: "visual-gap"; pixels: number }
+  | { mode: "fixed-stride"; pixels: number };
+
+function groupRowSpacingV4(
   layout: RendererRevisionPolicyV4["gridLayout"],
-): number | undefined {
-  if (layout === "group-rows-r10") return GROUP_ROW_DIE_GAP_R10_V4;
-  if (layout === "group-rows-r11") return GROUP_ROW_DIE_GAP_R11_V4;
+): GroupRowSpacingV4 | undefined {
+  if (layout === "group-rows-r10") {
+    return { mode: "visual-gap", pixels: GROUP_ROW_DIE_GAP_R10_V4 };
+  }
+  if (layout === "group-rows-r11") {
+    return { mode: "visual-gap", pixels: GROUP_ROW_DIE_GAP_R11_V4 };
+  }
+  if (layout === "group-rows-r12") {
+    return { mode: "fixed-stride", pixels: GROUP_ROW_DIE_STRIDE_R12_V4 };
+  }
   return undefined;
 }
 
@@ -573,12 +585,12 @@ function geometryGridLayout<Die>(
   } else {
     rows = groups;
   }
-  const groupRowDieGap = groupRowDieGapV4(layout);
-  if (groupRowDieGap !== undefined && visualBoundsForDie === undefined) {
+  const groupRowSpacing = groupRowSpacingV4(layout);
+  if (groupRowSpacing !== undefined && visualBoundsForDie === undefined) {
     throw new Error(`CanvasKit V4 ${name} visual bounds are required`);
   }
   const columnOffsets = rows.map((row) => {
-    if (groupRowDieGap === undefined || visualBoundsForDie === undefined) {
+    if (groupRowSpacing === undefined || visualBoundsForDie === undefined) {
       return row.map((_, index) => index * GRID_DIE_SIZE_V4);
     }
     const bounds = row.map(visualBoundsForDie);
@@ -604,10 +616,12 @@ function geometryGridLayout<Die>(
         throw new Error(`CanvasKit V4 ${name} row offset is missing`);
       }
       offsets.push(
-        previousOffset +
-          Math.ceil(
-            previous.right + groupRowDieGap - current.left,
-          ),
+        groupRowSpacing.mode === "fixed-stride"
+          ? previousOffset + groupRowSpacing.pixels
+          : previousOffset +
+            Math.ceil(
+              previous.right + groupRowSpacing.pixels - current.left,
+            ),
       );
     }
     return offsets;
@@ -625,7 +639,7 @@ function geometryGridLayout<Die>(
       throw new Error(`CanvasKit V4 ${name} row width is missing`);
     }
     if (
-      groupRowDieGap === undefined ||
+      groupRowSpacing === undefined ||
       visualBoundsForDie === undefined ||
       row.length === 1
     ) {
@@ -648,14 +662,14 @@ function geometryGridLayout<Die>(
     if (visualCenter === undefined) {
       throw new Error(`CanvasKit V4 ${name} visual center is missing`);
     }
-    return groupRowDieGap === undefined
+    return groupRowSpacing === undefined
       ? fullWidth
       : 2 * Math.max(visualCenter, fullWidth - visualCenter);
   });
   const contentWidth = Math.max(...rowWidths);
   const framed =
     (layout === "compact-r9" && diceCount === 1) ||
-    groupRowDieGap !== undefined;
+    groupRowSpacing !== undefined;
   const width = framed
     ? Math.max(contentWidth, rowHeight * COMPACT_GRID_TARGET_ASPECT_V4)
     : contentWidth;

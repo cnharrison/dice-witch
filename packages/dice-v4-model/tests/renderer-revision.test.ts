@@ -59,10 +59,20 @@ describe("V4 renderer revision policies", () => {
     });
   });
 
+  it("inherits every r11 policy in r12 except production center spacing", () => {
+    const revision11 = rendererRevisionPolicyV4("canvaskit-v4-r11");
+    const revision12 = rendererRevisionPolicyV4("canvaskit-v4-r12");
+
+    expect(revision12).toEqual({
+      ...revision11,
+      gridLayout: "group-rows-r12",
+    });
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r12" as RendererRevisionV4,
+        "canvaskit-v4-r13" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

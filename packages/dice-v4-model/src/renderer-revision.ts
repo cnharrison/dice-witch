@@ -28,7 +28,8 @@ export type RendererRevisionPolicyV4 = {
     | "legacy"
     | "compact-r9"
     | "group-rows-r10"
-    | "group-rows-r11";
+    | "group-rows-r11"
+    | "group-rows-r12";
 };
 
 function policy(
@@ -92,6 +93,7 @@ const r8 = policy({ ...r7, modifierIcons: "signal-disks-r8" });
 const r9 = policy({ ...r8, gridLayout: "compact-r9" });
 const r10 = policy({ ...r9, gridLayout: "group-rows-r10" });
 const r11 = policy({ ...r10, gridLayout: "group-rows-r11" });
+const r12 = policy({ ...r11, gridLayout: "group-rows-r12" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -105,6 +107,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r9": r9,
   "canvaskit-v4-r10": r10,
   "canvaskit-v4-r11": r11,
+  "canvaskit-v4-r12": r12,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

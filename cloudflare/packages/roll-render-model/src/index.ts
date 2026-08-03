@@ -545,7 +545,7 @@ export function buildRollRenderRequestV4(
   }
   return validateRenderRequestV4({
     version: 4,
-    rendererRevision: "canvaskit-v4-r11",
+    rendererRevision: "canvaskit-v4-r12",
     groups,
   });
 }
