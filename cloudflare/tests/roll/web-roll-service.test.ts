@@ -233,7 +233,7 @@ describe("appearance preview", () => {
 
     expect(preview).toMatchObject({
       version: 4,
-      rendererRevision: "canvaskit-v4-r9",
+      rendererRevision: "canvaskit-v4-r10",
     });
     expect(preview.groups.map((group) => group.length)).toEqual([5, 5]);
     expect(preview.groups.flat()).toHaveLength(10);
@@ -323,7 +323,7 @@ describe("appearance preview", () => {
     expect(allDice).toMatchObject({
       version: 4,
       contentType: "image/png",
-      width: 750,
+      width: 700,
       height: 300,
       diceCount: 10,
       rowCount: 2,
@@ -723,7 +723,7 @@ describe("WebRollService", () => {
     expect(result.renderedImage.png).toEqual(result.discord.png);
     expect(result.renderModel).toMatchObject({
       version: 4,
-      rendererRevision: "canvaskit-v4-r9",
+      rendererRevision: "canvaskit-v4-r10",
     });
     if (result.renderModel === undefined) {
       throw new Error("Expected a V4 render model");

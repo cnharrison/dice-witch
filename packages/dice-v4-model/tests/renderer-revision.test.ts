@@ -39,10 +39,20 @@ describe("V4 renderer revision policies", () => {
     expect(revision8.gridLayout).toBe("legacy");
   });
 
+  it("inherits every r9 policy in r10 except the grouped-row layout", () => {
+    const revision9 = rendererRevisionPolicyV4("canvaskit-v4-r9");
+    const revision10 = rendererRevisionPolicyV4("canvaskit-v4-r10");
+
+    expect(revision10).toEqual({
+      ...revision9,
+      gridLayout: "group-rows-r10",
+    });
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r10" as RendererRevisionV4,
+        "canvaskit-v4-r11" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

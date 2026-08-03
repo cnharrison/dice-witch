@@ -36,7 +36,11 @@ describe("V4 modifier icon designs", () => {
       expect(modifierIconDesignV4(revision)).toBe("legacy-r1");
       expect(modifierIconSizeV4(revision)).toBe(LEGACY_MODIFIER_ICON_SIZE_V4);
     }
-    for (const revision of ["canvaskit-v4-r8", "canvaskit-v4-r9"] as const) {
+    for (const revision of [
+      "canvaskit-v4-r8",
+      "canvaskit-v4-r9",
+      "canvaskit-v4-r10",
+    ] as const) {
       expect(modifierIconDesignV4(revision)).toBe("signal-disks-r8");
       expect(modifierIconSizeV4(revision)).toBe(
         SIGNAL_DISK_MODIFIER_ICON_SIZE_V4,
