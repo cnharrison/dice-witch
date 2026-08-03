@@ -112,9 +112,9 @@ describe("D1RollLifecycleRepository", () => {
       httpStatus: 200,
     });
 
-    await expect(repository.record(deferred)).resolves.toEqual({ status: "applied" });
-    await expect(repository.record(deferred)).resolves.toEqual({ status: "existing" });
     await expect(repository.record(accepted)).resolves.toEqual({ status: "applied" });
+    await expect(repository.record(accepted)).resolves.toEqual({ status: "existing" });
+    await expect(repository.record(deferred)).resolves.toEqual({ status: "stale" });
     await expect(repository.record(started)).resolves.toEqual({ status: "applied" });
     await expect(repository.record(accepted)).resolves.toEqual({ status: "stale" });
     await expect(repository.record(delivered)).resolves.toEqual({ status: "applied" });
