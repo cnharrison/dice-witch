@@ -457,7 +457,7 @@ function requireTextureRaster(texture: TextureRasterV4): void {
   }
 }
 
-function legacyGridRows<Die>(
+function wrappedGroupRows<Die>(
   groups: readonly (readonly Die[])[],
 ): readonly (readonly Die[])[] {
   return groups.flatMap((group) =>
@@ -540,7 +540,7 @@ function groupRowSpacingV4(
   if (layout === "group-rows-r11") {
     return { mode: "visual-gap", pixels: GROUP_ROW_DIE_GAP_R11_V4 };
   }
-  if (layout === "group-rows-r12") {
+  if (layout === "group-rows-r12" || layout === "group-rows-r13") {
     return { mode: "fixed-stride", pixels: GROUP_ROW_DIE_STRIDE_R12_V4 };
   }
   return undefined;
@@ -578,8 +578,8 @@ function geometryGridLayout<Die>(
   }
   const rowHeight = GRID_DIE_SIZE_V4 + (hasIcons ? iconSize : 0);
   let rows: readonly (readonly Die[])[];
-  if (layout === "legacy") {
-    rows = legacyGridRows(groups);
+  if (layout === "legacy" || layout === "group-rows-r13") {
+    rows = wrappedGroupRows(groups);
   } else if (layout === "compact-r9") {
     rows = compactGridRows(groups, rowHeight);
   } else {

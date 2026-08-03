@@ -42,6 +42,7 @@ describe("V4 modifier icon designs", () => {
       "canvaskit-v4-r10",
       "canvaskit-v4-r11",
       "canvaskit-v4-r12",
+      "canvaskit-v4-r13",
     ] as const) {
       expect(modifierIconDesignV4(revision)).toBe("signal-disks-r8");
       expect(modifierIconSizeV4(revision)).toBe(
