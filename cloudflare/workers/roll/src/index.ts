@@ -70,6 +70,7 @@ import {
   type RollDeliveryFailurePhase,
   type RollDeliveryStatus,
   type RollWorkRecord,
+  type RollWorkRecordV5,
   type RollWorkRequest,
   type StoredDeliveryRow,
   type StoredWorkRow,
@@ -148,6 +149,7 @@ function rollDeliveryFailureMessage(): DiscordComponentsV2Message {
 type RetryableDeliveryPhase =
   | "settings"
   | "clatter"
+  | "snapshot"
   | "discord"
   | "terminal-response";
 
@@ -515,6 +517,35 @@ type FinishedDeliveryAcceptance = Readonly<{
 // claim to measure CPU-only work.
 function elapsedMs(startedAt: number, completedAt = Date.now()): number {
   return Math.max(0, completedAt - startedAt);
+}
+
+function rollRecordRenderVersion(record: RollWorkRecord): 1 | 2 | 3 | 4 {
+  return record.version === 5 ? record.renderVersion : record.version;
+}
+
+function rollRecordRendererRevision(record: RollWorkRecord): string | null {
+  if (record.version === 4 && record.renderRequest !== null) {
+    return record.renderRequest.rendererRevision;
+  }
+  if (
+    record.version === 5 &&
+    record.renderVersion === 4 &&
+    record.renderRequest !== null
+  ) {
+    return record.renderRequest.rendererRevision;
+  }
+  return null;
+}
+
+function rollRecordV5Identity(record: RollWorkRecordV5): string {
+  return JSON.stringify({
+    request: record.request,
+    rollSeed: record.rollSeed,
+    renderSeed: record.renderSeed,
+    outcome: record.outcome,
+    createdAt: record.createdAt,
+    renderVersion: record.renderVersion,
+  });
 }
 
 function logDurableAcceptanceTiming(input: Readonly<{
@@ -1782,11 +1813,8 @@ export class RollWork extends DurableObject<RollEnv> {
       outcome: record.outcome,
       rollSeed: record.rollSeed,
       renderSeed: record.renderSeed,
-      renderVersion: record.version,
-      rendererRevision:
-        record.version === 4 && record.renderRequest !== null
-          ? record.renderRequest.rendererRevision
-          : null,
+      renderVersion: rollRecordRenderVersion(record),
+      rendererRevision: rollRecordRendererRevision(record),
       destinationPayload: null,
     };
   }
@@ -1961,6 +1989,35 @@ export class RollWork extends DurableObject<RollEnv> {
     );
   }
 
+  private updateLifecycleRenderSnapshot(record: RollWorkRecordV5): void {
+    const rendererRevision = rollRecordRendererRevision(record);
+    if (rendererRevision === null) return;
+    const row = this.readLifecycleOutbox();
+    if (row === undefined) return;
+    const current = parseRollLifecycleSnapshot(JSON.parse(row.snapshot_json));
+    if (
+      current.context.renderVersion !== record.renderVersion ||
+      (current.context.rendererRevision !== null &&
+        current.context.rendererRevision !== rendererRevision)
+    ) {
+      throw new Error("Roll lifecycle render snapshot conflicts with stored work");
+    }
+    if (current.context.rendererRevision === rendererRevision) return;
+    const occurredAt = Date.now();
+    const next = parseRollLifecycleSnapshot({
+      ...current,
+      revision: current.revision + 1,
+      context: { ...current.context, rendererRevision },
+    });
+    this.ctx.storage.sql.exec(
+      `UPDATE roll_lifecycle_outbox
+       SET snapshot_json = ?, next_sync_at = ?
+       WHERE singleton = 1`,
+      JSON.stringify(next),
+      occurredAt,
+    );
+  }
+
   private recordProviderAttempt(): void {
     const row = this.readLifecycleOutbox();
     if (row === undefined) return;
@@ -2061,9 +2118,7 @@ export class RollWork extends DurableObject<RollEnv> {
     const record = input.record ?? this.tryReadWork();
     const source = this.readSourceLogRow();
     const rendererRevision =
-      record?.version === 4 && record.renderRequest !== null
-        ? record.renderRequest.rendererRevision
-        : null;
+      record === undefined ? null : rollRecordRendererRevision(record);
     const imageSha256 =
       source !== undefined && source.image_bytes.byteLength > 0
         ? source.image_sha256
@@ -2087,7 +2142,8 @@ export class RollWork extends DurableObject<RollEnv> {
           ? null
           : Math.max(0, input.completedAt - record.createdAt),
       delayMs: input.delayMs ?? null,
-      renderVersion: record?.version ?? null,
+      renderVersion:
+        record === undefined ? null : rollRecordRenderVersion(record),
       rendererRevision,
       imageSha256,
     });
@@ -2655,6 +2711,51 @@ export class RollWork extends DurableObject<RollEnv> {
     return { delayMs, resultNotBefore };
   }
 
+  private async deferUntilResultNotBefore(
+    skipDiceDelay: boolean,
+    resultNotBefore: number | null,
+    expiresAt: number,
+  ): Promise<{ status: "pending"; retryAt: number } | null> {
+    if (
+      skipDiceDelay ||
+      resultNotBefore === null ||
+      resultNotBefore <= Date.now()
+    ) {
+      return null;
+    }
+    const retryAt = Math.min(
+      resultNotBefore,
+      deliveryFinalizationAt(expiresAt),
+    );
+    await this.ctx.storage.setAlarm(retryAt);
+    return { status: "pending", retryAt };
+  }
+
+  private async finalizeIfResultWindowClosed(
+    delivery: StoredDeliveryRow,
+    target: RollDeliveryTarget,
+    attempts: number,
+  ): Promise<DeliverRollWorkResult | null> {
+    const now = Date.now();
+    if (now >= delivery.expires_at) {
+      const current = this.readDelivery();
+      if (current === undefined) {
+        throw new Error("Active roll delivery disappeared before expiry");
+      }
+      await this.finalizeExpiredDelivery(current);
+      return { status: "expired" };
+    }
+    if (now >= deliveryFinalizationAt(delivery.expires_at)) {
+      return this.attemptTerminalResponse(
+        target,
+        attempts,
+        delivery.expires_at,
+        "deadline",
+      );
+    }
+    return null;
+  }
+
   private readSourceLogRow(): StoredSourceLogRow | undefined {
     return this.ctx.storage.sql
       .exec<StoredSourceLogRow>(
@@ -3172,17 +3273,41 @@ export class RollWork extends DurableObject<RollEnv> {
           );
         });
       }
-      if (
-        !skipDiceDelay &&
-        resultNotBefore !== null &&
-        resultNotBefore > Date.now()
-      ) {
-        const retryAt = Math.min(
+      if (record.version === 5 && record.renderRequest === null) {
+        let finalized: RollWorkRecordV5 | null;
+        try {
+          finalized = await this.finalizeRenderSnapshot(record, metadata);
+        } catch {
+          return this.terminateDelivery(
+            target,
+            attempts,
+            delivery.expires_at,
+            "record",
+          );
+        }
+        if (finalized === null) {
+          return this.scheduleRetry(
+            target.id,
+            attempts,
+            delivery.expires_at,
+            "snapshot",
+          );
+        }
+        record = finalized;
+      }
+      const terminal = await this.finalizeIfResultWindowClosed(
+        delivery,
+        target,
+        attempts,
+      );
+      if (terminal !== null) return terminal;
+      if (record.version !== 5) {
+        const pending = await this.deferUntilResultNotBefore(
+          skipDiceDelay,
           resultNotBefore,
-          deliveryFinalizationAt(delivery.expires_at),
+          delivery.expires_at,
         );
-        await this.ctx.storage.setAlarm(retryAt);
-        return { status: "pending", retryAt };
+        if (pending !== null) return pending;
       }
     }
 
@@ -3327,6 +3452,20 @@ export class RollWork extends DurableObject<RollEnv> {
         bytes: png,
         description: "Rendered dice result",
       };
+      const terminal = await this.finalizeIfResultWindowClosed(
+        delivery,
+        target,
+        attempts,
+      );
+      if (terminal !== null) return terminal;
+      if (record.version === 5) {
+        const pending = await this.deferUntilResultNotBefore(
+          skipDiceDelay,
+          resultNotBefore,
+          delivery.expires_at,
+        );
+        if (pending !== null) return pending;
+      }
       if (metadata.responseMode === "channel-message") {
         if (metadata.logging === null) {
           return this.terminateDelivery(
@@ -3881,7 +4020,7 @@ export class RollWork extends DurableObject<RollEnv> {
         renderSnapshotPreparationMs: null,
       };
     }
-
+    // Every rollback target must parse and recover V5 before this producer ships.
     const renderSnapshotPreparationStartedAt = Date.now();
     try {
       const renderRequest = await buildRollRenderRequestForVersion(
@@ -3943,6 +4082,65 @@ export class RollWork extends DurableObject<RollEnv> {
     }
   }
 
+  private async finalizeRenderSnapshot(
+    record: RollWorkRecordV5,
+    metadata: DeliveryMetadata,
+  ): Promise<RollWorkRecordV5 | null> {
+    if (record.renderRequest !== null) return record;
+    if (metadata.accounting === null) {
+      throw new Error("Roll render snapshot accounting context is unavailable");
+    }
+    let renderRequest: Awaited<
+      ReturnType<typeof buildRollRenderRequestForVersion>
+    >;
+    try {
+      renderRequest = await buildRollRenderRequestForVersion(
+        this.env.DATA_SERVICE,
+        record.renderVersion,
+        metadata.accounting.userId,
+        metadata.accounting.guildId,
+        record.outcome,
+        record.renderSeed,
+      );
+    } catch {
+      return null;
+    }
+    let candidate: RollWorkRecordV5;
+    if (record.renderVersion === 3) {
+      if (renderRequest.version !== 3) {
+        throw new Error("Roll render snapshot version is invalid");
+      }
+      candidate = { ...record, renderVersion: 3, renderRequest };
+    } else {
+      if (renderRequest.version !== 4) {
+        throw new Error("Roll render snapshot version is invalid");
+      }
+      candidate = { ...record, renderVersion: 4, renderRequest };
+    }
+    const finalized = parseRecord(JSON.stringify(candidate));
+    if (finalized.version !== 5 || finalized.renderRequest === null) {
+      throw new Error("Finalized roll render snapshot is invalid");
+    }
+
+    return this.ctx.storage.transactionSync(() => {
+      const current = this.readWork();
+      if (
+        current === undefined ||
+        current.version !== 5 ||
+        rollRecordV5Identity(current) !== rollRecordV5Identity(record)
+      ) {
+        throw new Error("Roll render snapshot conflicts with stored work");
+      }
+      if (current.renderRequest !== null) return current;
+      this.ctx.storage.sql.exec(
+        "UPDATE roll_work SET record_json = ? WHERE singleton = 1",
+        JSON.stringify(finalized),
+      );
+      this.updateLifecycleRenderSnapshot(finalized);
+      return finalized;
+    });
+  }
+
   private async renderRecord(
     record: RollWorkRecord,
   ): Promise<RenderResult | RenderResultV2 | RenderResultV3 | RenderResultV4> {
@@ -3951,13 +4149,19 @@ export class RollWork extends DurableObject<RollEnv> {
         buildRollRenderRequest(record.outcome, record.renderSeed),
       );
     }
+    if (record.version === 5 && record.renderRequest === null) {
+      throw new Error("Roll render snapshot is pending");
+    }
     if (record.renderRequest === null) {
       throw new Error("Roll work has no renderable outcome");
     }
     if (record.version === 2) {
       return renderDiceRequestV2ToPng(record.renderRequest);
     }
-    if (record.version === 3) {
+    if (
+      record.version === 3 ||
+      (record.version === 5 && record.renderVersion === 3)
+    ) {
       return renderDiceRequestV3ToPng(record.renderRequest);
     }
     return {

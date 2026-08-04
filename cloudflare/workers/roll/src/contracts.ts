@@ -73,11 +73,26 @@ export type RollWorkRecordV4 = RollWorkRecordBase & {
   renderRequest: RenderRequestV4 | null;
 };
 
+// V5 keeps roll identity durable while the immutable appearance snapshot is
+// prepared during delivery. A null renderRequest is the only pending state.
+export type RollWorkRecordV5 =
+  | (RollWorkRecordBase & {
+      version: 5;
+      renderVersion: 3;
+      renderRequest: RenderRequestV3 | null;
+    })
+  | (RollWorkRecordBase & {
+      version: 5;
+      renderVersion: 4;
+      renderRequest: RenderRequestV4 | null;
+    });
+
 export type RollWorkRecord =
   | RollWorkRecordV1
   | RollWorkRecordV2
   | RollWorkRecordV3
-  | RollWorkRecordV4;
+  | RollWorkRecordV4
+  | RollWorkRecordV5;
 
 export type RenderResultV4 = RenderedDiceRequestV4 & { version: 4 };
 
@@ -889,7 +904,8 @@ export function parseRecord(value: string): RollWorkRecord {
     (parsed.version !== 1 &&
       parsed.version !== 2 &&
       parsed.version !== 3 &&
-      parsed.version !== 4) ||
+      parsed.version !== 4 &&
+      parsed.version !== 5) ||
     !isRecord(parsed.request) ||
     !Number.isInteger(parsed.rollSeed) ||
     Number(parsed.rollSeed) < 0 ||
@@ -916,6 +932,43 @@ export function parseRecord(value: string): RollWorkRecord {
     createdAt: Number(parsed.createdAt),
   };
   if (parsed.version === 1) return { version: 1, ...common };
+
+  if (parsed.version === 5) {
+    if (
+      !hasExactKeys(parsed, [
+        "createdAt",
+        "outcome",
+        "renderRequest",
+        "renderSeed",
+        "renderVersion",
+        "request",
+        "rollSeed",
+        "version",
+      ]) ||
+      (parsed.renderVersion !== 3 && parsed.renderVersion !== 4) ||
+      common.outcome.outcomes.length === 0
+    ) {
+      throw new Error("Stored roll work is invalid");
+    }
+    if (parsed.renderVersion === 4) {
+      validateStoredRequestV4(request);
+      validateStoredOutcomeV4(parsed.outcome, request, common.rollSeed);
+    }
+    if (parsed.renderRequest === null) {
+      return parsed.renderVersion === 3
+        ? { version: 5, renderVersion: 3, ...common, renderRequest: null }
+        : { version: 5, renderVersion: 4, ...common, renderRequest: null };
+    }
+    if (parsed.renderVersion === 3) {
+      const renderRequest = validateRenderRequestV3(parsed.renderRequest);
+      validateRenderSnapshotShape(renderRequest, common.outcome);
+      return { version: 5, renderVersion: 3, ...common, renderRequest };
+    }
+    const renderRequest = validateRenderRequestV4(parsed.renderRequest);
+    validateRenderSnapshotV4(renderRequest, common.outcome);
+    return { version: 5, renderVersion: 4, ...common, renderRequest };
+  }
+
   if (
     !hasExactKeys(parsed, [
       "createdAt",

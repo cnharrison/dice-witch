@@ -53,6 +53,54 @@ function controlledSignal(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
+function interceptEffectiveAppearance(
+  userId: string,
+  intercept: () => Response | undefined | Promise<Response | undefined>,
+): () => void {
+  const service = rollEnv.DATA_SERVICE as unknown as {
+    fetch: (request: Request) => Promise<Response>;
+  };
+  const originalFetch = service.fetch;
+  service.fetch = vi.fn(async (request: Request): Promise<Response> => {
+    const path = new URL(request.url).pathname;
+    if (
+      path === "/internal/appearance/v2/effective" ||
+      path === "/internal/appearance/v3/effective"
+    ) {
+      const body = await request.clone().json<{ userId?: unknown }>();
+      if (body.userId === userId) {
+        const response = await intercept();
+        if (response !== undefined) return response;
+      }
+    }
+    return originalFetch.call(service, request);
+  });
+  return () => {
+    service.fetch = originalFetch;
+  };
+}
+
+function observeInteractionRequests(
+  token: string,
+  inspect: (request: Request) => void | Promise<void>,
+): () => void {
+  const fetch = globalThis.fetch.bind(globalThis);
+  const spy = vi.spyOn(globalThis, "fetch").mockImplementation(
+    async (request, init): Promise<Response> => {
+      const outbound = request instanceof Request
+        ? request
+        : new Request(request, init);
+      if (new URL(outbound.url).pathname.includes(`/${token}/`)) {
+        await inspect(outbound);
+      }
+      return fetch(request, init);
+    },
+  );
+  return () => {
+    spy.mockRestore();
+  };
+}
+
 function snowflakeAt(timestamp: number, sequence = 0): string {
   return (
     (BigInt(timestamp - 1_420_070_400_000) << 22n) |
@@ -123,6 +171,60 @@ function telemetryDeliveryRequest(
       acknowledgementType: 5,
     },
   };
+}
+
+async function seedPendingV5Delivery(
+  stub: ReturnType<typeof work>,
+  input: RollDeliveryRequest,
+  renderVersion: 3 | 4 = 4,
+): Promise<void> {
+  await stub.prepare({
+    notation: [input.request.notation],
+    repetitions: input.request.repetitions,
+  });
+  await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+    status: "created",
+    delivery: "pending",
+  });
+  await runInDurableObject(stub, (_instance, state) => {
+    const workRow = state.storage.sql
+      .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+      .one();
+    const record = JSON.parse(workRow.record_json) as Record<string, unknown>;
+    const pending = parseRecord(
+      JSON.stringify({
+        ...record,
+        version: 5,
+        renderVersion,
+        renderRequest: null,
+      }),
+    );
+    const lifecycleRow = state.storage.sql
+      .exec<{ snapshot_json: string }>(
+        "SELECT snapshot_json FROM roll_lifecycle_outbox WHERE singleton = 1",
+      )
+      .one();
+    const lifecycle = JSON.parse(lifecycleRow.snapshot_json) as {
+      context: Record<string, unknown>;
+    };
+    state.storage.sql.exec(
+      "UPDATE roll_work SET record_json = ? WHERE singleton = 1",
+      JSON.stringify(pending),
+    );
+    state.storage.sql.exec(
+      `UPDATE roll_lifecycle_outbox
+       SET snapshot_json = ?
+       WHERE singleton = 1`,
+      JSON.stringify({
+        ...lifecycle,
+        context: {
+          ...lifecycle.context,
+          renderVersion,
+          rendererRevision: null,
+        },
+      }),
+    );
+  });
 }
 
 describe("RollWork Durable Object", () => {
@@ -854,6 +956,88 @@ describe("RollWork Durable Object", () => {
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
       expect(stored.record_json).toBe(serialized);
+    });
+  });
+
+  it("parses pending and finalized renderer-v5 snapshots", () => {
+    const pendingV4 = {
+      ...structuredClone(rollWorkV4Fixture),
+      version: 5 as const,
+      renderVersion: 4 as const,
+      renderRequest: null,
+    };
+    const finalizedV4 = {
+      ...pendingV4,
+      renderRequest: structuredClone(rollWorkV4Fixture.renderRequest),
+    };
+    const pendingV3 = {
+      ...structuredClone(rollWorkV3Fixture),
+      version: 5 as const,
+      renderVersion: 3 as const,
+      renderRequest: null,
+    };
+    const finalizedV3 = {
+      ...pendingV3,
+      renderRequest: structuredClone(rollWorkV3Fixture.renderRequest),
+    };
+
+    expect(parseRecord(JSON.stringify(pendingV4))).toEqual(pendingV4);
+    expect(parseRecord(JSON.stringify(finalizedV4))).toEqual(finalizedV4);
+    expect(parseRecord(JSON.stringify(pendingV3))).toEqual(pendingV3);
+    expect(parseRecord(JSON.stringify(finalizedV3))).toEqual(finalizedV3);
+    expect(() =>
+      parseRecord(JSON.stringify({ ...finalizedV4, renderVersion: 3 })),
+    ).toThrow();
+  });
+
+  it("rejects direct rendering while a renderer-v5 snapshot is pending", async () => {
+    const stub = work("1400000000000000054");
+    const pending = {
+      ...structuredClone(rollWorkV4Fixture),
+      version: 5 as const,
+      renderVersion: 4 as const,
+      renderRequest: null,
+    };
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO roll_work (singleton, request_json, record_json)
+         VALUES (1, ?, ?)`,
+        JSON.stringify(pending.request),
+        JSON.stringify(pending),
+      );
+    });
+
+    await runInDurableObject(stub, async (instance) => {
+      await expect(
+        (instance as unknown as {
+          render(value: unknown): Promise<unknown>;
+        }).render(pending.request),
+      ).rejects.toThrow("Roll render snapshot is pending");
+    });
+  });
+
+  it("renders a finalized renderer-v5 snapshot at its stored V3 version", async () => {
+    const stub = work("1400000000000000055");
+    const finalized = {
+      ...structuredClone(rollWorkV3Fixture),
+      version: 5 as const,
+      renderVersion: 3 as const,
+    };
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO roll_work (singleton, request_json, record_json)
+         VALUES (1, ?, ?)`,
+        JSON.stringify(finalized.request),
+        JSON.stringify(finalized),
+      );
+    });
+
+    await expect(stub.render(finalized.request)).resolves.toMatchObject({
+      status: "rendered",
+      version: 3,
+      diceCount: 1,
+      width: 150,
+      height: 150,
     });
   });
 
@@ -1717,6 +1901,288 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
       attempts: 2,
+    });
+  });
+
+  it("rechecks the finalization window after snapshot preparation", async () => {
+    const id = snowflakeAt(Date.now(), 51);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-clatter-contract");
+    input.accounting.guildId = "100000000000000002";
+    input.accounting.userId = "100000000000000055";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    await seedPendingV5Delivery(stub, input);
+
+    const appearanceStarted = controlledSignal();
+    const appearanceReleased = controlledSignal();
+    const restoreAppearance = interceptEffectiveAppearance(
+      input.accounting.userId,
+      async () => {
+        appearanceStarted.resolve();
+        await appearanceReleased.promise;
+        return undefined;
+      },
+    );
+    let clatterCalls = 0;
+    let resultCalls = 0;
+    let terminalCalls = 0;
+    const restoreRequests = observeInteractionRequests(
+      input.interaction.token,
+      async (request) => {
+        const contentType = request.headers.get("content-type") ?? "";
+        if (contentType.startsWith("multipart/form-data")) {
+          resultCalls += 1;
+          return;
+        }
+        if (contentType.startsWith("application/json")) {
+          const payload = JSON.stringify(await request.clone().json<unknown>());
+          if (payload.includes("clatters across the table")) clatterCalls += 1;
+          if (payload.includes("This roll could not be completed")) {
+            terminalCalls += 1;
+          }
+        }
+      },
+    );
+
+    try {
+      await runInDurableObject(stub, async (instance, state) => {
+        state.storage.sql.exec(
+          `UPDATE interaction_delivery
+           SET expires_at = ?, delay_ms = 1
+           WHERE singleton = 1`,
+          Date.now() + 120_000,
+        );
+        const roll = instance as unknown as {
+          deliver(value: unknown): Promise<unknown>;
+          finalizeIfResultWindowClosed(
+            delivery: { expires_at: number },
+            target: unknown,
+            attempts: number,
+          ): Promise<unknown>;
+        };
+        const finalizeIfResultWindowClosed =
+          roll.finalizeIfResultWindowClosed.bind(roll);
+        roll.finalizeIfResultWindowClosed = (delivery, target, attempts) =>
+          finalizeIfResultWindowClosed(
+            { ...delivery, expires_at: Date.now() + 59_999 },
+            target,
+            attempts,
+          );
+        const deliveryPromise = roll.deliver(input);
+        try {
+          await appearanceStarted.promise;
+          expect(clatterCalls).toBe(1);
+          appearanceReleased.resolve();
+          await expect(deliveryPromise).resolves.toEqual({ status: "failed" });
+        } finally {
+          appearanceReleased.resolve();
+          await deliveryPromise.catch(() => undefined);
+        }
+      });
+    } finally {
+      appearanceReleased.resolve();
+      restoreAppearance();
+      restoreRequests();
+    }
+
+    expect(clatterCalls).toBe(1);
+    expect(resultCalls).toBe(0);
+    expect(terminalCalls).toBe(1);
+    await runInDurableObject(stub, (instance) => {
+      const roll = instance as unknown as {
+        deliveryDiagnostics(): unknown;
+      };
+      expect(roll.deliveryDiagnostics()).toMatchObject({
+        state: "failed",
+        failurePhase: "deadline",
+      });
+    });
+  });
+
+  it("retries snapshot preparation without repeating persisted clatter", async () => {
+    const id = snowflakeAt(Date.now(), 50);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-clatter-contract");
+    input.accounting.guildId = "100000000000000002";
+    input.accounting.userId = "100000000000000066";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    await seedPendingV5Delivery(stub, input);
+    let appearanceCalls = 0;
+    const restoreAppearance = interceptEffectiveAppearance(
+      input.accounting.userId,
+      () => {
+        appearanceCalls += 1;
+        return appearanceCalls === 1
+          ? Response.json({ error: "temporary" }, { status: 503 })
+          : undefined;
+      },
+    );
+    let clatterCalls = 0;
+    const restoreRequests = observeInteractionRequests(
+      input.interaction.token,
+      (request) => {
+        if (
+          request.headers
+            .get("content-type")
+            ?.startsWith("application/json")
+        ) {
+          clatterCalls += 1;
+        }
+      },
+    );
+
+    try {
+      await expect(stub.deliver(input)).resolves.toMatchObject({
+        status: "pending",
+      });
+      await runInDurableObject(stub, (_instance, state) => {
+        const delivery = state.storage.sql
+          .exec<{ clatter_sent_at: number | null }>(
+            "SELECT clatter_sent_at FROM interaction_delivery",
+          )
+          .one();
+        expect(delivery.clatter_sent_at).toBeTypeOf("number");
+        const workRow = state.storage.sql
+          .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+          .one();
+        expect(JSON.parse(workRow.record_json)).toMatchObject({
+          version: 5,
+          renderRequest: null,
+        });
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET result_not_before = 0",
+        );
+      });
+
+      await evictDurableObject(stub);
+      await runInDurableObject(stub, async (instance) => {
+        await callAlarm(instance);
+      });
+    } finally {
+      restoreAppearance();
+      restoreRequests();
+    }
+
+    expect(appearanceCalls).toBe(2);
+    expect(clatterCalls).toBe(1);
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const workRow = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(JSON.parse(workRow.record_json)).toMatchObject({
+        version: 5,
+        renderVersion: 4,
+        renderRequest: {
+          version: 4,
+          rendererRevision: "canvaskit-v4-r14",
+        },
+      });
+    });
+  });
+
+  it("rolls back snapshot finalization when its lifecycle update fails", async () => {
+    const id = snowflakeAt(Date.now(), 52);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-clatter-contract");
+    input.accounting.guildId = "100000000000000002";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    await seedPendingV5Delivery(stub, input);
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(`
+        CREATE TRIGGER fail_render_lifecycle_update
+        BEFORE UPDATE OF snapshot_json ON roll_lifecycle_outbox
+        WHEN instr(NEW.snapshot_json, 'canvaskit-v4-r14') > 0
+        BEGIN
+          SELECT RAISE(ABORT, 'simulated lifecycle render update failure');
+        END;
+      `);
+    });
+
+    await expect(stub.deliver(input)).resolves.toEqual({ status: "failed" });
+    await runInDurableObject(stub, (_instance, state) => {
+      const workRow = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(JSON.parse(workRow.record_json)).toMatchObject({
+        version: 5,
+        renderVersion: 4,
+        renderRequest: null,
+      });
+      const lifecycleRow = state.storage.sql
+        .exec<{ snapshot_json: string }>(
+          "SELECT snapshot_json FROM roll_lifecycle_outbox",
+        )
+        .one();
+      expect(
+        (JSON.parse(lifecycleRow.snapshot_json) as {
+          context: { rendererRevision: string | null };
+        }).context.rendererRevision,
+      ).toBeNull();
+    });
+  });
+
+  it("recovers a pending renderer-v5 snapshot after eviction", async () => {
+    const id = snowflakeAt(Date.now(), 48);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-clatter-contract");
+    input.accounting.guildId = "100000000000000002";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+
+    await seedPendingV5Delivery(stub, input);
+
+    await evictDurableObject(stub);
+    await runInDurableObject(stub, async (instance, state) => {
+      await callAlarm(instance);
+      const workRow = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(JSON.parse(workRow.record_json)).toMatchObject({
+        version: 5,
+        renderVersion: 4,
+        renderRequest: {
+          version: 4,
+          rendererRevision: "canvaskit-v4-r14",
+        },
+      });
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM roll_log_outbox",
+          )
+          .one().count,
+      ).toBe(1);
+      const delivery = state.storage.sql
+        .exec<{
+          clatter_sent_at: number;
+          delay_ms: number;
+          result_not_before: number;
+        }>(
+          `SELECT clatter_sent_at, delay_ms, result_not_before
+           FROM interaction_delivery`,
+        )
+        .one();
+      expect(delivery.result_not_before).toBe(
+        delivery.clatter_sent_at + delivery.delay_ms,
+      );
+      state.storage.sql.exec(
+        "UPDATE interaction_delivery SET result_not_before = 0",
+      );
+      await callAlarm(instance);
+    });
+
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
     });
   });
 
@@ -2838,7 +3304,6 @@ describe("RollWork Durable Object", () => {
       await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
         status: "existing",
       });
-
       const events: Record<string, unknown>[] = [];
       for (const [entry] of consoleInfo.mock.calls) {
         if (
