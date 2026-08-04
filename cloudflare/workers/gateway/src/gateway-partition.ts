@@ -376,7 +376,9 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
         const state = connection.status().state;
         return state === "fatal" || state === "stopped"
           ? Promise.resolve()
-          : connection.stop().then(() => undefined);
+          : connection
+              .stop({ releaseOwnership: false })
+              .then(() => undefined);
       }),
     );
     this.fleetConnections.clear();
@@ -1058,7 +1060,9 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
         const state = connection.status().state;
         return state === "fatal" || state === "stopped"
           ? Promise.resolve()
-          : connection.stop().then(() => undefined);
+          : connection
+              .stop({ releaseOwnership: false })
+              .then(() => undefined);
       }),
     );
     for (const [key] of entries) this.fleetConnections.delete(key);

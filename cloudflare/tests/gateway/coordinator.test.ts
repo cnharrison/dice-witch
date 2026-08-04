@@ -533,4 +533,55 @@ describe("GatewayCoordinator fleet lifecycle", () => {
     });
     expect(fetchGatewayBot).not.toHaveBeenCalled();
   });
+
+  it("clears shard ownership during stopFleet without nested release RPCs", async () => {
+    const coordinator = gatewayEnv.GATEWAY_COORDINATOR.getByName(
+      "coordinator-fleet-stop-ownership-test",
+    );
+    await coordinator.initializeFleet(9, 1, 24);
+    await expect(
+      coordinator.acquireOwnership({
+        generation: 9,
+        shardId: 0,
+        shardCount: 1,
+        ownerId: "partition-stop-owner",
+      }),
+    ).resolves.toMatchObject({ acquired: true });
+
+    // Nested partition→coordinator releaseOwnership during stop previously
+    // caused Cloudflare 1104. stopFleet must clear ownership itself after the
+    // partition stop returns, even if the partition skips release RPC.
+    const result = await runInDurableObject(coordinator, async (instance) => {
+      const coordinatorInstance = instance as GatewayCoordinator;
+      const runtime = coordinatorInstance as unknown as { env: GatewayEnv };
+      Object.defineProperty(runtime.env, "GATEWAY_PARTITION", {
+        configurable: true,
+        value: {
+          getByName: () => ({
+            executeFleetCommand: () => Promise.resolve(),
+          }),
+        },
+      });
+      const stopped = await coordinatorInstance.stopFleet();
+      const status = await coordinatorInstance.status();
+      return { stopped, status };
+    });
+
+    expect(result).toMatchObject({
+      stopped: {
+        phase: "stopped",
+        activeGeneration: null,
+        activeShardCount: 0,
+      },
+      status: { ownerships: [] },
+    });
+    await expect(
+      coordinator.acquireOwnership({
+        generation: 9,
+        shardId: 0,
+        shardCount: 1,
+        ownerId: "partition-stop-owner-reuse",
+      }),
+    ).resolves.toMatchObject({ acquired: true, alreadyOwned: false });
+  });
 });

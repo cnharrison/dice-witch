@@ -682,7 +682,9 @@ export class GatewayShardConnection {
     return this.status();
   }
 
-  async stop(): Promise<GatewayShardStatus> {
+  async stop(options?: {
+    releaseOwnership?: boolean;
+  }): Promise<GatewayShardStatus> {
     if (this.machine.status !== "stopped") {
       await this.apply({
         type: "stop",
@@ -690,7 +692,13 @@ export class GatewayShardConnection {
         stoppedAt: Date.now(),
       });
     }
-    await this.releaseOwnership();
+    // Fleet-stop skips nested coordinator RPC (Cloudflare 1104) and lets the
+    // coordinator clear ownership after the partition command returns.
+    if (options?.releaseOwnership === false) {
+      this.ownershipAcquired = false;
+    } else {
+      await this.releaseOwnership();
+    }
     return this.status();
   }
 

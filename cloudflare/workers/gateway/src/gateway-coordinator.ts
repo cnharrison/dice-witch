@@ -465,6 +465,9 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     await this.runFleetActions(result.actions, result.state);
     const finalize = this.fleetTransitionQueue.then(async () => {
       const state = await this.requireFleetState();
+      // Drop any residual ownership after a full operator stop, including the
+      // empty-action path where no stop-generation commands ran.
+      this.ctx.storage.sql.exec(`DELETE FROM shard_ownership`);
       const stopped: StoredFleetState = {
         ...state,
         machine: createGenerationMachine(state.nextGeneration - 1, 1),
@@ -1162,6 +1165,17 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     return result.rowsWritten === 1;
   }
 
+  clearOwnershipForGeneration(generation: number): number {
+    if (!Number.isSafeInteger(generation) || generation < 0) {
+      throw new Error("Gateway ownership generation is invalid");
+    }
+    const result = this.ctx.storage.sql.exec(
+      `DELETE FROM shard_ownership WHERE generation = ?`,
+      generation,
+    );
+    return result.rowsWritten;
+  }
+
   async gatewayUrl(): Promise<string> {
     const stored = this.ctx.storage.sql
       .exec<GatewayConfigurationRow>(
@@ -1431,6 +1445,14 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
       await Promise.all(
         commands.map((command) => this.executeFleetCommand(command)),
       );
+      if (
+        action.type === "stop-generation" ||
+        action.type === "retire-generation"
+      ) {
+        // Ownership rows are cleared here, not via nested partition RPC,
+        // because releaseOwnership during stopFleet previously hit error 1104.
+        this.clearOwnershipForGeneration(action.generation);
+      }
       if (action.type === "suspend-generation") {
         const transition = transitionGeneration(state.machine, {
           type: "active-suspended",
