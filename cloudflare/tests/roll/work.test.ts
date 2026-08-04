@@ -80,6 +80,48 @@ function interceptEffectiveAppearance(
   };
 }
 
+type LifecycleSyncObservation = Readonly<{
+  state: unknown;
+  rendererRevision: unknown;
+  httpStatus: number;
+}>;
+
+function observeLifecycleSyncs(interactionId: string): Readonly<{
+  observations: LifecycleSyncObservation[];
+  restore: () => void;
+}> {
+  const service = rollEnv.DATA_SERVICE as unknown as {
+    fetch: (request: Request) => Promise<Response>;
+  };
+  const originalFetch = service.fetch;
+  const observations: LifecycleSyncObservation[] = [];
+  service.fetch = vi.fn(async (request: Request): Promise<Response> => {
+    const path = new URL(request.url).pathname;
+    const snapshot = path === "/internal/roll-lifecycle"
+      ? await request.clone().json<{
+          interactionId?: unknown;
+          state?: unknown;
+          context?: { rendererRevision?: unknown };
+        }>()
+      : null;
+    const response = await originalFetch.call(service, request);
+    if (snapshot?.interactionId === interactionId) {
+      observations.push({
+        state: snapshot.state,
+        rendererRevision: snapshot.context?.rendererRevision,
+        httpStatus: response.status,
+      });
+    }
+    return response;
+  });
+  return {
+    observations,
+    restore: () => {
+      service.fetch = originalFetch;
+    },
+  };
+}
+
 function observeInteractionRequests(
   token: string,
   inspect: (request: Request) => void | Promise<void>,
@@ -2087,7 +2129,73 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("rolls back snapshot finalization when its lifecycle update fails", async () => {
+  it("keeps pending V5 lifecycle identity stable through renderer finalization", async () => {
+    const id = snowflakeAt(Date.now(), 69);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-clatter-contract");
+    input.accounting.guildId = "100000000000000002";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    await stub.prepare({
+      notation: [input.request.notation],
+      repetitions: input.request.repetitions,
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const workRow = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      const record = JSON.parse(workRow.record_json) as Record<string, unknown>;
+      const pending = parseRecord(
+        JSON.stringify({
+          ...record,
+          version: 5,
+          renderVersion: 4,
+          renderRequest: null,
+        }),
+      );
+      state.storage.sql.exec(
+        "UPDATE roll_work SET record_json = ? WHERE singleton = 1",
+        JSON.stringify(pending),
+      );
+    });
+    const lifecycleSyncs = observeLifecycleSyncs(id);
+
+    try {
+      const firstAttempt = await stub.deliver(input);
+      if (firstAttempt.status === "pending") {
+        await runInDurableObject(stub, async (instance, state) => {
+          state.storage.sql.exec(
+            "UPDATE interaction_delivery SET result_not_before = 0",
+          );
+          await callAlarm(instance);
+        });
+      }
+    } finally {
+      lifecycleSyncs.restore();
+    }
+
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+    });
+    expect(lifecycleSyncs.observations[0]).toMatchObject({
+      state: "accepted",
+      rendererRevision: "canvaskit-v4-r14",
+      httpStatus: 200,
+    });
+    expect(
+      lifecycleSyncs.observations.map(({ rendererRevision }) => rendererRevision),
+    ).toEqual(
+      lifecycleSyncs.observations.map(() => "canvaskit-v4-r14"),
+    );
+    expect(lifecycleSyncs.observations.at(-1)).toMatchObject({
+      state: "delivered",
+      rendererRevision: "canvaskit-v4-r14",
+      httpStatus: 200,
+    });
+  });
+
+  it("rolls back snapshot finalization when lifecycle renderer metadata conflicts", async () => {
     const id = snowflakeAt(Date.now(), 52);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-clatter-contract");
@@ -2097,14 +2205,24 @@ describe("RollWork Durable Object", () => {
     }
     await seedPendingV5Delivery(stub, input);
     await runInDurableObject(stub, (_instance, state) => {
-      state.storage.sql.exec(`
-        CREATE TRIGGER fail_render_lifecycle_update
-        BEFORE UPDATE OF snapshot_json ON roll_lifecycle_outbox
-        WHEN instr(NEW.snapshot_json, 'canvaskit-v4-r14') > 0
-        BEGIN
-          SELECT RAISE(ABORT, 'simulated lifecycle render update failure');
-        END;
-      `);
+      const lifecycleRow = state.storage.sql
+        .exec<{ snapshot_json: string }>(
+          "SELECT snapshot_json FROM roll_lifecycle_outbox",
+        )
+        .one();
+      const lifecycle = JSON.parse(lifecycleRow.snapshot_json) as {
+        context: Record<string, unknown>;
+      };
+      state.storage.sql.exec(
+        "UPDATE roll_lifecycle_outbox SET snapshot_json = ?",
+        JSON.stringify({
+          ...lifecycle,
+          context: {
+            ...lifecycle.context,
+            rendererRevision: "canvaskit-v4-r13",
+          },
+        }),
+      );
     });
 
     await expect(stub.deliver(input)).resolves.toEqual({ status: "failed" });
@@ -2126,7 +2244,7 @@ describe("RollWork Durable Object", () => {
         (JSON.parse(lifecycleRow.snapshot_json) as {
           context: { rendererRevision: string | null };
         }).context.rendererRevision,
-      ).toBeNull();
+      ).toBe("canvaskit-v4-r13");
     });
   });
 
@@ -2140,6 +2258,20 @@ describe("RollWork Durable Object", () => {
     }
 
     await seedPendingV5Delivery(stub, input);
+    await runInDurableObject(stub, (_instance, state) => {
+      const lifecycle = state.storage.sql
+        .exec<{ snapshot_json: string }>(
+          "SELECT snapshot_json FROM roll_lifecycle_outbox",
+        )
+        .one();
+      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
+        revision: number;
+      };
+      state.storage.sql.exec(
+        "UPDATE roll_lifecycle_outbox SET synced_revision = ?",
+        snapshot.revision,
+      );
+    });
 
     await evictDurableObject(stub);
     await runInDurableObject(stub, async (instance, state) => {
@@ -2155,6 +2287,16 @@ describe("RollWork Durable Object", () => {
           rendererRevision: "canvaskit-v4-r14",
         },
       });
+      const lifecycle = state.storage.sql
+        .exec<{ snapshot_json: string }>(
+          "SELECT snapshot_json FROM roll_lifecycle_outbox",
+        )
+        .one();
+      expect(
+        (JSON.parse(lifecycle.snapshot_json) as {
+          context: { rendererRevision: string | null };
+        }).context.rendererRevision,
+      ).toBeNull();
       expect(
         state.storage.sql
           .exec<{ count: number }>(

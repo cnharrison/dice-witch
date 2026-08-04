@@ -13,6 +13,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const accountingAttempts = new Map<string, number>();
 const appearanceAttempts = new Map<string, number>();
+const lifecycleRendererRevisions = new Map<string, unknown>();
 const resultDeliveryAttempts = new Map<string, number>();
 
 function v2TopLevelText(payload: unknown): string | null {
@@ -194,6 +195,23 @@ async function dataTestResponse(request: Request): Promise<Response> {
     });
   }
   if (path === "/internal/roll-lifecycle") {
+    if (
+      !isRecord(value) ||
+      typeof value.interactionId !== "string" ||
+      !isRecord(value.context) ||
+      (value.context.rendererRevision !== null &&
+        typeof value.context.rendererRevision !== "string")
+    ) {
+      return Response.json({ error: "invalid" }, { status: 400 });
+    }
+    const rendererRevision = value.context.rendererRevision;
+    if (
+      lifecycleRendererRevisions.has(value.interactionId) &&
+      lifecycleRendererRevisions.get(value.interactionId) !== rendererRevision
+    ) {
+      return Response.json({ status: "conflict" }, { status: 409 });
+    }
+    lifecycleRendererRevisions.set(value.interactionId, rendererRevision);
     return Response.json({ status: "applied" });
   }
   if (path !== "/internal/roll-accounting") {

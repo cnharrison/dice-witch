@@ -47,7 +47,10 @@ import {
   type RollLogArtifact,
   type SaveRollIntent,
 } from "../../../packages/discord-contracts/src";
-import { buildRollRenderRequest } from "../../../packages/roll-render-model/src";
+import {
+  buildRollRenderRequest,
+  ROLL_RENDERER_REVISION_V4,
+} from "../../../packages/roll-render-model/src";
 import {
   deliveryMetadata,
   interactionCreatedAt,
@@ -527,12 +530,8 @@ function rollRecordRendererRevision(record: RollWorkRecord): string | null {
   if (record.version === 4 && record.renderRequest !== null) {
     return record.renderRequest.rendererRevision;
   }
-  if (
-    record.version === 5 &&
-    record.renderVersion === 4 &&
-    record.renderRequest !== null
-  ) {
-    return record.renderRequest.rendererRevision;
+  if (record.version === 5 && record.renderVersion === 4) {
+    return record.renderRequest?.rendererRevision ?? ROLL_RENDERER_REVISION_V4;
   }
   return null;
 }
@@ -1989,33 +1988,23 @@ export class RollWork extends DurableObject<RollEnv> {
     );
   }
 
-  private updateLifecycleRenderSnapshot(record: RollWorkRecordV5): void {
+  private validateLifecycleRenderSnapshot(record: RollWorkRecordV5): void {
     const rendererRevision = rollRecordRendererRevision(record);
     if (rendererRevision === null) return;
     const row = this.readLifecycleOutbox();
     if (row === undefined) return;
     const current = parseRollLifecycleSnapshot(JSON.parse(row.snapshot_json));
-    if (
-      current.context.renderVersion !== record.renderVersion ||
-      (current.context.rendererRevision !== null &&
-        current.context.rendererRevision !== rendererRevision)
-    ) {
+    if (current.context.renderVersion !== record.renderVersion) {
       throw new Error("Roll lifecycle render snapshot conflicts with stored work");
     }
-    if (current.context.rendererRevision === rendererRevision) return;
-    const occurredAt = Date.now();
-    const next = parseRollLifecycleSnapshot({
-      ...current,
-      revision: current.revision + 1,
-      context: { ...current.context, rendererRevision },
-    });
-    this.ctx.storage.sql.exec(
-      `UPDATE roll_lifecycle_outbox
-       SET snapshot_json = ?, next_sync_at = ?
-       WHERE singleton = 1`,
-      JSON.stringify(next),
-      occurredAt,
-    );
+    if (current.context.rendererRevision === null) {
+      // This may already be part of Data's accepted fingerprint for V5 work
+      // written before producers predeclared the renderer revision.
+      return;
+    }
+    if (current.context.rendererRevision !== rendererRevision) {
+      throw new Error("Roll lifecycle render snapshot conflicts with stored work");
+    }
   }
 
   private recordProviderAttempt(): void {
@@ -4132,11 +4121,11 @@ export class RollWork extends DurableObject<RollEnv> {
         throw new Error("Roll render snapshot conflicts with stored work");
       }
       if (current.renderRequest !== null) return current;
+      this.validateLifecycleRenderSnapshot(finalized);
       this.ctx.storage.sql.exec(
         "UPDATE roll_work SET record_json = ? WHERE singleton = 1",
         JSON.stringify(finalized),
       );
-      this.updateLifecycleRenderSnapshot(finalized);
       return finalized;
     });
   }

@@ -519,6 +519,8 @@ function renderDieV4(
   };
 }
 
+export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r14" as const;
+
 export function buildRollRenderRequestV4(
   result: RollExecutionResult,
   renderSeed: number,
@@ -545,7 +547,7 @@ export function buildRollRenderRequestV4(
   }
   return validateRenderRequestV4({
     version: 4,
-    rendererRevision: "canvaskit-v4-r14",
+    rendererRevision: ROLL_RENDERER_REVISION_V4,
     groups,
   });
 }

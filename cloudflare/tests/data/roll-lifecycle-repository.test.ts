@@ -200,6 +200,27 @@ describe("D1RollLifecycleRepository", () => {
     });
   });
 
+  it("rejects renderer revision enrichment after lifecycle acceptance", async () => {
+    const repository = new D1RollLifecycleRepository(dataEnv.DATA);
+    const pending = snapshot({
+      interactionId: "100000000000000006",
+      context: { ...snapshot().context, rendererRevision: null },
+    });
+    await expect(repository.record(pending)).resolves.toEqual({
+      status: "applied",
+    });
+    await expect(
+      repository.record({
+        ...pending,
+        revision: 2,
+        context: {
+          ...pending.context,
+          rendererRevision: "canvaskit-v4-r14",
+        },
+      }),
+    ).resolves.toEqual({ status: "conflict" });
+  });
+
   it("rejects conflicting immutable context and forbidden credentials", async () => {
     const repository = new D1RollLifecycleRepository(dataEnv.DATA);
     await repository.record(snapshot());
