@@ -4010,6 +4010,32 @@ export class RollWork extends DurableObject<RollEnv> {
       };
     }
     // Every rollback target must parse and recover V5 before this producer ships.
+    if (
+      delivery.rollSeed !== null &&
+      delivery.savedRoll === null &&
+      delivery.responseMode === "edit-original" &&
+      delivery.logging?.source === "discord"
+    ) {
+      return {
+        status: "ready",
+        record:
+          renderVersion === 3
+            ? {
+                version: 5,
+                renderVersion: 3,
+                ...common,
+                renderRequest: null,
+              }
+            : {
+                version: 5,
+                renderVersion: 4,
+                ...common,
+                renderRequest: null,
+              },
+        renderSnapshotPreparationMs: null,
+      };
+    }
+
     const renderSnapshotPreparationStartedAt = Date.now();
     try {
       const renderRequest = await buildRollRenderRequestForVersion(

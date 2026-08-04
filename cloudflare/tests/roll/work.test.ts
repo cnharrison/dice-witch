@@ -1877,21 +1877,96 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("persists the guild preference and skips Discord clatter", async () => {
+  it("persists the disabled delay preference and sends the result directly", async () => {
     const id = snowflakeAt(Date.now(), 26);
     const stub = work(id);
-    const input = deliveryRequest(id, "delivery-success");
-    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+    const input = telemetryDeliveryRequest(id, "delivery-success");
+    input.accounting.userId = "100000000000000044";
+    const appearanceStarted = controlledSignal();
+    const appearanceReleased = controlledSignal();
+    const restoreAppearance = interceptEffectiveAppearance(
+      input.accounting.userId,
+      async () => {
+        appearanceStarted.resolve();
+        await appearanceReleased.promise;
+        return undefined;
+      },
+    );
+    let jsonCalls = 0;
+    let multipartCalls = 0;
+    const restoreRequests = observeInteractionRequests(
+      input.interaction.token,
+      (request) => {
+        const contentType = request.headers.get("content-type") ?? "";
+        if (contentType.startsWith("application/json")) jsonCalls += 1;
+        if (contentType.startsWith("multipart/form-data")) multipartCalls += 1;
+      },
+    );
+
+    try {
+      await runInDurableObject(stub, async (instance) => {
+        const roll = instance as unknown as {
+          deliver(value: unknown): Promise<unknown>;
+        };
+        const deliveryPromise = roll.deliver(input);
+        try {
+          await appearanceStarted.promise;
+          expect(jsonCalls).toBe(0);
+          expect(multipartCalls).toBe(0);
+          appearanceReleased.resolve();
+          await expect(deliveryPromise).resolves.toEqual({
+            status: "delivered",
+          });
+        } finally {
+          appearanceReleased.resolve();
+          await deliveryPromise.catch(() => undefined);
+        }
+      });
+    } finally {
+      appearanceReleased.resolve();
+      restoreAppearance();
+      restoreRequests();
+    }
+
+    expect(jsonCalls).toBe(0);
+    expect(multipartCalls).toBe(1);
     await runInDurableObject(stub, (_instance, state) => {
-      const row = state.storage.sql
+      const delivery = state.storage.sql
         .exec<{
           skip_dice_delay: number | null;
           clatter_sent_at: number | null;
+          delay_ms: number | null;
+          result_not_before: number | null;
         }>(
-          "SELECT skip_dice_delay, clatter_sent_at FROM interaction_delivery",
+          `SELECT skip_dice_delay, clatter_sent_at, delay_ms,
+                  result_not_before
+           FROM interaction_delivery`,
         )
         .one();
-      expect(row).toEqual({ skip_dice_delay: 1, clatter_sent_at: null });
+      expect(delivery).toEqual({
+        skip_dice_delay: 1,
+        clatter_sent_at: null,
+        delay_ms: null,
+        result_not_before: null,
+      });
+      const workRow = state.storage.sql
+        .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+        .one();
+      expect(JSON.parse(workRow.record_json)).toMatchObject({
+        version: 5,
+        renderVersion: 4,
+        renderRequest: {
+          version: 4,
+          rendererRevision: "canvaskit-v4-r14",
+        },
+      });
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM roll_log_outbox",
+          )
+          .one().count,
+      ).toBe(1);
     });
   });
 
@@ -1943,6 +2018,147 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
       attempts: 2,
+    });
+  });
+
+  it("prepares a fresh roll during its persisted clatter delay", async () => {
+    const id = snowflakeAt(Date.now(), 49);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(id, "delivery-clatter-contract");
+    const renderVersionBinding: string = rollEnv.ROLL_RENDER_VERSION;
+    const expectedRenderVersion = renderVersionBinding === "3" ? 3 : 4;
+    input.accounting.guildId = "100000000000000002";
+    input.accounting.userId = "100000000000000077";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    const appearanceStarted = controlledSignal();
+    const appearanceReleased = controlledSignal();
+    let appearanceCalls = 0;
+    const restoreAppearance = interceptEffectiveAppearance(
+      input.accounting.userId,
+      async () => {
+        appearanceCalls += 1;
+        appearanceStarted.resolve();
+        await appearanceReleased.promise;
+        return appearanceCalls > 1
+          ? Response.json({ error: "profile changed" }, { status: 503 })
+          : undefined;
+      },
+    );
+    let clatterCalls = 0;
+    let deliveredImage = new Uint8Array();
+    const restoreRequests = observeInteractionRequests(
+      input.interaction.token,
+      async (request) => {
+        const contentType = request.headers.get("content-type") ?? "";
+        if (contentType.startsWith("application/json")) clatterCalls += 1;
+        if (contentType.startsWith("multipart/form-data")) {
+          const form = await request.clone().formData();
+          const image = form.get("files[0]");
+          if (image instanceof Blob) {
+            deliveredImage = new Uint8Array(await image.arrayBuffer());
+          }
+        }
+      },
+    );
+
+    let finalizedRecord = "";
+    let sourceImage = new Uint8Array();
+    try {
+      await runInDurableObject(stub, async (instance, state) => {
+        const roll = instance as unknown as {
+          deliver(value: unknown): Promise<unknown>;
+        };
+        const deliveryPromise = roll.deliver(input);
+        try {
+          await appearanceStarted.promise;
+          expect(clatterCalls).toBe(1);
+          const delivery = state.storage.sql
+            .exec<{
+              clatter_sent_at: number;
+              delay_ms: number;
+              result_not_before: number;
+            }>(
+              `SELECT clatter_sent_at, delay_ms, result_not_before
+               FROM interaction_delivery`,
+            )
+            .one();
+          expect(delivery.result_not_before).toBe(
+            delivery.clatter_sent_at + delivery.delay_ms,
+          );
+          const pendingWork = state.storage.sql
+            .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+            .one();
+          expect(JSON.parse(pendingWork.record_json)).toMatchObject({
+            version: 5,
+            renderVersion: expectedRenderVersion,
+            renderRequest: null,
+          });
+          expect(
+            state.storage.sql
+              .exec<{ count: number }>(
+                "SELECT COUNT(*) AS count FROM roll_log_outbox",
+              )
+              .one().count,
+          ).toBe(0);
+
+          appearanceReleased.resolve();
+          await expect(deliveryPromise).resolves.toMatchObject({
+            status: "pending",
+          });
+          finalizedRecord = state.storage.sql
+            .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+            .one().record_json;
+          expect(JSON.parse(finalizedRecord)).toMatchObject({
+            version: 5,
+            renderVersion: expectedRenderVersion,
+            renderRequest:
+              expectedRenderVersion === 3
+                ? { version: 3 }
+                : {
+                    version: 4,
+                    rendererRevision: "canvaskit-v4-r14",
+                  },
+          });
+          const source = state.storage.sql
+            .exec<{ image_bytes: ArrayBuffer }>(
+              "SELECT image_bytes FROM roll_log_outbox",
+            )
+            .one();
+          sourceImage = new Uint8Array(source.image_bytes).slice();
+          expect(sourceImage.byteLength).toBeGreaterThan(0);
+        } finally {
+          appearanceReleased.resolve();
+          await deliveryPromise.catch(() => undefined);
+        }
+      });
+
+      await evictDurableObject(stub);
+      await runInDurableObject(stub, async (instance, state) => {
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET result_not_before = 0",
+        );
+        await callAlarm(instance);
+      });
+    } finally {
+      appearanceReleased.resolve();
+      restoreAppearance();
+      restoreRequests();
+    }
+
+    expect(appearanceCalls).toBe(1);
+    expect(clatterCalls).toBe(1);
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+    });
+    expect(deliveredImage).toEqual(sourceImage);
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+          .one().record_json,
+      ).toBe(finalizedRecord);
     });
   });
 
@@ -3446,6 +3662,17 @@ describe("RollWork Durable Object", () => {
       await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
         status: "existing",
       });
+      await runInDurableObject(stub, (_instance, state) => {
+        const row = state.storage.sql
+          .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+          .one();
+        expect(JSON.parse(row.record_json)).toMatchObject({
+          version: 5,
+          renderVersion: 4,
+          renderRequest: null,
+        });
+      });
+
       const events: Record<string, unknown>[] = [];
       for (const [entry] of consoleInfo.mock.calls) {
         if (
@@ -3498,11 +3725,11 @@ describe("RollWork Durable Object", () => {
         "handlerElapsedMs",
         "recordPreparationMs",
         "recoveryAlarmWriteMs",
-        "renderSnapshotPreparationMs",
       ] as const) {
         expect(Number.isSafeInteger(event[field])).toBe(true);
         expect(event[field]).toBeGreaterThanOrEqual(0);
       }
+      expect(event.renderSnapshotPreparationMs).toBeNull();
       expect(event.handlerElapsedMs).toBeGreaterThanOrEqual(
         event.recordPreparationMs as number,
       );
