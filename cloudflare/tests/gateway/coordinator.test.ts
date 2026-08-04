@@ -563,7 +563,7 @@ describe("GatewayCoordinator fleet lifecycle", () => {
         },
       });
       const stopped = await coordinatorInstance.stopFleet();
-      const status = await coordinatorInstance.status();
+      const status = coordinatorInstance.status();
       return { stopped, status };
     });
 
