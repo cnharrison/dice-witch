@@ -1258,7 +1258,9 @@ describe("CanvasKit Render Request V4", () => {
         | "canvaskit-v4-r9"
         | "canvaskit-v4-r10"
         | "canvaskit-v4-r11"
-        | "canvaskit-v4-r12",
+        | "canvaskit-v4-r12"
+        | "canvaskit-v4-r13"
+        | "canvaskit-v4-r14",
     ) => ({
       version: 4 as const,
       rendererRevision,
@@ -1282,6 +1284,8 @@ describe("CanvasKit Render Request V4", () => {
         groupedRows,
         wideGroupedRows,
         productionSpacingRows,
+        wrappedRows,
+        balancedRows,
       ] = await Promise.all([
         renderDiceRequestV4ToPng(
           requestFor(target, result, "canvaskit-v4-r8"),
@@ -1301,6 +1305,14 @@ describe("CanvasKit Render Request V4", () => {
         ),
         renderDiceRequestV4ToPng(
           requestFor(target, result, "canvaskit-v4-r12"),
+          createRenderer,
+        ),
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r13"),
+          createRenderer,
+        ),
+        renderDiceRequestV4ToPng(
+          requestFor(target, result, "canvaskit-v4-r14"),
           createRenderer,
         ),
       ]);
@@ -1332,9 +1344,25 @@ describe("CanvasKit Render Request V4", () => {
         diceCount: 1,
         rowCount: 1,
       });
+      expect(wrappedRows).toMatchObject({
+        rendererRevision: "canvaskit-v4-r13",
+        width: 300,
+        height: 150,
+        diceCount: 1,
+        rowCount: 1,
+      });
+      expect(balancedRows).toMatchObject({
+        rendererRevision: "canvaskit-v4-r14",
+        width: 300,
+        height: 150,
+        diceCount: 1,
+        rowCount: 1,
+      });
       expect(groupedRows.png).toEqual(compact.png);
       expect(wideGroupedRows.png).toEqual(compact.png);
       expect(productionSpacingRows.png).toEqual(compact.png);
+      expect(wrappedRows.png).toEqual(compact.png);
+      expect(balancedRows.png).toEqual(compact.png);
       const [legacyPixels, compactPixels] = await Promise.all([
         decodePngRgba8(legacy.png),
         decodePngRgba8(compact.png),
@@ -1900,6 +1928,138 @@ describe("CanvasKit Render Request V4", () => {
     });
   });
 
+  it("wraps and centers each r13 repetition after ten dice", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const rendered = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r13",
+        groups: [
+          Array.from({ length: 11 }, (_, index) => ({
+            ...die("d8", (index % 8) + 1),
+            appearance: scopedAppearance,
+          })),
+          Array.from({ length: 3 }, (_, index) => ({
+            ...die("d8", index + 1),
+            appearance: scopedAppearance,
+          })),
+        ],
+      },
+      () => createRequestRenderer(canvasKit),
+    );
+
+    expect(rendered).toMatchObject({
+      width: 1_500,
+      height: 450,
+      diceCount: 14,
+      rowCount: 3,
+    });
+    const decoded = await decodePngRgba8(rendered.png);
+    for (const [rowIndex, expectedDice] of [
+      [0, 10],
+      [1, 1],
+      [2, 3],
+    ] as const) {
+      const runs = alphaColumnRuns(
+        cropRgba(
+          decoded.pixels,
+          rendered.width,
+          0,
+          rowIndex * 150,
+          rendered.width,
+          150,
+        ),
+        rendered.width,
+      );
+      expect(runs).toHaveLength(expectedDice);
+      const first = runs[0];
+      const last = runs.at(-1);
+      if (first === undefined || last === undefined) {
+        throw new Error("Expected centered r13 dice row");
+      }
+      expect(Math.abs(first.left - (rendered.width - last.right - 1)))
+        .toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("balances fifteen r14 dice across centered rows", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const rendered = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r14",
+        groups: [Array.from({ length: 15 }, (_, index) => ({
+          ...die("d20", (index % 20) + 1),
+          appearance: scopedAppearance,
+        }))],
+      },
+      () => createRequestRenderer(canvasKit),
+    );
+
+    expect(rendered).toMatchObject({
+      width: 1_200,
+      height: 300,
+      diceCount: 15,
+      rowCount: 2,
+    });
+    const decoded = await decodePngRgba8(rendered.png);
+    for (const [rowIndex, expectedDice] of [[0, 8], [1, 7]] as const) {
+      const runs = alphaColumnRuns(
+        cropRgba(
+          decoded.pixels,
+          rendered.width,
+          0,
+          rowIndex * 150,
+          rendered.width,
+          150,
+        ),
+        rendered.width,
+      );
+      expect(runs).toHaveLength(expectedDice);
+      const first = runs[0];
+      const last = runs.at(-1);
+      if (first === undefined || last === undefined) {
+        throw new Error("Expected centered r14 dice row");
+      }
+      expect(Math.abs(first.left - (rendered.width - last.right - 1)))
+        .toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("wraps the maximum r13 and r14 repetitions into five rows", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const groups = [Array.from({ length: 50 }, (_, index) => ({
+      ...die("d6", (index % 6) + 1),
+      appearance: scopedAppearance,
+    }))];
+
+    for (const rendererRevision of [
+      "canvaskit-v4-r13",
+      "canvaskit-v4-r14",
+    ] as const) {
+      const rendered = await renderDiceRequestV4ToPng(
+        { version: 4, rendererRevision, groups },
+        () => createRequestRenderer(canvasKit),
+      );
+      expect(rendered).toMatchObject({
+        width: 1_500,
+        height: 750,
+        diceCount: 50,
+        rowCount: 5,
+      });
+      expect(rendered.png.byteLength).toBeLessThan(10_000_000);
+    }
+  });
+
   it("preserves the compact r9 maximum repeated modifier layout", async () => {
     const scopedAppearance = {
       ...appearance,
@@ -2364,7 +2524,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r13" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r15" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

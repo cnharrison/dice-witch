@@ -69,10 +69,30 @@ describe("V4 renderer revision policies", () => {
     });
   });
 
+  it("inherits every r12 policy in r13 except independent row wrapping", () => {
+    const revision12 = rendererRevisionPolicyV4("canvaskit-v4-r12");
+    const revision13 = rendererRevisionPolicyV4("canvaskit-v4-r13");
+
+    expect(revision13).toEqual({
+      ...revision12,
+      gridLayout: "group-rows-r13",
+    });
+  });
+
+  it("inherits every r13 policy in r14 except balanced row wrapping", () => {
+    const revision13 = rendererRevisionPolicyV4("canvaskit-v4-r13");
+    const revision14 = rendererRevisionPolicyV4("canvaskit-v4-r14");
+
+    expect(revision14).toEqual({
+      ...revision13,
+      gridLayout: "group-rows-r14",
+    });
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r13" as RendererRevisionV4,
+        "canvaskit-v4-r15" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });
