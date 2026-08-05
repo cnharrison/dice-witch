@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateAuditReport } from "./audit-policy.mjs";
+import {
+  evaluateAuditReport,
+  REACT_ROUTER_EXCEPTION,
+  UNDICI_EXCEPTION,
+} from "./audit-policy.mjs";
+
+// Clocks are derived from the configured expiries so renewing an exception
+// never requires editing an unrelated test.
+const BEFORE_ANY_EXPIRY =
+  Math.min(REACT_ROUTER_EXCEPTION.expiresAt, UNDICI_EXCEPTION.expiresAt) - 1;
+
+function isoExpiry(exception) {
+  return new Date(exception.expiresAt).toISOString();
+}
 
 function undiciAdvisory() {
   return {
@@ -79,16 +92,25 @@ function report(extra = {}) {
   };
 }
 
+test("configures every exception with a finite expiry", () => {
+  for (const exception of [REACT_ROUTER_EXCEPTION, UNDICI_EXCEPTION]) {
+    assert.ok(
+      Number.isFinite(exception.expiresAt),
+      `${exception.package} expiry must be a parsable instant`,
+    );
+  }
+});
+
 test("allows only bounded unreachable advisories before expiry", () => {
   assert.deepEqual(
-    evaluateAuditReport(report(), Date.parse("2026-08-03T00:00:00Z")),
+    evaluateAuditReport(report(), BEFORE_ANY_EXPIRY),
     {
       allowed: ["react-router", "react-router-dom", "undici"],
       exceptions: [
         {
           urls: ["https://github.com/advisories/GHSA-qwww-vcr4-c8h2"],
-          reason: "unstable RSC APIs are not used",
-          expiresAt: "2026-08-07T00:00:00.000Z",
+          reason: REACT_ROUTER_EXCEPTION.reason,
+          expiresAt: isoExpiry(REACT_ROUTER_EXCEPTION),
         },
         {
           urls: [
@@ -98,9 +120,8 @@ test("allows only bounded unreachable advisories before expiry", () => {
             "https://github.com/advisories/GHSA-jr45-8vmc-qm54",
             "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
           ],
-          reason:
-            "the high-severity cache interceptor is not configured; the remaining advisories are moderate and all affected packages are development-only",
-          expiresAt: "2026-08-05T00:00:00.000Z",
+          reason: UNDICI_EXCEPTION.reason,
+          expiresAt: isoExpiry(UNDICI_EXCEPTION),
         },
       ],
     },
@@ -112,7 +133,7 @@ test("rejects every other high or critical advisory", () => {
     () =>
       evaluateAuditReport(
         report({ tar: { severity: "high", via: [] } }),
-        Date.parse("2026-07-24T00:00:00Z"),
+        BEFORE_ANY_EXPIRY,
       ),
     /blocking packages: tar/,
   );
@@ -124,7 +145,7 @@ test("rejects an incomplete advisory dependency chain", () => {
 
   assert.throws(
     () =>
-      evaluateAuditReport(incomplete, Date.parse("2026-07-24T00:00:00Z")),
+      evaluateAuditReport(incomplete, BEFORE_ANY_EXPIRY),
     /audit exception chain is incomplete/,
   );
 });
@@ -137,7 +158,7 @@ test("rejects any changed undici advisory chain", () => {
     () =>
       evaluateAuditReport(
         report({ undici: changed }),
-        Date.parse("2026-08-03T00:00:00Z"),
+        BEFORE_ANY_EXPIRY,
       ),
     /blocking packages: undici/,
   );
@@ -151,15 +172,21 @@ test("rejects an undici advisory severity escalation", () => {
     () =>
       evaluateAuditReport(
         report({ undici: escalated }),
-        Date.parse("2026-08-03T00:00:00Z"),
+        BEFORE_ANY_EXPIRY,
       ),
     /blocking packages: undici/,
   );
 });
 
 test("fails closed when the undici exception expires", () => {
+  // Only one exception is under test, so the other advisory chain is removed
+  // rather than relying on which expiry happens to come first.
+  const withoutReactRouter = report();
+  delete withoutReactRouter.vulnerabilities["react-router"];
+  delete withoutReactRouter.vulnerabilities["react-router-dom"];
+
   assert.throws(
-    () => evaluateAuditReport(report(), Date.parse("2026-08-05T00:00:00Z")),
+    () => evaluateAuditReport(withoutReactRouter, UNDICI_EXCEPTION.expiresAt),
     /temporary undici audit exception has expired/,
   );
 });
@@ -170,10 +197,7 @@ test("fails closed when the React Router exception expires", () => {
 
   assert.throws(
     () =>
-      evaluateAuditReport(
-        withoutUndici,
-        Date.parse("2026-08-07T00:00:00Z"),
-      ),
+      evaluateAuditReport(withoutUndici, REACT_ROUTER_EXCEPTION.expiresAt),
     /temporary react-router audit exception has expired/,
   );
 });

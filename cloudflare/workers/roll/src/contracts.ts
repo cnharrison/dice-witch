@@ -236,6 +236,7 @@ export type StoredDeliveryRow = {
   skip_dice_delay: number | null;
   delay_ms: number | null;
   result_not_before: number | null;
+  snapshot_ms: number | null;
   accounting_state: "pending" | "not_applicable" | "accounted" | "failed";
   accounting_occurred_at: number | null;
   accounting_http_status: number | null;

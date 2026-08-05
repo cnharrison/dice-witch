@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const REACT_ROUTER_EXCEPTION = {
+export const REACT_ROUTER_EXCEPTION = {
   source: 1_124_282,
   package: "react-router",
   dependent: "react-router-dom",
@@ -11,7 +11,7 @@ const REACT_ROUTER_EXCEPTION = {
   expiresAt: Date.parse("2026-08-07T00:00:00Z"),
 };
 
-const UNDICI_EXCEPTION = {
+export const UNDICI_EXCEPTION = {
   package: "undici",
   advisories: [
     [
@@ -69,8 +69,8 @@ const UNDICI_EXCEPTION = {
     "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
   ],
   reason:
-    "the high-severity cache interceptor is not configured; the remaining advisories are moderate and all affected packages are development-only",
-  expiresAt: Date.parse("2026-08-05T00:00:00Z"),
+    "the high-severity cache interceptor is not configured; the remaining advisories are moderate, all affected packages are development-only, and every published miniflare release pins undici 7.28.0 exactly",
+  expiresAt: Date.parse("2026-08-19T00:00:00Z"),
 };
 
 function isRecord(value) {
