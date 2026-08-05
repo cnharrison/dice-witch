@@ -303,6 +303,7 @@ describe("RollWork Durable Object", () => {
           "skip_dice_delay",
           "delay_ms",
           "result_not_before",
+          "snapshot_ms",
           "accounting_state",
           "accounting_occurred_at",
           "accounting_http_status",
@@ -2021,6 +2022,69 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("reports delivery segments measured in an earlier alarm wake", async () => {
+    const id = snowflakeAt(Date.now(), 91);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(id, "delivery-clatter-contract");
+    input.accounting.guildId = "100000000000000002";
+    input.accounting.userId = "100000000000000077";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    const consoleInfo = vi
+      .spyOn(console, "info")
+      .mockImplementation(() => undefined);
+    try {
+      await expect(stub.deliver(input)).resolves.toMatchObject({
+        status: "pending",
+      });
+      const prepared = await runInDurableObject(stub, (_instance, state) =>
+        state.storage.sql
+          .exec<{ snapshot_ms: number | null }>(
+            "SELECT snapshot_ms FROM interaction_delivery",
+          )
+          .one(),
+      );
+      expect(prepared.snapshot_ms).toBeTypeOf("number");
+
+      // Eviction drops in-memory state, so the completion event can only
+      // report these segments if the earlier wake persisted them.
+      await evictDurableObject(stub);
+      await runInDurableObject(stub, async (instance, state) => {
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET result_not_before = ?",
+          Date.now(),
+        );
+        await callAlarm(instance);
+      });
+      await expect(stub.deliveryStatus()).resolves.toMatchObject({
+        state: "delivered",
+      });
+
+      const delivered = consoleInfo.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find(
+          ({ message, rollId }) =>
+            message === "Roll destination delivery completed" && rollId === id,
+        );
+      expect(delivered).toMatchObject({
+        telemetryVersion: 3,
+        state: "delivered",
+        renderSnapshotPreparationMs: prepared.snapshot_ms,
+      });
+      expect(delivered?.ackToClatterMs).toBeTypeOf("number");
+      expect(delivered?.resultUploadMs).toBeTypeOf("number");
+      expect(delivered?.postDelayMs).toBeTypeOf("number");
+      expect(Number(delivered?.imageByteLength)).toBeGreaterThan(0);
+      expect(Number(delivered?.postDelayMs)).toBeGreaterThanOrEqual(0);
+      expect(Number(delivered?.elapsedMs)).toBeGreaterThanOrEqual(
+        Number(delivered?.postDelayMs),
+      );
+    } finally {
+      consoleInfo.mockRestore();
+    }
+  });
+
   it("prepares a fresh roll during its persisted clatter delay", async () => {
     const id = snowflakeAt(Date.now(), 49);
     const stub = work(id);
@@ -3008,7 +3072,7 @@ describe("RollWork Durable Object", () => {
             rollId === deliveredId,
         );
       expect(delivered).toMatchObject({
-        telemetryVersion: 2,
+        telemetryVersion: 3,
         subsystem: "roll-destination",
         rollId: deliveredId,
         interactionId: deliveredId,
@@ -3049,6 +3113,8 @@ describe("RollWork Durable Object", () => {
       expect(delivered?.renderSeed).toBeTypeOf("number");
       expect(delivered?.elapsedMs).toBeTypeOf("number");
       expect(delivered?.imageSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(delivered?.resultUploadMs).toBeTypeOf("number");
+      expect(Number(delivered?.imageByteLength)).toBeGreaterThan(0);
 
       const failed = consoleError.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
@@ -3058,7 +3124,7 @@ describe("RollWork Durable Object", () => {
             rollId === failedId,
         );
       expect(failed).toMatchObject({
-        telemetryVersion: 2,
+        telemetryVersion: 3,
         subsystem: "roll-destination",
         rollId: failedId,
         interactionId: failedId,
