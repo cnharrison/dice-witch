@@ -1142,7 +1142,9 @@ describe("RollWork Durable Object", () => {
       height: 750,
     });
     await expect(stub.render(fixture.request)).resolves.toEqual(first);
-  });
+    // Two maximum-size CanvasKit renders take about 2.5s alone and longer
+    // while the rest of the suite competes for the same machine.
+  }, 20_000);
 
   it("rejects V3 and V4 records with incompatible render data", () => {
     const wrongVersion = structuredClone(rollWorkV3Fixture) as {
@@ -2260,7 +2262,9 @@ describe("RollWork Durable Object", () => {
         }
         if (contentType.startsWith("application/json")) {
           const payload = JSON.stringify(await request.clone().json<unknown>());
-          if (payload.includes("clatters across the table")) clatterCalls += 1;
+          // Extreme rolls swap in a random clatter variant, so match the
+          // shared ellipsis opener instead of one variant's wording.
+          if (payload.includes("_...")) clatterCalls += 1;
           if (payload.includes("This roll could not be completed")) {
             terminalCalls += 1;
           }
@@ -2358,10 +2362,15 @@ describe("RollWork Durable Object", () => {
     );
 
     try {
-      await expect(stub.deliver(input)).resolves.toMatchObject({
-        status: "pending",
-      });
-      await runInDurableObject(stub, (_instance, state) => {
+      // Delivering and inspecting inside one invocation keeps the scheduled
+      // retry from finalizing the snapshot before the pending state is read.
+      await runInDurableObject(stub, async (instance, state) => {
+        const roll = instance as unknown as {
+          deliver(value: unknown): Promise<unknown>;
+        };
+        await expect(roll.deliver(input)).resolves.toMatchObject({
+          status: "pending",
+        });
         const delivery = state.storage.sql
           .exec<{ clatter_sent_at: number | null }>(
             "SELECT clatter_sent_at FROM interaction_delivery",
