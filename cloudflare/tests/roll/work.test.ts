@@ -143,6 +143,17 @@ function observeInteractionRequests(
   };
 }
 
+function serializedLogEvents(
+  calls: [unknown?, ...unknown[]][],
+): Record<string, unknown>[] {
+  // Acceptance telemetry logs an object while destination telemetry logs a
+  // JSON string, so only the serialized entries are parsed here.
+  return calls
+    .map(([entry]) => entry)
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => JSON.parse(entry) as Record<string, unknown>);
+}
+
 function snowflakeAt(timestamp: number, sequence = 0): string {
   return (
     (BigInt(timestamp - 1_420_070_400_000) << 22n) |
@@ -588,8 +599,7 @@ describe("RollWork Durable Object", () => {
     });
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await runDurableObjectAlarm(stub);
-    const completed = consoleInfo.mock.calls
-      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+    const completed = serializedLogEvents(consoleInfo.mock.calls)
       .find(({ message, rollId }) =>
         message === "Roll destination delivery completed" && rollId === runId
       );
@@ -2072,8 +2082,7 @@ describe("RollWork Durable Object", () => {
         state: "delivered",
       });
 
-      const delivered = consoleInfo.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      const delivered = serializedLogEvents(consoleInfo.mock.calls)
         .find(
           ({ message, rollId }) =>
             message === "Roll destination delivery completed" && rollId === id,
@@ -3009,8 +3018,7 @@ describe("RollWork Durable Object", () => {
         state: "failed",
         failurePhase: "record",
       });
-      const terminalFailure = consoleError.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      const terminalFailure = serializedLogEvents(consoleError.mock.calls)
         .find(
           ({ message, rollId }) =>
             message === "Roll delivery encountered a terminal internal failure" &&
@@ -3088,8 +3096,7 @@ describe("RollWork Durable Object", () => {
         );
       });
 
-      const delivered = consoleInfo.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      const delivered = serializedLogEvents(consoleInfo.mock.calls)
         .find(
           ({ message, rollId }) =>
             message === "Roll destination delivery completed" &&
@@ -3140,8 +3147,7 @@ describe("RollWork Durable Object", () => {
       expect(delivered?.resultUploadMs).toBeTypeOf("number");
       expect(Number(delivered?.imageByteLength)).toBeGreaterThan(0);
 
-      const failed = consoleError.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      const failed = serializedLogEvents(consoleError.mock.calls)
         .find(
           ({ message, rollId }) =>
             message === "Roll destination delivery completed" &&
@@ -3213,8 +3219,7 @@ describe("RollWork Durable Object", () => {
 
     try {
       await expect(work(id).deliver(input)).resolves.toEqual({ status: "failed" });
-      const failed = consoleError.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      const failed = serializedLogEvents(consoleError.mock.calls)
         .find(
           ({ message, rollId }) =>
             message === "Roll destination delivery completed" && rollId === id,
@@ -3837,6 +3842,40 @@ describe("RollWork Durable Object", () => {
       ]) {
         expect(serialized).not.toContain(String(sensitive));
       }
+    } finally {
+      consoleInfo.mockRestore();
+    }
+  });
+
+  it("reports acceptance timing when delivery continues inline", async () => {
+    const id = snowflakeAt(Date.now(), 93);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(id, "delivery-clatter-contract");
+    input.accounting.guildId = "100000000000000002";
+    input.accounting.userId = "100000000000000078";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+    const consoleInfo = vi
+      .spyOn(console, "info")
+      .mockImplementation(() => undefined);
+
+    try {
+      await expect(stub.deliver(input)).resolves.toMatchObject({
+        status: "pending",
+      });
+      const event = consoleInfo.mock.calls
+        .map(([entry]) => entry as Record<string, unknown>)
+        .find((entry) => entry.message === "Roll durable acceptance completed");
+      expect(event).toMatchObject({
+        subsystem: "roll-acceptance",
+        acceptanceStatus: "created",
+      });
+      // Inline delivery skips the immediate alarm, so no alarm write is timed.
+      expect(event?.deliveryAlarmWriteMs).toBeNull();
+      expect(
+        Number.isSafeInteger(event?.acknowledgementToHandlerStartMs),
+      ).toBe(true);
     } finally {
       consoleInfo.mockRestore();
     }

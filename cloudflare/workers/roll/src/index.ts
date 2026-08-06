@@ -1608,7 +1608,6 @@ export class RollWork extends DurableObject<RollEnv> {
       }
     }
     if (
-      !deliverInline &&
       accepted.status === "created" &&
       delivery.telemetry !== null
     ) {

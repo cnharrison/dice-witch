@@ -109,7 +109,7 @@ function randomSeed(): number {
 }
 
 type RollWorkAcceptanceStub = {
-  acceptDelivery(value: unknown): Promise<unknown>;
+  deliver(value: unknown): Promise<unknown>;
 };
 
 type DeferredRoll = {
@@ -119,10 +119,11 @@ type DeferredRoll = {
 };
 
 function isAcceptedRollDelivery(value: unknown): boolean {
+  // Inline delivery reports its own progress: pending means the clatter is
+  // posted and the result is waiting on the deliberate delay.
   return (
     isRecord(value) &&
-    (value.status === "created" || value.status === "existing") &&
-    (value.delivery === "pending" || value.delivery === "delivered")
+    (value.status === "pending" || value.status === "delivered")
   );
 }
 
@@ -178,34 +179,33 @@ async function acceptDeferredRoll(
   payload: ReturnType<typeof buildRollDeliveryPayload>,
   roll: DeferredRoll,
 ): Promise<void> {
-  const acceptanceStartedAt = Date.now();
+  // Delivering inline keeps the clatter message off the delivery alarm, which
+  // costs roughly half a second of wake latency before anything reaches Discord.
+  const deliveryStartedAt = Date.now();
   try {
-    const accepted = await stub.acceptDelivery(payload);
-    const acceptanceCompletedAt = Date.now();
+    const accepted = await stub.deliver(payload);
+    const deliveryCompletedAt = Date.now();
     if (isAcceptedRollDelivery(accepted)) {
       const acknowledgementPreparedAt =
         payload.telemetry?.acknowledgementPreparedAt;
       try {
         console.info({
-          telemetryVersion: 2,
+          telemetryVersion: 3,
           level: "info",
           message: "Discord roll lifecycle advanced",
           interactionId: roll.id,
           stage: "accepted",
           status: (accepted as { status: string }).status,
           timingClock: "workers-io",
-          acceptanceRpcMs: elapsedMs(
-            acceptanceStartedAt,
-            acceptanceCompletedAt,
-          ),
-          acknowledgementToAcceptanceStartMs:
+          deliveryRpcMs: elapsedMs(deliveryStartedAt, deliveryCompletedAt),
+          acknowledgementToDeliveryStartMs:
             acknowledgementPreparedAt === undefined
               ? null
-              : elapsedMs(acknowledgementPreparedAt, acceptanceStartedAt),
-          acknowledgementToAcceptanceCompleteMs:
+              : elapsedMs(acknowledgementPreparedAt, deliveryStartedAt),
+          acknowledgementToDeliveryCompleteMs:
             acknowledgementPreparedAt === undefined
               ? null
-              : elapsedMs(acknowledgementPreparedAt, acceptanceCompletedAt),
+              : elapsedMs(acknowledgementPreparedAt, deliveryCompletedAt),
         });
       } catch {
         // Observability must not turn durable acceptance into a failure.
@@ -596,7 +596,7 @@ export async function handleInteractionRequest(
   }
   let accepted: unknown;
   try {
-    accepted = await stub.acceptDelivery(payload);
+    accepted = await stub.deliver(payload);
   } catch {
     return interactionError("This roll could not be accepted. Please try again.");
   }

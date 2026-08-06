@@ -633,12 +633,11 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       (BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const deliver = vi.fn((value: unknown) => {
       void value;
       return Promise.resolve({
-        status: "created",
-        delivery: "pending",
-        expiresAt: interactionTimestamp + 15 * 60 * 1_000,
+        status: "pending",
+        retryAt: interactionTimestamp + 15 * 60 * 1_000,
       });
     });
     const cacheContext = vi.fn(async (request: Request) => {
@@ -689,7 +688,7 @@ describe("Discord HTTP interaction Worker", () => {
           ],
         },
       }),
-      { rollWork: { acceptDelivery }, dataFetch: cacheContext },
+      { rollWork: { deliver }, dataFetch: cacheContext },
     );
     env.ROLL_LIFECYCLE_TELEMETRY_VERSION = "2";
     const pending: Promise<unknown>[] = [];
@@ -762,9 +761,9 @@ describe("Discord HTTP interaction Worker", () => {
     }
     expect(Object.keys(acceptanceEvent).sort()).toEqual(
       [
-        "acceptanceRpcMs",
-        "acknowledgementToAcceptanceCompleteMs",
-        "acknowledgementToAcceptanceStartMs",
+        "deliveryRpcMs",
+        "acknowledgementToDeliveryCompleteMs",
+        "acknowledgementToDeliveryStartMs",
         "interactionId",
         "level",
         "message",
@@ -775,18 +774,18 @@ describe("Discord HTTP interaction Worker", () => {
       ].sort(),
     );
     expect(acceptanceEvent).toMatchObject({
-      telemetryVersion: 2,
+      telemetryVersion: 3,
       level: "info",
       message: "Discord roll lifecycle advanced",
       interactionId,
       stage: "accepted",
-      status: "created",
+      status: "pending",
       timingClock: "workers-io",
     });
     for (const field of [
-      "acceptanceRpcMs",
-      "acknowledgementToAcceptanceCompleteMs",
-      "acknowledgementToAcceptanceStartMs",
+      "deliveryRpcMs",
+      "acknowledgementToDeliveryCompleteMs",
+      "acknowledgementToDeliveryStartMs",
     ] as const) {
       expect(Number.isSafeInteger(acceptanceEvent[field])).toBe(true);
       expect(acceptanceEvent[field]).toBeGreaterThanOrEqual(0);
@@ -796,8 +795,8 @@ describe("Discord HTTP interaction Worker", () => {
     );
     await expect(response.json()).resolves.toEqual({ type: 5 });
     expect(cacheContext).toHaveBeenCalledOnce();
-    expect(acceptDelivery).toHaveBeenCalledOnce();
-    const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
+    expect(deliver).toHaveBeenCalledOnce();
+    const acceptedRequest: unknown = deliver.mock.calls[0]?.[0];
     if (
       typeof acceptedRequest !== "object" ||
       acceptedRequest === null ||
@@ -812,7 +811,7 @@ describe("Discord HTTP interaction Worker", () => {
     const telemetry = acceptedRequest.telemetry;
     expect(typeof deferredAt).toBe("number");
     expect(rollSeed).toEqual(expect.any(Number));
-    expect(acceptDelivery).toHaveBeenCalledWith({
+    expect(deliver).toHaveBeenCalledWith({
       interaction: {
         id: interactionId,
         applicationId: "100000000000000001",
@@ -849,12 +848,11 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const deliver = vi.fn((value: unknown) => {
       void value;
       return Promise.resolve({
-        status: "created",
-        delivery: "pending",
-        expiresAt: interactionTimestamp + 15 * 60 * 1_000,
+        status: "pending",
+        retryAt: interactionTimestamp + 15 * 60 * 1_000,
       });
     });
     const { env, request } = await signedRequest(
@@ -882,7 +880,7 @@ describe("Discord HTTP interaction Worker", () => {
           options: [{ name: "notation", type: 3, value: "1776" }],
         },
       }),
-      { rollWork: { acceptDelivery } },
+      { rollWork: { deliver } },
     );
 
     const response = await handleInteractionRequest(request, env);
@@ -899,8 +897,8 @@ describe("Discord HTTP interaction Worker", () => {
     expect(JSON.stringify(body)).toContain("🚫 Invalid notation");
     expect(JSON.stringify(body)).not.toContain("Preparing your roll");
     expect(JSON.stringify(body)).toContain("Dice notation guide");
-    expect(acceptDelivery).toHaveBeenCalledOnce();
-    const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
+    expect(deliver).toHaveBeenCalledOnce();
+    const acceptedRequest: unknown = deliver.mock.calls[0]?.[0];
     expect(acceptedRequest).toMatchObject({
       interaction: { id: interactionId },
       request: { notation: "1776", repetitions: 1 },
@@ -921,12 +919,11 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       (BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const deliver = vi.fn((value: unknown) => {
       void value;
       return Promise.resolve({
-        status: "created",
-        delivery: "pending",
-        expiresAt: interactionTimestamp + 15 * 60 * 1_000,
+        status: "pending",
+        retryAt: interactionTimestamp + 15 * 60 * 1_000,
       });
     });
     const { env, request } = await signedRequest(
@@ -944,14 +941,14 @@ describe("Discord HTTP interaction Worker", () => {
           options: [{ name: "notation", type: 3, value: "1d20" }],
         },
       }),
-      { rollWork: { acceptDelivery } },
+      { rollWork: { deliver } },
     );
 
     const response = await handleInteractionRequest(request, env);
 
     expect(response.status).toBe(200);
-    expect(acceptDelivery).toHaveBeenCalledOnce();
-    const accepted = acceptDelivery.mock.calls[0]?.[0] as {
+    expect(deliver).toHaveBeenCalledOnce();
+    const accepted = deliver.mock.calls[0]?.[0] as {
       accounting: { guildId: string | null };
     };
     expect(accepted.accounting.guildId).toBeNull();
@@ -1202,7 +1199,7 @@ describe("Discord HTTP interaction Worker", () => {
       }),
       {
         rollWork: {
-          acceptDelivery: () => Promise.resolve({ status: "conflict" }),
+          deliver: () => Promise.resolve({ status: "conflict" }),
         },
       },
     );
@@ -1240,7 +1237,7 @@ describe("Discord HTTP interaction Worker", () => {
       }),
       {
         rollWork: {
-          acceptDelivery: () => Promise.reject(new Error("unavailable")),
+          deliver: () => Promise.reject(new Error("unavailable")),
         },
       },
     );
