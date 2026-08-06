@@ -304,6 +304,8 @@ describe("RollWork Durable Object", () => {
           "delay_ms",
           "result_not_before",
           "snapshot_ms",
+          "settings_ms",
+          "clatter_post_ms",
           "accounting_state",
           "accounting_occurred_at",
           "accounting_http_status",
@@ -2042,12 +2044,19 @@ describe("RollWork Durable Object", () => {
       });
       const prepared = await runInDurableObject(stub, (_instance, state) =>
         state.storage.sql
-          .exec<{ snapshot_ms: number | null }>(
-            "SELECT snapshot_ms FROM interaction_delivery",
+          .exec<{
+            snapshot_ms: number | null;
+            settings_ms: number | null;
+            clatter_post_ms: number | null;
+          }>(
+            `SELECT snapshot_ms, settings_ms, clatter_post_ms
+             FROM interaction_delivery`,
           )
           .one(),
       );
       expect(prepared.snapshot_ms).toBeTypeOf("number");
+      expect(prepared.settings_ms).toBeTypeOf("number");
+      expect(prepared.clatter_post_ms).toBeTypeOf("number");
 
       // Eviction drops in-memory state, so the completion event can only
       // report these segments if the earlier wake persisted them.
@@ -2070,11 +2079,17 @@ describe("RollWork Durable Object", () => {
             message === "Roll destination delivery completed" && rollId === id,
         );
       expect(delivered).toMatchObject({
-        telemetryVersion: 3,
+        telemetryVersion: 4,
         state: "delivered",
         renderSnapshotPreparationMs: prepared.snapshot_ms,
+        guildSettingsMs: prepared.settings_ms,
+        clatterPostMs: prepared.clatter_post_ms,
       });
       expect(delivered?.ackToClatterMs).toBeTypeOf("number");
+      expect(delivered?.deliveryWakeMs).toBeTypeOf("number");
+      expect(Number(delivered?.ackToClatterMs)).toBeGreaterThanOrEqual(
+        Number(delivered?.guildSettingsMs) + Number(delivered?.clatterPostMs),
+      );
       expect(delivered?.resultUploadMs).toBeTypeOf("number");
       expect(delivered?.postDelayMs).toBeTypeOf("number");
       expect(Number(delivered?.imageByteLength)).toBeGreaterThan(0);
@@ -3081,7 +3096,7 @@ describe("RollWork Durable Object", () => {
             rollId === deliveredId,
         );
       expect(delivered).toMatchObject({
-        telemetryVersion: 3,
+        telemetryVersion: 4,
         subsystem: "roll-destination",
         rollId: deliveredId,
         interactionId: deliveredId,
@@ -3133,7 +3148,7 @@ describe("RollWork Durable Object", () => {
             rollId === failedId,
         );
       expect(failed).toMatchObject({
-        telemetryVersion: 3,
+        telemetryVersion: 4,
         subsystem: "roll-destination",
         rollId: failedId,
         interactionId: failedId,
