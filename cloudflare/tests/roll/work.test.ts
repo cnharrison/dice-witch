@@ -317,6 +317,8 @@ describe("RollWork Durable Object", () => {
           "snapshot_ms",
           "settings_ms",
           "clatter_post_ms",
+          "lifecycle_sync_ms",
+          "accounting_ms",
           "accounting_state",
           "accounting_occurred_at",
           "accounting_http_status",
@@ -2088,14 +2090,16 @@ describe("RollWork Durable Object", () => {
             message === "Roll destination delivery completed" && rollId === id,
         );
       expect(delivered).toMatchObject({
-        telemetryVersion: 4,
+        telemetryVersion: 5,
         state: "delivered",
         renderSnapshotPreparationMs: prepared.snapshot_ms,
         guildSettingsMs: prepared.settings_ms,
         clatterPostMs: prepared.clatter_post_ms,
       });
       expect(delivered?.ackToClatterMs).toBeTypeOf("number");
-      expect(delivered?.deliveryWakeMs).toBeTypeOf("number");
+      expect(delivered?.acceptanceToDeliveryStartMs).toBeTypeOf("number");
+      expect(delivered?.lifecycleSyncMs).toBeTypeOf("number");
+      expect(delivered?.accountingMs).toBeTypeOf("number");
       expect(Number(delivered?.ackToClatterMs)).toBeGreaterThanOrEqual(
         Number(delivered?.guildSettingsMs) + Number(delivered?.clatterPostMs),
       );
@@ -3103,7 +3107,7 @@ describe("RollWork Durable Object", () => {
             rollId === deliveredId,
         );
       expect(delivered).toMatchObject({
-        telemetryVersion: 4,
+        telemetryVersion: 5,
         subsystem: "roll-destination",
         rollId: deliveredId,
         interactionId: deliveredId,
@@ -3154,7 +3158,7 @@ describe("RollWork Durable Object", () => {
             rollId === failedId,
         );
       expect(failed).toMatchObject({
-        telemetryVersion: 4,
+        telemetryVersion: 5,
         subsystem: "roll-destination",
         rollId: failedId,
         interactionId: failedId,

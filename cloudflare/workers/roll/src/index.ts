@@ -692,6 +692,8 @@ export class RollWork extends DurableObject<RollEnv> {
         snapshot_ms INTEGER CHECK (snapshot_ms >= 0),
         settings_ms INTEGER CHECK (settings_ms >= 0),
         clatter_post_ms INTEGER CHECK (clatter_post_ms >= 0),
+        lifecycle_sync_ms INTEGER CHECK (lifecycle_sync_ms >= 0),
+        accounting_ms INTEGER CHECK (accounting_ms >= 0),
         accounting_state TEXT NOT NULL DEFAULT 'not_applicable'
           CHECK (accounting_state IN (
             'pending', 'not_applicable', 'accounted', 'failed'
@@ -792,6 +794,11 @@ export class RollWork extends DurableObject<RollEnv> {
         "clatter_post_ms",
         "clatter_post_ms INTEGER CHECK (clatter_post_ms >= 0)",
       ],
+      [
+        "lifecycle_sync_ms",
+        "lifecycle_sync_ms INTEGER CHECK (lifecycle_sync_ms >= 0)",
+      ],
+      ["accounting_ms", "accounting_ms INTEGER CHECK (accounting_ms >= 0)"],
       [
         "accounting_state",
         "accounting_state TEXT NOT NULL DEFAULT 'not_applicable'",
@@ -2104,7 +2111,12 @@ export class RollWork extends DurableObject<RollEnv> {
   // Delivery spans several alarm wakes, so segments measured in an earlier
   // wake are persisted and read back when the completion event is emitted.
   private recordDeliverySegment(
-    column: "snapshot_ms" | "settings_ms" | "clatter_post_ms",
+    column:
+      | "snapshot_ms"
+      | "settings_ms"
+      | "clatter_post_ms"
+      | "lifecycle_sync_ms"
+      | "accounting_ms",
     value: number,
   ): void {
     // A later wake can repeat the same step against already stored state, so
@@ -2158,7 +2170,9 @@ export class RollWork extends DurableObject<RollEnv> {
     const delivery = this.readDelivery();
     const lifecycle = this.readLifecycleTimings();
     const clatterSentAt = delivery?.clatter_sent_at ?? null;
-    const deliveryWakeMs =
+    // Named for the span it covers: this is acceptance plus pre-delivery
+    // bookkeeping, not the alarm hop alone.
+    const acceptanceToDeliveryStartMs =
       lifecycle.acceptedAt === null || lifecycle.deliveryStartedAt === null
         ? null
         : lifecycle.deliveryStartedAt - lifecycle.acceptedAt;
@@ -2180,7 +2194,7 @@ export class RollWork extends DurableObject<RollEnv> {
     const imageByteLength = image?.image_bytes.byteLength ?? null;
     const imageSha256 = image?.image_sha256 ?? null;
     const event = JSON.stringify({
-      telemetryVersion: 4,
+      telemetryVersion: 5,
       level: input.state === "delivered" ? "info" : "error",
       message: "Roll destination delivery completed",
       subsystem: "roll-destination",
@@ -2199,7 +2213,9 @@ export class RollWork extends DurableObject<RollEnv> {
           : Math.max(0, input.completedAt - record.createdAt),
       delayMs: input.delayMs ?? null,
       ackToClatterMs,
-      deliveryWakeMs,
+      acceptanceToDeliveryStartMs,
+      lifecycleSyncMs: delivery?.lifecycle_sync_ms ?? null,
+      accountingMs: delivery?.accounting_ms ?? null,
       guildSettingsMs: delivery?.settings_ms ?? null,
       clatterPostMs: delivery?.clatter_post_ms ?? null,
       // Image rendering is deliberately absent: it is pure computation, and a
@@ -2374,7 +2390,15 @@ export class RollWork extends DurableObject<RollEnv> {
 
   private async runPreDeliveryBookkeeping(): Promise<void> {
     // Both operations must settle before delivery, but neither depends on the other.
-    await Promise.all([this.syncLifecycle(), this.runAccounting()]);
+    const startedAt = Date.now();
+    await Promise.all([
+      this.syncLifecycle().finally(() => {
+        this.recordDeliverySegment("lifecycle_sync_ms", elapsedMs(startedAt));
+      }),
+      this.runAccounting().finally(() => {
+        this.recordDeliverySegment("accounting_ms", elapsedMs(startedAt));
+      }),
+    ]);
   }
 
   private runAccounting(): Promise<void> {
@@ -4467,6 +4491,7 @@ export class RollWork extends DurableObject<RollEnv> {
                 delivered_at, last_http_status, attempts, clatter_sent_at,
                 followup_message_id, skip_dice_delay, delay_ms, result_not_before,
                 snapshot_ms, settings_ms, clatter_post_ms,
+                lifecycle_sync_ms, accounting_ms,
                 accounting_state, accounting_occurred_at,
                 accounting_http_status, accounting_attempts, logging_state,
                 logging_http_status, logging_attempts, helper_state,

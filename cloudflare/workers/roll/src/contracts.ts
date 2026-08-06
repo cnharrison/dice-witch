@@ -239,6 +239,8 @@ export type StoredDeliveryRow = {
   snapshot_ms: number | null;
   settings_ms: number | null;
   clatter_post_ms: number | null;
+  lifecycle_sync_ms: number | null;
+  accounting_ms: number | null;
   accounting_state: "pending" | "not_applicable" | "accounted" | "failed";
   accounting_occurred_at: number | null;
   accounting_http_status: number | null;
