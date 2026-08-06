@@ -690,6 +690,8 @@ export class RollWork extends DurableObject<RollEnv> {
         delay_ms INTEGER CHECK (delay_ms BETWEEN 1 AND 5000),
         result_not_before INTEGER CHECK (result_not_before >= 0),
         snapshot_ms INTEGER CHECK (snapshot_ms >= 0),
+        settings_ms INTEGER CHECK (settings_ms >= 0),
+        clatter_post_ms INTEGER CHECK (clatter_post_ms >= 0),
         accounting_state TEXT NOT NULL DEFAULT 'not_applicable'
           CHECK (accounting_state IN (
             'pending', 'not_applicable', 'accounted', 'failed'
@@ -785,6 +787,11 @@ export class RollWork extends DurableObject<RollEnv> {
         "result_not_before INTEGER CHECK (result_not_before >= 0)",
       ],
       ["snapshot_ms", "snapshot_ms INTEGER CHECK (snapshot_ms >= 0)"],
+      ["settings_ms", "settings_ms INTEGER CHECK (settings_ms >= 0)"],
+      [
+        "clatter_post_ms",
+        "clatter_post_ms INTEGER CHECK (clatter_post_ms >= 0)",
+      ],
       [
         "accounting_state",
         "accounting_state TEXT NOT NULL DEFAULT 'not_applicable'",
@@ -2095,22 +2102,44 @@ export class RollWork extends DurableObject<RollEnv> {
     );
   }
 
-  // Delivery spans several alarm wakes, so a segment measured in an earlier
-  // wake is persisted and read back when the completion event is emitted.
-  private recordSnapshotPreparation(value: number): void {
+  // Delivery spans several alarm wakes, so segments measured in an earlier
+  // wake are persisted and read back when the completion event is emitted.
+  private recordDeliverySegment(
+    column: "snapshot_ms" | "settings_ms" | "clatter_post_ms",
+    value: number,
+  ): void {
+    // A later wake can repeat the same step against already stored state, so
+    // only the first measurement describes what the roll actually waited for.
     this.ctx.storage.sql.exec(
-      "UPDATE interaction_delivery SET snapshot_ms = ? WHERE singleton = 1",
+      `UPDATE interaction_delivery
+       SET ${column} = ?
+       WHERE singleton = 1 AND ${column} IS NULL`,
       value,
     );
   }
 
-  private readAcknowledgementPreparedAt(): number | null {
+  private readLifecycleTimings(): Readonly<{
+    acknowledgementPreparedAt: number | null;
+    acceptedAt: number | null;
+    deliveryStartedAt: number | null;
+  }> {
     const row = this.readLifecycleOutbox();
-    if (row === undefined) return null;
+    if (row === undefined) {
+      return {
+        acknowledgementPreparedAt: null,
+        acceptedAt: null,
+        deliveryStartedAt: null,
+      };
+    }
     const snapshot = parseRollLifecycleSnapshot(JSON.parse(row.snapshot_json));
-    return snapshot.version === 2
-      ? snapshot.diagnostics.acknowledgementPreparedAt
-      : null;
+    return {
+      acknowledgementPreparedAt:
+        snapshot.version === 2
+          ? snapshot.diagnostics.acknowledgementPreparedAt
+          : null,
+      acceptedAt: snapshot.acceptedAt,
+      deliveryStartedAt: snapshot.deliveryStartedAt,
+    };
   }
 
   private logDestinationCompletion(input: {
@@ -2128,30 +2157,31 @@ export class RollWork extends DurableObject<RollEnv> {
     const record = input.record ?? this.tryReadWork();
     const source = this.readSourceLogRow();
     const delivery = this.readDelivery();
-    const acknowledgementPreparedAt = this.readAcknowledgementPreparedAt();
+    const lifecycle = this.readLifecycleTimings();
     const clatterSentAt = delivery?.clatter_sent_at ?? null;
+    const deliveryWakeMs =
+      lifecycle.acceptedAt === null || lifecycle.deliveryStartedAt === null
+        ? null
+        : lifecycle.deliveryStartedAt - lifecycle.acceptedAt;
     const resultNotBefore = delivery?.skip_dice_delay === 1
       ? null
       : delivery?.result_not_before ?? null;
     // Raw differences: a negative span means an invariant broke and must stay
     // visible instead of being clamped into the healthy range.
     const ackToClatterMs =
-      clatterSentAt === null || acknowledgementPreparedAt === null
+      clatterSentAt === null || lifecycle.acknowledgementPreparedAt === null
         ? null
-        : clatterSentAt - acknowledgementPreparedAt;
+        : clatterSentAt - lifecycle.acknowledgementPreparedAt;
     const postDelayMs =
       resultNotBefore === null ? null : input.completedAt - resultNotBefore;
     const rendererRevision =
       record === undefined ? null : rollRecordRendererRevision(record);
-    // The uploaded PNG is the result request body, so its size is what
-    // resultUploadMs has to be read against.
     const image =
       source !== undefined && source.image_bytes.byteLength > 0 ? source : null;
     const imageByteLength = image?.image_bytes.byteLength ?? null;
     const imageSha256 = image?.image_sha256 ?? null;
     const event = JSON.stringify({
-      // Version 3 decomposes the delivery span into segments.
-      telemetryVersion: 3,
+      telemetryVersion: 4,
       level: input.state === "delivered" ? "info" : "error",
       message: "Roll destination delivery completed",
       subsystem: "roll-destination",
@@ -2170,6 +2200,9 @@ export class RollWork extends DurableObject<RollEnv> {
           : Math.max(0, input.completedAt - record.createdAt),
       delayMs: input.delayMs ?? null,
       ackToClatterMs,
+      deliveryWakeMs,
+      guildSettingsMs: delivery?.settings_ms ?? null,
+      clatterPostMs: delivery?.clatter_post_ms ?? null,
       // Image rendering is deliberately absent: it is pure computation, and a
       // Workers clock does not advance without I/O, so it cannot be timed here.
       renderSnapshotPreparationMs: delivery?.snapshot_ms ?? null,
@@ -3085,8 +3118,10 @@ export class RollWork extends DurableObject<RollEnv> {
     let delayMs: number | null = null;
     let resultNotBefore: number | null = null;
     if (record.outcome.outcomes.length > 0) {
+      const settingsStartedAt = Date.now();
       try {
         skipDiceDelay = await this.resolveSkipDiceDelay(delivery, metadata);
+        this.recordDeliverySegment("settings_ms", elapsedMs(settingsStartedAt));
         if (!skipDiceDelay) {
           const delay = this.resolveRollDelay(delivery);
           delayMs = delay.delayMs;
@@ -3177,6 +3212,7 @@ export class RollWork extends DurableObject<RollEnv> {
             : "create-followup-clatter";
         let clatterHttpStatus: number;
         let originalResponseMessageId: string | null = null;
+        const clatterPostStartedAt = Date.now();
         if (metadata.responseMode === "channel-message") {
           if (metadata.logging === null) {
             return this.terminateDelivery(
@@ -3201,6 +3237,10 @@ export class RollWork extends DurableObject<RollEnv> {
             discordOperation,
           );
           if ("result" in attempt) return attempt.result;
+          this.recordDeliverySegment(
+            "clatter_post_ms",
+            elapsedMs(clatterPostStartedAt),
+          );
           followupMessageId = attempt.delivery.messageId;
           clatterHttpStatus = attempt.delivery.httpStatus;
         } else {
@@ -3212,6 +3252,7 @@ export class RollWork extends DurableObject<RollEnv> {
             this.recordProviderAttempt();
             clatterResponse = await fetch(request);
           } catch {
+            // A failed post is retried, so only a successful one is timed.
             return this.scheduleRetry(
               target.id,
               attempts,
@@ -3240,6 +3281,10 @@ export class RollWork extends DurableObject<RollEnv> {
               { code, operation: discordOperation },
             );
           }
+          this.recordDeliverySegment(
+            "clatter_post_ms",
+            elapsedMs(clatterPostStartedAt),
+          );
           clatterHttpStatus = clatterResponse.status;
           if (metadata.responseMode === "followup") {
             try {
@@ -3328,7 +3373,7 @@ export class RollWork extends DurableObject<RollEnv> {
             "snapshot",
           );
         }
-        this.recordSnapshotPreparation(elapsedMs(snapshotStartedAt));
+        this.recordDeliverySegment("snapshot_ms", elapsedMs(snapshotStartedAt));
         record = finalized;
       }
       const terminal = await this.finalizeIfResultWindowClosed(
@@ -4422,7 +4467,7 @@ export class RollWork extends DurableObject<RollEnv> {
         `SELECT metadata_json, token, token_fingerprint, expires_at, state,
                 delivered_at, last_http_status, attempts, clatter_sent_at,
                 followup_message_id, skip_dice_delay, delay_ms, result_not_before,
-                snapshot_ms,
+                snapshot_ms, settings_ms, clatter_post_ms,
                 accounting_state, accounting_occurred_at,
                 accounting_http_status, accounting_attempts, logging_state,
                 logging_http_status, logging_attempts, helper_state,
