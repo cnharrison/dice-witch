@@ -1546,14 +1546,11 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       return accepted;
     }
-    await this.runPreDeliveryBookkeeping();
-    if (accepted.delivery === "delivered" || accepted.delivery === "failed") {
-      await this.runHelper();
-      await this.scheduleAfterAttempts(accepted.expiresAt);
-      return { status: accepted.delivery };
-    }
-    const result = await this.runDelivery();
-    await this.syncLifecycle();
+    const result =
+      accepted.delivery === "delivered" || accepted.delivery === "failed"
+        ? { status: accepted.delivery }
+        : await this.runDelivery();
+    await this.runDeliveryBookkeeping();
     await this.runHelper();
     await this.scheduleAfterAttempts(accepted.expiresAt);
     return result;
@@ -2171,8 +2168,8 @@ export class RollWork extends DurableObject<RollEnv> {
     const delivery = this.readDelivery();
     const lifecycle = this.readLifecycleTimings();
     const clatterSentAt = delivery?.clatter_sent_at ?? null;
-    // Named for the span it covers: this is acceptance plus pre-delivery
-    // bookkeeping, not the alarm hop alone.
+    // Named for the span it covers: acceptance through the start of delivery,
+    // not the alarm hop alone.
     const acceptanceToDeliveryStartMs =
       lifecycle.acceptedAt === null || lifecycle.deliveryStartedAt === null
         ? null
@@ -2277,13 +2274,12 @@ export class RollWork extends DurableObject<RollEnv> {
       await this.finalizeExpiredDelivery(delivery);
       return;
     }
-    await this.runPreDeliveryBookkeeping();
     const current = this.readDelivery();
     if (current === undefined) return;
     if (current.state === "pending") {
       await this.runDelivery();
     }
-    await this.syncLifecycle();
+    await this.runDeliveryBookkeeping();
     await this.runHelper();
     await this.runLogging();
     await this.scheduleAfterAttempts(current.expires_at);
@@ -2389,8 +2385,9 @@ export class RollWork extends DurableObject<RollEnv> {
     await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
   }
 
-  private async runPreDeliveryBookkeeping(): Promise<void> {
-    // Both operations must settle before delivery, but neither depends on the other.
+  private async runDeliveryBookkeeping(): Promise<void> {
+    // Neither record is read on the roll's own timescale, so both settle after
+    // Discord has the message rather than delaying what the user sees.
     const startedAt = Date.now();
     await Promise.all([
       this.syncLifecycle().finally(() => {
