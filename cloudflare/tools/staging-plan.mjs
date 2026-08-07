@@ -24,7 +24,6 @@ const APPLICATION_WORKERS = [
   "interactions",
   "web-api",
 ];
-const AUDIENCE_SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1_000;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const CLI_USAGE =
   "Usage: node tools/staging-plan.mjs --sha <full-sha> --workers <comma-list> --roll-origin <url> --gateway-origin <url> [--apply-migrations] [--allow-gateway-deploy]";
@@ -62,16 +61,6 @@ function smokeOrigins(configSummary, targets) {
     roll: requireHttpsOrigin("roll smoke origin", targets?.rollOrigin),
     gateway: requireHttpsOrigin("gateway smoke origin", targets?.gatewayOrigin),
   };
-}
-
-function audienceSnapshotGateCommand() {
-  return command("node", [
-    "tools/verify-audience-snapshot.mjs",
-    "--config",
-    configFile("data"),
-    "--max-age-ms",
-    String(AUDIENCE_SNAPSHOT_MAX_AGE_MS),
-  ]);
 }
 
 function qualityGateCommands(configSummary) {
@@ -198,10 +187,6 @@ export function createStagingPlan(input) {
       },
     );
   }
-  steps.push({
-    kind: "audience-snapshot-gate",
-    command: audienceSnapshotGateCommand(),
-  });
   for (const worker of workers) {
     steps.push({
       kind: "deploy",

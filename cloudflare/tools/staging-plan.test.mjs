@@ -65,7 +65,7 @@ test("deploys the complete application Worker cohort in dependency order", () =>
     applicationWorkers,
   );
   assert.equal(plan.steps[0].kind, "quality-gate");
-  assert.equal(plan.steps[1].kind, "audience-snapshot-gate");
+  assert.equal(plan.steps[1].kind, "deploy");
   assert.equal(plan.steps.at(-1).kind, "smoke-test");
 });
 
@@ -91,7 +91,7 @@ test("deploys Data only as part of the complete migration cohort", () => {
   assert.equal(plan.applyMigrations, true);
   assert.equal(plan.steps[1].kind, "migration-list");
   assert.equal(plan.steps[2].kind, "migration-apply");
-  assert.equal(plan.steps[3].kind, "audience-snapshot-gate");
+  assert.equal(plan.steps[3].kind, "deploy");
 
   assert.throws(
     () =>
