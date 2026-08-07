@@ -69,6 +69,10 @@ export type RollDeliveryPayload = {
   rollSeed: number;
   telemetry?: RollDeliveryTelemetryV2;
   settings?: { skipDiceDelay: boolean };
+  // Present when the acknowledgement already carried the clatter, so the roll
+  // reuses this seed instead of drawing its own and the two texts agree.
+  renderSeed?: number;
+  clatter?: { deliveredAt: number };
   logging: {
     source: "discord";
     channelId: string;
@@ -82,6 +86,7 @@ export function buildRollDeliveryPayload(
   deferredAt: number,
   rollSeed: number,
   telemetry: unknown,
+  acknowledgedClatter: { renderSeed: number; deliveredAt: number } | null = null,
 ): RollDeliveryPayload {
   if (
     !Number.isSafeInteger(rollSeed) ||
@@ -89,6 +94,16 @@ export function buildRollDeliveryPayload(
     rollSeed > 0xffff_ffff
   ) {
     throw new Error("Roll delivery seed is invalid");
+  }
+  if (
+    acknowledgedClatter !== null &&
+    (!Number.isSafeInteger(acknowledgedClatter.renderSeed) ||
+      acknowledgedClatter.renderSeed < 0 ||
+      acknowledgedClatter.renderSeed > 0xffff_ffff ||
+      !Number.isSafeInteger(acknowledgedClatter.deliveredAt) ||
+      acknowledgedClatter.deliveredAt <= 0)
+  ) {
+    throw new Error("Roll delivery clatter acknowledgement is invalid");
   }
   const receivedAt = Number(
     (BigInt(interaction.id) >> 22n) + BigInt(DISCORD_EPOCH_MS),
@@ -120,6 +135,12 @@ export function buildRollDeliveryPayload(
     deferredAt,
     rollSeed,
     ...(parsedTelemetry === null ? {} : { telemetry: parsedTelemetry }),
+    ...(acknowledgedClatter === null
+      ? {}
+      : {
+          renderSeed: acknowledgedClatter.renderSeed,
+          clatter: { deliveredAt: acknowledgedClatter.deliveredAt },
+        }),
     logging: {
       source: "discord",
       channelId: interaction.channelId,

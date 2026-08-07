@@ -134,6 +134,9 @@ export type RollDeliveryRequest = {
   };
   deferredAt?: number;
   rollSeed?: number;
+  renderSeed?: number;
+  clatter?: { deliveredAt: number };
+  settings?: { skipDiceDelay: boolean };
   telemetry?: RollDeliveryTelemetryV2;
   logging: {
     source: "discord" | "web";
@@ -256,12 +259,15 @@ export type StoredDeliveryRow = {
 type ValidatedRollDeliveryRequest = Omit<
   RollDeliveryRequest,
   | "accounting"
+  | "clatter"
   | "deferredAt"
   | "logging"
+  | "renderSeed"
   | "request"
   | "responseMode"
   | "rollSeed"
   | "savedRoll"
+  | "settings"
   | "telemetry"
 > & {
   request: RollWorkRequest;
@@ -273,7 +279,18 @@ type ValidatedRollDeliveryRequest = Omit<
   responseMode: RollDeliveryResponseMode;
   savedRoll: SavedRollInvocationV1 | null;
   settings: { skipDiceDelay: boolean } | null;
+  renderSeed: number | null;
+  clatter: { deliveredAt: number } | null;
 };
+
+function isSeed(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= 0xffff_ffff
+  );
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -373,10 +390,16 @@ export function validateDeliveryRequest(
   const hasTelemetry = Object.hasOwn(value, "telemetry");
   // Settings are additive: every accepted shape stays valid without them.
   const hasSettings = Object.hasOwn(value, "settings");
+  // An acknowledged clatter is additive too, and always arrives with the seed
+  // that produced it so the roll can reproduce the same text.
+  const hasRenderSeed = Object.hasOwn(value, "renderSeed");
+  const hasClatter = Object.hasOwn(value, "clatter");
   const shape = { ...value };
   delete shape.deferredAt;
   delete shape.telemetry;
   delete shape.settings;
+  delete shape.renderSeed;
+  delete shape.clatter;
   const hasPreflightedDirectRoll = hasExactKeys(shape, [
     "accounting",
     "interaction",
@@ -520,16 +543,10 @@ export function validateDeliveryRequest(
 
   let rollSeed: number | null = null;
   if (hasPreflightedDirectRoll) {
-    const candidate = value.rollSeed;
-    if (
-      typeof candidate !== "number" ||
-      !Number.isSafeInteger(candidate) ||
-      candidate < 0 ||
-      candidate > 0xffff_ffff
-    ) {
+    if (!isSeed(value.rollSeed)) {
       throw new Error("Roll delivery seed is invalid");
     }
-    rollSeed = candidate;
+    rollSeed = value.rollSeed;
   }
 
   let settings: { skipDiceDelay: boolean } | null = null;
@@ -542,6 +559,32 @@ export function validateDeliveryRequest(
       throw new Error("Roll delivery settings are invalid");
     }
     settings = { skipDiceDelay: value.settings.skipDiceDelay };
+  }
+
+  let renderSeed: number | null = null;
+  if (hasRenderSeed) {
+    if (!isSeed(value.renderSeed)) {
+      throw new Error("Roll delivery render seed is invalid");
+    }
+    renderSeed = value.renderSeed;
+  }
+
+  let clatter: { deliveredAt: number } | null = null;
+  if (hasClatter) {
+    if (
+      !isRecord(value.clatter) ||
+      !hasExactKeys(value.clatter, ["deliveredAt"]) ||
+      typeof value.clatter.deliveredAt !== "number" ||
+      !Number.isSafeInteger(value.clatter.deliveredAt) ||
+      value.clatter.deliveredAt <= 0
+    ) {
+      throw new Error("Roll delivery clatter is invalid");
+    }
+    // The roll must be able to reproduce the acknowledged text verbatim.
+    if (renderSeed === null) {
+      throw new Error("Roll delivery clatter has no render seed");
+    }
+    clatter = { deliveredAt: value.clatter.deliveredAt };
   }
 
   let logging: RollDeliveryRequest["logging"] | null = null;
@@ -636,6 +679,8 @@ export function validateDeliveryRequest(
     responseMode,
     savedRoll,
     settings,
+    renderSeed,
+    clatter,
   };
 }
 

@@ -4,6 +4,7 @@ import {
   buildEditOriginalResponse,
   buildInvalidRollHelpMessage,
   buildKnowledgeBaseResponse,
+  buildRollClatterMessage,
   buildRollDeliveryPayload,
   buildStaticCommandResponse,
   buildStatusCommandResponse,
@@ -175,7 +176,8 @@ async function deliverRequestedRollHelper(
 
 // A roll's Durable Object is new for every interaction, so its first call to
 // another Worker costs roughly half a second. This Worker is long lived, so it
-// resolves the setting here and the roll never waits for it.
+// resolves the setting here and the roll never waits for it. A null result
+// means unresolved, and the roll then falls back to its own lookup.
 async function resolveSkipDiceDelay(
   dataService: Fetcher,
   guildId: string | null,
@@ -587,8 +589,12 @@ export async function handleInteractionRequest(
       stableAppearanceIdentities: true,
       preserveOutOfRangePhysicalFaces: true,
     });
-    const acknowledgementType = outcome.outcomes.length === 0 ? 4 : 5;
-    if (acknowledgementType === 4) {
+    // Discord discards the interaction after three seconds, so preparing the
+    // acknowledgement must stay pure computation. Anything that waits on
+    // another service belongs after the response, never before it.
+    const acknowledgementType = 4;
+    let clatterRenderSeed: number | null = null;
+    if (outcome.outcomes.length === 0) {
       const invalidRoll = buildInvalidRollHelpMessage(outcome, roll.id);
       acknowledgement = {
         type: acknowledgementType,
@@ -598,7 +604,19 @@ export async function handleInteractionRequest(
           allowed_mentions: { parse: [] },
         },
       };
-    } else acknowledgement = { type: acknowledgementType };
+    } else {
+      // The roll's Durable Object is created fresh per interaction and takes
+      // about 700ms to dispatch, so a clatter posted from there lands long
+      // after the acknowledgement that can carry it now.
+      clatterRenderSeed = randomSeed();
+      acknowledgement = {
+        type: acknowledgementType,
+        data: {
+          ...buildRollClatterMessage(outcome, clatterRenderSeed),
+          allowed_mentions: { parse: [] },
+        },
+      };
+    }
     acknowledgementTelemetry = {
       version: 2,
       handlerStartedAt,
@@ -612,6 +630,14 @@ export async function handleInteractionRequest(
       env.ROLL_LIFECYCLE_TELEMETRY_VERSION === "2"
         ? acknowledgementTelemetry
         : null,
+      // The clatter reaches Discord with the acknowledgement, so both share one
+      // timestamp and the recorded span between them stays truthful at zero.
+      clatterRenderSeed === null
+        ? null
+        : {
+            renderSeed: clatterRenderSeed,
+            deliveredAt: acknowledgementTelemetry.acknowledgementPreparedAt,
+          },
     );
   } catch {
     return interactionError("This roll could not be accepted. Please try again.");

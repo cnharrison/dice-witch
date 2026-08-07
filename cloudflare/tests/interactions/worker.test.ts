@@ -801,7 +801,24 @@ describe("Discord HTTP interaction Worker", () => {
     expect(JSON.stringify(acceptanceEvent)).not.toMatch(
       /fixture\.interaction\.token|100000000000000004|100000000000000002|100000000000000003|2d20 \+ 5|Attack|alice/,
     );
-    await expect(response.json()).resolves.toEqual({ type: 5 });
+    // A delay-enabled guild sees the clatter in the acknowledgement itself, so
+    // no deferred loading state is used and the roll never posts one.
+    const acknowledgement = await response.json<{
+      type: number;
+      data: {
+        flags: number;
+        allowed_mentions: unknown;
+        components: { type: number; content: string }[];
+      };
+    }>();
+    expect(acknowledgement.type).toBe(4);
+    expect(acknowledgement.data.flags).toBe(32_768);
+    expect(acknowledgement.data.allowed_mentions).toEqual({ parse: [] });
+    expect(acknowledgement.data.components).toHaveLength(1);
+    expect(acknowledgement.data.components[0]?.type).toBe(10);
+    expect(acknowledgement.data.components[0]?.content).toMatch(
+      /^_\.\.\..*\.\.\._$/,
+    );
     expect(contextMutations).toBe(1);
     expect(acceptDelivery).toHaveBeenCalledOnce();
     const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
@@ -810,15 +827,25 @@ describe("Discord HTTP interaction Worker", () => {
       acceptedRequest === null ||
       !("deferredAt" in acceptedRequest) ||
       !("rollSeed" in acceptedRequest) ||
+      !("renderSeed" in acceptedRequest) ||
+      !("clatter" in acceptedRequest) ||
       !("telemetry" in acceptedRequest)
     ) {
       throw new Error("Accepted roll request is missing preflight metadata");
     }
     const deferredAt = acceptedRequest.deferredAt;
     const rollSeed = acceptedRequest.rollSeed;
+    const renderSeed = acceptedRequest.renderSeed;
     const telemetry = acceptedRequest.telemetry;
     expect(typeof deferredAt).toBe("number");
     expect(rollSeed).toEqual(expect.any(Number));
+    expect(renderSeed).toEqual(expect.any(Number));
+    // The recorded delivery time is the acknowledgement itself, so the roll's
+    // delay window starts when the user actually saw the dice clatter.
+    expect(acceptedRequest.clatter).toEqual({
+      deliveredAt: (telemetry as { acknowledgementPreparedAt: number })
+        .acknowledgementPreparedAt,
+    });
     expect(acceptDelivery).toHaveBeenCalledWith({
       interaction: {
         id: interactionId,
@@ -835,6 +862,8 @@ describe("Discord HTTP interaction Worker", () => {
       deferredAt,
       rollSeed,
       telemetry,
+      renderSeed,
+      clatter: acceptedRequest.clatter,
       logging: {
         source: "discord",
         channelId: "100000000000000003",
@@ -910,7 +939,10 @@ describe("Discord HTTP interaction Worker", () => {
     } as ExecutionContext;
 
     const response = await handleInteractionRequest(request, env, ctx);
-    await expect(response.json()).resolves.toEqual({ type: 5 });
+    // The setting is resolved after the response, so it cannot delay it and no
+    // request has been made by the time the acknowledgement is sent.
+    expect(settingsRequests).toEqual([]);
+    await expect(response.json()).resolves.toMatchObject({ type: 4 });
     await Promise.all(pending);
 
     expect(settingsRequests).toEqual(["100000000000000002"]);
@@ -968,11 +1000,78 @@ describe("Discord HTTP interaction Worker", () => {
     } as ExecutionContext;
 
     const response = await handleInteractionRequest(request, env, ctx);
-    await expect(response.json()).resolves.toEqual({ type: 5 });
+    // An unavailable data service must not change the acknowledgement at all.
+    await expect(response.json()).resolves.toMatchObject({ type: 4 });
     await Promise.all(pending);
 
     expect(acceptDelivery).toHaveBeenCalledOnce();
     expect(acceptDelivery.mock.calls[0]?.[0]).not.toHaveProperty("settings");
+    expect(acceptDelivery.mock.calls[0]?.[0]).toHaveProperty("clatter");
+  });
+
+  it("acknowledges a roll without waiting for the data service", async () => {
+    const interactionTimestamp = 1_783_800_000_301;
+    const interactionId = String(
+      ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
+    );
+    const acceptDelivery = vi.fn((value: unknown) => {
+      void value;
+      return Promise.resolve({
+        status: "created",
+        delivery: "pending",
+        expiresAt: interactionTimestamp + 15 * 60 * 1_000,
+      });
+    });
+    let releaseDataService = (): void => {};
+    const dataServiceStalled = new Promise<void>((resolve) => {
+      releaseDataService = resolve;
+    });
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: interactionId,
+        application_id: "100000000000000001",
+        type: 2,
+        token: "fixture.stalled.data",
+        guild_id: "100000000000000002",
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: { user: { id: "100000000000000004", username: "alice" } },
+        data: {
+          id: "100000000000000005",
+          name: "roll",
+          type: 1,
+          options: [{ name: "notation", type: 3, value: "1d20" }],
+        },
+      }),
+      {
+        rollWork: { acceptDelivery },
+        dataFetch: async () => {
+          await dataServiceStalled;
+          return new Response(null, { status: 503 });
+        },
+      },
+    );
+    const pending: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil(promise: Promise<unknown>) {
+        pending.push(promise);
+      },
+    } as ExecutionContext;
+
+    try {
+      // Discord discards an interaction that is not answered within three
+      // seconds, so a stalled data service must never hold the response.
+      const response = await handleInteractionRequest(request, env, ctx);
+      await expect(response.json()).resolves.toMatchObject({ type: 4 });
+    } finally {
+      releaseDataService();
+      await Promise.all(pending);
+    }
   });
 
   it("responds privately to invalid notation without a preparation step", async () => {

@@ -1697,8 +1697,8 @@ export class RollWork extends DurableObject<RollEnv> {
             `INSERT INTO interaction_delivery (
                singleton, metadata_json, token, token_fingerprint, expires_at,
                state, accounting_state, accounting_occurred_at, logging_state,
-               helper_state
-             ) VALUES (1, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+               helper_state, clatter_sent_at
+             ) VALUES (1, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
             metadataJson,
             delivery.interaction.token,
             fingerprint,
@@ -1707,6 +1707,9 @@ export class RollWork extends DurableObject<RollEnv> {
             accountingOccurredAt,
             loggingState,
             "not_applicable",
+            // An acknowledged clatter is already on screen, so delivery must
+            // neither post it again nor anchor the delay window on itself.
+            delivery.clatter?.deliveredAt ?? null,
           );
           this.acceptLifecycleSnapshot(acceptedAt);
           return { status: "created", delivery: "pending", expiresAt };
@@ -1873,7 +1876,9 @@ export class RollWork extends DurableObject<RollEnv> {
                 delivery.telemetry.acknowledgementPreparedAt,
               acknowledgementType: delivery.telemetry.acknowledgementType,
               firstProviderAttemptAt: null,
-              clatterSucceededAt: null,
+              // The acknowledgement delivered the clatter, so its success time
+              // is already known and no provider attempt will report it later.
+              clatterSucceededAt: delivery.clatter?.deliveredAt ?? null,
               discordErrorCode: null,
               discordOperation: null,
               originalResponseMessageId: null,
@@ -4105,7 +4110,9 @@ export class RollWork extends DurableObject<RollEnv> {
     }
 
     const rollSeed = delivery.rollSeed ?? randomSeed();
-    const renderSeed = randomSeed();
+    // The acknowledgement already rendered clatter text from this seed, so the
+    // result message must reuse it rather than contradict what users saw.
+    const renderSeed = delivery.renderSeed ?? randomSeed();
     const renderVersion = accounting === null
       ? null
       : parseRollRenderVersion(this.env.ROLL_RENDER_VERSION);
