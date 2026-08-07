@@ -272,6 +272,7 @@ type ValidatedRollDeliveryRequest = Omit<
   logging: RollDeliveryRequest["logging"] | null;
   responseMode: RollDeliveryResponseMode;
   savedRoll: SavedRollInvocationV1 | null;
+  settings: { skipDiceDelay: boolean } | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -370,9 +371,12 @@ export function validateDeliveryRequest(
   if (!isRecord(value)) throw new Error("Roll delivery request is invalid");
   const hasDeferredAt = Object.hasOwn(value, "deferredAt");
   const hasTelemetry = Object.hasOwn(value, "telemetry");
+  // Settings are additive: every accepted shape stays valid without them.
+  const hasSettings = Object.hasOwn(value, "settings");
   const shape = { ...value };
   delete shape.deferredAt;
   delete shape.telemetry;
+  delete shape.settings;
   const hasPreflightedDirectRoll = hasExactKeys(shape, [
     "accounting",
     "interaction",
@@ -528,6 +532,18 @@ export function validateDeliveryRequest(
     rollSeed = candidate;
   }
 
+  let settings: { skipDiceDelay: boolean } | null = null;
+  if (hasSettings) {
+    if (
+      !isRecord(value.settings) ||
+      !hasExactKeys(value.settings, ["skipDiceDelay"]) ||
+      typeof value.settings.skipDiceDelay !== "boolean"
+    ) {
+      throw new Error("Roll delivery settings are invalid");
+    }
+    settings = { skipDiceDelay: value.settings.skipDiceDelay };
+  }
+
   let logging: RollDeliveryRequest["logging"] | null = null;
   if (
     hasPreflightedDirectRoll ||
@@ -619,6 +635,7 @@ export function validateDeliveryRequest(
     logging,
     responseMode,
     savedRoll,
+    settings,
   };
 }
 

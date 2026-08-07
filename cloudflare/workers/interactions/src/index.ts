@@ -173,14 +173,55 @@ async function deliverRequestedRollHelper(
   }
 }
 
+// A roll's Durable Object is new for every interaction, so its first call to
+// another Worker costs roughly half a second. This Worker is long lived, so it
+// resolves the setting here and the roll never waits for it.
+async function resolveSkipDiceDelay(
+  dataService: Fetcher,
+  guildId: string | null,
+): Promise<boolean | null> {
+  if (guildId === null) return null;
+  try {
+    const response = await dataService.fetch(
+      new Request("https://data.internal/internal/guilds/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ guildId }),
+      }),
+    );
+    if (!response.ok) return null;
+    const value: unknown = await response.json();
+    if (
+      !isRecord(value) ||
+      value.status !== "found" ||
+      !isRecord(value.settings) ||
+      typeof value.settings.skipDiceDelay !== "boolean"
+    ) {
+      return null;
+    }
+    return value.settings.skipDiceDelay;
+  } catch {
+    return null;
+  }
+}
+
 async function acceptDeferredRoll(
   stub: RollWorkAcceptanceStub,
   payload: ReturnType<typeof buildRollDeliveryPayload>,
   roll: DeferredRoll,
+  dataService: Fetcher,
 ): Promise<void> {
+  const skipDiceDelay = await resolveSkipDiceDelay(
+    dataService,
+    payload.accounting.guildId,
+  );
   const acceptanceStartedAt = Date.now();
   try {
-    const accepted = await stub.acceptDelivery(payload);
+    const accepted = await stub.acceptDelivery(
+      skipDiceDelay === null
+        ? payload
+        : { ...payload, settings: { skipDiceDelay } },
+    );
     const acceptanceCompletedAt = Date.now();
     if (isAcceptedRollDelivery(accepted)) {
       const acknowledgementPreparedAt =
@@ -591,7 +632,7 @@ export async function handleInteractionRequest(
         payload.accounting.receivedAt >= 3_000,
   });
   if (ctx !== undefined) {
-    ctx.waitUntil(acceptDeferredRoll(stub, payload, roll));
+    ctx.waitUntil(acceptDeferredRoll(stub, payload, roll, env.DATA_SERVICE));
     return json(acknowledgement);
   }
   let accepted: unknown;

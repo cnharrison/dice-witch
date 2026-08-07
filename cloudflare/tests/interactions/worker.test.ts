@@ -641,10 +641,17 @@ describe("Discord HTTP interaction Worker", () => {
         expiresAt: interactionTimestamp + 15 * 60 * 1_000,
       });
     });
+    let contextMutations = 0;
     const cacheContext = vi.fn(async (request: Request) => {
-      expect(new URL(request.url).pathname).toBe(
-        "/internal/discord-channel-context",
-      );
+      const path = new URL(request.url).pathname;
+      if (path === "/internal/guilds/settings") {
+        return Response.json({
+          status: "found",
+          settings: { skipDiceDelay: false },
+        });
+      }
+      contextMutations += 1;
+      expect(path).toBe("/internal/discord-channel-context");
       const mutation = await request.json<Record<string, unknown>>();
       expect(mutation).toMatchObject({
         version: 1,
@@ -795,7 +802,7 @@ describe("Discord HTTP interaction Worker", () => {
       /fixture\.interaction\.token|100000000000000004|100000000000000002|100000000000000003|2d20 \+ 5|Attack|alice/,
     );
     await expect(response.json()).resolves.toEqual({ type: 5 });
-    expect(cacheContext).toHaveBeenCalledOnce();
+    expect(contextMutations).toBe(1);
     expect(acceptDelivery).toHaveBeenCalledOnce();
     const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
     if (
@@ -841,7 +848,131 @@ describe("Discord HTTP interaction Worker", () => {
           channelType: 0,
         },
       },
+      settings: { skipDiceDelay: false },
     });
+  });
+
+  it("resolves the guild dice-delay setting before accepting a roll", async () => {
+    const interactionTimestamp = 1_783_800_000_101;
+    const interactionId = String(
+      ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
+    );
+    const acceptDelivery = vi.fn((value: unknown) => {
+      void value;
+      return Promise.resolve({
+        status: "created",
+        delivery: "pending",
+        expiresAt: interactionTimestamp + 15 * 60 * 1_000,
+      });
+    });
+    const settingsRequests: string[] = [];
+    const dataFetch = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path !== "/internal/guilds/settings") {
+        return new Response(null, { status: 503 });
+      }
+      const body = await request.json<{ guildId?: unknown }>();
+      settingsRequests.push(String(body.guildId));
+      return Response.json({
+        status: "found",
+        settings: { skipDiceDelay: true },
+      });
+    });
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: interactionId,
+        application_id: "100000000000000001",
+        type: 2,
+        token: "fixture.settings.token",
+        guild_id: "100000000000000002",
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: { user: { id: "100000000000000004", username: "alice" } },
+        data: {
+          id: "100000000000000005",
+          name: "roll",
+          type: 1,
+          options: [{ name: "notation", type: 3, value: "1d20" }],
+        },
+      }),
+      { rollWork: { acceptDelivery }, dataFetch },
+    );
+    const pending: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil(promise: Promise<unknown>) {
+        pending.push(promise);
+      },
+    } as ExecutionContext;
+
+    const response = await handleInteractionRequest(request, env, ctx);
+    await expect(response.json()).resolves.toEqual({ type: 5 });
+    await Promise.all(pending);
+
+    expect(settingsRequests).toEqual(["100000000000000002"]);
+    expect(acceptDelivery).toHaveBeenCalledOnce();
+    expect(acceptDelivery.mock.calls[0]?.[0]).toMatchObject({
+      settings: { skipDiceDelay: true },
+    });
+  });
+
+  it("accepts a roll without settings when the lookup fails", async () => {
+    const interactionTimestamp = 1_783_800_000_201;
+    const interactionId = String(
+      ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
+    );
+    const acceptDelivery = vi.fn((value: unknown) => {
+      void value;
+      return Promise.resolve({
+        status: "created",
+        delivery: "pending",
+        expiresAt: interactionTimestamp + 15 * 60 * 1_000,
+      });
+    });
+    const { env, request } = await signedRequest(
+      JSON.stringify({
+        id: interactionId,
+        application_id: "100000000000000001",
+        type: 2,
+        token: "fixture.settings.failure",
+        guild_id: "100000000000000002",
+        channel_id: "100000000000000003",
+        channel: {
+          id: "100000000000000003",
+          guild_id: "100000000000000002",
+          name: "dice-rolls",
+          type: 0,
+        },
+        member: { user: { id: "100000000000000004", username: "alice" } },
+        data: {
+          id: "100000000000000005",
+          name: "roll",
+          type: 1,
+          options: [{ name: "notation", type: 3, value: "1d20" }],
+        },
+      }),
+      {
+        rollWork: { acceptDelivery },
+        dataFetch: () => Promise.resolve(new Response(null, { status: 503 })),
+      },
+    );
+    const pending: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil(promise: Promise<unknown>) {
+        pending.push(promise);
+      },
+    } as ExecutionContext;
+
+    const response = await handleInteractionRequest(request, env, ctx);
+    await expect(response.json()).resolves.toEqual({ type: 5 });
+    await Promise.all(pending);
+
+    expect(acceptDelivery).toHaveBeenCalledOnce();
+    expect(acceptDelivery.mock.calls[0]?.[0]).not.toHaveProperty("settings");
   });
 
   it("responds privately to invalid notation without a preparation step", async () => {
