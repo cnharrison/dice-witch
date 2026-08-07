@@ -36,6 +36,20 @@ function logWork(name: string) {
   return rollEnv.LOG_WORK.getByName(name);
 }
 
+// Bookkeeping trails delivery, so a wake can return while the roll it started
+// is still settling. Drive alarms until the delivery leaves the pending state.
+async function settleDelivery(
+  stub: ReturnType<typeof work>,
+  wakes = 10,
+): Promise<void> {
+  for (let wake = 0; wake < wakes; wake += 1) {
+    await runDurableObjectAlarm(stub);
+    const { state } = await stub.deliveryStatus();
+    if (state !== "pending") return;
+  }
+  throw new Error("Roll delivery did not settle");
+}
+
 async function callAlarm(instance: {
   alarm?: () => void | Promise<void>;
 }): Promise<void> {
@@ -589,7 +603,7 @@ describe("RollWork Durable Object", () => {
       savedRoll: { name: "Attack", notation: "2d20+5", revision: 3 },
     });
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    await runDurableObjectAlarm(stub);
+    await settleDelivery(stub);
     const completed = consoleInfo.mock.calls
       .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
       .find(({ message, rollId }) =>
@@ -730,7 +744,7 @@ describe("RollWork Durable Object", () => {
         "UPDATE interaction_delivery SET result_not_before = 0 WHERE singleton = 1",
       );
     });
-    await runDurableObjectAlarm(stub);
+    await settleDelivery(stub);
 
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
@@ -2487,7 +2501,7 @@ describe("RollWork Durable Object", () => {
       state: "delivered",
     });
     expect(lifecycleSyncs.observations[0]).toMatchObject({
-      state: "accepted",
+      state: "delivery_started",
       rendererRevision: "canvaskit-v4-r14",
       httpStatus: 200,
     });
@@ -2935,10 +2949,12 @@ describe("RollWork Durable Object", () => {
                 "SELECT attempts, state FROM interaction_delivery",
               )
               .one();
-          expect(delivery()).toEqual({ attempts: 0, state: "pending" });
+          // Bookkeeping now trails delivery, so the roll has already reached
+          // Discord while both records are still in flight.
+          expect(delivery()).toEqual({ attempts: 1, state: "delivered" });
           lifecycleSyncReleased.resolve();
           await Promise.resolve();
-          expect(delivery()).toEqual({ attempts: 0, state: "pending" });
+          expect(delivery()).toEqual({ attempts: 1, state: "delivered" });
           accountingReleased.resolve();
           await alarm;
         } finally {
@@ -2956,8 +2972,7 @@ describe("RollWork Durable Object", () => {
 
     expect(lifecycleSnapshots[0]).toMatchObject({
       interactionId: id,
-      state: "accepted",
-      revision: 2,
+      state: "delivered",
     });
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
@@ -2978,6 +2993,120 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("resolves the dice-delay setting during acceptance instead of delivery", async () => {
+    const id = snowflakeAt(Date.now(), 71);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-success");
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    let settingsCalls = 0;
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      if (new URL(request.url).pathname === "/internal/guilds/settings") {
+        settingsCalls += 1;
+      }
+      return originalFetch.call(dataService, request);
+    });
+
+    try {
+      await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+        status: "created",
+        delivery: "pending",
+      });
+      expect(settingsCalls).toBe(1);
+      await runInDurableObject(stub, (_instance, state) => {
+        expect(
+          state.storage.sql
+            .exec<{ skip_dice_delay: number | null }>(
+              "SELECT skip_dice_delay FROM interaction_delivery",
+            )
+            .one().skip_dice_delay,
+        ).not.toBeNull();
+      });
+      await settleDelivery(stub);
+      expect(settingsCalls).toBe(1);
+    } finally {
+      dataService.fetch = originalFetch;
+    }
+
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+  });
+
+  it("resolves the dice-delay setting during acceptance for a preflighted roll", async () => {
+    const id = snowflakeAt(Date.now(), 73);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(id, "delivery-success");
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    let settingsCalls = 0;
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      if (new URL(request.url).pathname === "/internal/guilds/settings") {
+        settingsCalls += 1;
+      }
+      return originalFetch.call(dataService, request);
+    });
+
+    try {
+      await expect(stub.deliver(input)).resolves.toEqual({
+        status: "delivered",
+      });
+      expect(settingsCalls).toBe(1);
+      await runInDurableObject(stub, (_instance, state) => {
+        expect(
+          state.storage.sql
+            .exec<{ settings_ms: number | null }>(
+              "SELECT settings_ms FROM interaction_delivery",
+            )
+            .one().settings_ms,
+        ).toBe(0);
+      });
+    } finally {
+      dataService.fetch = originalFetch;
+    }
+  });
+
+  it("falls back to the delivery lookup when the prefetch fails", async () => {
+    const id = snowflakeAt(Date.now(), 72);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-success");
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    let settingsCalls = 0;
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      if (new URL(request.url).pathname === "/internal/guilds/settings") {
+        settingsCalls += 1;
+        if (settingsCalls === 1) {
+          return Response.json({ error: "temporary" }, { status: 503 });
+        }
+      }
+      return originalFetch.call(dataService, request);
+    });
+
+    try {
+      await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+        status: "created",
+        delivery: "pending",
+      });
+      await settleDelivery(stub);
+      expect(settingsCalls).toBe(2);
+    } finally {
+      dataService.fetch = originalFetch;
+    }
+
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+  });
+
   it("terminates delivery without rereading an invalid stored record", async () => {
     const id = snowflakeAt(Date.now(), 66);
     const stub = work(id);
@@ -2986,6 +3115,9 @@ describe("RollWork Durable Object", () => {
       status: "created",
       delivery: "pending",
     });
+    // Delivery no longer waits on bookkeeping, so the alarm can reach the
+    // corrupted record before the assertions run.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
@@ -3001,7 +3133,6 @@ describe("RollWork Durable Object", () => {
         JSON.stringify(record),
       );
     });
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
       await runInDurableObject(stub, async (instance) => callAlarm(instance));
@@ -3920,8 +4051,6 @@ describe("RollWork Durable Object", () => {
       fetch: (request: Request) => Promise<Response>;
     };
     const originalFetch = dataService.fetch;
-    const accountingStarted = controlledSignal();
-    const accountingReleased = controlledSignal();
     dataService.fetch = vi.fn(async (dataRequest: Request): Promise<Response> => {
       const path = new URL(dataRequest.url).pathname;
       if (path === "/internal/roll-lifecycle") {
@@ -3930,16 +4059,6 @@ describe("RollWork Durable Object", () => {
         }>();
         if (lifecycle.interactionId === id) {
           return Response.json({ error: "temporary" }, { status: 503 });
-        }
-      }
-      if (path === "/internal/roll-accounting") {
-        const accounting = await dataRequest.clone().json<{
-          interactionId?: unknown;
-        }>();
-        if (accounting.interactionId === id) {
-          accountingStarted.resolve();
-          await accountingReleased.promise;
-          return Response.json({ status: "applied" });
         }
       }
       return originalFetch.call(dataService, dataRequest);
@@ -3955,16 +4074,14 @@ describe("RollWork Durable Object", () => {
           status: "created",
           delivery: "pending",
         });
-        const delivery = roll.deliver(request);
-        await accountingStarted.promise;
         state.storage.sql.exec(
           "UPDATE interaction_delivery SET expires_at = 0",
         );
-        accountingReleased.resolve();
-        await expect(delivery).resolves.toEqual({ status: "expired" });
+        await expect(roll.deliver(request)).resolves.toEqual({
+          status: "expired",
+        });
       });
     } finally {
-      accountingReleased.resolve();
       dataService.fetch = originalFetch;
     }
 

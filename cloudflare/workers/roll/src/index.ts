@@ -506,6 +506,7 @@ type DeliveryRecordResolution =
       status: "ready";
       record: RollWorkRecord;
       renderSnapshotPreparationMs: number | null;
+      skipDiceDelay?: boolean | undefined;
     }
   | { status: "conflict" }
   | { status: "unavailable" };
@@ -1546,14 +1547,11 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       return accepted;
     }
-    await this.runPreDeliveryBookkeeping();
-    if (accepted.delivery === "delivered" || accepted.delivery === "failed") {
-      await this.runHelper();
-      await this.scheduleAfterAttempts(accepted.expiresAt);
-      return { status: accepted.delivery };
-    }
-    const result = await this.runDelivery();
-    await this.syncLifecycle();
+    const result =
+      accepted.delivery === "delivered" || accepted.delivery === "failed"
+        ? { status: accepted.delivery }
+        : await this.runDelivery();
+    await this.runDeliveryBookkeeping();
     await this.runHelper();
     await this.scheduleAfterAttempts(accepted.expiresAt);
     return result;
@@ -1596,6 +1594,9 @@ export class RollWork extends DurableObject<RollEnv> {
       this.activeAcceptances -= 1;
     });
     const accepted = acceptance.result;
+    if (resolution.skipDiceDelay !== undefined) {
+      this.storeSkipDiceDelay(resolution.skipDiceDelay);
+    }
     const continuesInline =
       deliverInline &&
       (accepted.status === "created" || accepted.status === "existing") &&
@@ -2171,8 +2172,8 @@ export class RollWork extends DurableObject<RollEnv> {
     const delivery = this.readDelivery();
     const lifecycle = this.readLifecycleTimings();
     const clatterSentAt = delivery?.clatter_sent_at ?? null;
-    // Named for the span it covers: this is acceptance plus pre-delivery
-    // bookkeeping, not the alarm hop alone.
+    // Named for the span it covers: acceptance through the start of delivery,
+    // not the alarm hop alone.
     const acceptanceToDeliveryStartMs =
       lifecycle.acceptedAt === null || lifecycle.deliveryStartedAt === null
         ? null
@@ -2277,13 +2278,12 @@ export class RollWork extends DurableObject<RollEnv> {
       await this.finalizeExpiredDelivery(delivery);
       return;
     }
-    await this.runPreDeliveryBookkeeping();
     const current = this.readDelivery();
     if (current === undefined) return;
     if (current.state === "pending") {
       await this.runDelivery();
     }
-    await this.syncLifecycle();
+    await this.runDeliveryBookkeeping();
     await this.runHelper();
     await this.runLogging();
     await this.scheduleAfterAttempts(current.expires_at);
@@ -2389,8 +2389,9 @@ export class RollWork extends DurableObject<RollEnv> {
     await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
   }
 
-  private async runPreDeliveryBookkeeping(): Promise<void> {
-    // Both operations must settle before delivery, but neither depends on the other.
+  private async runDeliveryBookkeeping(): Promise<void> {
+    // Neither record is read on the roll's own timescale, so both settle after
+    // Discord has the message rather than delaying what the user sees.
     const startedAt = Date.now();
     await Promise.all([
       this.syncLifecycle().finally(() => {
@@ -2747,11 +2748,24 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     const guildId = metadata.accounting?.guildId ?? null;
     if (guildId === null) {
-      this.ctx.storage.sql.exec(
-        "UPDATE interaction_delivery SET skip_dice_delay = 0 WHERE singleton = 1",
-      );
+      this.storeSkipDiceDelay(false);
       return false;
     }
+    const skipDiceDelay = await this.fetchGuildSkipDiceDelay(guildId);
+    this.storeSkipDiceDelay(skipDiceDelay);
+    return skipDiceDelay;
+  }
+
+  private prefetchSkipDiceDelay(
+    guildId: string | null,
+  ): Promise<boolean | undefined> {
+    if (guildId === null) return Promise.resolve(false);
+    // A failed prefetch must not fail acceptance: delivery still owns the
+    // authoritative lookup and its retry handling.
+    return this.fetchGuildSkipDiceDelay(guildId).catch(() => undefined);
+  }
+
+  private async fetchGuildSkipDiceDelay(guildId: string): Promise<boolean> {
     const response = await this.env.DATA_SERVICE.fetch(
       new Request("https://data.internal/internal/guilds/settings", {
         method: "POST",
@@ -2769,12 +2783,16 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       throw new Error("Guild settings response is invalid");
     }
-    const skipDiceDelay = value.settings.skipDiceDelay;
+    return value.settings.skipDiceDelay;
+  }
+
+  private storeSkipDiceDelay(skipDiceDelay: boolean): void {
     this.ctx.storage.sql.exec(
-      "UPDATE interaction_delivery SET skip_dice_delay = ? WHERE singleton = 1",
+      `UPDATE interaction_delivery
+       SET skip_dice_delay = ?
+       WHERE singleton = 1 AND skip_dice_delay IS NULL`,
       skipDiceDelay ? 1 : 0,
     );
-    return skipDiceDelay;
   }
 
   private resolveRollDelay(delivery: StoredDeliveryRow): {
@@ -4134,6 +4152,9 @@ export class RollWork extends DurableObject<RollEnv> {
         renderSnapshotPreparationMs: null,
       };
     }
+    // Resolving the dice-delay setting here keeps it off the pre-clatter path
+    // for every record shape that reaches delivery with dice to show.
+    const skipDiceDelay = this.prefetchSkipDiceDelay(accounting.guildId);
     // Every rollback target must parse and recover V5 before this producer ships.
     if (
       delivery.rollSeed !== null &&
@@ -4143,6 +4164,7 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       return {
         status: "ready",
+        skipDiceDelay: await skipDiceDelay,
         record:
           renderVersion === 3
             ? {
@@ -4163,16 +4185,22 @@ export class RollWork extends DurableObject<RollEnv> {
 
     const renderSnapshotPreparationStartedAt = Date.now();
     try {
-      const renderRequest = await buildRollRenderRequestForVersion(
-        this.env.DATA_SERVICE,
-        renderVersion,
-        accounting.userId,
-        accounting.guildId,
-        outcome,
-        renderSeed,
-      );
+      // The dice-delay setting rides along with the appearance lookup so that
+      // delivery never pays for a data service round trip of its own.
+      const [renderRequest, resolvedSkipDiceDelay] = await Promise.all([
+        buildRollRenderRequestForVersion(
+          this.env.DATA_SERVICE,
+          renderVersion,
+          accounting.userId,
+          accounting.guildId,
+          outcome,
+          renderSeed,
+        ),
+        skipDiceDelay,
+      ]);
       return {
         status: "ready",
+        skipDiceDelay: resolvedSkipDiceDelay,
         record:
           renderRequest.version === 3
             ? { version: 3, ...common, renderRequest }
