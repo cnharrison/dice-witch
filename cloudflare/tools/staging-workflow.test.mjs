@@ -69,14 +69,20 @@ test("does not expose deployment credentials to dependency or quality steps", as
   );
 });
 
-test("requires exact SHA, isolation, snapshot verification, and Gateway acknowledgement", async () => {
+test("requires exact SHA, isolation, and Gateway acknowledgement", async () => {
   const value = await workflow();
 
   assert.match(value, /\^\[0-9a-f\]\{40\}\$/);
   assert.match(value, /staging-plan\.mjs/);
   assert.match(value, /--allow-gateway-deploy/);
   assert.match(value, /STAGING_PRODUCTION_DENYLIST_B64/);
-  assert.match(value, /Verify audience snapshot before deployment/);
-  assert.match(value, /verify-audience-snapshot\.mjs/);
   assert.match(value, /--expected-sha/);
+});
+
+// The staging bot serves one guild and publishes to nothing, so a fresh
+// audience snapshot is not worth holding the Gateway open for.
+test("does not gate staging deployment on an audience snapshot", async () => {
+  const value = await workflow();
+
+  assert.doesNotMatch(value, /verify-audience-snapshot\.mjs/);
 });

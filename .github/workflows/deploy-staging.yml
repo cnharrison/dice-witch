@@ -172,16 +172,6 @@ jobs:
           npx --no-install wrangler d1 migrations apply DATA \
             --remote --config wrangler.data.jsonc > /dev/null
 
-      - name: Verify audience snapshot before deployment
-        working-directory: cloudflare
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          node tools/verify-audience-snapshot.mjs \
-            --config wrangler.data.jsonc \
-            --max-age-ms 43200000
-
       - name: Deploy staging Worker cohort
         working-directory: cloudflare
         env:
