@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router';
 import { AuthWrapper } from './AuthWrapper';
 import { Navbar } from './Navbar';
 import { Toaster } from './ui/toaster';

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { BookOpen, Plus } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router';
 import { useAuth, useSignIn } from '@/lib/AuthProvider';
 import { Button } from "@/components/ui/button";
 import { useServerStats } from '@/hooks/useServerStats';
