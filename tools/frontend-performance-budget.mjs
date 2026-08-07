@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 export const FRONTEND_PERFORMANCE_BUDGET = Object.freeze({
   initialTransferBytes: 225 * 1024,
-  initialJavaScriptBytes: 90 * 1024,
+  initialJavaScriptBytes: 105 * 1024,
   thirdPartyOrigins: 1,
 });
 

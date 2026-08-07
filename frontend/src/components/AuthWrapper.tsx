@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router";
 import { useAuth } from "../lib/AuthProvider";
 import { SparkleLoadingIndicator } from "./SparkleLoadingIndicator";
 

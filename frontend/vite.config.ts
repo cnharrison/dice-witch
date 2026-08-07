@@ -28,6 +28,9 @@ export default defineConfig(({ mode }) => {
       react(),
     ],
     resolve: {
+      // Workspace hoisting can leave an older React beside this one, and two
+      // copies in a bundle break hooks at runtime.
+      dedupe: ["react", "react-dom"],
       alias: {
         "@": path.resolve(projectDirectory, "src"),
       },

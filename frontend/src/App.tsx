@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router';
 import { EnvironmentBanner } from './components/EnvironmentBanner';
 import { SparkleLoadingIndicator } from './components/SparkleLoadingIndicator';
 import { SvgFilters } from './components/SvgFilters';

@@ -48,7 +48,7 @@ test("accepts a bounded initial route and reports its transfer composition", asy
 
 test("rejects oversized JavaScript and additional third-party origins", async () => {
   const directory = await fixture({
-    javascript: randomBytes(100 * 1024),
+    javascript: randomBytes(120 * 1024),
     externalStylesheets: [
       "https://fonts.example/style.css",
       "https://analytics.example/script.css",

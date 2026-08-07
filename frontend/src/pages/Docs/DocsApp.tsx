@@ -1,6 +1,6 @@
 import * as React from "react";
 import { House, LogIn, Plus, Search } from "lucide-react";
-import { Link, NavLink, useLocation, useParams } from "react-router-dom";
+import { Link, NavLink, useLocation, useParams } from "react-router";
 import { Navbar } from "@/components/Navbar";
 import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { ThemeToggle } from "@/components/ui/theme-toggle";

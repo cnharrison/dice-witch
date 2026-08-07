@@ -1,6 +1,6 @@
 import type { MDXComponents } from "mdx/types.js";
 import * as React from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { MarkdownHeading } from "./MarkdownHeading";
 
 function markdownLink({ href = "", ...props }: React.ComponentProps<"a">) {
