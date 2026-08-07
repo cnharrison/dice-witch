@@ -369,10 +369,12 @@ function parseRollLifecycleDiagnostics(
     (value.firstProviderAttemptAt !== null &&
       (!timestamp(value.firstProviderAttemptAt) ||
         value.firstProviderAttemptAt < (acceptedAt ?? value.acknowledgementPreparedAt))) ||
+    // The acknowledgement itself can carry the clatter, in which case it
+    // succeeds before any provider attempt this roll makes. The acknowledgement
+    // is the true lower bound for either delivery route.
     (value.clatterSucceededAt !== null &&
       (!timestamp(value.clatterSucceededAt) ||
-        value.firstProviderAttemptAt === null ||
-        value.clatterSucceededAt < value.firstProviderAttemptAt)) ||
+        value.clatterSucceededAt < value.acknowledgementPreparedAt)) ||
     (value.discordErrorCode !== null &&
       (!Number.isSafeInteger(value.discordErrorCode) ||
         Number(value.discordErrorCode) < 1)) ||

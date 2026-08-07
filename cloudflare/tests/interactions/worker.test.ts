@@ -801,7 +801,24 @@ describe("Discord HTTP interaction Worker", () => {
     expect(JSON.stringify(acceptanceEvent)).not.toMatch(
       /fixture\.interaction\.token|100000000000000004|100000000000000002|100000000000000003|2d20 \+ 5|Attack|alice/,
     );
-    await expect(response.json()).resolves.toEqual({ type: 5 });
+    // A delay-enabled guild sees the clatter in the acknowledgement itself, so
+    // no deferred loading state is used and the roll never posts one.
+    const acknowledgement = await response.json<{
+      type: number;
+      data: {
+        flags: number;
+        allowed_mentions: unknown;
+        components: { type: number; content: string }[];
+      };
+    }>();
+    expect(acknowledgement.type).toBe(4);
+    expect(acknowledgement.data.flags).toBe(32_768);
+    expect(acknowledgement.data.allowed_mentions).toEqual({ parse: [] });
+    expect(acknowledgement.data.components).toHaveLength(1);
+    expect(acknowledgement.data.components[0]?.type).toBe(10);
+    expect(acknowledgement.data.components[0]?.content).toMatch(
+      /^_\.\.\..*\.\.\._$/,
+    );
     expect(contextMutations).toBe(1);
     expect(acceptDelivery).toHaveBeenCalledOnce();
     const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
@@ -810,15 +827,25 @@ describe("Discord HTTP interaction Worker", () => {
       acceptedRequest === null ||
       !("deferredAt" in acceptedRequest) ||
       !("rollSeed" in acceptedRequest) ||
+      !("renderSeed" in acceptedRequest) ||
+      !("clatter" in acceptedRequest) ||
       !("telemetry" in acceptedRequest)
     ) {
       throw new Error("Accepted roll request is missing preflight metadata");
     }
     const deferredAt = acceptedRequest.deferredAt;
     const rollSeed = acceptedRequest.rollSeed;
+    const renderSeed = acceptedRequest.renderSeed;
     const telemetry = acceptedRequest.telemetry;
     expect(typeof deferredAt).toBe("number");
     expect(rollSeed).toEqual(expect.any(Number));
+    expect(renderSeed).toEqual(expect.any(Number));
+    // The recorded delivery time is the acknowledgement itself, so the roll's
+    // delay window starts when the user actually saw the dice clatter.
+    expect(acceptedRequest.clatter).toEqual({
+      deliveredAt: (telemetry as { acknowledgementPreparedAt: number })
+        .acknowledgementPreparedAt,
+    });
     expect(acceptDelivery).toHaveBeenCalledWith({
       interaction: {
         id: interactionId,
@@ -835,6 +862,8 @@ describe("Discord HTTP interaction Worker", () => {
       deferredAt,
       rollSeed,
       telemetry,
+      renderSeed,
+      clatter: acceptedRequest.clatter,
       logging: {
         source: "discord",
         channelId: "100000000000000003",
@@ -918,6 +947,9 @@ describe("Discord HTTP interaction Worker", () => {
     expect(acceptDelivery.mock.calls[0]?.[0]).toMatchObject({
       settings: { skipDiceDelay: true },
     });
+    // A guild that turned the delay off must not gain a clatter step.
+    expect(acceptDelivery.mock.calls[0]?.[0]).not.toHaveProperty("clatter");
+    expect(acceptDelivery.mock.calls[0]?.[0]).not.toHaveProperty("renderSeed");
   });
 
   it("accepts a roll without settings when the lookup fails", async () => {
@@ -973,6 +1005,9 @@ describe("Discord HTTP interaction Worker", () => {
 
     expect(acceptDelivery).toHaveBeenCalledOnce();
     expect(acceptDelivery.mock.calls[0]?.[0]).not.toHaveProperty("settings");
+    // An unresolved setting must not let the acknowledgement commit to a
+    // clatter the roll cannot reproduce.
+    expect(acceptDelivery.mock.calls[0]?.[0]).not.toHaveProperty("clatter");
   });
 
   it("responds privately to invalid notation without a preparation step", async () => {

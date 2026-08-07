@@ -4,6 +4,7 @@ import {
   buildEditOriginalResponse,
   buildInvalidRollHelpMessage,
   buildKnowledgeBaseResponse,
+  buildRollClatterMessage,
   buildRollDeliveryPayload,
   buildStaticCommandResponse,
   buildStatusCommandResponse,
@@ -175,7 +176,8 @@ async function deliverRequestedRollHelper(
 
 // A roll's Durable Object is new for every interaction, so its first call to
 // another Worker costs roughly half a second. This Worker is long lived, so it
-// resolves the setting here and the roll never waits for it.
+// resolves the setting here and the roll never waits for it. A null result
+// means unresolved, and every caller must then keep the pre-existing behavior.
 async function resolveSkipDiceDelay(
   dataService: Fetcher,
   guildId: string | null,
@@ -209,12 +211,8 @@ async function acceptDeferredRoll(
   stub: RollWorkAcceptanceStub,
   payload: ReturnType<typeof buildRollDeliveryPayload>,
   roll: DeferredRoll,
-  dataService: Fetcher,
+  skipDiceDelay: boolean | null,
 ): Promise<void> {
-  const skipDiceDelay = await resolveSkipDiceDelay(
-    dataService,
-    payload.accounting.guildId,
-  );
   const acceptanceStartedAt = Date.now();
   try {
     const accepted = await stub.acceptDelivery(
@@ -575,6 +573,14 @@ export async function handleInteractionRequest(
     env.DATA_SERVICE,
     ctx,
   );
+  // The roll's Durable Object is created fresh per interaction and takes about
+  // 700ms to dispatch, so a clatter posted from there lands long after the
+  // acknowledgement. Resolving the setting here lets the acknowledgement itself
+  // carry the clatter, and the same lookup still rides along in the payload.
+  const skipDiceDelay = await resolveSkipDiceDelay(
+    env.DATA_SERVICE,
+    roll.guildId,
+  );
   let payload: ReturnType<typeof buildRollDeliveryPayload>;
   let acknowledgement: Record<string, unknown>;
   let acknowledgementTelemetry: RollDeliveryTelemetryV2;
@@ -587,9 +593,11 @@ export async function handleInteractionRequest(
       stableAppearanceIdentities: true,
       preserveOutOfRangePhysicalFaces: true,
     });
-    const acknowledgementType = outcome.outcomes.length === 0 ? 4 : 5;
-    if (acknowledgementType === 4) {
+    let acknowledgementType: 4 | 5;
+    let clatterRenderSeed: number | null = null;
+    if (outcome.outcomes.length === 0) {
       const invalidRoll = buildInvalidRollHelpMessage(outcome, roll.id);
+      acknowledgementType = 4;
       acknowledgement = {
         type: acknowledgementType,
         data: {
@@ -598,7 +606,25 @@ export async function handleInteractionRequest(
           allowed_mentions: { parse: [] },
         },
       };
-    } else acknowledgement = { type: acknowledgementType };
+    } else if (skipDiceDelay === false) {
+      // The clatter rides along with the acknowledgement so users see it now
+      // rather than after the roll's Durable Object has been created.
+      clatterRenderSeed = randomSeed();
+      acknowledgementType = 4;
+      acknowledgement = {
+        type: acknowledgementType,
+        data: {
+          ...buildRollClatterMessage(outcome, clatterRenderSeed),
+          allowed_mentions: { parse: [] },
+        },
+      };
+    } else {
+      // An unresolved setting keeps the deferred acknowledgement this Worker
+      // has always sent, so an unavailable data service cannot change what
+      // users see.
+      acknowledgementType = 5;
+      acknowledgement = { type: acknowledgementType };
+    }
     acknowledgementTelemetry = {
       version: 2,
       handlerStartedAt,
@@ -612,6 +638,14 @@ export async function handleInteractionRequest(
       env.ROLL_LIFECYCLE_TELEMETRY_VERSION === "2"
         ? acknowledgementTelemetry
         : null,
+      // The clatter reaches Discord with the acknowledgement, so both share one
+      // timestamp and the recorded span between them stays truthful at zero.
+      clatterRenderSeed === null
+        ? null
+        : {
+            renderSeed: clatterRenderSeed,
+            deliveredAt: acknowledgementTelemetry.acknowledgementPreparedAt,
+          },
     );
   } catch {
     return interactionError("This roll could not be accepted. Please try again.");
@@ -632,7 +666,7 @@ export async function handleInteractionRequest(
         payload.accounting.receivedAt >= 3_000,
   });
   if (ctx !== undefined) {
-    ctx.waitUntil(acceptDeferredRoll(stub, payload, roll, env.DATA_SERVICE));
+    ctx.waitUntil(acceptDeferredRoll(stub, payload, roll, skipDiceDelay));
     return json(acknowledgement);
   }
   let accepted: unknown;

@@ -2261,6 +2261,73 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("reuses an acknowledged clatter instead of posting its own", async () => {
+    const id = snowflakeAt(Date.now(), 63);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(id, "delivery-clatter-contract");
+    const deliveredAt = input.accounting.receivedAt;
+    input.renderSeed = 4_242;
+    input.clatter = { deliveredAt };
+    input.settings = { skipDiceDelay: false };
+
+    let jsonPosts = 0;
+    const restoreRequests = observeInteractionRequests(
+      input.interaction.token,
+      (request) => {
+        const contentType = request.headers.get("content-type") ?? "";
+        if (contentType.startsWith("application/json")) jsonPosts += 1;
+      },
+    );
+    try {
+      await expect(stub.deliver(input)).resolves.toMatchObject({
+        status: "pending",
+      });
+      await runInDurableObject(stub, async (_instance, state) => {
+        const row = state.storage.sql
+          .exec<{
+            clatter_sent_at: number;
+            delay_ms: number;
+            result_not_before: number;
+          }>(
+            `SELECT clatter_sent_at, delay_ms, result_not_before
+             FROM interaction_delivery`,
+          )
+          .one();
+        // The delay window is anchored on the acknowledgement the user saw,
+        // not on a later clatter this delivery would otherwise have posted.
+        expect(row.clatter_sent_at).toBe(deliveredAt);
+        expect(row.result_not_before).toBe(deliveredAt + row.delay_ms);
+        expect(await state.storage.getAlarm()).toBe(row.result_not_before);
+      });
+      // Only the result upload remains, and it is multipart rather than JSON.
+      expect(jsonPosts).toBe(0);
+
+      await runInDurableObject(stub, async (instance, state) => {
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET result_not_before = 0",
+        );
+        await callAlarm(instance);
+      });
+    } finally {
+      restoreRequests();
+    }
+
+    expect(jsonPosts).toBe(0);
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      const record: unknown = JSON.parse(
+        state.storage.sql
+          .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+          .one().record_json,
+      );
+      // The result must reproduce the acknowledged text, so it has to keep the
+      // seed that produced it rather than draw a fresh one.
+      expect(record).toMatchObject({ renderSeed: 4_242 });
+    });
+  });
+
   it("rechecks the finalization window after snapshot preparation", async () => {
     const id = snowflakeAt(Date.now(), 51);
     const stub = work(id);
@@ -3987,6 +4054,18 @@ describe("RollWork Durable Object", () => {
     await expect(
       stub.acceptDelivery({ ...input, rollSeed: 987_654_321 }),
     ).resolves.toEqual({ status: "conflict" });
+  });
+
+  it("rejects an acknowledged clatter that has no render seed", () => {
+    const id = snowflakeAt(Date.now(), 64);
+    // Without the seed the roll would draw its own and contradict the text the
+    // acknowledgement already showed, so the payload must be refused outright.
+    expect(() =>
+      validateDeliveryRequest({
+        ...telemetryDeliveryRequest(id, "delivery-clatter-contract"),
+        clatter: { deliveredAt: Date.now() },
+      }),
+    ).toThrow("Roll delivery clatter has no render seed");
   });
 
   it("rejects private-defer metadata outside direct Discord delivery", () => {
