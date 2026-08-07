@@ -36,6 +36,20 @@ function logWork(name: string) {
   return rollEnv.LOG_WORK.getByName(name);
 }
 
+// Bookkeeping trails delivery, so a wake can return while the roll it started
+// is still settling. Drive alarms until the delivery leaves the pending state.
+async function settleDelivery(
+  stub: ReturnType<typeof work>,
+  wakes = 10,
+): Promise<void> {
+  for (let wake = 0; wake < wakes; wake += 1) {
+    await runDurableObjectAlarm(stub);
+    const { state } = await stub.deliveryStatus();
+    if (state !== "pending") return;
+  }
+  throw new Error("Roll delivery did not settle");
+}
+
 async function callAlarm(instance: {
   alarm?: () => void | Promise<void>;
 }): Promise<void> {
@@ -589,7 +603,7 @@ describe("RollWork Durable Object", () => {
       savedRoll: { name: "Attack", notation: "2d20+5", revision: 3 },
     });
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    await runDurableObjectAlarm(stub);
+    await settleDelivery(stub);
     const completed = consoleInfo.mock.calls
       .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
       .find(({ message, rollId }) =>
@@ -2487,7 +2501,7 @@ describe("RollWork Durable Object", () => {
       state: "delivered",
     });
     expect(lifecycleSyncs.observations[0]).toMatchObject({
-      state: "accepted",
+      state: "delivery_started",
       rendererRevision: "canvaskit-v4-r14",
       httpStatus: 200,
     });
@@ -2935,10 +2949,12 @@ describe("RollWork Durable Object", () => {
                 "SELECT attempts, state FROM interaction_delivery",
               )
               .one();
-          expect(delivery()).toEqual({ attempts: 0, state: "pending" });
+          // Bookkeeping now trails delivery, so the roll has already reached
+          // Discord while both records are still in flight.
+          expect(delivery()).toEqual({ attempts: 1, state: "delivered" });
           lifecycleSyncReleased.resolve();
           await Promise.resolve();
-          expect(delivery()).toEqual({ attempts: 0, state: "pending" });
+          expect(delivery()).toEqual({ attempts: 1, state: "delivered" });
           accountingReleased.resolve();
           await alarm;
         } finally {
@@ -2956,8 +2972,7 @@ describe("RollWork Durable Object", () => {
 
     expect(lifecycleSnapshots[0]).toMatchObject({
       interactionId: id,
-      state: "accepted",
-      revision: 2,
+      state: "delivered",
     });
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
@@ -2986,6 +3001,9 @@ describe("RollWork Durable Object", () => {
       status: "created",
       delivery: "pending",
     });
+    // Delivery no longer waits on bookkeeping, so the alarm can reach the
+    // corrupted record before the assertions run.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
@@ -3001,7 +3019,6 @@ describe("RollWork Durable Object", () => {
         JSON.stringify(record),
       );
     });
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
       await runInDurableObject(stub, async (instance) => callAlarm(instance));
@@ -3920,8 +3937,6 @@ describe("RollWork Durable Object", () => {
       fetch: (request: Request) => Promise<Response>;
     };
     const originalFetch = dataService.fetch;
-    const accountingStarted = controlledSignal();
-    const accountingReleased = controlledSignal();
     dataService.fetch = vi.fn(async (dataRequest: Request): Promise<Response> => {
       const path = new URL(dataRequest.url).pathname;
       if (path === "/internal/roll-lifecycle") {
@@ -3930,16 +3945,6 @@ describe("RollWork Durable Object", () => {
         }>();
         if (lifecycle.interactionId === id) {
           return Response.json({ error: "temporary" }, { status: 503 });
-        }
-      }
-      if (path === "/internal/roll-accounting") {
-        const accounting = await dataRequest.clone().json<{
-          interactionId?: unknown;
-        }>();
-        if (accounting.interactionId === id) {
-          accountingStarted.resolve();
-          await accountingReleased.promise;
-          return Response.json({ status: "applied" });
         }
       }
       return originalFetch.call(dataService, dataRequest);
@@ -3955,16 +3960,14 @@ describe("RollWork Durable Object", () => {
           status: "created",
           delivery: "pending",
         });
-        const delivery = roll.deliver(request);
-        await accountingStarted.promise;
         state.storage.sql.exec(
           "UPDATE interaction_delivery SET expires_at = 0",
         );
-        accountingReleased.resolve();
-        await expect(delivery).resolves.toEqual({ status: "expired" });
+        await expect(roll.deliver(request)).resolves.toEqual({
+          status: "expired",
+        });
       });
     } finally {
-      accountingReleased.resolve();
       dataService.fetch = originalFetch;
     }
 
