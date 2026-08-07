@@ -506,7 +506,6 @@ type DeliveryRecordResolution =
       status: "ready";
       record: RollWorkRecord;
       renderSnapshotPreparationMs: number | null;
-      skipDiceDelay?: boolean | undefined;
     }
   | { status: "conflict" }
   | { status: "unavailable" };
@@ -1594,8 +1593,8 @@ export class RollWork extends DurableObject<RollEnv> {
       this.activeAcceptances -= 1;
     });
     const accepted = acceptance.result;
-    if (resolution.skipDiceDelay !== undefined) {
-      this.storeSkipDiceDelay(resolution.skipDiceDelay);
+    if (delivery.settings !== null) {
+      this.storeSkipDiceDelay(delivery.settings.skipDiceDelay);
     }
     const continuesInline =
       deliverInline &&
@@ -2754,15 +2753,6 @@ export class RollWork extends DurableObject<RollEnv> {
     const skipDiceDelay = await this.fetchGuildSkipDiceDelay(guildId);
     this.storeSkipDiceDelay(skipDiceDelay);
     return skipDiceDelay;
-  }
-
-  private prefetchSkipDiceDelay(
-    guildId: string | null,
-  ): Promise<boolean | undefined> {
-    if (guildId === null) return Promise.resolve(false);
-    // A failed prefetch must not fail acceptance: delivery still owns the
-    // authoritative lookup and its retry handling.
-    return this.fetchGuildSkipDiceDelay(guildId).catch(() => undefined);
   }
 
   private async fetchGuildSkipDiceDelay(guildId: string): Promise<boolean> {
@@ -4152,9 +4142,6 @@ export class RollWork extends DurableObject<RollEnv> {
         renderSnapshotPreparationMs: null,
       };
     }
-    // Resolving the dice-delay setting here keeps it off the pre-clatter path
-    // for every record shape that reaches delivery with dice to show.
-    const skipDiceDelay = this.prefetchSkipDiceDelay(accounting.guildId);
     // Every rollback target must parse and recover V5 before this producer ships.
     if (
       delivery.rollSeed !== null &&
@@ -4164,7 +4151,6 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       return {
         status: "ready",
-        skipDiceDelay: await skipDiceDelay,
         record:
           renderVersion === 3
             ? {
@@ -4187,20 +4173,16 @@ export class RollWork extends DurableObject<RollEnv> {
     try {
       // The dice-delay setting rides along with the appearance lookup so that
       // delivery never pays for a data service round trip of its own.
-      const [renderRequest, resolvedSkipDiceDelay] = await Promise.all([
-        buildRollRenderRequestForVersion(
-          this.env.DATA_SERVICE,
-          renderVersion,
-          accounting.userId,
-          accounting.guildId,
-          outcome,
-          renderSeed,
-        ),
-        skipDiceDelay,
-      ]);
+      const renderRequest = await buildRollRenderRequestForVersion(
+        this.env.DATA_SERVICE,
+        renderVersion,
+        accounting.userId,
+        accounting.guildId,
+        outcome,
+        renderSeed,
+      );
       return {
         status: "ready",
-        skipDiceDelay: resolvedSkipDiceDelay,
         record:
           renderRequest.version === 3
             ? { version: 3, ...common, renderRequest }

@@ -68,6 +68,7 @@ export type RollDeliveryPayload = {
   deferredAt: number;
   rollSeed: number;
   telemetry?: RollDeliveryTelemetryV2;
+  settings?: { skipDiceDelay: boolean };
   logging: {
     source: "discord";
     channelId: string;

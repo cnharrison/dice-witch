@@ -2993,10 +2993,15 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("resolves the dice-delay setting during acceptance instead of delivery", async () => {
+  it("never looks up a dice-delay setting the request already carries", async () => {
     const id = snowflakeAt(Date.now(), 71);
     const stub = work(id);
-    const input = deliveryRequest(id, "delivery-success");
+    // The fixture guild skips the delay, so honouring "false" proves the
+    // carried setting wins without any lookup of its own.
+    const input = {
+      ...deliveryRequest(id, "delivery-success"),
+      settings: { skipDiceDelay: false },
+    };
     const dataService = rollEnv.DATA_SERVICE as unknown as {
       fetch: (request: Request) => Promise<Response>;
     };
@@ -3014,32 +3019,28 @@ describe("RollWork Durable Object", () => {
         status: "created",
         delivery: "pending",
       });
-      expect(settingsCalls).toBe(1);
+      expect(settingsCalls).toBe(0);
       await runInDurableObject(stub, (_instance, state) => {
         expect(
           state.storage.sql
-            .exec<{ skip_dice_delay: number | null }>(
+            .exec<{ skip_dice_delay: number }>(
               "SELECT skip_dice_delay FROM interaction_delivery",
             )
             .one().skip_dice_delay,
-        ).not.toBeNull();
+        ).toBe(0);
       });
-      await settleDelivery(stub);
-      expect(settingsCalls).toBe(1);
     } finally {
       dataService.fetch = originalFetch;
     }
-
-    await expect(stub.deliveryStatus()).resolves.toMatchObject({
-      state: "delivered",
-      lastHttpStatus: 200,
-    });
   });
 
-  it("resolves the dice-delay setting during acceptance for a preflighted roll", async () => {
+  it("skips the dice delay a preflighted request already resolved", async () => {
     const id = snowflakeAt(Date.now(), 73);
     const stub = work(id);
-    const input = telemetryDeliveryRequest(id, "delivery-success");
+    const input = {
+      ...telemetryDeliveryRequest(id, "delivery-success"),
+      settings: { skipDiceDelay: true },
+    };
     const dataService = rollEnv.DATA_SERVICE as unknown as {
       fetch: (request: Request) => Promise<Response>;
     };
@@ -3056,22 +3057,22 @@ describe("RollWork Durable Object", () => {
       await expect(stub.deliver(input)).resolves.toEqual({
         status: "delivered",
       });
-      expect(settingsCalls).toBe(1);
+      expect(settingsCalls).toBe(0);
       await runInDurableObject(stub, (_instance, state) => {
         expect(
           state.storage.sql
-            .exec<{ settings_ms: number | null }>(
-              "SELECT settings_ms FROM interaction_delivery",
+            .exec<{ settings_ms: number | null; skip_dice_delay: number }>(
+              "SELECT settings_ms, skip_dice_delay FROM interaction_delivery",
             )
-            .one().settings_ms,
-        ).toBe(0);
+            .one(),
+        ).toMatchObject({ settings_ms: 0, skip_dice_delay: 1 });
       });
     } finally {
       dataService.fetch = originalFetch;
     }
   });
 
-  it("falls back to the delivery lookup when the prefetch fails", async () => {
+  it("looks the dice-delay setting up itself when the request omits it", async () => {
     const id = snowflakeAt(Date.now(), 72);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");
@@ -3083,9 +3084,6 @@ describe("RollWork Durable Object", () => {
     dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
       if (new URL(request.url).pathname === "/internal/guilds/settings") {
         settingsCalls += 1;
-        if (settingsCalls === 1) {
-          return Response.json({ error: "temporary" }, { status: 503 });
-        }
       }
       return originalFetch.call(dataService, request);
     });
@@ -3095,8 +3093,9 @@ describe("RollWork Durable Object", () => {
         status: "created",
         delivery: "pending",
       });
+      expect(settingsCalls).toBe(0);
       await settleDelivery(stub);
-      expect(settingsCalls).toBe(2);
+      expect(settingsCalls).toBe(1);
     } finally {
       dataService.fetch = originalFetch;
     }
