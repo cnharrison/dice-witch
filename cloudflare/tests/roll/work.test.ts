@@ -2993,6 +2993,85 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("resolves the dice-delay setting during acceptance instead of delivery", async () => {
+    const id = snowflakeAt(Date.now(), 71);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-success");
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    let settingsCalls = 0;
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      if (new URL(request.url).pathname === "/internal/guilds/settings") {
+        settingsCalls += 1;
+      }
+      return originalFetch.call(dataService, request);
+    });
+
+    try {
+      await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+        status: "created",
+        delivery: "pending",
+      });
+      expect(settingsCalls).toBe(1);
+      await runInDurableObject(stub, (_instance, state) => {
+        expect(
+          state.storage.sql
+            .exec<{ skip_dice_delay: number | null }>(
+              "SELECT skip_dice_delay FROM interaction_delivery",
+            )
+            .one().skip_dice_delay,
+        ).not.toBeNull();
+      });
+      await settleDelivery(stub);
+      expect(settingsCalls).toBe(1);
+    } finally {
+      dataService.fetch = originalFetch;
+    }
+
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+  });
+
+  it("falls back to the delivery lookup when the prefetch fails", async () => {
+    const id = snowflakeAt(Date.now(), 72);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-success");
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    let settingsCalls = 0;
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      if (new URL(request.url).pathname === "/internal/guilds/settings") {
+        settingsCalls += 1;
+        if (settingsCalls === 1) {
+          return Response.json({ error: "temporary" }, { status: 503 });
+        }
+      }
+      return originalFetch.call(dataService, request);
+    });
+
+    try {
+      await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+        status: "created",
+        delivery: "pending",
+      });
+      await settleDelivery(stub);
+      expect(settingsCalls).toBe(2);
+    } finally {
+      dataService.fetch = originalFetch;
+    }
+
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "delivered",
+      lastHttpStatus: 200,
+    });
+  });
+
   it("terminates delivery without rereading an invalid stored record", async () => {
     const id = snowflakeAt(Date.now(), 66);
     const stub = work(id);
