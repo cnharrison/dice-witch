@@ -177,7 +177,7 @@ async function deliverRequestedRollHelper(
 // A roll's Durable Object is new for every interaction, so its first call to
 // another Worker costs roughly half a second. This Worker is long lived, so it
 // resolves the setting here and the roll never waits for it. A null result
-// means unresolved, and every caller must then keep the pre-existing behavior.
+// means unresolved, and the roll then falls back to its own lookup.
 async function resolveSkipDiceDelay(
   dataService: Fetcher,
   guildId: string | null,
@@ -211,8 +211,12 @@ async function acceptDeferredRoll(
   stub: RollWorkAcceptanceStub,
   payload: ReturnType<typeof buildRollDeliveryPayload>,
   roll: DeferredRoll,
-  skipDiceDelay: boolean | null,
+  dataService: Fetcher,
 ): Promise<void> {
+  const skipDiceDelay = await resolveSkipDiceDelay(
+    dataService,
+    payload.accounting.guildId,
+  );
   const acceptanceStartedAt = Date.now();
   try {
     const accepted = await stub.acceptDelivery(
@@ -573,14 +577,6 @@ export async function handleInteractionRequest(
     env.DATA_SERVICE,
     ctx,
   );
-  // The roll's Durable Object is created fresh per interaction and takes about
-  // 700ms to dispatch, so a clatter posted from there lands long after the
-  // acknowledgement. Resolving the setting here lets the acknowledgement itself
-  // carry the clatter, and the same lookup still rides along in the payload.
-  const skipDiceDelay = await resolveSkipDiceDelay(
-    env.DATA_SERVICE,
-    roll.guildId,
-  );
   let payload: ReturnType<typeof buildRollDeliveryPayload>;
   let acknowledgement: Record<string, unknown>;
   let acknowledgementTelemetry: RollDeliveryTelemetryV2;
@@ -593,11 +589,13 @@ export async function handleInteractionRequest(
       stableAppearanceIdentities: true,
       preserveOutOfRangePhysicalFaces: true,
     });
-    let acknowledgementType: 4 | 5;
+    // Discord discards the interaction after three seconds, so preparing the
+    // acknowledgement must stay pure computation. Anything that waits on
+    // another service belongs after the response, never before it.
+    const acknowledgementType = 4;
     let clatterRenderSeed: number | null = null;
     if (outcome.outcomes.length === 0) {
       const invalidRoll = buildInvalidRollHelpMessage(outcome, roll.id);
-      acknowledgementType = 4;
       acknowledgement = {
         type: acknowledgementType,
         data: {
@@ -606,11 +604,11 @@ export async function handleInteractionRequest(
           allowed_mentions: { parse: [] },
         },
       };
-    } else if (skipDiceDelay === false) {
-      // The clatter rides along with the acknowledgement so users see it now
-      // rather than after the roll's Durable Object has been created.
+    } else {
+      // The roll's Durable Object is created fresh per interaction and takes
+      // about 700ms to dispatch, so a clatter posted from there lands long
+      // after the acknowledgement that can carry it now.
       clatterRenderSeed = randomSeed();
-      acknowledgementType = 4;
       acknowledgement = {
         type: acknowledgementType,
         data: {
@@ -618,12 +616,6 @@ export async function handleInteractionRequest(
           allowed_mentions: { parse: [] },
         },
       };
-    } else {
-      // An unresolved setting keeps the deferred acknowledgement this Worker
-      // has always sent, so an unavailable data service cannot change what
-      // users see.
-      acknowledgementType = 5;
-      acknowledgement = { type: acknowledgementType };
     }
     acknowledgementTelemetry = {
       version: 2,
@@ -666,7 +658,7 @@ export async function handleInteractionRequest(
         payload.accounting.receivedAt >= 3_000,
   });
   if (ctx !== undefined) {
-    ctx.waitUntil(acceptDeferredRoll(stub, payload, roll, skipDiceDelay));
+    ctx.waitUntil(acceptDeferredRoll(stub, payload, roll, env.DATA_SERVICE));
     return json(acknowledgement);
   }
   let accepted: unknown;
