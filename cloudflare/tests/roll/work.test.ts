@@ -3036,6 +3036,41 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("resolves the dice-delay setting during acceptance for a preflighted roll", async () => {
+    const id = snowflakeAt(Date.now(), 73);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(id, "delivery-success");
+    const dataService = rollEnv.DATA_SERVICE as unknown as {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    const originalFetch = dataService.fetch;
+    let settingsCalls = 0;
+    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+      if (new URL(request.url).pathname === "/internal/guilds/settings") {
+        settingsCalls += 1;
+      }
+      return originalFetch.call(dataService, request);
+    });
+
+    try {
+      await expect(stub.deliver(input)).resolves.toEqual({
+        status: "delivered",
+      });
+      expect(settingsCalls).toBe(1);
+      await runInDurableObject(stub, (_instance, state) => {
+        expect(
+          state.storage.sql
+            .exec<{ settings_ms: number | null }>(
+              "SELECT settings_ms FROM interaction_delivery",
+            )
+            .one().settings_ms,
+        ).toBe(0);
+      });
+    } finally {
+      dataService.fetch = originalFetch;
+    }
+  });
+
   it("falls back to the delivery lookup when the prefetch fails", async () => {
     const id = snowflakeAt(Date.now(), 72);
     const stub = work(id);
