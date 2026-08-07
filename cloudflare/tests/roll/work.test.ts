@@ -744,7 +744,7 @@ describe("RollWork Durable Object", () => {
         "UPDATE interaction_delivery SET result_not_before = 0 WHERE singleton = 1",
       );
     });
-    await runDurableObjectAlarm(stub);
+    await settleDelivery(stub);
 
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
