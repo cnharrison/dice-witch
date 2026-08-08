@@ -302,7 +302,13 @@ export type RenderViewV4 =
       azimuthOffsetDegrees: number;
       poseAzimuthDegrees: number;
     }
-  | { kind: "sphere-surface"; rotationDegrees: number };
+  | {
+      kind: "sphere-surface";
+      rotationDegrees: number;
+      labelLongitudeDegrees?: number;
+      labelLatitudeDegrees?: number;
+      labelRotationDegrees?: number;
+    };
 
 type RenderDieV4Base = {
   result: number;

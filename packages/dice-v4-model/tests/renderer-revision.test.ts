@@ -104,6 +104,7 @@ describe("V4 renderer revision policies", () => {
     const revision15 = rendererRevisionPolicyV4("canvaskit-v4-r15");
     const revision16 = rendererRevisionPolicyV4("canvaskit-v4-r16");
     const revision17 = rendererRevisionPolicyV4("canvaskit-v4-r17");
+    const revision18 = rendererRevisionPolicyV4("canvaskit-v4-r18");
 
     expect(revision16).toEqual({
       ...revision15,
@@ -113,13 +114,17 @@ describe("V4 renderer revision policies", () => {
       ...revision16,
       cameraAngles: "presets-r17",
     });
+    expect(revision18).toEqual({
+      ...revision17,
+      cameraAngles: "presets-r18",
+    });
     expect(revision15.cameraAngles).toBe("legacy");
   });
 
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r18" as RendererRevisionV4,
+        "canvaskit-v4-r19" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

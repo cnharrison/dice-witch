@@ -125,6 +125,20 @@ describe("V4 geometry contract", () => {
         view: { kind: "sphere-surface", rotationDegrees: 36 },
       },
     );
+    const positionedSphere = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r18",
+      {
+        target: "other",
+        form: "sphere",
+        view: {
+          kind: "sphere-surface",
+          rotationDegrees: 36,
+          labelLongitudeDegrees: -45,
+          labelLatitudeDegrees: 25,
+          labelRotationDegrees: 36,
+        },
+      },
+    );
 
     expect(d20.camera.position).not.toEqual(
       D20_STANDARD_GEOMETRY_R2_V4.camera.position,
@@ -158,6 +172,13 @@ describe("V4 geometry contract", () => {
     expect(realisticSphere.labelFrame.up[1]).toBeCloseTo(
       Math.cos(Math.PI / 5),
     );
+    expect(positionedSphere.kind).toBe("sphere");
+    if (positionedSphere.kind !== "sphere") {
+      throw new Error("Positioned sphere geometry is invalid");
+    }
+    expect(positionedSphere.labelFrame.origin[0]).not.toBe(0);
+    expect(positionedSphere.labelFrame.origin[1]).not.toBe(0);
+    expect(positionedSphere.labelFrame.origin[2]).toBeGreaterThan(0);
     expect(
       getRenderTexturePlacementV4({
         appearance: {

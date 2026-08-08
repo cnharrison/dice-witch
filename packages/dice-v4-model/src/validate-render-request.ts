@@ -50,6 +50,7 @@ import {
   CAMERA_ELEVATION_DEGREES_R16_V4,
   D4_POSE_AZIMUTHS_R16_V4,
   POSE_AZIMUTHS_R17_V4,
+  SPHERE_LABEL_PRESETS_R18_V4,
   SPHERE_ROTATIONS_R17_V4,
 } from "./geometry";
 import type {
@@ -98,6 +99,12 @@ const CAMERA_VIEW_KEYS = [
   "poseAzimuthDegrees",
 ] as const;
 const SPHERE_VIEW_KEYS = ["kind", "rotationDegrees"] as const;
+const POSITIONED_SPHERE_VIEW_KEYS = [
+  ...SPHERE_VIEW_KEYS,
+  "labelLatitudeDegrees",
+  "labelLongitudeDegrees",
+  "labelRotationDegrees",
+] as const;
 const TEXTURE_KEYS_R1 = [
   "generatorId",
   "offsetU",
@@ -897,7 +904,9 @@ function parseView(
   }
   if (!isRecord(value)) throw new Error(`${path} must be an object`);
   if (form === "sphere") {
-    if (!hasExactKeys(value, SPHERE_VIEW_KEYS) || value.kind !== "sphere-surface") {
+    const positioned = cameraAngles === "presets-r18";
+    const keys = positioned ? POSITIONED_SPHERE_VIEW_KEYS : SPHERE_VIEW_KEYS;
+    if (!hasExactKeys(value, keys) || value.kind !== "sphere-surface") {
       throw new Error(`${path} is invalid for ${target} sphere`);
     }
     const rotationDegrees = finiteViewNumber(
@@ -911,7 +920,33 @@ function parseView(
     if (!rotations.includes(rotationDegrees)) {
       throw new Error(`${path}.rotationDegrees is invalid`);
     }
-    return { kind: "sphere-surface", rotationDegrees };
+    if (!positioned) return { kind: "sphere-surface", rotationDegrees };
+    const labelLongitudeDegrees = finiteViewNumber(
+      value.labelLongitudeDegrees,
+      `${path}.labelLongitudeDegrees`,
+    );
+    const labelLatitudeDegrees = finiteViewNumber(
+      value.labelLatitudeDegrees,
+      `${path}.labelLatitudeDegrees`,
+    );
+    const labelRotationDegrees = finiteViewNumber(
+      value.labelRotationDegrees,
+      `${path}.labelRotationDegrees`,
+    );
+    const isPreset = SPHERE_LABEL_PRESETS_R18_V4.some(
+      (preset) =>
+        preset.longitudeDegrees === labelLongitudeDegrees &&
+        preset.latitudeDegrees === labelLatitudeDegrees &&
+        preset.rotationDegrees === labelRotationDegrees,
+    );
+    if (!isPreset) throw new Error(`${path} sphere label preset is invalid`);
+    return {
+      kind: "sphere-surface",
+      rotationDegrees,
+      labelLongitudeDegrees,
+      labelLatitudeDegrees,
+      labelRotationDegrees,
+    };
   }
   if (!hasExactKeys(value, CAMERA_VIEW_KEYS) || value.kind !== "camera") {
     throw new Error(`${path} is invalid for ${target}`);

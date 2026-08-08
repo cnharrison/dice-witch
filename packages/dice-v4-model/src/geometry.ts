@@ -39,6 +39,18 @@ export const POSE_AZIMUTHS_R17_V4 = Object.freeze([
   0, 36, 72, 108, 144, 180, 216, 252, 288, 324,
 ] as const);
 export const SPHERE_ROTATIONS_R17_V4 = POSE_AZIMUTHS_R17_V4;
+export const SPHERE_LABEL_PRESETS_R18_V4 = Object.freeze([
+  { longitudeDegrees: -60, latitudeDegrees: -35, rotationDegrees: 0 },
+  { longitudeDegrees: -45, latitudeDegrees: 25, rotationDegrees: 36 },
+  { longitudeDegrees: -30, latitudeDegrees: -10, rotationDegrees: 72 },
+  { longitudeDegrees: -15, latitudeDegrees: 40, rotationDegrees: 108 },
+  { longitudeDegrees: -5, latitudeDegrees: -30, rotationDegrees: 144 },
+  { longitudeDegrees: 10, latitudeDegrees: 15, rotationDegrees: 180 },
+  { longitudeDegrees: 25, latitudeDegrees: -40, rotationDegrees: 216 },
+  { longitudeDegrees: 40, latitudeDegrees: 35, rotationDegrees: 252 },
+  { longitudeDegrees: 55, latitudeDegrees: -15, rotationDegrees: 288 },
+  { longitudeDegrees: 65, latitudeDegrees: 10, rotationDegrees: 324 },
+] as const);
 
 export type PolyhedralTargetV4 = Exclude<AppearanceTargetV4, "other">;
 export type PolyhedralGeometryIdV4 =
@@ -221,20 +233,81 @@ export function getRenderGeometryDescriptorV4(
   if (cameraAngles === "legacy") return descriptor;
   if (die.view?.kind === "sphere-surface" && descriptor.kind === "sphere") {
     if (cameraAngles === "presets-r16") return descriptor;
-    const radians = (die.view.rotationDegrees * Math.PI) / 180;
-    const cosine = Math.cos(radians);
-    const sine = Math.sin(radians);
-    const rotate = ([x, y, z]: Point3V4): Point3V4 => [
-      x * cosine - y * sine,
-      x * sine + y * cosine,
-      z,
+    if (cameraAngles === "presets-r17") {
+      const radians = (die.view.rotationDegrees * Math.PI) / 180;
+      const cosine = Math.cos(radians);
+      const sine = Math.sin(radians);
+      const rotate = ([x, y, z]: Point3V4): Point3V4 => [
+        x * cosine - y * sine,
+        x * sine + y * cosine,
+        z,
+      ];
+      return {
+        ...descriptor,
+        labelFrame: {
+          ...descriptor.labelFrame,
+          right: rotate(descriptor.labelFrame.right),
+          up: rotate(descriptor.labelFrame.up),
+        },
+      };
+    }
+    const {
+      labelLongitudeDegrees,
+      labelLatitudeDegrees,
+      labelRotationDegrees,
+    } = die.view;
+    if (
+      labelLongitudeDegrees === undefined ||
+      labelLatitudeDegrees === undefined ||
+      labelRotationDegrees === undefined
+    ) {
+      throw new Error("Sphere label orientation is missing");
+    }
+    const longitude = (labelLongitudeDegrees * Math.PI) / 180;
+    const latitude = (labelLatitudeDegrees * Math.PI) / 180;
+    const rotation = (labelRotationDegrees * Math.PI) / 180;
+    const normal: Point3V4 = [
+      Math.sin(longitude) * Math.cos(latitude),
+      Math.sin(latitude),
+      Math.cos(longitude) * Math.cos(latitude),
+    ];
+    const tangentRight: Point3V4 = [
+      Math.cos(longitude),
+      0,
+      -Math.sin(longitude),
+    ];
+    const tangentUp: Point3V4 = [
+      -Math.sin(latitude) * Math.sin(longitude),
+      Math.cos(latitude),
+      -Math.sin(latitude) * Math.cos(longitude),
+    ];
+    const combineTangents = (
+      first: Point3V4,
+      firstScale: number,
+      second: Point3V4,
+      secondScale: number,
+    ): Point3V4 => [
+      first[0] * firstScale + second[0] * secondScale,
+      first[1] * firstScale + second[1] * secondScale,
+      first[2] * firstScale + second[2] * secondScale,
     ];
     return {
       ...descriptor,
       labelFrame: {
         ...descriptor.labelFrame,
-        right: rotate(descriptor.labelFrame.right),
-        up: rotate(descriptor.labelFrame.up),
+        origin: normal,
+        right: combineTangents(
+          tangentRight,
+          Math.cos(rotation),
+          tangentUp,
+          Math.sin(rotation),
+        ),
+        up: combineTangents(
+          tangentUp,
+          Math.cos(rotation),
+          tangentRight,
+          -Math.sin(rotation),
+        ),
       },
     };
   }

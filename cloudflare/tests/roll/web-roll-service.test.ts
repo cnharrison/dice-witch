@@ -233,7 +233,7 @@ describe("appearance preview", () => {
 
     expect(preview).toMatchObject({
       version: 4,
-      rendererRevision: "canvaskit-v4-r17",
+      rendererRevision: "canvaskit-v4-r18",
     });
     expect(preview.groups.map((group) => group.length)).toEqual([5, 5]);
     expect(preview.groups.flat()).toHaveLength(10);
@@ -723,7 +723,7 @@ describe("WebRollService", () => {
     expect(result.renderedImage.png).toEqual(result.discord.png);
     expect(result.renderModel).toMatchObject({
       version: 4,
-      rendererRevision: "canvaskit-v4-r17",
+      rendererRevision: "canvaskit-v4-r18",
     });
     if (result.renderModel === undefined) {
       throw new Error("Expected a V4 render model");

@@ -2524,7 +2524,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r18" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r19" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

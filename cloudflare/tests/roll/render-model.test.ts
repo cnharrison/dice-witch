@@ -724,7 +724,7 @@ describe("buildRollRenderRequestV4", () => {
     );
 
     expect(request.version).toBe(4);
-    expect(request.rendererRevision).toBe("canvaskit-v4-r17");
+    expect(request.rendererRevision).toBe("canvaskit-v4-r18");
     expect(
       request.groups.flatMap((group) =>
         group.map(({ target }) => target),
@@ -754,6 +754,17 @@ describe("buildRollRenderRequestV4", () => {
           sphereView.rotationDegrees,
         ),
     ).toBe(true);
+    if (
+      sphereView?.kind !== "sphere-surface" ||
+      sphereView.labelLongitudeDegrees === undefined ||
+      sphereView.labelLatitudeDegrees === undefined
+    ) {
+      throw new Error("Sphere view is missing its label position");
+    }
+    const sphereLabelDepth =
+      Math.cos((sphereView.labelLongitudeDegrees * Math.PI) / 180) *
+      Math.cos((sphereView.labelLatitudeDegrees * Math.PI) / 180);
+    expect(sphereLabelDepth).toBeGreaterThan(0);
     const cameraViews = request.groups
       .flat()
       .filter(({ form }) => form !== "sphere")
