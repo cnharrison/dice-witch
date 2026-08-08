@@ -190,7 +190,7 @@ describe("RenderRequestV4", () => {
     );
 
     const invalidPose = structuredClone(current);
-    const invalidPoseView = invalidPose.groups[0]?.[0]?.view;
+    const invalidPoseView = invalidPose.groups[0][0].view;
     if (invalidPoseView?.kind !== "camera") {
       throw new Error("Current camera fixture is invalid");
     }
