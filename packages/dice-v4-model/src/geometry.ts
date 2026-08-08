@@ -128,6 +128,7 @@ export type SphericalGeometryDescriptorV4 = {
   form: "sphere";
   radius: number;
   skinMapping: "spherical-inverse-v1";
+  labelMapping?: "local-frame-r19";
   labelFrame: GeometryLabelPlacementV4;
   camera: GeometryCameraV4;
 };
@@ -229,7 +230,8 @@ export function getRenderGeometryDescriptorV4(
   const descriptor = getCanonicalGeometryDescriptorV4(
     getRenderGeometryIdV4(rendererRevision, die),
   );
-  const cameraAngles = rendererRevisionPolicyV4(rendererRevision).cameraAngles;
+  const revisionPolicy = rendererRevisionPolicyV4(rendererRevision);
+  const cameraAngles = revisionPolicy.cameraAngles;
   if (cameraAngles === "legacy") return descriptor;
   if (die.view?.kind === "sphere-surface" && descriptor.kind === "sphere") {
     if (cameraAngles === "presets-r16") return descriptor;
@@ -293,6 +295,9 @@ export function getRenderGeometryDescriptorV4(
     ];
     return {
       ...descriptor,
+      ...(revisionPolicy.sphereLabelMapping === "local-frame-r19"
+        ? { labelMapping: "local-frame-r19" as const }
+        : {}),
       labelFrame: {
         ...descriptor.labelFrame,
         origin: normal,

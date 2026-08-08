@@ -29,6 +29,7 @@ describe("shared V4 model Cloudflare boundary", () => {
       "canvaskit-v4-r16",
       "canvaskit-v4-r17",
       "canvaskit-v4-r18",
+      "canvaskit-v4-r19",
     ]);
     expect(deriveNamedSeedV4(123, "material")).toBe(2_641_807_242);
     const projection = projectPolyhedralGeometryV4(

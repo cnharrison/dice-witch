@@ -599,7 +599,7 @@ function renderDieV4(
   };
 }
 
-export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r18" as const;
+export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r19" as const;
 
 export function buildRollRenderRequestV4(
   result: RollExecutionResult,

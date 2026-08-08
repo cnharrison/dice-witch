@@ -11,6 +11,7 @@ import {
   CRITICAL_TREATMENTS_V4,
   ENGRAVING_FINISHES_V4,
   FUDGE_STANDARD_GEOMETRY_V4,
+  getRenderGeometryDescriptorV4,
   IDENTITY_TEXTURE_PLACEMENT_V4,
   OTHER_SPHERE_GEOMETRY_V4,
   PERCENTILE_STANDARD_GEOMETRY_V4,
@@ -763,6 +764,68 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       expect(canvasKit.HEAPU8.buffer.byteLength).toBe(
         CANVASKIT_INITIAL_MEMORY_BYTES_V4,
       );
+    } finally {
+      renderer.dispose();
+    }
+  });
+
+  it("projects off-center sphere labels through their local surface frame", async () => {
+    const canvasKit = await loadCanvasKitV4();
+    const renderer = createRenderer(canvasKit);
+    const view = {
+      kind: "sphere-surface" as const,
+      rotationDegrees: 36,
+      labelLongitudeDegrees: -45,
+      labelLatitudeDegrees: 25,
+      labelRotationDegrees: 36,
+    };
+    const legacy = getRenderGeometryDescriptorV4("canvaskit-v4-r18", {
+      target: "other",
+      form: "sphere",
+      view,
+    });
+    const localFrame = getRenderGeometryDescriptorV4("canvaskit-v4-r19", {
+      target: "other",
+      form: "sphere",
+      view,
+    });
+    if (legacy.kind !== "sphere" || localFrame.kind !== "sphere") {
+      throw new Error("Sphere projection fixture is invalid");
+    }
+
+    try {
+      const options = {
+        sides: 20,
+        result: 12,
+        size: 150,
+        engravingColor: "#ffffff",
+        renderPolicy: "standard-r7" as const,
+      };
+      const legacyRender = await renderer.renderSphere({
+        ...options,
+        geometry: legacy,
+      });
+      const localFrameRender = await renderer.renderSphere({
+        ...options,
+        geometry: localFrame,
+      });
+      const repeated = await renderer.renderSphere({
+        ...options,
+        geometry: localFrame,
+      });
+      const blank = await renderer.renderSphere({
+        ...options,
+        geometry: localFrame,
+        blankFaces: true,
+      });
+
+      expect(localFrame.labelMapping).toBe("local-frame-r19");
+      expect(legacy.labelMapping).toBeUndefined();
+      expect(await sha256Hex(legacyRender.png)).toBe("03bddff976c805a1ee09f7fd42be483446368b0a8e9499fc3ccf4917d92d64ef");
+      expect(await sha256Hex(localFrameRender.png)).toBe("fd21bc3921095f997532e38f459558c938cfebd3b9adb36389905f7c7bf273af");
+      expect(localFrameRender.png).not.toEqual(legacyRender.png);
+      expect(localFrameRender.png).not.toEqual(blank.png);
+      expect(repeated.png).toEqual(localFrameRender.png);
     } finally {
       renderer.dispose();
     }

@@ -125,19 +125,20 @@ describe("V4 geometry contract", () => {
         view: { kind: "sphere-surface", rotationDegrees: 36 },
       },
     );
+    const positionedView = {
+      kind: "sphere-surface" as const,
+      rotationDegrees: 36,
+      labelLongitudeDegrees: -45,
+      labelLatitudeDegrees: 25,
+      labelRotationDegrees: 36,
+    };
     const positionedSphere = getRenderGeometryDescriptorV4(
       "canvaskit-v4-r18",
-      {
-        target: "other",
-        form: "sphere",
-        view: {
-          kind: "sphere-surface",
-          rotationDegrees: 36,
-          labelLongitudeDegrees: -45,
-          labelLatitudeDegrees: 25,
-          labelRotationDegrees: 36,
-        },
-      },
+      { target: "other", form: "sphere", view: positionedView },
+    );
+    const projectedSphere = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r19",
+      { target: "other", form: "sphere", view: positionedView },
     );
 
     expect(d20.camera.position).not.toEqual(
@@ -179,6 +180,13 @@ describe("V4 geometry contract", () => {
     expect(positionedSphere.labelFrame.origin[0]).not.toBe(0);
     expect(positionedSphere.labelFrame.origin[1]).not.toBe(0);
     expect(positionedSphere.labelFrame.origin[2]).toBeGreaterThan(0);
+    expect(positionedSphere.labelMapping).toBeUndefined();
+    expect(projectedSphere.kind).toBe("sphere");
+    if (projectedSphere.kind !== "sphere") {
+      throw new Error("Projected sphere geometry is invalid");
+    }
+    expect(projectedSphere.labelMapping).toBe("local-frame-r19");
+    expect(projectedSphere.labelFrame).toEqual(positionedSphere.labelFrame);
     expect(
       getRenderTexturePlacementV4({
         appearance: {

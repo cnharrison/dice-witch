@@ -289,6 +289,24 @@ half4 main(float2 position) {
   float2 source = sphereCenter + tangent * sphereRadius;
   return labelTexture.eval(source);
 }`;
+const SPHERE_LOCAL_FRAME_LABEL_SHADER_V4 = `
+uniform shader labelTexture;
+uniform float2 sphereCenter;
+uniform float sphereRadius;
+uniform float3 labelNormal;
+uniform float3 labelRight;
+uniform float3 labelUp;
+half4 main(float2 position) {
+  float2 point = (position - sphereCenter) / sphereRadius;
+  float radiusSquared = dot(point, point);
+  if (radiusSquared > 1.0) return half4(0.0);
+  float z = sqrt(max(0.0, 1.0 - radiusSquared));
+  float3 normal = float3(point.x, -point.y, z);
+  if (dot(normal, labelNormal) <= 0.0) return half4(0.0);
+  float2 local = float2(dot(normal, labelRight), dot(normal, labelUp));
+  float2 source = sphereCenter + float2(local.x, -local.y) * sphereRadius;
+  return labelTexture.eval(source);
+}`;
 
 export type RenderedGeometryV4 = {
   png: Uint8Array<ArrayBuffer>;
@@ -2494,6 +2512,7 @@ function drawSphericalLabel(
     engravingContrastEdge,
   );
   const height = geometry.camera.orthographicHeight;
+  const usesLocalFrame = geometry.labelMapping === "local-frame-r19";
   const labelCanvas = labelSurface.getCanvas();
   labelCanvas.clear(canvasKit.TRANSPARENT);
   const labelBounds = drawLabel(
@@ -2503,18 +2522,24 @@ function drawSphericalLabel(
     {
       value: result,
       alignment: "viewer-upright",
-      origin: [
-        0.5 + geometry.labelFrame.origin[0] / height,
-        0.5 - geometry.labelFrame.origin[1] / height,
-      ],
-      right: [
-        geometry.labelFrame.right[0] / height,
-        -geometry.labelFrame.right[1] / height,
-      ],
-      up: [
-        geometry.labelFrame.up[0] / height,
-        -geometry.labelFrame.up[1] / height,
-      ],
+      origin: usesLocalFrame
+        ? [0.5, 0.5]
+        : [
+            0.5 + geometry.labelFrame.origin[0] / height,
+            0.5 - geometry.labelFrame.origin[1] / height,
+          ],
+      right: usesLocalFrame
+        ? [1 / height, 0]
+        : [
+            geometry.labelFrame.right[0] / height,
+            -geometry.labelFrame.right[1] / height,
+          ],
+      up: usesLocalFrame
+        ? [0, -1 / height]
+        : [
+            geometry.labelFrame.up[0] / height,
+            -geometry.labelFrame.up[1] / height,
+          ],
       maxWidth: geometry.labelFrame.maxWidth,
       maxHeight: geometry.labelFrame.maxHeight,
       opticalInset: geometry.labelFrame.opticalInset,
@@ -2546,23 +2571,36 @@ function drawSphericalLabel(
   );
   const labelShader = scope.own(
     labelEffect.makeShaderWithChildren(
-      [center, center, radius],
+      usesLocalFrame
+        ? [
+            center,
+            center,
+            radius,
+            ...geometry.labelFrame.origin,
+            ...geometry.labelFrame.right,
+            ...geometry.labelFrame.up,
+          ]
+        : [center, center, radius],
       [labelTexture],
     ),
     "sphere label shader",
   );
   const labelPaint = createPaint(canvasKit, scope);
   labelPaint.setShader(labelShader);
-  const labelDrawBounds = sphereLabelDrawBounds(labelBounds, center, radius);
-  canvas.drawRect(
-    canvasKit.LTRBRect(
-      labelDrawBounds.left,
-      labelDrawBounds.top,
-      labelDrawBounds.right,
-      labelDrawBounds.bottom,
-    ),
-    labelPaint,
-  );
+  if (usesLocalFrame) {
+    canvas.drawPath(path, labelPaint);
+  } else {
+    const labelDrawBounds = sphereLabelDrawBounds(labelBounds, center, radius);
+    canvas.drawRect(
+      canvasKit.LTRBRect(
+        labelDrawBounds.left,
+        labelDrawBounds.top,
+        labelDrawBounds.right,
+        labelDrawBounds.bottom,
+      ),
+      labelPaint,
+    );
+  }
 }
 
 function sphericalGeometryMetrics({
@@ -2706,10 +2744,7 @@ async function renderSphericalGeometry(
 
 function renderSphereWithGeometryRenderer(
   canvasKit: CanvasKitRuntimeV4,
-  font: Font,
-  effect: RuntimeEffect,
-  litEffect: RuntimeEffect,
-  labelEffect: RuntimeEffect,
+  resources: GeometryRendererResourcesV4,
   options: RenderCanonicalSphereV4Options,
 ): Promise<RenderedGeometryV4> {
   const usesClassicBaseline = usesClassicBaselineSphereShaderV4(
@@ -2722,14 +2757,14 @@ function renderSphereWithGeometryRenderer(
   );
   return renderSphericalGeometry(
     canvasKit,
-    font,
-    labelEffect,
+    resources.defaultFont,
+    sphereLabelEffect(resources, options.geometry),
     options,
     (scope, center, radius) =>
       scope.own(
         usesClassicBaseline
-          ? effect.makeShader([center, center, radius])
-          : litEffect.makeShader(
+          ? resources.sphereEffect.makeShader([center, center, radius])
+          : resources.sphereLitEffect.makeShader(
               sphereLightingUniforms(center, radius, parameters),
             ),
         "sphere material shader",
@@ -2757,7 +2792,7 @@ function renderTexturedSphereWithGeometryRenderer(
   return renderSphericalGeometry(
     canvasKit,
     resources.defaultFont,
-    resources.sphereLabelEffect,
+    sphereLabelEffect(resources, options.geometry),
     options,
     (scope, center, radius) => {
       const textureShader = createPlacedTextureShader(
@@ -2801,7 +2836,17 @@ type GeometryRendererResourcesV4 = {
   sphereLitEffect: RuntimeEffect;
   sphereLitTextureEffect: RuntimeEffect;
   sphereLabelEffect: RuntimeEffect;
+  sphereLocalFrameLabelEffect: RuntimeEffect;
 };
+
+function sphereLabelEffect(
+  resources: GeometryRendererResourcesV4,
+  geometry: SphericalGeometryDescriptorV4,
+): RuntimeEffect {
+  return geometry.labelMapping === "local-frame-r19"
+    ? resources.sphereLocalFrameLabelEffect
+    : resources.sphereLabelEffect;
+}
 
 function getTexturePlacementEffect(
   canvasKit: CanvasKitRuntimeV4,
@@ -3151,7 +3196,7 @@ function drawSphereGridLabel(
   if (!die.blankFaces) drawSphericalLabel(
     canvasKit,
     geometryFont(resources, die.fontId),
-    resources.sphereLabelEffect,
+    sphereLabelEffect(resources, die.geometry),
     canvas,
     scope,
     path,
@@ -3253,7 +3298,7 @@ function drawSphereGeometryGridDie(
     return drawSphericalGeometry(
       canvasKit,
       geometryFont(resources, die.fontId),
-      resources.sphereLabelEffect,
+      sphereLabelEffect(resources, options.geometry),
       canvas,
       scope,
       options,
@@ -3293,7 +3338,7 @@ function drawSphereGeometryGridDie(
     return drawSphericalGeometry(
       canvasKit,
       geometryFont(resources, die.fontId),
-      resources.sphereLabelEffect,
+      sphereLabelEffect(resources, options.geometry),
       canvas,
       scope,
       options,
@@ -3322,7 +3367,7 @@ function drawSphereGeometryGridDie(
     return drawSphericalGeometry(
       canvasKit,
       geometryFont(resources, die.fontId),
-      resources.sphereLabelEffect,
+      sphereLabelEffect(resources, options.geometry),
       canvas,
       scope,
       options,
@@ -3811,6 +3856,16 @@ function initializeGeometryRendererV4(
       }),
       `sphere label shader (${sphereLabelShaderError})`,
     );
+    let sphereLocalFrameLabelShaderError = "";
+    const sphereLocalFrameLabelEffect = scope.own(
+      canvasKit.RuntimeEffect.Make(
+        SPHERE_LOCAL_FRAME_LABEL_SHADER_V4,
+        (error) => {
+          sphereLocalFrameLabelShaderError = error;
+        },
+      ),
+      `sphere local-frame label shader (${sphereLocalFrameLabelShaderError})`,
+    );
     return {
       scope,
       defaultFont,
@@ -3823,6 +3878,7 @@ function initializeGeometryRendererV4(
       sphereLitEffect,
       sphereLitTextureEffect,
       sphereLabelEffect,
+      sphereLocalFrameLabelEffect,
     };
   } catch (initializationError) {
     try {
@@ -3920,10 +3976,7 @@ export class CanvasKitGeometryRendererV4 {
     }
     return renderSphereWithGeometryRenderer(
       this.#canvasKit,
-      this.#resources.defaultFont,
-      this.#resources.sphereEffect,
-      this.#resources.sphereLitEffect,
-      this.#resources.sphereLabelEffect,
+      this.#resources,
       options,
     );
   }

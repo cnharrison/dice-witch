@@ -26,6 +26,7 @@ export type RendererRevisionPolicyV4 = {
     | "presets-r16"
     | "presets-r17"
     | "presets-r18";
+  sphereLabelMapping: "legacy" | "local-frame-r19";
   uniformD20Ink: boolean;
   sphereOutline: boolean;
   strongPhysicalEdges: boolean;
@@ -61,6 +62,7 @@ const r1 = policy({
   d20LiberationSansScale: false,
   allowD20LabelClearanceShortfall: false,
   cameraAngles: "legacy",
+  sphereLabelMapping: "legacy",
   uniformD20Ink: false,
   sphereOutline: false,
   strongPhysicalEdges: false,
@@ -110,6 +112,7 @@ const r15 = policy({ ...r14, allowD20LabelClearanceShortfall: true });
 const r16 = policy({ ...r15, cameraAngles: "presets-r16" });
 const r17 = policy({ ...r16, cameraAngles: "presets-r17" });
 const r18 = policy({ ...r17, cameraAngles: "presets-r18" });
+const r19 = policy({ ...r18, sphereLabelMapping: "local-frame-r19" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -130,6 +133,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r16": r16,
   "canvaskit-v4-r17": r17,
   "canvaskit-v4-r18": r18,
+  "canvaskit-v4-r19": r19,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

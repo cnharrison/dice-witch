@@ -121,10 +121,21 @@ describe("V4 renderer revision policies", () => {
     expect(revision15.cameraAngles).toBe("legacy");
   });
 
+  it("changes only sphere label mapping in r19", () => {
+    const revision18 = rendererRevisionPolicyV4("canvaskit-v4-r18");
+    const revision19 = rendererRevisionPolicyV4("canvaskit-v4-r19");
+
+    expect(revision19).toEqual({
+      ...revision18,
+      sphereLabelMapping: "local-frame-r19",
+    });
+    expect(revision18.sphereLabelMapping).toBe("legacy");
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r19" as RendererRevisionV4,
+        "canvaskit-v4-r20" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });
