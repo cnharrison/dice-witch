@@ -204,7 +204,7 @@ describe("RenderRequestV4", () => {
       rendererRevision: "canvaskit-v4-r17" as const,
     };
     const realisticView = realistic.groups[0][0].view;
-    if (realisticView.kind !== "camera") {
+    if (realisticView === undefined || realisticView.kind !== "camera") {
       throw new Error("Realistic camera fixture is invalid");
     }
     realisticView.azimuthOffsetDegrees = 45;
@@ -216,7 +216,7 @@ describe("RenderRequestV4", () => {
     for (const [index, azimuthOffsetDegrees] of azimuths.entries()) {
       const preset = structuredClone(realistic);
       const presetView = preset.groups[0][0].view;
-      if (presetView.kind !== "camera") {
+      if (presetView === undefined || presetView.kind !== "camera") {
         throw new Error("Camera preset fixture is invalid");
       }
       const poseAzimuthDegrees = poses[index];

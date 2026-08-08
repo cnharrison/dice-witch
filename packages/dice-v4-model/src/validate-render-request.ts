@@ -904,7 +904,7 @@ function parseView(
       value.rotationDegrees,
       `${path}.rotationDegrees`,
     );
-    const rotations =
+    const rotations: readonly number[] =
       cameraAngles === "presets-r16"
         ? CAMERA_AZIMUTH_OFFSETS_R16_V4
         : SPHERE_ROTATIONS_R17_V4;
@@ -931,14 +931,14 @@ function parseView(
   if (elevationDegrees !== CAMERA_ELEVATION_DEGREES_R16_V4) {
     throw new Error(`${path}.elevationDegrees is invalid`);
   }
-  const azimuths =
+  const azimuths: readonly number[] =
     cameraAngles === "presets-r16"
       ? CAMERA_AZIMUTH_OFFSETS_R16_V4
       : CAMERA_AZIMUTH_OFFSETS_R17_V4;
   if (!azimuths.includes(azimuthOffsetDegrees)) {
     throw new Error(`${path}.azimuthOffsetDegrees is invalid`);
   }
-  const poseAzimuths =
+  const poseAzimuths: readonly number[] =
     cameraAngles === "presets-r16"
       ? target === "d4"
         ? D4_POSE_AZIMUTHS_R16_V4
