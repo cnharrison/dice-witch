@@ -190,7 +190,11 @@ describe("RenderRequestV4", () => {
     );
 
     const invalidPose = structuredClone(current);
-    invalidPose.groups[0][0].view.poseAzimuthDegrees = 120;
+    const invalidPoseView = invalidPose.groups[0]?.[0]?.view;
+    if (invalidPoseView?.kind !== "camera") {
+      throw new Error("Current camera fixture is invalid");
+    }
+    invalidPoseView.poseAzimuthDegrees = 120;
     expect(() => validateRenderRequestV4(invalidPose)).toThrow(
       "Render request groups[0][0].view.poseAzimuthDegrees is invalid",
     );

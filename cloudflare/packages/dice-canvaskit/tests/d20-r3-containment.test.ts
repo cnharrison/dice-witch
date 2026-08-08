@@ -6,6 +6,7 @@ import {
   projectPolyhedralGeometryV4,
   type EngravingFinishV4,
   type FontIdV4,
+  type GeometryCameraV4,
 } from "@dice-witch/dice-v4-model";
 import { describe, expect, it } from "vitest";
 import { CANVASKIT_FONT_DATA_V4 } from "../src/font-assets";
@@ -138,9 +139,9 @@ function resultGroup(
 }
 
 function atElevation(
-  camera: typeof D20_STANDARD_GEOMETRY_R2_V4.camera,
+  camera: GeometryCameraV4,
   elevationDegrees: number,
-): typeof camera {
+): GeometryCameraV4 {
   const [x, y, z] = camera.position;
   const radius = Math.hypot(x, y, z);
   const azimuth = Math.atan2(x, z);
