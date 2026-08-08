@@ -27,6 +27,19 @@ import type {
   RenderTextureV4,
 } from "./types";
 
+export const CAMERA_ELEVATION_DEGREES_R16_V4 = 40;
+export const CAMERA_AZIMUTH_OFFSETS_R16_V4 = Object.freeze([
+  -20, -10, 0, 10, 20,
+] as const);
+export const D4_POSE_AZIMUTHS_R16_V4 = Object.freeze([0, 120, 240] as const);
+export const CAMERA_AZIMUTH_OFFSETS_R17_V4 = Object.freeze([
+  -45, -35, -25, -15, -5, 5, 15, 25, 35, 45,
+] as const);
+export const POSE_AZIMUTHS_R17_V4 = Object.freeze([
+  0, 36, 72, 108, 144, 180, 216, 252, 288, 324,
+] as const);
+export const SPHERE_ROTATIONS_R17_V4 = POSE_AZIMUTHS_R17_V4;
+
 export type PolyhedralTargetV4 = Exclude<AppearanceTargetV4, "other">;
 export type PolyhedralGeometryIdV4 =
   | `${PolyhedralTargetV4}-${PolyhedralFormV4}-r1`
@@ -204,8 +217,26 @@ export function getRenderGeometryDescriptorV4(
   const descriptor = getCanonicalGeometryDescriptorV4(
     getRenderGeometryIdV4(rendererRevision, die),
   );
-  if (!rendererRevisionPolicyV4(rendererRevision).resolvedCameraAngles) {
-    return descriptor;
+  const cameraAngles = rendererRevisionPolicyV4(rendererRevision).cameraAngles;
+  if (cameraAngles === "legacy") return descriptor;
+  if (die.view?.kind === "sphere-surface" && descriptor.kind === "sphere") {
+    if (cameraAngles === "presets-r16") return descriptor;
+    const radians = (die.view.rotationDegrees * Math.PI) / 180;
+    const cosine = Math.cos(radians);
+    const sine = Math.sin(radians);
+    const rotate = ([x, y, z]: Point3V4): Point3V4 => [
+      x * cosine - y * sine,
+      x * sine + y * cosine,
+      z,
+    ];
+    return {
+      ...descriptor,
+      labelFrame: {
+        ...descriptor.labelFrame,
+        right: rotate(descriptor.labelFrame.right),
+        up: rotate(descriptor.labelFrame.up),
+      },
+    };
   }
   if (die.view?.kind !== "camera" || descriptor.kind !== "polyhedral") {
     return descriptor;
@@ -226,7 +257,7 @@ export function getRenderGeometryDescriptorV4(
   ];
   return {
     ...descriptor,
-    ...(die.target === "d4"
+    ...((cameraAngles === "presets-r16" ? die.target === "d4" : true)
       ? {
           resultOrientations: descriptor.resultOrientations.map(
             ({ result, rotation }) => ({

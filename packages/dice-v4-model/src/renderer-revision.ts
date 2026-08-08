@@ -21,7 +21,7 @@ export type RendererRevisionPolicyV4 = {
   d4EngravingFinishEnhancement: boolean;
   d20LiberationSansScale: boolean;
   allowD20LabelClearanceShortfall: boolean;
-  resolvedCameraAngles: boolean;
+  cameraAngles: "legacy" | "presets-r16" | "presets-r17";
   uniformD20Ink: boolean;
   sphereOutline: boolean;
   strongPhysicalEdges: boolean;
@@ -56,7 +56,7 @@ const r1 = policy({
   d4EngravingFinishEnhancement: false,
   d20LiberationSansScale: false,
   allowD20LabelClearanceShortfall: false,
-  resolvedCameraAngles: false,
+  cameraAngles: "legacy",
   uniformD20Ink: false,
   sphereOutline: false,
   strongPhysicalEdges: false,
@@ -103,7 +103,8 @@ const r12 = policy({ ...r11, gridLayout: "group-rows-r12" });
 const r13 = policy({ ...r12, gridLayout: "group-rows-r13" });
 const r14 = policy({ ...r13, gridLayout: "group-rows-r14" });
 const r15 = policy({ ...r14, allowD20LabelClearanceShortfall: true });
-const r16 = policy({ ...r15, resolvedCameraAngles: true });
+const r16 = policy({ ...r15, cameraAngles: "presets-r16" });
+const r17 = policy({ ...r16, cameraAngles: "presets-r17" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -122,6 +123,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r14": r14,
   "canvaskit-v4-r15": r15,
   "canvaskit-v4-r16": r16,
+  "canvaskit-v4-r17": r17,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

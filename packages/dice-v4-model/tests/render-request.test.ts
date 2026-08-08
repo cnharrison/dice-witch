@@ -198,6 +198,35 @@ describe("RenderRequestV4", () => {
     expect(() => validateRenderRequestV4(invalidPose)).toThrow(
       "Render request groups[0][0].view.poseAzimuthDegrees is invalid",
     );
+
+    const realistic = {
+      ...structuredClone(current),
+      rendererRevision: "canvaskit-v4-r17" as const,
+    };
+    const realisticView = realistic.groups[0][0].view;
+    if (realisticView.kind !== "camera") {
+      throw new Error("Realistic camera fixture is invalid");
+    }
+    realisticView.azimuthOffsetDegrees = 45;
+    realisticView.poseAzimuthDegrees = 180;
+    expect(validateRenderRequestV4(realistic)).toEqual(realistic);
+
+    const azimuths = [-45, -35, -25, -15, -5, 5, 15, 25, 35, 45];
+    const poses = [0, 36, 72, 108, 144, 180, 216, 252, 288, 324];
+    for (const [index, azimuthOffsetDegrees] of azimuths.entries()) {
+      const preset = structuredClone(realistic);
+      const presetView = preset.groups[0][0].view;
+      if (presetView.kind !== "camera") {
+        throw new Error("Camera preset fixture is invalid");
+      }
+      const poseAzimuthDegrees = poses[index];
+      if (poseAzimuthDegrees === undefined) {
+        throw new Error("Pose preset fixture is missing");
+      }
+      presetView.azimuthOffsetDegrees = azimuthOffsetDegrees;
+      presetView.poseAzimuthDegrees = poseAzimuthDegrees;
+      expect(validateRenderRequestV4(preset)).toEqual(preset);
+    }
   });
 
   it("accepts and canonicalizes every material family", () => {

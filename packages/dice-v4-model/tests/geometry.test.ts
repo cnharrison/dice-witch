@@ -107,6 +107,24 @@ describe("V4 geometry contract", () => {
       form: "sphere",
       view: { kind: "sphere-surface", rotationDegrees: 20 },
     });
+    const realisticD20 = getRenderGeometryDescriptorV4("canvaskit-v4-r17", {
+      target: "d20",
+      form: "standard",
+      view: {
+        kind: "camera",
+        elevationDegrees: 40,
+        azimuthOffsetDegrees: 45,
+        poseAzimuthDegrees: 180,
+      },
+    });
+    const realisticSphere = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r17",
+      {
+        target: "other",
+        form: "sphere",
+        view: { kind: "sphere-surface", rotationDegrees: 36 },
+      },
+    );
 
     expect(d20.camera.position).not.toEqual(
       D20_STANDARD_GEOMETRY_R2_V4.camera.position,
@@ -117,6 +135,29 @@ describe("V4 geometry contract", () => {
       D4_STANDARD_GEOMETRY_V4.resultOrientations,
     );
     expect(sphere).toBe(OTHER_SPHERE_GEOMETRY_V4);
+    expect(realisticD20.kind).toBe("polyhedral");
+    if (realisticD20.kind !== "polyhedral") {
+      throw new Error("D20 geometry is invalid");
+    }
+    expect(realisticD20.resultOrientations).not.toEqual(
+      D20_STANDARD_GEOMETRY_R2_V4.resultOrientations,
+    );
+    expect(realisticSphere.kind).toBe("sphere");
+    if (realisticSphere.kind !== "sphere") {
+      throw new Error("Sphere geometry is invalid");
+    }
+    expect(realisticSphere.labelFrame.right[0]).toBeCloseTo(
+      Math.cos(Math.PI / 5),
+    );
+    expect(realisticSphere.labelFrame.right[1]).toBeCloseTo(
+      Math.sin(Math.PI / 5),
+    );
+    expect(realisticSphere.labelFrame.up[0]).toBeCloseTo(
+      -Math.sin(Math.PI / 5),
+    );
+    expect(realisticSphere.labelFrame.up[1]).toBeCloseTo(
+      Math.cos(Math.PI / 5),
+    );
     expect(
       getRenderTexturePlacementV4({
         appearance: {

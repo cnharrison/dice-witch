@@ -724,7 +724,7 @@ describe("buildRollRenderRequestV4", () => {
     );
 
     expect(request.version).toBe(4);
-    expect(request.rendererRevision).toBe("canvaskit-v4-r16");
+    expect(request.rendererRevision).toBe("canvaskit-v4-r17");
     expect(
       request.groups.flatMap((group) =>
         group.map(({ target }) => target),
@@ -747,6 +747,13 @@ describe("buildRollRenderRequestV4", () => {
       form: "sphere",
       view: { kind: "sphere-surface" },
     });
+    const sphereView = request.groups[8]?.[0]?.view;
+    expect(
+      sphereView?.kind === "sphere-surface" &&
+        [0, 36, 72, 108, 144, 180, 216, 252, 288, 324].includes(
+          sphereView.rotationDegrees,
+        ),
+    ).toBe(true);
     const cameraViews = request.groups
       .flat()
       .filter(({ form }) => form !== "sphere")
@@ -760,9 +767,20 @@ describe("buildRollRenderRequestV4", () => {
     const azimuths = cameraViews.map((view) =>
       view?.kind === "camera" ? view.azimuthOffsetDegrees : undefined,
     );
-    expect(azimuths.every((value) => [-20, -10, 0, 10, 20].includes(value ?? 99))).toBe(
-      true,
-    );
+    expect(
+      azimuths.every((value) =>
+        [-45, -35, -25, -15, -5, 5, 15, 25, 35, 45].includes(value ?? 99),
+      ),
+    ).toBe(true);
+    expect(
+      cameraViews.every(
+        (view) =>
+          view?.kind === "camera" &&
+          [0, 36, 72, 108, 144, 180, 216, 252, 288, 324].includes(
+            view.poseAzimuthDegrees,
+          ),
+      ),
+    ).toBe(true);
     expect(new Set(azimuths).size).toBeGreaterThan(1);
     expect(request.groups[6]?.[0]?.appearance).toEqual(
       request.groups[6]?.[1]?.appearance,

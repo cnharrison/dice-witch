@@ -44,6 +44,14 @@ import {
   WOOD_STYLES_V4,
 } from "./registries";
 import { rendererRevisionPolicyV4 } from "./renderer-revision";
+import {
+  CAMERA_AZIMUTH_OFFSETS_R16_V4,
+  CAMERA_AZIMUTH_OFFSETS_R17_V4,
+  CAMERA_ELEVATION_DEGREES_R16_V4,
+  D4_POSE_AZIMUTHS_R16_V4,
+  POSE_AZIMUTHS_R17_V4,
+  SPHERE_ROTATIONS_R17_V4,
+} from "./geometry";
 import type {
   AppearanceMaterialV4,
   AppearanceTargetV4,
@@ -882,8 +890,8 @@ function parseView(
   form: RenderFormV4,
   rendererRevision: RendererRevisionV4,
 ): RenderViewV4 | undefined {
-  const required = rendererRevisionPolicyV4(rendererRevision).resolvedCameraAngles;
-  if (!required) {
+  const cameraAngles = rendererRevisionPolicyV4(rendererRevision).cameraAngles;
+  if (cameraAngles === "legacy") {
     if (value !== undefined) throw new Error(`${path} is not supported`);
     return undefined;
   }
@@ -896,7 +904,11 @@ function parseView(
       value.rotationDegrees,
       `${path}.rotationDegrees`,
     );
-    if (![-20, -10, 0, 10, 20].includes(rotationDegrees)) {
+    const rotations =
+      cameraAngles === "presets-r16"
+        ? CAMERA_AZIMUTH_OFFSETS_R16_V4
+        : SPHERE_ROTATIONS_R17_V4;
+    if (!rotations.includes(rotationDegrees)) {
       throw new Error(`${path}.rotationDegrees is invalid`);
     }
     return { kind: "sphere-surface", rotationDegrees };
@@ -916,14 +928,23 @@ function parseView(
     value.poseAzimuthDegrees,
     `${path}.poseAzimuthDegrees`,
   );
-  if (elevationDegrees !== 40) throw new Error(`${path}.elevationDegrees is invalid`);
-  if (![-20, -10, 0, 10, 20].includes(azimuthOffsetDegrees)) {
+  if (elevationDegrees !== CAMERA_ELEVATION_DEGREES_R16_V4) {
+    throw new Error(`${path}.elevationDegrees is invalid`);
+  }
+  const azimuths =
+    cameraAngles === "presets-r16"
+      ? CAMERA_AZIMUTH_OFFSETS_R16_V4
+      : CAMERA_AZIMUTH_OFFSETS_R17_V4;
+  if (!azimuths.includes(azimuthOffsetDegrees)) {
     throw new Error(`${path}.azimuthOffsetDegrees is invalid`);
   }
-  if (
-    (target === "d4" && ![0, 120, 240].includes(poseAzimuthDegrees)) ||
-    (target !== "d4" && poseAzimuthDegrees !== 0)
-  ) {
+  const poseAzimuths =
+    cameraAngles === "presets-r16"
+      ? target === "d4"
+        ? D4_POSE_AZIMUTHS_R16_V4
+        : [0]
+      : POSE_AZIMUTHS_R17_V4;
+  if (!poseAzimuths.includes(poseAzimuthDegrees)) {
     throw new Error(`${path}.poseAzimuthDegrees is invalid`);
   }
   return { kind: "camera", elevationDegrees, azimuthOffsetDegrees, poseAzimuthDegrees };
@@ -940,7 +961,8 @@ function parseDie(
     APPEARANCE_TARGETS_V4,
     `${path}.target is not supported`,
   );
-  const withView = rendererRevisionPolicyV4(rendererRevision).resolvedCameraAngles;
+  const withView =
+    rendererRevisionPolicyV4(rendererRevision).cameraAngles !== "legacy";
   const expected = target === "other"
     ? withView
       ? OTHER_DIE_WITH_VIEW_KEYS

@@ -1,5 +1,9 @@
 import {
+  CAMERA_AZIMUTH_OFFSETS_R17_V4,
+  CAMERA_ELEVATION_DEGREES_R16_V4,
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
+  POSE_AZIMUTHS_R17_V4,
+  SPHERE_ROTATIONS_R17_V4,
   createDeterministicRandomV4,
   deriveAppearanceSeedV4,
   deriveNamedSeedV4,
@@ -460,9 +464,6 @@ function logicalPercentileIdentity(
     : undefined;
 }
 
-const CAMERA_AZIMUTH_OFFSETS_V4 = [-20, -10, 0, 10, 20] as const;
-const D4_POSE_AZIMUTHS_V4 = [0, 120, 240] as const;
-
 function selectCameraPreset(
   seed: number,
   presets: readonly number[],
@@ -494,19 +495,26 @@ function renderViewV4(
     ...(dieIdentity === undefined ? {} : { dieIdentity }),
   });
   const cameraSeed = deriveNamedSeedV4(scopedSeed, "camera");
+  if (form === "sphere") {
+    return {
+      kind: "sphere-surface",
+      rotationDegrees: selectCameraPreset(
+        cameraSeed,
+        SPHERE_ROTATIONS_R17_V4,
+      ),
+    };
+  }
   const azimuthOffsetDegrees = selectCameraPreset(
     cameraSeed,
-    CAMERA_AZIMUTH_OFFSETS_V4,
+    CAMERA_AZIMUTH_OFFSETS_R17_V4,
   );
-  if (form === "sphere") {
-    return { kind: "sphere-surface", rotationDegrees: azimuthOffsetDegrees };
-  }
-  const poseSeed = deriveNamedSeedV4(cameraSeed, "pose");
-  const poseAzimuthDegrees =
-    target === "d4" ? selectCameraPreset(poseSeed, D4_POSE_AZIMUTHS_V4) : 0;
+  const poseAzimuthDegrees = selectCameraPreset(
+    deriveNamedSeedV4(cameraSeed, "pose"),
+    POSE_AZIMUTHS_R17_V4,
+  );
   return {
     kind: "camera",
-    elevationDegrees: 40,
+    elevationDegrees: CAMERA_ELEVATION_DEGREES_R16_V4,
     azimuthOffsetDegrees,
     poseAzimuthDegrees,
   };
@@ -587,7 +595,7 @@ function renderDieV4(
   };
 }
 
-export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r16" as const;
+export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r17" as const;
 
 export function buildRollRenderRequestV4(
   result: RollExecutionResult,

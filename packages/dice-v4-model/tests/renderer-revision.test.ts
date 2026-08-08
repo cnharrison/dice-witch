@@ -100,21 +100,26 @@ describe("V4 renderer revision policies", () => {
     expect(revision14.allowD20LabelClearanceShortfall).toBe(false);
   });
 
-  it("inherits every r15 policy in r16 except resolved camera angles", () => {
+  it("adds immutable camera preset revisions", () => {
     const revision15 = rendererRevisionPolicyV4("canvaskit-v4-r15");
     const revision16 = rendererRevisionPolicyV4("canvaskit-v4-r16");
+    const revision17 = rendererRevisionPolicyV4("canvaskit-v4-r17");
 
     expect(revision16).toEqual({
       ...revision15,
-      resolvedCameraAngles: true,
+      cameraAngles: "presets-r16",
     });
-    expect(revision15.resolvedCameraAngles).toBe(false);
+    expect(revision17).toEqual({
+      ...revision16,
+      cameraAngles: "presets-r17",
+    });
+    expect(revision15.cameraAngles).toBe("legacy");
   });
 
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r17" as RendererRevisionV4,
+        "canvaskit-v4-r18" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });
