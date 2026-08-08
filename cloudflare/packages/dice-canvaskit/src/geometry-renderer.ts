@@ -339,6 +339,7 @@ export type RenderCanonicalGeometryV4Options = {
   requiresLocalSeparation?: boolean;
   criticalEffect?: RenderCriticalEffectV4 | null;
   renderPolicy?: PolyhedralRenderPolicyV4;
+  allowD20LabelClearanceShortfall?: boolean;
   blankFaces?: boolean;
 };
 
@@ -1408,6 +1409,7 @@ function fitTriangleSafeFont(
   containment: LabelContainmentV4,
   uniformInkDimensions: UniformInkDimensionsV4 | null = null,
   uniformFontScale = 1,
+  allowClearanceShortfall = false,
 ): FittedInkTextV4 {
   const normalized = normalizedInkText(font, value, hasOrientationMark);
   const clearanceForBounds = (
@@ -1447,6 +1449,7 @@ function fitTriangleSafeFont(
     }
     let lower = maximumFontSize * D20_R3_MINIMUM_FONT_SCALE_V4;
     if (clearanceAt(lower) < containment.requiredClearance) {
+      if (allowClearanceShortfall) return lower;
       throw new Error("CanvasKit V4 d20 label cannot preserve edge clearance");
     }
     let upper = maximumFontSize;
@@ -1613,6 +1616,7 @@ function drawLabel(
   containment: LabelContainmentV4 | null = null,
   uniformInkDimensions: UniformInkDimensionsV4 | null = null,
   engravingFontScale = 1,
+  allowD20LabelClearanceShortfall = false,
 ): LabelPixelBoundsV4 | null {
   const value = formatFaceLabelV4(target, label.value);
   if (value === "") return null;
@@ -1650,6 +1654,7 @@ function drawLabel(
       containment,
       uniformInkDimensions,
       uniformFontScale,
+      allowD20LabelClearanceShortfall,
     );
     x = fitted.x;
     baseline = fitted.baseline;
@@ -1908,6 +1913,7 @@ function drawPolyhedralGeometry(
     requiresLocalSeparation = false,
     criticalEffect,
     renderPolicy = "legacy",
+    allowD20LabelClearanceShortfall = false,
     blankFaces = false,
   }: RenderCanonicalGeometryV4Options,
   textureSize: number,
@@ -2088,6 +2094,7 @@ function drawPolyhedralGeometry(
         containment,
         uniformInkDimensions,
         engravingFontScale,
+        allowD20LabelClearanceShortfall,
       );
     });
   });
@@ -3366,6 +3373,7 @@ function drawPolyhedralGeometryGridDie(
   sharedScope: CanvasKitResourceScopeV4,
   shaderCache: GeometryGridShaderCacheV4,
   die: RenderPolyhedralGeometryGridDieV4,
+  allowD20LabelClearanceShortfall: boolean,
 ): number {
   const font = geometryFont(resources, die.fontId);
   const options: RenderCanonicalGeometryV4Options = {
@@ -3373,6 +3381,7 @@ function drawPolyhedralGeometryGridDie(
     result: die.result,
     size: GRID_DIE_SIZE_V4,
     ...gridAppearanceOptions(die),
+    allowD20LabelClearanceShortfall,
   };
   const usesOctahedralMapping =
     die.geometry.skinMapping.kind === "view-octahedral";
@@ -3530,6 +3539,7 @@ function drawGeometryGridDie(
   sharedScope: CanvasKitResourceScopeV4,
   shaderCache: GeometryGridShaderCacheV4,
   die: RenderGeometryGridDieV4,
+  allowD20LabelClearanceShortfall: boolean,
 ): number {
   if (die.kind === "sphere") {
     return drawSphereGeometryGridDie(
@@ -3550,6 +3560,7 @@ function drawGeometryGridDie(
     sharedScope,
     shaderCache,
     die,
+    allowD20LabelClearanceShortfall,
   );
 }
 
@@ -3672,6 +3683,7 @@ function renderGeometryGridWithGeometryRenderer(
   resources: GeometryRendererResourcesV4,
   { groups, rendererRevision }: RenderGeometryGridV4Options,
 ): Promise<RenderedGeometryGridV4> {
+  const policy = rendererRevisionPolicyV4(rendererRevision);
   const shaderCache: GeometryGridShaderCacheV4 = {
     atlasedOctahedralTextures: atlasedOctahedralTextures(groups),
     materialTextures: new Map(),
@@ -3695,6 +3707,7 @@ function renderGeometryGridWithGeometryRenderer(
         sharedScope,
         shaderCache,
         die,
+        policy.allowD20LabelClearanceShortfall,
       ),
     (die) => die.icons ?? [],
     (die) => geometryGridDieVisualBounds(die, rendererRevision),

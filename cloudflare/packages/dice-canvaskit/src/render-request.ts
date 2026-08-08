@@ -5,6 +5,7 @@ import {
   engravingFontScaleV4,
   generateMaterialTextureV4,
   getRenderGeometryDescriptorV4,
+  getRenderTexturePlacementV4,
   parseRenderRequestV4Json,
   rendererRevisionPolicyV4,
   resolveEngravingContrastEdgeV4,
@@ -187,6 +188,7 @@ function geometryGridDie(
   options: DiceRequestRenderOptionsV4,
 ): RenderGeometryGridDieV4 {
   const geometry = getRenderGeometryDescriptorV4(rendererRevision, die);
+  const texturePlacement = getRenderTexturePlacementV4(die);
   const lighting = lightingForDieV4(die, rendererRevision);
   const textureScope = textureScopeForDie(die, rendererRevision);
   const usesProjectedTexture =
@@ -223,7 +225,7 @@ function geometryGridDie(
     const key = `${canonicalTextureGenerationInputV4(
       die.appearance,
     )}|${texturePlacementKeyV4(
-      die.appearance.texture,
+      texturePlacement,
     )}|${renderLightingKeyV4(
       lighting,
       die.appearance.material.family,
@@ -234,7 +236,7 @@ function geometryGridDie(
         texture,
         lighting,
         die.appearance.material.family,
-        die.appearance.texture,
+        texturePlacement,
       );
       textures.sphericalMaterials.set(key, materialRaster);
     }
@@ -273,7 +275,7 @@ function geometryGridDie(
     textureMapping,
     texturePlacement: usesOctahedralAtlas
       ? IDENTITY_TEXTURE_PLACEMENT_V4
-      : die.appearance.texture,
+      : texturePlacement,
     textureScope,
     engravingColor: die.appearance.engraving.color,
     engravingFinish: die.appearance.engraving.finish,
@@ -341,6 +343,8 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r12": renderCanvasKit,
   "canvaskit-v4-r13": renderCanvasKit,
   "canvaskit-v4-r14": renderCanvasKit,
+  "canvaskit-v4-r15": renderCanvasKit,
+  "canvaskit-v4-r16": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {

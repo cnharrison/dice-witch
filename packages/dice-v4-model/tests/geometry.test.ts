@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  D4_STANDARD_GEOMETRY_V4,
   D20_STANDARD_GEOMETRY_R2_V4,
   D20_STANDARD_GEOMETRY_V4,
+  OTHER_SPHERE_GEOMETRY_V4,
   GEOMETRY_IDS_V4,
   getGeometryIdV4,
   getRenderGeometryDescriptorV4,
   getRenderGeometryIdV4,
+  getRenderTexturePlacementV4,
   type PolyhedralGeometryDescriptorV4,
+  type RenderDieV4,
   type SphericalGeometryDescriptorV4,
 } from "../src";
 
@@ -79,6 +83,51 @@ describe("V4 geometry contract", () => {
         standardD20,
       ),
     ).toThrow("Render request rendererRevision is not supported");
+  });
+
+  it("applies stored camera and d4 pose angles without mutating canonical geometry", () => {
+    const view = {
+      kind: "camera" as const,
+      elevationDegrees: 40,
+      azimuthOffsetDegrees: 20,
+      poseAzimuthDegrees: 120,
+    };
+    const d20 = getRenderGeometryDescriptorV4("canvaskit-v4-r16", {
+      target: "d20",
+      form: "standard",
+      view,
+    });
+    const d4 = getRenderGeometryDescriptorV4("canvaskit-v4-r16", {
+      target: "d4",
+      form: "standard",
+      view,
+    });
+    const sphere = getRenderGeometryDescriptorV4("canvaskit-v4-r16", {
+      target: "other",
+      form: "sphere",
+      view: { kind: "sphere-surface", rotationDegrees: 20 },
+    });
+
+    expect(d20.camera.position).not.toEqual(
+      D20_STANDARD_GEOMETRY_R2_V4.camera.position,
+    );
+    expect(d4.kind).toBe("polyhedral");
+    if (d4.kind !== "polyhedral") throw new Error("D4 geometry is invalid");
+    expect(d4.resultOrientations).not.toEqual(
+      D4_STANDARD_GEOMETRY_V4.resultOrientations,
+    );
+    expect(sphere).toBe(OTHER_SPHERE_GEOMETRY_V4);
+    expect(
+      getRenderTexturePlacementV4({
+        appearance: {
+          texture: { rotation: 350, offsetU: 0, offsetV: 0 },
+        },
+        view: { kind: "sphere-surface", rotationDegrees: 20 },
+      } as unknown as RenderDieV4),
+    ).toMatchObject({ rotation: 10, offsetU: 0, offsetV: 0 });
+    expect(D20_STANDARD_GEOMETRY_R2_V4.camera.position).toEqual([
+      3.8, 6.5, 7,
+    ]);
   });
 
   it("expresses polyhedral and spherical descriptors without runtime objects", () => {

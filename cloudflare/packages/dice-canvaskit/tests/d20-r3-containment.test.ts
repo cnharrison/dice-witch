@@ -137,6 +137,25 @@ function resultGroup(
   );
 }
 
+function atElevation(
+  camera: typeof D20_STANDARD_GEOMETRY_R2_V4.camera,
+  elevationDegrees: number,
+): typeof camera {
+  const [x, y, z] = camera.position;
+  const radius = Math.hypot(x, y, z);
+  const azimuth = Math.atan2(x, z);
+  const elevation = (elevationDegrees * Math.PI) / 180;
+  const horizontal = radius * Math.cos(elevation);
+  return {
+    ...camera,
+    position: [
+      horizontal * Math.sin(azimuth),
+      radius * Math.sin(elevation),
+      horizontal * Math.cos(azimuth),
+    ],
+  };
+}
+
 describe("CanvasKit V4 r3 d20 containment", () => {
   it("couples the additive geometry and render policy fail closed", async () => {
     const canvasKit = await loadCanvasKitV4();
@@ -257,6 +276,46 @@ describe("CanvasKit V4 r3 d20 containment", () => {
       renderer.dispose();
     }
   });
+
+  it("uses the minimum d20 label size when revised camera angles are tight", async () => {
+    const canvasKit = await loadCanvasKitV4();
+    const renderer = new CanvasKitGeometryRendererV4({
+      canvasKit,
+      defaultFontId: "liberation-sans",
+      fontDataById: CANVASKIT_FONT_DATA_V4,
+    });
+    const geometry = {
+      ...D20_STANDARD_GEOMETRY_R2_V4,
+      camera: atElevation(D20_STANDARD_GEOMETRY_R2_V4.camera, 30),
+    };
+
+    try {
+      let refusalCount = 0;
+      for (let result = 1; result <= 20; result += 1) {
+        await renderer
+          .render({ geometry, result, size: 150, renderPolicy: "standard-r7" })
+          .catch((error: unknown) => {
+            expect(error).toBeInstanceOf(Error);
+            expect((error as Error).message).toBe(
+              "CanvasKit V4 d20 label cannot preserve edge clearance",
+            );
+            refusalCount += 1;
+          });
+        await expect(
+          renderer.render({
+            geometry,
+            result,
+            size: 150,
+            renderPolicy: "standard-r7",
+            allowD20LabelClearanceShortfall: true,
+          }),
+        ).resolves.toMatchObject({ width: 150, height: 150 });
+      }
+      expect(refusalCount).toBeGreaterThan(0);
+    } finally {
+      renderer.dispose();
+    }
+  }, 30_000);
 
   it("keeps every result, font, and engraving finish clear at delivery size", async () => {
     const canvasKit = await loadCanvasKitV4();

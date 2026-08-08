@@ -724,7 +724,7 @@ describe("buildRollRenderRequestV4", () => {
     );
 
     expect(request.version).toBe(4);
-    expect(request.rendererRevision).toBe("canvaskit-v4-r14");
+    expect(request.rendererRevision).toBe("canvaskit-v4-r16");
     expect(
       request.groups.flatMap((group) =>
         group.map(({ target }) => target),
@@ -745,7 +745,25 @@ describe("buildRollRenderRequestV4", () => {
       target: "other",
       sides: 7,
       form: "sphere",
+      view: { kind: "sphere-surface" },
     });
+    const cameraViews = request.groups
+      .flat()
+      .filter(({ form }) => form !== "sphere")
+      .map(({ view }) => view);
+    expect(cameraViews).toHaveLength(9);
+    expect(
+      cameraViews.every(
+        (view) => view?.kind === "camera" && view.elevationDegrees === 40,
+      ),
+    ).toBe(true);
+    const azimuths = cameraViews.map((view) =>
+      view?.kind === "camera" ? view.azimuthOffsetDegrees : undefined,
+    );
+    expect(azimuths.every((value) => [-20, -10, 0, 10, 20].includes(value ?? 99))).toBe(
+      true,
+    );
+    expect(new Set(azimuths).size).toBeGreaterThan(1);
     expect(request.groups[6]?.[0]?.appearance).toEqual(
       request.groups[6]?.[1]?.appearance,
     );
@@ -846,6 +864,9 @@ describe("buildRollRenderRequestV4", () => {
     recipe.material.value.textureScale = 200;
     expect(request).toEqual(snapshot);
     expect(replay).toEqual(snapshot);
+    expect(request.groups.flat().every(({ view }) => view !== undefined)).toBe(
+      true,
+    );
     expect(
       new Set(
         request.groups.flatMap((group) =>

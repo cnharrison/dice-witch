@@ -838,7 +838,7 @@ describe("RollWork Durable Object", () => {
         version: 4,
         renderRequest: {
           version: 4,
-          rendererRevision: "canvaskit-v4-r14",
+          rendererRevision: "canvaskit-v4-r16",
           groups: [[{ target: "d20" }]],
         },
       });
@@ -1199,7 +1199,7 @@ describe("RollWork Durable Object", () => {
     const wrongRevision = structuredClone(rollWorkV4Fixture) as {
       renderRequest: { rendererRevision: string };
     };
-    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r15";
+    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r17";
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
       "Render request rendererRevision is not supported",
     );
@@ -1978,7 +1978,7 @@ describe("RollWork Durable Object", () => {
         renderVersion: 4,
         renderRequest: {
           version: 4,
-          rendererRevision: "canvaskit-v4-r14",
+          rendererRevision: "canvaskit-v4-r16",
         },
       });
       expect(
@@ -2217,7 +2217,7 @@ describe("RollWork Durable Object", () => {
                 ? { version: 3 }
                 : {
                     version: 4,
-                    rendererRevision: "canvaskit-v4-r14",
+                    rendererRevision: "canvaskit-v4-r16",
                   },
           });
           const source = state.storage.sql
@@ -2512,7 +2512,7 @@ describe("RollWork Durable Object", () => {
         renderVersion: 4,
         renderRequest: {
           version: 4,
-          rendererRevision: "canvaskit-v4-r14",
+          rendererRevision: "canvaskit-v4-r16",
         },
       });
     });
@@ -2569,17 +2569,17 @@ describe("RollWork Durable Object", () => {
     });
     expect(lifecycleSyncs.observations[0]).toMatchObject({
       state: "delivery_started",
-      rendererRevision: "canvaskit-v4-r14",
+      rendererRevision: "canvaskit-v4-r16",
       httpStatus: 200,
     });
     expect(
       lifecycleSyncs.observations.map(({ rendererRevision }) => rendererRevision),
     ).toEqual(
-      lifecycleSyncs.observations.map(() => "canvaskit-v4-r14"),
+      lifecycleSyncs.observations.map(() => "canvaskit-v4-r16"),
     );
     expect(lifecycleSyncs.observations.at(-1)).toMatchObject({
       state: "delivered",
-      rendererRevision: "canvaskit-v4-r14",
+      rendererRevision: "canvaskit-v4-r16",
       httpStatus: 200,
     });
   });
@@ -2673,7 +2673,7 @@ describe("RollWork Durable Object", () => {
         renderVersion: 4,
         renderRequest: {
           version: 4,
-          rendererRevision: "canvaskit-v4-r14",
+          rendererRevision: "canvaskit-v4-r16",
         },
       });
       const lifecycle = state.storage.sql
@@ -3319,7 +3319,7 @@ describe("RollWork Durable Object", () => {
         httpStatus: 200,
         failurePhase: null,
         renderVersion: 4,
-        rendererRevision: "canvaskit-v4-r14",
+        rendererRevision: "canvaskit-v4-r16",
       });
       expect(delivered?.outcome).toMatchObject({
         version: 1,

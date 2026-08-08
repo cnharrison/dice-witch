@@ -1,5 +1,8 @@
 import {
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
+  createDeterministicRandomV4,
+  deriveAppearanceSeedV4,
+  deriveNamedSeedV4,
   validateRenderRequestV4,
   type AppearanceRecipeV3,
   type AppearanceTargetV4,
@@ -8,6 +11,7 @@ import {
   type RenderCriticalEffectV4,
   type RenderDieV4,
   type RenderRequestV4,
+  type RenderViewV4,
 } from "@dice-witch/dice-v4-model";
 import {
   resolveAppearanceRecipe,
@@ -456,6 +460,58 @@ function logicalPercentileIdentity(
     : undefined;
 }
 
+const CAMERA_AZIMUTH_OFFSETS_V4 = [-20, -10, 0, 10, 20] as const;
+const D4_POSE_AZIMUTHS_V4 = [0, 120, 240] as const;
+
+function selectCameraPreset(
+  seed: number,
+  presets: readonly number[],
+): number {
+  const preset = presets[createDeterministicRandomV4(seed).index(presets.length)];
+  if (preset === undefined) throw new Error("Camera preset is missing");
+  return preset;
+}
+
+function renderViewV4(
+  target: AppearanceTargetV4,
+  form: RenderDieV4["form"],
+  recipe: AppearanceRecipeV3,
+  renderSeed: number,
+  groupIndex: number,
+  dieIndex: number,
+  groupIdentity: string | undefined,
+  dieIdentity: string | undefined,
+): RenderViewV4 {
+  const scopedSeed = deriveAppearanceSeedV4({
+    renderSeed,
+    target,
+    groupIndex,
+    dieIndex,
+    variation: "curated",
+    varyBy: "die",
+    recipe,
+    ...(groupIdentity === undefined ? {} : { groupIdentity }),
+    ...(dieIdentity === undefined ? {} : { dieIdentity }),
+  });
+  const cameraSeed = deriveNamedSeedV4(scopedSeed, "camera");
+  const azimuthOffsetDegrees = selectCameraPreset(
+    cameraSeed,
+    CAMERA_AZIMUTH_OFFSETS_V4,
+  );
+  if (form === "sphere") {
+    return { kind: "sphere-surface", rotationDegrees: azimuthOffsetDegrees };
+  }
+  const poseSeed = deriveNamedSeedV4(cameraSeed, "pose");
+  const poseAzimuthDegrees =
+    target === "d4" ? selectCameraPreset(poseSeed, D4_POSE_AZIMUTHS_V4) : 0;
+  return {
+    kind: "camera",
+    elevationDegrees: 40,
+    azimuthOffsetDegrees,
+    poseAzimuthDegrees,
+  };
+}
+
 function renderDieV4(
   die: RollDie,
   renderSeed: number,
@@ -496,6 +552,16 @@ function renderDieV4(
   if (percentileIdentity !== undefined) {
     percentileAppearances.set(percentileIdentity, resolved);
   }
+  const view = renderViewV4(
+    target,
+    resolved.form,
+    recipe,
+    renderSeed,
+    groupIndex,
+    dieIndex,
+    die.appearanceGroupIdentity,
+    die.appearanceDieIdentity,
+  );
   if (target === "other") {
     if (typeof die.sides !== "number") {
       throw new Error("Other appearance target requires numeric sides");
@@ -507,6 +573,7 @@ function renderDieV4(
       form: resolved.form,
       appearance: renderAppearanceV4(resolved, die.modifiers),
       icons: iconsFor(die.modifiers),
+      view,
     };
   }
 
@@ -516,10 +583,11 @@ function renderDieV4(
     form: resolved.form,
     appearance: renderAppearanceV4(resolved, die.modifiers),
     icons: iconsFor(die.modifiers),
+    view,
   };
 }
 
-export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r14" as const;
+export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r16" as const;
 
 export function buildRollRenderRequestV4(
   result: RollExecutionResult,

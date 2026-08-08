@@ -89,10 +89,32 @@ describe("V4 renderer revision policies", () => {
     });
   });
 
+  it("inherits every r14 policy in r15 except the d20 clearance shortfall", () => {
+    const revision14 = rendererRevisionPolicyV4("canvaskit-v4-r14");
+    const revision15 = rendererRevisionPolicyV4("canvaskit-v4-r15");
+
+    expect(revision15).toEqual({
+      ...revision14,
+      allowD20LabelClearanceShortfall: true,
+    });
+    expect(revision14.allowD20LabelClearanceShortfall).toBe(false);
+  });
+
+  it("inherits every r15 policy in r16 except resolved camera angles", () => {
+    const revision15 = rendererRevisionPolicyV4("canvaskit-v4-r15");
+    const revision16 = rendererRevisionPolicyV4("canvaskit-v4-r16");
+
+    expect(revision16).toEqual({
+      ...revision15,
+      resolvedCameraAngles: true,
+    });
+    expect(revision15.resolvedCameraAngles).toBe(false);
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r15" as RendererRevisionV4,
+        "canvaskit-v4-r17" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

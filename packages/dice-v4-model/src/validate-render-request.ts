@@ -63,6 +63,7 @@ import type {
   RenderLightingV4,
   RenderRequestV4,
   RenderTextureV4,
+  RenderViewV4,
   RendererRevisionV4,
   SharpResinMaterialV4,
   StoneMaterialV4,
@@ -79,7 +80,16 @@ import {
 
 const REQUEST_KEYS = ["groups", "rendererRevision", "version"] as const;
 const DIE_KEYS = ["appearance", "form", "icons", "result", "target"] as const;
+const DIE_WITH_VIEW_KEYS = [...DIE_KEYS, "view"] as const;
 const OTHER_DIE_KEYS = [...DIE_KEYS, "sides"] as const;
+const OTHER_DIE_WITH_VIEW_KEYS = [...OTHER_DIE_KEYS, "view"] as const;
+const CAMERA_VIEW_KEYS = [
+  "azimuthOffsetDegrees",
+  "elevationDegrees",
+  "kind",
+  "poseAzimuthDegrees",
+] as const;
+const SPHERE_VIEW_KEYS = ["kind", "rotationDegrees"] as const;
 const TEXTURE_KEYS_R1 = [
   "generatorId",
   "offsetU",
@@ -858,6 +868,67 @@ function validateTextureScopeForDie(
   }
 }
 
+function finiteViewNumber(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${path} must be finite`);
+  }
+  return value;
+}
+
+function parseView(
+  value: unknown,
+  path: string,
+  target: AppearanceTargetV4,
+  form: RenderFormV4,
+  rendererRevision: RendererRevisionV4,
+): RenderViewV4 | undefined {
+  const required = rendererRevisionPolicyV4(rendererRevision).resolvedCameraAngles;
+  if (!required) {
+    if (value !== undefined) throw new Error(`${path} is not supported`);
+    return undefined;
+  }
+  if (!isRecord(value)) throw new Error(`${path} must be an object`);
+  if (form === "sphere") {
+    if (!hasExactKeys(value, SPHERE_VIEW_KEYS) || value.kind !== "sphere-surface") {
+      throw new Error(`${path} is invalid for ${target} sphere`);
+    }
+    const rotationDegrees = finiteViewNumber(
+      value.rotationDegrees,
+      `${path}.rotationDegrees`,
+    );
+    if (![-20, -10, 0, 10, 20].includes(rotationDegrees)) {
+      throw new Error(`${path}.rotationDegrees is invalid`);
+    }
+    return { kind: "sphere-surface", rotationDegrees };
+  }
+  if (!hasExactKeys(value, CAMERA_VIEW_KEYS) || value.kind !== "camera") {
+    throw new Error(`${path} is invalid for ${target}`);
+  }
+  const elevationDegrees = finiteViewNumber(
+    value.elevationDegrees,
+    `${path}.elevationDegrees`,
+  );
+  const azimuthOffsetDegrees = finiteViewNumber(
+    value.azimuthOffsetDegrees,
+    `${path}.azimuthOffsetDegrees`,
+  );
+  const poseAzimuthDegrees = finiteViewNumber(
+    value.poseAzimuthDegrees,
+    `${path}.poseAzimuthDegrees`,
+  );
+  if (elevationDegrees !== 40) throw new Error(`${path}.elevationDegrees is invalid`);
+  if (![-20, -10, 0, 10, 20].includes(azimuthOffsetDegrees)) {
+    throw new Error(`${path}.azimuthOffsetDegrees is invalid`);
+  }
+  if (
+    (target === "d4" && ![0, 120, 240].includes(poseAzimuthDegrees)) ||
+    (target !== "d4" && poseAzimuthDegrees !== 0)
+  ) {
+    throw new Error(`${path}.poseAzimuthDegrees is invalid`);
+  }
+  return { kind: "camera", elevationDegrees, azimuthOffsetDegrees, poseAzimuthDegrees };
+}
+
 function parseDie(
   value: unknown,
   path: string,
@@ -869,7 +940,14 @@ function parseDie(
     APPEARANCE_TARGETS_V4,
     `${path}.target is not supported`,
   );
-  const expected = target === "other" ? OTHER_DIE_KEYS : DIE_KEYS;
+  const withView = rendererRevisionPolicyV4(rendererRevision).resolvedCameraAngles;
+  const expected = target === "other"
+    ? withView
+      ? OTHER_DIE_WITH_VIEW_KEYS
+      : OTHER_DIE_KEYS
+    : withView
+      ? DIE_WITH_VIEW_KEYS
+      : DIE_KEYS;
   if (!hasExactKeys(value, expected)) {
     throw new Error(`${path} has invalid fields`);
   }
@@ -884,6 +962,13 @@ function parseDie(
     const sides = boundedInteger(value.sides, 1, 999, `${path}.sides`);
     const form = parseForm(value.form, target, appearance.material, path);
     validateTextureScopeForDie(appearance, target, form);
+    const view = parseView(
+      value.view,
+      `${path}.view`,
+      target,
+      form,
+      rendererRevision,
+    );
     return {
       target,
       sides,
@@ -891,16 +976,25 @@ function parseDie(
       form,
       appearance,
       icons,
+      ...(view === undefined ? {} : { view }),
     };
   }
   const form = parseForm(value.form, target, appearance.material, path);
   validateTextureScopeForDie(appearance, target, form);
+  const view = parseView(
+    value.view,
+    `${path}.view`,
+    target,
+    form,
+    rendererRevision,
+  );
   return {
     target,
     result: parseResult(value.result, target, undefined, path),
     form,
     appearance,
     icons,
+    ...(view === undefined ? {} : { view }),
   };
 }
 

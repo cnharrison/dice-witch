@@ -1,5 +1,6 @@
 import {
   buildPhysicalPolyhedralMeshV4,
+  getRenderTexturePlacementV4,
   projectPolyhedralGeometryV4,
   rendererRevisionPolicyV4,
   resolveEngravingContrastEdgeV4,
@@ -288,7 +289,10 @@ export function createThreeDiceResourcesV4(
               ? "projected-texture"
               : "authored",
           )
-        : createSphericalGeometryV4(descriptor, die.appearance.texture);
+        : createSphericalGeometryV4(
+            descriptor,
+            getRenderTexturePlacementV4(die),
+          );
     geometries.push(baseGeometry);
     const labelAtlas =
       prepared.kind === "polyhedral"

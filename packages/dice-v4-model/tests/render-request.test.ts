@@ -164,6 +164,38 @@ function revision2Request(
 }
 
 describe("RenderRequestV4", () => {
+  it("requires resolved camera angles only for the camera revision", () => {
+    const legacy = validRequest();
+    expect(validateRenderRequestV4(legacy)).toEqual(legacy);
+
+    const currentDie = die();
+    currentDie.appearance.texture.scope = "die-wide";
+    currentDie.view = {
+      kind: "camera",
+      elevationDegrees: 40,
+      azimuthOffsetDegrees: -10,
+      poseAzimuthDegrees: 0,
+    };
+    const current = {
+      version: 4,
+      rendererRevision: "canvaskit-v4-r16",
+      groups: [[currentDie]],
+    } as const;
+    expect(validateRenderRequestV4(current)).toEqual(current);
+
+    const missingView = structuredClone(current);
+    delete (missingView.groups[0][0] as { view?: unknown }).view;
+    expect(() => validateRenderRequestV4(missingView)).toThrow(
+      "Render request groups[0][0] has invalid fields",
+    );
+
+    const invalidPose = structuredClone(current);
+    invalidPose.groups[0][0].view.poseAzimuthDegrees = 120;
+    expect(() => validateRenderRequestV4(invalidPose)).toThrow(
+      "Render request groups[0][0].view.poseAzimuthDegrees is invalid",
+    );
+  });
+
   it("accepts and canonicalizes every material family", () => {
     for (const material of materials) {
       const parsed = validateRenderRequestV4(requestWithDie(die(material)));

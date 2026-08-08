@@ -17,12 +17,14 @@ import {
   POLYHEDRAL_FORMS_V4,
 } from "./registries";
 import { rendererRevisionPolicyV4 } from "./renderer-revision";
+import { multiplyQuaternionsV4 } from "./geometry-math";
 import type {
   AppearanceTargetV4,
   PolyhedralFormV4,
   RenderDieV4,
   RendererRevisionV4,
   RenderFormV4,
+  RenderTextureV4,
 } from "./types";
 
 export type PolyhedralTargetV4 = Exclude<AppearanceTargetV4, "other">;
@@ -168,7 +170,10 @@ export function getGeometryIdV4(
   return `${target}-${form}-r1`;
 }
 
-export type RenderGeometrySelectionV4 = Pick<RenderDieV4, "target" | "form">;
+export type RenderGeometrySelectionV4 = Pick<
+  RenderDieV4,
+  "target" | "form" | "view"
+>;
 
 export function getRenderGeometryIdV4(
   rendererRevision: RendererRevisionV4,
@@ -181,13 +186,65 @@ export function getRenderGeometryIdV4(
     : geometryId;
 }
 
+export function getRenderTexturePlacementV4(
+  die: RenderDieV4,
+): RenderTextureV4 {
+  const placement = die.appearance.texture;
+  if (die.view?.kind !== "sphere-surface") return placement;
+  return {
+    ...placement,
+    rotation: (placement.rotation + die.view.rotationDegrees + 360) % 360,
+  };
+}
+
 export function getRenderGeometryDescriptorV4(
   rendererRevision: RendererRevisionV4,
   die: RenderGeometrySelectionV4,
 ): GeometryDescriptorV4 {
-  return getCanonicalGeometryDescriptorV4(
+  const descriptor = getCanonicalGeometryDescriptorV4(
     getRenderGeometryIdV4(rendererRevision, die),
   );
+  if (!rendererRevisionPolicyV4(rendererRevision).resolvedCameraAngles) {
+    return descriptor;
+  }
+  if (die.view?.kind !== "camera" || descriptor.kind !== "polyhedral") {
+    return descriptor;
+  }
+  const [x, y, z] = descriptor.camera.position;
+  const radius = Math.hypot(x, y, z);
+  const baseAzimuth = Math.atan2(x, z);
+  const azimuth =
+    baseAzimuth + (die.view.azimuthOffsetDegrees * Math.PI) / 180;
+  const elevation = (die.view.elevationDegrees * Math.PI) / 180;
+  const horizontal = radius * Math.cos(elevation);
+  const poseRadians = (die.view.poseAzimuthDegrees * Math.PI) / 180;
+  const poseRotation: QuaternionV4 = [
+    0,
+    Math.sin(poseRadians / 2),
+    0,
+    Math.cos(poseRadians / 2),
+  ];
+  return {
+    ...descriptor,
+    ...(die.target === "d4"
+      ? {
+          resultOrientations: descriptor.resultOrientations.map(
+            ({ result, rotation }) => ({
+              result,
+              rotation: multiplyQuaternionsV4(poseRotation, rotation),
+            }),
+          ),
+        }
+      : {}),
+    camera: {
+      ...descriptor.camera,
+      position: [
+        horizontal * Math.sin(azimuth),
+        radius * Math.sin(elevation),
+        horizontal * Math.cos(azimuth),
+      ],
+    },
+  };
 }
 
 export {

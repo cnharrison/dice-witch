@@ -295,11 +295,21 @@ export type RenderAppearanceV4 = {
   effect: RenderCriticalEffectV4 | null;
 };
 
+export type RenderViewV4 =
+  | {
+      kind: "camera";
+      elevationDegrees: number;
+      azimuthOffsetDegrees: number;
+      poseAzimuthDegrees: number;
+    }
+  | { kind: "sphere-surface"; rotationDegrees: number };
+
 type RenderDieV4Base = {
   result: number;
   form: RenderFormV4;
   appearance: RenderAppearanceV4;
   icons: IconNameV4[];
+  view?: RenderViewV4;
 };
 
 export type RenderDieV4 =
