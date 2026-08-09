@@ -41,16 +41,27 @@ describe("AuthoritativeDiceImageGrid", () => {
     expect(container.querySelectorAll("[data-dice-group]")).toHaveLength(2);
   });
 
-  it("fails visibly when response dimensions cannot describe exact crops", () => {
-    render(
-      <AuthoritativeDiceImageGrid
-        image={{ ...image, width: 451 }}
-        groupSizes={[3, 2]}
-      />,
-    );
+  it.each([
+    { width: 307, height: 150, groupSizes: [2] },
+    { width: 300, height: 150, groupSizes: [1] },
+  ])(
+    "preserves a framed $width×$height authoritative image without inferring crop offsets",
+    ({ width, height, groupSizes }) => {
+      const { container } = render(
+        <AuthoritativeDiceImageGrid
+          image={{ ...image, width, height }}
+          groupSizes={groupSizes}
+        />,
+      );
 
-    expect(screen.getByRole("alert").textContent).toContain(
-      "Authoritative dice image layout is invalid",
-    );
-  });
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(container.querySelectorAll("img")).toHaveLength(1);
+      const source = container.querySelector("[data-authoritative-image]");
+      expect(source).not.toBeNull();
+      expect((source as HTMLElement).style).toMatchObject({
+        width: `${String(width)}px`,
+        height: `${String(height)}px`,
+      });
+    },
+  );
 });

@@ -44,6 +44,29 @@ const LABEL_EDGE_HALF_WIDTH_PIXELS_V4 = 0.5;
 const LABEL_REQUIRED_CLEARANCE_RATIO_V4 =
   (LABEL_VISIBLE_GAP_PIXELS_V4 + LABEL_EDGE_HALF_WIDTH_PIXELS_V4) / 150;
 const LABEL_FIT_ITERATIONS_V4 = 24;
+
+export function fitLabelFontSizeToClearanceV4(
+  maximumFontSize: number,
+  minimumFontScale: number,
+  requiredClearance: number,
+  clearanceAt: (fontSize: number) => number,
+  allowClearanceShortfall: boolean,
+): number {
+  if (clearanceAt(maximumFontSize) >= requiredClearance) return maximumFontSize;
+  let lower = maximumFontSize * minimumFontScale;
+  if (clearanceAt(lower) < requiredClearance) {
+    if (allowClearanceShortfall) return lower;
+    throw new Error("Three.js V4 label cannot preserve edge clearance");
+  }
+  let upper = maximumFontSize;
+  for (let iteration = 0; iteration < LABEL_FIT_ITERATIONS_V4; iteration += 1) {
+    const candidate = (lower + upper) / 2;
+    if (clearanceAt(candidate) >= requiredClearance) lower = candidate;
+    else upper = candidate;
+  }
+  return lower;
+}
+
 const MINIMUM_LABEL_FONT_SCALE_BY_FORM_V4 = Object.freeze({
   standard: 0.35,
   sharp: 0.35,
@@ -369,6 +392,7 @@ function fitPhysicalLabelFontV4(
   minimumFontScale: number,
   uniformInkDimensions: UniformInkDimensionsV4 | null,
   engravingFontScale: number,
+  allowClearanceShortfall: boolean,
 ): FittedPhysicalLabelV4 {
   const clearance = (fontSize: number): number =>
     minimumConvexPolygonClearanceV4(
@@ -386,32 +410,17 @@ function fitPhysicalLabelFontV4(
         ),
       ),
     );
-  const fitToClearance = (
-    maximum: number,
-    clearanceAt: (fontSize: number) => number,
-  ): number => {
-    if (clearanceAt(maximum) >= frame.requiredClearance) return maximum;
-    let lower = maximum * minimumFontScale;
-    if (clearanceAt(lower) < frame.requiredClearance) {
-      throw new Error("Three.js V4 label cannot preserve edge clearance");
-    }
-    let upper = maximum;
-    for (let iteration = 0; iteration < LABEL_FIT_ITERATIONS_V4; iteration += 1) {
-      const candidate = (lower + upper) / 2;
-      if (clearanceAt(candidate) >= frame.requiredClearance) lower = candidate;
-      else upper = candidate;
-    }
-    return lower;
-  };
   const uniformMaximumFontSize =
     uniformInkDimensions === null
       ? Number.POSITIVE_INFINITY
-      : fitToClearance(
+      : fitLabelFontSizeToClearanceV4(
           referenceSize *
             Math.min(
               availableWidth / uniformInkDimensions.width,
               availableHeight / uniformInkDimensions.height,
             ),
+          minimumFontScale,
+          frame.requiredClearance,
           (fontSize) =>
             minimumConvexPolygonClearanceV4(
               frame.polygon,
@@ -428,6 +437,7 @@ function fitPhysicalLabelFontV4(
                 ),
               ),
             ),
+          allowClearanceShortfall,
         );
   const fittedMaximumFontSize =
     Math.min(maximumFontSize, uniformMaximumFontSize) * engravingFontScale;
@@ -436,7 +446,13 @@ function fitPhysicalLabelFontV4(
       ? D20_R4_ORIENTATION_MARK_OPTICAL_SCALE_V4
       : 1;
   const fontSize =
-    fitToClearance(fittedMaximumFontSize, clearance) * uniformFontScale;
+    fitLabelFontSizeToClearanceV4(
+      fittedMaximumFontSize,
+      minimumFontScale,
+      frame.requiredClearance,
+      clearance,
+      allowClearanceShortfall,
+    ) * uniformFontScale;
   return {
     fontSize,
     fontScale: fontSize / maximumFontSize,
@@ -458,6 +474,7 @@ function drawPhysicalLabelV4(
   uniformInkDimensions: UniformInkDimensionsV4 | null = null,
   engravingFontScale = 1,
   contrastEdge: EngravingContrastEdgeV4 | null = null,
+  allowClearanceShortfall = false,
 ): FittedPhysicalLabelV4 {
   if (text === "") {
     return {
@@ -506,6 +523,7 @@ function drawPhysicalLabelV4(
     minimumFontScale,
     uniformInkDimensions,
     engravingFontScale,
+    allowClearanceShortfall,
   );
   const { fontSize } = fitted;
   context.font = `${fontSize}px "${fontFamily}"`;
@@ -777,6 +795,9 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
   const revisionPolicy = rendererRevision === undefined
     ? null
     : rendererRevisionPolicyV4(rendererRevision);
+  const allowClearanceShortfall =
+    physical.target === "d20" &&
+    revisionPolicy?.allowD20LabelClearanceShortfall === true;
   const engraving = engravingLayerRecipeV4(
     appearance,
     revisionPolicy?.d4EngravingFinishEnhancement === true &&
@@ -815,6 +836,7 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
         uniformInkDimensions,
         fontScale,
         contrastEdge,
+        allowClearanceShortfall,
       );
     let fitted: FittedPhysicalLabelV4;
     if (clipToTile) {
@@ -852,8 +874,9 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
   const minimumVisibleLabelGapPixelsAt150 =
     Math.min(...visibleClearances) * 150 - LABEL_EDGE_HALF_WIDTH_PIXELS_V4;
   if (
+    !allowClearanceShortfall &&
     minimumVisibleLabelGapPixelsAt150 <
-    LABEL_VISIBLE_GAP_PIXELS_V4 - 1e-6
+      LABEL_VISIBLE_GAP_PIXELS_V4 - 1e-6
   ) {
     throw new Error("Three.js V4 label cannot preserve edge clearance");
   }

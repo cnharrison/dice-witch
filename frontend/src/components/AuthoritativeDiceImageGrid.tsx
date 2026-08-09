@@ -54,9 +54,7 @@ export function AuthoritativeDiceImageGrid({
   );
   if (
     groupSizes.length === 0 ||
-    groupSizes.some((size) => !Number.isSafeInteger(size) || size < 1) ||
-    image.width !== sourceColumns * DICE_CELL_SIZE ||
-    image.height !== sourceRows * rowHeight
+    groupSizes.some((size) => !Number.isSafeInteger(size) || size < 1)
   ) {
     return (
       <p role="alert" className="p-4 text-sm text-destructive">
@@ -66,6 +64,31 @@ export function AuthoritativeDiceImageGrid({
   }
 
   const source = `data:${image.contentType};base64,${image.base64}`;
+  const canCropUniformCells =
+    image.width === sourceColumns * DICE_CELL_SIZE &&
+    image.height === sourceRows * rowHeight;
+  if (!canCropUniformCells) {
+    return (
+      <div
+        role="img"
+        aria-label={blankFaces ? "Prepared blank dice" : "Rendered dice result"}
+        className="w-full overflow-x-auto"
+      >
+        <div className="flex w-max min-w-full justify-center">
+          <img
+            data-authoritative-image
+            src={source}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            className="pointer-events-none max-w-none select-none"
+            style={{ width: image.width, height: image.height }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       role="img"

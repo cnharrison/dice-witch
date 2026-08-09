@@ -15,9 +15,21 @@ import {
   createPhysicalLabelGeometryV4,
   createSphericalLabelGeometryV4,
   faceAtlasUvV4,
+  fitLabelFontSizeToClearanceV4,
 } from "./face-atlas";
 
 describe("V4 Three.js face atlas layout", () => {
+  it("honors renderer revisions that allow minimum-size label clearance shortfalls", () => {
+    const clearanceAt = (fontSize: number) => 1 - fontSize / 100;
+
+    expect(
+      fitLabelFontSizeToClearanceV4(100, 0.35, 0.8, clearanceAt, true),
+    ).toBe(35);
+    expect(() =>
+      fitLabelFontSizeToClearanceV4(100, 0.35, 0.8, clearanceAt, false),
+    ).toThrow("Three.js V4 label cannot preserve edge clearance");
+  });
+
   it("maps six isolated face tiles without sampling adjacent cells", () => {
     const layout = createFaceAtlasLayoutV4(6);
 
