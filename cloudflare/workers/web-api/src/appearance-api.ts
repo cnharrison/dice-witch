@@ -1,8 +1,12 @@
 import {
   parseAppearanceProfileV3,
+  parseAppearanceProfileV4,
   parseGuildAppearanceProfileV3,
+  parseGuildAppearanceProfileV4,
   type AppearanceProfileV3,
+  type AppearanceProfileV4,
   type GuildAppearanceProfileV3,
+  type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_VALIDATION_CATALOG,
@@ -10,6 +14,7 @@ import {
   parseAppearancePreviewRequest,
   parseAppearancePreviewRequestV2,
   parseAppearancePreviewRequestV3,
+  parseAppearancePreviewRequestV4,
   parseAppearanceProfile,
   parseAppearanceProfileV2,
   parseGuildAppearanceProfile,
@@ -17,6 +22,7 @@ import {
   type AppearancePreviewRequest,
   type AppearancePreviewRequestV2,
   type AppearancePreviewRequestV3,
+  type AppearancePreviewRequestV4,
   type AppearanceProfileV1,
   type AppearanceProfileV2,
   type GuildAppearanceProfileV1,
@@ -37,17 +43,20 @@ export type AppearancePreviewService = {
   preview(value: unknown): Promise<unknown>;
   previewV2(value: unknown): Promise<unknown>;
   previewV3(value: unknown): Promise<unknown>;
+  previewV4(value: unknown): Promise<unknown>;
 };
 
 type AppearanceProfileKind = "personal" | "guild";
-type AppearanceContractVersion = 1 | 2 | 3;
+type AppearanceContractVersion = 1 | 2 | 3 | 4;
 type AppearanceProfile =
   | AppearanceProfileV1
   | AppearanceProfileV2
   | AppearanceProfileV3
+  | AppearanceProfileV4
   | GuildAppearanceProfileV1
   | GuildAppearanceProfileV2
-  | GuildAppearanceProfileV3;
+  | GuildAppearanceProfileV3
+  | GuildAppearanceProfileV4;
 
 type AppearanceWriteInput = {
   expectedRevision: number;
@@ -85,10 +94,18 @@ function parseProfile(
   kind: AppearanceProfileKind,
   version: AppearanceContractVersion,
 ): AppearanceProfile {
-  if (version === 3) {
-    return kind === "personal"
-      ? parseAppearanceProfileV3(value, APPEARANCE_VALIDATION_CATALOG_V3)
-      : parseGuildAppearanceProfileV3(
+  if (version === 3 || version === 4) {
+    if (kind === "personal") {
+      return version === 3
+        ? parseAppearanceProfileV3(value, APPEARANCE_VALIDATION_CATALOG_V3)
+        : parseAppearanceProfileV4(value, APPEARANCE_VALIDATION_CATALOG_V3);
+    }
+    return version === 3
+      ? parseGuildAppearanceProfileV3(
+          value,
+          APPEARANCE_VALIDATION_CATALOG_V3,
+        )
+      : parseGuildAppearanceProfileV4(
           value,
           APPEARANCE_VALIDATION_CATALOG_V3,
         );
@@ -109,7 +126,7 @@ function appearanceErrorResponse(
   v3: string,
   status = 502,
 ): Response {
-  return json({ error: version === 3 ? v3 : legacy }, status);
+  return json({ error: version >= 3 ? v3 : legacy }, status);
 }
 
 async function postData(
@@ -171,6 +188,16 @@ async function readJson(request: Request): Promise<unknown> {
   ) as unknown;
 }
 
+function parseLookupProfile(
+  value: unknown,
+  kind: AppearanceProfileKind,
+  version: AppearanceContractVersion,
+): AppearanceProfile {
+  return version === 4 && isRecord(value) && value.version === 3
+    ? parseProfile(value, kind, 3)
+    : parseProfile(value, kind, version);
+}
+
 function parseLookup(
   value: unknown,
   kind: AppearanceProfileKind,
@@ -201,7 +228,7 @@ function parseLookup(
   }
   return {
     revision: Number(value.revision),
-    profile: parseProfile(value.profile, kind, version),
+    profile: parseLookupProfile(value.profile, kind, version),
   };
 }
 
@@ -513,6 +540,44 @@ export async function putPersonalAppearanceV3(
   );
 }
 
+export async function getPersonalAppearanceV4(
+  dataService: AppearanceApiDataService,
+  userId: string,
+): Promise<Response> {
+  return lookupResponse(
+    await postData(dataService, "/internal/appearance/v4/personal/get", {
+      userId,
+    }),
+    "personal",
+    4,
+  );
+}
+
+export async function putPersonalAppearanceV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  userId: string,
+  now: number,
+): Promise<Response> {
+  let input: AppearanceWriteInput;
+  try {
+    input = await parseWrite(request, "personal", 4);
+  } catch {
+    return json({ error: "appearance_profile_invalid" }, 400);
+  }
+  return writeResponse(
+    await postData(dataService, "/internal/appearance/v4/personal/put", {
+      userId,
+      expectedRevision: input.expectedRevision,
+      profile: input.profile,
+      mutationId: `web-appearance-personal:${input.idempotencyKey}`,
+      occurredAt: now,
+    }),
+    "personal",
+    4,
+  );
+}
+
 export async function getGuildAppearanceV2(
   dataService: AppearanceApiDataService,
   guildId: string,
@@ -593,6 +658,46 @@ export async function putGuildAppearanceV3(
   );
 }
 
+export async function getGuildAppearanceV4(
+  dataService: AppearanceApiDataService,
+  guildId: string,
+): Promise<Response> {
+  return lookupResponse(
+    await postData(dataService, "/internal/appearance/v4/guild/get", {
+      guildId,
+    }),
+    "guild",
+    4,
+  );
+}
+
+export async function putGuildAppearanceV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  guildId: string,
+  userId: string,
+  now: number,
+): Promise<Response> {
+  let input: AppearanceWriteInput;
+  try {
+    input = await parseWrite(request, "guild", 4);
+  } catch {
+    return json({ error: "appearance_profile_invalid" }, 400);
+  }
+  return writeResponse(
+    await postData(dataService, "/internal/appearance/v4/guild/put", {
+      guildId,
+      updatedByUserId: userId,
+      expectedRevision: input.expectedRevision,
+      profile: input.profile,
+      mutationId: `web-appearance-guild:${input.idempotencyKey}`,
+      occurredAt: now,
+    }),
+    "guild",
+    4,
+  );
+}
+
 function isPng(value: Uint8Array): boolean {
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
   return signature.every((byte, index) => value[index] === byte);
@@ -602,10 +707,11 @@ async function previewResponse(
   input:
     | AppearancePreviewRequest
     | AppearancePreviewRequestV2
-    | AppearancePreviewRequestV3,
+    | AppearancePreviewRequestV3
+    | AppearancePreviewRequestV4,
   render: (input: unknown) => Promise<unknown>,
   rendererVersion: 2 | 3 | 4,
-  responseVersion: 1 | 2 | 3,
+  responseVersion: 1 | 2 | 3 | 4,
 ): Promise<Response> {
   let result: unknown;
   try {
@@ -614,7 +720,7 @@ async function previewResponse(
     return json(
       {
         error:
-          responseVersion === 3
+          responseVersion >= 3
             ? "appearance_renderer_failed"
             : "Appearance preview failed",
       },
@@ -654,7 +760,7 @@ async function previewResponse(
     return json(
       {
         error:
-          responseVersion === 3
+          responseVersion >= 3
             ? "appearance_preview_response_invalid"
             : "Appearance preview response is invalid",
       },
@@ -727,5 +833,23 @@ export async function previewAppearanceV3(
     (previewInput) => previewService.previewV3(previewInput),
     4,
     3,
+  );
+}
+
+export async function previewAppearanceV4(
+  request: Request,
+  previewService: AppearancePreviewService,
+): Promise<Response> {
+  let input: AppearancePreviewRequestV4;
+  try {
+    input = parseAppearancePreviewRequestV4(await readJson(request));
+  } catch {
+    return json({ error: "appearance_preview_invalid" }, 400);
+  }
+  return previewResponse(
+    input,
+    (previewInput) => previewService.previewV4(previewInput),
+    4,
+    4,
   );
 }

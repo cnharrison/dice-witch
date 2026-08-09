@@ -86,6 +86,7 @@ const REQUIRED_BINDINGS = {
     GATEWAY_STATUS: "service",
     LOG_WORK: "durable_object_namespace",
     ROLL_RENDER_VERSION: "plain_text",
+    ROLL_VIEW_POLICY: "plain_text",
     ROLL_WORK: "durable_object_namespace",
     WEB_DELIVERY_WORK: "durable_object_namespace",
   },
@@ -281,6 +282,11 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
     binding.script_name = productionName("roll");
   }
 
+  configs.roll.vars = {
+    ...configs.roll.vars,
+    ROLL_VIEW_POLICY: "r19",
+  };
+
   configs["web-api"].routes = [
     { pattern: new URL(values.frontendOrigin).hostname, custom_domain: true },
   ];
@@ -376,6 +382,9 @@ export function validateProductionConfigs(configs, expectedSha) {
   }
   if (configs.roll?.vars?.ROLL_RENDER_VERSION !== "4") {
     errors.push("Production Roll render version must be 4");
+  }
+  if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r19") {
+    errors.push("Production Roll view policy must be r19");
   }
   if (
     configs.interactions?.durable_objects?.bindings?.length !== 2 ||

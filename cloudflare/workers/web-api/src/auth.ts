@@ -24,18 +24,23 @@ import {
   getGuildAppearance,
   getGuildAppearanceV2,
   getGuildAppearanceV3,
+  getGuildAppearanceV4,
   getPersonalAppearance,
   getPersonalAppearanceV2,
   getPersonalAppearanceV3,
+  getPersonalAppearanceV4,
   previewAppearance,
   previewAppearanceV2,
   previewAppearanceV3,
+  previewAppearanceV4,
   putGuildAppearance,
   putGuildAppearanceV2,
   putGuildAppearanceV3,
+  putGuildAppearanceV4,
   putPersonalAppearance,
   putPersonalAppearanceV2,
   putPersonalAppearanceV3,
+  putPersonalAppearanceV4,
 } from "./appearance-api";
 import { bytesToBase64, json, securityHeaders } from "./responses";
 import { handleSavedRollApiRequest } from "./saved-roll-api";
@@ -115,6 +120,7 @@ export type WebApiBindings = {
     preview(value: unknown): Promise<unknown>;
     previewV2(value: unknown): Promise<unknown>;
     previewV3(value: unknown): Promise<unknown>;
+    previewV4(value: unknown): Promise<unknown>;
   };
   DISCORD_CLIENT_ID: string;
   DISCORD_CLIENT_SECRET: WorkerSecretSource;
@@ -323,7 +329,8 @@ function preflight(
     pathname === "/api/appearance/me" ||
     pathname === "/api/appearance/v2/me" ||
     pathname === "/api/appearance/v3/me" ||
-    /^\/api\/guilds\/[1-9][0-9]{16,19}\/appearance(?:\/v[23])?$/.test(
+    pathname === "/api/appearance/v4/me" ||
+    /^\/api\/guilds\/[1-9][0-9]{16,19}\/appearance(?:\/v[234])?$/.test(
       pathname,
     )
   ) {
@@ -342,7 +349,8 @@ function preflight(
   } else if (
     pathname === "/api/appearance/preview" ||
     pathname === "/api/appearance/v2/preview" ||
-    pathname === "/api/appearance/v3/preview"
+    pathname === "/api/appearance/v3/preview" ||
+    pathname === "/api/appearance/v4/preview"
   ) {
     methods = "POST";
     allowedHeaders = "content-type";
@@ -468,9 +476,10 @@ function appearanceCatalogForPath(
   return APPEARANCE_CATALOG_V1;
 }
 
-type AppearanceBrowserVersion = 1 | 2 | 3;
+type AppearanceBrowserVersion = 1 | 2 | 3 | 4;
 
 function appearanceVersionForPath(pathname: string): AppearanceBrowserVersion {
+  if (pathname.endsWith("/v4") || pathname.includes("/v4/")) return 4;
   if (pathname.endsWith("/v3") || pathname.includes("/v3/")) return 3;
   if (pathname.endsWith("/v2") || pathname.includes("/v2/")) return 2;
   return 1;
@@ -481,6 +490,7 @@ function getPersonalAppearanceForVersion(
   dataService: Fetcher,
   userId: string,
 ): Promise<Response> {
+  if (version === 4) return getPersonalAppearanceV4(dataService, userId);
   if (version === 3) return getPersonalAppearanceV3(dataService, userId);
   return version === 2
     ? getPersonalAppearanceV2(dataService, userId)
@@ -494,6 +504,9 @@ function putPersonalAppearanceForVersion(
   userId: string,
   now: number,
 ): Promise<Response> {
+  if (version === 4) {
+    return putPersonalAppearanceV4(request, dataService, userId, now);
+  }
   if (version === 3) {
     return putPersonalAppearanceV3(request, dataService, userId, now);
   }
@@ -507,6 +520,7 @@ function getGuildAppearanceForVersion(
   dataService: Fetcher,
   guildId: string,
 ): Promise<Response> {
+  if (version === 4) return getGuildAppearanceV4(dataService, guildId);
   if (version === 3) return getGuildAppearanceV3(dataService, guildId);
   return version === 2
     ? getGuildAppearanceV2(dataService, guildId)
@@ -521,6 +535,15 @@ function putGuildAppearanceForVersion(
   userId: string,
   now: number,
 ): Promise<Response> {
+  if (version === 4) {
+    return putGuildAppearanceV4(
+      request,
+      dataService,
+      guildId,
+      userId,
+      now,
+    );
+  }
   if (version === 3) {
     return putGuildAppearanceV3(
       request,
@@ -1970,7 +1993,8 @@ export async function handleAuthRequest(
     if (
       (pathname === "/api/appearance/me" ||
         pathname === "/api/appearance/v2/me" ||
-        pathname === "/api/appearance/v3/me") &&
+        pathname === "/api/appearance/v3/me" ||
+        pathname === "/api/appearance/v4/me") &&
       (request.method === "GET" || request.method === "PUT")
     ) {
       const exactOrigin =
@@ -1984,7 +2008,7 @@ export async function handleAuthRequest(
         return json(
           {
             error:
-              appearanceVersion === 3
+              appearanceVersion >= 3
                 ? "appearance_origin_forbidden"
                 : "Forbidden",
           },
@@ -1994,7 +2018,7 @@ export async function handleAuthRequest(
       const authentication = await authenticateSession(request, env, now);
       if (!authentication.authenticated) {
         const response =
-          appearanceVersion === 3
+          appearanceVersion >= 3
             ? v3AppearanceAccessError(
                 authentication.response.status === 401
                   ? "authentication"
@@ -2024,14 +2048,15 @@ export async function handleAuthRequest(
       request.method === "POST" &&
       (pathname === "/api/appearance/preview" ||
         pathname === "/api/appearance/v2/preview" ||
-        pathname === "/api/appearance/v3/preview")
+        pathname === "/api/appearance/v3/preview" ||
+        pathname === "/api/appearance/v4/preview")
     ) {
       const appearanceVersion = appearanceVersionForPath(pathname);
       if (request.headers.get("origin") !== configuration.FRONTEND_ORIGIN) {
         return json(
           {
             error:
-              appearanceVersion === 3
+              appearanceVersion >= 3
                 ? "appearance_origin_forbidden"
                 : "Forbidden",
           },
@@ -2041,7 +2066,7 @@ export async function handleAuthRequest(
       const authentication = await authenticateSession(request, env, now);
       if (!authentication.authenticated) {
         const response =
-          appearanceVersion === 3
+          appearanceVersion >= 3
             ? v3AppearanceAccessError(
                 authentication.response.status === 401
                   ? "authentication"
@@ -2052,7 +2077,9 @@ export async function handleAuthRequest(
         return withCors(response, configuration);
       }
       let response: Response;
-      if (appearanceVersion === 3) {
+      if (appearanceVersion === 4) {
+        response = await previewAppearanceV4(request, env.ROLL_WEB);
+      } else if (appearanceVersion === 3) {
         response = await previewAppearanceV3(request, env.ROLL_WEB);
       } else if (appearanceVersion === 2) {
         response = await previewAppearanceV2(request, env.ROLL_WEB);
@@ -2162,7 +2189,7 @@ export async function handleAuthRequest(
         : response;
     }
     const appearanceMatch = pathname.match(
-      /^\/api\/guilds\/([1-9][0-9]{16,19})\/appearance(?:\/(v[23]))?$/,
+      /^\/api\/guilds\/([1-9][0-9]{16,19})\/appearance(?:\/(v[234]))?$/,
     );
     if (
       appearanceMatch !== null &&
@@ -2183,7 +2210,7 @@ export async function handleAuthRequest(
         return json(
           {
             error:
-              appearanceVersion === 3
+              appearanceVersion >= 3
                 ? "appearance_origin_forbidden"
                 : "Forbidden",
           },
@@ -2193,7 +2220,7 @@ export async function handleAuthRequest(
       const authorization = await authorizeGuild(request, env, guildId, now);
       if (!authorization.authorized) {
         const response =
-          appearanceVersion === 3
+          appearanceVersion >= 3
             ? v3AppearanceAccessError(
                 authorization.reason,
                 authorization.response,

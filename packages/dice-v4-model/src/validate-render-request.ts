@@ -1,7 +1,12 @@
+import { isAuthoredRenderViewV4 } from "./authored-views";
 import {
   isMaterialFormCompatibleV4,
   isPolyhedralFormImplementedForTargetV4,
 } from "./compatibility";
+import {
+  DICE_VIEW_AZIMUTH_RANGE_V4,
+  DICE_VIEW_ELEVATION_RANGE_V4,
+} from "./dice-view-preferences";
 import {
   APPEARANCE_PERCENTAGE_RANGE_V4,
   APPEARANCE_TEXTURE_SCALE_RANGE_V4,
@@ -97,6 +102,13 @@ const CAMERA_VIEW_KEYS = [
   "elevationDegrees",
   "kind",
   "poseAzimuthDegrees",
+] as const;
+const ORIENTED_CAMERA_VIEW_KEYS = [
+  "azimuthOffsetDegrees",
+  "elevationDegrees",
+  "kind",
+  "mode",
+  "resultRotation",
 ] as const;
 const SPHERE_VIEW_KEYS = ["kind", "rotationDegrees"] as const;
 const POSITIONED_SPHERE_VIEW_KEYS = [
@@ -895,16 +907,19 @@ function parseView(
   path: string,
   target: AppearanceTargetV4,
   form: RenderFormV4,
+  result: number,
   rendererRevision: RendererRevisionV4,
 ): RenderViewV4 | undefined {
-  const cameraAngles = rendererRevisionPolicyV4(rendererRevision).cameraAngles;
+  const { cameraAngles, resolvedViews } =
+    rendererRevisionPolicyV4(rendererRevision);
   if (cameraAngles === "legacy") {
     if (value !== undefined) throw new Error(`${path} is not supported`);
     return undefined;
   }
   if (!isRecord(value)) throw new Error(`${path} must be an object`);
   if (form === "sphere") {
-    const positioned = cameraAngles === "presets-r18";
+    const positioned =
+      cameraAngles === "presets-r18" || cameraAngles === "preferences-r20";
     const keys = positioned ? POSITIONED_SPHERE_VIEW_KEYS : SPHERE_VIEW_KEYS;
     if (!hasExactKeys(value, keys) || value.kind !== "sphere-surface") {
       throw new Error(`${path} is invalid for ${target} sphere`);
@@ -939,7 +954,27 @@ function parseView(
         preset.latitudeDegrees === labelLatitudeDegrees &&
         preset.rotationDegrees === labelRotationDegrees,
     );
-    if (!isPreset) throw new Error(`${path} sphere label preset is invalid`);
+    const isCenteredAuthoredView =
+      resolvedViews &&
+      rotationDegrees === 0 &&
+      labelLongitudeDegrees === 0 &&
+      labelLatitudeDegrees === 0 &&
+      labelRotationDegrees === 0;
+    const isPreferenceView =
+      cameraAngles === "preferences-r20" &&
+      Number.isSafeInteger(labelLongitudeDegrees) &&
+      labelLongitudeDegrees >= DICE_VIEW_AZIMUTH_RANGE_V4.minimum &&
+      labelLongitudeDegrees <= DICE_VIEW_AZIMUTH_RANGE_V4.maximum &&
+      labelLongitudeDegrees % DICE_VIEW_AZIMUTH_RANGE_V4.step === 0 &&
+      rotationDegrees === labelRotationDegrees &&
+      SPHERE_LABEL_PRESETS_R18_V4.some(
+        (preset) =>
+          preset.latitudeDegrees === labelLatitudeDegrees &&
+          preset.rotationDegrees === labelRotationDegrees,
+      );
+    if (!isPreset && !isCenteredAuthoredView && !isPreferenceView) {
+      throw new Error(`${path} sphere label preset is invalid`);
+    }
     return {
       kind: "sphere-surface",
       rotationDegrees,
@@ -947,6 +982,50 @@ function parseView(
       labelLatitudeDegrees,
       labelRotationDegrees,
     };
+  }
+  if (value.kind === "oriented-camera") {
+    if (
+      !resolvedViews ||
+      !hasExactKeys(value, ORIENTED_CAMERA_VIEW_KEYS) ||
+      (value.mode !== "legacy" && value.mode !== "clear")
+    ) {
+      throw new Error(`${path} is invalid for ${target}`);
+    }
+    const elevationDegrees = boundedInteger(
+      value.elevationDegrees,
+      1,
+      89,
+      `${path}.elevationDegrees`,
+    );
+    const azimuthOffsetDegrees = boundedInteger(
+      value.azimuthOffsetDegrees,
+      -180,
+      180,
+      `${path}.azimuthOffsetDegrees`,
+    );
+    if (
+      !Array.isArray(value.resultRotation) ||
+      value.resultRotation.length !== 4
+    ) {
+      throw new Error(`${path}.resultRotation must contain four numbers`);
+    }
+    const resultRotation = value.resultRotation.map((component, index) =>
+      finiteViewNumber(component, `${path}.resultRotation[${index}]`),
+    ) as [number, number, number, number];
+    if (Math.abs(Math.hypot(...resultRotation) - 1) > 1e-9) {
+      throw new Error(`${path}.resultRotation must be normalized`);
+    }
+    const view: RenderViewV4 = {
+      kind: "oriented-camera",
+      mode: value.mode,
+      elevationDegrees,
+      azimuthOffsetDegrees,
+      resultRotation,
+    };
+    if (!isAuthoredRenderViewV4(view, { target, form, result })) {
+      throw new Error(`${path} does not match an authored ${target} view`);
+    }
+    return view;
   }
   if (!hasExactKeys(value, CAMERA_VIEW_KEYS) || value.kind !== "camera") {
     throw new Error(`${path} is invalid for ${target}`);
@@ -963,14 +1042,28 @@ function parseView(
     value.poseAzimuthDegrees,
     `${path}.poseAzimuthDegrees`,
   );
-  if (elevationDegrees !== CAMERA_ELEVATION_DEGREES_R16_V4) {
+  const hasPreferenceCamera = cameraAngles === "preferences-r20";
+  if (
+    hasPreferenceCamera
+      ? !Number.isSafeInteger(elevationDegrees) ||
+        elevationDegrees < DICE_VIEW_ELEVATION_RANGE_V4.minimum ||
+        elevationDegrees > DICE_VIEW_ELEVATION_RANGE_V4.maximum
+      : elevationDegrees !== CAMERA_ELEVATION_DEGREES_R16_V4
+  ) {
     throw new Error(`${path}.elevationDegrees is invalid`);
   }
   const azimuths: readonly number[] =
     cameraAngles === "presets-r16"
       ? CAMERA_AZIMUTH_OFFSETS_R16_V4
       : CAMERA_AZIMUTH_OFFSETS_R17_V4;
-  if (!azimuths.includes(azimuthOffsetDegrees)) {
+  if (
+    hasPreferenceCamera
+      ? !Number.isSafeInteger(azimuthOffsetDegrees) ||
+        azimuthOffsetDegrees < DICE_VIEW_AZIMUTH_RANGE_V4.minimum ||
+        azimuthOffsetDegrees > DICE_VIEW_AZIMUTH_RANGE_V4.maximum ||
+        azimuthOffsetDegrees % DICE_VIEW_AZIMUTH_RANGE_V4.step !== 0
+      : !azimuths.includes(azimuthOffsetDegrees)
+  ) {
     throw new Error(`${path}.azimuthOffsetDegrees is invalid`);
   }
   const poseAzimuths: readonly number[] =
@@ -982,7 +1075,12 @@ function parseView(
   if (!poseAzimuths.includes(poseAzimuthDegrees)) {
     throw new Error(`${path}.poseAzimuthDegrees is invalid`);
   }
-  return { kind: "camera", elevationDegrees, azimuthOffsetDegrees, poseAzimuthDegrees };
+  return {
+    kind: "camera",
+    elevationDegrees,
+    azimuthOffsetDegrees,
+    poseAzimuthDegrees,
+  };
 }
 
 function parseDie(
@@ -1018,18 +1116,20 @@ function parseDie(
   if (target === "other") {
     const sides = boundedInteger(value.sides, 1, 999, `${path}.sides`);
     const form = parseForm(value.form, target, appearance.material, path);
+    const result = parseResult(value.result, target, sides, path);
     validateTextureScopeForDie(appearance, target, form);
     const view = parseView(
       value.view,
       `${path}.view`,
       target,
       form,
+      result,
       rendererRevision,
     );
     return {
       target,
       sides,
-      result: parseResult(value.result, target, sides, path),
+      result,
       form,
       appearance,
       icons,
@@ -1037,17 +1137,19 @@ function parseDie(
     };
   }
   const form = parseForm(value.form, target, appearance.material, path);
+  const result = parseResult(value.result, target, undefined, path);
   validateTextureScopeForDie(appearance, target, form);
   const view = parseView(
     value.view,
     `${path}.view`,
     target,
     form,
+    result,
     rendererRevision,
   );
   return {
     target,
-    result: parseResult(value.result, target, undefined, path),
+    result,
     form,
     appearance,
     icons,

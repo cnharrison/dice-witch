@@ -1,6 +1,7 @@
 import {
   APPEARANCE_TARGETS_V4,
   parseAppearanceRecipeV3,
+  parseDiceViewPreferencesV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_TARGETS,
@@ -8,6 +9,7 @@ import {
   parseAppearanceRecipeV2,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
+  type EffectiveAppearanceV4,
 } from "../../../packages/dice-appearance/src";
 
 export type AppearanceDataService = {
@@ -75,9 +77,34 @@ export function parseEffectiveAppearanceRecipesV3(
   ) as EffectiveAppearanceRecipesV3;
 }
 
+export function parseEffectiveAppearanceV4(
+  value: unknown,
+): EffectiveAppearanceV4 {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["diceView", "recipes", "version"]) ||
+    value.version !== 4 ||
+    !isRecord(value.recipes) ||
+    !hasExactKeys(value.recipes, APPEARANCE_TARGETS_V4)
+  ) {
+    throw new Error("Effective appearance response is invalid");
+  }
+  const recipes = value.recipes;
+  return {
+    version: 4,
+    recipes: Object.fromEntries(
+      APPEARANCE_TARGETS_V4.map((target) => [
+        target,
+        parseAppearanceRecipeV3(recipes[target]),
+      ]),
+    ) as EffectiveAppearanceRecipesV3,
+    diceView: parseDiceViewPreferencesV4(value.diceView),
+  };
+}
+
 async function loadEffectiveAppearance(
   dataService: AppearanceDataService,
-  version: 2 | 3,
+  version: 2 | 3 | 4,
   userId: string,
   guildId: string | null,
 ): Promise<unknown> {
@@ -123,5 +150,15 @@ export async function loadEffectiveAppearanceV3(
 ): Promise<EffectiveAppearanceRecipesV3> {
   return parseEffectiveAppearanceRecipesV3(
     await loadEffectiveAppearance(dataService, 3, userId, guildId),
+  );
+}
+
+export async function loadEffectiveAppearanceV4(
+  dataService: AppearanceDataService,
+  userId: string,
+  guildId: string | null,
+): Promise<EffectiveAppearanceV4> {
+  return parseEffectiveAppearanceV4(
+    await loadEffectiveAppearance(dataService, 4, userId, guildId),
   );
 }

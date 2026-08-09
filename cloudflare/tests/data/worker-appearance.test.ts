@@ -3,8 +3,10 @@ import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type AppearanceProfileV3,
+  type AppearanceProfileV4,
   type AppearanceRecipeV3,
   type GuildAppearanceProfileV3,
+  type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
   BUILTIN_APPEARANCE_RECIPES,
@@ -12,7 +14,10 @@ import {
   BUILTIN_APPEARANCE_RECIPES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
   migrateAppearanceProfileV1,
+  migrateAppearanceProfileV3ToV4,
   migrateGuildAppearanceProfileV1,
+  migrateGuildAppearanceProfileV3ToV4,
+  projectAppearanceProfileV4ToV3,
   type AppearanceProfileV1,
   type AppearanceProfileV2,
   type AppearanceRecipeV2,
@@ -220,6 +225,18 @@ function guildProfileV3(): GuildAppearanceProfileV3 {
       },
     },
   };
+}
+
+function personalProfileV4(primary = "#aa0000"): AppearanceProfileV4 {
+  const profile = migrateAppearanceProfileV3ToV4(personalProfileV3(primary));
+  profile.diceView.mode = "clear";
+  return profile;
+}
+
+function guildProfileV4(): GuildAppearanceProfileV4 {
+  const profile = migrateGuildAppearanceProfileV3ToV4(guildProfileV3());
+  profile.diceView.mode = "legacy";
+  return profile;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -590,6 +607,183 @@ describe("Data Worker appearance service", () => {
         error: "appearance_profile_version_conflict",
       });
     }
+  });
+
+  it("reads and writes exact personal and guild V4 profiles", async () => {
+    const personal = personalProfileV4();
+    const guild = guildProfileV4();
+    const personalWrite = await post(
+      "/internal/appearance/v4/personal/put",
+      {
+        userId,
+        expectedRevision: 0,
+        profile: personal,
+        mutationId: "appearance-v4-personal-create",
+        occurredAt,
+      },
+    );
+    const guildWrite = await post("/internal/appearance/v4/guild/put", {
+      guildId,
+      updatedByUserId: userId,
+      expectedRevision: 0,
+      profile: guild,
+      mutationId: "appearance-v4-guild-create",
+      occurredAt: occurredAt + 1,
+    });
+
+    expect(personalWrite.status).toBe(200);
+    await expect(personalWrite.json()).resolves.toEqual({
+      status: "applied",
+      revision: 1,
+      profile: personal,
+    });
+    expect(guildWrite.status).toBe(200);
+    await expect(guildWrite.json()).resolves.toEqual({
+      status: "applied",
+      revision: 1,
+      profile: guild,
+    });
+    await expect(
+      (
+        await post("/internal/appearance/v4/personal/get", { userId })
+      ).json(),
+    ).resolves.toEqual({ status: "found", revision: 1, profile: personal });
+    await expect(
+      (
+        await post("/internal/appearance/v4/guild/get", { guildId })
+      ).json(),
+    ).resolves.toEqual({
+      status: "found",
+      revision: 1,
+      profile: guild,
+      updatedByUserId: userId,
+    });
+    const effective: unknown = await (
+      await post("/internal/appearance/v4/effective", { userId, guildId })
+    ).json();
+    if (!isRecord(effective)) {
+      throw new Error("Effective appearance V4 response is invalid");
+    }
+    expect(effective.diceView).toEqual(guild.diceView);
+
+    const invalid = structuredClone(personal);
+    Object.assign(invalid.diceView, { mode: "sometimes" });
+    const invalidWrite = await post(
+      "/internal/appearance/v4/personal/put",
+      {
+        userId,
+        expectedRevision: 1,
+        profile: invalid,
+        mutationId: "appearance-v4-personal-invalid",
+        occurredAt: occurredAt + 2,
+      },
+    );
+    expect(invalidWrite.status).toBe(400);
+  });
+
+  it("supports mixed V3/V4 reads but rejects cross-version writes", async () => {
+    const v3 = personalProfileV3();
+    await post("/internal/appearance/v3/personal/put", {
+      userId,
+      expectedRevision: 0,
+      profile: v3,
+      mutationId: "appearance-v4-seed-v3",
+      occurredAt,
+    });
+    const before = await dataEnv.DATA.prepare(
+      "SELECT revision, profile_json, updated_at FROM user_appearance_profiles WHERE user_id = ?",
+    )
+      .bind(userId)
+      .first();
+    await expect(
+      (
+        await post("/internal/appearance/v4/personal/get", { userId })
+      ).json(),
+    ).resolves.toEqual({ status: "found", revision: 1, profile: v3 });
+    const v4AgainstV3 = await post(
+      "/internal/appearance/v4/personal/put",
+      {
+        userId,
+        expectedRevision: 1,
+        profile: personalProfileV4(),
+        mutationId: "appearance-v4-against-v3",
+        occurredAt: occurredAt + 1,
+      },
+    );
+    expect(v4AgainstV3.status).toBe(409);
+
+    await dataEnv.DATA.prepare(
+      "UPDATE user_appearance_profiles SET profile_json = ? WHERE user_id = ?",
+    )
+      .bind(JSON.stringify(personalProfileV4()), userId)
+      .run();
+    const v3Read = await post("/internal/appearance/v3/personal/get", { userId });
+    await expect(v3Read.json()).resolves.toEqual({
+      status: "found",
+      revision: 1,
+      profile: projectAppearanceProfileV4ToV3(personalProfileV4()),
+    });
+    const v3AgainstV4 = await post(
+      "/internal/appearance/v3/personal/put",
+      {
+        userId,
+        expectedRevision: 1,
+        profile: v3,
+        mutationId: "appearance-v3-against-v4",
+        occurredAt: occurredAt + 2,
+      },
+    );
+    expect(v3AgainstV4.status).toBe(409);
+    expect(before).not.toBeNull();
+    await expect(
+      dataEnv.DATA.prepare(
+        "SELECT COUNT(*) AS count FROM mutation_receipts WHERE mutation_id IN (?, ?)",
+      )
+        .bind("appearance-v4-against-v3", "appearance-v3-against-v4")
+        .first<{ count: number }>(),
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it("resolves V4 defaults from V3 without persisting a migration", async () => {
+    const v3 = personalProfileV3();
+    await post("/internal/appearance/v3/personal/put", {
+      userId,
+      expectedRevision: 0,
+      profile: v3,
+      mutationId: "appearance-v4-effective-v3",
+      occurredAt,
+    });
+    const before = await dataEnv.DATA.prepare(
+      "SELECT revision, profile_json, updated_at FROM user_appearance_profiles WHERE user_id = ?",
+    )
+      .bind(userId)
+      .first();
+
+    const response = await post("/internal/appearance/v4/effective", {
+      userId,
+      guildId: null,
+    });
+    expect(response.status).toBe(200);
+    const effective: unknown = await response.json();
+    if (!isRecord(effective)) {
+      throw new Error("Effective appearance V4 response is invalid");
+    }
+    expect(effective.version).toBe(4);
+    expect(effective.diceView).toEqual({
+      elevationDegrees: 40,
+      mode: "normal",
+      azimuth: {
+        all: { mode: "random", customDegrees: 0 },
+        overrides: {},
+      },
+    });
+    expect(
+      await dataEnv.DATA.prepare(
+        "SELECT revision, profile_json, updated_at FROM user_appearance_profiles WHERE user_id = ?",
+      )
+        .bind(userId)
+        .first(),
+    ).toEqual(before);
   });
 
   it("returns V3 version conflicts without migrating older rows", async () => {

@@ -1,6 +1,8 @@
 import {
   parseAppearanceRecipeV3,
+  parseDiceViewPreferencesV4,
   type AppearanceRecipeV3,
+  type DiceViewPreferencesV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_TARGETS,
@@ -38,6 +40,10 @@ export type AppearancePreviewRequestV2 = AppearancePreviewRequestBase<
 export type AppearancePreviewRequestV3 = AppearancePreviewRequestBase<
   AppearanceRecipeV3
 >;
+
+export type AppearancePreviewRequestV4 = AppearancePreviewRequestV3 & {
+  diceView: DiceViewPreferencesV4;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -122,5 +128,30 @@ export function parseAppearancePreviewRequestV3(
   return {
     ...request,
     recipe: parseAppearanceRecipeV3(request.recipe),
+  };
+}
+
+export function parseAppearancePreviewRequestV4(
+  value: unknown,
+): AppearancePreviewRequestV4 {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "diceView",
+    "recipe",
+    "seed",
+    "state",
+    "target",
+  ])) {
+    throw new Error("Appearance preview request is invalid");
+  }
+  const request = parseAppearancePreviewEnvelope({
+    recipe: value.recipe,
+    seed: value.seed,
+    state: value.state,
+    target: value.target,
+  });
+  return {
+    ...request,
+    recipe: parseAppearanceRecipeV3(request.recipe),
+    diceView: parseDiceViewPreferencesV4(value.diceView),
   };
 }

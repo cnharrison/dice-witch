@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseAppearanceProfileV3,
+  parseAppearanceProfileV4,
+  parseGuildAppearanceProfileV3,
+  parseGuildAppearanceProfileV4,
+} from "@dice-witch/dice-v4-model";
+import {
   legacyAppearanceRecipeV1,
   migrateAppearanceProfileV1,
   migrateAppearanceRecipeV1,
   migrateGuildAppearanceProfileV1,
+  migrateAppearanceProfileV3ToV4,
+  migrateGuildAppearanceProfileV3ToV4,
+  projectAppearanceProfileV4ToV3,
+  projectGuildAppearanceProfileV4ToV3,
   parseAppearanceProfile,
   parseAppearanceProfileV2,
   parseGuildAppearanceProfile,
@@ -135,5 +145,69 @@ describe("appearance V1 to V2 migration", () => {
     expect(() => legacyAppearanceRecipeV1(native)).toThrow(
       "Legacy appearance recipe is required",
     );
+  });
+});
+
+const catalogV3 = { builtinStyleIds: ["chaotic"] } as const;
+
+function profileV3() {
+  return parseAppearanceProfileV3(
+    {
+      version: 3,
+      designs: [],
+      assignments: {
+        all: { source: "builtin", id: "chaotic" },
+        overrides: {},
+      },
+    },
+    catalogV3,
+  );
+}
+
+describe("appearance V3 to V4 migration", () => {
+  it("adds explicit canonical dice-view defaults without mutating V3", () => {
+    const source = profileV3();
+    const sourceJson = JSON.stringify(source);
+    const migrated = migrateAppearanceProfileV3ToV4(source);
+
+    expect(migrated).toEqual({
+      version: 4,
+      designs: source.designs,
+      assignments: source.assignments,
+      diceView: {
+        elevationDegrees: 40,
+        mode: "normal",
+        azimuth: {
+          all: { mode: "random", customDegrees: 0 },
+          overrides: {},
+        },
+      },
+    });
+    expect(parseAppearanceProfileV4(migrated, catalogV3)).toEqual(migrated);
+    expect(JSON.stringify(source)).toBe(sourceJson);
+
+    migrated.assignments.all = null;
+    expect(source.assignments.all).toEqual({
+      source: "builtin",
+      id: "chaotic",
+    });
+  });
+
+  it("preserves guild mode and projects migrated rows for V3 reads", () => {
+    const guild = parseGuildAppearanceProfileV3(
+      { ...profileV3(), mode: "default" },
+      catalogV3,
+    );
+    const migrated = migrateGuildAppearanceProfileV3ToV4(guild);
+
+    expect(migrated.mode).toBe("default");
+    expect(parseGuildAppearanceProfileV4(migrated, catalogV3)).toEqual(
+      migrated,
+    );
+    expect(projectGuildAppearanceProfileV4ToV3(migrated)).toEqual(guild);
+    expect(projectAppearanceProfileV4ToV3(migrated)).toEqual(profileV3());
+
+    migrated.diceView.mode = "clear";
+    expect(projectGuildAppearanceProfileV4ToV3(migrated)).toEqual(guild);
   });
 });

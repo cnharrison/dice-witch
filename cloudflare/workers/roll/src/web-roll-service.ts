@@ -17,11 +17,13 @@ import {
   parseAppearancePreviewRequest,
   parseAppearancePreviewRequestV2,
   parseAppearancePreviewRequestV3,
+  parseAppearancePreviewRequestV4,
   type AppearancePreviewState,
   type AppearanceTarget,
   type EffectiveAppearanceRecipesV1,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
+  type EffectiveAppearanceV4,
 } from "../../../packages/dice-appearance/src";
 import {
   renderBlankDiceRequestV3ToPng,
@@ -50,15 +52,19 @@ import {
   buildRollRenderRequestV2,
   buildRollRenderRequestV3,
   buildRollRenderRequestV4,
+  buildRollRenderRequestR20V4,
 } from "../../../packages/roll-render-model/src";
 import {
   loadEffectiveAppearanceV2,
   loadEffectiveAppearanceV3,
+  loadEffectiveAppearanceV4,
   type AppearanceDataService,
 } from "./appearance";
 import {
   parseRollRenderVersion,
+  parseRollViewPolicy,
   type RollRenderVersion,
+  type RollViewPolicy,
 } from "./render-version";
 import type { WebDeliveryExecutionResult } from "./web-delivery-work";
 type WebRollEnv = RollBindings;
@@ -430,6 +436,24 @@ export function buildAppearancePreviewRenderRequestV4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR20V4(
+  value: unknown,
+): RenderRequestV4 {
+  const request = parseAppearancePreviewRequestV4(value);
+  const effectiveAppearance: EffectiveAppearanceV4 = {
+    version: 4,
+    recipes: Object.fromEntries(
+      APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
+    ) as EffectiveAppearanceV4["recipes"],
+    diceView: request.diceView,
+  };
+  return buildRollRenderRequestR20V4(
+    previewOutcome(request.target, request.state, request.seed),
+    request.seed,
+    effectiveAppearance,
+  );
+}
+
 export async function renderAppearancePreview(
   value: unknown,
 ): Promise<AppearancePreviewResult> {
@@ -452,12 +476,10 @@ export async function renderAppearancePreviewV2(
   };
 }
 
-export async function renderAppearancePreviewV3(
-  value: unknown,
-  createRenderer: DiceRequestRendererFactoryV4 =
-    createCanvasKitRequestRendererV4,
+async function renderAppearancePreviewRequestV4(
+  request: RenderRequestV4,
+  createRenderer: DiceRequestRendererFactoryV4,
 ): Promise<AppearancePreviewResultV3> {
-  const request = buildAppearancePreviewRenderRequestV4(value);
   const rendered = await renderV4WithSingleRetry(
     serializeRenderRequestV4(request),
     createRenderer,
@@ -473,6 +495,28 @@ export async function renderAppearancePreviewV3(
   };
 }
 
+export function renderAppearancePreviewV3(
+  value: unknown,
+  createRenderer: DiceRequestRendererFactoryV4 =
+    createCanvasKitRequestRendererV4,
+): Promise<AppearancePreviewResultV3> {
+  return renderAppearancePreviewRequestV4(
+    buildAppearancePreviewRenderRequestV4(value),
+    createRenderer,
+  );
+}
+
+export function renderAppearancePreviewV4(
+  value: unknown,
+  createRenderer: DiceRequestRendererFactoryV4 =
+    createCanvasKitRequestRendererV4,
+): Promise<AppearancePreviewResultV3> {
+  return renderAppearancePreviewRequestV4(
+    buildAppearancePreviewRenderRequestR20V4(value),
+    createRenderer,
+  );
+}
+
 function randomSeed(): number {
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
   if (seed === undefined) throw new Error("Roll seed generation failed");
@@ -481,18 +525,30 @@ function randomSeed(): number {
 
 type LoadedWebAppearance =
   | { version: 3; recipes: EffectiveAppearanceRecipesV2 }
-  | { version: 4; recipes: EffectiveAppearanceRecipesV3 };
+  | { version: 4; viewPolicy: "r19"; recipes: EffectiveAppearanceRecipesV3 }
+  | { version: 4; viewPolicy: "r20"; effective: EffectiveAppearanceV4 };
 
 async function loadWebAppearance(
   dataService: AppearanceDataService,
   version: RollRenderVersion,
+  viewPolicy: RollViewPolicy,
   userId: string,
   guildId: string,
 ): Promise<LoadedWebAppearance> {
-  return version === 3
+  if (version === 3) {
+    if (viewPolicy !== "r19") {
+      throw new Error("ROLL_VIEW_POLICY r20 requires ROLL_RENDER_VERSION 4");
+    }
+    return {
+      version,
+      recipes: await loadEffectiveAppearanceV2(dataService, userId, guildId),
+    };
+  }
+  return viewPolicy === "r20"
     ? {
         version,
-        recipes: await loadEffectiveAppearanceV2(
+        viewPolicy,
+        effective: await loadEffectiveAppearanceV4(
           dataService,
           userId,
           guildId,
@@ -500,6 +556,7 @@ async function loadWebAppearance(
       }
     : {
         version,
+        viewPolicy,
         recipes: await loadEffectiveAppearanceV3(
           dataService,
           userId,
@@ -552,8 +609,11 @@ function buildWebRenderRequest(
   renderSeed: number,
   appearance: LoadedWebAppearance,
 ): RenderRequestV3 | RenderRequestV4 {
-  return appearance.version === 3
-    ? buildRollRenderRequestV3(outcome, renderSeed, appearance.recipes)
+  if (appearance.version === 3) {
+    return buildRollRenderRequestV3(outcome, renderSeed, appearance.recipes);
+  }
+  return appearance.viewPolicy === "r20"
+    ? buildRollRenderRequestR20V4(outcome, renderSeed, appearance.effective)
     : buildRollRenderRequestV4(outcome, renderSeed, appearance.recipes);
 }
 
@@ -708,13 +768,16 @@ export async function prepareWebRoll(
   value: unknown,
   dataService: AppearanceDataService,
   configuredRenderVersion: unknown,
+  configuredViewPolicy: unknown,
 ): Promise<WebRollPreparationResult> {
   const request = validatePreparationRequest(value);
   const renderSeed = request.renderSeed ?? randomSeed();
   const version = parseRollRenderVersion(configuredRenderVersion);
+  const viewPolicy = parseRollViewPolicy(configuredViewPolicy);
   const appearance = await loadWebAppearance(
     dataService,
     version,
+    viewPolicy,
     request.userId,
     request.guildId,
   );
@@ -764,12 +827,14 @@ export async function executeWebRoll(
   value: unknown,
   dataService: AppearanceDataService,
   configuredRenderVersion: unknown,
+  configuredViewPolicy: unknown,
   createRollSeed: () => number = randomSeed,
   createRenderSeed: () => number = randomSeed,
 ): Promise<WebRollResult> {
   const request = validateRequest(value);
   const renderSeed = request.renderSeed ?? createRenderSeed();
   const version = parseRollRenderVersion(configuredRenderVersion);
+  const viewPolicy = parseRollViewPolicy(configuredViewPolicy);
   const validation = prepareRollAppearance({
     notation: parseNotationArgs(request.notation),
     repetitions: request.repetitions,
@@ -785,6 +850,7 @@ export async function executeWebRoll(
   const appearance = await loadWebAppearance(
     dataService,
     version,
+    viewPolicy,
     request.userId,
     request.guildId,
   );
@@ -876,6 +942,7 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
       value,
       this.env.DATA_SERVICE,
       this.env.ROLL_RENDER_VERSION,
+      this.env.ROLL_VIEW_POLICY,
     );
   }
 
@@ -909,6 +976,7 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
       value,
       this.env.DATA_SERVICE,
       this.env.ROLL_RENDER_VERSION,
+      this.env.ROLL_VIEW_POLICY,
     );
   }
 
@@ -922,5 +990,9 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
 
   previewV3(value: unknown): Promise<AppearancePreviewResultV3> {
     return renderAppearancePreviewV3(value);
+  }
+
+  previewV4(value: unknown): Promise<AppearancePreviewResultV3> {
+    return renderAppearancePreviewV4(value);
   }
 }

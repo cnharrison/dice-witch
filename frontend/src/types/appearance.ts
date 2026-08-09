@@ -1,8 +1,10 @@
 import type {
   AppearanceMaterialV4,
   AppearanceProfileV3 as SharedAppearanceProfileV3,
+  AppearanceProfileV4 as SharedAppearanceProfileV4,
   AppearanceRecipeV3 as SharedAppearanceRecipeV3,
   GuildAppearanceProfileV3 as SharedGuildAppearanceProfileV3,
+  GuildAppearanceProfileV4 as SharedGuildAppearanceProfileV4,
   MaterialFamilyV4,
   RenderFormV4,
 } from "@dice-witch/dice-v4-model";
@@ -198,11 +200,18 @@ export type AppearanceCatalogV2 = {
 export type AppearanceRecipeV3 = SharedAppearanceRecipeV3;
 export type AppearanceProfileV3 = SharedAppearanceProfileV3;
 export type GuildAppearanceProfileV3 = SharedGuildAppearanceProfileV3;
+export type AppearanceProfileV4 = SharedAppearanceProfileV4;
+export type GuildAppearanceProfileV4 = SharedGuildAppearanceProfileV4;
 
 export type AppearanceCatalogV3 = AppearancePublicCatalogV3;
 
 export type AppearanceProfileResource<
-  Profile extends AppearanceProfileV2 | AppearanceProfileV3 = AppearanceProfileV2,
+  Profile extends
+    | AppearanceProfileV2
+    | AppearanceProfileV3
+    | AppearanceProfileV4
+    | GuildAppearanceProfileV3
+    | GuildAppearanceProfileV4 = AppearanceProfileV2,
 > = {
   revision: number;
   profile: Profile | null;
@@ -218,6 +227,10 @@ export type AppearancePreview = {
 
 export type AppearancePreviewV3 = Omit<AppearancePreview, "version"> & {
   version: 3;
+};
+
+export type AppearancePreviewV4 = Omit<AppearancePreview, "version"> & {
+  version: 4;
 };
 
 export type AppearanceMaterialFamily = MaterialFamilyV4;

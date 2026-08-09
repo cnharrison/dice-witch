@@ -10,7 +10,9 @@
   "packageManager": "npm@11.6.2",
   "exports": {
     ".": "./src/index.ts",
+    "./authored-views": "./src/authored-views.ts",
     "./compatibility": "./src/compatibility.ts",
+    "./dice-view-preferences": "./src/dice-view-preferences.ts",
     "./limits": "./src/limits.ts",
     "./registries": "./src/registries.ts"
   },

@@ -1,3 +1,4 @@
+import { isAuthoredRenderViewV4 } from "./authored-views";
 import { D10_STANDARD_GEOMETRY_V4, PERCENTILE_STANDARD_GEOMETRY_V4 } from "./geometry-d10";
 import { D12_STANDARD_GEOMETRY_V4 } from "./geometry-d12";
 import {
@@ -198,12 +199,12 @@ export function getGeometryIdV4(
 
 export type RenderGeometrySelectionV4 = Pick<
   RenderDieV4,
-  "target" | "form" | "view"
+  "target" | "form" | "result" | "view"
 >;
 
 export function getRenderGeometryIdV4(
   rendererRevision: RendererRevisionV4,
-  die: RenderGeometrySelectionV4,
+  die: Pick<RenderDieV4, "target" | "form">,
 ): GeometryIdV4 {
   const policy = rendererRevisionPolicyV4(rendererRevision);
   const geometryId = getGeometryIdV4(die.target, die.form);
@@ -316,8 +317,17 @@ export function getRenderGeometryDescriptorV4(
       },
     };
   }
-  if (die.view?.kind !== "camera" || descriptor.kind !== "polyhedral") {
+  if (
+    (die.view?.kind !== "camera" && die.view?.kind !== "oriented-camera") ||
+    descriptor.kind !== "polyhedral"
+  ) {
     return descriptor;
+  }
+  if (
+    die.view.kind === "oriented-camera" &&
+    (!revisionPolicy.resolvedViews || !isAuthoredRenderViewV4(die.view, die))
+  ) {
+    throw new Error("Resolved render view is not supported by this revision");
   }
   const [x, y, z] = descriptor.camera.position;
   const radius = Math.hypot(x, y, z);
@@ -326,6 +336,24 @@ export function getRenderGeometryDescriptorV4(
     baseAzimuth + (die.view.azimuthOffsetDegrees * Math.PI) / 180;
   const elevation = (die.view.elevationDegrees * Math.PI) / 180;
   const horizontal = radius * Math.cos(elevation);
+  const position: Point3V4 = [
+    horizontal * Math.sin(azimuth),
+    radius * Math.sin(elevation),
+    horizontal * Math.cos(azimuth),
+  ];
+  const camera = { ...descriptor.camera, position };
+  if (die.view.kind === "oriented-camera") {
+    const { resultRotation } = die.view;
+    return {
+      ...descriptor,
+      resultOrientations: descriptor.resultOrientations.map((orientation) =>
+        orientation.result === die.result
+          ? { result: orientation.result, rotation: resultRotation }
+          : orientation,
+      ),
+      camera,
+    };
+  }
   const poseRadians = (die.view.poseAzimuthDegrees * Math.PI) / 180;
   const poseRotation: QuaternionV4 = [
     0,
@@ -345,14 +373,7 @@ export function getRenderGeometryDescriptorV4(
           ),
         }
       : {}),
-    camera: {
-      ...descriptor.camera,
-      position: [
-        horizontal * Math.sin(azimuth),
-        radius * Math.sin(elevation),
-        horizontal * Math.cos(azimuth),
-      ],
-    },
+    camera,
   };
 }
 

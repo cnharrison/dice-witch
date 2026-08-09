@@ -10,6 +10,7 @@ import {
   validateRenderRequestV4,
   type AppearanceRecipeV3,
   type AppearanceTargetV4,
+  type DiceViewPreferencesV4,
   type IconNameV4,
   type RenderAppearanceV4,
   type RenderCriticalEffectV4,
@@ -17,6 +18,7 @@ import {
   type RenderRequestV4,
   type RenderViewV4,
 } from "@dice-witch/dice-v4-model";
+import { getAuthoredRenderViewV4 } from "@dice-witch/dice-v4-model/authored-views";
 import {
   resolveAppearanceRecipe,
   resolveAppearanceRecipeV2,
@@ -25,6 +27,7 @@ import {
   type AppearanceRecipeV1,
   type AppearanceRecipeV2,
   type AppearanceTarget,
+  type EffectiveAppearanceV4,
   type ResolvedAppearanceLightingV2,
   type ResolvedAppearanceSurfaceV2,
   type ResolvedAppearanceV3,
@@ -475,6 +478,8 @@ function selectCameraPreset<Preset>(
 
 function renderViewV4(
   target: AppearanceTargetV4,
+  preferenceTarget: AppearanceTargetV4,
+  result: number,
   form: RenderDieV4["form"],
   recipe: AppearanceRecipeV3,
   renderSeed: number,
@@ -482,7 +487,15 @@ function renderViewV4(
   dieIndex: number,
   groupIdentity: string | undefined,
   dieIdentity: string | undefined,
+  diceView: DiceViewPreferencesV4 | null,
 ): RenderViewV4 {
+  if (diceView?.mode === "legacy" || diceView?.mode === "clear") {
+    return getAuthoredRenderViewV4(diceView.mode, {
+      target,
+      form,
+      result,
+    });
+  }
   const scopedSeed = deriveAppearanceSeedV4({
     renderSeed,
     target,
@@ -495,6 +508,8 @@ function renderViewV4(
     ...(dieIdentity === undefined ? {} : { dieIdentity }),
   });
   const cameraSeed = deriveNamedSeedV4(scopedSeed, "camera");
+  const azimuthPreference =
+    diceView?.azimuth.overrides[preferenceTarget] ?? diceView?.azimuth.all;
   if (form === "sphere") {
     const preset = selectCameraPreset(
       cameraSeed,
@@ -503,22 +518,26 @@ function renderViewV4(
     return {
       kind: "sphere-surface",
       rotationDegrees: preset.rotationDegrees,
-      labelLongitudeDegrees: preset.longitudeDegrees,
+      labelLongitudeDegrees:
+        azimuthPreference?.mode === "custom"
+          ? azimuthPreference.customDegrees
+          : preset.longitudeDegrees,
       labelLatitudeDegrees: preset.latitudeDegrees,
       labelRotationDegrees: preset.rotationDegrees,
     };
   }
-  const azimuthOffsetDegrees = selectCameraPreset(
-    cameraSeed,
-    CAMERA_AZIMUTH_OFFSETS_R17_V4,
-  );
+  const azimuthOffsetDegrees =
+    azimuthPreference?.mode === "custom"
+      ? azimuthPreference.customDegrees
+      : selectCameraPreset(cameraSeed, CAMERA_AZIMUTH_OFFSETS_R17_V4);
   const poseAzimuthDegrees = selectCameraPreset(
     deriveNamedSeedV4(cameraSeed, "pose"),
     POSE_AZIMUTHS_R17_V4,
   );
   return {
     kind: "camera",
-    elevationDegrees: CAMERA_ELEVATION_DEGREES_R16_V4,
+    elevationDegrees:
+      diceView?.elevationDegrees ?? CAMERA_ELEVATION_DEGREES_R16_V4,
     azimuthOffsetDegrees,
     poseAzimuthDegrees,
   };
@@ -530,6 +549,7 @@ function renderDieV4(
   groupIndex: number,
   dieIndex: number,
   recipes: EffectiveAppearanceRecipesV3,
+  diceView: DiceViewPreferencesV4 | null,
   percentileAppearances: Map<string, ResolvedAppearanceV3>,
 ): RenderDieV4 {
   const target = appearanceTarget(die);
@@ -566,6 +586,8 @@ function renderDieV4(
   }
   const view = renderViewV4(
     target,
+    onesIdentity === undefined ? target : "percentile",
+    result,
     resolved.form,
     recipe,
     renderSeed,
@@ -573,6 +595,7 @@ function renderDieV4(
     dieIndex,
     die.appearanceGroupIdentity,
     die.appearanceDieIdentity,
+    diceView,
   );
   if (target === "other") {
     if (typeof die.sides !== "number") {
@@ -600,11 +623,16 @@ function renderDieV4(
 }
 
 export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r19" as const;
+export const ROLL_RENDERER_REVISION_R20_V4 = "canvaskit-v4-r20" as const;
 
-export function buildRollRenderRequestV4(
+function buildRollRenderRequestForRevisionV4(
   result: RollExecutionResult,
   renderSeed: number,
   recipes: EffectiveAppearanceRecipesV3,
+  diceView: DiceViewPreferencesV4 | null,
+  rendererRevision:
+    | typeof ROLL_RENDERER_REVISION_V4
+    | typeof ROLL_RENDERER_REVISION_R20_V4,
 ): RenderRequestV4 {
   validateRenderSeed(renderSeed);
   const groups = renderableRollOutcomes(result).map(
@@ -617,6 +645,7 @@ export function buildRollRenderRequestV4(
           outcomeIndex,
           dieIndex,
           recipes,
+          diceView,
           percentileAppearances,
         ),
       );
@@ -627,7 +656,35 @@ export function buildRollRenderRequestV4(
   }
   return validateRenderRequestV4({
     version: 4,
-    rendererRevision: ROLL_RENDERER_REVISION_V4,
+    rendererRevision,
     groups,
   });
+}
+
+export function buildRollRenderRequestV4(
+  result: RollExecutionResult,
+  renderSeed: number,
+  recipes: EffectiveAppearanceRecipesV3,
+): RenderRequestV4 {
+  return buildRollRenderRequestForRevisionV4(
+    result,
+    renderSeed,
+    recipes,
+    null,
+    ROLL_RENDERER_REVISION_V4,
+  );
+}
+
+export function buildRollRenderRequestR20V4(
+  result: RollExecutionResult,
+  renderSeed: number,
+  effectiveAppearance: EffectiveAppearanceV4,
+): RenderRequestV4 {
+  return buildRollRenderRequestForRevisionV4(
+    result,
+    renderSeed,
+    effectiveAppearance.recipes,
+    effectiveAppearance.diceView,
+    ROLL_RENDERER_REVISION_R20_V4,
+  );
 }

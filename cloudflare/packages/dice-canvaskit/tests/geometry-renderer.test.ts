@@ -11,6 +11,7 @@ import {
   CRITICAL_TREATMENTS_V4,
   ENGRAVING_FINISHES_V4,
   FUDGE_STANDARD_GEOMETRY_V4,
+  getAuthoredRenderViewV4,
   getRenderGeometryDescriptorV4,
   IDENTITY_TEXTURE_PLACEMENT_V4,
   OTHER_SPHERE_GEOMETRY_V4,
@@ -133,6 +134,78 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       renderer.dispose();
     }
   });
+
+  it("renders every authored polyhedral view without changing r19", async () => {
+    const canvasKit = await loadCanvasKitV4();
+    const renderer = createRenderer(canvasKit);
+    const range = (first: number, last: number) =>
+      Array.from({ length: last - first + 1 }, (_, index) => first + index);
+    const subjects = [
+      { target: "d4", form: "standard", results: range(1, 4) },
+      { target: "d6", form: "standard", results: range(1, 6) },
+      { target: "d8", form: "standard", results: range(1, 8) },
+      { target: "d10", form: "standard", results: range(1, 10) },
+      { target: "d12", form: "standard", results: range(1, 12) },
+      { target: "d20", form: "standard", results: range(1, 20) },
+      { target: "d20", form: "sharp", results: range(1, 20) },
+      { target: "d20", form: "crystal-cut", results: range(1, 20) },
+      { target: "d20", form: "hollow-cage", results: range(1, 20) },
+      { target: "percentile", form: "standard", results: range(0, 9).map((value) => value * 10) },
+      { target: "fudge", form: "standard", results: [-1, 0, 1] },
+    ] as const;
+    try {
+      for (const mode of ["legacy", "clear"] as const) {
+        for (const subject of subjects) {
+          for (const result of subject.results) {
+            const die = {
+              target: subject.target,
+              form: subject.form,
+              result,
+            } as const;
+            const view = getAuthoredRenderViewV4(mode, die);
+            const geometry = getRenderGeometryDescriptorV4(
+              "canvaskit-v4-r20",
+              { ...die, view },
+            );
+            if (geometry.kind !== "polyhedral") {
+              throw new Error("Authored polyhedral geometry is invalid");
+            }
+            const options = {
+              geometry,
+              result,
+              size: 300,
+              renderPolicy: "standard-r7",
+            } as const;
+            let rendered;
+            try {
+              rendered = await renderer.render(options);
+            } catch (error) {
+              throw new Error(
+                `Authored ${mode} ${subject.target} ${subject.form} result ${result} failed`,
+                { cause: error },
+              );
+            }
+
+            expect(rendered.visibleFaceCount).toBeGreaterThan(0);
+            if (result === subject.results[0]) {
+              expect((await renderer.render(options)).png).toEqual(rendered.png);
+            }
+          }
+        }
+      }
+      expect(D6_STANDARD_GEOMETRY_V4.camera.position).toEqual([3, 4.5, 7]);
+      const canonical = await renderer.render({
+        geometry: D6_STANDARD_GEOMETRY_V4,
+        result: 6,
+        size: 300,
+      });
+      expect(await sha256Hex(canonical.png)).toBe(
+        APPROVED_REPRESENTATIVE_PNG_HASHES_V4["d6-standard-r1"],
+      );
+    } finally {
+      renderer.dispose();
+    }
+  }, 30_000);
 
   it("renders a crisp sharp-edge d20 without changing the standard d20", async () => {
     const canvasKit = await loadCanvasKitV4();
@@ -782,11 +855,13 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
     const legacy = getRenderGeometryDescriptorV4("canvaskit-v4-r18", {
       target: "other",
       form: "sphere",
+      result: 12,
       view,
     });
     const localFrame = getRenderGeometryDescriptorV4("canvaskit-v4-r19", {
       target: "other",
       form: "sphere",
+      result: 12,
       view,
     });
     if (legacy.kind !== "sphere" || localFrame.kind !== "sphere") {

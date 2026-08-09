@@ -1,5 +1,6 @@
 import {
   APPEARANCE_TARGETS_V4,
+  createDefaultDiceViewPreferencesV4,
   type AppearanceRecipeV3,
 } from "@dice-witch/dice-v4-model";
 import type {
@@ -15,12 +16,14 @@ import {
   buildAppearancePreviewRenderRequest,
   buildAppearancePreviewRenderRequestV3,
   buildAppearancePreviewRenderRequestV4,
+  buildAppearancePreviewRenderRequestR20V4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
   renderAppearancePreview,
   renderAppearancePreviewV2,
   renderAppearancePreviewV3,
+  renderAppearancePreviewV4,
 } from "../../workers/roll/src/web-roll-service";
 
 const userId = "100000000000000003";
@@ -63,19 +66,26 @@ const materialProvenanceRecipeV3: AppearanceRecipeV3 = provenanceRecipeV3;
 function appearanceService(
   onRequest?: (value: unknown, path: string) => void,
   activeRecipe: AppearanceRecipeV3 = defaultRecipeV3,
+  activeDiceView = createDefaultDiceViewPreferencesV4(),
 ) {
   return {
     async fetch(request: Request): Promise<Response> {
       const value: unknown = await request.json();
       onRequest?.(value, new URL(request.url).pathname);
-      const version = new URL(request.url).pathname.includes("/v3/") ? 3 : 2;
+      const path = new URL(request.url).pathname;
+      const version = path.includes("/v4/")
+        ? 4
+        : path.includes("/v3/")
+          ? 3
+          : 2;
       return Response.json({
         version,
         recipes: Object.fromEntries(
-          (version === 3 ? APPEARANCE_TARGETS_V4 : APPEARANCE_TARGETS).map(
-            (target) => [target, version === 3 ? activeRecipe : recipeV2],
+          (version >= 3 ? APPEARANCE_TARGETS_V4 : APPEARANCE_TARGETS).map(
+            (target) => [target, version >= 3 ? activeRecipe : recipeV2],
           ),
         ),
+        ...(version === 4 ? { diceView: activeDiceView } : {}),
       });
     },
   };
@@ -111,6 +121,7 @@ async function preparedRequest(
     },
     dataService,
     version,
+    "r19",
   );
   if (preparation.status !== "prepared") {
     throw new Error("Expected a prepared request fixture");
@@ -242,6 +253,63 @@ describe("appearance preview", () => {
         preview.groups.flat().map(({ appearance }) => appearance.texture.scope),
       ),
     ).toEqual(new Set(["die-wide"]));
+  });
+
+  it("builds Profile V4 camera drafts through r20", () => {
+    const clear = createDefaultDiceViewPreferencesV4();
+    clear.mode = "clear";
+    const preview = buildAppearancePreviewRenderRequestR20V4({
+      target: "all",
+      recipe: recipeV3,
+      diceView: clear,
+      seed: 7,
+      state: "normal",
+    });
+
+    expect(preview.rendererRevision).toBe("canvaskit-v4-r20");
+    expect(
+      preview.groups.flat().every(
+        ({ view }) => view?.kind === "oriented-camera" || view?.kind === "sphere-surface",
+      ),
+    ).toBe(true);
+
+    const normal = createDefaultDiceViewPreferencesV4();
+    normal.elevationDegrees = 55;
+    normal.azimuth.all = { mode: "custom", customDegrees: 0 };
+    const normalPreview = buildAppearancePreviewRenderRequestR20V4({
+      target: "d20",
+      recipe: recipeV3,
+      diceView: normal,
+      seed: 7,
+      state: "normal",
+    });
+    expect(normalPreview.groups[0]?.[0]?.view).toMatchObject({
+      kind: "camera",
+      elevationDegrees: 55,
+      azimuthOffsetDegrees: 0,
+    });
+  });
+
+  it("renders Profile V4 camera previews through the r20 renderer", async () => {
+    const diceView = createDefaultDiceViewPreferencesV4();
+    diceView.mode = "legacy";
+    const rendered = await renderAppearancePreviewV4({
+      target: "d6",
+      recipe: recipeV3,
+      diceView,
+      seed: 7,
+      state: "normal",
+    });
+
+    expect(rendered).toMatchObject({
+      version: 4,
+      contentType: "image/png",
+      diceCount: 1,
+      rowCount: 1,
+    });
+    expect(rendered.png.slice(0, 8)).toEqual(
+      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+    );
   });
 
   it("retries one identical V4 preview and returns a bounded renderer result", async () => {
@@ -403,6 +471,7 @@ describe("WebRollService", () => {
       },
       dataService,
       "4",
+      "r19",
     );
     expect(preparation.status).toBe("prepared");
     if (preparation.status !== "prepared") {
@@ -430,6 +499,7 @@ describe("WebRollService", () => {
       },
       dataService,
       "4",
+      "r19",
     );
     if (
       expandedPreparation.status !== "prepared" ||
@@ -454,6 +524,7 @@ describe("WebRollService", () => {
       }),
       dataService,
       "4",
+      "r19",
     );
     expect(result.status).toBe("rolled");
     if (result.status !== "rolled" || result.renderModel === undefined) {
@@ -474,6 +545,50 @@ describe("WebRollService", () => {
     );
   });
 
+  it("prepares and executes website rolls through the explicit r20 policy", async () => {
+    const diceView = createDefaultDiceViewPreferencesV4();
+    diceView.mode = "clear";
+    const dataService = appearanceService(undefined, defaultRecipeV3, diceView);
+    const preparation = await prepareWebRoll(
+      {
+        notation: "d20",
+        repetitions: 1,
+        userId,
+        guildId,
+      },
+      dataService,
+      "4",
+      "r20",
+    );
+    if (preparation.status !== "prepared" || preparation.renderModel === undefined) {
+      throw new Error("Expected an r20 web preparation");
+    }
+    expect(preparation.renderModel.rendererRevision).toBe("canvaskit-v4-r20");
+    expect(preparation.renderModel.groups[0]?.[0]?.view).toMatchObject({
+      kind: "oriented-camera",
+      mode: "clear",
+    });
+
+    const result = await executeWebRoll(
+      request({
+        notation: "d20",
+        renderSeed: preparation.renderSeed,
+        appearanceDigest: preparation.appearanceDigest,
+      }),
+      dataService,
+      "4",
+      "r20",
+    );
+    if (result.status !== "rolled" || result.renderModel === undefined) {
+      throw new Error("Expected an r20 web result");
+    }
+    expect(result.renderModel.rendererRevision).toBe("canvaskit-v4-r20");
+    expect(result.renderModel.groups[0]?.[0]?.view).toMatchObject({
+      kind: "oriented-camera",
+      mode: "clear",
+    });
+  });
+
   it("keeps the Preferences-resolved material on original and exploded dice", async () => {
     const dataService = appearanceService(
       undefined,
@@ -490,6 +605,7 @@ describe("WebRollService", () => {
       },
       dataService,
       "4",
+      "r19",
     );
     if (preparation.status !== "prepared") {
       throw new Error("Expected an exploding-dice preparation");
@@ -503,6 +619,7 @@ describe("WebRollService", () => {
       }),
       dataService,
       "4",
+      "r19",
       () => 0,
     );
     if (result.status !== "rolled" || result.renderModel === undefined) {
@@ -545,6 +662,7 @@ describe("WebRollService", () => {
         },
         dataService,
         "4",
+        "r19",
       );
       if (preparation.status !== "prepared") {
         throw new Error("Expected a reroll preparation");
@@ -557,6 +675,7 @@ describe("WebRollService", () => {
         }),
         dataService,
         "4",
+        "r19",
         () => 0,
       );
       if (result.status !== "rolled" || result.renderModel === undefined) {
@@ -603,6 +722,7 @@ describe("WebRollService", () => {
         },
         dataService,
         "4",
+        "r19",
       );
       if (preparation.status !== "prepared") {
         throw new Error("Expected a percentile reroll preparation");
@@ -616,6 +736,7 @@ describe("WebRollService", () => {
         }),
         dataService,
         "4",
+        "r19",
         () => 0,
       );
       if (result.status !== "rolled") {
@@ -650,6 +771,7 @@ describe("WebRollService", () => {
       legacyRequest,
       appearanceService(),
       "3",
+      "r19",
       () => 0x1234_5678,
     );
 
@@ -682,7 +804,7 @@ describe("WebRollService", () => {
         nameColor: "#AABBCC",
       },
     });
-    const result = await executeWebRoll(value, dataService, "4");
+    const result = await executeWebRoll(value, dataService, "4", "r19");
 
     if (result.status !== "rolled") throw new Error("Expected a rolled result");
     expect(result.discord.payload).toMatchObject({ flags: 1 << 15 });
@@ -698,7 +820,7 @@ describe("WebRollService", () => {
     );
     const value = await preparedRequest(dataService, "4");
     lookups.length = 0;
-    const result = await executeWebRoll(value, dataService, "4");
+    const result = await executeWebRoll(value, dataService, "4", "r19");
 
     expect(result.status).toBe("rolled");
     if (result.status !== "rolled") throw new Error("Expected a rolled result");
@@ -742,7 +864,7 @@ describe("WebRollService", () => {
     const dataService = appearanceService((_value, path) => lookups.push(path));
     const value = await preparedRequest(dataService, "3");
     lookups.length = 0;
-    const result = await executeWebRoll(value, dataService, "3");
+    const result = await executeWebRoll(value, dataService, "3", "r19");
 
     expect(result.status).toBe("rolled");
     if (result.status !== "rolled") throw new Error("Expected a rolled result");
@@ -780,6 +902,7 @@ describe("WebRollService", () => {
       { notation: "1d20", repetitions: 1, userId, guildId },
       dataService,
       "4",
+      "r19",
     );
     if (prepared.status !== "prepared") {
       throw new Error("Expected a prepared roll");
@@ -794,6 +917,7 @@ describe("WebRollService", () => {
         }),
         dataService,
         "4",
+        "r19",
       ),
     ).resolves.toEqual({
       status: "stale",
@@ -811,6 +935,7 @@ describe("WebRollService", () => {
           },
         },
         "4",
+        "r19",
       ),
     ).resolves.toEqual({
       status: "invalid",
@@ -824,6 +949,7 @@ describe("WebRollService", () => {
         request({ channelId: "must-not-cross-roll-boundary" }),
         appearanceService(),
         "4",
+        "r19",
       ),
     ).rejects.toThrow("Web roll request is invalid");
   });
@@ -840,6 +966,7 @@ describe("WebRollService", () => {
           },
         },
         "4",
+        "r19",
       ),
     ).rejects.toThrow("Effective appearance lookup failed");
   });

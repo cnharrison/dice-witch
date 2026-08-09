@@ -244,6 +244,33 @@ export type GuildAppearanceProfileV3 = AppearanceProfileV3 & {
   mode: "off" | "default" | "enforced";
 };
 
+export type DiceViewModeV4 = "normal" | "legacy" | "clear";
+
+export type DiceViewAzimuthV4 = {
+  mode: "random" | "custom";
+  customDegrees: number;
+};
+
+export type DiceViewPreferencesV4 = {
+  elevationDegrees: number;
+  mode: DiceViewModeV4;
+  azimuth: {
+    all: DiceViewAzimuthV4;
+    overrides: Partial<Record<AppearanceTargetV4, DiceViewAzimuthV4>>;
+  };
+};
+
+export type AppearanceProfileV4 = {
+  version: 4;
+  designs: CustomAppearanceDesignV3[];
+  assignments: AppearanceAssignmentsV3;
+  diceView: DiceViewPreferencesV4;
+};
+
+export type GuildAppearanceProfileV4 = AppearanceProfileV4 & {
+  mode: "off" | "default" | "enforced";
+};
+
 export type AppearanceValidationCatalogV3 = {
   builtinStyleIds: readonly string[];
 };
@@ -301,6 +328,13 @@ export type RenderViewV4 =
       elevationDegrees: number;
       azimuthOffsetDegrees: number;
       poseAzimuthDegrees: number;
+    }
+  | {
+      kind: "oriented-camera";
+      mode: "legacy" | "clear";
+      elevationDegrees: number;
+      azimuthOffsetDegrees: number;
+      resultRotation: readonly [number, number, number, number];
     }
   | {
       kind: "sphere-surface";

@@ -2,16 +2,20 @@ import {
   APPEARANCE_TARGETS_V4,
   type AppearanceRecipeV3,
   type AppearanceTargetV4,
+  type DiceViewPreferencesV4,
 } from "@dice-witch/dice-v4-model";
+import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model/dice-view-preferences";
 import {
   APPEARANCE_TARGETS,
   type AppearanceBuiltinRecipesV3,
   type EffectiveAppearanceRecipeInput,
   type EffectiveAppearanceRecipeInputV2,
+  type EffectiveAppearanceInputV4,
   type EffectiveAppearanceRecipeInputV3,
   type EffectiveAppearanceRecipesV1,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
+  type EffectiveAppearanceV4,
   type GuildAppearanceMode,
 } from "./types";
 
@@ -181,4 +185,31 @@ export function resolveEffectiveAppearanceRecipesV3(
     input,
     builtInRecipeV3,
   );
+}
+
+function effectiveDiceViewPreferencesV4(
+  input: EffectiveAppearanceInputV4,
+): DiceViewPreferencesV4 {
+  const personal = input.personalProfile?.diceView;
+  const guild = input.guildProfile?.diceView;
+  const mode = input.guildProfile?.mode ?? "off";
+  let selected: DiceViewPreferencesV4 | undefined;
+  if (mode === "off") selected = personal;
+  else if (mode === "enforced") selected = guild ?? personal;
+  else selected = personal ?? guild;
+  return structuredClone(selected ?? createDefaultDiceViewPreferencesV4());
+}
+
+export function resolveEffectiveAppearanceV4(
+  input: EffectiveAppearanceInputV4,
+): EffectiveAppearanceV4 {
+  return {
+    version: 4,
+    recipes: resolveEffectiveRecipes(
+      APPEARANCE_TARGETS_V4,
+      input,
+      builtInRecipeV3,
+    ),
+    diceView: effectiveDiceViewPreferencesV4(input),
+  };
 }

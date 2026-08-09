@@ -30,7 +30,11 @@ describe("V4 geometry contract", () => {
   });
 
   it("selects immutable geometry by renderer revision without a renderer-local rule", () => {
-    const standardD20 = { target: "d20", form: "standard" } as const;
+    const standardD20 = {
+      target: "d20",
+      form: "standard",
+      result: 20,
+    } as const;
 
     expect(getRenderGeometryIdV4("canvaskit-v4-r1", standardD20)).toBe(
       "d20-standard-r1",
@@ -95,21 +99,25 @@ describe("V4 geometry contract", () => {
     const d20 = getRenderGeometryDescriptorV4("canvaskit-v4-r16", {
       target: "d20",
       form: "standard",
+      result: 20,
       view,
     });
     const d4 = getRenderGeometryDescriptorV4("canvaskit-v4-r16", {
       target: "d4",
       form: "standard",
+      result: 4,
       view,
     });
     const sphere = getRenderGeometryDescriptorV4("canvaskit-v4-r16", {
       target: "other",
       form: "sphere",
+      result: 1,
       view: { kind: "sphere-surface", rotationDegrees: 20 },
     });
     const realisticD20 = getRenderGeometryDescriptorV4("canvaskit-v4-r17", {
       target: "d20",
       form: "standard",
+      result: 20,
       view: {
         kind: "camera",
         elevationDegrees: 40,
@@ -122,6 +130,7 @@ describe("V4 geometry contract", () => {
       {
         target: "other",
         form: "sphere",
+        result: 1,
         view: { kind: "sphere-surface", rotationDegrees: 36 },
       },
     );
@@ -134,11 +143,11 @@ describe("V4 geometry contract", () => {
     };
     const positionedSphere = getRenderGeometryDescriptorV4(
       "canvaskit-v4-r18",
-      { target: "other", form: "sphere", view: positionedView },
+      { target: "other", form: "sphere", result: 1, view: positionedView },
     );
     const projectedSphere = getRenderGeometryDescriptorV4(
       "canvaskit-v4-r19",
-      { target: "other", form: "sphere", view: positionedView },
+      { target: "other", form: "sphere", result: 1, view: positionedView },
     );
 
     expect(d20.camera.position).not.toEqual(

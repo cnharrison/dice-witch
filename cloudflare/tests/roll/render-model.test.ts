@@ -1,6 +1,9 @@
 import {
+  createDefaultDiceViewPreferencesV4,
+  getAuthoredRenderViewV4,
   validateRenderRequestV4,
   type AppearanceRecipeV3,
+  type DiceViewModeV4,
 } from "@dice-witch/dice-v4-model";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,6 +12,7 @@ import {
   type AppearanceRecipeV1,
   type AppearanceRecipeV2,
   type AppearanceTarget,
+  type EffectiveAppearanceV4,
 } from "../../packages/dice-appearance/src";
 import { validateRenderRequest } from "../../packages/dice-svg/src/validate";
 import { validateRenderRequestV2 } from "../../packages/dice-svg/src/validateV2";
@@ -18,6 +22,7 @@ import {
   buildRollRenderRequestV2,
   buildRollRenderRequestV3,
   buildRollRenderRequestV4,
+  buildRollRenderRequestR20V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -150,6 +155,17 @@ function effectiveRecipesV3(
   return Object.fromEntries(
     APPEARANCE_TARGETS.map((target) => [target, recipe]),
   );
+}
+
+function effectiveAppearanceV4(mode: DiceViewModeV4): EffectiveAppearanceV4 {
+  return {
+    version: 4,
+    recipes: effectiveRecipesV3() as EffectiveAppearanceV4["recipes"],
+    diceView: {
+      ...createDefaultDiceViewPreferencesV4(),
+      mode,
+    },
+  };
 }
 
 describe("buildRollRenderRequest", () => {
@@ -950,5 +966,119 @@ describe("buildRollRenderRequestV4", () => {
     ).toThrow(
       "Appearance repeated gradient requires standard polyhedral form",
     );
+  });
+});
+
+describe("buildRollRenderRequestR20V4", () => {
+  it("persists exact authored Legacy and Clear views for every physical die", () => {
+    const roll = executeRoll({
+      notation: ["d4", "d6", "d8", "d10", "d12", "d20", "d%", "dF", "d7"],
+      seed: 0,
+      stableAppearanceIdentities: true,
+    });
+
+    for (const mode of ["legacy", "clear"] as const) {
+      const request = buildRollRenderRequestR20V4(
+        roll,
+        0x1234_abcd,
+        effectiveAppearanceV4(mode),
+      );
+      expect(request.rendererRevision).toBe("canvaskit-v4-r20");
+      expect(validateRenderRequestV4(request)).toEqual(request);
+      for (const die of request.groups.flat()) {
+        expect(die.view).toEqual(
+          getAuthoredRenderViewV4(mode, {
+            target: die.target,
+            form: die.form,
+            result: die.result,
+          }),
+        );
+      }
+      const otherSeed = buildRollRenderRequestR20V4(
+        roll,
+        0xfeed_cafe,
+        effectiveAppearanceV4(mode),
+      );
+      expect(
+        otherSeed.groups.flat().map(({ view }) => view),
+      ).toEqual(request.groups.flat().map(({ view }) => view));
+    }
+  });
+
+  it("applies normal elevation and target azimuths while retaining random pose", () => {
+    const effective = effectiveAppearanceV4("normal");
+    effective.diceView = {
+      elevationDegrees: 55,
+      mode: "normal",
+      azimuth: {
+        all: { mode: "custom", customDegrees: 15 },
+        overrides: {
+          d6: { mode: "random", customDegrees: -45 },
+          percentile: { mode: "custom", customDegrees: -20 },
+          other: { mode: "custom", customDegrees: 35 },
+        },
+      },
+    };
+    const request = buildRollRenderRequestR20V4(
+      executeRoll({
+        notation: ["d6", "d8", "d%", "d7"],
+        seed: 0,
+        stableAppearanceIdentities: true,
+      }),
+      42,
+      effective,
+    );
+
+    const d6 = request.groups[0]?.[0]?.view;
+    expect(d6?.kind).toBe("camera");
+    if (d6?.kind !== "camera") throw new Error("d6 camera view is missing");
+    expect(d6.elevationDegrees).toBe(55);
+    expect([-45, -35, -25, -15, -5, 5, 15, 25, 35, 45]).toContain(
+      d6.azimuthOffsetDegrees,
+    );
+    expect(request.groups[1]?.[0]?.view).toMatchObject({
+      kind: "camera",
+      elevationDegrees: 55,
+      azimuthOffsetDegrees: 15,
+    });
+    expect(request.groups[2]?.map(({ view }) => view)).toEqual([
+      expect.objectContaining({
+        kind: "camera",
+        elevationDegrees: 55,
+        azimuthOffsetDegrees: -20,
+      }),
+      expect.objectContaining({
+        kind: "camera",
+        elevationDegrees: 55,
+        azimuthOffsetDegrees: -20,
+      }),
+    ]);
+    expect(request.groups[3]?.[0]?.view).toMatchObject({
+      kind: "sphere-surface",
+      labelLongitudeDegrees: 35,
+    });
+  });
+
+  it("detaches the final view snapshot from mutable preferences", () => {
+    const effective = effectiveAppearanceV4("normal");
+    effective.diceView.azimuth.overrides.d20 = {
+      mode: "custom",
+      customDegrees: -35,
+    };
+    const request = buildRollRenderRequestR20V4(
+      outcome(["d20"]),
+      7,
+      effective,
+    );
+    const snapshot = structuredClone(request);
+
+    effective.diceView.elevationDegrees = 30;
+    effective.diceView.azimuth.overrides.d20.customDegrees = 45;
+    expect(request).toEqual(snapshot);
+    expect(request.groups[0]?.[0]?.view).toMatchObject({
+      kind: "camera",
+      elevationDegrees: 40,
+      azimuthOffsetDegrees: -35,
+    });
   });
 });

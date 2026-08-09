@@ -502,6 +502,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
       },
       this.env.DATA_SERVICE,
       this.env.ROLL_RENDER_VERSION,
+      this.env.ROLL_VIEW_POLICY,
       () => row.roll_seed,
       () => row.render_seed,
     );

@@ -9,6 +9,7 @@ test("keeps the production-compatible Roll template pinned to V3", async () => {
   const config = JSON.parse(await readFile(rollConfigUrl, "utf8"));
 
   assert.equal(config.vars.ROLL_RENDER_VERSION, "3");
+  assert.equal(config.vars.ROLL_VIEW_POLICY, "r19");
 });
 
 test("keeps the Data Worker private to service bindings", async () => {

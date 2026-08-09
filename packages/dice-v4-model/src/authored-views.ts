@@ -1,0 +1,278 @@
+import { D10_STANDARD_GEOMETRY_V4, PERCENTILE_STANDARD_GEOMETRY_V4 } from "./geometry-d10";
+import { D12_STANDARD_GEOMETRY_V4 } from "./geometry-d12";
+import { D20_STANDARD_GEOMETRY_R2_V4 } from "./geometry-d20";
+import { D4_STANDARD_GEOMETRY_V4 } from "./geometry-d4";
+import { D6_STANDARD_GEOMETRY_V4 } from "./geometry-d6";
+import { D8_STANDARD_GEOMETRY_V4 } from "./geometry-d8";
+import { FUDGE_STANDARD_GEOMETRY_V4 } from "./geometry-fudge";
+import type {
+  GeometryFaceV4,
+  PolyhedralGeometryDescriptorV4,
+  QuaternionV4,
+} from "./geometry";
+import {
+  multiplyQuaternionsV4,
+  quaternionFromFrameV4,
+  rotatePointByQuaternionV4,
+} from "./geometry-math";
+import type { RenderDieV4, RenderViewV4 } from "./types";
+
+export type AuthoredViewModeV4 = "legacy" | "clear";
+
+type AuthoredRenderDieV4 = Pick<RenderDieV4, "form" | "result" | "target">;
+type OrientedCameraViewV4 = Extract<
+  RenderViewV4,
+  { kind: "oriented-camera" }
+>;
+type RotationV4 = OrientedCameraViewV4["resultRotation"];
+type PolyhedralViewEntryV4 = {
+  views: Readonly<
+    Record<AuthoredViewModeV4, ReadonlyMap<number, Readonly<OrientedCameraViewV4>>>
+  >;
+};
+
+const D4_LEGACY_FACE_BY_RESULT_V4 = new Map<number, string>([
+  [1, "face-opposite-2"],
+  [2, "face-opposite-1"],
+  [3, "face-opposite-4"],
+  [4, "face-opposite-1"],
+]);
+
+function orientedCamera(
+  mode: AuthoredViewModeV4,
+  elevationDegrees: number,
+  resultRotation: RotationV4,
+): Readonly<OrientedCameraViewV4> {
+  return Object.freeze({
+    kind: "oriented-camera",
+    mode,
+    elevationDegrees,
+    azimuthOffsetDegrees: 0,
+    resultRotation: Object.freeze(resultRotation),
+  });
+}
+
+function resultOrientation(
+  geometry: PolyhedralGeometryDescriptorV4,
+  result: number,
+): QuaternionV4 {
+  const orientation = geometry.resultOrientations.find(
+    (candidate) => candidate.result === result,
+  );
+  if (orientation === undefined) {
+    throw new Error(`${geometry.id} result ${result} orientation is missing`);
+  }
+  return orientation.rotation;
+}
+
+function restingResultFace(
+  geometry: PolyhedralGeometryDescriptorV4,
+  result: number,
+): GeometryFaceV4 {
+  const rotation = resultOrientation(geometry, result);
+  const face = geometry.faces
+    .filter((candidate) =>
+      candidate.labels.some((label) => label.value === result),
+    )
+    .sort(
+      (left, right) =>
+        rotatePointByQuaternionV4(right.normal, rotation)[1] -
+        rotatePointByQuaternionV4(left.normal, rotation)[1],
+    )[0];
+  if (face === undefined) {
+    throw new Error(`${geometry.id} result ${result} face is missing`);
+  }
+  return face;
+}
+
+function legacyResultRotation(
+  geometry: PolyhedralGeometryDescriptorV4,
+  result: number,
+  faceId?: string,
+): QuaternionV4 {
+  const face =
+    faceId === undefined
+      ? restingResultFace(geometry, result)
+      : geometry.faces.find((candidate) => candidate.id === faceId);
+  const label = face?.labels.find((candidate) => candidate.value === result);
+  if (face === undefined || label === undefined) {
+    throw new Error(`${geometry.id} result ${result} Legacy frame is missing`);
+  }
+  return quaternionFromFrameV4(label.right, label.up, face.normal);
+}
+
+function clearResultRotation(
+  geometry: PolyhedralGeometryDescriptorV4,
+  result: number,
+  faceId?: string,
+): QuaternionV4 {
+  const baseRotation = resultOrientation(geometry, result);
+  const face =
+    faceId === undefined
+      ? restingResultFace(geometry, result)
+      : geometry.faces.find((candidate) => candidate.id === faceId);
+  if (face === undefined) {
+    throw new Error(`${geometry.id} result ${result} Clear face is missing`);
+  }
+  const label = face.labels.find((candidate) => candidate.value === result);
+  if (label === undefined) {
+    throw new Error(`${geometry.id} result ${result} Clear frame is missing`);
+  }
+  const currentUp = rotatePointByQuaternionV4(label.up, baseRotation);
+  const currentAngle = Math.atan2(currentUp[0], currentUp[2]);
+  const cameraAzimuth = Math.atan2(
+    geometry.camera.position[0],
+    geometry.camera.position[2],
+  );
+  // Keep neighboring labels away from an edge-on singular projection.
+  const desiredAngle = cameraAzimuth + Math.PI + (5 * Math.PI) / 180;
+  const yaw = desiredAngle - currentAngle;
+  const yawRotation: QuaternionV4 = [
+    0,
+    Math.sin(yaw / 2),
+    0,
+    Math.cos(yaw / 2),
+  ];
+  return multiplyQuaternionsV4(yawRotation, baseRotation);
+}
+
+function createPolyhedralEntry(
+  geometry: PolyhedralGeometryDescriptorV4,
+  results: readonly number[],
+  clearElevationDegrees: number,
+  legacyFaceByResult: ReadonlyMap<number, string> = new Map(),
+): PolyhedralViewEntryV4 {
+  const legacy = new Map<number, Readonly<OrientedCameraViewV4>>();
+  const clear = new Map<number, Readonly<OrientedCameraViewV4>>();
+  for (const result of results) {
+    legacy.set(
+      result,
+      orientedCamera(
+        "legacy",
+        30,
+        legacyResultRotation(
+          geometry,
+          result,
+          legacyFaceByResult.get(result),
+        ),
+      ),
+    );
+    clear.set(
+      result,
+      orientedCamera(
+        "clear",
+        clearElevationDegrees,
+        clearResultRotation(
+          geometry,
+          result,
+          legacyFaceByResult.get(result),
+        ),
+      ),
+    );
+  }
+  return Object.freeze({
+    views: Object.freeze({ legacy, clear }),
+  });
+}
+
+const range = (first: number, last: number): number[] =>
+  Array.from({ length: last - first + 1 }, (_, index) => first + index);
+
+const D20_RESULTS_V4 = range(1, 20);
+const D20_VIEWS_V4 = createPolyhedralEntry(
+  D20_STANDARD_GEOMETRY_R2_V4,
+  D20_RESULTS_V4,
+  55,
+);
+const POLYHEDRAL_VIEWS_V4 = new Map<string, PolyhedralViewEntryV4>([
+  [
+    "d4:standard",
+    createPolyhedralEntry(
+      D4_STANDARD_GEOMETRY_V4,
+      range(1, 4),
+      30,
+      D4_LEGACY_FACE_BY_RESULT_V4,
+    ),
+  ],
+  ["d6:standard", createPolyhedralEntry(D6_STANDARD_GEOMETRY_V4, range(1, 6), 55)],
+  ["d8:standard", createPolyhedralEntry(D8_STANDARD_GEOMETRY_V4, range(1, 8), 55)],
+  ["d10:standard", createPolyhedralEntry(D10_STANDARD_GEOMETRY_V4, range(1, 10), 45)],
+  ["d12:standard", createPolyhedralEntry(D12_STANDARD_GEOMETRY_V4, range(1, 12), 55)],
+  ["d20:standard", D20_VIEWS_V4],
+  ["d20:sharp", D20_VIEWS_V4],
+  ["d20:crystal-cut", D20_VIEWS_V4],
+  ["d20:hollow-cage", D20_VIEWS_V4],
+  [
+    "percentile:standard",
+    createPolyhedralEntry(
+      PERCENTILE_STANDARD_GEOMETRY_V4,
+      range(0, 9).map((value) => value * 10),
+      45,
+    ),
+  ],
+  [
+    "fudge:standard",
+    createPolyhedralEntry(FUDGE_STANDARD_GEOMETRY_V4, [-1, 0, 1], 55),
+  ],
+]);
+
+const CENTERED_SPHERE_VIEW_V4 = Object.freeze({
+  kind: "sphere-surface",
+  rotationDegrees: 0,
+  labelLongitudeDegrees: 0,
+  labelLatitudeDegrees: 0,
+  labelRotationDegrees: 0,
+} satisfies RenderViewV4);
+
+function polyhedralEntryKey(die: AuthoredRenderDieV4): string {
+  return `${die.target}:${die.form}`;
+}
+
+export function getAuthoredRenderViewV4(
+  mode: AuthoredViewModeV4,
+  die: AuthoredRenderDieV4,
+): Readonly<RenderViewV4> {
+  if (
+    die.target === "other" &&
+    die.form === "sphere" &&
+    Number.isInteger(die.result) &&
+    die.result >= 1
+  ) {
+    return CENTERED_SPHERE_VIEW_V4;
+  }
+  const view = POLYHEDRAL_VIEWS_V4.get(polyhedralEntryKey(die))?.views[
+    mode
+  ].get(die.result);
+  if (view === undefined) {
+    throw new Error(
+      `Authored ${mode} view is not implemented for ${die.target} ${die.form} result ${die.result}`,
+    );
+  }
+  return view;
+}
+
+export function isAuthoredRenderViewV4(
+  view: RenderViewV4,
+  die: AuthoredRenderDieV4,
+): boolean {
+  if (view.kind === "sphere-surface") {
+    return (
+      die.target === "other" &&
+      die.form === "sphere" &&
+      view.rotationDegrees === 0 &&
+      view.labelLongitudeDegrees === 0 &&
+      view.labelLatitudeDegrees === 0 &&
+      view.labelRotationDegrees === 0
+    );
+  }
+  if (view.kind !== "oriented-camera") return false;
+  const expected = getAuthoredRenderViewV4(view.mode, die);
+  return (
+    expected.kind === "oriented-camera" &&
+    view.elevationDegrees === expected.elevationDegrees &&
+    view.azimuthOffsetDegrees === expected.azimuthOffsetDegrees &&
+    view.resultRotation.every(
+      (component, index) => component === expected.resultRotation[index],
+    )
+  );
+}

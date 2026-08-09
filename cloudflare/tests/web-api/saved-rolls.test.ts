@@ -45,6 +45,7 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
       preview: vi.fn(),
       previewV2: vi.fn(),
       previewV3: vi.fn(),
+      previewV4: vi.fn(),
     },
     DISCORD_CLIENT_ID: "100000000000000099",
     DISCORD_CLIENT_SECRET: "test-client-secret",

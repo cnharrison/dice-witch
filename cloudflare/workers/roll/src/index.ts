@@ -49,6 +49,7 @@ import {
 } from "../../../packages/discord-contracts/src";
 import {
   buildRollRenderRequest,
+  ROLL_RENDERER_REVISION_R20_V4,
   ROLL_RENDERER_REVISION_V4,
 } from "../../../packages/roll-render-model/src";
 import {
@@ -81,6 +82,7 @@ import {
 import {
   buildRollRenderRequestForVersion,
   parseRollRenderVersion,
+  parseRollViewPolicy,
 } from "./render-version";
 
 export { LogWork } from "./log-work";
@@ -526,12 +528,21 @@ function rollRecordRenderVersion(record: RollWorkRecord): 1 | 2 | 3 | 4 {
   return record.version === 5 ? record.renderVersion : record.version;
 }
 
+function rollRecordV5ViewPolicy(record: RollWorkRecordV5): "r19" | "r20" {
+  return record.renderVersion === 4 ? (record.viewPolicy ?? "r19") : "r19";
+}
+
 function rollRecordRendererRevision(record: RollWorkRecord): string | null {
   if (record.version === 4 && record.renderRequest !== null) {
     return record.renderRequest.rendererRevision;
   }
   if (record.version === 5 && record.renderVersion === 4) {
-    return record.renderRequest?.rendererRevision ?? ROLL_RENDERER_REVISION_V4;
+    return (
+      record.renderRequest?.rendererRevision ??
+      (rollRecordV5ViewPolicy(record) === "r20"
+        ? ROLL_RENDERER_REVISION_R20_V4
+        : ROLL_RENDERER_REVISION_V4)
+    );
   }
   return null;
 }
@@ -544,6 +555,7 @@ function rollRecordV5Identity(record: RollWorkRecordV5): string {
     outcome: record.outcome,
     createdAt: record.createdAt,
     renderVersion: record.renderVersion,
+    viewPolicy: rollRecordV5ViewPolicy(record),
   });
 }
 
@@ -4169,6 +4181,7 @@ export class RollWork extends DurableObject<RollEnv> {
             : {
                 version: 5,
                 renderVersion: 4,
+                viewPolicy: parseRollViewPolicy(this.env.ROLL_VIEW_POLICY),
                 ...common,
                 renderRequest: null,
               },
@@ -4183,6 +4196,7 @@ export class RollWork extends DurableObject<RollEnv> {
       const renderRequest = await buildRollRenderRequestForVersion(
         this.env.DATA_SERVICE,
         renderVersion,
+        parseRollViewPolicy(this.env.ROLL_VIEW_POLICY),
         accounting.userId,
         accounting.guildId,
         outcome,
@@ -4254,6 +4268,7 @@ export class RollWork extends DurableObject<RollEnv> {
       renderRequest = await buildRollRenderRequestForVersion(
         this.env.DATA_SERVICE,
         record.renderVersion,
+        rollRecordV5ViewPolicy(record),
         metadata.accounting.userId,
         metadata.accounting.guildId,
         record.outcome,

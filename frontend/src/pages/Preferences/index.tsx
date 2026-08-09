@@ -7,25 +7,29 @@ import { Switch } from "@/components/ui/switch";
 import { useGuild } from "@/context/GuildContext";
 import { AppearanceApiError } from "@/lib/appearance";
 import {
-  getGuildAppearanceProfileV3,
-  getPersonalAppearanceBootstrapV3,
+  getGuildAppearanceProfileV4,
+  getPersonalAppearanceBootstrapV4,
   putGuildAppearanceProfileV3,
+  putGuildAppearanceProfileV4,
   putPersonalAppearanceProfileV3,
-  type PersonalAppearanceBootstrapV3,
+  putPersonalAppearanceProfileV4,
+  type PersonalAppearanceBootstrapV4,
 } from "@/lib/appearance-v3";
 import {
-  PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
+  PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
   PERSONAL_APPEARANCE_STALE_TIME_MS,
 } from "@/lib/appearance-query";
 import {
-  createEmptyAppearanceProfileV3,
+  createEmptyAppearanceProfileV4,
   setGuildAppearanceModeV3,
 } from "@/lib/appearance-editor-v3";
 import { appConfig } from "@/lib/config";
 import { customFetch } from "@/lib/api";
 import type {
   AppearanceProfileV3,
+  AppearanceProfileV4,
   GuildAppearanceProfileV3,
+  GuildAppearanceProfileV4,
 } from "@/types/appearance";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -204,8 +208,8 @@ export default function Preferences() {
   );
 
   const personalBootstrapQuery = useQuery({
-    queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
-    queryFn: getPersonalAppearanceBootstrapV3,
+    queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
+    queryFn: getPersonalAppearanceBootstrapV4,
     staleTime: PERSONAL_APPEARANCE_STALE_TIME_MS,
     retry: (failureCount, error) =>
       retryAppearanceQuery(failureCount, error, 2),
@@ -245,12 +249,12 @@ export default function Preferences() {
   }, [adminGuilds.length, guildsQuery.isLoading]);
 
   const guildAppearanceQuery = useQuery({
-    queryKey: ["appearanceProfileV3", "guild", selectedGuildId],
+    queryKey: ["appearanceProfileV4", "guild", selectedGuildId],
     queryFn: () => {
       if (!catalog || !selectedGuildId) {
         throw new Error("Guild appearance context is missing");
       }
-      return getGuildAppearanceProfileV3(selectedGuildId, catalog);
+      return getGuildAppearanceProfileV4(selectedGuildId, catalog);
     },
     enabled:
       section === "guild" &&
@@ -276,7 +280,11 @@ export default function Preferences() {
       profile,
       revision,
     }: {
-      profile: AppearanceProfileV3 | GuildAppearanceProfileV3;
+      profile:
+        | AppearanceProfileV3
+        | AppearanceProfileV4
+        | GuildAppearanceProfileV3
+        | GuildAppearanceProfileV4;
       revision: number;
     }) => {
       if (!catalog) {
@@ -285,18 +293,20 @@ export default function Preferences() {
       if ("mode" in profile) {
         throw new Error("Guild profile cannot be saved as a personal profile");
       }
-      return putPersonalAppearanceProfileV3(revision, profile, catalog);
+      return profile.version === 4
+        ? putPersonalAppearanceProfileV4(revision, profile, catalog)
+        : putPersonalAppearanceProfileV3(revision, profile, catalog);
     },
     onSuccess: (resource) => {
       queryClient.setQueryData(
-        PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
-        (current: PersonalAppearanceBootstrapV3 | undefined) =>
+        PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
+        (current: PersonalAppearanceBootstrapV4 | undefined) =>
           current === undefined ? current : { ...current, resource },
       );
     },
     onError: () => {
       void queryClient.invalidateQueries({
-        queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
+        queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
       });
     },
   });
@@ -307,7 +317,11 @@ export default function Preferences() {
       guildId,
       revision,
     }: {
-      profile: AppearanceProfileV3 | GuildAppearanceProfileV3;
+      profile:
+        | AppearanceProfileV3
+        | AppearanceProfileV4
+        | GuildAppearanceProfileV3
+        | GuildAppearanceProfileV4;
       guildId: string;
       revision: number;
     }) => {
@@ -317,22 +331,19 @@ export default function Preferences() {
       if (!("mode" in profile)) {
         throw new Error("Personal profile cannot be saved as a guild profile");
       }
-      return putGuildAppearanceProfileV3(
-        guildId,
-        revision,
-        profile,
-        catalog,
-      );
+      return profile.version === 4
+        ? putGuildAppearanceProfileV4(guildId, revision, profile, catalog)
+        : putGuildAppearanceProfileV3(guildId, revision, profile, catalog);
     },
     onSuccess: (resource, variables) => {
       queryClient.setQueryData(
-        ["appearanceProfileV3", "guild", variables.guildId],
+        ["appearanceProfileV4", "guild", variables.guildId],
         resource,
       );
     },
     onError: (_error, variables) => {
       void queryClient.invalidateQueries({
-        queryKey: ["appearanceProfileV3", "guild", variables.guildId],
+        queryKey: ["appearanceProfileV4", "guild", variables.guildId],
       });
     },
   });
@@ -399,7 +410,11 @@ export default function Preferences() {
         kind="personal"
         personalDesigns={personalResource.profile?.designs ?? []}
         isSaving={personalMutation.isPending}
+        version={personalResource.profile?.version ?? 4}
         onSave={async (profile) => {
+          if ("mode" in profile) {
+            throw new Error("Personal appearance profile is required");
+          }
           await personalMutation.mutateAsync({
             profile,
             revision: personalResource.revision,
@@ -483,7 +498,11 @@ export default function Preferences() {
             kind="guild"
             personalDesigns={personalResource.profile?.designs ?? []}
             isSaving={guildAppearanceMutation.isPending}
+            version={guildResource.profile?.version ?? 4}
             onSave={async (profile) => {
+              if (!("mode" in profile)) {
+                throw new Error("Guild appearance profile is required");
+              }
               await guildAppearanceMutation.mutateAsync({
                 profile,
                 guildId: selectedGuildId,
@@ -512,13 +531,13 @@ export default function Preferences() {
             <ServerAppearanceModeV3
               mode={
                 guildResource.profile?.mode ??
-                createEmptyAppearanceProfileV3("guild").mode
+                createEmptyAppearanceProfileV4("guild").mode
               }
               disabled={guildAppearanceMutation.isPending}
               onChange={async (mode) => {
                 const profile = setGuildAppearanceModeV3(
                   guildResource.profile ??
-                    createEmptyAppearanceProfileV3("guild"),
+                    createEmptyAppearanceProfileV4("guild"),
                   mode,
                   catalog,
                 );

@@ -1,4 +1,6 @@
+export * from "./authored-views";
 export * from "./compatibility";
+export * from "./dice-view-preferences";
 export * from "./engraving";
 export * from "./face-semantics";
 export * from "./geometry";

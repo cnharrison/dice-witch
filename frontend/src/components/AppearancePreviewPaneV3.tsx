@@ -2,7 +2,10 @@ import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { Button } from "@/components/ui/button";
 import { AppearanceApiError } from "@/lib/appearance";
-import { getAppearancePreviewV3 } from "@/lib/appearance-v3";
+import {
+  getAppearancePreviewV3,
+  getAppearancePreviewV4,
+} from "@/lib/appearance-v3";
 import type { AppearanceEditorTargetV3 } from "@/lib/appearance-editor-v3";
 import {
   APPEARANCE_TARGET_LABELS,
@@ -10,6 +13,7 @@ import {
 } from "@/types/appearance";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
+import type { DiceViewPreferencesV4 } from "@dice-witch/dice-v4-model";
 import * as React from "react";
 
 type PreviewState = "normal" | "critical-success" | "critical-failure";
@@ -49,23 +53,36 @@ function previewErrorMessage(error: unknown): string {
 export function AppearancePreviewPaneV3({
   target,
   recipe,
+  diceView,
 }: {
   target: AppearanceEditorTargetV3;
   recipe: AppearanceRecipeV3;
+  diceView?: DiceViewPreferencesV4;
 }) {
   const [seed, setSeed] = React.useState(0x51ce_b00c);
   const [state, setState] = React.useState<PreviewState>("normal");
   const debouncedRecipe = useDebouncedValue(recipe, 300);
   const isExpanded = target === "all";
   const previewQuery = useQuery({
-    queryKey: ["appearancePreviewV3", target, seed, state, debouncedRecipe],
-    queryFn: () =>
-      getAppearancePreviewV3({
+    queryKey: [
+      diceView === undefined ? "appearancePreviewV3" : "appearancePreviewV4",
+      target,
+      seed,
+      state,
+      debouncedRecipe,
+      diceView,
+    ],
+    queryFn: () => {
+      const input = {
         target,
         recipe: debouncedRecipe,
         seed,
         state,
-      }),
+      };
+      return diceView === undefined
+        ? getAppearancePreviewV3(input)
+        : getAppearancePreviewV4({ ...input, diceView });
+    },
     staleTime: Infinity,
     gcTime: 10_000,
     retry: false,

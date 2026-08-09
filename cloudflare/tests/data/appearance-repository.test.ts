@@ -3,14 +3,20 @@ import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type AppearanceProfileV3,
+  type AppearanceProfileV4,
   type AppearanceRecipeV3,
   type GuildAppearanceProfileV3,
+  type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_VALIDATION_CATALOG,
   APPEARANCE_VALIDATION_CATALOG_V3,
   migrateAppearanceProfileV1,
+  migrateAppearanceProfileV3ToV4,
   migrateGuildAppearanceProfileV1,
+  migrateGuildAppearanceProfileV3ToV4,
+  projectAppearanceProfileV4ToV3,
+  projectGuildAppearanceProfileV4ToV3,
   type AppearanceProfileV1,
   type AppearanceProfileV2,
   type GuildAppearanceProfileV1,
@@ -154,6 +160,18 @@ function personalProfileV3(primary = "#123456"): AppearanceProfileV3 {
 
 function guildProfileV3(): GuildAppearanceProfileV3 {
   return { ...personalProfileV3("#654321"), mode: "enforced" };
+}
+
+function personalProfileV4(primary = "#123456"): AppearanceProfileV4 {
+  const profile = migrateAppearanceProfileV3ToV4(personalProfileV3(primary));
+  profile.diceView.mode = "clear";
+  return profile;
+}
+
+function guildProfileV4(): GuildAppearanceProfileV4 {
+  const profile = migrateGuildAppearanceProfileV3ToV4(guildProfileV3());
+  profile.diceView.mode = "legacy";
+  return profile;
 }
 
 async function storePersonalProfile(
@@ -655,6 +673,168 @@ describe("D1AppearanceRepository", () => {
       revision: 1,
       profile: v3,
       updatedByUserId: userId,
+    });
+  });
+
+  it("reads personal V3 and V4 compatibly while keeping writes version-strict", async () => {
+    const repository = new D1AppearanceRepository(dataEnv.DATA, catalog);
+    const v3 = personalProfileV3();
+    await storePersonalProfile(v3, 7);
+    const before = await dataEnv.DATA.prepare(
+      "SELECT revision, profile_json, updated_at FROM user_appearance_profiles WHERE user_id = ?",
+    )
+      .bind(userId)
+      .first();
+
+    await expect(repository.getPersonalV4(userId)).resolves.toEqual({
+      status: "found",
+      revision: 7,
+      profile: v3,
+    });
+    await expect(
+      repository.putPersonalV4({
+        userId,
+        expectedRevision: 7,
+        profile: personalProfileV4(),
+        mutationId: "appearance-user-v4-against-v3",
+        occurredAt,
+      }),
+    ).resolves.toEqual({
+      status: "appearance_profile_version_conflict",
+    });
+    expect(
+      await dataEnv.DATA.prepare(
+        "SELECT revision, profile_json, updated_at FROM user_appearance_profiles WHERE user_id = ?",
+      )
+        .bind(userId)
+        .first(),
+    ).toEqual(before);
+
+    await resetAppearanceRows();
+    const v4 = personalProfileV4();
+    await storePersonalProfile(v4, 7);
+    await expect(repository.getPersonalV3(userId)).resolves.toEqual({
+      status: "found",
+      revision: 7,
+      profile: projectAppearanceProfileV4ToV3(v4),
+    });
+    await expect(repository.getPersonalV4(userId)).resolves.toEqual({
+      status: "found",
+      revision: 7,
+      profile: v4,
+    });
+    await expect(
+      repository.putPersonalV3({
+        userId,
+        expectedRevision: 7,
+        profile: v3,
+        mutationId: "appearance-user-v3-against-v4",
+        occurredAt: occurredAt + 1,
+      }),
+    ).resolves.toEqual({
+      status: "appearance_profile_version_conflict",
+    });
+    const updated = structuredClone(v4);
+    updated.diceView.mode = "legacy";
+    await expect(
+      repository.putPersonalV4({
+        userId,
+        expectedRevision: 7,
+        profile: updated,
+        mutationId: "appearance-user-v4-update",
+        occurredAt: occurredAt + 2,
+      }),
+    ).resolves.toEqual({
+      status: "applied",
+      revision: 8,
+      profile: updated,
+    });
+  });
+
+  it("reads guild V3 and V4 compatibly while keeping writes version-strict", async () => {
+    const repository = new D1AppearanceRepository(dataEnv.DATA, catalog);
+    const v3 = guildProfileV3();
+    await storeGuildProfile(v3, 4);
+
+    await expect(repository.getGuildV4(guildId)).resolves.toEqual({
+      status: "found",
+      revision: 4,
+      profile: v3,
+      updatedByUserId: userId,
+    });
+    await expect(
+      repository.putGuildV4({
+        guildId,
+        updatedByUserId: userId,
+        expectedRevision: 4,
+        profile: guildProfileV4(),
+        mutationId: "appearance-guild-v4-against-v3",
+        occurredAt,
+      }),
+    ).resolves.toEqual({
+      status: "appearance_profile_version_conflict",
+    });
+
+    await resetAppearanceRows();
+    const v4 = guildProfileV4();
+    await storeGuildProfile(v4, 4);
+    await expect(repository.getGuildV3(guildId)).resolves.toEqual({
+      status: "found",
+      revision: 4,
+      profile: projectGuildAppearanceProfileV4ToV3(v4),
+      updatedByUserId: userId,
+    });
+    await expect(repository.getGuildV4(guildId)).resolves.toEqual({
+      status: "found",
+      revision: 4,
+      profile: v4,
+      updatedByUserId: userId,
+    });
+    await expect(
+      repository.putGuildV3({
+        guildId,
+        updatedByUserId: userId,
+        expectedRevision: 4,
+        profile: v3,
+        mutationId: "appearance-guild-v3-against-v4",
+        occurredAt: occurredAt + 1,
+      }),
+    ).resolves.toEqual({
+      status: "appearance_profile_version_conflict",
+    });
+  });
+
+  it("creates V4 rows without requiring an older profile", async () => {
+    const repository = new D1AppearanceRepository(dataEnv.DATA, catalog);
+    const personal = personalProfileV4();
+    const guild = guildProfileV4();
+
+    await expect(
+      repository.putPersonalV4({
+        userId,
+        expectedRevision: 0,
+        profile: personal,
+        mutationId: "appearance-user-v4-create",
+        occurredAt,
+      }),
+    ).resolves.toEqual({
+      status: "applied",
+      revision: 1,
+      profile: personal,
+    });
+    await expect(
+      repository.putGuildV4({
+        guildId,
+        updatedByUserId: userId,
+        expectedRevision: 0,
+        profile: guild,
+        mutationId: "appearance-guild-v4-create",
+        occurredAt: occurredAt + 1,
+      }),
+    ).resolves.toEqual({
+      status: "applied",
+      revision: 1,
+      profile: guild,
     });
   });
 

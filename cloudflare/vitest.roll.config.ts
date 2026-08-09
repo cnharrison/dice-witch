@@ -488,7 +488,7 @@ export default defineConfig({
         ],
         outboundService: discordTestResponse,
         serviceBindings: { DATA_SERVICE: dataTestResponse },
-        bindings: { ROLL_RENDER_VERSION: "4" },
+        bindings: { ROLL_RENDER_VERSION: "4", ROLL_VIEW_POLICY: "r19" },
       },
       wrangler: {
         configPath: "./wrangler.roll.example.jsonc",

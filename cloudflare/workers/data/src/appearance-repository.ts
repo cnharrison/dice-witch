@@ -1,13 +1,19 @@
 import {
   parseAppearanceProfileV3,
+  parseAppearanceProfileV4,
   parseGuildAppearanceProfileV3,
+  parseGuildAppearanceProfileV4,
   type AppearanceProfileV3,
+  type AppearanceProfileV4,
   type AppearanceValidationCatalogV3,
   type GuildAppearanceProfileV3,
+  type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
   migrateAppearanceProfileV1,
   migrateGuildAppearanceProfileV1,
+  projectAppearanceProfileV4ToV3,
+  projectGuildAppearanceProfileV4ToV3,
   parseAppearanceProfile,
   parseAppearanceProfileV2,
   parseGuildAppearanceProfile,
@@ -83,6 +89,7 @@ type PutPersonalAppearanceInput = {
 export type PutPersonalAppearanceV1Input = PutPersonalAppearanceInput;
 export type PutPersonalAppearanceV2Input = PutPersonalAppearanceInput;
 export type PutPersonalAppearanceV3Input = PutPersonalAppearanceInput;
+export type PutPersonalAppearanceV4Input = PutPersonalAppearanceInput;
 
 type PutGuildAppearanceInput = {
   guildId: string;
@@ -96,8 +103,9 @@ type PutGuildAppearanceInput = {
 export type PutGuildAppearanceV1Input = PutGuildAppearanceInput;
 export type PutGuildAppearanceV2Input = PutGuildAppearanceInput;
 export type PutGuildAppearanceV3Input = PutGuildAppearanceInput;
+export type PutGuildAppearanceV4Input = PutGuildAppearanceInput;
 
-type AppearanceProfileVersion = 1 | 2 | 3;
+type AppearanceProfileVersion = 1 | 2 | 3 | 4;
 
 type StoredProfileState =
   | { status: "missing" }
@@ -162,12 +170,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 type StoredPersonalDocument =
   | { version: 1; profile: AppearanceProfileV1 }
   | { version: 2; profile: AppearanceProfileV2 }
-  | { version: 3; profile: AppearanceProfileV3 };
+  | { version: 3; profile: AppearanceProfileV3 }
+  | { version: 4; profile: AppearanceProfileV4 };
 
 type StoredGuildDocument =
   | { version: 1; profile: GuildAppearanceProfileV1 }
   | { version: 2; profile: GuildAppearanceProfileV2 }
-  | { version: 3; profile: GuildAppearanceProfileV3 };
+  | { version: 3; profile: GuildAppearanceProfileV3 }
+  | { version: 4; profile: GuildAppearanceProfileV4 };
 
 type StoredPersonalProfile =
   | { status: "missing" }
@@ -213,6 +223,12 @@ function parseStoredPersonalProfile(
         profile: parseAppearanceProfileV3(value, catalogs.v3),
       };
     }
+    if (value.version === 4) {
+      return {
+        version: 4,
+        profile: parseAppearanceProfileV4(value, catalogs.v3),
+      };
+    }
     throw new Error("Stored profile version is not supported");
   } catch {
     throw new Error("Stored appearance profile is invalid");
@@ -242,6 +258,12 @@ function parseStoredGuildProfile(
       return {
         version: 3,
         profile: parseGuildAppearanceProfileV3(value, catalogs.v3),
+      };
+    }
+    if (value.version === 4) {
+      return {
+        version: 4,
+        profile: parseGuildAppearanceProfileV4(value, catalogs.v3),
       };
     }
     throw new Error("Stored profile version is not supported");
@@ -378,7 +400,9 @@ export class D1AppearanceRepository {
     const userId = validateSnowflake(userIdValue, "User id");
     const stored = await this.readPersonalProfile(userId);
     if (stored.status === "missing") return stored;
-    if (stored.document.version === 3) return versionConflict();
+    if (stored.document.version !== 1 && stored.document.version !== 2) {
+      return versionConflict();
+    }
     return {
       status: "found",
       revision: stored.revision,
@@ -395,7 +419,30 @@ export class D1AppearanceRepository {
     const userId = validateSnowflake(userIdValue, "User id");
     const stored = await this.readPersonalProfile(userId);
     if (stored.status === "missing") return stored;
-    if (stored.document.version !== 3) return versionConflict();
+    if (stored.document.version !== 3 && stored.document.version !== 4) {
+      return versionConflict();
+    }
+    return {
+      status: "found",
+      revision: stored.revision,
+      profile:
+        stored.document.version === 4
+          ? projectAppearanceProfileV4ToV3(stored.document.profile)
+          : stored.document.profile,
+    };
+  }
+
+  async getPersonalV4(
+    userIdValue: string,
+  ): Promise<
+    AppearanceProfileReadResult<AppearanceProfileV3 | AppearanceProfileV4>
+  > {
+    const userId = validateSnowflake(userIdValue, "User id");
+    const stored = await this.readPersonalProfile(userId);
+    if (stored.status === "missing") return stored;
+    if (stored.document.version !== 3 && stored.document.version !== 4) {
+      return versionConflict();
+    }
     return {
       status: "found",
       revision: stored.revision,
@@ -424,7 +471,9 @@ export class D1AppearanceRepository {
     const guildId = validateSnowflake(guildIdValue, "Guild id");
     const stored = await this.readGuildProfile(guildId);
     if (stored.status === "missing") return stored;
-    if (stored.document.version === 3) return versionConflict();
+    if (stored.document.version !== 1 && stored.document.version !== 2) {
+      return versionConflict();
+    }
     return {
       status: "found",
       revision: stored.revision,
@@ -442,7 +491,33 @@ export class D1AppearanceRepository {
     const guildId = validateSnowflake(guildIdValue, "Guild id");
     const stored = await this.readGuildProfile(guildId);
     if (stored.status === "missing") return stored;
-    if (stored.document.version !== 3) return versionConflict();
+    if (stored.document.version !== 3 && stored.document.version !== 4) {
+      return versionConflict();
+    }
+    return {
+      status: "found",
+      revision: stored.revision,
+      profile:
+        stored.document.version === 4
+          ? projectGuildAppearanceProfileV4ToV3(stored.document.profile)
+          : stored.document.profile,
+      updatedByUserId: stored.updatedByUserId,
+    };
+  }
+
+  async getGuildV4(
+    guildIdValue: string,
+  ): Promise<
+    GuildAppearanceProfileReadResult<
+      GuildAppearanceProfileV3 | GuildAppearanceProfileV4
+    >
+  > {
+    const guildId = validateSnowflake(guildIdValue, "Guild id");
+    const stored = await this.readGuildProfile(guildId);
+    if (stored.status === "missing") return stored;
+    if (stored.document.version !== 3 && stored.document.version !== 4) {
+      return versionConflict();
+    }
     return {
       status: "found",
       revision: stored.revision,
@@ -469,6 +544,12 @@ export class D1AppearanceRepository {
     return this.putPersonal(input, 3);
   }
 
+  putPersonalV4(
+    input: PutPersonalAppearanceV4Input,
+  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV4>> {
+    return this.putPersonal(input, 4);
+  }
+
   private putPersonal(
     input: PutPersonalAppearanceInput,
     requestVersion: 1,
@@ -481,12 +562,19 @@ export class D1AppearanceRepository {
     input: PutPersonalAppearanceInput,
     requestVersion: 3,
   ): Promise<AppearanceProfileWriteResult<AppearanceProfileV3>>;
+  private putPersonal(
+    input: PutPersonalAppearanceInput,
+    requestVersion: 4,
+  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV4>>;
   private async putPersonal(
     input: PutPersonalAppearanceInput,
     requestVersion: AppearanceProfileVersion,
   ): Promise<
     AppearanceProfileWriteResult<
-      AppearanceProfileV1 | AppearanceProfileV2 | AppearanceProfileV3
+      | AppearanceProfileV1
+      | AppearanceProfileV2
+      | AppearanceProfileV3
+      | AppearanceProfileV4
     >
   > {
     const userId = validateSnowflake(input.userId, "User id");
@@ -495,13 +583,16 @@ export class D1AppearanceRepository {
     let profile:
       | AppearanceProfileV1
       | AppearanceProfileV2
-      | AppearanceProfileV3;
+      | AppearanceProfileV3
+      | AppearanceProfileV4;
     if (requestVersion === 1) {
       profile = parseAppearanceProfile(input.profile, this.catalogs.v1V2);
     } else if (requestVersion === 2) {
       profile = parseAppearanceProfileV2(input.profile, this.catalogs.v1V2);
-    } else {
+    } else if (requestVersion === 3) {
       profile = parseAppearanceProfileV3(input.profile, this.catalogs.v3);
+    } else {
+      profile = parseAppearanceProfileV4(input.profile, this.catalogs.v3);
     }
     const profileJson = serializeProfile(profile);
     const payloadJson = JSON.stringify({ expectedRevision, profile });
@@ -555,6 +646,12 @@ export class D1AppearanceRepository {
     return this.putGuild(input, 3);
   }
 
+  putGuildV4(
+    input: PutGuildAppearanceV4Input,
+  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV4>> {
+    return this.putGuild(input, 4);
+  }
+
   private putGuild(
     input: PutGuildAppearanceInput,
     requestVersion: 1,
@@ -567,6 +664,10 @@ export class D1AppearanceRepository {
     input: PutGuildAppearanceInput,
     requestVersion: 3,
   ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV3>>;
+  private putGuild(
+    input: PutGuildAppearanceInput,
+    requestVersion: 4,
+  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV4>>;
   private async putGuild(
     input: PutGuildAppearanceInput,
     requestVersion: AppearanceProfileVersion,
@@ -575,6 +676,7 @@ export class D1AppearanceRepository {
       | GuildAppearanceProfileV1
       | GuildAppearanceProfileV2
       | GuildAppearanceProfileV3
+      | GuildAppearanceProfileV4
     >
   > {
     const guildId = validateSnowflake(input.guildId, "Guild id");
@@ -587,7 +689,8 @@ export class D1AppearanceRepository {
     let profile:
       | GuildAppearanceProfileV1
       | GuildAppearanceProfileV2
-      | GuildAppearanceProfileV3;
+      | GuildAppearanceProfileV3
+      | GuildAppearanceProfileV4;
     if (requestVersion === 1) {
       profile = parseGuildAppearanceProfile(
         input.profile,
@@ -598,8 +701,10 @@ export class D1AppearanceRepository {
         input.profile,
         this.catalogs.v1V2,
       );
-    } else {
+    } else if (requestVersion === 3) {
       profile = parseGuildAppearanceProfileV3(input.profile, this.catalogs.v3);
+    } else {
+      profile = parseGuildAppearanceProfileV4(input.profile, this.catalogs.v3);
     }
     const profileJson = serializeProfile(profile);
     const payloadJson = JSON.stringify({

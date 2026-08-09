@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
-import type {
-  AppearanceProfileV3,
-  CustomAppearanceDesignV3,
+import {
+  createDefaultDiceViewPreferencesV4,
+  type AppearanceProfileV3,
+  type AppearanceProfileV4,
+  type CustomAppearanceDesignV3,
   GuildAppearanceProfileV3,
 } from "@dice-witch/dice-v4-model";
 import { AppearanceApiError } from "@/lib/appearance";
@@ -25,6 +27,13 @@ vi.mock("@/lib/appearance-v3", async (importOriginal) => {
       height: 150,
       base64: "iVBORw0KGgo=",
     })),
+    getAppearancePreviewV4: vi.fn(async () => ({
+      version: 4,
+      contentType: "image/png",
+      width: 150,
+      height: 150,
+      base64: "iVBORw0KGgo=",
+    })),
   };
 });
 
@@ -38,6 +47,15 @@ function personalProfile(): AppearanceProfileV3 {
       all: { source: "builtin", id: "chaotic" },
       overrides: { d20: { source: "builtin", id: "hex-appeal" } },
     },
+  };
+}
+
+function personalProfileV4(): AppearanceProfileV4 {
+  const profile = personalProfile();
+  return {
+    ...profile,
+    version: 4,
+    diceView: createDefaultDiceViewPreferencesV4(),
   };
 }
 
@@ -114,6 +132,90 @@ describe("AppearanceEditorV3", () => {
     expect(screen.getByRole("button", { name: "Save & apply" })).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Design name")).toBeNull();
+  });
+
+  it("keeps V4 camera changes in the shared Save & apply draft", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfileV4() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      version: 4,
+      onSave,
+    });
+
+    await user.click(screen.getByLabelText("Keep rolled results clear"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save & apply" })).toBeDefined();
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Preset" }),
+      "dice-witch",
+    );
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({
+      version: 4,
+      diceView: { mode: "normal" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+    expect(onSave.mock.calls[1]?.[0]).toMatchObject({
+      version: 4,
+      diceView: { mode: "clear" },
+    });
+  });
+
+  it("preserves appearance and camera drafts through one save", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfileV4() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      version: 4,
+      onSave,
+    });
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Preset" }),
+      "pride",
+    );
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    await user.click(screen.getByRole("button", { name: "Customize" }));
+    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
+    const hex = screen.getByRole("textbox", { name: "Hex color" });
+    await user.clear(hex);
+    await user.type(hex, "#123456");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.clear(screen.getByLabelText("Design name"));
+    await user.type(screen.getByLabelText("Design name"), "Combined draft");
+
+    await user.click(screen.getByLabelText("Keep rolled results clear"));
+    expect(screen.getByLabelText("Design name")).toHaveProperty(
+      "value",
+      "Combined draft",
+    );
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+    const saved = onSave.mock.calls[1]?.[0];
+    expect(saved).toMatchObject({
+      version: 4,
+      diceView: { mode: "clear" },
+      designs: [{ id: designId, name: "Combined draft" }],
+    });
+    const colors = saved?.designs[0]?.recipe.colors;
+    if (colors?.mode !== "palette") {
+      throw new Error("Combined draft palette is missing");
+    }
+    expect(colors.colors[0]).toBe("#123456");
   });
 
   it("applies Random directly from the preset selector", async () => {

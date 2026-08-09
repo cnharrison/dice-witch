@@ -5,7 +5,7 @@ import { verifyProductionActiveSettings } from "./production-active-settings.mjs
 const sha = "a".repeat(40);
 const config = {
   compatibility_date: "2026-07-10",
-  vars: { ROLL_RENDER_VERSION: "4" },
+  vars: { ROLL_RENDER_VERSION: "4", ROLL_VIEW_POLICY: "r19" },
   services: [
     { binding: "DATA_SERVICE", service: "dice-witch-data-production" },
   ],
@@ -20,6 +20,7 @@ const version = {
   resources: {
     bindings: [
       { name: "ROLL_RENDER_VERSION", type: "plain_text", text: "4" },
+      { name: "ROLL_VIEW_POLICY", type: "plain_text", text: "r19" },
       {
         name: "DATA_SERVICE",
         type: "service",

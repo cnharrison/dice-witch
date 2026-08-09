@@ -4,6 +4,7 @@ import type { RendererRevisionV4 } from "./types";
 
 export type RendererRevisionPolicyV4 = {
   explicitTextureScope: boolean;
+  resolvedViews: boolean;
   d20Geometry: "r1" | "r2";
   gradientMapping: "legacy" | "projected";
   patternMapping: "legacy" | "projected" | "surface";
@@ -25,7 +26,8 @@ export type RendererRevisionPolicyV4 = {
     | "legacy"
     | "presets-r16"
     | "presets-r17"
-    | "presets-r18";
+    | "presets-r18"
+    | "preferences-r20";
   sphereLabelMapping: "legacy" | "local-frame-r19";
   uniformD20Ink: boolean;
   sphereOutline: boolean;
@@ -49,6 +51,7 @@ function policy(
 
 const r1 = policy({
   explicitTextureScope: false,
+  resolvedViews: false,
   d20Geometry: "r1",
   gradientMapping: "legacy",
   patternMapping: "legacy",
@@ -113,6 +116,11 @@ const r16 = policy({ ...r15, cameraAngles: "presets-r16" });
 const r17 = policy({ ...r16, cameraAngles: "presets-r17" });
 const r18 = policy({ ...r17, cameraAngles: "presets-r18" });
 const r19 = policy({ ...r18, sphereLabelMapping: "local-frame-r19" });
+const r20 = policy({
+  ...r19,
+  resolvedViews: true,
+  cameraAngles: "preferences-r20",
+});
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -134,6 +142,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r17": r17,
   "canvaskit-v4-r18": r18,
   "canvaskit-v4-r19": r19,
+  "canvaskit-v4-r20": r20,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

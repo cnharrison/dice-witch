@@ -1,3 +1,10 @@
+import {
+  type AppearanceProfileV3,
+  type AppearanceProfileV4,
+  type GuildAppearanceProfileV3,
+  type GuildAppearanceProfileV4,
+} from "@dice-witch/dice-v4-model";
+import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model/dice-view-preferences";
 import type {
   AppearanceColors,
   AppearanceProfileV1,
@@ -87,6 +94,45 @@ export function migrateGuildAppearanceProfileV1(
 ): GuildAppearanceProfileV2 {
   return {
     ...migrateAppearanceProfileV1(profile),
+    mode: profile.mode,
+  };
+}
+
+export function migrateAppearanceProfileV3ToV4(
+  profile: AppearanceProfileV3,
+): AppearanceProfileV4 {
+  return {
+    version: 4,
+    designs: structuredClone(profile.designs),
+    assignments: structuredClone(profile.assignments),
+    diceView: createDefaultDiceViewPreferencesV4(),
+  };
+}
+
+export function migrateGuildAppearanceProfileV3ToV4(
+  profile: GuildAppearanceProfileV3,
+): GuildAppearanceProfileV4 {
+  return {
+    ...migrateAppearanceProfileV3ToV4(profile),
+    mode: profile.mode,
+  };
+}
+
+export function projectAppearanceProfileV4ToV3(
+  profile: AppearanceProfileV4,
+): AppearanceProfileV3 {
+  return {
+    version: 3,
+    designs: structuredClone(profile.designs),
+    assignments: structuredClone(profile.assignments),
+  };
+}
+
+export function projectGuildAppearanceProfileV4ToV3(
+  profile: GuildAppearanceProfileV4,
+): GuildAppearanceProfileV3 {
+  return {
+    ...projectAppearanceProfileV4ToV3(profile),
     mode: profile.mode,
   };
 }

@@ -40,11 +40,13 @@ function mockFetch(options: {
   isAdmin?: boolean;
   guildStatus?: number;
   personalStatus?: number;
+  personalProfile?: unknown;
 } = {}): void {
   const {
     isAdmin = false,
     guildStatus = 200,
     personalStatus = 200,
+    personalProfile = null,
   } = options;
   vi.stubGlobal(
     "fetch",
@@ -53,24 +55,46 @@ function mockFetch(options: {
       if (url.pathname === "/api/appearance/v3/catalog") {
         return Response.json(APPEARANCE_CATALOG_V3);
       }
-      if (url.pathname === "/api/appearance/v3/me") {
+      if (url.pathname === "/api/appearance/v3/me" && init?.method === "PUT") {
+        const body = JSON.parse(String(init.body)) as { profile: unknown };
+        return Response.json({
+          status: "applied",
+          revision: 2,
+          profile: body.profile,
+        });
+      }
+      if (url.pathname === "/api/appearance/v4/me") {
+        if (init?.method === "PUT") {
+          const body = JSON.parse(String(init.body)) as { profile: unknown };
+          return Response.json({
+            status: "applied",
+            revision: 1,
+            profile: body.profile,
+          });
+        }
         return personalStatus === 200
-          ? Response.json({ revision: 0, profile: null })
+          ? Response.json({
+              revision: personalProfile === null ? 0 : 1,
+              profile: personalProfile,
+            })
           : Response.json(
               { error: "appearance_profile_version_conflict" },
               { status: personalStatus },
             );
       }
-      if (url.pathname === "/api/appearance/v3/preview") {
+      if (
+        url.pathname === "/api/appearance/v3/preview" ||
+        url.pathname === "/api/appearance/v4/preview"
+      ) {
         return Response.json({
-          version: 3,
+          version: url.pathname.includes("/v4/") ? 4 : 3,
           contentType: "image/png",
           width: 150,
           height: 150,
           base64: "iVBORw0KGgo=",
         });
       }
-      if (url.pathname === `/api/guilds/${GUILD_ID}/appearance/v3`) {
+      if (url.pathname === `/api/guilds/${GUILD_ID}/appearance/v4`) {
         return Response.json({ revision: 0, profile: null });
       }
       if (url.pathname === `/api/guilds/${GUILD_ID}/preferences`) {
@@ -127,6 +151,72 @@ describe("appearance preference authorization", () => {
     ).toBeNull();
   });
 
+  it("saves camera drafts through the profile Save & apply action", async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    renderPreferences();
+
+    await user.click(
+      await screen.findByRole("switch", { name: "Keep rolled results clear" }),
+    );
+    expect(
+      vi.mocked(fetch).mock.calls.some(
+        ([input, init]) =>
+          requestUrl(input).pathname === "/api/appearance/v4/me" &&
+          init?.method === "PUT",
+      ),
+    ).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => {
+      const mutation = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) =>
+          requestUrl(input).pathname === "/api/appearance/v4/me" &&
+          init?.method === "PUT",
+      );
+      expect(mutation).toBeDefined();
+      expect(JSON.parse(String(mutation?.[1]?.body))).toMatchObject({
+        expectedRevision: 0,
+        profile: {
+          version: 4,
+          diceView: { mode: "clear", elevationDegrees: 40 },
+        },
+      });
+    });
+  });
+
+  it("keeps V3 rows editable without migrating them in the browser", async () => {
+    mockFetch({
+      personalProfile: {
+        version: 3,
+        designs: [],
+        assignments: { all: null, overrides: {} },
+      },
+    });
+    renderPreferences();
+
+    expect(await screen.findByText("Preview")).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Dice view" })).toBeNull();
+
+    const user = userEvent.setup();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Preset" }),
+      "dice-witch",
+    );
+    await waitFor(() => {
+      const mutation = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) =>
+          requestUrl(input).pathname === "/api/appearance/v3/me" &&
+          init?.method === "PUT",
+      );
+      expect(mutation).toBeDefined();
+      expect(JSON.parse(String(mutation?.[1]?.body))).toMatchObject({
+        expectedRevision: 1,
+        profile: { version: 3 },
+      });
+    });
+  });
+
   it("keeps roll delivery inside the Server appearance section", async () => {
     const user = userEvent.setup();
     mockFetch({ isAdmin: true });
@@ -161,7 +251,7 @@ describe("appearance preference authorization", () => {
     ).toBeTruthy();
   });
 
-  it("distinguishes stored Profile V3 version conflicts", async () => {
+  it("distinguishes stored profile version conflicts", async () => {
     mockFetch({ personalStatus: 409 });
     renderPreferences();
 
@@ -175,7 +265,7 @@ describe("appearance preference authorization", () => {
     expect(screen.queryByText("Preview")).toBeNull();
   });
 
-  it("keeps roll-delay persistence independent from Profile V3", async () => {
+  it("keeps roll-delay persistence independent from appearance profiles", async () => {
     const user = userEvent.setup();
     mockFetch({ isAdmin: true });
     renderPreferences();

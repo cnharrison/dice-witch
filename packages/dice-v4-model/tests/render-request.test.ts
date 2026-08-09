@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
   TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4,
+  getAuthoredRenderViewV4,
   validateRenderRequestV4,
   type AppearanceMaterialV4,
   type RenderDieV4,
@@ -226,6 +227,106 @@ describe("RenderRequestV4", () => {
       presetView.azimuthOffsetDegrees = azimuthOffsetDegrees;
       presetView.poseAzimuthDegrees = poseAzimuthDegrees;
       expect(validateRenderRequestV4(preset)).toEqual(preset);
+    }
+  });
+
+  it("accepts fully resolved d6 authored camera views only in r20", () => {
+    const authoredDie: RenderDieV4 = {
+      ...die(),
+      target: "d6",
+      result: 6,
+      form: "standard",
+      view: getAuthoredRenderViewV4("legacy", {
+        target: "d6",
+        form: "standard",
+        result: 6,
+      }),
+    };
+    authoredDie.appearance.texture.scope = "die-wide";
+    const authored = {
+      version: 4,
+      rendererRevision: "canvaskit-v4-r20",
+      groups: [[authoredDie]],
+    } as const;
+
+    expect(validateRenderRequestV4(authored)).toEqual(authored);
+
+    const previousRevision = {
+      ...structuredClone(authored),
+      rendererRevision: "canvaskit-v4-r19" as const,
+    };
+    expect(() => validateRenderRequestV4(previousRevision)).toThrow(
+      "Render request groups[0][0].view is invalid for d6",
+    );
+
+    const unauthoredTarget = {
+      ...structuredClone(authored),
+      groups: [[{ ...authoredDie, target: "d20", result: 20 }]],
+    };
+    expect(() => validateRenderRequestV4(unauthoredTarget)).toThrow(
+      "Render request groups[0][0].view does not match an authored d20 view",
+    );
+
+    const nonUnitRotation = structuredClone(authored);
+    const view = nonUnitRotation.groups[0][0].view;
+    if (view?.kind !== "oriented-camera") {
+      throw new Error("Authored camera fixture is invalid");
+    }
+    view.resultRotation = [0, 0, 0, 2];
+    expect(() => validateRenderRequestV4(nonUnitRotation)).toThrow(
+      "Render request groups[0][0].view.resultRotation must be normalized",
+    );
+
+    const wrongResultRotation = structuredClone(authored);
+    const wrongView = wrongResultRotation.groups[0][0].view;
+    if (wrongView?.kind !== "oriented-camera") {
+      throw new Error("Authored camera fixture is invalid");
+    }
+    wrongView.resultRotation = [0, 0, 1, 0];
+    expect(() => validateRenderRequestV4(wrongResultRotation)).toThrow(
+      "Render request groups[0][0].view does not match an authored d6 view",
+    );
+  });
+
+  it("accepts bounded preference cameras only in r20", () => {
+    const preferenceDie = die();
+    preferenceDie.appearance.texture.scope = "die-wide";
+    preferenceDie.view = {
+      kind: "camera",
+      elevationDegrees: 55,
+      azimuthOffsetDegrees: 0,
+      poseAzimuthDegrees: 180,
+    };
+    const preference = {
+      version: 4,
+      rendererRevision: "canvaskit-v4-r20",
+      groups: [[preferenceDie]],
+    } as const;
+
+    expect(validateRenderRequestV4(preference)).toEqual(preference);
+    expect(() =>
+      validateRenderRequestV4({
+        ...structuredClone(preference),
+        rendererRevision: "canvaskit-v4-r19",
+      }),
+    ).toThrow("Render request groups[0][0].view.elevationDegrees is invalid");
+
+    for (const [field, value] of [
+      ["elevationDegrees", 29],
+      ["elevationDegrees", 55.5],
+      ["azimuthOffsetDegrees", 46],
+      ["azimuthOffsetDegrees", 3],
+      ["poseAzimuthDegrees", 5],
+    ] as const) {
+      const invalid = structuredClone(preference);
+      const view = invalid.groups[0][0].view;
+      if (view?.kind !== "camera") {
+        throw new Error("Camera preference fixture is invalid");
+      }
+      view[field] = value;
+      expect(() => validateRenderRequestV4(invalid)).toThrow(
+        `Render request groups[0][0].view.${field} is invalid`,
+      );
     }
   });
 

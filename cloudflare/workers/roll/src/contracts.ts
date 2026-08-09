@@ -84,6 +84,7 @@ export type RollWorkRecordV5 =
   | (RollWorkRecordBase & {
       version: 5;
       renderVersion: 4;
+      viewPolicy?: "r19" | "r20";
       renderRequest: RenderRequestV4 | null;
     });
 
@@ -1001,18 +1002,26 @@ export function parseRecord(value: string): RollWorkRecord {
   if (parsed.version === 1) return { version: 1, ...common };
 
   if (parsed.version === 5) {
+    const legacyKeys = [
+      "createdAt",
+      "outcome",
+      "renderRequest",
+      "renderSeed",
+      "renderVersion",
+      "request",
+      "rollSeed",
+      "version",
+    ];
+    const hasViewPolicy = hasExactKeys(parsed, [
+      ...legacyKeys,
+      "viewPolicy",
+    ]);
     if (
-      !hasExactKeys(parsed, [
-        "createdAt",
-        "outcome",
-        "renderRequest",
-        "renderSeed",
-        "renderVersion",
-        "request",
-        "rollSeed",
-        "version",
-      ]) ||
+      (!hasExactKeys(parsed, legacyKeys) && !hasViewPolicy) ||
       (parsed.renderVersion !== 3 && parsed.renderVersion !== 4) ||
+      (hasViewPolicy &&
+        (parsed.renderVersion !== 4 ||
+          (parsed.viewPolicy !== "r19" && parsed.viewPolicy !== "r20"))) ||
       common.outcome.outcomes.length === 0
     ) {
       throw new Error("Stored roll work is invalid");
@@ -1022,9 +1031,16 @@ export function parseRecord(value: string): RollWorkRecord {
       validateStoredOutcomeV4(parsed.outcome, request, common.rollSeed);
     }
     if (parsed.renderRequest === null) {
-      return parsed.renderVersion === 3
-        ? { version: 5, renderVersion: 3, ...common, renderRequest: null }
-        : { version: 5, renderVersion: 4, ...common, renderRequest: null };
+      if (parsed.renderVersion === 3) {
+        return { version: 5, renderVersion: 3, ...common, renderRequest: null };
+      }
+      return {
+        version: 5,
+        renderVersion: 4,
+        ...(hasViewPolicy ? { viewPolicy: parsed.viewPolicy as "r19" | "r20" } : {}),
+        ...common,
+        renderRequest: null,
+      };
     }
     if (parsed.renderVersion === 3) {
       const renderRequest = validateRenderRequestV3(parsed.renderRequest);
@@ -1033,7 +1049,13 @@ export function parseRecord(value: string): RollWorkRecord {
     }
     const renderRequest = validateRenderRequestV4(parsed.renderRequest);
     validateRenderSnapshotV4(renderRequest, common.outcome);
-    return { version: 5, renderVersion: 4, ...common, renderRequest };
+    return {
+      version: 5,
+      renderVersion: 4,
+      ...(hasViewPolicy ? { viewPolicy: parsed.viewPolicy as "r19" | "r20" } : {}),
+      ...common,
+      renderRequest,
+    };
   }
 
   if (

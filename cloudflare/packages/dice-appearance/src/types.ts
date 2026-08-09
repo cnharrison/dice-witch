@@ -2,14 +2,17 @@ import type {
   AppearanceColorsV3,
   AppearanceMaterialV4,
   AppearanceProfileV3,
+  AppearanceProfileV4,
   AppearanceRecipeV3,
   AppearanceTargetV4,
   AppearanceVariationScopeV3,
   AppearanceVariationV3,
+  DiceViewPreferencesV4,
   EngravingFinishV4,
   FontIdV4,
   GradientScopeV4,
   GuildAppearanceProfileV3,
+  GuildAppearanceProfileV4,
   LightingDirectionV4,
   LightingModeV4,
   LightingStrengthV4,
@@ -497,6 +500,12 @@ export type EffectiveAppearanceRecipesV3 = Record<
   AppearanceRecipeV3
 >;
 
+export type EffectiveAppearanceV4 = {
+  version: 4;
+  recipes: EffectiveAppearanceRecipesV3;
+  diceView: DiceViewPreferencesV4;
+};
+
 export type AppearanceResolutionContextV3 = {
   renderSeed: number;
   target: AppearanceTargetV4;
@@ -527,6 +536,12 @@ export type EffectiveAppearanceRecipeInputV2 = {
 export type EffectiveAppearanceRecipeInputV3 = {
   personalProfile: AppearanceProfileV3 | null;
   guildProfile: GuildAppearanceProfileV3 | null;
+  builtins: AppearanceBuiltinRecipesV3;
+};
+
+export type EffectiveAppearanceInputV4 = {
+  personalProfile: AppearanceProfileV4 | null;
+  guildProfile: GuildAppearanceProfileV4 | null;
   builtins: AppearanceBuiltinRecipesV3;
 };
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseRollRenderVersion } from "../../workers/roll/src/render-version";
+import {
+  parseRollRenderVersion,
+  parseRollViewPolicy,
+} from "../../workers/roll/src/render-version";
 
 describe("Roll render-version configuration", () => {
   it.each([
@@ -14,6 +17,22 @@ describe("Roll render-version configuration", () => {
     (configured) => {
       expect(() => parseRollRenderVersion(configured)).toThrow(
         "ROLL_RENDER_VERSION must be 3 or 4",
+      );
+    },
+  );
+
+  it.each(["r19", "r20"] as const)(
+    "accepts explicit view policy %s",
+    (configured) => {
+      expect(parseRollViewPolicy(configured)).toBe(configured);
+    },
+  );
+
+  it.each([undefined, null, "", "r18", "R20"])(
+    "fails closed for view policy %j",
+    (configured) => {
+      expect(() => parseRollViewPolicy(configured)).toThrow(
+        "ROLL_VIEW_POLICY must be r19 or r20",
       );
     },
   );

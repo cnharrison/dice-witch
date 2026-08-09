@@ -1,4 +1,5 @@
 import { AppearancePresetGalleryV3 } from "@/components/AppearancePresetGalleryV3";
+import { DiceViewPreferencesV4 } from "@/components/DiceViewPreferencesV4";
 import { AppearancePreviewPaneV3 } from "@/components/AppearancePreviewPaneV3";
 import { AppearanceRecipeControlsV3 } from "@/components/AppearanceRecipeControlsV3";
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
@@ -16,6 +17,7 @@ import {
   beginAppearanceRecipeEditV3,
   clearAppearanceTargetOverrideV3,
   createEmptyAppearanceProfileV3,
+  createEmptyAppearanceProfileV4,
   deleteAppearanceDesignV3,
   nextPresetEditNameV3,
   resolveAppearanceEditorSelectionV3,
@@ -32,6 +34,7 @@ import {
 import type {
   AppearanceRecipeV3,
   CustomAppearanceDesignV3,
+  DiceViewPreferencesV4 as DiceViewPreferencesValueV4,
 } from "@dice-witch/dice-v4-model";
 import { Check, Save } from "lucide-react";
 import * as React from "react";
@@ -42,6 +45,7 @@ type AppearanceEditorV3Props = {
   kind: "personal" | "guild";
   personalDesigns: readonly CustomAppearanceDesignV3[];
   isSaving: boolean;
+  version?: 3 | 4;
   onSave(profile: EditableAppearanceProfileV3): Promise<void>;
 };
 
@@ -71,20 +75,34 @@ export function AppearanceEditorV3({
   kind,
   personalDesigns,
   isSaving,
+  version = 3,
   onSave,
 }: AppearanceEditorV3Props) {
   const resourceProfile = React.useMemo(
-    () => resource.profile ?? createEmptyAppearanceProfileV3(kind),
-    [kind, resource.profile],
+    () =>
+      resource.profile ??
+      (version === 4
+        ? createEmptyAppearanceProfileV4(kind)
+        : createEmptyAppearanceProfileV3(kind)),
+    [kind, resource.profile, version],
   );
   const [currentProfile, setCurrentProfile] =
     React.useState<EditableAppearanceProfileV3>(resourceProfile);
+  const [diceViewDraft, setDiceViewDraft] =
+    React.useState<DiceViewPreferencesValueV4 | null>(
+      resourceProfile.version === 4
+        ? structuredClone(resourceProfile.diceView)
+        : null,
+    );
+  const diceViewDirtyRef = React.useRef(false);
   const initial = resolveAppearanceEditorSelectionV3(
     currentProfile,
     "all",
     catalog,
   );
   const [target, setTarget] =
+    React.useState<AppearanceEditorTargetV3>("all");
+  const [previewTarget, setPreviewTarget] =
     React.useState<AppearanceEditorTargetV3>("all");
   const [recipe, setRecipe] = React.useState(initial.recipe);
   const [selectedStyleId, setSelectedStyleId] = React.useState(initial.styleId);
@@ -104,7 +122,23 @@ export function AppearanceEditorV3({
 
   React.useEffect(() => {
     setCurrentProfile(resourceProfile);
+    if (resourceProfile.version === 4 && !diceViewDirtyRef.current) {
+      setDiceViewDraft(structuredClone(resourceProfile.diceView));
+    }
   }, [resource.revision, resourceProfile]);
+
+  const diceViewDirty =
+    currentProfile.version === 4 &&
+    diceViewDraft !== null &&
+    JSON.stringify(currentProfile.diceView) !== JSON.stringify(diceViewDraft);
+  diceViewDirtyRef.current = diceViewDirty;
+
+  const withDiceViewDraft = <Profile extends EditableAppearanceProfileV3>(
+    profile: Profile,
+  ): Profile => {
+    if (profile.version !== 4 || diceViewDraft === null) return profile;
+    return { ...profile, diceView: structuredClone(diceViewDraft) } as Profile;
+  };
 
   React.useEffect(() => {
     if (
@@ -141,6 +175,7 @@ export function AppearanceEditorV3({
       catalog,
     );
     setTarget(nextTarget);
+    setPreviewTarget(nextTarget);
     setRecipe(selection.recipe);
     setSelectedStyleId(selection.styleId);
     setEditingDesignId(selection.designId);
@@ -195,11 +230,13 @@ export function AppearanceEditorV3({
     const id = editingDesignId ?? crypto.randomUUID();
     let profile: EditableAppearanceProfileV3;
     try {
-      profile = upsertAppearanceDesignV3(
-        currentProfile,
-        target,
-        { id, name, recipe },
-        catalog,
+      profile = withDiceViewDraft(
+        upsertAppearanceDesignV3(
+          currentProfile,
+          target,
+          { id, name, recipe },
+          catalog,
+        ),
       );
     } catch (error) {
       setStatus(errorMessage(error));
@@ -215,6 +252,28 @@ export function AppearanceEditorV3({
     setDesignName(name);
     setAutomaticDesignName(false);
     setCustomizing(false);
+    diceViewDirtyRef.current = false;
+    if (profile.version === 4) {
+      setDiceViewDraft(structuredClone(profile.diceView));
+    }
+  };
+
+  const saveDiceView = async () => {
+    const profile = withDiceViewDraft(currentProfile);
+    const saved = await saveProfile(profile, "Dice view settings were saved.");
+    if (!saved) return;
+    diceViewDirtyRef.current = false;
+    if (profile.version === 4) {
+      setDiceViewDraft(structuredClone(profile.diceView));
+    }
+  };
+
+  const cancelDraft = () => {
+    loadSelection(currentProfile, target);
+    if (currentProfile.version === 4) {
+      setDiceViewDraft(structuredClone(currentProfile.diceView));
+    }
+    diceViewDirtyRef.current = false;
   };
 
   const copyPersonalDesign = () => {
@@ -346,6 +405,18 @@ export function AppearanceEditorV3({
           </div>
         </div>
 
+        {currentProfile.version === 4 && diceViewDraft !== null && (
+          <DiceViewPreferencesV4
+            value={diceViewDraft}
+            disabled={isSaving}
+            onChange={(next) => {
+              setDiceViewDraft(next);
+              setStatus(null);
+            }}
+            onPreviewTargetChange={setPreviewTarget}
+          />
+        )}
+
         {kind === "guild" && personalDesigns.length > 0 && (
           <div className="rounded-lg border bg-muted/20 p-4">
             <p className="text-sm font-semibold">Copy one of my designs</p>
@@ -401,16 +472,18 @@ export function AppearanceEditorV3({
         </div>
 
         {customizing && (
-          <>
-            <AppearanceRecipeControlsV3
-              recipe={recipe}
-              catalog={catalog}
-              target={target}
-              onChange={setCustomRecipe}
-            />
+          <AppearanceRecipeControlsV3
+            recipe={recipe}
+            catalog={catalog}
+            target={target}
+            onChange={setCustomRecipe}
+          />
+        )}
 
-            <div className="sticky bottom-2 z-20 rounded-lg border border-brand/35 bg-card/95 p-4 shadow-lg backdrop-blur-sm">
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+        {(customizing || diceViewDirty) && (
+          <div className="sticky bottom-2 z-20 rounded-lg border border-brand/35 bg-card/95 p-4 shadow-lg backdrop-blur-sm">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+              {customizing ? (
                 <div className="space-y-1.5">
                   <Label htmlFor={`${kind}-design-name-v3`}>Design name</Label>
                   <Input
@@ -424,25 +497,31 @@ export function AppearanceEditorV3({
                     }}
                   />
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={isSaving}
-                  onClick={() => loadSelection(currentProfile, target)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={() => void saveCustomDesign()}
-                >
-                  <Save className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Save &amp; apply
-                </Button>
-              </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Save the camera draft when it looks right.
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={isSaving}
+                onClick={cancelDraft}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isSaving}
+                onClick={() =>
+                  void (customizing ? saveCustomDesign() : saveDiceView())
+                }
+              >
+                <Save className="mr-2 h-4 w-4" aria-hidden="true" />
+                Save &amp; apply
+              </Button>
             </div>
-          </>
+          </div>
         )}
 
         {presetState === "applying" ? (
@@ -469,7 +548,11 @@ export function AppearanceEditorV3({
 
       <aside className="space-y-4">
         <div className="xl:sticky xl:top-6 xl:z-10">
-          <AppearancePreviewPaneV3 target={target} recipe={recipe} />
+          <AppearancePreviewPaneV3
+            target={previewTarget}
+            recipe={recipe}
+            {...(diceViewDraft === null ? {} : { diceView: diceViewDraft })}
+          />
         </div>
         {currentProfile.designs.length > 0 && (
           <SavedAppearanceDesigns

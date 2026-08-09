@@ -132,10 +132,22 @@ describe("V4 renderer revision policies", () => {
     expect(revision18.sphereLabelMapping).toBe("legacy");
   });
 
+  it("adds resolved authored views in r20 without changing r19", () => {
+    const revision19 = rendererRevisionPolicyV4("canvaskit-v4-r19");
+    const revision20 = rendererRevisionPolicyV4("canvaskit-v4-r20");
+
+    expect(revision20).toEqual({
+      ...revision19,
+      resolvedViews: true,
+      cameraAngles: "preferences-r20",
+    });
+    expect(revision19.resolvedViews).toBe(false);
+  });
+
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r20" as RendererRevisionV4,
+        "canvaskit-v4-r21" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

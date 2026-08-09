@@ -3,6 +3,12 @@ import {
   isPolyhedralFormImplementedForTargetV4,
 } from "./compatibility";
 import {
+  DICE_VIEW_AZIMUTH_MODES_V4,
+  DICE_VIEW_AZIMUTH_RANGE_V4,
+  DICE_VIEW_ELEVATION_RANGE_V4,
+  DICE_VIEW_MODES_V4,
+} from "./dice-view-preferences";
+import {
   APPEARANCE_PALETTE_COLOR_RANGE_V3,
   APPEARANCE_SELECTION_WEIGHT_RANGE_V3,
   MAX_APPEARANCE_DESIGN_NAME_CHARACTERS_V3,
@@ -34,13 +40,17 @@ import type {
   AppearanceDesignReferenceV3,
   AppearanceMaterialV4,
   AppearanceProfileV3,
+  AppearanceProfileV4,
   AppearanceRecipeV3,
   AppearanceSelection,
   AppearanceTargetV4,
   PolyhedralFormV4,
   AppearanceValidationCatalogV3,
   CustomAppearanceDesignV3,
+  DiceViewAzimuthV4,
+  DiceViewPreferencesV4,
   GuildAppearanceProfileV3,
+  GuildAppearanceProfileV4,
 } from "./types";
 import { parseAppearanceMaterialV4 } from "./validate-render-request";
 import {
@@ -548,24 +558,92 @@ function validateAssignedCustomForms(
   }
 }
 
-function validateProfileSize(profile: AppearanceProfileV3): void {
-  if (JSON.stringify(profile).length > MAX_PROFILE_JSON_CHARACTERS_V3) {
-    throw new Error("Appearance profile exceeds 65536 characters");
+function parseDiceViewAzimuthV4(
+  value: unknown,
+  path: string,
+): DiceViewAzimuthV4 {
+  const azimuth = requireExactRecord(
+    value,
+    ["customDegrees", "mode"],
+    `${path} has invalid fields`,
+  );
+  if (
+    !DICE_VIEW_AZIMUTH_MODES_V4.includes(
+      azimuth.mode as (typeof DICE_VIEW_AZIMUTH_MODES_V4)[number],
+    )
+  ) {
+    throw new Error(`${path}.mode is invalid`);
   }
+  if (
+    typeof azimuth.customDegrees !== "number" ||
+    !Number.isSafeInteger(azimuth.customDegrees) ||
+    azimuth.customDegrees < DICE_VIEW_AZIMUTH_RANGE_V4.minimum ||
+    azimuth.customDegrees > DICE_VIEW_AZIMUTH_RANGE_V4.maximum ||
+    azimuth.customDegrees % DICE_VIEW_AZIMUTH_RANGE_V4.step !== 0
+  ) {
+    throw new Error(`${path}.customDegrees must be from -45 through 45 by 5`);
+  }
+  return {
+    mode: azimuth.mode as DiceViewAzimuthV4["mode"],
+    customDegrees: azimuth.customDegrees,
+  };
 }
 
-export function parseAppearanceProfileV3(
+export function parseDiceViewPreferencesV4(
   value: unknown,
-  catalog: AppearanceValidationCatalogV3,
-): AppearanceProfileV3 {
-  const profile = requireExactRecord(
+): DiceViewPreferencesV4 {
+  const diceView = requireExactRecord(
     value,
-    ["assignments", "designs", "version"],
-    "Appearance profile V3 has invalid fields",
+    ["azimuth", "elevationDegrees", "mode"],
+    "Dice view preferences V4 have invalid fields",
   );
-  if (profile.version !== 3) {
-    throw new Error("Appearance profile version must be 3");
+  if (
+    typeof diceView.elevationDegrees !== "number" ||
+    !Number.isSafeInteger(diceView.elevationDegrees) ||
+    diceView.elevationDegrees < DICE_VIEW_ELEVATION_RANGE_V4.minimum ||
+    diceView.elevationDegrees > DICE_VIEW_ELEVATION_RANGE_V4.maximum
+  ) {
+    throw new Error("Dice view elevationDegrees must be from 30 through 55");
   }
+  if (
+    !DICE_VIEW_MODES_V4.includes(
+      diceView.mode as (typeof DICE_VIEW_MODES_V4)[number],
+    )
+  ) {
+    throw new Error("Dice view mode is invalid");
+  }
+  const azimuth = requireExactRecord(
+    diceView.azimuth,
+    ["all", "overrides"],
+    "Dice view azimuth has invalid fields",
+  );
+  if (!isRecord(azimuth.overrides)) {
+    throw new Error("Dice view azimuth overrides are invalid");
+  }
+  const overrides: DiceViewPreferencesV4["azimuth"]["overrides"] = {};
+  for (const [target, override] of Object.entries(azimuth.overrides)) {
+    if (!APPEARANCE_TARGETS_V4.includes(target as AppearanceTargetV4)) {
+      throw new Error("Dice view azimuth override target is not supported");
+    }
+    overrides[target as AppearanceTargetV4] = parseDiceViewAzimuthV4(
+      override,
+      `Dice view azimuth override ${target}`,
+    );
+  }
+  return {
+    elevationDegrees: diceView.elevationDegrees,
+    mode: diceView.mode as DiceViewPreferencesV4["mode"],
+    azimuth: {
+      all: parseDiceViewAzimuthV4(azimuth.all, "Dice view azimuth all"),
+      overrides,
+    },
+  };
+}
+
+function parseProfileContents(
+  profile: Record<string, unknown>,
+  catalog: AppearanceValidationCatalogV3,
+): Pick<AppearanceProfileV3, "assignments" | "designs"> {
   if (!Array.isArray(profile.designs)) {
     throw new Error("Appearance profile designs must be an array");
   }
@@ -583,13 +661,63 @@ export function parseAppearanceProfileV3(
     designIds,
   );
   validateAssignedCustomForms(designs, assignments);
+  return { designs, assignments };
+}
+
+function validateProfileSize(
+  profile: AppearanceProfileV3 | AppearanceProfileV4,
+): void {
+  if (JSON.stringify(profile).length > MAX_PROFILE_JSON_CHARACTERS_V3) {
+    throw new Error("Appearance profile exceeds 65536 characters");
+  }
+}
+
+export function parseAppearanceProfileV3(
+  value: unknown,
+  catalog: AppearanceValidationCatalogV3,
+): AppearanceProfileV3 {
+  const profile = requireExactRecord(
+    value,
+    ["assignments", "designs", "version"],
+    "Appearance profile V3 has invalid fields",
+  );
+  if (profile.version !== 3) {
+    throw new Error("Appearance profile version must be 3");
+  }
   const parsed: AppearanceProfileV3 = {
     version: 3,
-    designs,
-    assignments,
+    ...parseProfileContents(profile, catalog),
   };
   validateProfileSize(parsed);
   return parsed;
+}
+
+export function parseAppearanceProfileV4(
+  value: unknown,
+  catalog: AppearanceValidationCatalogV3,
+): AppearanceProfileV4 {
+  const profile = requireExactRecord(
+    value,
+    ["assignments", "designs", "diceView", "version"],
+    "Appearance profile V4 has invalid fields",
+  );
+  if (profile.version !== 4) {
+    throw new Error("Appearance profile version must be 4");
+  }
+  const parsed: AppearanceProfileV4 = {
+    version: 4,
+    ...parseProfileContents(profile, catalog),
+    diceView: parseDiceViewPreferencesV4(profile.diceView),
+  };
+  validateProfileSize(parsed);
+  return parsed;
+}
+
+function parseGuildMode(value: unknown): GuildAppearanceProfileV3["mode"] {
+  if (value !== "off" && value !== "default" && value !== "enforced") {
+    throw new Error("Guild appearance mode is invalid");
+  }
+  return value;
 }
 
 export function parseGuildAppearanceProfileV3(
@@ -601,13 +729,6 @@ export function parseGuildAppearanceProfileV3(
     ["assignments", "designs", "mode", "version"],
     "Guild appearance profile V3 has invalid fields",
   );
-  if (
-    guild.mode !== "off" &&
-    guild.mode !== "default" &&
-    guild.mode !== "enforced"
-  ) {
-    throw new Error("Guild appearance mode is invalid");
-  }
   const profile = parseAppearanceProfileV3(
     {
       version: guild.version,
@@ -616,9 +737,36 @@ export function parseGuildAppearanceProfileV3(
     },
     catalog,
   );
-  const parsed: GuildAppearanceProfileV3 = { ...profile, mode: guild.mode };
-  if (JSON.stringify(parsed).length > MAX_PROFILE_JSON_CHARACTERS_V3) {
-    throw new Error("Appearance profile exceeds 65536 characters");
-  }
+  const parsed: GuildAppearanceProfileV3 = {
+    ...profile,
+    mode: parseGuildMode(guild.mode),
+  };
+  validateProfileSize(parsed);
+  return parsed;
+}
+
+export function parseGuildAppearanceProfileV4(
+  value: unknown,
+  catalog: AppearanceValidationCatalogV3,
+): GuildAppearanceProfileV4 {
+  const guild = requireExactRecord(
+    value,
+    ["assignments", "designs", "diceView", "mode", "version"],
+    "Guild appearance profile V4 has invalid fields",
+  );
+  const profile = parseAppearanceProfileV4(
+    {
+      version: guild.version,
+      designs: guild.designs,
+      assignments: guild.assignments,
+      diceView: guild.diceView,
+    },
+    catalog,
+  );
+  const parsed: GuildAppearanceProfileV4 = {
+    ...profile,
+    mode: parseGuildMode(guild.mode),
+  };
+  validateProfileSize(parsed);
   return parsed;
 }

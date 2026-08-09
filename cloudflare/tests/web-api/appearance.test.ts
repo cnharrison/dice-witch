@@ -1,9 +1,15 @@
 import type {
   AppearanceProfileV3,
+  AppearanceProfileV4,
   GuildAppearanceProfileV3,
+  GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import { describe, expect, it, vi } from "vitest";
-import { BUILTIN_APPEARANCE_STYLES_V3 } from "../../packages/dice-appearance/src";
+import {
+  BUILTIN_APPEARANCE_STYLES_V3,
+  migrateAppearanceProfileV3ToV4,
+  migrateGuildAppearanceProfileV3ToV4,
+} from "../../packages/dice-appearance/src";
 import type {
   AppearanceProfileV1,
   AppearanceProfileV2,
@@ -134,6 +140,18 @@ function guildProfileV3(): GuildAppearanceProfileV3 {
   return { ...personalProfileV3(), mode: "enforced" };
 }
 
+function personalProfileV4(primary = "#123456"): AppearanceProfileV4 {
+  const profile = migrateAppearanceProfileV3ToV4(personalProfileV3(primary));
+  profile.diceView.mode = "clear";
+  return profile;
+}
+
+function guildProfileV4(): GuildAppearanceProfileV4 {
+  const profile = migrateGuildAppearanceProfileV3ToV4(guildProfileV3());
+  profile.diceView.mode = "legacy";
+  return profile;
+}
+
 function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBindings {
   return {
     DATA_SERVICE: { fetch: dataFetch } as Fetcher,
@@ -155,6 +173,7 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
       preview: vi.fn(),
       previewV2: vi.fn(),
       previewV3: vi.fn(),
+      previewV4: vi.fn(),
     },
     DISCORD_CLIENT_ID: "100000000000000001",
     DISCORD_CLIENT_SECRET: "test-client-secret",
@@ -454,6 +473,117 @@ describe("web appearance API", () => {
     ]);
   });
 
+  it("reads mixed profiles and strictly writes the authenticated user's V4 profile", async () => {
+    const requests: Array<{ path: string; body: unknown }> = [];
+    const v3 = personalProfileV3();
+    const v4 = personalProfileV4();
+    const env = bindings(async (request) => {
+      const path = new URL(request.url).pathname;
+      const body: unknown = await request.json();
+      requests.push({ path, body });
+      if (path === "/internal/sessions/current") return storedSession();
+      if (path === "/internal/appearance/v4/personal/get") {
+        return Response.json({ status: "found", revision: 3, profile: v3 });
+      }
+      return Response.json({ status: "applied", revision: 4, profile: v4 });
+    });
+
+    const read = await handleAuthRequest(
+      browserRequest("/api/appearance/v4/me"),
+      env,
+      vi.fn(),
+      () => now,
+    );
+    expect(read.status).toBe(200);
+    await expect(read.json()).resolves.toEqual({ revision: 3, profile: v3 });
+
+    const write = await handleAuthRequest(
+      browserRequest("/api/appearance/v4/me", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        body: JSON.stringify({ expectedRevision: 3, profile: v4 }),
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+    expect(write.status).toBe(200);
+    await expect(write.json()).resolves.toEqual({
+      status: "applied",
+      revision: 4,
+      profile: v4,
+    });
+    expect(requests.at(-1)).toEqual({
+      path: "/internal/appearance/v4/personal/put",
+      body: {
+        userId,
+        expectedRevision: 3,
+        profile: v4,
+        mutationId: `web-appearance-personal:${idempotencyKey}`,
+        occurredAt: now,
+      },
+    });
+
+    const invalid = await handleAuthRequest(
+      browserRequest("/api/appearance/v4/me", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        body: JSON.stringify({ expectedRevision: 3, profile: v3 }),
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+    expect(invalid.status).toBe(400);
+    await expect(invalid.json()).resolves.toEqual({
+      error: "appearance_profile_invalid",
+    });
+  });
+
+  it("preserves guild authorization and attribution on V4 writes", async () => {
+    const requests: Array<{ path: string; body: unknown }> = [];
+    const profile = guildProfileV4();
+    const response = await handleAuthRequest(
+      browserRequest(`/api/guilds/${guildId}/appearance/v4`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        body: JSON.stringify({ expectedRevision: 0, profile }),
+      }),
+      bindings(async (request) => {
+        const path = new URL(request.url).pathname;
+        const body: unknown = await request.json();
+        requests.push({ path, body });
+        if (path === "/internal/sessions/current") return storedSession();
+        if (path === "/internal/memberships/list") return membershipResponse();
+        return Response.json({ status: "applied", revision: 1, profile });
+      }),
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(200);
+    expect(requests[2]).toEqual({
+      path: "/internal/appearance/v4/guild/put",
+      body: {
+        guildId,
+        updatedByUserId: userId,
+        expectedRevision: 0,
+        profile,
+        mutationId: `web-appearance-guild:${idempotencyKey}`,
+        occurredAt: now,
+      },
+    });
+  });
+
   it("preserves guild authorization and attribution on V3 writes", async () => {
     const requests: Array<{ path: string; body: unknown }> = [];
     const profile = guildProfileV3();
@@ -729,6 +859,49 @@ describe("web appearance API", () => {
       base64: "iVBORw0KGgo=",
     });
     expect(previewV3).toHaveBeenCalledWith(input);
+  });
+
+  it("delegates V4 camera previews to the r20 renderer path", async () => {
+    const env = bindings(() => Promise.resolve(storedSession()));
+    const previewV4 = vi.fn(() =>
+      Promise.resolve({
+        version: 4,
+        contentType: "image/png",
+        width: 150,
+        height: 150,
+        diceCount: 1,
+        rowCount: 1,
+        png: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      }),
+    );
+    env.ROLL_WEB.previewV4 = previewV4;
+    const input = {
+      target: "d20",
+      recipe: personalProfileV3().designs[0]?.recipe,
+      diceView: personalProfileV4().diceView,
+      seed: 42,
+      state: "normal",
+    };
+    const response = await handleAuthRequest(
+      browserRequest("/api/appearance/v4/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      version: 4,
+      contentType: "image/png",
+      width: 150,
+      height: 150,
+      base64: "iVBORw0KGgo=",
+    });
+    expect(previewV4).toHaveBeenCalledWith(input);
   });
 
   it("returns stable V3 preview validation and renderer errors", async () => {
@@ -1225,13 +1398,15 @@ describe("web appearance API", () => {
     expect(preview).not.toHaveBeenCalled();
   });
 
-  it("advertises explicit V1 through V3 appearance preflight contracts", async () => {
+  it("advertises explicit V1 through V4 appearance profile preflight contracts", async () => {
     for (const path of [
       "/api/appearance/me",
       "/api/appearance/v2/me",
       "/api/appearance/v3/me",
+      "/api/appearance/v4/me",
       `/api/guilds/${guildId}/appearance/v2`,
       `/api/guilds/${guildId}/appearance/v3`,
+      `/api/guilds/${guildId}/appearance/v4`,
     ]) {
       const response = await handleAuthRequest(
         new Request(`${apiOrigin}${path}`, {
@@ -1252,8 +1427,12 @@ describe("web appearance API", () => {
       );
     }
 
-    const preview = await handleAuthRequest(
-      new Request(`${apiOrigin}/api/appearance/v3/preview`, {
+    for (const path of [
+      "/api/appearance/v3/preview",
+      "/api/appearance/v4/preview",
+    ]) {
+      const preview = await handleAuthRequest(
+      new Request(`${apiOrigin}${path}`, {
         method: "OPTIONS",
         headers: { origin: frontendOrigin },
       }),
@@ -1261,10 +1440,11 @@ describe("web appearance API", () => {
       vi.fn(),
       () => now,
     );
-    expect(preview.status).toBe(204);
-    expect(preview.headers.get("access-control-allow-methods")).toBe("POST");
-    expect(preview.headers.get("access-control-allow-headers")).toBe(
-      "content-type",
-    );
+      expect(preview.status).toBe(204);
+      expect(preview.headers.get("access-control-allow-methods")).toBe("POST");
+      expect(preview.headers.get("access-control-allow-headers")).toBe(
+        "content-type",
+      );
+    }
   });
 });

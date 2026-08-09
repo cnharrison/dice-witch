@@ -103,6 +103,7 @@ function bindings(
         preview: vi.fn(),
         previewV2: vi.fn(),
         previewV3: vi.fn(),
+        previewV4: vi.fn(),
       },
       DISCORD_CLIENT_ID: "100000000000000001",
       DISCORD_CLIENT_SECRET: "test-client-secret",

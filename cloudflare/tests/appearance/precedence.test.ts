@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type {
-  AppearanceProfileV3,
-  AppearanceRecipeV3,
+import {
+  createDefaultDiceViewPreferencesV4,
+  type AppearanceProfileV3,
+  type AppearanceProfileV4,
+  type AppearanceRecipeV3,
+  type DiceViewModeV4,
+  type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_TARGETS,
   resolveEffectiveAppearanceRecipes,
   resolveEffectiveAppearanceRecipesV3,
+  resolveEffectiveAppearanceV4,
   type AppearanceBuiltinRecipesV3,
   type AppearanceProfileV1,
   type AppearanceRecipeV1,
@@ -130,6 +135,32 @@ function profileV3(styleId: string): AppearanceProfileV3 {
       all: { source: "builtin", id: styleId },
       overrides: {},
     },
+  };
+}
+
+function profileV4(
+  styleId: string,
+  mode: DiceViewModeV4,
+  elevationDegrees: number,
+): AppearanceProfileV4 {
+  return {
+    ...profileV3(styleId),
+    version: 4,
+    diceView: {
+      ...createDefaultDiceViewPreferencesV4(),
+      mode,
+      elevationDegrees,
+    },
+  };
+}
+
+function guildProfileV4(
+  mode: GuildAppearanceProfileV4["mode"],
+  viewMode: DiceViewModeV4,
+): GuildAppearanceProfileV4 {
+  return {
+    ...profileV4("collector", viewMode, 55),
+    mode,
   };
 }
 
@@ -265,5 +296,86 @@ describe("appearance V3 precedence", () => {
         builtins,
       }),
     ).toThrow("Built-in appearance recipe missing is required");
+  });
+});
+
+describe("appearance V4 dice-view precedence", () => {
+  const builtins: AppearanceBuiltinRecipesV3 = {
+    chaotic: { recipe: recipeV3("#111111") },
+    collector: { recipe: recipeV3("#224466") },
+  };
+
+  it("returns explicit normal defaults when no profile exists", () => {
+    const resolved = resolveEffectiveAppearanceV4({
+      personalProfile: null,
+      guildProfile: null,
+      builtins,
+    });
+
+    expect(resolved.version).toBe(4);
+    expect(resolved.diceView).toEqual(createDefaultDiceViewPreferencesV4());
+    expect(resolved.recipes.d6.colors).toEqual({
+      mode: "tonal",
+      primary: "#111111",
+    });
+  });
+
+  it("ignores guild views when Off and lets personal win in Default", () => {
+    const personal = profileV4("chaotic", "legacy", 30);
+
+    expect(
+      resolveEffectiveAppearanceV4({
+        personalProfile: personal,
+        guildProfile: guildProfileV4("off", "clear"),
+        builtins,
+      }).diceView,
+    ).toEqual(personal.diceView);
+    expect(
+      resolveEffectiveAppearanceV4({
+        personalProfile: personal,
+        guildProfile: guildProfileV4("default", "clear"),
+        builtins,
+      }).diceView,
+    ).toEqual(personal.diceView);
+  });
+
+  it("uses guild views when Default has no personal profile or is Enforced", () => {
+    const guildDefault = guildProfileV4("default", "clear");
+    expect(
+      resolveEffectiveAppearanceV4({
+        personalProfile: null,
+        guildProfile: guildDefault,
+        builtins,
+      }).diceView,
+    ).toEqual(guildDefault.diceView);
+
+    const guildEnforced = guildProfileV4("enforced", "clear");
+    expect(
+      resolveEffectiveAppearanceV4({
+        personalProfile: profileV4("chaotic", "legacy", 30),
+        guildProfile: guildEnforced,
+        builtins,
+      }).diceView,
+    ).toEqual(guildEnforced.diceView);
+  });
+
+  it("returns a detached complete preference object", () => {
+    const personal = profileV4("chaotic", "normal", 40);
+    personal.diceView.azimuth.overrides.d20 = {
+      mode: "custom",
+      customDegrees: -35,
+    };
+    const resolved = resolveEffectiveAppearanceV4({
+      personalProfile: personal,
+      guildProfile: null,
+      builtins,
+    });
+
+    const resolvedD20 = resolved.diceView.azimuth.overrides.d20;
+    if (resolvedD20 === undefined) {
+      throw new Error("Resolved d20 preference fixture is missing");
+    }
+    resolvedD20.customDegrees = 45;
+    expect(personal.diceView.azimuth.overrides.d20.customDegrees).toBe(-35);
   });
 });
