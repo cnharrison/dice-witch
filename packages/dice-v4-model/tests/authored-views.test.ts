@@ -38,7 +38,7 @@ describe("authored V4 render views", () => {
     "defines one frozen %s view for every d6 result",
     (mode) => {
       for (const result of D6_RESULTS) {
-        const view = getAuthoredRenderViewV4(mode, {
+        const view = getAuthoredRenderViewV4("canvaskit-v4-r20", mode, {
           target: "d6",
           form: "standard",
           result,
@@ -65,7 +65,7 @@ describe("authored V4 render views", () => {
             form: subject.form,
             result,
           } as const;
-          const view = getAuthoredRenderViewV4(mode, die);
+          const view = getAuthoredRenderViewV4("canvaskit-v4-r20", mode, die);
           const descriptor = getRenderGeometryDescriptorV4(
             "canvaskit-v4-r20",
             { ...die, view },
@@ -92,7 +92,7 @@ describe("authored V4 render views", () => {
           form: subject.form,
           result,
         } as const;
-        const view = getAuthoredRenderViewV4("legacy", die);
+        const view = getAuthoredRenderViewV4("canvaskit-v4-r20", "legacy", die);
         const descriptor = getRenderGeometryDescriptorV4(
           "canvaskit-v4-r20",
           { ...die, view },
@@ -133,7 +133,7 @@ describe("authored V4 render views", () => {
           form: subject.form,
           result,
         } as const;
-        const view = getAuthoredRenderViewV4("clear", die);
+        const view = getAuthoredRenderViewV4("canvaskit-v4-r20", "clear", die);
         const descriptor = getRenderGeometryDescriptorV4(
           "canvaskit-v4-r20",
           { ...die, view },
@@ -163,17 +163,70 @@ describe("authored V4 render views", () => {
     }
   });
 
+  it("raises only r21 d20 Clear views to emphasize the result face", () => {
+    for (const form of [
+      "standard",
+      "sharp",
+      "crystal-cut",
+      "hollow-cage",
+    ] as const) {
+      for (let result = 1; result <= 20; result += 1) {
+        const die = { target: "d20" as const, form, result };
+        const clearR20 = getAuthoredRenderViewV4(
+          "canvaskit-v4-r20",
+          "clear",
+          die,
+        );
+        const clearR21 = getAuthoredRenderViewV4(
+          "canvaskit-v4-r21",
+          "clear",
+          die,
+        );
+        expect(clearR20).toMatchObject({
+          kind: "oriented-camera",
+          mode: "clear",
+          elevationDegrees: 55,
+        });
+        expect(clearR21).toMatchObject({
+          kind: "oriented-camera",
+          mode: "clear",
+          elevationDegrees: 85,
+        });
+        if (
+          clearR20.kind !== "oriented-camera" ||
+          clearR21.kind !== "oriented-camera"
+        ) {
+          throw new Error("D20 Clear view is not an oriented camera");
+        }
+        expect(clearR21.resultRotation).toEqual(clearR20.resultRotation);
+        expect(
+          getAuthoredRenderViewV4(
+            "canvaskit-v4-r21",
+            "legacy",
+            die,
+          ),
+        ).toEqual(
+          getAuthoredRenderViewV4(
+            "canvaskit-v4-r20",
+            "legacy",
+            die,
+          ),
+        );
+      }
+    }
+  });
+
   it("shares each d20 authored rotation across every physical form", () => {
     for (const mode of ["legacy", "clear"] as const) {
       for (let result = 1; result <= 20; result += 1) {
-        const standard = getAuthoredRenderViewV4(mode, {
+        const standard = getAuthoredRenderViewV4("canvaskit-v4-r20", mode, {
           target: "d20",
           form: "standard",
           result,
         });
         for (const form of ["sharp", "crystal-cut", "hollow-cage"] as const) {
           expect(
-            getAuthoredRenderViewV4(mode, { target: "d20", form, result }),
+            getAuthoredRenderViewV4("canvaskit-v4-r20", mode, { target: "d20", form, result }),
           ).toEqual(standard);
         }
       }
@@ -183,8 +236,8 @@ describe("authored V4 render views", () => {
   it("centers every authored sphere result identically in both modes", () => {
     for (const result of [1, 20, 100, 999]) {
       const die = { target: "other", form: "sphere", result } as const;
-      const legacy = getAuthoredRenderViewV4("legacy", die);
-      const clear = getAuthoredRenderViewV4("clear", die);
+      const legacy = getAuthoredRenderViewV4("canvaskit-v4-r20", "legacy", die);
+      const clear = getAuthoredRenderViewV4("canvaskit-v4-r20", "clear", die);
 
       expect(legacy).toEqual({
         kind: "sphere-surface",
@@ -217,7 +270,7 @@ describe("authored V4 render views", () => {
 
   it("points every Legacy d6 result toward the viewer with valid neighbors", () => {
     for (const result of D6_RESULTS) {
-      const view = getAuthoredRenderViewV4("legacy", {
+      const view = getAuthoredRenderViewV4("canvaskit-v4-r20", "legacy", {
         target: "d6",
         form: "standard",
         result,
@@ -274,7 +327,7 @@ describe("authored V4 render views", () => {
 
   it("keeps every Clear d6 result on top and visually dominant", () => {
     for (const result of D6_RESULTS) {
-      const view = getAuthoredRenderViewV4("clear", {
+      const view = getAuthoredRenderViewV4("canvaskit-v4-r20", "clear", {
         target: "d6",
         form: "standard",
         result,
@@ -341,14 +394,14 @@ describe("authored V4 render views", () => {
 
   it("fails instead of substituting an unauthored target or revision", () => {
     expect(() =>
-      getAuthoredRenderViewV4("legacy", {
+      getAuthoredRenderViewV4("canvaskit-v4-r20", "legacy", {
         target: "d8",
         form: "standard",
         result: 9,
       }),
     ).toThrow("Authored legacy view is not implemented for d8 standard result 9");
 
-    const view = getAuthoredRenderViewV4("legacy", {
+    const view = getAuthoredRenderViewV4("canvaskit-v4-r20", "legacy", {
       target: "d6",
       form: "standard",
       result: 1,

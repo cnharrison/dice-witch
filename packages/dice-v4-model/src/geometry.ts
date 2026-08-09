@@ -325,7 +325,8 @@ export function getRenderGeometryDescriptorV4(
   }
   if (
     die.view.kind === "oriented-camera" &&
-    (!revisionPolicy.resolvedViews || !isAuthoredRenderViewV4(die.view, die))
+    (!revisionPolicy.resolvedViews ||
+      !isAuthoredRenderViewV4(rendererRevision, die.view, die))
   ) {
     throw new Error("Resolved render view is not supported by this revision");
   }

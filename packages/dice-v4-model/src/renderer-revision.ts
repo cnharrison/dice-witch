@@ -121,6 +121,7 @@ const r20 = policy({
   resolvedViews: true,
   cameraAngles: "preferences-r20",
 });
+const r21 = policy({ ...r20 });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -143,6 +144,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r18": r18,
   "canvaskit-v4-r19": r19,
   "canvaskit-v4-r20": r20,
+  "canvaskit-v4-r21": r21,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

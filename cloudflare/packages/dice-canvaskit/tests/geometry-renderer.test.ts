@@ -154,41 +154,52 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       { target: "fudge", form: "standard", results: [-1, 0, 1] },
     ] as const;
     try {
-      for (const mode of ["legacy", "clear"] as const) {
-        for (const subject of subjects) {
-          for (const result of subject.results) {
-            const die = {
-              target: subject.target,
-              form: subject.form,
-              result,
-            } as const;
-            const view = getAuthoredRenderViewV4(mode, die);
-            const geometry = getRenderGeometryDescriptorV4(
-              "canvaskit-v4-r20",
-              { ...die, view },
-            );
-            if (geometry.kind !== "polyhedral") {
-              throw new Error("Authored polyhedral geometry is invalid");
-            }
-            const options = {
-              geometry,
-              result,
-              size: 300,
-              renderPolicy: "standard-r7",
-            } as const;
-            let rendered;
-            try {
-              rendered = await renderer.render(options);
-            } catch (error) {
-              throw new Error(
-                `Authored ${mode} ${subject.target} ${subject.form} result ${result} failed`,
-                { cause: error },
+      for (const rendererRevision of [
+        "canvaskit-v4-r20",
+        "canvaskit-v4-r21",
+      ] as const) {
+        for (const mode of ["legacy", "clear"] as const) {
+          for (const subject of subjects) {
+            for (const result of subject.results) {
+              const die = {
+                target: subject.target,
+                form: subject.form,
+                result,
+              } as const;
+              const view = getAuthoredRenderViewV4(
+                rendererRevision,
+                mode,
+                die,
               );
-            }
+              const geometry = getRenderGeometryDescriptorV4(
+                rendererRevision,
+                { ...die, view },
+              );
+              if (geometry.kind !== "polyhedral") {
+                throw new Error("Authored polyhedral geometry is invalid");
+              }
+              const options = {
+                geometry,
+                result,
+                size: 300,
+                renderPolicy: "standard-r7",
+              } as const;
+              let rendered;
+              try {
+                rendered = await renderer.render(options);
+              } catch (error) {
+                throw new Error(
+                  `Authored ${rendererRevision} ${mode} ${subject.target} ${subject.form} result ${result} failed`,
+                  { cause: error },
+                );
+              }
 
-            expect(rendered.visibleFaceCount).toBeGreaterThan(0);
-            if (result === subject.results[0]) {
-              expect((await renderer.render(options)).png).toEqual(rendered.png);
+              expect(rendered.visibleFaceCount).toBeGreaterThan(0);
+              if (result === subject.results[0]) {
+                expect((await renderer.render(options)).png).toEqual(
+                  rendered.png,
+                );
+              }
             }
           }
         }
@@ -205,7 +216,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
     } finally {
       renderer.dispose();
     }
-  }, 30_000);
+  }, 45_000);
 
   it("renders a crisp sharp-edge d20 without changing the standard d20", async () => {
     const canvasKit = await loadCanvasKitV4();

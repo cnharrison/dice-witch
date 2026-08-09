@@ -53,6 +53,7 @@ import {
   buildRollRenderRequestV3,
   buildRollRenderRequestV4,
   buildRollRenderRequestR20V4,
+  buildRollRenderRequestR21V4,
 } from "../../../packages/roll-render-model/src";
 import {
   loadEffectiveAppearanceV2,
@@ -436,8 +437,9 @@ export function buildAppearancePreviewRenderRequestV4(
   );
 }
 
-export function buildAppearancePreviewRenderRequestR20V4(
+function buildResolvedAppearancePreviewRenderRequestV4(
   value: unknown,
+  buildRequest: typeof buildRollRenderRequestR20V4,
 ): RenderRequestV4 {
   const request = parseAppearancePreviewRequestV4(value);
   const effectiveAppearance: EffectiveAppearanceV4 = {
@@ -447,10 +449,28 @@ export function buildAppearancePreviewRenderRequestR20V4(
     ) as EffectiveAppearanceV4["recipes"],
     diceView: request.diceView,
   };
-  return buildRollRenderRequestR20V4(
+  return buildRequest(
     previewOutcome(request.target, request.state, request.seed),
     request.seed,
     effectiveAppearance,
+  );
+}
+
+export function buildAppearancePreviewRenderRequestR20V4(
+  value: unknown,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR20V4,
+  );
+}
+
+export function buildAppearancePreviewRenderRequestR21V4(
+  value: unknown,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR21V4,
   );
 }
 
@@ -512,7 +532,7 @@ export function renderAppearancePreviewV4(
     createCanvasKitRequestRendererV4,
 ): Promise<AppearancePreviewResultV3> {
   return renderAppearancePreviewRequestV4(
-    buildAppearancePreviewRenderRequestR20V4(value),
+    buildAppearancePreviewRenderRequestR21V4(value),
     createRenderer,
   );
 }
@@ -526,7 +546,11 @@ function randomSeed(): number {
 type LoadedWebAppearance =
   | { version: 3; recipes: EffectiveAppearanceRecipesV2 }
   | { version: 4; viewPolicy: "r19"; recipes: EffectiveAppearanceRecipesV3 }
-  | { version: 4; viewPolicy: "r20"; effective: EffectiveAppearanceV4 };
+  | {
+      version: 4;
+      viewPolicy: "r20" | "r21";
+      effective: EffectiveAppearanceV4;
+    };
 
 async function loadWebAppearance(
   dataService: AppearanceDataService,
@@ -537,18 +561,18 @@ async function loadWebAppearance(
 ): Promise<LoadedWebAppearance> {
   if (version === 3) {
     if (viewPolicy !== "r19") {
-      throw new Error("ROLL_VIEW_POLICY r20 requires ROLL_RENDER_VERSION 4");
+      throw new Error(`${viewPolicy} ROLL_VIEW_POLICY requires ROLL_RENDER_VERSION 4`);
     }
     return {
       version,
       recipes: await loadEffectiveAppearanceV2(dataService, userId, guildId),
     };
   }
-  return viewPolicy === "r20"
+  return viewPolicy === "r19"
     ? {
         version,
         viewPolicy,
-        effective: await loadEffectiveAppearanceV4(
+        recipes: await loadEffectiveAppearanceV3(
           dataService,
           userId,
           guildId,
@@ -557,7 +581,7 @@ async function loadWebAppearance(
     : {
         version,
         viewPolicy,
-        recipes: await loadEffectiveAppearanceV3(
+        effective: await loadEffectiveAppearanceV4(
           dataService,
           userId,
           guildId,
@@ -612,9 +636,12 @@ function buildWebRenderRequest(
   if (appearance.version === 3) {
     return buildRollRenderRequestV3(outcome, renderSeed, appearance.recipes);
   }
+  if (appearance.viewPolicy === "r19") {
+    return buildRollRenderRequestV4(outcome, renderSeed, appearance.recipes);
+  }
   return appearance.viewPolicy === "r20"
     ? buildRollRenderRequestR20V4(outcome, renderSeed, appearance.effective)
-    : buildRollRenderRequestV4(outcome, renderSeed, appearance.recipes);
+    : buildRollRenderRequestR21V4(outcome, renderSeed, appearance.effective);
 }
 
 function appearanceIdentities(outcome: RollExecutionResult): string[][] {

@@ -17,6 +17,7 @@ import {
   buildAppearancePreviewRenderRequestV3,
   buildAppearancePreviewRenderRequestV4,
   buildAppearancePreviewRenderRequestR20V4,
+  buildAppearancePreviewRenderRequestR21V4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
@@ -255,7 +256,7 @@ describe("appearance preview", () => {
     ).toEqual(new Set(["die-wide"]));
   });
 
-  it("builds Profile V4 camera drafts through r20", () => {
+  it("builds Profile V4 camera drafts through immutable r20 and r21", () => {
     const clear = createDefaultDiceViewPreferencesV4();
     clear.mode = "clear";
     const preview = buildAppearancePreviewRenderRequestR20V4({
@@ -288,9 +289,21 @@ describe("appearance preview", () => {
       elevationDegrees: 55,
       azimuthOffsetDegrees: 0,
     });
+
+    const emphasized = buildAppearancePreviewRenderRequestR21V4({
+      target: "d20",
+      recipe: recipeV3,
+      diceView: clear,
+      seed: 7,
+      state: "normal",
+    });
+    expect(emphasized).toMatchObject({
+      rendererRevision: "canvaskit-v4-r21",
+      groups: [[{ view: { elevationDegrees: 85 } }]],
+    });
   });
 
-  it("renders Profile V4 camera previews through the r20 renderer", async () => {
+  it("renders Profile V4 camera previews through the r21 renderer", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     diceView.mode = "legacy";
     const rendered = await renderAppearancePreviewV4({
@@ -587,6 +600,40 @@ describe("WebRollService", () => {
       kind: "oriented-camera",
       mode: "clear",
     });
+  });
+
+  it("prepares and executes website rolls through the explicit r21 policy", async () => {
+    const diceView = createDefaultDiceViewPreferencesV4();
+    diceView.mode = "clear";
+    const dataService = appearanceService(undefined, defaultRecipeV3, diceView);
+    const preparation = await prepareWebRoll(
+      { notation: "d20", repetitions: 1, userId, guildId },
+      dataService,
+      "4",
+      "r21",
+    );
+    if (preparation.status !== "prepared" || preparation.renderModel === undefined) {
+      throw new Error("Expected an r21 web preparation");
+    }
+    expect(preparation.renderModel).toMatchObject({
+      rendererRevision: "canvaskit-v4-r21",
+      groups: [[{ view: { mode: "clear", elevationDegrees: 85 } }]],
+    });
+
+    const result = await executeWebRoll(
+      request({
+        notation: "d20",
+        renderSeed: preparation.renderSeed,
+        appearanceDigest: preparation.appearanceDigest,
+      }),
+      dataService,
+      "4",
+      "r21",
+    );
+    if (result.status !== "rolled" || result.renderModel === undefined) {
+      throw new Error("Expected an r21 web result");
+    }
+    expect(result.renderModel.rendererRevision).toBe("canvaskit-v4-r21");
   });
 
   it("keeps the Preferences-resolved material on original and exploded dice", async () => {

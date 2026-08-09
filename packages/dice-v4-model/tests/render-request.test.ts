@@ -230,13 +230,13 @@ describe("RenderRequestV4", () => {
     }
   });
 
-  it("accepts fully resolved d6 authored camera views only in r20", () => {
+  it("accepts fully resolved d6 authored camera views in r20 and r21", () => {
     const authoredDie: RenderDieV4 = {
       ...die(),
       target: "d6",
       result: 6,
       form: "standard",
-      view: getAuthoredRenderViewV4("legacy", {
+      view: getAuthoredRenderViewV4("canvaskit-v4-r20", "legacy", {
         target: "d6",
         form: "standard",
         result: 6,
@@ -250,6 +250,21 @@ describe("RenderRequestV4", () => {
     } as const;
 
     expect(validateRenderRequestV4(authored)).toEqual(authored);
+    const revision21 = {
+      ...structuredClone(authored),
+      rendererRevision: "canvaskit-v4-r21" as const,
+      groups: [[
+        {
+          ...authoredDie,
+          view: getAuthoredRenderViewV4(
+            "canvaskit-v4-r21",
+            "legacy",
+            { target: "d6", form: "standard", result: 6 },
+          ),
+        },
+      ]],
+    };
+    expect(validateRenderRequestV4(revision21)).toEqual(revision21);
 
     const previousRevision = {
       ...structuredClone(authored),
@@ -288,7 +303,32 @@ describe("RenderRequestV4", () => {
     );
   });
 
-  it("accepts bounded preference cameras only in r20", () => {
+  it("keeps r20 and r21 d20 Clear snapshots revision-specific", () => {
+    const d20 = die();
+    d20.appearance.texture.scope = "die-wide";
+    d20.view = getAuthoredRenderViewV4(
+      "canvaskit-v4-r20",
+      "clear",
+      { target: "d20", form: "standard", result: d20.result },
+    );
+    const requestR20 = {
+      version: 4,
+      rendererRevision: "canvaskit-v4-r20",
+      groups: [[d20]],
+    } as const;
+    expect(validateRenderRequestV4(requestR20)).toEqual(requestR20);
+
+    expect(() =>
+      validateRenderRequestV4({
+        ...structuredClone(requestR20),
+        rendererRevision: "canvaskit-v4-r21",
+      }),
+    ).toThrow(
+      "Render request groups[0][0].view does not match an authored d20 view",
+    );
+  });
+
+  it("accepts bounded preference cameras in r20 and r21", () => {
     const preferenceDie = die();
     preferenceDie.appearance.texture.scope = "die-wide";
     preferenceDie.view = {
@@ -304,6 +344,12 @@ describe("RenderRequestV4", () => {
     } as const;
 
     expect(validateRenderRequestV4(preference)).toEqual(preference);
+    expect(
+      validateRenderRequestV4({
+        ...structuredClone(preference),
+        rendererRevision: "canvaskit-v4-r21",
+      }),
+    ).toMatchObject({ rendererRevision: "canvaskit-v4-r21" });
     expect(() =>
       validateRenderRequestV4({
         ...structuredClone(preference),

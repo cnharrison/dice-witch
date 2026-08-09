@@ -15,6 +15,7 @@ import {
   type RenderAppearanceV4,
   type RenderCriticalEffectV4,
   type RenderDieV4,
+  type RendererRevisionV4,
   type RenderRequestV4,
   type RenderViewV4,
 } from "@dice-witch/dice-v4-model";
@@ -488,9 +489,10 @@ function renderViewV4(
   groupIdentity: string | undefined,
   dieIdentity: string | undefined,
   diceView: DiceViewPreferencesV4 | null,
+  rendererRevision: RendererRevisionV4,
 ): RenderViewV4 {
   if (diceView?.mode === "legacy" || diceView?.mode === "clear") {
-    return getAuthoredRenderViewV4(diceView.mode, {
+    return getAuthoredRenderViewV4(rendererRevision, diceView.mode, {
       target,
       form,
       result,
@@ -551,6 +553,7 @@ function renderDieV4(
   recipes: EffectiveAppearanceRecipesV3,
   diceView: DiceViewPreferencesV4 | null,
   percentileAppearances: Map<string, ResolvedAppearanceV3>,
+  rendererRevision: RendererRevisionV4,
 ): RenderDieV4 {
   const target = appearanceTarget(die);
   const recipe = recipes[target];
@@ -596,6 +599,7 @@ function renderDieV4(
     die.appearanceGroupIdentity,
     die.appearanceDieIdentity,
     diceView,
+    rendererRevision,
   );
   if (target === "other") {
     if (typeof die.sides !== "number") {
@@ -624,6 +628,7 @@ function renderDieV4(
 
 export const ROLL_RENDERER_REVISION_V4 = "canvaskit-v4-r19" as const;
 export const ROLL_RENDERER_REVISION_R20_V4 = "canvaskit-v4-r20" as const;
+export const ROLL_RENDERER_REVISION_R21_V4 = "canvaskit-v4-r21" as const;
 
 function buildRollRenderRequestForRevisionV4(
   result: RollExecutionResult,
@@ -632,7 +637,8 @@ function buildRollRenderRequestForRevisionV4(
   diceView: DiceViewPreferencesV4 | null,
   rendererRevision:
     | typeof ROLL_RENDERER_REVISION_V4
-    | typeof ROLL_RENDERER_REVISION_R20_V4,
+    | typeof ROLL_RENDERER_REVISION_R20_V4
+    | typeof ROLL_RENDERER_REVISION_R21_V4,
 ): RenderRequestV4 {
   validateRenderSeed(renderSeed);
   const groups = renderableRollOutcomes(result).map(
@@ -647,6 +653,7 @@ function buildRollRenderRequestForRevisionV4(
           recipes,
           diceView,
           percentileAppearances,
+          rendererRevision,
         ),
       );
     },
@@ -686,5 +693,19 @@ export function buildRollRenderRequestR20V4(
     effectiveAppearance.recipes,
     effectiveAppearance.diceView,
     ROLL_RENDERER_REVISION_R20_V4,
+  );
+}
+
+export function buildRollRenderRequestR21V4(
+  result: RollExecutionResult,
+  renderSeed: number,
+  effectiveAppearance: EffectiveAppearanceV4,
+): RenderRequestV4 {
+  return buildRollRenderRequestForRevisionV4(
+    result,
+    renderSeed,
+    effectiveAppearance.recipes,
+    effectiveAppearance.diceView,
+    ROLL_RENDERER_REVISION_R21_V4,
   );
 }

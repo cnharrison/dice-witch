@@ -15,7 +15,11 @@ import {
   quaternionFromFrameV4,
   rotatePointByQuaternionV4,
 } from "./geometry-math";
-import type { RenderDieV4, RenderViewV4 } from "./types";
+import type {
+  RenderDieV4,
+  RendererRevisionV4,
+  RenderViewV4,
+} from "./types";
 
 export type AuthoredViewModeV4 = "legacy" | "clear";
 
@@ -184,7 +188,7 @@ const D20_VIEWS_V4 = createPolyhedralEntry(
   D20_RESULTS_V4,
   55,
 );
-const POLYHEDRAL_VIEWS_V4 = new Map<string, PolyhedralViewEntryV4>([
+const POLYHEDRAL_VIEWS_R20_V4 = new Map<string, PolyhedralViewEntryV4>([
   [
     "d4:standard",
     createPolyhedralEntry(
@@ -216,6 +220,29 @@ const POLYHEDRAL_VIEWS_V4 = new Map<string, PolyhedralViewEntryV4>([
   ],
 ]);
 
+function withClearElevation(
+  entry: PolyhedralViewEntryV4,
+  elevationDegrees: number,
+): PolyhedralViewEntryV4 {
+  return Object.freeze({
+    views: Object.freeze({
+      legacy: entry.views.legacy,
+      clear: new Map(
+        [...entry.views.clear].map(([result, view]) => [
+          result,
+          orientedCamera("clear", elevationDegrees, view.resultRotation),
+        ]),
+      ),
+    }),
+  });
+}
+
+const D20_VIEWS_R21_V4 = withClearElevation(D20_VIEWS_V4, 85);
+const POLYHEDRAL_VIEWS_R21_V4 = new Map(POLYHEDRAL_VIEWS_R20_V4);
+for (const form of ["standard", "sharp", "crystal-cut", "hollow-cage"] as const) {
+  POLYHEDRAL_VIEWS_R21_V4.set(`d20:${form}`, D20_VIEWS_R21_V4);
+}
+
 const CENTERED_SPHERE_VIEW_V4 = Object.freeze({
   kind: "sphere-surface",
   rotationDegrees: 0,
@@ -228,7 +255,20 @@ function polyhedralEntryKey(die: AuthoredRenderDieV4): string {
   return `${die.target}:${die.form}`;
 }
 
+function authoredPolyhedralViews(
+  rendererRevision: RendererRevisionV4,
+): ReadonlyMap<string, PolyhedralViewEntryV4> {
+  if (rendererRevision === "canvaskit-v4-r20") {
+    return POLYHEDRAL_VIEWS_R20_V4;
+  }
+  if (rendererRevision === "canvaskit-v4-r21") {
+    return POLYHEDRAL_VIEWS_R21_V4;
+  }
+  throw new Error(`Authored views are not supported by ${rendererRevision}`);
+}
+
 export function getAuthoredRenderViewV4(
+  rendererRevision: RendererRevisionV4,
   mode: AuthoredViewModeV4,
   die: AuthoredRenderDieV4,
 ): Readonly<RenderViewV4> {
@@ -240,9 +280,9 @@ export function getAuthoredRenderViewV4(
   ) {
     return CENTERED_SPHERE_VIEW_V4;
   }
-  const view = POLYHEDRAL_VIEWS_V4.get(polyhedralEntryKey(die))?.views[
-    mode
-  ].get(die.result);
+  const view = authoredPolyhedralViews(rendererRevision)
+    .get(polyhedralEntryKey(die))
+    ?.views[mode].get(die.result);
   if (view === undefined) {
     throw new Error(
       `Authored ${mode} view is not implemented for ${die.target} ${die.form} result ${die.result}`,
@@ -252,6 +292,7 @@ export function getAuthoredRenderViewV4(
 }
 
 export function isAuthoredRenderViewV4(
+  rendererRevision: RendererRevisionV4,
   view: RenderViewV4,
   die: AuthoredRenderDieV4,
 ): boolean {
@@ -266,7 +307,11 @@ export function isAuthoredRenderViewV4(
     );
   }
   if (view.kind !== "oriented-camera") return false;
-  const expected = getAuthoredRenderViewV4(view.mode, die);
+  const expected = getAuthoredRenderViewV4(
+    rendererRevision,
+    view.mode,
+    die,
+  );
   return (
     expected.kind === "oriented-camera" &&
     view.elevationDegrees === expected.elevationDegrees &&

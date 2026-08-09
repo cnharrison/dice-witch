@@ -27,7 +27,7 @@ describe("V4 Three.js camera", () => {
 
   it("uses the resolved authored d6 camera without browser-side interpretation", () => {
     const result = 6;
-    const view = getAuthoredRenderViewV4("clear", {
+    const view = getAuthoredRenderViewV4("canvaskit-v4-r20", "clear", {
       target: "d6",
       form: "standard",
       result,

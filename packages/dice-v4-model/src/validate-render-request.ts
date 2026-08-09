@@ -1022,7 +1022,13 @@ function parseView(
       azimuthOffsetDegrees,
       resultRotation,
     };
-    if (!isAuthoredRenderViewV4(view, { target, form, result })) {
+    if (
+      !isAuthoredRenderViewV4(rendererRevision, view, {
+        target,
+        form,
+        result,
+      })
+    ) {
       throw new Error(`${path} does not match an authored ${target} view`);
     }
     return view;

@@ -23,6 +23,7 @@ import {
   buildRollRenderRequestV3,
   buildRollRenderRequestV4,
   buildRollRenderRequestR20V4,
+  buildRollRenderRequestR21V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -969,7 +970,7 @@ describe("buildRollRenderRequestV4", () => {
   });
 });
 
-describe("buildRollRenderRequestR20V4", () => {
+describe("Profile V4 roll rendering", () => {
   it("persists exact authored Legacy and Clear views for every physical die", () => {
     const roll = executeRoll({
       notation: ["d4", "d6", "d8", "d10", "d12", "d20", "d%", "dF", "d7"],
@@ -987,7 +988,7 @@ describe("buildRollRenderRequestR20V4", () => {
       expect(validateRenderRequestV4(request)).toEqual(request);
       for (const die of request.groups.flat()) {
         expect(die.view).toEqual(
-          getAuthoredRenderViewV4(mode, {
+          getAuthoredRenderViewV4("canvaskit-v4-r20", mode, {
             target: die.target,
             form: die.form,
             result: die.result,
@@ -1003,6 +1004,36 @@ describe("buildRollRenderRequestR20V4", () => {
         otherSeed.groups.flat().map(({ view }) => view),
       ).toEqual(request.groups.flat().map(({ view }) => view));
     }
+  });
+
+  it("emits an immutable r21 d20 Clear snapshot without changing r20", () => {
+    const roll = executeRoll({
+      notation: ["d20"],
+      seed: 0,
+      stableAppearanceIdentities: true,
+    });
+    const effective = effectiveAppearanceV4("clear");
+    const requestR20 = buildRollRenderRequestR20V4(
+      roll,
+      0x1234_abcd,
+      effective,
+    );
+    const requestR21 = buildRollRenderRequestR21V4(
+      roll,
+      0x1234_abcd,
+      effective,
+    );
+
+    expect(requestR20).toMatchObject({
+      rendererRevision: "canvaskit-v4-r20",
+      groups: [[{ view: { elevationDegrees: 55 } }]],
+    });
+    expect(requestR21).toMatchObject({
+      rendererRevision: "canvaskit-v4-r21",
+      groups: [[{ view: { elevationDegrees: 85 } }]],
+    });
+    expect(validateRenderRequestV4(requestR20)).toEqual(requestR20);
+    expect(validateRenderRequestV4(requestR21)).toEqual(requestR21);
   });
 
   it("applies normal elevation and target azimuths while retaining random pose", () => {
