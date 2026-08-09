@@ -155,6 +155,14 @@ export function AppearanceEditorV3({
     ...(hasCameraTab ? (["camera"] as const) : []),
     ...(hasServerTab ? (["server"] as const) : []),
   ];
+  const unsavedDrafts = [
+    ...(customizing ? ["Design"] : []),
+    ...(diceViewDirty ? ["Camera"] : []),
+  ];
+  const hasUnsavedChanges = unsavedDrafts.length > 0;
+  const tabHasUnsavedChanges = (tab: AppearanceEditorTab): boolean =>
+    (tab === "design" && customizing) ||
+    (tab === "camera" && diceViewDirty);
 
   React.useEffect(() => {
     if (
@@ -512,6 +520,15 @@ export function AppearanceEditorV3({
               }`}
             >
               {TAB_LABELS[tab]}
+              {tabHasUnsavedChanges(tab) && (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="ml-2 inline-block h-2 w-2 rounded-full bg-brand"
+                  />
+                  <span className="sr-only">, unsaved changes</span>
+                </>
+              )}
             </button>
           ))}
         </div>
@@ -578,12 +595,29 @@ export function AppearanceEditorV3({
           </div>
 
           {customizing && (
-            <AppearanceRecipeControlsV3
-              recipe={recipe}
-              catalog={catalog}
-              target={target}
-              onChange={setCustomRecipe}
-            />
+            <>
+              <div className="space-y-1.5 rounded-lg border bg-muted/20 p-4">
+                <Label htmlFor={`${kind}-design-name-v3`}>
+                  Custom design name
+                </Label>
+                <Input
+                  id={`${kind}-design-name-v3`}
+                  aria-label="Custom design name"
+                  value={designName}
+                  maxLength={catalog.bounds.maximumDesignNameCharacters}
+                  onChange={(event) => {
+                    setDesignName(event.target.value);
+                    setAutomaticDesignName(false);
+                  }}
+                />
+              </div>
+              <AppearanceRecipeControlsV3
+                recipe={recipe}
+                catalog={catalog}
+                target={target}
+                onChange={setCustomRecipe}
+              />
+            </>
           )}
 
           {currentProfile.designs.length > 0 && (
@@ -628,28 +662,15 @@ export function AppearanceEditorV3({
           </div>
         )}
 
-        {(customizing || diceViewDirty) && (
+        {hasUnsavedChanges && (
           <div className="sticky bottom-2 z-20 rounded-lg border border-brand/35 bg-card/95 p-4 shadow-lg backdrop-blur-sm">
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-              {customizing ? (
-                <div className="space-y-1.5">
-                  <Label htmlFor={`${kind}-design-name-v3`}>Design name</Label>
-                  <Input
-                    id={`${kind}-design-name-v3`}
-                    aria-label="Design name"
-                    value={designName}
-                    maxLength={catalog.bounds.maximumDesignNameCharacters}
-                    onChange={(event) => {
-                      setDesignName(event.target.value);
-                      setAutomaticDesignName(false);
-                    }}
-                  />
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Save the camera draft when it looks right.
-                </p>
-              )}
+            <div className="grid grid-cols-2 items-center gap-3 sm:grid-cols-[1fr_auto_auto]">
+              <p
+                className="col-span-2 text-sm font-medium text-foreground sm:col-span-1"
+                aria-live="polite"
+              >
+                Unsaved changes: {unsavedDrafts.join(" and ")}.
+              </p>
               <Button
                 type="button"
                 variant="ghost"

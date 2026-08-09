@@ -185,15 +185,19 @@ describe("AppearanceEditorV3", () => {
       onSave: vi.fn(async () => undefined),
     });
 
-    expect(screen.queryByLabelText("Design name")).toBeNull();
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
     expect(screen.queryByRole("button", { name: "Randomize" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Apply to/ })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Customize" }));
-    expect(screen.getByLabelText("Design name")).toBeDefined();
+    expect(screen.getByLabelText("Custom design name")).toBeDefined();
+    expect(
+      screen.getByRole("tab", { name: "Design, unsaved changes" }),
+    ).toBeDefined();
+    expect(screen.getByText("Unsaved changes: Design.")).toBeDefined();
     expect(screen.getByRole("button", { name: "Save & apply" })).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByLabelText("Design name")).toBeNull();
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
   });
 
   it("keeps V4 camera changes in the shared Save & apply draft", async () => {
@@ -212,6 +216,10 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("tab", { name: "Camera" }));
     await user.click(screen.getByLabelText("Keep rolled results clear"));
     expect(onSave).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("tab", { name: "Camera, unsaved changes" }),
+    ).toBeDefined();
+    expect(screen.getByText("Unsaved changes: Camera.")).toBeDefined();
     expect(screen.getByRole("button", { name: "Save & apply" })).toBeDefined();
 
     await user.click(screen.getByRole("tab", { name: "Design" }));
@@ -258,15 +266,24 @@ describe("AppearanceEditorV3", () => {
     await user.clear(hex);
     await user.type(hex, "#123456");
     await user.click(screen.getByRole("button", { name: "Apply" }));
-    await user.clear(screen.getByLabelText("Design name"));
-    await user.type(screen.getByLabelText("Design name"), "Combined draft");
+    await user.clear(screen.getByLabelText("Custom design name"));
+    await user.type(
+      screen.getByLabelText("Custom design name"),
+      "Combined draft",
+    );
 
     await user.click(screen.getByRole("tab", { name: "Camera" }));
     await user.click(screen.getByLabelText("Keep rolled results clear"));
-    expect(screen.getByLabelText("Design name")).toHaveProperty(
-      "value",
-      "Combined draft",
-    );
+    expect(
+      screen.queryByRole("textbox", { name: "Custom design name" }),
+    ).toBeNull();
+    expect(screen.getByText("Unsaved changes: Design and Camera.")).toBeDefined();
+    expect(
+      screen.getByRole("tab", { name: "Design, unsaved changes" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("tab", { name: "Camera, unsaved changes" }),
+    ).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
@@ -405,7 +422,7 @@ describe("AppearanceEditorV3", () => {
       all: { source: "custom", id: designId },
       overrides: {},
     });
-    expect(screen.queryByLabelText("Design name")).toBeNull();
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
   });
 
   it("detaches the first preset edit into a validated custom design", async () => {
@@ -432,12 +449,15 @@ describe("AppearanceEditorV3", () => {
     await user.clear(hex);
     await user.type(hex, "#123456");
     await user.click(screen.getByRole("button", { name: "Apply" }));
-    expect(screen.getByLabelText("Design name")).toHaveProperty(
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
       "value",
       "Edit 1",
     );
-    await user.clear(screen.getByLabelText("Design name"));
-    await user.type(screen.getByLabelText("Design name"), "Night garden");
+    await user.clear(screen.getByLabelText("Custom design name"));
+    await user.type(
+      screen.getByLabelText("Custom design name"),
+      "Night garden",
+    );
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
