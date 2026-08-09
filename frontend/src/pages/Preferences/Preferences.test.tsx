@@ -156,8 +156,9 @@ describe("appearance preference authorization", () => {
     mockFetch();
     renderPreferences();
 
+    await user.click(await screen.findByRole("tab", { name: "Camera" }));
     await user.click(
-      await screen.findByRole("switch", { name: "Keep rolled results clear" }),
+      screen.getByRole("switch", { name: "Keep rolled results clear" }),
     );
     expect(
       vi.mocked(fetch).mock.calls.some(
@@ -230,25 +231,34 @@ describe("appearance preference authorization", () => {
     });
     expect(sectionHeading.closest("section")).not.toBeNull();
     expect(screen.getByLabelText("Find a server")).toBeDefined();
-    const serverGroup = sectionHeading.parentElement;
-    const stylingMode = await screen.findByRole("group", {
+    expect(await screen.findByRole("tab", { name: "Design" })).toBeDefined();
+    expect(screen.getByRole("tab", { name: "Camera" })).toBeDefined();
+    const serverSettingsTab = screen.getByRole("tab", {
+      name: "Server settings",
+    });
+    expect(
+      screen.queryByRole("group", { name: "Server styling mode" }),
+    ).toBeNull();
+    expect(
+      screen.queryByText("Skip dice roll delay and clatter message"),
+    ).toBeNull();
+
+    const preview = screen.getByRole("region", { name: "Preview" });
+    await user.click(serverSettingsTab);
+    const stylingMode = screen.getByRole("group", {
       name: "Server styling mode",
     });
-    expect(serverGroup?.contains(stylingMode)).toBe(true);
+    expect(stylingMode).toBeDefined();
     expect(
-      await screen.findByText("Skip dice roll delay and clatter message"),
+      screen.getByText("Skip dice roll delay and clatter message"),
     ).toBeDefined();
+    expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
     expect(
       screen.queryByText("Control whether server rolls pause for the animated clatter notice."),
     ).toBeNull();
     expect(
       screen.queryByText("Choose an authorized server, then set its dice and roll delivery."),
     ).toBeNull();
-    const rollDelivery = screen.getByRole("heading", { name: "Roll delivery" });
-    expect(
-      stylingMode.compareDocumentPosition(rollDelivery) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
   it("distinguishes stored profile version conflicts", async () => {
@@ -274,7 +284,10 @@ describe("appearance preference authorization", () => {
       await screen.findByRole("button", { name: "Server appearance" }),
     );
     await user.click(
-      await screen.findByRole("switch", {
+      await screen.findByRole("tab", { name: "Server settings" }),
+    );
+    await user.click(
+      screen.getByRole("switch", {
         name: "Skip dice roll delay and clatter message",
       }),
     );

@@ -46,7 +46,16 @@ type AppearanceEditorV3Props = {
   personalDesigns: readonly CustomAppearanceDesignV3[];
   isSaving: boolean;
   version?: 3 | 4;
+  settingsPanel?: React.ReactNode;
   onSave(profile: EditableAppearanceProfileV3): Promise<void>;
+};
+
+type AppearanceEditorTab = "design" | "camera" | "server";
+
+const TAB_LABELS: Readonly<Record<AppearanceEditorTab, string>> = {
+  design: "Design",
+  camera: "Camera",
+  server: "Server settings",
 };
 
 function errorMessage(error: unknown): string {
@@ -76,6 +85,7 @@ export function AppearanceEditorV3({
   personalDesigns,
   isSaving,
   version = 3,
+  settingsPanel,
   onSave,
 }: AppearanceEditorV3Props) {
   const resourceProfile = React.useMemo(
@@ -119,6 +129,12 @@ export function AppearanceEditorV3({
   >("idle");
   const [customizing, setCustomizing] = React.useState(false);
   const [personalDesignId, setPersonalDesignId] = React.useState("");
+  const [activeTab, setActiveTab] =
+    React.useState<AppearanceEditorTab>("design");
+  const [previewExpanded, setPreviewExpanded] = React.useState(true);
+  const tabRefs = React.useRef<
+    Partial<Record<AppearanceEditorTab, HTMLButtonElement | null>>
+  >({});
 
   React.useEffect(() => {
     setCurrentProfile(resourceProfile);
@@ -132,6 +148,48 @@ export function AppearanceEditorV3({
     diceViewDraft !== null &&
     JSON.stringify(currentProfile.diceView) !== JSON.stringify(diceViewDraft);
   diceViewDirtyRef.current = diceViewDirty;
+  const hasCameraTab = currentProfile.version === 4;
+  const hasServerTab = settingsPanel !== undefined;
+  const editorTabs: readonly AppearanceEditorTab[] = [
+    "design",
+    ...(hasCameraTab ? (["camera"] as const) : []),
+    ...(hasServerTab ? (["server"] as const) : []),
+  ];
+
+  React.useEffect(() => {
+    if (
+      (activeTab === "camera" && !hasCameraTab) ||
+      (activeTab === "server" && !hasServerTab)
+    ) {
+      setActiveTab("design");
+    }
+  }, [activeTab, hasCameraTab, hasServerTab]);
+
+  const activateTab = (tab: AppearanceEditorTab, focus = false) => {
+    setActiveTab(tab);
+    if (focus) tabRefs.current[tab]?.focus();
+  };
+
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    tab: AppearanceEditorTab,
+  ) => {
+    const index = editorTabs.indexOf(tab);
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + editorTabs.length) % editorTabs.length;
+    } else if (event.key === "ArrowRight") {
+      nextIndex = (index + 1) % editorTabs.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = editorTabs.length - 1;
+    }
+    const nextTab = nextIndex === undefined ? undefined : editorTabs[nextIndex];
+    if (nextTab === undefined) return;
+    event.preventDefault();
+    activateTab(nextTab, true);
+  };
 
   const withDiceViewDraft = <Profile extends EditableAppearanceProfileV3>(
     profile: Profile,
@@ -380,104 +438,194 @@ export function AppearanceEditorV3({
 
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
-      <div className="space-y-6 rounded-xl border bg-card p-4 shadow-sm sm:p-6">
-        <div>
-          <AppearanceTargetPickerV3
-            value={target}
-            disabled={isSaving}
-            onChange={selectTarget}
-          />
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <p>
-              Current design: {activeSelection.name}
-              {activeReference === null ? " (default)" : ""}
-            </p>
-            {hasTargetOverride && (
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={() => void clearTargetOverride()}
-                className="font-semibold text-brand underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                Use All dice design
-              </button>
-            )}
-          </div>
+      <div className="order-1 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-1">
+        <AppearanceTargetPickerV3
+          value={target}
+          disabled={isSaving}
+          onChange={selectTarget}
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <p>
+            Current design: {activeSelection.name}
+            {activeReference === null ? " (default)" : ""}
+          </p>
+          {hasTargetOverride && (
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={() => void clearTargetOverride()}
+              className="font-semibold text-brand underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              Use All dice design
+            </button>
+          )}
         </div>
+      </div>
 
-        {currentProfile.version === 4 && diceViewDraft !== null && (
-          <DiceViewPreferencesV4
-            value={diceViewDraft}
-            disabled={isSaving}
-            onChange={(next) => {
-              setDiceViewDraft(next);
-              setStatus(null);
-            }}
-            onPreviewTargetChange={setPreviewTarget}
-          />
-        )}
-
-        {kind === "guild" && personalDesigns.length > 0 && (
-          <div className="rounded-lg border bg-muted/20 p-4">
-            <p className="text-sm font-semibold">Copy one of my designs</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-              <label className="block space-y-1.5 text-xs font-medium">
-                <span className="block">Design</span>
-                <AppearanceSelectV3
-                  aria-label="Personal design to copy"
-                  value={personalDesignId}
-                  onChange={(event) => setPersonalDesignId(event.target.value)}
-                  className="sm:h-10"
-                >
-                <option value="">Choose a personal design</option>
-                {personalDesigns.map((design) => (
-                  <option key={design.id} value={design.id}>
-                    {design.name}
-                  </option>
-                ))}
-                </AppearanceSelectV3>
-              </label>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={personalDesignId === "" || isSaving}
-                onClick={copyPersonalDesign}
-              >
-                Copy to draft
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <AppearancePresetGalleryV3
-            catalog={catalog}
-            selectedStyleId={selectedStyleId}
-            disabled={isSaving || presetState === "applying" || customizing}
-            onSelect={(styleId) => void selectStyle(styleId)}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isSaving || presetState === "applying" || customizing}
-            onClick={() => {
-              setPresetState("idle");
-              setRecipe(withAutomaticMaterialFormsV3(recipe));
-              setCustomizing(true);
-              setStatus(null);
-            }}
-          >
-            Customize
-          </Button>
-        </div>
-
-        {customizing && (
-          <AppearanceRecipeControlsV3
+      <aside className="order-2 xl:col-start-2 xl:row-span-2 xl:row-start-1">
+        <Button
+          type="button"
+          variant="outline"
+          className="mb-3 w-full xl:hidden"
+          aria-controls={`${kind}-appearance-preview`}
+          aria-expanded={previewExpanded}
+          onClick={() => setPreviewExpanded((expanded) => !expanded)}
+        >
+          {previewExpanded ? "Hide preview" : "Show preview"}
+        </Button>
+        <div
+          id={`${kind}-appearance-preview`}
+          className={`${previewExpanded ? "" : "hidden xl:block"} xl:sticky xl:top-6 xl:z-10`}
+        >
+          <AppearancePreviewPaneV3
+            target={previewTarget}
             recipe={recipe}
-            catalog={catalog}
-            target={target}
-            onChange={setCustomRecipe}
+            {...(diceViewDraft === null ? {} : { diceView: diceViewDraft })}
           />
+        </div>
+      </aside>
+
+      <div className="order-3 space-y-6 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-2">
+        <div
+          role="tablist"
+          aria-label="Appearance editor"
+          className="flex gap-1 overflow-x-auto border-b"
+        >
+          {editorTabs.map((tab) => (
+            <button
+              key={tab}
+              ref={(element) => {
+                tabRefs.current[tab] = element;
+              }}
+              id={`${kind}-${tab}-tab`}
+              type="button"
+              role="tab"
+              aria-controls={`${kind}-${tab}-panel`}
+              aria-selected={activeTab === tab}
+              tabIndex={activeTab === tab ? 0 : -1}
+              onClick={() => activateTab(tab)}
+              onKeyDown={(event) => handleTabKeyDown(event, tab)}
+              className={`min-h-11 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                activeTab === tab
+                  ? "border-brand text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {TAB_LABELS[tab]}
+            </button>
+          ))}
+        </div>
+
+        <div
+          id={`${kind}-design-panel`}
+          role="tabpanel"
+          aria-labelledby={`${kind}-design-tab`}
+          hidden={activeTab !== "design"}
+          className="space-y-6"
+        >
+          {kind === "guild" && personalDesigns.length > 0 && (
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <p className="text-sm font-semibold">Copy one of my designs</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                <label className="block space-y-1.5 text-xs font-medium">
+                  <span className="block">Design</span>
+                  <AppearanceSelectV3
+                    aria-label="Personal design to copy"
+                    value={personalDesignId}
+                    onChange={(event) => setPersonalDesignId(event.target.value)}
+                    className="sm:h-10"
+                  >
+                    <option value="">Choose a personal design</option>
+                    {personalDesigns.map((design) => (
+                      <option key={design.id} value={design.id}>
+                        {design.name}
+                      </option>
+                    ))}
+                  </AppearanceSelectV3>
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={personalDesignId === "" || isSaving}
+                  onClick={copyPersonalDesign}
+                >
+                  Copy to draft
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <AppearancePresetGalleryV3
+              catalog={catalog}
+              selectedStyleId={selectedStyleId}
+              disabled={isSaving || presetState === "applying" || customizing}
+              onSelect={(styleId) => void selectStyle(styleId)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSaving || presetState === "applying" || customizing}
+              onClick={() => {
+                setPresetState("idle");
+                setRecipe(withAutomaticMaterialFormsV3(recipe));
+                setCustomizing(true);
+                setStatus(null);
+              }}
+            >
+              Customize
+            </Button>
+          </div>
+
+          {customizing && (
+            <AppearanceRecipeControlsV3
+              recipe={recipe}
+              catalog={catalog}
+              target={target}
+              onChange={setCustomRecipe}
+            />
+          )}
+
+          {currentProfile.designs.length > 0 && (
+            <SavedAppearanceDesigns
+              designs={currentProfile.designs}
+              isSaving={isSaving}
+              onApply={(designId) => void applySavedDesign(designId)}
+              onEdit={editDesign}
+              onDelete={(designId) => void deleteDesign(designId)}
+            />
+          )}
+        </div>
+
+        {hasCameraTab && diceViewDraft !== null && (
+          <div
+            id={`${kind}-camera-panel`}
+            role="tabpanel"
+            aria-labelledby={`${kind}-camera-tab`}
+            hidden={activeTab !== "camera"}
+          >
+            <DiceViewPreferencesV4
+              value={diceViewDraft}
+              disabled={isSaving}
+              onChange={(next) => {
+                setDiceViewDraft(next);
+                setStatus(null);
+              }}
+              onPreviewTargetChange={setPreviewTarget}
+            />
+          </div>
+        )}
+
+        {hasServerTab && (
+          <div
+            id={`${kind}-server-panel`}
+            role="tabpanel"
+            aria-labelledby={`${kind}-server-tab`}
+            hidden={activeTab !== "server"}
+            className="space-y-6"
+          >
+            {activeTab === "server" ? settingsPanel : null}
+          </div>
         )}
 
         {(customizing || diceViewDirty) && (
@@ -525,10 +673,7 @@ export function AppearanceEditorV3({
         )}
 
         {presetState === "applying" ? (
-          <SparkleLoadingIndicator
-            label="Applying preset"
-            className="w-fit"
-          />
+          <SparkleLoadingIndicator label="Applying preset" className="w-fit" />
         ) : presetState === "applied" ? (
           <p role="status" className="text-brand">
             <Check
@@ -545,25 +690,6 @@ export function AppearanceEditorV3({
           </p>
         ) : null}
       </div>
-
-      <aside className="space-y-4">
-        <div className="xl:sticky xl:top-6 xl:z-10">
-          <AppearancePreviewPaneV3
-            target={previewTarget}
-            recipe={recipe}
-            {...(diceViewDraft === null ? {} : { diceView: diceViewDraft })}
-          />
-        </div>
-        {currentProfile.designs.length > 0 && (
-          <SavedAppearanceDesigns
-            designs={currentProfile.designs}
-            isSaving={isSaving}
-            onApply={(designId) => void applySavedDesign(designId)}
-            onEdit={editDesign}
-            onDelete={(designId) => void deleteDesign(designId)}
-          />
-        )}
-      </aside>
     </section>
   );
 }

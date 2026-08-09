@@ -3,6 +3,7 @@
 import { DiceViewPreferencesV4 } from "@/components/DiceViewPreferencesV4";
 import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(cleanup);
@@ -23,6 +24,29 @@ function renderPreferences(
 }
 
 describe("DiceViewPreferencesV4", () => {
+  it("keeps concise mode guidance available on hover and focus", async () => {
+    const user = userEvent.setup();
+    renderPreferences();
+
+    expect(screen.queryByText(/Set the shared camera angle/i)).toBeNull();
+    expect(screen.queryByText(/Applies to non-spherical dice/i)).toBeNull();
+    expect(screen.queryByText(/Random uses the approved camera positions/i)).toBeNull();
+
+    await user.hover(screen.getByRole("button", { name: "About legacy dice view" }));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Points each rolled result toward you in a fixed 3D composition.",
+      }),
+    ).toBeDefined();
+
+    screen.getByRole("button", { name: "About clear dice view" }).focus();
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Uses a fixed physically resting view with the result upright.",
+      }),
+    ).toBeDefined();
+  });
+
   it("makes Legacy and Clear mutually exclusive without changing normal settings", () => {
     const { onChange, value } = renderPreferences();
     fireEvent.click(screen.getByLabelText("Use legacy dice view"));

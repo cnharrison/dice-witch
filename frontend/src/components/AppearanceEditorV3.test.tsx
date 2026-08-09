@@ -112,6 +112,68 @@ describe("AppearanceEditorV3", () => {
     expect(preview.parentElement?.className).toContain("xl:sticky");
   });
 
+  it("keeps one preview mounted while switching between Design and Camera tabs", async () => {
+    const user = userEvent.setup();
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfileV4() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      version: 4,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    const preview = screen.getByRole("region", { name: "Preview" });
+    const designTab = screen.getByRole("tab", { name: "Design" });
+    const cameraTab = screen.getByRole("tab", { name: "Camera" });
+    expect(designTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("combobox", { name: "Preset" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Dice view" })).toBeNull();
+
+    await user.click(cameraTab);
+    expect(cameraTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Dice view" })).toBeDefined();
+    expect(screen.queryByRole("combobox", { name: "Preset" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
+
+    cameraTab.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(designTab.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(designTab);
+
+    await user.keyboard("{End}");
+    expect(document.activeElement).toBe(cameraTab);
+    await user.keyboard("{Home}");
+    expect(document.activeElement).toBe(designTab);
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(document.activeElement).toBe(designTab);
+    expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
+  });
+
+  it("keeps the mobile preview available as one collapsible panel", async () => {
+    const user = userEvent.setup();
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfileV4() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      version: 4,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    const preview = screen.getByRole("region", { name: "Preview" });
+    const hidePreview = screen.getByRole("button", { name: "Hide preview" });
+    expect(hidePreview.getAttribute("aria-expanded")).toBe("true");
+    await user.click(hidePreview);
+
+    const showPreview = screen.getByRole("button", { name: "Show preview" });
+    expect(showPreview.getAttribute("aria-expanded")).toBe("false");
+    expect(document.getElementById("personal-appearance-preview")?.className).toContain("hidden");
+    expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
+  });
+
   it("keeps detailed controls transactional and removes redundant preset actions", async () => {
     const user = userEvent.setup();
     renderEditor({
@@ -147,10 +209,12 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
+    await user.click(screen.getByRole("tab", { name: "Camera" }));
     await user.click(screen.getByLabelText("Keep rolled results clear"));
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Save & apply" })).toBeDefined();
 
+    await user.click(screen.getByRole("tab", { name: "Design" }));
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Preset" }),
       "dice-witch",
@@ -197,6 +261,7 @@ describe("AppearanceEditorV3", () => {
     await user.clear(screen.getByLabelText("Design name"));
     await user.type(screen.getByLabelText("Design name"), "Combined draft");
 
+    await user.click(screen.getByRole("tab", { name: "Camera" }));
     await user.click(screen.getByLabelText("Keep rolled results clear"));
     expect(screen.getByLabelText("Design name")).toHaveProperty(
       "value",

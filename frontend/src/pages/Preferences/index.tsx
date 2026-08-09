@@ -486,31 +486,58 @@ export default function Preferences() {
       }
 
       serverSettings = (
-        <>
-          <div className="rounded-xl border border-brand/35 bg-card p-5 shadow-sm">
-            <h3 className="font-semibold">Roll delivery</h3>
-            {deliverySetting}
-          </div>
-          <AppearanceEditorV3
-            key={selectedGuildId}
-            catalog={catalog}
-            resource={guildResource}
-            kind="guild"
-            personalDesigns={personalResource.profile?.designs ?? []}
-            isSaving={guildAppearanceMutation.isPending}
-            version={guildResource.profile?.version ?? 4}
-            onSave={async (profile) => {
-              if (!("mode" in profile)) {
-                throw new Error("Guild appearance profile is required");
-              }
-              await guildAppearanceMutation.mutateAsync({
-                profile,
-                guildId: selectedGuildId,
-                revision: guildResource.revision,
-              });
-            }}
-          />
-        </>
+        <AppearanceEditorV3
+          key={selectedGuildId}
+          catalog={catalog}
+          resource={guildResource}
+          kind="guild"
+          personalDesigns={personalResource.profile?.designs ?? []}
+          isSaving={guildAppearanceMutation.isPending}
+          version={guildResource.profile?.version ?? 4}
+          settingsPanel={
+            <>
+              <ServerAppearanceModeV3
+                mode={
+                  guildResource.profile?.mode ??
+                  createEmptyAppearanceProfileV4("guild").mode
+                }
+                disabled={guildAppearanceMutation.isPending}
+                onChange={async (mode) => {
+                  const profile = setGuildAppearanceModeV3(
+                    guildResource.profile ??
+                      createEmptyAppearanceProfileV4("guild"),
+                    mode,
+                    catalog,
+                  );
+                  await guildAppearanceMutation.mutateAsync({
+                    profile,
+                    guildId: selectedGuildId,
+                    revision: guildResource.revision,
+                  });
+                }}
+              />
+              <section
+                aria-labelledby="roll-delivery-heading"
+                className="rounded-lg border border-brand/35 p-4"
+              >
+                <h3 id="roll-delivery-heading" className="font-semibold">
+                  Roll delivery
+                </h3>
+                {deliverySetting}
+              </section>
+            </>
+          }
+          onSave={async (profile) => {
+            if (!("mode" in profile)) {
+              throw new Error("Guild appearance profile is required");
+            }
+            await guildAppearanceMutation.mutateAsync({
+              profile,
+              guildId: selectedGuildId,
+              revision: guildResource.revision,
+            });
+          }}
+        />
       );
     }
 
@@ -527,28 +554,6 @@ export default function Preferences() {
               onValueChange={setSelectedGuildId}
             />
           </div>
-          {guildResource !== undefined && selectedGuildId !== undefined && (
-            <ServerAppearanceModeV3
-              mode={
-                guildResource.profile?.mode ??
-                createEmptyAppearanceProfileV4("guild").mode
-              }
-              disabled={guildAppearanceMutation.isPending}
-              onChange={async (mode) => {
-                const profile = setGuildAppearanceModeV3(
-                  guildResource.profile ??
-                    createEmptyAppearanceProfileV4("guild"),
-                  mode,
-                  catalog,
-                );
-                await guildAppearanceMutation.mutateAsync({
-                  profile,
-                  guildId: selectedGuildId,
-                  revision: guildResource.revision,
-                });
-              }}
-            />
-          )}
         </div>
         {serverSettings}
       </section>

@@ -2,6 +2,12 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   APPEARANCE_TARGET_LABELS,
 } from "@/types/appearance";
 import {
@@ -10,6 +16,7 @@ import {
   type DiceViewAzimuthV4,
   type DiceViewPreferencesV4,
 } from "@dice-witch/dice-v4-model";
+import { Info } from "lucide-react";
 
 type DiceViewPreferencesV4Props = {
   value: DiceViewPreferencesV4;
@@ -17,6 +24,31 @@ type DiceViewPreferencesV4Props = {
   onChange(value: DiceViewPreferencesV4): void;
   onPreviewTargetChange?(target: AppearanceTargetV4 | "all"): void;
 };
+
+function ModeDescriptionTooltip({
+  label,
+  description,
+}: {
+  label: string;
+  description: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Info className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>{description}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function azimuthLabel(value: number): string {
   if (value === 0) return "0°";
@@ -85,18 +117,13 @@ export function DiceViewPreferencesV4({
   };
 
   return (
-    <section className="space-y-5 rounded-xl border border-brand/35 bg-card p-4 shadow-sm sm:p-6" aria-labelledby="dice-view-heading">
-      <div>
+    <TooltipProvider delayDuration={0}>
+      <section className="space-y-5 rounded-xl border border-brand/35 bg-card p-4 shadow-sm sm:p-6" aria-labelledby="dice-view-heading">
         <h2 id="dice-view-heading" className="text-xl font-semibold">
           Dice view
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Set the shared camera angle or temporarily prioritize readability.
-          Colors and materials are unchanged.
-        </p>
-      </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
         <div className="flex items-start gap-3 rounded-lg border p-3">
           <Switch
             id="legacy-dice-view"
@@ -104,11 +131,12 @@ export function DiceViewPreferencesV4({
             disabled={disabled}
             onCheckedChange={(checked) => setMode("legacy", checked)}
           />
-          <div>
+          <div className="flex items-center gap-1.5">
             <Label htmlFor="legacy-dice-view">Use legacy dice view</Label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Points each rolled result toward you in a fixed 3D composition.
-            </p>
+            <ModeDescriptionTooltip
+              label="About legacy dice view"
+              description="Points each rolled result toward you in a fixed 3D composition."
+            />
           </div>
         </div>
         <div className="flex items-start gap-3 rounded-lg border p-3">
@@ -118,11 +146,12 @@ export function DiceViewPreferencesV4({
             disabled={disabled}
             onCheckedChange={(checked) => setMode("clear", checked)}
           />
-          <div>
+          <div className="flex items-center gap-1.5">
             <Label htmlFor="clear-dice-view">Keep rolled results clear</Label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Uses a fixed physically resting view with the result upright.
-            </p>
+            <ModeDescriptionTooltip
+              label="About clear dice view"
+              description="Uses a fixed physically resting view with the result upright."
+            />
           </div>
         </div>
       </div>
@@ -137,12 +166,7 @@ export function DiceViewPreferencesV4({
       <fieldset disabled={disabled || overrideActive} className="space-y-5 disabled:opacity-60">
         <div className="rounded-lg border p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <Label htmlFor="dice-view-elevation">Shared elevation</Label>
-              <p className="text-xs text-muted-foreground">
-                Applies to non-spherical dice.
-              </p>
-            </div>
+            <Label htmlFor="dice-view-elevation">Shared elevation</Label>
             <span className="font-mono text-sm" aria-live="polite">
               {value.elevationDegrees}°
             </span>
@@ -175,13 +199,7 @@ export function DiceViewPreferencesV4({
 
         <div className="space-y-3 rounded-lg border p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="font-semibold">Viewing side</h3>
-              <p className="text-xs text-muted-foreground">
-                Random uses the approved camera positions. Custom fixes the
-                viewing side while each die keeps a random resting rotation.
-              </p>
-            </div>
+            <h3 className="font-semibold">Viewing side</h3>
             <Button type="button" variant="outline" onClick={resetToRandom}>
               Reset all to random
             </Button>
@@ -289,7 +307,8 @@ export function DiceViewPreferencesV4({
             })}
           </div>
         </div>
-      </fieldset>
-    </section>
+        </fieldset>
+      </section>
+    </TooltipProvider>
   );
 }
