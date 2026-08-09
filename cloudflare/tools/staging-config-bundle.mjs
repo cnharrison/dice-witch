@@ -59,6 +59,9 @@ function applyReleaseConfiguration(configs) {
   if (!isRecord(configs.interactions.vars)) {
     throw new Error("Interactions staging vars are required");
   }
+  if (!isRecord(configs.roll.vars)) {
+    throw new Error("Roll staging vars are required");
+  }
   if (!Array.isArray(configs.roll.services)) {
     throw new Error("Roll staging services are required");
   }
@@ -69,6 +72,7 @@ function applyReleaseConfiguration(configs) {
     enabled: true,
     logs: { invocation_logs: true, head_sampling_rate: 1 },
   };
+  configs.roll.vars.ROLL_VIEW_POLICY = "r20";
 
   const messageProbe = configs.roll.services.find(
     ({ binding }) => binding === "DISCORD_MESSAGE_PROBE",

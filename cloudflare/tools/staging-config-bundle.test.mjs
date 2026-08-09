@@ -26,6 +26,7 @@ function bundle() {
         config.vars = {};
       }
       if (worker === "roll") {
+        config.vars = { ROLL_RENDER_VERSION: "4" };
         config.services = [];
       }
       return [worker, config];
@@ -63,6 +64,10 @@ test("materializes only known configs and stamps exact build metadata", async ()
   assert.deepEqual(interactions.observability, {
     enabled: true,
     logs: { invocation_logs: true, head_sampling_rate: 1 },
+  });
+  assert.deepEqual(roll.vars, {
+    ROLL_RENDER_VERSION: "4",
+    ROLL_VIEW_POLICY: "r20",
   });
   assert.deepEqual(roll.services, [
     {
