@@ -288,6 +288,42 @@ describe("authored V4 render views", () => {
     }
   });
 
+  it("turns only d6 and Fudge r25 Legacy result faces further toward the camera", () => {
+    for (const subject of AUTHORED_POLYHEDRAL_SUBJECTS) {
+      for (const result of subject.results) {
+        const die = {
+          target: subject.target,
+          form: subject.form,
+          result,
+        } as const;
+        for (const mode of ["legacy", "clear"] as const) {
+          const r24 = getAuthoredRenderViewV4(
+            "canvaskit-v4-r24",
+            mode,
+            die,
+          );
+          const r25 = getAuthoredRenderViewV4(
+            "canvaskit-v4-r25",
+            mode,
+            die,
+          );
+          if (
+            mode === "legacy" &&
+            (subject.target === "d6" || subject.target === "fudge")
+          ) {
+            expect(r25).toEqual({
+              ...r24,
+              elevationDegrees: 12,
+              azimuthOffsetDegrees: -15,
+            });
+          } else {
+            expect(r25).toEqual(r24);
+          }
+        }
+      }
+    }
+  });
+
   it("raises only r21 d20 Clear views to emphasize the result face", () => {
     for (const form of [
       "standard",

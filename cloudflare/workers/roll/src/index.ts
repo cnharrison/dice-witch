@@ -54,6 +54,7 @@ import {
   ROLL_RENDERER_REVISION_R22_V4,
   ROLL_RENDERER_REVISION_R23_V4,
   ROLL_RENDERER_REVISION_R24_V4,
+  ROLL_RENDERER_REVISION_R25_V4,
   ROLL_RENDERER_REVISION_V4,
 } from "../../../packages/roll-render-model/src";
 import {
@@ -87,6 +88,7 @@ import {
   buildRollRenderRequestForVersion,
   parseRollRenderVersion,
   parseRollViewPolicy,
+  type RollViewPolicy,
 } from "./render-version";
 
 export { LogWork } from "./log-work";
@@ -534,7 +536,7 @@ function rollRecordRenderVersion(record: RollWorkRecord): 1 | 2 | 3 | 4 {
 
 function rollRecordV5ViewPolicy(
   record: RollWorkRecordV5,
-): "r19" | "r20" | "r21" | "r22" | "r23" | "r24" {
+): RollViewPolicy {
   return record.renderVersion === 4 ? (record.viewPolicy ?? "r19") : "r19";
 }
 
@@ -547,6 +549,7 @@ function rollRecordRendererRevision(record: RollWorkRecord): string | null {
       return record.renderRequest.rendererRevision;
     }
     const viewPolicy = rollRecordV5ViewPolicy(record);
+    if (viewPolicy === "r25") return ROLL_RENDERER_REVISION_R25_V4;
     if (viewPolicy === "r24") return ROLL_RENDERER_REVISION_R24_V4;
     if (viewPolicy === "r23") return ROLL_RENDERER_REVISION_R23_V4;
     if (viewPolicy === "r22") return ROLL_RENDERER_REVISION_R22_V4;

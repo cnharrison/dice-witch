@@ -57,6 +57,7 @@ import {
   buildRollRenderRequestR22V4,
   buildRollRenderRequestR23V4,
   buildRollRenderRequestR24V4,
+  buildRollRenderRequestR25V4,
 } from "../../../packages/roll-render-model/src";
 import {
   loadEffectiveAppearanceV2,
@@ -504,6 +505,15 @@ export function buildAppearancePreviewRenderRequestR24V4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR25V4(
+  value: unknown,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR25V4,
+  );
+}
+
 export async function renderAppearancePreview(
   value: unknown,
 ): Promise<AppearancePreviewResult> {
@@ -562,7 +572,7 @@ export function renderAppearancePreviewV4(
     createCanvasKitRequestRendererV4,
 ): Promise<AppearancePreviewResultV3> {
   return renderAppearancePreviewRequestV4(
-    buildAppearancePreviewRenderRequestR24V4(value),
+    buildAppearancePreviewRenderRequestR25V4(value),
     createRenderer,
   );
 }
@@ -578,7 +588,7 @@ type LoadedWebAppearance =
   | { version: 4; viewPolicy: "r19"; recipes: EffectiveAppearanceRecipesV3 }
   | {
       version: 4;
-      viewPolicy: "r20" | "r21" | "r22" | "r23" | "r24";
+      viewPolicy: Exclude<RollViewPolicy, "r19">;
       effective: EffectiveAppearanceV4;
     };
 
@@ -690,9 +700,16 @@ function buildWebRenderRequest(
       appearance.effective,
     );
   }
-  return appearance.viewPolicy === "r23"
-    ? buildRollRenderRequestR23V4(outcome, renderSeed, appearance.effective)
-    : buildRollRenderRequestR24V4(outcome, renderSeed, appearance.effective);
+  if (appearance.viewPolicy === "r23") {
+    return buildRollRenderRequestR23V4(
+      outcome,
+      renderSeed,
+      appearance.effective,
+    );
+  }
+  return appearance.viewPolicy === "r24"
+    ? buildRollRenderRequestR24V4(outcome, renderSeed, appearance.effective)
+    : buildRollRenderRequestR25V4(outcome, renderSeed, appearance.effective);
 }
 
 function appearanceIdentities(outcome: RollExecutionResult): string[][] {

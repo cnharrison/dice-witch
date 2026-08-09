@@ -127,6 +127,7 @@ const r21 = policy({ ...r20 });
 const r22 = policy({ ...r21 });
 const r23 = policy({ ...r22 });
 const r24 = policy({ ...r23, gridVerticalAlignment: "visual-center-r24" });
+const r25 = policy({ ...r24 });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -153,6 +154,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r22": r22,
   "canvaskit-v4-r23": r23,
   "canvaskit-v4-r24": r24,
+  "canvaskit-v4-r25": r25,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

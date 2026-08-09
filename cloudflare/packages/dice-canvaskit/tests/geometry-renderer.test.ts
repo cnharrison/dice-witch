@@ -179,6 +179,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
         "canvaskit-v4-r22",
         "canvaskit-v4-r23",
         "canvaskit-v4-r24",
+        "canvaskit-v4-r25",
       ] as const) {
         for (const mode of ["legacy", "clear"] as const) {
           for (const subject of subjects) {
@@ -239,6 +240,47 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       renderer.dispose();
     }
   }, 90_000);
+
+  it("renders the r25 d6 and Fudge Legacy cameras differently from r24", async () => {
+    const canvasKit = await loadCanvasKitV4();
+    const renderer = createRenderer(canvasKit);
+    const subjects = [
+      { target: "d6", form: "standard", result: 3 },
+      { target: "fudge", form: "standard", result: 0 },
+    ] as const;
+    try {
+      for (const die of subjects) {
+        const render = (rendererRevision: "canvaskit-v4-r24" | "canvaskit-v4-r25") => {
+          const view = getAuthoredRenderViewV4(
+            rendererRevision,
+            "legacy",
+            die,
+          );
+          const geometry = getRenderGeometryDescriptorV4(rendererRevision, {
+            ...die,
+            view,
+          });
+          if (geometry.kind !== "polyhedral") {
+            throw new Error("Legacy cube geometry is invalid");
+          }
+          return renderer.render({
+            geometry,
+            result: die.result,
+            size: 300,
+            renderPolicy: "standard-r7",
+          });
+        };
+        const r24 = await render("canvaskit-v4-r24");
+        const r25 = await render("canvaskit-v4-r25");
+
+        expect(r24.visibleFaceCount).toBe(3);
+        expect(r25.visibleFaceCount).toBe(3);
+        expect(r25.png).not.toEqual(r24.png);
+      }
+    } finally {
+      renderer.dispose();
+    }
+  });
 
   it("renders a crisp sharp-edge d20 without changing the standard d20", async () => {
     const canvasKit = await loadCanvasKitV4();
@@ -803,13 +845,16 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
     }
   });
 
-  it("visually centers the asymmetric d4 in r24 grid cells", async () => {
+  it("visually centers the asymmetric d4 from r24 onward", async () => {
     const canvasKit = await loadCanvasKitV4();
     const renderer = createRenderer(canvasKit);
     const die = { target: "d4", form: "standard", result: 3 } as const;
     try {
       const render = async (
-        rendererRevision: "canvaskit-v4-r23" | "canvaskit-v4-r24",
+        rendererRevision:
+          | "canvaskit-v4-r23"
+          | "canvaskit-v4-r24"
+          | "canvaskit-v4-r25",
         icons: readonly ["target-success"] | readonly [] = [],
       ) => {
         const view = getAuthoredRenderViewV4(
@@ -839,9 +884,11 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       };
       const r23 = await decodePngRgba8((await render("canvaskit-v4-r23")).png);
       const r24 = await decodePngRgba8((await render("canvaskit-v4-r24")).png);
+      const r25 = await decodePngRgba8((await render("canvaskit-v4-r25")).png);
 
       expect(visibleVerticalCenter(r23)).toBeLessThan(65);
       expect(visibleVerticalCenter(r24)).toBe(74.5);
+      expect(visibleVerticalCenter(r25)).toBe(74.5);
 
       const iconsR23 = await decodePngRgba8(
         (await render("canvaskit-v4-r23", ["target-success"])).png,

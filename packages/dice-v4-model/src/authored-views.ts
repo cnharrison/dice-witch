@@ -244,14 +244,11 @@ for (const form of ["standard", "sharp", "crystal-cut", "hollow-cage"] as const)
   POLYHEDRAL_VIEWS_R21_V4.set(`d20:${form}`, D20_VIEWS_R21_V4);
 }
 
-function withFrontFacingLegacyCamera(
+function withLegacyCamera(
   entry: PolyhedralViewEntryV4,
-  geometry: PolyhedralGeometryDescriptorV4,
+  elevationDegrees: number,
+  azimuthOffsetDegrees: number,
 ): PolyhedralViewEntryV4 {
-  const [x, , z] = geometry.camera.position;
-  const azimuthOffsetDegrees = -Math.round(
-    (Math.atan2(x, z) * 180) / Math.PI,
-  );
   return Object.freeze({
     views: Object.freeze({
       legacy: new Map(
@@ -259,7 +256,7 @@ function withFrontFacingLegacyCamera(
           result,
           orientedCamera(
             "legacy",
-            1,
+            elevationDegrees,
             view.resultRotation,
             azimuthOffsetDegrees,
           ),
@@ -268,6 +265,17 @@ function withFrontFacingLegacyCamera(
       clear: entry.views.clear,
     }),
   });
+}
+
+function withFrontFacingLegacyCamera(
+  entry: PolyhedralViewEntryV4,
+  geometry: PolyhedralGeometryDescriptorV4,
+): PolyhedralViewEntryV4 {
+  const [x, , z] = geometry.camera.position;
+  const azimuthOffsetDegrees = -Math.round(
+    (Math.atan2(x, z) * 180) / Math.PI,
+  );
+  return withLegacyCamera(entry, 1, azimuthOffsetDegrees);
 }
 
 const POLYHEDRAL_VIEWS_R22_V4 = new Map(POLYHEDRAL_VIEWS_R21_V4);
@@ -313,6 +321,15 @@ for (const key of ["d6:standard", "fudge:standard"] as const) {
   );
 }
 
+const POLYHEDRAL_VIEWS_R25_V4 = new Map(POLYHEDRAL_VIEWS_R23_V4);
+for (const key of ["d6:standard", "fudge:standard"] as const) {
+  const entry = POLYHEDRAL_VIEWS_R25_V4.get(key);
+  if (entry === undefined) {
+    throw new Error(`Authored ${key} views are missing`);
+  }
+  POLYHEDRAL_VIEWS_R25_V4.set(key, withLegacyCamera(entry, 12, -15));
+}
+
 const CENTERED_SPHERE_VIEW_V4 = Object.freeze({
   kind: "sphere-surface",
   rotationDegrees: 0,
@@ -342,6 +359,9 @@ function authoredPolyhedralViews(
     rendererRevision === "canvaskit-v4-r24"
   ) {
     return POLYHEDRAL_VIEWS_R23_V4;
+  }
+  if (rendererRevision === "canvaskit-v4-r25") {
+    return POLYHEDRAL_VIEWS_R25_V4;
   }
   throw new Error(`Authored views are not supported by ${rendererRevision}`);
 }

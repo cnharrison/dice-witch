@@ -21,6 +21,7 @@ import {
 } from "../../../packages/discord-contracts/src";
 import { renderedRollFaceV4 } from "../../../packages/roll-render-model/src";
 import { parseSavedRollNameColorV2 } from "../../../packages/saved-rolls/src";
+import type { RollViewPolicy } from "./render-version";
 import {
   MAX_DIE_SIDES,
   MAX_NOTATION_EXPRESSIONS,
@@ -84,7 +85,7 @@ export type RollWorkRecordV5 =
   | (RollWorkRecordBase & {
       version: 5;
       renderVersion: 4;
-      viewPolicy?: "r19" | "r20" | "r21" | "r22" | "r23" | "r24";
+      viewPolicy?: RollViewPolicy;
       renderRequest: RenderRequestV4 | null;
     });
 
@@ -1026,7 +1027,8 @@ export function parseRecord(value: string): RollWorkRecord {
           parsed.viewPolicy !== "r21" &&
           parsed.viewPolicy !== "r22" &&
           parsed.viewPolicy !== "r23" &&
-          parsed.viewPolicy !== "r24")) ||
+          parsed.viewPolicy !== "r24" &&
+          parsed.viewPolicy !== "r25")) ||
       common.outcome.outcomes.length === 0
     ) {
       throw new Error("Stored roll work is invalid");
@@ -1042,7 +1044,9 @@ export function parseRecord(value: string): RollWorkRecord {
       return {
         version: 5,
         renderVersion: 4,
-        ...(hasViewPolicy ? { viewPolicy: parsed.viewPolicy as "r19" | "r20" | "r21" | "r22" | "r23" | "r24" } : {}),
+        ...(hasViewPolicy
+          ? { viewPolicy: parsed.viewPolicy as RollViewPolicy }
+          : {}),
         ...common,
         renderRequest: null,
       };
@@ -1057,7 +1061,9 @@ export function parseRecord(value: string): RollWorkRecord {
     return {
       version: 5,
       renderVersion: 4,
-      ...(hasViewPolicy ? { viewPolicy: parsed.viewPolicy as "r19" | "r20" | "r21" | "r22" | "r23" | "r24" } : {}),
+      ...(hasViewPolicy
+        ? { viewPolicy: parsed.viewPolicy as RollViewPolicy }
+        : {}),
       ...common,
       renderRequest,
     };

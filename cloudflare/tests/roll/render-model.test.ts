@@ -27,6 +27,7 @@ import {
   buildRollRenderRequestR22V4,
   buildRollRenderRequestR23V4,
   buildRollRenderRequestR24V4,
+  buildRollRenderRequestR25V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1130,6 +1131,32 @@ describe("Profile V4 roll rendering", () => {
     );
     expect(validateRenderRequestV4(requestR23)).toEqual(requestR23);
     expect(validateRenderRequestV4(requestR24)).toEqual(requestR24);
+  });
+
+  it("carries the approved d6 and Fudge Legacy camera into r25", () => {
+    const roll = executeRoll({
+      notation: ["d6", "dF"],
+      seed: 0,
+      stableAppearanceIdentities: true,
+    });
+    const request = buildRollRenderRequestR25V4(
+      roll,
+      0x1234_abcd,
+      effectiveAppearanceV4("legacy"),
+    );
+
+    expect(request.rendererRevision).toBe("canvaskit-v4-r25");
+    expect(request.groups.flat().map(({ view }) => view)).toEqual([
+      expect.objectContaining({
+        elevationDegrees: 12,
+        azimuthOffsetDegrees: -15,
+      }),
+      expect.objectContaining({
+        elevationDegrees: 12,
+        azimuthOffsetDegrees: -15,
+      }),
+    ]);
+    expect(validateRenderRequestV4(request)).toEqual(request);
   });
 
   it("applies normal elevation and target azimuths while retaining random pose", () => {
