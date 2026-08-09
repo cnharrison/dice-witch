@@ -20,6 +20,7 @@ import {
   buildAppearancePreviewRenderRequestR21V4,
   buildAppearancePreviewRenderRequestR22V4,
   buildAppearancePreviewRenderRequestR23V4,
+  buildAppearancePreviewRenderRequestR24V4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
@@ -339,7 +340,24 @@ describe("appearance preview", () => {
     });
   });
 
-  it("renders Profile V4 camera previews through the r23 renderer", async () => {
+  it("carries approved Legacy views into the r24 centered grid", () => {
+    const legacy = createDefaultDiceViewPreferencesV4();
+    legacy.mode = "legacy";
+    expect(
+      buildAppearancePreviewRenderRequestR24V4({
+        target: "d4",
+        recipe: recipeV3,
+        diceView: legacy,
+        seed: 7,
+        state: "normal",
+      }),
+    ).toMatchObject({
+      rendererRevision: "canvaskit-v4-r24",
+      groups: [[{ target: "d4", view: { mode: "legacy" } }]],
+    });
+  });
+
+  it("renders Profile V4 camera previews through the r24 renderer", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     diceView.mode = "legacy";
     const rendered = await renderAppearancePreviewV4({
@@ -708,6 +726,24 @@ describe("WebRollService", () => {
       rendererRevision: "canvaskit-v4-r23",
       groups: [[{ view: { mode: "legacy", elevationDegrees: 30 } }]],
     });
+  });
+
+  it("prepares website rolls through the explicit r24 policy", async () => {
+    const diceView = createDefaultDiceViewPreferencesV4();
+    diceView.mode = "legacy";
+    const dataService = appearanceService(undefined, defaultRecipeV3, diceView);
+    const preparation = await prepareWebRoll(
+      { notation: "d4+d6", repetitions: 1, userId, guildId },
+      dataService,
+      "4",
+      "r24",
+    );
+    if (preparation.status !== "prepared" || preparation.renderModel === undefined) {
+      throw new Error("Expected an r24 web preparation");
+    }
+    expect(preparation.renderModel.rendererRevision).toBe(
+      "canvaskit-v4-r24",
+    );
   });
 
   it("keeps the Preferences-resolved material on original and exploded dice", async () => {

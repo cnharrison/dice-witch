@@ -26,6 +26,7 @@ import {
   buildRollRenderRequestR21V4,
   buildRollRenderRequestR22V4,
   buildRollRenderRequestR23V4,
+  buildRollRenderRequestR24V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1103,6 +1104,32 @@ describe("Profile V4 roll rendering", () => {
     ]);
     expect(validateRenderRequestV4(requestR22)).toEqual(requestR22);
     expect(validateRenderRequestV4(requestR23)).toEqual(requestR23);
+  });
+
+  it("carries the approved authored views into the r24 centered grid", () => {
+    const roll = executeRoll({
+      notation: ["d4", "d6"],
+      seed: 0,
+      stableAppearanceIdentities: true,
+    });
+    const effective = effectiveAppearanceV4("legacy");
+    const requestR23 = buildRollRenderRequestR23V4(
+      roll,
+      0x1234_abcd,
+      effective,
+    );
+    const requestR24 = buildRollRenderRequestR24V4(
+      roll,
+      0x1234_abcd,
+      effective,
+    );
+
+    expect(requestR24.rendererRevision).toBe("canvaskit-v4-r24");
+    expect(requestR24.groups.flat().map(({ view }) => view)).toEqual(
+      requestR23.groups.flat().map(({ view }) => view),
+    );
+    expect(validateRenderRequestV4(requestR23)).toEqual(requestR23);
+    expect(validateRenderRequestV4(requestR24)).toEqual(requestR24);
   });
 
   it("applies normal elevation and target azimuths while retaining random pose", () => {

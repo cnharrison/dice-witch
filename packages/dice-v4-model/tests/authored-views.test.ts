@@ -269,6 +269,21 @@ describe("authored V4 render views", () => {
             die,
           ),
         );
+        for (const mode of ["legacy", "clear"] as const) {
+          expect(
+            getAuthoredRenderViewV4(
+              "canvaskit-v4-r24",
+              mode,
+              die,
+            ),
+          ).toEqual(
+            getAuthoredRenderViewV4(
+              "canvaskit-v4-r23",
+              mode,
+              die,
+            ),
+          );
+        }
       }
     }
   });

@@ -88,6 +88,25 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
     .join("");
 }
 
+function visibleVerticalCenter({
+  width,
+  height,
+  pixels,
+}: Awaited<ReturnType<typeof decodePngRgba8>>): number {
+  let top = height;
+  let bottom = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if ((pixels[(y * width + x) * 4 + 3] as number) !== 0) {
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+  if (bottom < top) throw new Error("CanvasKit V4 test image is empty");
+  return (top + bottom) / 2;
+}
+
 function pixelDifference(
   first: Uint8Array,
   second: Uint8Array,
@@ -159,6 +178,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
         "canvaskit-v4-r21",
         "canvaskit-v4-r22",
         "canvaskit-v4-r23",
+        "canvaskit-v4-r24",
       ] as const) {
         for (const mode of ["legacy", "clear"] as const) {
           for (const subject of subjects) {
@@ -777,6 +797,60 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       expect(repeated.png).toEqual(rendered.png);
       expect(canvasKit.HEAPU8.buffer.byteLength).toBe(
         CANVASKIT_INITIAL_MEMORY_BYTES_V4,
+      );
+    } finally {
+      renderer.dispose();
+    }
+  });
+
+  it("visually centers the asymmetric d4 in r24 grid cells", async () => {
+    const canvasKit = await loadCanvasKitV4();
+    const renderer = createRenderer(canvasKit);
+    const die = { target: "d4", form: "standard", result: 3 } as const;
+    try {
+      const render = async (
+        rendererRevision: "canvaskit-v4-r23" | "canvaskit-v4-r24",
+        icons: readonly ["target-success"] | readonly [] = [],
+      ) => {
+        const view = getAuthoredRenderViewV4(
+          rendererRevision,
+          "legacy",
+          die,
+        );
+        const geometry = getRenderGeometryDescriptorV4(rendererRevision, {
+          ...die,
+          view,
+        });
+        if (geometry.kind !== "polyhedral") {
+          throw new Error("D4 grid geometry is invalid");
+        }
+        return renderer.renderGeometryGrid({
+          rendererRevision,
+          groups: [[
+            {
+              kind: "polyhedral",
+              geometry,
+              result: die.result,
+              fontId: "liberation-sans",
+              icons,
+            },
+          ]],
+        });
+      };
+      const r23 = await decodePngRgba8((await render("canvaskit-v4-r23")).png);
+      const r24 = await decodePngRgba8((await render("canvaskit-v4-r24")).png);
+
+      expect(visibleVerticalCenter(r23)).toBeLessThan(65);
+      expect(visibleVerticalCenter(r24)).toBe(74.5);
+
+      const iconsR23 = await decodePngRgba8(
+        (await render("canvaskit-v4-r23", ["target-success"])).png,
+      );
+      const iconsR24 = await decodePngRgba8(
+        (await render("canvaskit-v4-r24", ["target-success"])).png,
+      );
+      expect(iconsR24.pixels.slice(150 * iconsR24.width * 4)).toEqual(
+        iconsR23.pixels.slice(150 * iconsR23.width * 4),
       );
     } finally {
       renderer.dispose();

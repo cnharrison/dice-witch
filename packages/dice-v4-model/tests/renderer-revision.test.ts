@@ -144,13 +144,17 @@ describe("V4 renderer revision policies", () => {
     expect(rendererRevisionPolicyV4("canvaskit-v4-r21")).toEqual(revision20);
     expect(rendererRevisionPolicyV4("canvaskit-v4-r22")).toEqual(revision20);
     expect(rendererRevisionPolicyV4("canvaskit-v4-r23")).toEqual(revision20);
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r24")).toEqual({
+      ...revision20,
+      gridVerticalAlignment: "visual-center-r24",
+    });
     expect(revision19.resolvedViews).toBe(false);
   });
 
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r24" as RendererRevisionV4,
+        "canvaskit-v4-r25" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

@@ -33,6 +33,7 @@ export type RendererRevisionPolicyV4 = {
   sphereOutline: boolean;
   strongPhysicalEdges: boolean;
   modifierIcons: ModifierIconDesignV4;
+  gridVerticalAlignment: "fixed" | "visual-center-r24";
   gridLayout:
     | "legacy"
     | "compact-r9"
@@ -70,6 +71,7 @@ const r1 = policy({
   sphereOutline: false,
   strongPhysicalEdges: false,
   modifierIcons: "legacy-r1",
+  gridVerticalAlignment: "fixed",
   gridLayout: "legacy",
 });
 const r2 = policy({ ...r1, explicitTextureScope: true });
@@ -124,6 +126,7 @@ const r20 = policy({
 const r21 = policy({ ...r20 });
 const r22 = policy({ ...r21 });
 const r23 = policy({ ...r22 });
+const r24 = policy({ ...r23, gridVerticalAlignment: "visual-center-r24" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -149,6 +152,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r21": r21,
   "canvaskit-v4-r22": r22,
   "canvaskit-v4-r23": r23,
+  "canvaskit-v4-r24": r24,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

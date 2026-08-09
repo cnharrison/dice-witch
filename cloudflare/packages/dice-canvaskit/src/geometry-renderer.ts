@@ -2212,6 +2212,7 @@ async function renderGeometryGridSurface<Die>(
   ) => number,
   iconsForDie?: (die: Die) => readonly IconNameV4[],
   visualBoundsForDie?: (die: Die) => { left: number; right: number },
+  verticalOffsetForDie?: (die: Die) => number,
 ): Promise<RenderedGeometryGridV4> {
   const hasIcons =
     iconsForDie !== undefined &&
@@ -2259,9 +2260,15 @@ async function renderGeometryGridSurface<Die>(
             rowOffset + columnOffset,
             rowIndex * rowHeight,
           );
-          visibleFaceCount += withCanvasKitResourcesSyncV4((dieScope) =>
-            drawDie(canvas, dieScope, scope, die),
-          );
+          visibleFaceCount += withCanvasKitResourcesSyncV4((dieScope) => {
+            canvas.save();
+            try {
+              canvas.translate(0, verticalOffsetForDie?.(die) ?? 0);
+              return drawDie(canvas, dieScope, scope, die);
+            } finally {
+              canvas.restore();
+            }
+          });
           if (iconPainter !== undefined && iconsForDie !== undefined) {
             iconPainter.draw(canvas, iconsForDie(die), rendererRevision);
           }
@@ -3674,12 +3681,21 @@ function sphereBackgroundUses(
   return uses;
 }
 
+type GeometryGridDieVisualBoundsV4 = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
 function geometryGridDieVisualBounds(
   die: RenderGeometryGridDieV4,
   rendererRevision: RendererRevisionV4,
-): { left: number; right: number } {
+): GeometryGridDieVisualBoundsV4 {
   let artworkLeft: number;
+  let artworkTop: number;
   let artworkRight: number;
+  let artworkBottom: number;
   if (die.kind === "sphere") {
     const { center, radius } = sphericalGeometryMetrics({
       geometry: die.geometry,
@@ -3688,14 +3704,21 @@ function geometryGridDieVisualBounds(
       size: GRID_DIE_SIZE_V4,
     });
     artworkLeft = center - radius;
+    artworkTop = center - radius;
     artworkRight = center + radius;
+    artworkBottom = center + radius;
   } else {
     const projection = projectPolyhedralGeometryV4(die.geometry, die.result);
     const horizontalPositions = projection.vertices.map(
       ({ position }) => position[0] * GRID_DIE_SIZE_V4,
     );
+    const verticalPositions = projection.vertices.map(
+      ({ position }) => position[1] * GRID_DIE_SIZE_V4,
+    );
     artworkLeft = Math.min(...horizontalPositions);
+    artworkTop = Math.min(...verticalPositions);
     artworkRight = Math.max(...horizontalPositions);
+    artworkBottom = Math.max(...verticalPositions);
   }
   const outlinePadding = 1;
   const effectOutset = criticalEffectOutsetV4(
@@ -3703,7 +3726,9 @@ function geometryGridDieVisualBounds(
     die.criticalEffect,
   );
   let left = Math.floor(artworkLeft - outlinePadding - effectOutset);
+  const top = Math.floor(artworkTop - outlinePadding - effectOutset);
   let right = Math.ceil(artworkRight + outlinePadding + effectOutset);
+  const bottom = Math.ceil(artworkBottom + outlinePadding + effectOutset);
   const icons = die.icons ?? [];
   if (icons.length > 3) {
     throw new Error("CanvasKit V4 modifier icon count is invalid");
@@ -3720,7 +3745,13 @@ function geometryGridDieVisualBounds(
     left = Math.min(left, iconLeft);
     right = Math.max(right, iconLeft + iconSize);
   });
-  return { left, right };
+  return { left, top, right, bottom };
+}
+
+function visualCenterOffsetV4(
+  { top, bottom }: GeometryGridDieVisualBoundsV4,
+): number {
+  return (GRID_DIE_SIZE_V4 - top - bottom) / 2;
 }
 
 function renderGeometryGridWithGeometryRenderer(
@@ -3756,6 +3787,12 @@ function renderGeometryGridWithGeometryRenderer(
       ),
     (die) => die.icons ?? [],
     (die) => geometryGridDieVisualBounds(die, rendererRevision),
+    policy.gridVerticalAlignment === "visual-center-r24"
+      ? (die) =>
+          visualCenterOffsetV4(
+            geometryGridDieVisualBounds(die, rendererRevision),
+          )
+      : undefined,
   );
 }
 
