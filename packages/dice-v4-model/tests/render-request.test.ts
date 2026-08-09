@@ -328,7 +328,31 @@ describe("RenderRequestV4", () => {
     );
   });
 
-  it("accepts bounded preference cameras in r20 and r21", () => {
+  it("keeps r21 and r22 d20 Legacy snapshots revision-specific", () => {
+    const d20 = die();
+    d20.appearance.texture.scope = "die-wide";
+    d20.view = getAuthoredRenderViewV4(
+      "canvaskit-v4-r21",
+      "legacy",
+      { target: "d20", form: "standard", result: d20.result },
+    );
+    const requestR21 = {
+      version: 4,
+      rendererRevision: "canvaskit-v4-r21",
+      groups: [[d20]],
+    } as const;
+    expect(validateRenderRequestV4(requestR21)).toEqual(requestR21);
+    expect(() =>
+      validateRenderRequestV4({
+        ...structuredClone(requestR21),
+        rendererRevision: "canvaskit-v4-r22",
+      }),
+    ).toThrow(
+      "Render request groups[0][0].view does not match an authored d20 view",
+    );
+  });
+
+  it("accepts bounded preference cameras in r20, r21, and r22", () => {
     const preferenceDie = die();
     preferenceDie.appearance.texture.scope = "die-wide";
     preferenceDie.view = {
@@ -344,12 +368,17 @@ describe("RenderRequestV4", () => {
     } as const;
 
     expect(validateRenderRequestV4(preference)).toEqual(preference);
-    expect(
-      validateRenderRequestV4({
-        ...structuredClone(preference),
-        rendererRevision: "canvaskit-v4-r21",
-      }),
-    ).toMatchObject({ rendererRevision: "canvaskit-v4-r21" });
+    for (const rendererRevision of [
+      "canvaskit-v4-r21",
+      "canvaskit-v4-r22",
+    ] as const) {
+      expect(
+        validateRenderRequestV4({
+          ...structuredClone(preference),
+          rendererRevision,
+        }),
+      ).toMatchObject({ rendererRevision });
+    }
     expect(() =>
       validateRenderRequestV4({
         ...structuredClone(preference),

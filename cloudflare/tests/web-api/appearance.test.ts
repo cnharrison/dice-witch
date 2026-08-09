@@ -861,7 +861,7 @@ describe("web appearance API", () => {
     expect(previewV3).toHaveBeenCalledWith(input);
   });
 
-  it("delegates V4 camera previews to the r21 renderer path", async () => {
+  it("delegates V4 camera previews to the r22 renderer path", async () => {
     const env = bindings(() => Promise.resolve(storedSession()));
     const previewV4 = vi.fn(() =>
       Promise.resolve({

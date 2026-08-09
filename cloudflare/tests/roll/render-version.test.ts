@@ -21,7 +21,7 @@ describe("Roll render-version configuration", () => {
     },
   );
 
-  it.each(["r19", "r20", "r21"] as const)(
+  it.each(["r19", "r20", "r21", "r22"] as const)(
     "accepts explicit view policy %s",
     (configured) => {
       expect(parseRollViewPolicy(configured)).toBe(configured);
@@ -32,7 +32,7 @@ describe("Roll render-version configuration", () => {
     "fails closed for view policy %j",
     (configured) => {
       expect(() => parseRollViewPolicy(configured)).toThrow(
-        "ROLL_VIEW_POLICY must be r19, r20, or r21",
+        "ROLL_VIEW_POLICY must be r19, r20, r21, or r22",
       );
     },
   );

@@ -46,12 +46,13 @@ function orientedCamera(
   mode: AuthoredViewModeV4,
   elevationDegrees: number,
   resultRotation: RotationV4,
+  azimuthOffsetDegrees = 0,
 ): Readonly<OrientedCameraViewV4> {
   return Object.freeze({
     kind: "oriented-camera",
     mode,
     elevationDegrees,
-    azimuthOffsetDegrees: 0,
+    azimuthOffsetDegrees,
     resultRotation: Object.freeze(resultRotation),
   });
 }
@@ -243,6 +244,57 @@ for (const form of ["standard", "sharp", "crystal-cut", "hollow-cage"] as const)
   POLYHEDRAL_VIEWS_R21_V4.set(`d20:${form}`, D20_VIEWS_R21_V4);
 }
 
+function withFrontFacingLegacyCamera(
+  entry: PolyhedralViewEntryV4,
+  geometry: PolyhedralGeometryDescriptorV4,
+): PolyhedralViewEntryV4 {
+  const [x, , z] = geometry.camera.position;
+  const azimuthOffsetDegrees = -Math.round(
+    (Math.atan2(x, z) * 180) / Math.PI,
+  );
+  return Object.freeze({
+    views: Object.freeze({
+      legacy: new Map(
+        [...entry.views.legacy].map(([result, view]) => [
+          result,
+          orientedCamera(
+            "legacy",
+            1,
+            view.resultRotation,
+            azimuthOffsetDegrees,
+          ),
+        ]),
+      ),
+      clear: entry.views.clear,
+    }),
+  });
+}
+
+const POLYHEDRAL_VIEWS_R22_V4 = new Map(POLYHEDRAL_VIEWS_R21_V4);
+const LEGACY_FRONT_GEOMETRIES_V4 = [
+  ["d4:standard", D4_STANDARD_GEOMETRY_V4],
+  ["d6:standard", D6_STANDARD_GEOMETRY_V4],
+  ["d8:standard", D8_STANDARD_GEOMETRY_V4],
+  ["d10:standard", D10_STANDARD_GEOMETRY_V4],
+  ["d12:standard", D12_STANDARD_GEOMETRY_V4],
+  ["d20:standard", D20_STANDARD_GEOMETRY_R2_V4],
+  ["d20:sharp", D20_STANDARD_GEOMETRY_R2_V4],
+  ["d20:crystal-cut", D20_STANDARD_GEOMETRY_R2_V4],
+  ["d20:hollow-cage", D20_STANDARD_GEOMETRY_R2_V4],
+  ["percentile:standard", PERCENTILE_STANDARD_GEOMETRY_V4],
+  ["fudge:standard", FUDGE_STANDARD_GEOMETRY_V4],
+] as const;
+for (const [key, geometry] of LEGACY_FRONT_GEOMETRIES_V4) {
+  const entry = POLYHEDRAL_VIEWS_R22_V4.get(key);
+  if (entry === undefined) {
+    throw new Error(`Authored ${key} views are missing`);
+  }
+  POLYHEDRAL_VIEWS_R22_V4.set(
+    key,
+    withFrontFacingLegacyCamera(entry, geometry),
+  );
+}
+
 const CENTERED_SPHERE_VIEW_V4 = Object.freeze({
   kind: "sphere-surface",
   rotationDegrees: 0,
@@ -263,6 +315,9 @@ function authoredPolyhedralViews(
   }
   if (rendererRevision === "canvaskit-v4-r21") {
     return POLYHEDRAL_VIEWS_R21_V4;
+  }
+  if (rendererRevision === "canvaskit-v4-r22") {
+    return POLYHEDRAL_VIEWS_R22_V4;
   }
   throw new Error(`Authored views are not supported by ${rendererRevision}`);
 }

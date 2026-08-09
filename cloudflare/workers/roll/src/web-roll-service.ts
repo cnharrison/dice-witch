@@ -54,6 +54,7 @@ import {
   buildRollRenderRequestV4,
   buildRollRenderRequestR20V4,
   buildRollRenderRequestR21V4,
+  buildRollRenderRequestR22V4,
 } from "../../../packages/roll-render-model/src";
 import {
   loadEffectiveAppearanceV2,
@@ -474,6 +475,15 @@ export function buildAppearancePreviewRenderRequestR21V4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR22V4(
+  value: unknown,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR22V4,
+  );
+}
+
 export async function renderAppearancePreview(
   value: unknown,
 ): Promise<AppearancePreviewResult> {
@@ -532,7 +542,7 @@ export function renderAppearancePreviewV4(
     createCanvasKitRequestRendererV4,
 ): Promise<AppearancePreviewResultV3> {
   return renderAppearancePreviewRequestV4(
-    buildAppearancePreviewRenderRequestR21V4(value),
+    buildAppearancePreviewRenderRequestR22V4(value),
     createRenderer,
   );
 }
@@ -548,7 +558,7 @@ type LoadedWebAppearance =
   | { version: 4; viewPolicy: "r19"; recipes: EffectiveAppearanceRecipesV3 }
   | {
       version: 4;
-      viewPolicy: "r20" | "r21";
+      viewPolicy: "r20" | "r21" | "r22";
       effective: EffectiveAppearanceV4;
     };
 
@@ -639,9 +649,16 @@ function buildWebRenderRequest(
   if (appearance.viewPolicy === "r19") {
     return buildRollRenderRequestV4(outcome, renderSeed, appearance.recipes);
   }
-  return appearance.viewPolicy === "r20"
-    ? buildRollRenderRequestR20V4(outcome, renderSeed, appearance.effective)
-    : buildRollRenderRequestR21V4(outcome, renderSeed, appearance.effective);
+  if (appearance.viewPolicy === "r20") {
+    return buildRollRenderRequestR20V4(
+      outcome,
+      renderSeed,
+      appearance.effective,
+    );
+  }
+  return appearance.viewPolicy === "r21"
+    ? buildRollRenderRequestR21V4(outcome, renderSeed, appearance.effective)
+    : buildRollRenderRequestR22V4(outcome, renderSeed, appearance.effective);
 }
 
 function appearanceIdentities(outcome: RollExecutionResult): string[][] {

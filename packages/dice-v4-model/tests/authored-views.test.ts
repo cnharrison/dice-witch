@@ -163,6 +163,80 @@ describe("authored V4 render views", () => {
     }
   });
 
+  it("makes every r22 Legacy result face directly dominate the camera", () => {
+    for (const subject of AUTHORED_POLYHEDRAL_SUBJECTS) {
+      for (const result of subject.results) {
+        const die = {
+          target: subject.target,
+          form: subject.form,
+          result,
+        } as const;
+        const legacyR21 = getAuthoredRenderViewV4(
+          "canvaskit-v4-r21",
+          "legacy",
+          die,
+        );
+        const legacyR22 = getAuthoredRenderViewV4(
+          "canvaskit-v4-r22",
+          "legacy",
+          die,
+        );
+        expect(legacyR21).toMatchObject({
+          kind: "oriented-camera",
+          elevationDegrees: 30,
+          azimuthOffsetDegrees: 0,
+        });
+        expect(legacyR22).toMatchObject({
+          kind: "oriented-camera",
+          elevationDegrees: 1,
+        });
+        expect(
+          getAuthoredRenderViewV4(
+            "canvaskit-v4-r22",
+            "clear",
+            die,
+          ),
+        ).toEqual(
+          getAuthoredRenderViewV4(
+            "canvaskit-v4-r21",
+            "clear",
+            die,
+          ),
+        );
+        if (legacyR22.kind !== "oriented-camera") {
+          throw new Error("Legacy r22 view is not an oriented camera");
+        }
+        const descriptor = getRenderGeometryDescriptorV4(
+          "canvaskit-v4-r22",
+          { ...die, view: legacyR22 },
+        );
+        if (descriptor.kind !== "polyhedral") {
+          throw new Error("Legacy r22 geometry is not polyhedral");
+        }
+        const cameraLength = Math.hypot(...descriptor.camera.position);
+        const cameraDirection = descriptor.camera.position.map(
+          (component) => component / cameraLength,
+        ) as [number, number, number];
+        const resultAlignment = Math.max(
+          ...descriptor.faces
+            .filter((face) =>
+              face.labels.some((label) => label.value === result),
+            )
+            .map((face) =>
+              dotPointsV4(
+                rotatePointByQuaternionV4(
+                  face.normal,
+                  legacyR22.resultRotation,
+                ),
+                cameraDirection,
+              ),
+            ),
+        );
+        expect(resultAlignment).toBeGreaterThan(0.999);
+      }
+    }
+  });
+
   it("raises only r21 d20 Clear views to emphasize the result face", () => {
     for (const form of [
       "standard",

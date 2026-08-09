@@ -84,7 +84,7 @@ export type RollWorkRecordV5 =
   | (RollWorkRecordBase & {
       version: 5;
       renderVersion: 4;
-      viewPolicy?: "r19" | "r20" | "r21";
+      viewPolicy?: "r19" | "r20" | "r21" | "r22";
       renderRequest: RenderRequestV4 | null;
     });
 
@@ -1023,7 +1023,8 @@ export function parseRecord(value: string): RollWorkRecord {
         (parsed.renderVersion !== 4 ||
           parsed.viewPolicy !== "r19" &&
           parsed.viewPolicy !== "r20" &&
-          parsed.viewPolicy !== "r21")) ||
+          parsed.viewPolicy !== "r21" &&
+          parsed.viewPolicy !== "r22")) ||
       common.outcome.outcomes.length === 0
     ) {
       throw new Error("Stored roll work is invalid");
@@ -1039,7 +1040,7 @@ export function parseRecord(value: string): RollWorkRecord {
       return {
         version: 5,
         renderVersion: 4,
-        ...(hasViewPolicy ? { viewPolicy: parsed.viewPolicy as "r19" | "r20" | "r21" } : {}),
+        ...(hasViewPolicy ? { viewPolicy: parsed.viewPolicy as "r19" | "r20" | "r21" | "r22" } : {}),
         ...common,
         renderRequest: null,
       };
@@ -1054,7 +1055,7 @@ export function parseRecord(value: string): RollWorkRecord {
     return {
       version: 5,
       renderVersion: 4,
-      ...(hasViewPolicy ? { viewPolicy: parsed.viewPolicy as "r19" | "r20" | "r21" } : {}),
+      ...(hasViewPolicy ? { viewPolicy: parsed.viewPolicy as "r19" | "r20" | "r21" | "r22" } : {}),
       ...common,
       renderRequest,
     };

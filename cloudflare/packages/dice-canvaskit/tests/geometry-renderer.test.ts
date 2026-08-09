@@ -157,6 +157,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       for (const rendererRevision of [
         "canvaskit-v4-r20",
         "canvaskit-v4-r21",
+        "canvaskit-v4-r22",
       ] as const) {
         for (const mode of ["legacy", "clear"] as const) {
           for (const subject of subjects) {

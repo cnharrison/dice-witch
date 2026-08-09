@@ -18,6 +18,7 @@ import {
   buildAppearancePreviewRenderRequestV4,
   buildAppearancePreviewRenderRequestR20V4,
   buildAppearancePreviewRenderRequestR21V4,
+  buildAppearancePreviewRenderRequestR22V4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
@@ -303,7 +304,24 @@ describe("appearance preview", () => {
     });
   });
 
-  it("renders Profile V4 camera previews through the r21 renderer", async () => {
+  it("builds front-facing Legacy previews through r22", () => {
+    const legacy = createDefaultDiceViewPreferencesV4();
+    legacy.mode = "legacy";
+    expect(
+      buildAppearancePreviewRenderRequestR22V4({
+        target: "d20",
+        recipe: recipeV3,
+        diceView: legacy,
+        seed: 7,
+        state: "normal",
+      }),
+    ).toMatchObject({
+      rendererRevision: "canvaskit-v4-r22",
+      groups: [[{ view: { elevationDegrees: 1 } }]],
+    });
+  });
+
+  it("renders Profile V4 camera previews through the r22 renderer", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     diceView.mode = "legacy";
     const rendered = await renderAppearancePreviewV4({
@@ -634,6 +652,25 @@ describe("WebRollService", () => {
       throw new Error("Expected an r21 web result");
     }
     expect(result.renderModel.rendererRevision).toBe("canvaskit-v4-r21");
+  });
+
+  it("prepares website rolls through the explicit r22 policy", async () => {
+    const diceView = createDefaultDiceViewPreferencesV4();
+    diceView.mode = "legacy";
+    const dataService = appearanceService(undefined, defaultRecipeV3, diceView);
+    const preparation = await prepareWebRoll(
+      { notation: "d20", repetitions: 1, userId, guildId },
+      dataService,
+      "4",
+      "r22",
+    );
+    if (preparation.status !== "prepared" || preparation.renderModel === undefined) {
+      throw new Error("Expected an r22 web preparation");
+    }
+    expect(preparation.renderModel).toMatchObject({
+      rendererRevision: "canvaskit-v4-r22",
+      groups: [[{ view: { mode: "legacy", elevationDegrees: 1 } }]],
+    });
   });
 
   it("keeps the Preferences-resolved material on original and exploded dice", async () => {
