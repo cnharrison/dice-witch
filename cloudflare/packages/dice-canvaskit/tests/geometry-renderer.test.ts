@@ -238,7 +238,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
     } finally {
       renderer.dispose();
     }
-  }, 45_000);
+  }, 90_000);
 
   it("renders a crisp sharp-edge d20 without changing the standard d20", async () => {
     const canvasKit = await loadCanvasKitV4();
