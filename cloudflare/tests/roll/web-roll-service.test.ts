@@ -19,6 +19,7 @@ import {
   buildAppearancePreviewRenderRequestR20V4,
   buildAppearancePreviewRenderRequestR21V4,
   buildAppearancePreviewRenderRequestR22V4,
+  buildAppearancePreviewRenderRequestR23V4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
@@ -321,7 +322,24 @@ describe("appearance preview", () => {
     });
   });
 
-  it("renders Profile V4 camera previews through the r22 renderer", async () => {
+  it("restores the classic d6 Legacy preview through r23", () => {
+    const legacy = createDefaultDiceViewPreferencesV4();
+    legacy.mode = "legacy";
+    expect(
+      buildAppearancePreviewRenderRequestR23V4({
+        target: "d6",
+        recipe: recipeV3,
+        diceView: legacy,
+        seed: 7,
+        state: "normal",
+      }),
+    ).toMatchObject({
+      rendererRevision: "canvaskit-v4-r23",
+      groups: [[{ view: { elevationDegrees: 30, azimuthOffsetDegrees: 0 } }]],
+    });
+  });
+
+  it("renders Profile V4 camera previews through the r23 renderer", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     diceView.mode = "legacy";
     const rendered = await renderAppearancePreviewV4({
@@ -670,6 +688,25 @@ describe("WebRollService", () => {
     expect(preparation.renderModel).toMatchObject({
       rendererRevision: "canvaskit-v4-r22",
       groups: [[{ view: { mode: "legacy", elevationDegrees: 1 } }]],
+    });
+  });
+
+  it("prepares website rolls through the explicit r23 policy", async () => {
+    const diceView = createDefaultDiceViewPreferencesV4();
+    diceView.mode = "legacy";
+    const dataService = appearanceService(undefined, defaultRecipeV3, diceView);
+    const preparation = await prepareWebRoll(
+      { notation: "d6", repetitions: 1, userId, guildId },
+      dataService,
+      "4",
+      "r23",
+    );
+    if (preparation.status !== "prepared" || preparation.renderModel === undefined) {
+      throw new Error("Expected an r23 web preparation");
+    }
+    expect(preparation.renderModel).toMatchObject({
+      rendererRevision: "canvaskit-v4-r23",
+      groups: [[{ view: { mode: "legacy", elevationDegrees: 30 } }]],
     });
   });
 

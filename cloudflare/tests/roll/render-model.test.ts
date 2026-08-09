@@ -25,6 +25,7 @@ import {
   buildRollRenderRequestR20V4,
   buildRollRenderRequestR21V4,
   buildRollRenderRequestR22V4,
+  buildRollRenderRequestR23V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1065,6 +1066,43 @@ describe("Profile V4 roll rendering", () => {
     });
     expect(validateRenderRequestV4(requestR21)).toEqual(requestR21);
     expect(validateRenderRequestV4(requestR22)).toEqual(requestR22);
+  });
+
+  it("restores only d6 and Fudge classic Legacy cameras in r23", () => {
+    const roll = executeRoll({
+      notation: ["d6", "dF"],
+      seed: 0,
+      stableAppearanceIdentities: true,
+    });
+    const effective = effectiveAppearanceV4("legacy");
+    const requestR22 = buildRollRenderRequestR22V4(
+      roll,
+      0x1234_abcd,
+      effective,
+    );
+    const requestR23 = buildRollRenderRequestR23V4(
+      roll,
+      0x1234_abcd,
+      effective,
+    );
+
+    expect(requestR22.groups.flat().map(({ view }) => view)).toEqual([
+      expect.objectContaining({ elevationDegrees: 1 }),
+      expect.objectContaining({ elevationDegrees: 1 }),
+    ]);
+    expect(requestR23.rendererRevision).toBe("canvaskit-v4-r23");
+    expect(requestR23.groups.flat().map(({ view }) => view)).toEqual([
+      expect.objectContaining({
+        elevationDegrees: 30,
+        azimuthOffsetDegrees: 0,
+      }),
+      expect.objectContaining({
+        elevationDegrees: 30,
+        azimuthOffsetDegrees: 0,
+      }),
+    ]);
+    expect(validateRenderRequestV4(requestR22)).toEqual(requestR22);
+    expect(validateRenderRequestV4(requestR23)).toEqual(requestR23);
   });
 
   it("applies normal elevation and target azimuths while retaining random pose", () => {

@@ -295,6 +295,24 @@ for (const [key, geometry] of LEGACY_FRONT_GEOMETRIES_V4) {
   );
 }
 
+const POLYHEDRAL_VIEWS_R23_V4 = new Map(POLYHEDRAL_VIEWS_R22_V4);
+for (const key of ["d6:standard", "fudge:standard"] as const) {
+  const r20 = POLYHEDRAL_VIEWS_R20_V4.get(key);
+  const r22 = POLYHEDRAL_VIEWS_R22_V4.get(key);
+  if (r20 === undefined || r22 === undefined) {
+    throw new Error(`Authored ${key} views are missing`);
+  }
+  POLYHEDRAL_VIEWS_R23_V4.set(
+    key,
+    Object.freeze({
+      views: Object.freeze({
+        legacy: r20.views.legacy,
+        clear: r22.views.clear,
+      }),
+    }),
+  );
+}
+
 const CENTERED_SPHERE_VIEW_V4 = Object.freeze({
   kind: "sphere-surface",
   rotationDegrees: 0,
@@ -318,6 +336,9 @@ function authoredPolyhedralViews(
   }
   if (rendererRevision === "canvaskit-v4-r22") {
     return POLYHEDRAL_VIEWS_R22_V4;
+  }
+  if (rendererRevision === "canvaskit-v4-r23") {
+    return POLYHEDRAL_VIEWS_R23_V4;
   }
   throw new Error(`Authored views are not supported by ${rendererRevision}`);
 }

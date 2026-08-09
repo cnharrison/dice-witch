@@ -265,6 +265,21 @@ describe("RenderRequestV4", () => {
       ]],
     };
     expect(validateRenderRequestV4(revision21)).toEqual(revision21);
+    const revision23 = {
+      ...structuredClone(authored),
+      rendererRevision: "canvaskit-v4-r23" as const,
+      groups: [[
+        {
+          ...authoredDie,
+          view: getAuthoredRenderViewV4(
+            "canvaskit-v4-r23",
+            "legacy",
+            { target: "d6", form: "standard", result: 6 },
+          ),
+        },
+      ]],
+    };
+    expect(validateRenderRequestV4(revision23)).toEqual(revision23);
 
     const previousRevision = {
       ...structuredClone(authored),
@@ -371,6 +386,7 @@ describe("RenderRequestV4", () => {
     for (const rendererRevision of [
       "canvaskit-v4-r21",
       "canvaskit-v4-r22",
+      "canvaskit-v4-r23",
     ] as const) {
       expect(
         validateRenderRequestV4({

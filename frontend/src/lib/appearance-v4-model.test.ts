@@ -33,6 +33,7 @@ describe("shared V4 model browser boundary", () => {
       "canvaskit-v4-r20",
       "canvaskit-v4-r21",
       "canvaskit-v4-r22",
+      "canvaskit-v4-r23",
     ]);
     expect(deriveNamedSeedV4(123, "material")).toBe(2_641_807_242);
     const projection = projectPolyhedralGeometryV4(

@@ -237,6 +237,42 @@ describe("authored V4 render views", () => {
     }
   });
 
+  it("restores the classic three-face Legacy camera only for d6 and Fudge in r23", () => {
+    for (const subject of AUTHORED_POLYHEDRAL_SUBJECTS) {
+      const sourceRevision =
+        subject.target === "d6" || subject.target === "fudge"
+          ? "canvaskit-v4-r20"
+          : "canvaskit-v4-r22";
+      for (const result of subject.results) {
+        const die = {
+          target: subject.target,
+          form: subject.form,
+          result,
+        } as const;
+        expect(
+          getAuthoredRenderViewV4(
+            "canvaskit-v4-r23",
+            "legacy",
+            die,
+          ),
+        ).toEqual(getAuthoredRenderViewV4(sourceRevision, "legacy", die));
+        expect(
+          getAuthoredRenderViewV4(
+            "canvaskit-v4-r23",
+            "clear",
+            die,
+          ),
+        ).toEqual(
+          getAuthoredRenderViewV4(
+            "canvaskit-v4-r22",
+            "clear",
+            die,
+          ),
+        );
+      }
+    }
+  });
+
   it("raises only r21 d20 Clear views to emphasize the result face", () => {
     for (const form of [
       "standard",
