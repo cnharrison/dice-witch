@@ -39,12 +39,19 @@ describe("DiceViewPreferencesV4", () => {
       }),
     ).toBeDefined();
 
-    screen.getByRole("button", { name: "About clear dice view" }).focus();
+    const clearHelp = screen.getByRole("button", {
+      name: "About clear dice view",
+    });
+    clearHelp.focus();
     expect(
       await screen.findByRole("tooltip", {
         name: "Uses a fixed physically resting view with the result upright.",
       }),
     ).toBeDefined();
+    clearHelp.blur();
+    await user.unhover(
+      screen.getByRole("button", { name: "About legacy dice view" }),
+    );
   });
 
   it("makes Legacy and Clear mutually exclusive without changing normal settings", () => {
@@ -69,6 +76,17 @@ describe("DiceViewPreferencesV4", () => {
     expect(
       screen.getByText(/temporarily overrides elevation and azimuth/i),
     ).not.toBeNull();
+  });
+
+  it("keeps the selected preview target when elevation changes", () => {
+    const onPreviewTargetChange = vi.fn();
+    renderPreferences({ onPreviewTargetChange });
+
+    fireEvent.change(screen.getByLabelText("Shared elevation"), {
+      target: { value: "47" },
+    });
+
+    expect(onPreviewTargetChange).not.toHaveBeenCalled();
   });
 
   it("updates All dice and clears target overrides", () => {

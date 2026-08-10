@@ -71,6 +71,10 @@ export type ThreeRollRendererCallbacksV4 = {
   onUnavailable(error: Error): void;
 };
 
+export type ThreeRollRendererOptionsV4 = {
+  maximumResultRows?: number;
+};
+
 type SettleStateV4 = {
   startedAt: number;
   initial: Quaternion[];
@@ -211,7 +215,15 @@ function interpolateViewportV4(
   };
 }
 
-function availableColumnsV4(container: HTMLElement): number {
+function availableColumnsV4(
+  container: HTMLElement,
+  model: PublicRenderModelV4,
+  maximumResultRows?: number,
+): number {
+  if (maximumResultRows !== undefined) {
+    const diceCount = model.groups.reduce((total, group) => total + group.length, 0);
+    return Math.max(1, Math.min(10, Math.ceil(diceCount / maximumResultRows)));
+  }
   const width = Math.max(THREE_DICE_GRID_CELL_SIZE_V4, container.clientWidth);
   return Math.max(1, Math.min(10, Math.floor(width / THREE_DICE_GRID_CELL_SIZE_V4)));
 }
@@ -229,7 +241,15 @@ function trayDimensionsV4(container: HTMLElement): {
 export function createThreeRollRendererV4(
   container: HTMLElement,
   callbacks: ThreeRollRendererCallbacksV4,
+  rendererOptions: ThreeRollRendererOptionsV4 = {},
 ): ThreeRollRendererV4 {
+  if (
+    rendererOptions.maximumResultRows !== undefined &&
+    (!Number.isSafeInteger(rendererOptions.maximumResultRows) ||
+      rendererOptions.maximumResultRows < 1)
+  ) {
+    throw new Error("Three.js V4 maximum result rows must be a positive integer");
+  }
   let renderer: WebGLRenderer | null = null;
   let drawingBufferLimits: ThreeDrawingBufferLimitsV4;
   try {
@@ -792,7 +812,11 @@ export function createThreeRollRendererV4(
       try {
         const preparation = await prepareThreeDiceGridV4(
           model,
-          availableColumnsV4(container),
+          availableColumnsV4(
+            container,
+            model,
+            rendererOptions.maximumResultRows,
+          ),
         );
         if (disposed || revision !== replacementRevision) return;
         next = createThreeDiceGridResourcesV4(preparation);
@@ -1044,7 +1068,12 @@ export function createThreeRollRendererV4(
           if (
             activeModel !== null &&
             activeOptions !== null &&
-            resources.layout.maximumColumns !== availableColumnsV4(container)
+            resources.layout.maximumColumns !==
+              availableColumnsV4(
+                container,
+                activeModel,
+                rendererOptions.maximumResultRows,
+              )
           ) {
             void controller
               .replaceModel(activeModel, {
@@ -1081,7 +1110,12 @@ export function createThreeRollRendererV4(
           presentation === null &&
           activeModel !== null &&
           activeOptions !== null &&
-          resources.layout.maximumColumns !== availableColumnsV4(container)
+          resources.layout.maximumColumns !==
+            availableColumnsV4(
+              container,
+              activeModel,
+              rendererOptions.maximumResultRows,
+            )
         ) {
           void controller
             .replaceModel(activeModel, {

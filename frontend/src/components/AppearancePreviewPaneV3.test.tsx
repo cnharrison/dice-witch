@@ -27,9 +27,19 @@ vi.mock("@/lib/appearance-v3", async (importOriginal) => {
 });
 
 vi.mock("./DiceAnimation3D", () => ({
-  DiceAnimation3D: ({ renderModel }: { renderModel: PublicRenderModelV4 }) => (
+  DiceAnimation3D: ({
+    renderModel,
+    animateResult,
+    maximumResultRows,
+  }: {
+    renderModel: PublicRenderModelV4;
+    animateResult: boolean;
+    maximumResultRows: number;
+  }) => (
     <div
       data-testid="camera-preview"
+      data-animate-result={String(animateResult)}
+      data-maximum-result-rows={maximumResultRows}
       data-elevation={renderModel.groups[0]?.[0]?.view?.kind === "camera"
         ? renderModel.groups[0][0].view.elevationDegrees
         : "authored"}
@@ -181,6 +191,10 @@ describe("AppearancePreviewPaneV3", () => {
     await waitFor(() =>
       expect(screen.getByTestId("camera-preview").dataset.elevation).toBe("40"),
     );
+    expect(screen.getByTestId("camera-preview").dataset.maximumResultRows).toBe("2");
+    expect(screen.getByTestId("camera-preview").dataset.animateResult).toBe("true");
+    expect(document.querySelector('[aria-label="Preview"] [aria-live="polite"]')?.className)
+      .toContain("h-72");
     const adjusted = { ...diceView, elevationDegrees: 47 };
     view.rerender(
       <QueryClientProvider client={client}>

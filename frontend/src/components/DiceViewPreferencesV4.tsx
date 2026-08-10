@@ -176,7 +176,6 @@ export function DiceViewPreferencesV4({
             value={value.elevationDegrees}
             onChange={(event) => {
               onChange({ ...value, elevationDegrees: Number(event.target.value) });
-              onPreviewTargetChange?.("all");
             }}
             className="mt-3 w-full accent-brand"
           />
@@ -186,7 +185,6 @@ export function DiceViewPreferencesV4({
             className="mt-2 px-0"
             onClick={() => {
               onChange({ ...value, elevationDegrees: 40 });
-              onPreviewTargetChange?.("all");
             }}
           >
             Reset to 40°

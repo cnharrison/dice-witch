@@ -312,6 +312,27 @@ describe("Three.js V4 roll renderer lifecycle", () => {
   it("uses the approved compact result handoff", () => {
     expect(THREE_RESULT_TRANSITION_MILLISECONDS_V4).toBe(400);
   });
+
+  it("lays nine appearance targets across at most two rows", async () => {
+    const container = document.createElement("div");
+    const renderer = createThreeRollRendererV4(
+      container,
+      { onUnavailable: vi.fn() },
+      { maximumResultRows: 2 },
+    );
+    const die = {} as Parameters<typeof renderer.replaceModel>[0]["groups"][number][number];
+    const model = {
+      groups: [Array.from({ length: 9 }, () => die)],
+    } as Parameters<typeof renderer.replaceModel>[0];
+
+    await renderer.replaceModel(model, {
+      animateResult: false,
+      blankFaces: false,
+      reducedMotion: true,
+    });
+
+    expect(mocks.prepare).toHaveBeenCalledWith(model, 5);
+  });
   it("commits a prepared replacement before disposing the previous model and cleans up on context loss", async () => {
     const container = document.createElement("div");
     const onUnavailable = vi.fn();

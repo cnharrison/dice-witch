@@ -77,6 +77,18 @@ afterEach(() => {
 });
 
 describe("DiceAnimation3D", () => {
+  it("configures a two-row result grid for appearance previews", async () => {
+    renderAnimation({
+      renderModel: parsePublicRenderModelV4(fixture),
+      maximumResultRows: 2,
+    });
+
+    await waitFor(() => expect(rendererMocks.create).toHaveBeenCalled());
+    expect(rendererMocks.create.mock.calls[0]?.[2]).toEqual({
+      maximumResultRows: 2,
+    });
+  });
+
   it("uses the exact prepared model with blank faces, then reveals authoritative results", async () => {
     const onReadyChange = vi.fn();
     const authoritative = parsePublicRenderModelV4(fixture);

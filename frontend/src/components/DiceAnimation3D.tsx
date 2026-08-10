@@ -13,6 +13,7 @@ export interface DiceAnimation3DProps {
   blankFaces?: boolean;
   animateResult?: boolean;
   viewOnlyUpdates?: boolean;
+  maximumResultRows?: number;
   appearanceIdentities?: readonly (readonly string[])[];
   rerolledAppearanceIdentities?: readonly string[];
   onReadyChange?: (ready: boolean) => void;
@@ -30,6 +31,7 @@ export function DiceAnimation3D({
   blankFaces = false,
   animateResult = true,
   viewOnlyUpdates = false,
+  maximumResultRows,
   appearanceIdentities,
   rerolledAppearanceIdentities,
   onReadyChange,
@@ -67,7 +69,7 @@ export function DiceAnimation3D({
           onReadyChangeRef.current?.(false);
           onUnavailableRef.current(error);
         },
-      });
+      }, { maximumResultRows });
       rendererRef.current = renderer;
     } catch (error) {
       const failure = asDiceAnimationErrorV4(
@@ -87,7 +89,7 @@ export function DiceAnimation3D({
       rendererRef.current = null;
       hasReadySceneRef.current = false;
     };
-  }, [enabled]);
+  }, [enabled, maximumResultRows]);
 
   React.useEffect(() => {
     const renderer = rendererRef.current;
@@ -183,7 +185,7 @@ export function DiceAnimation3D({
     >
       <div
         ref={containerRef}
-        className="h-full min-h-[150px] w-full min-w-[150px]"
+        className="flex h-full min-h-[150px] w-full min-w-[150px] items-center justify-center"
         aria-hidden={status !== "ready"}
       />
     </div>

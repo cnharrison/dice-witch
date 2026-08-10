@@ -87,7 +87,6 @@ export function AppearancePreviewPaneV3({
   const debouncedRecipe = useDebouncedValue(recipe, 300);
   const cameraMode = mode === "camera" && diceView !== undefined;
   const requestedDiceView = cameraMode ? CAMERA_BASE_DICE_VIEW : diceView;
-  const isExpanded = target === "all";
   const previewQuery = useQuery({
     queryKey: [
       diceView === undefined ? "appearancePreviewV3" : "appearancePreviewV4",
@@ -223,12 +222,14 @@ export function AppearancePreviewPaneV3({
     cameraContent = <SparkleLoadingIndicator label="Loading preview" />;
   } else {
     cameraContent = (
-      <div className="relative h-full min-h-72 w-full">
+      <div className="relative h-full w-full">
         <DiceAnimation3D
+          className="[&_canvas]:!h-auto [&_canvas]:max-h-full"
           renderModel={cameraModel}
           isRolling={false}
-          animateResult={false}
+          animateResult
           viewOnlyUpdates
+          maximumResultRows={2}
           onReadyChange={setCameraReady}
           onUnavailable={handleCameraUnavailable}
         />
@@ -259,7 +260,7 @@ export function AppearancePreviewPaneV3({
   return (
     <section
       aria-label="Preview"
-      data-expanded={isExpanded}
+      data-target={target}
       className="overflow-hidden rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg dark:border-brand/40 dark:bg-select dark:text-card-foreground"
     >
       <div className="flex flex-wrap justify-end gap-2">
@@ -287,7 +288,7 @@ export function AppearancePreviewPaneV3({
         </div>
       </div>
       <div
-        className={`mt-4 flex items-center justify-center overflow-auto rounded-lg border border-border bg-background p-3 dark:border-white/10 dark:bg-black/25 ${isExpanded ? "min-h-80" : "min-h-72"}`}
+        className="mt-4 flex h-72 items-center justify-center overflow-hidden rounded-lg border border-border bg-background p-3 dark:border-white/10 dark:bg-black/25"
         aria-busy={previewQuery.isFetching}
         aria-live="polite"
       >
