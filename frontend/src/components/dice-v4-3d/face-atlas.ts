@@ -728,6 +728,12 @@ function physicalContainmentFrameV4(
   };
 }
 
+export function usesProjectedLabelClearanceV4(
+  geometryId: GeometryIdV4,
+): boolean {
+  return geometryId === "d20-standard-r2";
+}
+
 function projectedContainmentFrameV4(
   projection: ProjectedPolyhedralGeometryV4,
   camera: GeometryCameraV4,
@@ -797,8 +803,11 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
   const revisionPolicy = rendererRevision === undefined
     ? null
     : rendererRevisionPolicyV4(rendererRevision);
+  const usesProjectedClearance = usesProjectedLabelClearanceV4(
+    physical.geometryId,
+  );
   const allowClearanceShortfall =
-    physical.target === "d20" &&
+    usesProjectedClearance &&
     revisionPolicy?.allowD20LabelClearanceShortfall === true;
   const engraving = engravingLayerRecipeV4(
     appearance,
@@ -819,9 +828,11 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
     if (face === undefined) {
       throw new Error(`Three.js V4 label face is missing: ${label.faceId}`);
     }
-    const containment =
-      projectedContainmentFrameV4(projection, camera, label) ??
-      physicalContainmentFrameV4(face, label);
+    const physicalContainment = physicalContainmentFrameV4(face, label);
+    const containment = usesProjectedClearance
+      ? projectedContainmentFrameV4(projection, camera, label) ??
+        physicalContainment
+      : physicalContainment;
     const text = formatFaceLabelV4(
       physical.target,
       label.value,
@@ -864,7 +875,10 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
     } else {
       fitted = drawLabel();
     }
-    if (containment.visible && Number.isFinite(fitted.clearance)) {
+    if (
+      (containment.visible || !usesProjectedClearance) &&
+      Number.isFinite(fitted.clearance)
+    ) {
       visibleClearances.push(fitted.clearance);
       visibleFontScales.push(fitted.fontScale);
       if (label.value === physical.result) {
@@ -884,6 +898,7 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
   const minimumVisibleLabelGapPixelsAt150 =
     Math.min(...visibleClearances) * 150 - LABEL_EDGE_HALF_WIDTH_PIXELS_V4;
   if (
+    usesProjectedClearance &&
     !allowClearanceShortfall &&
     minimumVisibleLabelGapPixelsAt150 <
       LABEL_VISIBLE_GAP_PIXELS_V4 - 1e-6

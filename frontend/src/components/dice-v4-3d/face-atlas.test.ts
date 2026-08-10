@@ -16,6 +16,7 @@ import {
   createSphericalLabelGeometryV4,
   faceAtlasUvV4,
   fitLabelFontSizeToClearanceV4,
+  usesProjectedLabelClearanceV4,
 } from "./face-atlas";
 
 describe("V4 Three.js face atlas layout", () => {
@@ -28,6 +29,13 @@ describe("V4 Three.js face atlas layout", () => {
     expect(() =>
       fitLabelFontSizeToClearanceV4(100, 0.35, 0.8, clearanceAt, false),
     ).toThrow("Three.js V4 label cannot preserve edge clearance");
+  });
+
+  it("matches authoritative projected-clearance scope", () => {
+    expect(usesProjectedLabelClearanceV4("d20-standard-r2")).toBe(true);
+    expect(usesProjectedLabelClearanceV4("d20-hollow-cage-r1")).toBe(false);
+    expect(usesProjectedLabelClearanceV4("d12-standard-r1")).toBe(false);
+    expect(usesProjectedLabelClearanceV4("d10-standard-r1")).toBe(false);
   });
 
   it("maps six isolated face tiles without sampling adjacent cells", () => {
