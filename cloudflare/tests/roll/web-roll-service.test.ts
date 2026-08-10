@@ -24,6 +24,7 @@ import {
   buildAppearancePreviewRenderRequestR25V4,
   buildAppearancePreviewRenderRequestR26V4,
   buildAppearancePreviewRenderRequestR27V4,
+  buildAppearancePreviewRenderRequestR28V4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
@@ -280,7 +281,7 @@ describe("appearance preview", () => {
     expect(ones?.appearance).toEqual(percentile?.appearance);
   });
 
-  it("builds current Profile V4 previews through immutable r27", () => {
+  it("preserves immutable r27 Profile V4 previews", () => {
     const preview = buildAppearancePreviewRenderRequestR27V4({
       target: "d6",
       recipe: recipeV3,
@@ -294,6 +295,24 @@ describe("appearance preview", () => {
       rendererRevision: "canvaskit-v4-r27",
       groups: [[{ target: "d6" }]],
     });
+  });
+
+  it("builds current matching percentile previews through immutable r28", () => {
+    const preview = buildAppearancePreviewRenderRequestR28V4({
+      target: "percentile",
+      recipe: recipeV3,
+      diceView: createDefaultDiceViewPreferencesV4(),
+      seed: 7,
+      state: "normal",
+    });
+    const [percentile, ones] = preview.groups[0] ?? [];
+
+    expect(preview).toMatchObject({
+      version: 4,
+      rendererRevision: "canvaskit-v4-r28",
+      groups: [[{ target: "percentile" }, { target: "d10" }]],
+    });
+    expect(ones?.appearance).toEqual(percentile?.appearance);
   });
 
   it("builds Profile V4 camera drafts through immutable r20 and r21", () => {

@@ -888,7 +888,14 @@ function namedRandomV3(seed: number, stream: string): DeterministicRandom {
 export type AppearanceResolutionSeedPolicyV3 =
   | "legacy"
   | "property-streams-r26"
-  | "property-streams-r27";
+  | "property-streams-r27"
+  | "property-streams-r28";
+
+function usesR27ColorBehaviorV3(
+  policy: AppearanceResolutionSeedPolicyV3,
+): boolean {
+  return policy === "property-streams-r27" || policy === "property-streams-r28";
+}
 
 function propertyScopeV3(
   recipe: AppearanceRecipeV3,
@@ -922,8 +929,12 @@ function propertySeedV3(
     if (recipe.variation !== "fixed") return seed;
     return hashStringV4(`fixed-r26:${stream}:${canonicalJsonV4(value)}`);
   }
+  const usesPerDieRandomPalette =
+    policy === "property-streams-r28" &&
+    usesFullSpectrumRandomizationV3(recipe);
+  const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
   return hashStringV4(
-    `property-r27:${propertyScopeV3(recipe, context, sharedAcrossDice)}:${stream}:${canonicalJsonV4(value)}`,
+    `property-r27:${propertyScopeV3(recipe, context, sharePropertyAcrossDice)}:${stream}:${canonicalJsonV4(value)}`,
   );
 }
 
@@ -947,14 +958,14 @@ function resolveColorsV3(
   seedPolicy: AppearanceResolutionSeedPolicyV3,
 ): NativeColors {
   if (recipe.colors.mode === "vivid-random-pair") {
-    const pair = (seedPolicy === "property-streams-r27"
+    const pair = (usesR27ColorBehaviorV3(seedPolicy)
       ? vividRandomPairR27(random)
       : vividRandomPair(random)).colors;
     return { ordered: [...pair], pair };
   }
   if (
     recipe.colors.mode === "random-pair" &&
-    seedPolicy === "property-streams-r27"
+    usesR27ColorBehaviorV3(seedPolicy)
   ) {
     const primary = randomColor(random);
     const pair: [string, string] = [
@@ -965,7 +976,7 @@ function resolveColorsV3(
   }
   if (
     recipe.colors.mode === "random" &&
-    seedPolicy === "property-streams-r27"
+    usesR27ColorBehaviorV3(seedPolicy)
   ) {
     const primary = canonicalColor(recipe.colors.primary);
     const pair: [string, string] = [
@@ -976,7 +987,7 @@ function resolveColorsV3(
   }
   if (
     recipe.colors.mode === "tonal" &&
-    seedPolicy === "property-streams-r27"
+    usesR27ColorBehaviorV3(seedPolicy)
   ) {
     const primary = canonicalColor(recipe.colors.primary);
     const brightness = [1, 3, 5]
@@ -1158,7 +1169,7 @@ export function resolveAppearanceRecipeV3(
   };
   const colorSeedValue = {
     colors: recipe.colors,
-    ...(seedPolicy === "property-streams-r27" &&
+    ...(usesR27ColorBehaviorV3(seedPolicy) &&
     !usesFullSpectrumRandomization
       ? {}
       : { material }),
@@ -1248,7 +1259,7 @@ export function resolveAppearanceRecipeV3(
   const isClassicGradient =
     material.family === "classic" && material.treatment === "gradient";
   const isBalancedClassicSolid =
-    seedPolicy === "property-streams-r27" &&
+    usesR27ColorBehaviorV3(seedPolicy) &&
     material.family === "classic" &&
     material.treatment === "solid";
   const textureScope =

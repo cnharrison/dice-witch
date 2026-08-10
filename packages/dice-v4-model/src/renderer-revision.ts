@@ -154,6 +154,7 @@ const r27 = policy({
   balancedClassicSolidFaceLocal: true,
   faceWidePhysicalSeparation: false,
 });
+const r28 = policy({ ...r27 });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -183,6 +184,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r25": r25,
   "canvaskit-v4-r26": r26,
   "canvaskit-v4-r27": r27,
+  "canvaskit-v4-r28": r28,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

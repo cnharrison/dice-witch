@@ -159,19 +159,21 @@ describe("V4 renderer revision policies", () => {
       sharedPercentileModifierIcons: true,
       fudgeCameraInset: true,
     });
-    expect(rendererRevisionPolicyV4("canvaskit-v4-r27")).toEqual({
+    const revision27 = rendererRevisionPolicyV4("canvaskit-v4-r27");
+    expect(revision27).toEqual({
       ...revision26,
       textureColors: "balanced-surface-r27",
       balancedClassicSolidFaceLocal: true,
       faceWidePhysicalSeparation: false,
     });
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r28")).toEqual(revision27);
     expect(revision19.resolvedViews).toBe(false);
   });
 
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r28" as RendererRevisionV4,
+        "canvaskit-v4-r29" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

@@ -8,6 +8,8 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_TARGETS,
+  BUILTIN_APPEARANCE_STYLES_V3,
+  CHAOTIC_APPEARANCE_STYLE_ID,
   migrateAppearanceRecipeV1,
   type AppearanceRecipeV1,
   type AppearanceRecipeV2,
@@ -30,6 +32,7 @@ import {
   buildRollRenderRequestR25V4,
   buildRollRenderRequestR26V4,
   buildRollRenderRequestR27V4,
+  buildRollRenderRequestR28V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1237,6 +1240,40 @@ describe("Profile V4 roll rendering", () => {
     expect(reseeded.appearance.texture.seed).not.toBe(
       first.appearance.texture.seed,
     );
+  });
+
+  it("varies built-in Random palettes by die in r28", () => {
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === CHAOTIC_APPEARANCE_STYLE_ID,
+    )?.recipe;
+    if (randomRecipe === undefined) {
+      throw new Error("Random appearance recipe is missing");
+    }
+    const recipe: AppearanceRecipeV3 = {
+      ...randomRecipe,
+      material: {
+        mode: "fixed",
+        value: {
+          family: "classic",
+          treatment: "solid",
+          opacity: "opaque",
+          finish: "satin",
+          textureScale: 100,
+        },
+      },
+    };
+    const effective: EffectiveAppearanceV4 = {
+      version: 4,
+      recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
+      diceView: createDefaultDiceViewPreferencesV4(),
+    };
+    const palettes = buildRollRenderRequestR28V4(
+      outcome(["6d6"], 42),
+      0x51ce_b00c,
+      effective,
+    ).groups.flat().map(({ appearance }) => appearance.palette.join(","));
+
+    expect(new Set(palettes).size).toBe(palettes.length);
   });
 
   it("carries the approved d6 and Fudge Legacy camera into r25", () => {

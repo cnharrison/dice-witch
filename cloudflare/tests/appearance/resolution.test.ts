@@ -1485,6 +1485,87 @@ describe("resolveAppearanceRecipeV3", () => {
     }
   });
 
+  it("restores per-die palettes for the built-in Random recipe in r28", () => {
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === CHAOTIC_APPEARANCE_STYLE_ID,
+    )?.recipe;
+    if (randomRecipe === undefined) {
+      throw new Error("Random appearance recipe is missing");
+    }
+    const recipe: AppearanceRecipeV3 = {
+      ...randomRecipe,
+      material: {
+        mode: "fixed",
+        value: {
+          family: "classic",
+          treatment: "solid",
+          opacity: "opaque",
+          finish: "satin",
+          textureScale: 100,
+        },
+      },
+    };
+    const contexts = Array.from({ length: 6 }, (_, dieIndex) =>
+      contextV3({
+        target: "d6",
+        dieIndex,
+        dieIdentity: `random-preview:${String(dieIndex)}`,
+      }),
+    );
+    const palettes = (policy: "property-streams-r27" | "property-streams-r28") =>
+      contexts.map((resolutionContext) =>
+        resolveAppearanceRecipeV3(recipe, resolutionContext, policy).appearance
+          .palette.join(","),
+      );
+    const r27Palettes = palettes("property-streams-r27");
+    const r28Palettes = palettes("property-streams-r28");
+
+    expect(new Set(r27Palettes).size).toBe(1);
+    expect(new Set(r28Palettes).size).toBe(contexts.length);
+    expect(palettes("property-streams-r28")).toEqual(r28Palettes);
+  });
+
+  it("keeps custom generated palettes consistent across dice in r28", () => {
+    const recipe = appearanceRecipeV3({
+      variation: "fixed",
+      varyBy: "die",
+      colors: { mode: "vivid-random-pair" },
+    });
+    const first = resolveAppearanceRecipeV3(
+      recipe,
+      contextV3({ target: "d4", dieIdentity: "custom:0" }),
+      "property-streams-r28",
+    );
+    const second = resolveAppearanceRecipeV3(
+      recipe,
+      contextV3({ target: "other", dieIdentity: "custom:1" }),
+      "property-streams-r28",
+    );
+
+    expect(second.appearance.palette).toEqual(first.appearance.palette);
+  });
+
+  it("preserves explicit palettes across dice in r28", () => {
+    const colors = ["#170022", "#04c9df", "#f3d36a"] as const;
+    const recipe = appearanceRecipeV3({
+      variation: "fixed",
+      varyBy: "die",
+      colors: { mode: "palette", colors: [...colors] },
+    });
+    for (const resolutionContext of [
+      contextV3({ target: "d4", dieIdentity: "palette:0" }),
+      contextV3({ target: "other", dieIdentity: "palette:1" }),
+    ]) {
+      expect(
+        resolveAppearanceRecipeV3(
+          recipe,
+          resolutionContext,
+          "property-streams-r28",
+        ).appearance.palette,
+      ).toEqual(colors);
+    }
+  });
+
   it("keeps every r27 chosen random partner visibly distinct", () => {
     const recipe = appearanceRecipeV3({
       variation: "fixed",
