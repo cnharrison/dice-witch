@@ -102,7 +102,11 @@ describe("V4 registries", () => {
   });
 
   it("pins scope-free r1 and explicit-scope additive renderer revisions", () => {
-    expect(TEXTURE_SCOPES_V4).toEqual(["die-wide", "face-local"]);
+    expect(TEXTURE_SCOPES_V4).toEqual([
+      "die-wide",
+      "face-local",
+      "bounded-die-wide",
+    ]);
     expect(RENDERER_REVISIONS_V4).toEqual([
       "canvaskit-v4-r1",
       "canvaskit-v4-r2",
@@ -132,6 +136,7 @@ describe("V4 registries", () => {
       "canvaskit-v4-r26",
       "canvaskit-v4-r27",
       "canvaskit-v4-r28",
+      "canvaskit-v4-r29",
     ]);
   });
 });

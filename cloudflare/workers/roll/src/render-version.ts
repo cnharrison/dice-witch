@@ -12,6 +12,7 @@ import {
   buildRollRenderRequestR26V4,
   buildRollRenderRequestR27V4,
   buildRollRenderRequestR28V4,
+  buildRollRenderRequestR29V4,
 } from "../../../packages/roll-render-model/src";
 import type { RenderRequestV3 } from "../../../packages/dice-svg/src";
 import {
@@ -32,7 +33,8 @@ export type RollViewPolicy =
   | "r25"
   | "r26"
   | "r27"
-  | "r28";
+  | "r28"
+  | "r29";
 export type EmittedRollRenderRequest = RenderRequestV3 | RenderRequestV4;
 
 export function parseRollRenderVersion(value: unknown): RollRenderVersion {
@@ -52,12 +54,13 @@ export function parseRollViewPolicy(value: unknown): RollViewPolicy {
     value === "r25" ||
     value === "r26" ||
     value === "r27" ||
-    value === "r28"
+    value === "r28" ||
+    value === "r29"
   ) {
     return value;
   }
   throw new Error(
-    "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, or r28",
+    "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, or r29",
   );
 }
 
@@ -113,7 +116,10 @@ export async function buildRollRenderRequestForVersion(
   if (viewPolicy === "r26") {
     return buildRollRenderRequestR26V4(outcome, renderSeed, appearance);
   }
-  return viewPolicy === "r27"
-    ? buildRollRenderRequestR27V4(outcome, renderSeed, appearance)
-    : buildRollRenderRequestR28V4(outcome, renderSeed, appearance);
+  if (viewPolicy === "r27") {
+    return buildRollRenderRequestR27V4(outcome, renderSeed, appearance);
+  }
+  return viewPolicy === "r28"
+    ? buildRollRenderRequestR28V4(outcome, renderSeed, appearance)
+    : buildRollRenderRequestR29V4(outcome, renderSeed, appearance);
 }

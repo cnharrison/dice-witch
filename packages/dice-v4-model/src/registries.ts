@@ -281,6 +281,7 @@ export const FANTASY_FINISHES_V4 = Object.freeze([
 export const TEXTURE_SCOPES_V4 = Object.freeze([
   "die-wide",
   "face-local",
+  "bounded-die-wide",
 ] as const);
 
 export const TEXTURE_GENERATOR_IDS_V4 = Object.freeze([
@@ -360,4 +361,5 @@ export const RENDERER_REVISIONS_V4 = Object.freeze([
   "canvaskit-v4-r26",
   "canvaskit-v4-r27",
   "canvaskit-v4-r28",
+  "canvaskit-v4-r29",
 ] as const);

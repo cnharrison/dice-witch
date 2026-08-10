@@ -353,6 +353,7 @@ export type RenderCanonicalGeometryV4Options = {
   engravingFinish?: EngravingFinishV4;
   engravingContrastEdge?: EngravingContrastEdgeV4;
   engravingFontScale?: number;
+  d6FiveOpticalOffsetX?: number;
   lighting?: RenderLightingV4;
   materialFamily?: MaterialFamilyV4;
   requiresLocalSeparation?: boolean;
@@ -412,7 +413,11 @@ export type RenderGeometryGridDieV4 =
       kind: "polyhedral";
       fontId: FontIdV4;
       texture?: TextureRasterV4;
-      textureMapping?: "source" | "octahedral-atlas" | "projected-texture";
+      textureMapping?:
+        | "source"
+        | "octahedral-atlas"
+        | "projected-texture"
+        | "bounded-projected-texture";
       texturePlacement?: TexturePlacementV4;
       textureScope?: TextureScopeV4;
       icons?: readonly IconNameV4[];
@@ -1213,18 +1218,45 @@ function geometryMesh(
   textureSize: number,
   textureScope: TextureScopeV4,
   texturePlacement: TexturePlacementV4,
-  textureMapping: "geometry" | "projected-texture" = "geometry",
+  textureMapping:
+    | "geometry"
+    | "projected-texture"
+    | "bounded-projected-texture" = "geometry",
 ): GeometryMeshV4 {
-  if (textureMapping === "projected-texture") {
-    if (textureScope !== "die-wide") {
+  if (
+    textureMapping === "projected-texture" ||
+    textureMapping === "bounded-projected-texture"
+  ) {
+    if (textureScope === "face-local") {
       throw new Error("CanvasKit V4 projected texture requires die-wide scope");
+    }
+    let texturePositions: number[];
+    if (textureMapping === "projected-texture") {
+      texturePositions = projection.mesh.positions.flatMap(([x, y]) => [
+        x * textureSize,
+        y * textureSize,
+      ]);
+    } else {
+      const xs = projection.mesh.positions.map(([x]) => x);
+      const ys = projection.mesh.positions.map(([, y]) => y);
+      const left = Math.min(...xs);
+      const right = Math.max(...xs);
+      const top = Math.min(...ys);
+      const bottom = Math.max(...ys);
+      const centerX = (left + right) / 2;
+      const centerY = (top + bottom) / 2;
+      const span = Math.max(right - left, bottom - top);
+      if (!Number.isFinite(span) || span <= 0) {
+        throw new Error("CanvasKit V4 projected texture bounds are invalid");
+      }
+      texturePositions = projection.mesh.positions.flatMap(([x, y]) => [
+        ((x - centerX) / span + 0.5) * (textureSize - 1),
+        ((y - centerY) / span + 0.5) * (textureSize - 1),
+      ]);
     }
     return {
       positions: projection.mesh.positions.flatMap(([x, y]) => [x, y]),
-      texturePositions: projection.mesh.positions.flatMap(([x, y]) => [
-        x * textureSize,
-        y * textureSize,
-      ]),
+      texturePositions,
       indices: [...projection.mesh.indices],
     };
   }
@@ -1721,6 +1753,7 @@ function drawLabel(
   engravingFontScale = 1,
   allowD20LabelClearanceShortfall = false,
   faceLabelSet?: FaceLabelSetV4,
+  opticalOffsetX = 0,
 ): LabelPixelBoundsV4 | null {
   const value = formatFaceLabelV4(target, label.value, faceLabelSet);
   if (value === "") return null;
@@ -1817,6 +1850,15 @@ function drawLabel(
       bottom: textBounds.bottom * engravingFontScale,
     };
   }
+  if (!Number.isFinite(opticalOffsetX) || Math.abs(opticalOffsetX) > 0.25) {
+    throw new Error("CanvasKit V4 label optical offset is invalid");
+  }
+  x += opticalOffsetX;
+  textBounds = {
+    ...textBounds,
+    left: textBounds.left + opticalOffsetX,
+    right: textBounds.right + opticalOffsetX,
+  };
   const [depthX, depthY] = engravingDepthOffset(
     rightX,
     rightY,
@@ -2016,6 +2058,7 @@ function drawPolyhedralGeometry(
     engravingFinish,
     engravingContrastEdge,
     engravingFontScale = 1,
+    d6FiveOpticalOffsetX = 0,
     lighting,
     materialFamily,
     requiresLocalSeparation = false,
@@ -2030,7 +2073,10 @@ function drawPolyhedralGeometry(
   createShader: GeometryShaderFactoryV4,
   textureScope: TextureScopeV4 = "die-wide",
   texturePlacement: TexturePlacementV4 = IDENTITY_TEXTURE_PLACEMENT_V4,
-  textureMapping: "geometry" | "projected-texture" = "geometry",
+  textureMapping:
+    | "geometry"
+    | "projected-texture"
+    | "bounded-projected-texture" = "geometry",
 ): number {
   requireRenderSize(size);
   assertPolyhedralRenderPolicyV4(renderPolicy);
@@ -2206,6 +2252,9 @@ function drawPolyhedralGeometry(
         engravingFontScale,
         allowD20LabelClearanceShortfall,
         faceLabelSet,
+        geometry.target === "d6" && label.value === 5
+          ? d6FiveOpticalOffsetX
+          : 0,
       );
     });
   });
@@ -3291,6 +3340,7 @@ type RenderGridAppearanceOptionsV4 = Pick<
   | "engravingFinish"
   | "engravingContrastEdge"
   | "engravingFontScale"
+  | "d6FiveOpticalOffsetX"
   | "faceLabelSet"
   | "lighting"
   | "materialFamily"
@@ -3320,6 +3370,9 @@ function gridAppearanceOptions(
   }
   if (die.engravingFontScale !== undefined) {
     options.engravingFontScale = die.engravingFontScale;
+  }
+  if (die.kind === "polyhedral" && die.d6FiveOpticalOffsetX !== undefined) {
+    options.d6FiveOpticalOffsetX = die.d6FiveOpticalOffsetX;
   }
   if (die.kind === "polyhedral" && die.faceLabelSet !== undefined) {
     options.faceLabelSet = die.faceLabelSet;
@@ -3588,13 +3641,14 @@ function drawPolyhedralGeometryGridDie(
   const usesSuppliedOctahedralAtlas =
     die.textureMapping === "octahedral-atlas";
   const usesProjectedTexture =
-    die.textureMapping === "projected-texture";
+    die.textureMapping === "projected-texture" ||
+    die.textureMapping === "bounded-projected-texture";
   const texture = die.texture;
   const placement =
     die.texturePlacement ?? IDENTITY_TEXTURE_PLACEMENT_V4;
   const textureScope = die.textureScope ?? "die-wide";
   const placementKey = texturePlacementKeyV4(placement);
-  if (usesProjectedTexture && textureScope !== "die-wide") {
+  if (usesProjectedTexture && textureScope === "face-local") {
     throw new Error(
       "CanvasKit V4 projected texture requires die-wide scope",
     );
@@ -3679,7 +3733,9 @@ function drawPolyhedralGeometryGridDie(
       () => textureShader,
       textureScope,
       placement,
-      "projected-texture",
+      die.textureMapping === "bounded-projected-texture"
+        ? "bounded-projected-texture"
+        : "projected-texture",
     );
   }
   if (!usesOctahedralMapping || usesSuppliedOctahedralAtlas) {
@@ -3774,6 +3830,7 @@ function atlasedOctahedralTextures(
         die.kind === "polyhedral" &&
         die.texture !== undefined &&
         die.textureMapping !== "projected-texture" &&
+        die.textureMapping !== "bounded-projected-texture" &&
         die.geometry.skinMapping.kind === "view-octahedral"
       ) {
         const placementKey = texturePlacementKeyV4(

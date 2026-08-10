@@ -2326,6 +2326,166 @@ describe("CanvasKit Render Request V4", () => {
     expect(separatedLabels.png).not.toEqual(plainLabels.png);
   });
 
+  it("renders r29 die-wide classic solids on every polyhedral target", async () => {
+    const solidAppearance: RenderAppearanceV4 = {
+      ...appearance,
+      material: {
+        family: "classic",
+        treatment: "solid",
+        opacity: "opaque",
+        finish: "satin",
+        textureScale: 100,
+      },
+      texture: { ...appearance.texture, scope: "bounded-die-wide" },
+    };
+    const subjects = [
+      { target: "d4" as const, result: 4 },
+      { target: "d6" as const, result: 6 },
+      { target: "d8" as const, result: 8 },
+      { target: "d10" as const, result: 9 },
+      { target: "d12" as const, result: 12 },
+      { target: "d20" as const, result: 20 },
+      { target: "percentile" as const, result: 90 },
+      { target: "fudge" as const, result: 1 },
+    ];
+    const request: RenderRequestV4 = {
+      version: 4,
+      rendererRevision: "canvaskit-v4-r29",
+      groups: subjects.map(({ target, result }) => [{
+        target,
+        result,
+        form: "standard",
+        appearance: solidAppearance,
+        icons: [],
+        view: getAuthoredRenderViewV4(
+          "canvaskit-v4-r29",
+          "legacy",
+          { target, result, form: "standard" },
+        ),
+      }]),
+    };
+    const rendered = await renderDiceRequestV4ToPng(
+      request,
+      () => createRequestRenderer(canvasKit),
+    );
+    const decoded = await decodePngRgba8(rendered.png);
+    const rowHeight = decoded.height / rendered.rowCount;
+
+    expect(rendered.rowCount).toBe(subjects.length);
+    expect(createHash("sha256").update(rendered.png).digest("hex")).toBe(
+      "794580d3452059f4a7ec5426f86f82daab70497fe6435d172352bf9a7e38942f",
+    );
+    for (let row = 0; row < rendered.rowCount; row += 1) {
+      let opaquePixels = 0;
+      const firstY = Math.floor(row * rowHeight);
+      const lastY = Math.floor((row + 1) * rowHeight);
+      for (let y = firstY; y < lastY; y += 1) {
+        for (let x = 0; x < decoded.width; x += 1) {
+          if (decoded.pixels[(y * decoded.width + x) * 4 + 3] !== 0) {
+            opaquePixels += 1;
+          }
+        }
+      }
+      expect(opaquePixels).toBeGreaterThan(100);
+    }
+  });
+
+  it("preserves custom die-wide classic solid bytes in r29", async () => {
+    const requestFor = (
+      rendererRevision: "canvaskit-v4-r28" | "canvaskit-v4-r29",
+    ): RenderRequestV4 => ({
+      version: 4,
+      rendererRevision,
+      groups: [[{
+        target: "d8",
+        result: 8,
+        form: "standard",
+        appearance: {
+          ...appearance,
+          material: {
+            family: "classic",
+            treatment: "solid",
+            opacity: "opaque",
+            finish: "satin",
+            textureScale: 100,
+          },
+          texture: { ...appearance.texture, scope: "die-wide" },
+        },
+        icons: [],
+        view: {
+          kind: "camera",
+          elevationDegrees: 40,
+          azimuthOffsetDegrees: 0,
+          poseAzimuthDegrees: 72,
+        },
+      }]],
+    });
+    const [r28, r29] = await Promise.all(
+      (["canvaskit-v4-r28", "canvaskit-v4-r29"] as const).map(
+        async (rendererRevision) =>
+          (await renderDiceRequestV4ToPng(
+            requestFor(rendererRevision),
+            () => createRequestRenderer(canvasKit),
+          )).png,
+      ),
+    );
+
+    expect(r29).toEqual(r28);
+  });
+
+  it("moves only the visible d6 five left without rewriting r28", async () => {
+    const requestFor = (
+      rendererRevision: "canvaskit-v4-r28" | "canvaskit-v4-r29",
+      poseAzimuthDegrees = 108,
+    ): RenderRequestV4 => ({
+      version: 4,
+      rendererRevision,
+      groups: [[{
+        target: "d6",
+        result: 3,
+        form: "standard",
+        appearance: {
+          ...appearance,
+          texture: { ...appearance.texture, scope: "die-wide" },
+        },
+        icons: [],
+        view: {
+          kind: "camera",
+          elevationDegrees: 40,
+          azimuthOffsetDegrees: 0,
+          poseAzimuthDegrees,
+        },
+      }]],
+    });
+    const revisions = ["canvaskit-v4-r28", "canvaskit-v4-r29"] as const;
+    const [r28, r29] = await Promise.all(
+      revisions.map(async (rendererRevision) =>
+        createHash("sha256")
+          .update(
+            (await renderDiceRequestV4ToPng(
+              requestFor(rendererRevision),
+              () => createRequestRenderer(canvasKit),
+            )).png,
+          )
+          .digest("hex"),
+      ),
+    );
+    const [r28WithoutFive, r29WithoutFive] = await Promise.all(
+      revisions.map(async (rendererRevision) =>
+        (await renderDiceRequestV4ToPng(
+          requestFor(rendererRevision, 0),
+          () => createRequestRenderer(canvasKit),
+        )).png,
+      ),
+    );
+
+    expect({ r28, r29 }).toEqual({
+      r28: "b71a2afdecd6508b4fd7674968c547bd392ab14657f63b3a337e7304859f78d2",
+      r29: "b4d885f7ac6dd406e370af07c749df096345be7426fa6ad9e286d61ccc13fc64",
+    });
+    expect(r29WithoutFive).toEqual(r28WithoutFive);
+  });
+
   it("preserves separated special forms and hollow cut-throughs", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
     const cases = [
@@ -2744,7 +2904,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r29" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r30" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

@@ -32,18 +32,20 @@ export function usesProjectedTextureMappingV4(
   rendererRevision: RendererRevisionV4,
   appearance: RenderAppearanceV4,
 ): boolean {
-  if (
-    appearance.texture.scope !== "die-wide" ||
-    appearance.material.family !== "classic"
-  ) {
-    return false;
-  }
+  if (appearance.material.family !== "classic") return false;
   const policy = rendererRevisionPolicyV4(rendererRevision);
+  if (appearance.texture.scope === "bounded-die-wide") {
+    return (
+      policy.boundedClassicSolidScope &&
+      appearance.material.treatment === "solid"
+    );
+  }
+  if (appearance.texture.scope !== "die-wide") return false;
+  if (appearance.material.treatment === "solid") return false;
   if (appearance.material.treatment === "gradient") {
     return policy.gradientMapping === "projected";
   }
-  return appearance.material.treatment === "pattern" &&
-    policy.patternMapping === "projected";
+  return policy.patternMapping === "projected";
 }
 
 export function createTextureGenerationInputV4(

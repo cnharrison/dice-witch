@@ -264,9 +264,19 @@ function geometryGridDie(
       icons: die.icons,
     };
   }
-  let textureMapping: "source" | "octahedral-atlas" | "projected-texture" =
-    "source";
-  if (usesProjectedTexture) textureMapping = "projected-texture";
+  let textureMapping:
+    | "source"
+    | "octahedral-atlas"
+    | "projected-texture"
+    | "bounded-projected-texture" = "source";
+  if (
+    usesProjectedTexture &&
+    textureScope === "bounded-die-wide"
+  ) {
+    textureMapping = "bounded-projected-texture";
+  } else if (usesProjectedTexture) {
+    textureMapping = "projected-texture";
+  }
   else if (usesOctahedralAtlas) textureMapping = "octahedral-atlas";
   return {
     kind: "polyhedral",
@@ -285,6 +295,9 @@ function geometryGridDie(
       ? {}
       : { engravingContrastEdge }),
     engravingFontScale,
+    ...(policy.d6FiveOpticalOffsetX !== 0 && die.target === "d6"
+      ? { d6FiveOpticalOffsetX: policy.d6FiveOpticalOffsetX }
+      : {}),
     ...(die.target === "d10" && die.faceLabelSet !== undefined
       ? { faceLabelSet: die.faceLabelSet }
       : {}),
@@ -368,6 +381,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r26": renderCanvasKit,
   "canvaskit-v4-r27": renderCanvasKit,
   "canvaskit-v4-r28": renderCanvasKit,
+  "canvaskit-v4-r29": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {

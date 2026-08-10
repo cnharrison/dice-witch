@@ -1,3 +1,4 @@
+import { canonicalJsonV4 } from "@dice-witch/dice-v4-model/canonical-json";
 import type {
   AppearanceMaterialV4,
   AppearanceRecipeV3,
@@ -1428,6 +1429,12 @@ const collectorStylesV3: readonly AppearanceBuiltinStyleV3[] = [
     recipe: grainExpectationsRecipeV3,
   },
 ];
+
+const RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(randomRecipeV3);
+
+export function isBuiltinRandomRecipeV3(recipe: AppearanceRecipeV3): boolean {
+  return canonicalJsonV4(recipe) === RANDOM_RECIPE_CANONICAL_V3;
+}
 
 export const BUILTIN_APPEARANCE_STYLES_V3: readonly AppearanceBuiltinStyleV3[] =
   Object.freeze([

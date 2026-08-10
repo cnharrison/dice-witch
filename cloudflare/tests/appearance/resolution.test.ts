@@ -1525,6 +1525,77 @@ describe("resolveAppearanceRecipeV3", () => {
     expect(palettes("property-streams-r28")).toEqual(r28Palettes);
   });
 
+  it("maps built-in Random solids once across the whole die in r29", () => {
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === CHAOTIC_APPEARANCE_STYLE_ID,
+    )?.recipe;
+    if (randomRecipe === undefined) {
+      throw new Error("Random appearance recipe is missing");
+    }
+    const material = {
+      family: "classic" as const,
+      treatment: "solid" as const,
+      opacity: "opaque" as const,
+      finish: "satin" as const,
+      textureScale: 100,
+    };
+    const customSolid = appearanceRecipeV3({
+      material: { mode: "fixed", value: material },
+    });
+    const randomContext = contextV3({
+      renderSeed: 7,
+      target: "d6",
+      groupIndex: 0,
+      dieIndex: 1,
+    });
+    const randomR28 = resolveAppearanceRecipeV3(
+      randomRecipe,
+      randomContext,
+      "property-streams-r28",
+    );
+    const randomR29 = resolveAppearanceRecipeV3(
+      randomRecipe,
+      randomContext,
+      "property-streams-r29",
+    );
+
+    expect(randomR28.appearance.material).toMatchObject({
+      family: "classic",
+      treatment: "solid",
+    });
+    expect(randomR29.appearance.material).toEqual(randomR28.appearance.material);
+    expect(randomR28.appearance.texture.scope).toBe("face-local");
+    expect(randomR29.appearance.texture.scope).toBe("bounded-die-wide");
+    for (const recipe of [
+      customSolid,
+      { ...customSolid, randomization: "full-spectrum-v2" as const },
+    ]) {
+      expect(
+        resolveAppearanceRecipeV3(
+          recipe,
+          contextV3({ target: "d6" }),
+          "property-streams-r29",
+        ).appearance.texture.scope,
+      ).toBe("face-local");
+    }
+    const customSharp = appearanceRecipeV3({
+      material: { mode: "fixed", value: material },
+      form: {
+        polyhedral: { mode: "fixed", value: "sharp" },
+        other: "sphere",
+      },
+    });
+    for (const policy of ["property-streams-r28", "property-streams-r29"] as const) {
+      expect(
+        resolveAppearanceRecipeV3(
+          customSharp,
+          contextV3({ target: "d20" }),
+          policy,
+        ).appearance.texture.scope,
+      ).toBe("die-wide");
+    }
+  });
+
   it("keeps custom generated palettes consistent across dice in r28", () => {
     const recipe = appearanceRecipeV3({
       variation: "fixed",

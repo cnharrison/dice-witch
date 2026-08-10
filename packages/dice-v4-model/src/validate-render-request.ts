@@ -880,6 +880,19 @@ function validateTextureScopeForDie(
   form: RenderFormV4,
   rendererRevision: RendererRevisionV4,
 ): void {
+  if (appearance.texture.scope === "bounded-die-wide") {
+    const material = appearance.material;
+    if (
+      !rendererRevisionPolicyV4(rendererRevision).boundedClassicSolidScope ||
+      target === "other" ||
+      form !== "standard" ||
+      material.family !== "classic" ||
+      material.treatment !== "solid"
+    ) {
+      throw new Error("bounded die-wide texture scope is not supported");
+    }
+    return;
+  }
   if (appearance.texture.scope !== "face-local") return;
   if (
     appearance.texture.offsetU !== 0 ||

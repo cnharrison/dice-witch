@@ -553,6 +553,46 @@ describe("authored V4 render views", () => {
     }
   });
 
+  it("swaps Legacy and Clear views for both physical d10 dice in r29", () => {
+    for (const subject of [
+      {
+        target: "d10" as const,
+        results: Array.from({ length: 10 }, (_, index) => index + 1),
+      },
+      {
+        target: "percentile" as const,
+        results: Array.from({ length: 10 }, (_, index) => index * 10),
+      },
+    ]) {
+      for (const result of subject.results) {
+        const die = { target: subject.target, form: "standard" as const, result };
+        const legacyR28 = getAuthoredRenderViewV4(
+          "canvaskit-v4-r28",
+          "legacy",
+          die,
+        );
+        const clearR28 = getAuthoredRenderViewV4(
+          "canvaskit-v4-r28",
+          "clear",
+          die,
+        );
+        const legacyR29 = getAuthoredRenderViewV4(
+          "canvaskit-v4-r29",
+          "legacy",
+          die,
+        );
+        const clearR29 = getAuthoredRenderViewV4(
+          "canvaskit-v4-r29",
+          "clear",
+          die,
+        );
+
+        expect(legacyR29).toEqual({ ...clearR28, mode: "legacy" });
+        expect(clearR29).toEqual({ ...legacyR28, mode: "clear" });
+      }
+    }
+  });
+
   it("fails instead of substituting an unauthored target or revision", () => {
     expect(() =>
       getAuthoredRenderViewV4("canvaskit-v4-r20", "legacy", {

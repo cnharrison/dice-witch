@@ -12,8 +12,12 @@ import {
   type EngravingFinishV4,
   type LinearDirectionV4,
   type RenderLightingV4,
+  type TextureScopeV4,
 } from "@dice-witch/dice-v4-model";
-import { randomSpecialMaterialV3 } from "./catalog";
+import {
+  isBuiltinRandomRecipeV3,
+  randomSpecialMaterialV3,
+} from "./catalog";
 import {
   LIGHT_APPEARANCE_INK,
   resolveAppearanceInk,
@@ -889,12 +893,17 @@ export type AppearanceResolutionSeedPolicyV3 =
   | "legacy"
   | "property-streams-r26"
   | "property-streams-r27"
-  | "property-streams-r28";
+  | "property-streams-r28"
+  | "property-streams-r29";
 
 function usesR27ColorBehaviorV3(
   policy: AppearanceResolutionSeedPolicyV3,
 ): boolean {
-  return policy === "property-streams-r27" || policy === "property-streams-r28";
+  return (
+    policy === "property-streams-r27" ||
+    policy === "property-streams-r28" ||
+    policy === "property-streams-r29"
+  );
 }
 
 function propertyScopeV3(
@@ -930,7 +939,8 @@ function propertySeedV3(
     return hashStringV4(`fixed-r26:${stream}:${canonicalJsonV4(value)}`);
   }
   const usesPerDieRandomPalette =
-    policy === "property-streams-r28" &&
+    (policy === "property-streams-r28" ||
+      policy === "property-streams-r29") &&
     usesFullSpectrumRandomizationV3(recipe);
   const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
   return hashStringV4(
@@ -1262,13 +1272,23 @@ export function resolveAppearanceRecipeV3(
     usesR27ColorBehaviorV3(seedPolicy) &&
     material.family === "classic" &&
     material.treatment === "solid";
-  const textureScope =
+  const usesBoundedRandomSolid =
+    seedPolicy === "property-streams-r29" &&
+    isBuiltinRandomRecipeV3(recipe) &&
+    isBalancedClassicSolid &&
+    context.target !== "other" &&
+    form === "standard";
+  let textureScope: TextureScopeV4 = "die-wide";
+  if (usesBoundedRandomSolid) {
+    textureScope = "bounded-die-wide";
+  } else if (
     context.target !== "other" &&
     form === "standard" &&
     (isBalancedClassicSolid ||
       (isClassicGradient && gradientScope === "repeated"))
-      ? "face-local"
-      : "die-wide";
+  ) {
+    textureScope = "face-local";
+  }
   if (
     isClassicGradient &&
     context.target !== "other" &&

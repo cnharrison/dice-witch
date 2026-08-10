@@ -61,6 +61,7 @@ import {
   buildRollRenderRequestR26V4,
   buildRollRenderRequestR27V4,
   buildRollRenderRequestR28V4,
+  buildRollRenderRequestR29V4,
 } from "../../../packages/roll-render-model/src";
 import {
   loadEffectiveAppearanceV2,
@@ -458,6 +459,20 @@ export function buildAppearancePreviewRenderRequestV4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR19V4(
+  value: unknown,
+): RenderRequestV4 {
+  const request = parseAppearancePreviewRequestV4(value);
+  const recipes = Object.fromEntries(
+    APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
+  ) as EffectiveAppearanceRecipesV3;
+  return buildRollRenderRequestV4(
+    previewOutcome(request.target, request.state, request.seed),
+    request.seed,
+    recipes,
+  );
+}
+
 function buildResolvedAppearancePreviewRenderRequestV4(
   value: unknown,
   buildRequest: typeof buildRollRenderRequestR20V4,
@@ -558,6 +573,45 @@ export function buildAppearancePreviewRenderRequestR28V4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR29V4(
+  value: unknown,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR29V4,
+  );
+}
+
+export function buildAppearancePreviewRenderRequestForPolicyV4(
+  value: unknown,
+  viewPolicy: RollViewPolicy,
+): RenderRequestV4 {
+  switch (viewPolicy) {
+    case "r19":
+      return buildAppearancePreviewRenderRequestR19V4(value);
+    case "r20":
+      return buildAppearancePreviewRenderRequestR20V4(value);
+    case "r21":
+      return buildAppearancePreviewRenderRequestR21V4(value);
+    case "r22":
+      return buildAppearancePreviewRenderRequestR22V4(value);
+    case "r23":
+      return buildAppearancePreviewRenderRequestR23V4(value);
+    case "r24":
+      return buildAppearancePreviewRenderRequestR24V4(value);
+    case "r25":
+      return buildAppearancePreviewRenderRequestR25V4(value);
+    case "r26":
+      return buildAppearancePreviewRenderRequestR26V4(value);
+    case "r27":
+      return buildAppearancePreviewRenderRequestR27V4(value);
+    case "r28":
+      return buildAppearancePreviewRenderRequestR28V4(value);
+    case "r29":
+      return buildAppearancePreviewRenderRequestR29V4(value);
+  }
+}
+
 export async function renderAppearancePreview(
   value: unknown,
 ): Promise<AppearancePreviewResult> {
@@ -612,11 +666,12 @@ export function renderAppearancePreviewV3(
 
 export function renderAppearancePreviewV4(
   value: unknown,
+  viewPolicy: RollViewPolicy,
   createRenderer: DiceRequestRendererFactoryV4 =
     createCanvasKitRequestRendererV4,
 ): Promise<AppearancePreviewResultV4> {
   return renderAppearancePreviewRequestV4(
-    buildAppearancePreviewRenderRequestR28V4(value),
+    buildAppearancePreviewRenderRequestForPolicyV4(value, viewPolicy),
     createRenderer,
   );
 }
@@ -772,9 +827,16 @@ function buildWebRenderRequest(
       appearance.effective,
     );
   }
-  return appearance.viewPolicy === "r27"
-    ? buildRollRenderRequestR27V4(outcome, renderSeed, appearance.effective)
-    : buildRollRenderRequestR28V4(outcome, renderSeed, appearance.effective);
+  if (appearance.viewPolicy === "r27") {
+    return buildRollRenderRequestR27V4(
+      outcome,
+      renderSeed,
+      appearance.effective,
+    );
+  }
+  return appearance.viewPolicy === "r28"
+    ? buildRollRenderRequestR28V4(outcome, renderSeed, appearance.effective)
+    : buildRollRenderRequestR29V4(outcome, renderSeed, appearance.effective);
 }
 
 function appearanceIdentities(outcome: RollExecutionResult): string[][] {
@@ -1153,6 +1215,9 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
   }
 
   previewV4(value: unknown): Promise<AppearancePreviewResultV4> {
-    return renderAppearancePreviewV4(value);
+    return renderAppearancePreviewV4(
+      value,
+      parseRollViewPolicy(this.env.ROLL_VIEW_POLICY),
+    );
   }
 }

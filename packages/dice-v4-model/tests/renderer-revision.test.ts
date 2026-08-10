@@ -167,13 +167,18 @@ describe("V4 renderer revision policies", () => {
       faceWidePhysicalSeparation: false,
     });
     expect(rendererRevisionPolicyV4("canvaskit-v4-r28")).toEqual(revision27);
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r29")).toEqual({
+      ...revision27,
+      boundedClassicSolidScope: true,
+      d6FiveOpticalOffsetX: -0.08,
+    });
     expect(revision19.resolvedViews).toBe(false);
   });
 
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r29" as RendererRevisionV4,
+        "canvaskit-v4-r30" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

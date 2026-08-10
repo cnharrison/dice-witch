@@ -25,6 +25,8 @@ import {
   buildAppearancePreviewRenderRequestR26V4,
   buildAppearancePreviewRenderRequestR27V4,
   buildAppearancePreviewRenderRequestR28V4,
+  buildAppearancePreviewRenderRequestR29V4,
+  buildAppearancePreviewRenderRequestForPolicyV4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
@@ -315,6 +317,57 @@ describe("appearance preview", () => {
     expect(ones?.appearance).toEqual(percentile?.appearance);
   });
 
+  it("routes V4 previews through the configured immutable policy", () => {
+    const input = {
+      target: "d6" as const,
+      recipe: recipeV3,
+      diceView: createDefaultDiceViewPreferencesV4(),
+      seed: 7,
+      state: "normal" as const,
+    };
+
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r19")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r19");
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r29")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r29");
+  });
+
+  it("maps built-in Random solid previews across whole dice in r29", () => {
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "chaotic",
+    )?.recipe;
+    if (randomRecipe === undefined) {
+      throw new Error("Random appearance recipe is missing");
+    }
+    const preview = buildAppearancePreviewRenderRequestR29V4({
+      target: "all",
+      recipe: randomRecipe,
+      diceView: createDefaultDiceViewPreferencesV4(),
+      seed: 7,
+      state: "normal",
+    });
+    const classicSolids = preview.groups
+      .flat()
+      .filter(
+        ({ appearance }) =>
+          appearance.material.family === "classic" &&
+          appearance.material.treatment === "solid",
+      );
+
+    expect(preview.rendererRevision).toBe("canvaskit-v4-r29");
+    expect(classicSolids.length).toBeGreaterThan(0);
+    expect(
+      classicSolids.every(
+        ({ appearance }) =>
+          appearance.texture.scope === "bounded-die-wide",
+      ),
+    ).toBe(true);
+  });
+
   it("builds Profile V4 camera drafts through immutable r20 and r21", () => {
     const clear = createDefaultDiceViewPreferencesV4();
     clear.mode = "clear";
@@ -438,13 +491,16 @@ describe("appearance preview", () => {
   it("renders Profile V4 camera previews through the current renderer", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     diceView.mode = "legacy";
-    const rendered = await renderAppearancePreviewV4({
-      target: "d6",
-      recipe: recipeV3,
-      diceView,
-      seed: 7,
-      state: "normal",
-    });
+    const rendered = await renderAppearancePreviewV4(
+      {
+        target: "d6",
+        recipe: recipeV3,
+        diceView,
+        seed: 7,
+        state: "normal",
+      },
+      "r29",
+    );
 
     expect(rendered).toMatchObject({
       version: 4,

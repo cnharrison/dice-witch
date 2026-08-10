@@ -330,6 +330,41 @@ for (const key of ["d6:standard", "fudge:standard"] as const) {
   POLYHEDRAL_VIEWS_R25_V4.set(key, withLegacyCamera(entry, 12, -15));
 }
 
+function swapAuthoredModes(
+  entry: PolyhedralViewEntryV4,
+): PolyhedralViewEntryV4 {
+  const remap = (
+    mode: AuthoredViewModeV4,
+    views: ReadonlyMap<number, Readonly<OrientedCameraViewV4>>,
+  ) =>
+    new Map(
+      [...views].map(([result, view]) => [
+        result,
+        orientedCamera(
+          mode,
+          view.elevationDegrees,
+          view.resultRotation,
+          view.azimuthOffsetDegrees,
+        ),
+      ]),
+    );
+  return Object.freeze({
+    views: Object.freeze({
+      legacy: remap("legacy", entry.views.clear),
+      clear: remap("clear", entry.views.legacy),
+    }),
+  });
+}
+
+const POLYHEDRAL_VIEWS_R29_V4 = new Map(POLYHEDRAL_VIEWS_R25_V4);
+for (const key of ["d10:standard", "percentile:standard"] as const) {
+  const entry = POLYHEDRAL_VIEWS_R29_V4.get(key);
+  if (entry === undefined) {
+    throw new Error(`Authored ${key} views are missing`);
+  }
+  POLYHEDRAL_VIEWS_R29_V4.set(key, swapAuthoredModes(entry));
+}
+
 const CENTERED_SPHERE_VIEW_V4 = Object.freeze({
   kind: "sphere-surface",
   rotationDegrees: 0,
@@ -359,6 +394,9 @@ function authoredPolyhedralViews(
     rendererRevision === "canvaskit-v4-r24"
   ) {
     return POLYHEDRAL_VIEWS_R23_V4;
+  }
+  if (rendererRevision === "canvaskit-v4-r29") {
+    return POLYHEDRAL_VIEWS_R29_V4;
   }
   if (
     rendererRevision === "canvaskit-v4-r25" ||

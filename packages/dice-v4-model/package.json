@@ -11,6 +11,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./authored-views": "./src/authored-views.ts",
+    "./canonical-json": "./src/canonical-json.ts",
     "./compatibility": "./src/compatibility.ts",
     "./dice-view-preferences": "./src/dice-view-preferences.ts",
     "./limits": "./src/limits.ts",

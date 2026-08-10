@@ -121,6 +121,36 @@ describe("V4 deterministic texture input", () => {
     }
   });
 
+  it("projects die-wide classic solids only from r29", () => {
+    const solid = appearance();
+    solid.material = {
+      family: "classic",
+      treatment: "solid",
+      opacity: "opaque",
+      finish: "satin",
+      textureScale: 100,
+    };
+    solid.texture.scope = "die-wide";
+
+    expect(usesProjectedTextureMappingV4("canvaskit-v4-r28", solid)).toBe(
+      false,
+    );
+    expect(usesProjectedTextureMappingV4("canvaskit-v4-r29", solid)).toBe(
+      false,
+    );
+    solid.texture.scope = "bounded-die-wide";
+    expect(usesProjectedTextureMappingV4("canvaskit-v4-r28", solid)).toBe(
+      false,
+    );
+    expect(usesProjectedTextureMappingV4("canvaskit-v4-r29", solid)).toBe(
+      true,
+    );
+    solid.texture.scope = "face-local";
+    expect(usesProjectedTextureMappingV4("canvaskit-v4-r29", solid)).toBe(
+      false,
+    );
+  });
+
   it("canonicalizes identical texel inputs independently of render transforms", () => {
     const first = appearance();
     first.texture.scope = "die-wide";

@@ -7,6 +7,7 @@ import {
   type AppearanceMaterialV4,
   type RenderDieV4,
   type RenderRequestV4,
+  type TextureScopeV4,
 } from "../src";
 
 const materials: AppearanceMaterialV4[] = [
@@ -150,7 +151,7 @@ function validRequest(): RenderRequestV4 {
 
 function revision2Request(
   value: RenderDieV4 = die(),
-  scope: "die-wide" | "face-local" = "die-wide",
+  scope: TextureScopeV4 = "die-wide",
 ) {
   const snapshot = structuredClone(value);
   Object.assign(snapshot.appearance.texture, {
@@ -609,6 +610,24 @@ describe("RenderRequestV4", () => {
     r26Solid.rendererRevision = "canvaskit-v4-r26";
     expect(() => validateRenderRequestV4(r26Solid)).toThrow(
       "face-local texture scope requires classic gradient material",
+    );
+
+    const r29Bounded = revision2Request(solid, "bounded-die-wide");
+    r29Bounded.rendererRevision = "canvaskit-v4-r29";
+    const r29Die = r29Bounded.groups[0]?.[0];
+    if (r29Die === undefined) throw new Error("r29 test die is missing");
+    Object.assign(r29Die, {
+      view: getAuthoredRenderViewV4(
+        "canvaskit-v4-r29",
+        "legacy",
+        { target: "d20", form: "standard", result: 20 },
+      ),
+    });
+    expect(validateRenderRequestV4(r29Bounded)).toEqual(r29Bounded);
+    const r28Bounded = structuredClone(r29Bounded);
+    r28Bounded.rendererRevision = "canvaskit-v4-r28";
+    expect(() => validateRenderRequestV4(r28Bounded)).toThrow(
+      "bounded die-wide texture scope is not supported",
     );
 
     const sharp = die({

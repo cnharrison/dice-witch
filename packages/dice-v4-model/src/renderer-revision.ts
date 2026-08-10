@@ -42,6 +42,8 @@ export type RendererRevisionPolicyV4 = {
   sharedPercentileModifierIcons: boolean;
   fudgeCameraInset: boolean;
   balancedClassicSolidFaceLocal: boolean;
+  boundedClassicSolidScope: boolean;
+  d6FiveOpticalOffsetX: number;
   faceWidePhysicalSeparation: boolean;
   gridLayout:
     | "legacy"
@@ -85,6 +87,8 @@ const r1 = policy({
   sharedPercentileModifierIcons: false,
   fudgeCameraInset: false,
   balancedClassicSolidFaceLocal: false,
+  boundedClassicSolidScope: false,
+  d6FiveOpticalOffsetX: 0,
   faceWidePhysicalSeparation: true,
   gridLayout: "legacy",
 });
@@ -155,6 +159,11 @@ const r27 = policy({
   faceWidePhysicalSeparation: false,
 });
 const r28 = policy({ ...r27 });
+const r29 = policy({
+  ...r28,
+  boundedClassicSolidScope: true,
+  d6FiveOpticalOffsetX: -0.08,
+});
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -185,6 +194,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r26": r26,
   "canvaskit-v4-r27": r27,
   "canvaskit-v4-r28": r28,
+  "canvaskit-v4-r29": r29,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(
