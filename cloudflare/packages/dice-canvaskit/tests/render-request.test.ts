@@ -4,6 +4,7 @@ import {
   LIGHTING_DIRECTIONS_V4,
   LIGHTING_STRENGTHS_V4,
   PATTERN_IDS_V4,
+  getAuthoredRenderViewV4,
   serializeRenderRequestV4,
   TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4,
   type RenderAppearanceV4,
@@ -2277,6 +2278,54 @@ describe("CanvasKit Render Request V4", () => {
     expect(canvasKit.HEAPU8.buffer.byteLength).toBe(33_554_432);
   });
 
+  it("uses an engraving edge instead of a face-wide separation wash in r27", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const requestFor = (requiresLocalSeparation: boolean): RenderRequestV4 => ({
+      version: 4,
+      rendererRevision: "canvaskit-v4-r27",
+      groups: [[{
+        target: "d20",
+        result: 20,
+        form: "standard",
+        appearance: {
+          ...appearance,
+          material: {
+            family: "classic",
+            treatment: "solid",
+            opacity: "opaque",
+            finish: "satin",
+            textureScale: 100,
+          },
+          palette: ["#080018", "#10234a"],
+          texture: { ...appearance.texture, scope: "face-local" },
+          requiresLocalSeparation,
+        },
+        icons: [],
+        view: getAuthoredRenderViewV4(
+          "canvaskit-v4-r27",
+          "legacy",
+          { target: "d20", form: "standard", result: 20 },
+        ),
+      }]],
+    });
+    const separated = requestFor(true);
+    const unseparated = requestFor(false);
+    const [separatedBlank, unseparatedBlank, separatedLabels, plainLabels] =
+      await Promise.all([
+        renderDiceRequestV4ToPng(separated, createRenderer, {
+          blankFaces: true,
+        }),
+        renderDiceRequestV4ToPng(unseparated, createRenderer, {
+          blankFaces: true,
+        }),
+        renderDiceRequestV4ToPng(separated, createRenderer),
+        renderDiceRequestV4ToPng(unseparated, createRenderer),
+      ]);
+
+    expect(separatedBlank.png).toEqual(unseparatedBlank.png);
+    expect(separatedLabels.png).not.toEqual(plainLabels.png);
+  });
+
   it("preserves separated special forms and hollow cut-throughs", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
     const cases = [
@@ -2695,7 +2744,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r27" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r28" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

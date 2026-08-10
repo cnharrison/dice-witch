@@ -362,7 +362,8 @@ function authoredPolyhedralViews(
   }
   if (
     rendererRevision === "canvaskit-v4-r25" ||
-    rendererRevision === "canvaskit-v4-r26"
+    rendererRevision === "canvaskit-v4-r26" ||
+    rendererRevision === "canvaskit-v4-r27"
   ) {
     return POLYHEDRAL_VIEWS_R25_V4;
   }

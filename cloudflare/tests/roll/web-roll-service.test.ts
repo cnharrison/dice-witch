@@ -23,6 +23,7 @@ import {
   buildAppearancePreviewRenderRequestR24V4,
   buildAppearancePreviewRenderRequestR25V4,
   buildAppearancePreviewRenderRequestR26V4,
+  buildAppearancePreviewRenderRequestR27V4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
@@ -277,6 +278,22 @@ describe("appearance preview", () => {
     expect(ones).toHaveProperty("faceLabelSet", "percentile-ones");
     expect(ones?.form).toBe(percentile?.form);
     expect(ones?.appearance).toEqual(percentile?.appearance);
+  });
+
+  it("builds current Profile V4 previews through immutable r27", () => {
+    const preview = buildAppearancePreviewRenderRequestR27V4({
+      target: "d6",
+      recipe: recipeV3,
+      diceView: createDefaultDiceViewPreferencesV4(),
+      seed: 7,
+      state: "normal",
+    });
+
+    expect(preview).toMatchObject({
+      version: 4,
+      rendererRevision: "canvaskit-v4-r27",
+      groups: [[{ target: "d6" }]],
+    });
   });
 
   it("builds Profile V4 camera drafts through immutable r20 and r21", () => {

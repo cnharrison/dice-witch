@@ -304,8 +304,8 @@ function validateStaticWorkerConfiguration(errors, configs) {
   if (configs.roll?.vars?.ROLL_RENDER_VERSION !== "4") {
     errors.push("Staging Roll ROLL_RENDER_VERSION must equal 4");
   }
-  if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r26") {
-    errors.push("Staging Roll ROLL_VIEW_POLICY must equal r26");
+  if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r27") {
+    errors.push("Staging Roll ROLL_VIEW_POLICY must equal r27");
   }
 
   if (

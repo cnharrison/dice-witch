@@ -412,19 +412,24 @@ describe("appearance V3 API client", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
 
     await expect(
-      getAppearancePreviewV4({
-        target: "d20",
-        recipe,
-        diceView: profile.diceView,
-        seed: 42,
-        state: "normal",
-      }),
+      getAppearancePreviewV4(
+        {
+          target: "d20",
+          recipe,
+          diceView: profile.diceView,
+          seed: 42,
+          state: "normal",
+        },
+        controller.signal,
+      ),
     ).resolves.toMatchObject({ version: 4, width: 150, height: 150 });
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.example.com/api/appearance/v4/preview",
     );
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       target: "d20",
       recipe,

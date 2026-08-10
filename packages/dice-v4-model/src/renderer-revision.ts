@@ -8,7 +8,11 @@ export type RendererRevisionPolicyV4 = {
   d20Geometry: "r1" | "r2";
   gradientMapping: "legacy" | "projected";
   patternMapping: "legacy" | "projected" | "surface";
-  textureColors: "legacy" | "vivid-r4" | "exact-gradient-r5";
+  textureColors:
+    | "legacy"
+    | "vivid-r4"
+    | "exact-gradient-r5"
+    | "balanced-surface-r27";
   presentation:
     | "legacy"
     | "standard-r4"
@@ -37,6 +41,8 @@ export type RendererRevisionPolicyV4 = {
   d10CriticalHalo: boolean;
   sharedPercentileModifierIcons: boolean;
   fudgeCameraInset: boolean;
+  balancedClassicSolidFaceLocal: boolean;
+  faceWidePhysicalSeparation: boolean;
   gridLayout:
     | "legacy"
     | "compact-r9"
@@ -78,6 +84,8 @@ const r1 = policy({
   d10CriticalHalo: false,
   sharedPercentileModifierIcons: false,
   fudgeCameraInset: false,
+  balancedClassicSolidFaceLocal: false,
+  faceWidePhysicalSeparation: true,
   gridLayout: "legacy",
 });
 const r2 = policy({ ...r1, explicitTextureScope: true });
@@ -140,6 +148,12 @@ const r26 = policy({
   sharedPercentileModifierIcons: true,
   fudgeCameraInset: true,
 });
+const r27 = policy({
+  ...r26,
+  textureColors: "balanced-surface-r27",
+  balancedClassicSolidFaceLocal: true,
+  faceWidePhysicalSeparation: false,
+});
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -168,6 +182,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r24": r24,
   "canvaskit-v4-r25": r25,
   "canvaskit-v4-r26": r26,
+  "canvaskit-v4-r27": r27,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

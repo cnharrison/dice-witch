@@ -1034,7 +1034,8 @@ export function parseRecord(value: string): RollWorkRecord {
           parsed.viewPolicy !== "r23" &&
           parsed.viewPolicy !== "r24" &&
           parsed.viewPolicy !== "r25" &&
-          parsed.viewPolicy !== "r26")) ||
+          parsed.viewPolicy !== "r26" &&
+          parsed.viewPolicy !== "r27")) ||
       common.outcome.outcomes.length === 0
     ) {
       throw new Error("Stored roll work is invalid");

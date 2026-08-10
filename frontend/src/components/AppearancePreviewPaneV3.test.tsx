@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
+import { AppearanceApiError } from "@/lib/appearance";
 import {
   getAppearancePreviewV3,
   getAppearancePreviewV4,
@@ -73,24 +74,30 @@ describe("AppearancePreviewPaneV3", () => {
     });
     expect(image.getAttribute("width")).toBe("750");
     expect(image.getAttribute("height")).toBe("300");
-    expect(preview).toHaveBeenCalledWith({
-      target: "all",
-      recipe,
-      seed: 0x51ce_b00c,
-      state: "normal",
-    });
+    expect(preview).toHaveBeenCalledWith(
+      {
+        target: "all",
+        recipe,
+        seed: 0x51ce_b00c,
+        state: "normal",
+      },
+      expect.any(AbortSignal),
+    );
 
     await user.selectOptions(
       screen.getByLabelText("Preview critical state"),
       "critical-success",
     );
     await waitFor(() =>
-      expect(preview).toHaveBeenLastCalledWith({
-        target: "all",
-        recipe,
-        seed: 0x51ce_b00c,
-        state: "critical-success",
-      }),
+      expect(preview).toHaveBeenLastCalledWith(
+        {
+          target: "all",
+          recipe,
+          seed: 0x51ce_b00c,
+          state: "critical-success",
+        },
+        expect.any(AbortSignal),
+      ),
     );
   });
 
@@ -121,6 +128,22 @@ describe("AppearancePreviewPaneV3", () => {
     ).toBeDefined();
     expect(screen.queryByRole("status")).toBeNull();
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  it("aborts an obsolete preview request when its target changes", async () => {
+    preview.mockImplementation(() => new Promise(() => undefined));
+    const { rerender, client } = renderPreview();
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1));
+    const obsoleteSignal = preview.mock.calls[0]?.[1];
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <AppearancePreviewPaneV3 target="d20" recipe={recipe} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(2));
+    expect(obsoleteSignal?.aborted).toBe(true);
   });
 
   it("requests an authoritative PNG when camera preferences change", async () => {
@@ -163,19 +186,37 @@ describe("AppearancePreviewPaneV3", () => {
     );
 
     await waitFor(() => expect(previewV4).toHaveBeenCalledTimes(2));
-    expect(previewV4).toHaveBeenLastCalledWith({
-      target: "d6",
-      recipe,
-      seed: 0x51ce_b00c,
-      state: "normal",
-      diceView: adjusted,
-    });
+    expect(previewV4).toHaveBeenLastCalledWith(
+      {
+        target: "d6",
+        recipe,
+        seed: 0x51ce_b00c,
+        state: "normal",
+        diceView: adjusted,
+      },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("uses brief retry copy for network failures", async () => {
+    preview.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPreview("d20");
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Error. Try again.",
+    );
   });
 
   it("keeps renderer failures visible and retries only on request", async () => {
     const user = userEvent.setup();
     preview
-      .mockRejectedValueOnce(new Error("appearance_renderer_failed"))
+      .mockRejectedValueOnce(
+        new AppearanceApiError(
+          "appearance_renderer_failed",
+          502,
+          "appearance_renderer_failed",
+        ),
+      )
       .mockResolvedValueOnce({
         version: 3,
         contentType: "image/png",
@@ -185,8 +226,8 @@ describe("AppearancePreviewPaneV3", () => {
       });
     renderPreview("d20");
 
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "appearance_renderer_failed",
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Error. Try again.",
     );
     expect(screen.queryByRole("img")).toBeNull();
     expect(preview).toHaveBeenCalledTimes(1);

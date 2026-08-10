@@ -1131,6 +1131,7 @@ function parsePreviewResponse(
 
 export async function getAppearancePreviewV3(
   value: unknown,
+  signal?: AbortSignal,
 ): Promise<AppearancePreviewV3> {
   let input: ReturnType<typeof parsePreviewInput>;
   try {
@@ -1144,6 +1145,7 @@ export async function getAppearancePreviewV3(
       credentials: "include",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
+      ...(signal === undefined ? {} : { signal }),
     }),
   );
   return parseResponse(
@@ -1155,6 +1157,7 @@ export async function getAppearancePreviewV3(
 
 export async function getAppearancePreviewV4(
   value: unknown,
+  signal?: AbortSignal,
 ): Promise<AppearancePreviewV4> {
   let input: ReturnType<typeof parsePreviewInputV4>;
   try {
@@ -1168,6 +1171,7 @@ export async function getAppearancePreviewV4(
       credentials: "include",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
+      ...(signal === undefined ? {} : { signal }),
     }),
   );
   return parseResponse(

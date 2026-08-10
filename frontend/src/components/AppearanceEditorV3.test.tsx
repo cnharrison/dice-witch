@@ -184,6 +184,7 @@ describe("AppearanceEditorV3", () => {
     await waitFor(() =>
       expect(vi.mocked(getAppearancePreviewV4)).toHaveBeenLastCalledWith(
         expect.objectContaining({ target: "d8" }),
+        expect.any(AbortSignal),
       ),
     );
     await user.click(screen.getByLabelText("Use legacy dice view"));
@@ -191,6 +192,7 @@ describe("AppearanceEditorV3", () => {
     await waitFor(() =>
       expect(vi.mocked(getAppearancePreviewV4)).toHaveBeenLastCalledWith(
         expect.objectContaining({ target: "d8" }),
+        expect.any(AbortSignal),
       ),
     );
   });

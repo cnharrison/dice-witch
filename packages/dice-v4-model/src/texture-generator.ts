@@ -40,7 +40,8 @@ const GENERATION_SIZE_V4 = 64;
 export type TextureColorPolicyV4 =
   | "legacy"
   | "vivid-r4"
-  | "exact-gradient-r5";
+  | "exact-gradient-r5"
+  | "balanced-surface-r27";
 
 function usesVividColorPolicyV4(policy: TextureColorPolicyV4): boolean {
   return policy !== "legacy";
@@ -166,11 +167,29 @@ function patternMask(
   }
 }
 
+function balancedClassicSurfaceAmountV4(context: PixelContextV4): number {
+  const position = modulo(
+    phase(context.x, 1) * 2 +
+      phase(context.y, 1) +
+      (context.noise(11) - 128) / 2 +
+      (context.seed & 0x1ff),
+    512,
+  );
+  const triangle = position <= BYTE_MAX ? position : 511 - position;
+  const normalized = triangle / BYTE_MAX;
+  return byte(normalized * normalized * (3 - 2 * normalized) * BYTE_MAX);
+}
+
 const classicPixel: PixelGeneratorV4<ClassicMaterialV4> = (context, material) => {
   const noise = context.noise(10);
   let amount: number;
   if ("patternId" in material) {
     amount = patternMask(material.patternId, material.textureScale, context);
+  } else if (
+    material.treatment === "solid" &&
+    context.colorPolicy === "balanced-surface-r27"
+  ) {
+    amount = balancedClassicSurfaceAmountV4(context);
   } else if (material.treatment === "solid") {
     amount = byte(40 + noise / 3);
   } else if (usesVividColorPolicyV4(context.colorPolicy)) {
@@ -680,7 +699,8 @@ export function generateMaterialTextureV4(
   validateInput(input);
   const palette = input.palette.map(parseTextureColorV4);
   if (
-    colorPolicy === "exact-gradient-r5" &&
+    (colorPolicy === "exact-gradient-r5" ||
+      colorPolicy === "balanced-surface-r27") &&
     input.material.family === "classic" &&
     input.material.treatment === "gradient"
   ) {

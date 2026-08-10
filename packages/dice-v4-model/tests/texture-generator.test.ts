@@ -325,6 +325,105 @@ describe("V4 material texture generation", () => {
     );
   });
 
+  it("balances broad palette regions across r27 classic solid surfaces", () => {
+    const material: ClassicMaterialV4 = {
+      family: "classic",
+      treatment: "solid",
+      opacity: "opaque",
+      finish: "satin",
+      textureScale: 100,
+    };
+    const solidInput = {
+      ...input(material),
+      palette: ["#ff0000", "#0000ff"],
+    };
+    const previous = generateMaterialTextureV4(
+      solidInput,
+      "exact-gradient-r5",
+    );
+    const revised = generateMaterialTextureV4(
+      solidInput,
+      "balanced-surface-r27",
+    );
+    const reseeded = generateMaterialTextureV4(
+      { ...solidInput, seed: 0x72_35_0027 },
+      "balanced-surface-r27",
+    );
+    let redRegions = 0;
+    let blueRegions = 0;
+    for (let offset = 0; offset < revised.pixels.length; offset += 4) {
+      const red = revised.pixels[offset] ?? 0;
+      const blue = revised.pixels[offset + 2] ?? 0;
+      if (red - blue >= 64) redRegions += 1;
+      if (blue - red >= 64) blueRegions += 1;
+    }
+    const pixelCount = SOURCE_TEXTURE_SIZE_V4 * SOURCE_TEXTURE_SIZE_V4;
+
+    expect(revised.pixels).not.toEqual(previous.pixels);
+    expect(reseeded.pixels).not.toEqual(revised.pixels);
+    expect(redRegions / pixelCount).toBeGreaterThan(0.35);
+    expect(blueRegions / pixelCount).toBeGreaterThan(0.35);
+    expect(Math.abs(redRegions - blueRegions) / pixelCount).toBeLessThan(0.08);
+  });
+
+  it("keeps multi-color r27 solid palettes balanced in either order", () => {
+    const material: ClassicMaterialV4 = {
+      family: "classic",
+      treatment: "solid",
+      opacity: "opaque",
+      finish: "satin",
+      textureScale: 100,
+    };
+    const colors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"];
+    const nearestColorShares = (ordered: string[]) => {
+      const parsed = ordered.map((color) =>
+        [1, 3, 5].map((offset) =>
+          Number.parseInt(color.slice(offset, offset + 2), 16),
+        ),
+      );
+      const pixels = generateMaterialTextureV4(
+        { ...input(material), palette: ordered },
+        "balanced-surface-r27",
+      ).pixels;
+      const counts = Array.from({ length: ordered.length }, () => 0);
+      for (let offset = 0; offset < pixels.length; offset += 4) {
+        const channels = [
+          pixels[offset] ?? 0,
+          pixels[offset + 1] ?? 0,
+          pixels[offset + 2] ?? 0,
+        ];
+        let nearest = 0;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        for (const [index, color] of parsed.entries()) {
+          const distance = Math.hypot(
+            ...channels.map(
+              (channel, channelIndex) =>
+                channel - (color[channelIndex] ?? channel),
+            ),
+          );
+          if (distance < nearestDistance) {
+            nearest = index;
+            nearestDistance = distance;
+          }
+        }
+        counts[nearest] = (counts[nearest] ?? 0) + 1;
+      }
+      const pixelCount = SOURCE_TEXTURE_SIZE_V4 * SOURCE_TEXTURE_SIZE_V4;
+      return counts.map((count) => count / pixelCount);
+    };
+    const forward = nearestColorShares(colors);
+    const reversed = nearestColorShares([...colors].reverse());
+
+    expect(Math.min(...forward)).toBeGreaterThan(0.12);
+    expect(Math.max(...forward)).toBeLessThan(0.38);
+    expect(Math.abs((forward[0] ?? 0) - (forward.at(-1) ?? 0))).toBeLessThan(
+      0.05,
+    );
+    for (const [index, share] of forward.entries()) {
+      expect(reversed.at(-index - 1)).toBeCloseTo(share, 1);
+    }
+  });
+
   it("inherits vivid r4 behavior for r5 non-gradient textures", () => {
     const material: ClassicMaterialV4 = {
       family: "classic",

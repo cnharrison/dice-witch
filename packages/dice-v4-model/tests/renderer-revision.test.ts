@@ -152,11 +152,18 @@ describe("V4 renderer revision policies", () => {
     expect(revision25).toEqual(
       rendererRevisionPolicyV4("canvaskit-v4-r24"),
     );
-    expect(rendererRevisionPolicyV4("canvaskit-v4-r26")).toEqual({
+    const revision26 = rendererRevisionPolicyV4("canvaskit-v4-r26");
+    expect(revision26).toEqual({
       ...revision25,
       d10CriticalHalo: true,
       sharedPercentileModifierIcons: true,
       fudgeCameraInset: true,
+    });
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r27")).toEqual({
+      ...revision26,
+      textureColors: "balanced-surface-r27",
+      balancedClassicSolidFaceLocal: true,
+      faceWidePhysicalSeparation: false,
     });
     expect(revision19.resolvedViews).toBe(false);
   });
@@ -164,7 +171,7 @@ describe("V4 renderer revision policies", () => {
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r27" as RendererRevisionV4,
+        "canvaskit-v4-r28" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

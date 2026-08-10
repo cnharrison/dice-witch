@@ -586,6 +586,31 @@ describe("RenderRequestV4", () => {
       validateRenderRequestV4(revision2Request(pattern, "face-local")),
     ).toThrow("face-local texture scope requires classic gradient material");
 
+    const solid = die({
+      family: "classic",
+      treatment: "solid",
+      opacity: "opaque",
+      finish: "satin",
+      textureScale: 100,
+    });
+    const r27Solid = revision2Request(solid, "face-local");
+    r27Solid.rendererRevision = "canvaskit-v4-r27";
+    const r27Die = r27Solid.groups[0]?.[0];
+    if (r27Die === undefined) throw new Error("r27 test die is missing");
+    Object.assign(r27Die, {
+      view: getAuthoredRenderViewV4(
+        "canvaskit-v4-r27",
+        "legacy",
+        { target: "d20", form: "standard", result: 20 },
+      ),
+    });
+    expect(validateRenderRequestV4(r27Solid)).toEqual(r27Solid);
+    const r26Solid = structuredClone(r27Solid);
+    r26Solid.rendererRevision = "canvaskit-v4-r26";
+    expect(() => validateRenderRequestV4(r26Solid)).toThrow(
+      "face-local texture scope requires classic gradient material",
+    );
+
     const sharp = die({
       family: "classic",
       treatment: "gradient",

@@ -29,6 +29,7 @@ import {
   buildRollRenderRequestR24V4,
   buildRollRenderRequestR25V4,
   buildRollRenderRequestR26V4,
+  buildRollRenderRequestR27V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1190,6 +1191,52 @@ describe("Profile V4 roll rendering", () => {
       engraving: { ...liberation.appearance.engraving, fontId: "font" },
     });
     expect(stencil.form).toBe(liberation.form);
+  });
+
+  it("keeps r27 property streams independent while allowing an explicit reseed", () => {
+    const recipe = appearanceRecipeV3({
+      variation: "fixed",
+      colors: { mode: "vivid-random-pair" },
+    });
+    const withFont = (fontId: "stencil-ops" | "liberation-sans") => ({
+      version: 4 as const,
+      recipes: effectiveRecipesV3({
+        ...recipe,
+        font: { mode: "fixed" as const, value: fontId },
+      }) as EffectiveAppearanceV4["recipes"],
+      diceView: createDefaultDiceViewPreferencesV4(),
+    });
+    const roll = outcome(["d8"], 42);
+    const first = buildRollRenderRequestR27V4(
+      roll,
+      0x51ce_b00c,
+      withFont("stencil-ops"),
+    ).groups[0]?.[0];
+    const fontOnly = buildRollRenderRequestR27V4(
+      roll,
+      0x51ce_b00c,
+      withFont("liberation-sans"),
+    ).groups[0]?.[0];
+    const reseeded = buildRollRenderRequestR27V4(
+      roll,
+      0x51ce_b00d,
+      withFont("stencil-ops"),
+    ).groups[0]?.[0];
+    if (first === undefined || fontOnly === undefined || reseeded === undefined) {
+      throw new Error("r27 property stream fixture is missing");
+    }
+
+    expect({
+      ...fontOnly.appearance,
+      engraving: { ...fontOnly.appearance.engraving, fontId: "font" },
+    }).toEqual({
+      ...first.appearance,
+      engraving: { ...first.appearance.engraving, fontId: "font" },
+    });
+    expect(reseeded.appearance.palette).not.toEqual(first.appearance.palette);
+    expect(reseeded.appearance.texture.seed).not.toBe(
+      first.appearance.texture.seed,
+    );
   });
 
   it("carries the approved d6 and Fudge Legacy camera into r25", () => {

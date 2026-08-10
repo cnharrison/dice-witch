@@ -188,6 +188,7 @@ function geometryGridDie(
   options: DiceRequestRenderOptionsV4,
 ): RenderGeometryGridDieV4 {
   const geometry = getRenderGeometryDescriptorV4(rendererRevision, die);
+  const policy = rendererRevisionPolicyV4(rendererRevision);
   const texturePlacement = getRenderTexturePlacementV4(die);
   const lighting = lightingForDieV4(die, rendererRevision);
   const textureScope = textureScopeForDie(die, rendererRevision);
@@ -205,8 +206,7 @@ function geometryGridDie(
     usesOctahedralAtlas,
     rendererRevision,
   );
-  const engravingContrastEdge = rendererRevisionPolicyV4(rendererRevision)
-    .engravingContrastEdge
+  const engravingContrastEdge = policy.engravingContrastEdge
       ? resolveEngravingContrastEdgeV4(
           die.appearance,
           sourceTexture,
@@ -255,7 +255,9 @@ function geometryGridDie(
       engravingFontScale,
       lighting,
       materialFamily: die.appearance.material.family,
-      requiresLocalSeparation: die.appearance.requiresLocalSeparation,
+      requiresLocalSeparation:
+        policy.faceWidePhysicalSeparation &&
+        die.appearance.requiresLocalSeparation,
       criticalEffect: die.appearance.effect,
       blankFaces: options.blankFaces === true,
       renderPolicy: renderPolicyV4(rendererRevision, geometry.id),
@@ -288,9 +290,11 @@ function geometryGridDie(
       : {}),
     lighting,
     materialFamily: die.appearance.material.family,
-    requiresLocalSeparation: die.appearance.requiresLocalSeparation,
+    requiresLocalSeparation:
+      policy.faceWidePhysicalSeparation &&
+      die.appearance.requiresLocalSeparation,
     criticalEffect: die.appearance.effect,
-    ...(rendererRevisionPolicyV4(rendererRevision).d10CriticalHalo &&
+    ...(policy.d10CriticalHalo &&
       (die.target === "d10" || die.target === "percentile")
       ? { criticalOuterGlow: true }
       : {}),
@@ -362,6 +366,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r24": renderCanvasKit,
   "canvaskit-v4-r25": renderCanvasKit,
   "canvaskit-v4-r26": renderCanvasKit,
+  "canvaskit-v4-r27": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {

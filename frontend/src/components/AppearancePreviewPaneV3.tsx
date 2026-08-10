@@ -35,19 +35,17 @@ function useDebouncedValue<Value>(value: Value, delay: number): Value {
 }
 
 function previewErrorMessage(error: unknown): string {
-  if (!(error instanceof AppearanceApiError)) {
-    return error instanceof Error ? error.message : "Preview is unavailable.";
-  }
+  if (!(error instanceof AppearanceApiError)) return "Error. Try again.";
   switch (error.code) {
     case "appearance_preview_invalid":
     case "appearance_preview_request_invalid":
       return "This draft contains a combination the renderer cannot preview.";
     case "appearance_renderer_failed":
-      return "The V4 renderer could not complete this preview.";
+      return "Error. Try again.";
     case "appearance_authentication_required":
       return "Sign in again to render appearance previews.";
     default:
-      return "The appearance preview service is unavailable.";
+      return "Error. Try again.";
   }
 }
 
@@ -65,22 +63,32 @@ export function AppearancePreviewPaneV3({
   const [hasDisplayedPreview, setHasDisplayedPreview] = React.useState(false);
   const [imageError, setImageError] = React.useState<Error | null>(null);
   const [imageRetryKey, setImageRetryKey] = React.useState(0);
-  const debouncedRecipe = useDebouncedValue(recipe, 300);
-  const debouncedDiceView = useDebouncedValue(diceView, 300);
+  const previewDraft = React.useMemo(
+    () => ({ recipe, diceView }),
+    [diceView, recipe],
+  );
+  const debouncedDraft = useDebouncedValue(previewDraft, 300);
   const previewQuery = useQuery({
     queryKey: [
       diceView === undefined ? "appearancePreviewV3" : "appearancePreviewV4",
       target,
       seed,
       state,
-      debouncedRecipe,
-      debouncedDiceView,
+      debouncedDraft,
     ],
-    queryFn: () => {
-      const input = { target, recipe: debouncedRecipe, seed, state };
-      return debouncedDiceView === undefined
-        ? getAppearancePreviewV3(input)
-        : getAppearancePreviewV4({ ...input, diceView: debouncedDiceView });
+    queryFn: ({ signal }) => {
+      const input = {
+        target,
+        recipe: debouncedDraft.recipe,
+        seed,
+        state,
+      };
+      return debouncedDraft.diceView === undefined
+        ? getAppearancePreviewV3(input, signal)
+        : getAppearancePreviewV4(
+            { ...input, diceView: debouncedDraft.diceView },
+            signal,
+          );
     },
     placeholderData: keepPreviousData,
     staleTime: Infinity,

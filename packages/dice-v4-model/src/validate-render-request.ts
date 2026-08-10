@@ -878,6 +878,7 @@ function validateTextureScopeForDie(
   appearance: RenderAppearanceV4,
   target: AppearanceTargetV4,
   form: RenderFormV4,
+  rendererRevision: RendererRevisionV4,
 ): void {
   if (appearance.texture.scope !== "face-local") return;
   if (
@@ -890,7 +891,14 @@ function validateTextureScopeForDie(
     throw new Error("face-local texture scope is invalid for other");
   }
   const material = appearance.material;
-  if (material.family !== "classic" || material.treatment !== "gradient") {
+  const classicGradient =
+    material.family === "classic" && material.treatment === "gradient";
+  const balancedClassicSolid =
+    rendererRevisionPolicyV4(rendererRevision)
+      .balancedClassicSolidFaceLocal &&
+    material.family === "classic" &&
+    material.treatment === "solid";
+  if (!classicGradient && !balancedClassicSolid) {
     throw new Error(
       "face-local texture scope requires classic gradient material",
     );
@@ -1132,7 +1140,7 @@ function parseDie(
     const sides = boundedInteger(value.sides, 1, 999, `${path}.sides`);
     const form = parseForm(value.form, target, appearance.material, path);
     const result = parseResult(value.result, target, sides, path);
-    validateTextureScopeForDie(appearance, target, form);
+    validateTextureScopeForDie(appearance, target, form, rendererRevision);
     const view = parseView(
       value.view,
       `${path}.view`,
@@ -1163,7 +1171,7 @@ function parseDie(
   if (faceLabelSet !== undefined && target !== "d10") {
     throw new Error(`${path}.faceLabelSet is invalid for ${target}`);
   }
-  validateTextureScopeForDie(appearance, target, form);
+  validateTextureScopeForDie(appearance, target, form, rendererRevision);
   const view = parseView(
     value.view,
     `${path}.view`,

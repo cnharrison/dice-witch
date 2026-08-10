@@ -141,6 +141,31 @@ function distinctRandomPair(
   return distinctPair(randomColor(random), randomColor(random));
 }
 
+function colorDistance(first: string, second: string): number {
+  return Math.hypot(
+    ...[1, 3, 5].map(
+      (offset) =>
+        Number.parseInt(first.slice(offset, offset + 2), 16) -
+        Number.parseInt(second.slice(offset, offset + 2), 16),
+    ),
+  );
+}
+
+function distinctRandomPartnerR27(
+  primary: string,
+  random: DeterministicRandom,
+): string {
+  const candidate = randomColor(random);
+  if (colorDistance(primary, candidate) >= 110) return candidate;
+  if (
+    colorDistance(primary, "#000000") >=
+    colorDistance(primary, "#ffffff")
+  ) {
+    return "#000000";
+  }
+  return "#ffffff";
+}
+
 type VividPairFamily = "bright" | "dark";
 
 type GeneratedVividPair = {
@@ -206,6 +231,27 @@ function vividRandomPair(random: DeterministicRandom): GeneratedVividPair {
       ),
     ),
     family,
+  };
+}
+
+function vividRandomPairR27(random: DeterministicRandom): GeneratedVividPair {
+  const hue = random.nextFloat() * 360;
+  const separation = 72 + random.nextFloat() * 216;
+  const direction = random.index(2) === 0 ? -1 : 1;
+  return {
+    colors: distinctPair(
+      hsvColor(
+        hue,
+        0.78 + random.nextFloat() * 0.2,
+        0.88 + random.nextFloat() * 0.12,
+      ),
+      hsvColor(
+        hue + direction * separation,
+        0.78 + random.nextFloat() * 0.2,
+        0.88 + random.nextFloat() * 0.12,
+      ),
+    ),
+    family: "bright",
   };
 }
 
@@ -841,30 +887,56 @@ function namedRandomV3(seed: number, stream: string): DeterministicRandom {
 
 export type AppearanceResolutionSeedPolicyV3 =
   | "legacy"
-  | "property-streams-r26";
+  | "property-streams-r26"
+  | "property-streams-r27";
+
+function propertyScopeV3(
+  recipe: AppearanceRecipeV3,
+  context: AppearanceResolutionContextV3,
+  sharedAcrossDice: boolean,
+): string {
+  if (sharedAcrossDice || recipe.varyBy === "roll") {
+    return `${String(context.renderSeed)}:roll:${recipe.variation}`;
+  }
+  if (recipe.varyBy === "group") {
+    return context.groupIdentity === undefined
+      ? `${String(context.renderSeed)}:group:${String(context.groupIndex)}:${recipe.variation}`
+      : `${String(context.renderSeed)}:group-id:${context.groupIdentity}:${recipe.variation}`;
+  }
+  return context.dieIdentity === undefined
+    ? `${String(context.renderSeed)}:die:${String(context.groupIndex)}:${String(context.dieIndex)}:${context.target}:${recipe.variation}`
+    : `${String(context.renderSeed)}:die-id:${context.dieIdentity}:${context.target}:${recipe.variation}`;
+}
 
 function propertySeedV3(
   recipe: AppearanceRecipeV3,
+  context: AppearanceResolutionContextV3,
   seed: number,
   policy: AppearanceResolutionSeedPolicyV3,
   stream: string,
   value: unknown,
+  sharedAcrossDice = false,
 ): number {
-  if (policy === "legacy" || recipe.variation !== "fixed") return seed;
+  if (policy === "legacy") return seed;
+  if (policy === "property-streams-r26") {
+    if (recipe.variation !== "fixed") return seed;
+    return hashStringV4(`fixed-r26:${stream}:${canonicalJsonV4(value)}`);
+  }
   return hashStringV4(
-    `fixed-r26:${stream}:${canonicalJsonV4(value)}`,
+    `property-r27:${propertyScopeV3(recipe, context, sharedAcrossDice)}:${stream}:${canonicalJsonV4(value)}`,
   );
 }
 
 function propertyRandomV3(
   recipe: AppearanceRecipeV3,
+  context: AppearanceResolutionContextV3,
   seed: number,
   policy: AppearanceResolutionSeedPolicyV3,
   stream: string,
   value: unknown,
 ): DeterministicRandom {
   return namedRandomV3(
-    propertySeedV3(recipe, seed, policy, stream, value),
+    propertySeedV3(recipe, context, seed, policy, stream, value),
     stream,
   );
 }
@@ -872,9 +944,48 @@ function propertyRandomV3(
 function resolveColorsV3(
   recipe: AppearanceRecipeV3,
   random: DeterministicRandom,
+  seedPolicy: AppearanceResolutionSeedPolicyV3,
 ): NativeColors {
   if (recipe.colors.mode === "vivid-random-pair") {
-    const pair = vividRandomPair(random).colors;
+    const pair = (seedPolicy === "property-streams-r27"
+      ? vividRandomPairR27(random)
+      : vividRandomPair(random)).colors;
+    return { ordered: [...pair], pair };
+  }
+  if (
+    recipe.colors.mode === "random-pair" &&
+    seedPolicy === "property-streams-r27"
+  ) {
+    const primary = randomColor(random);
+    const pair: [string, string] = [
+      primary,
+      distinctRandomPartnerR27(primary, random),
+    ];
+    return { ordered: [...pair], pair };
+  }
+  if (
+    recipe.colors.mode === "random" &&
+    seedPolicy === "property-streams-r27"
+  ) {
+    const primary = canonicalColor(recipe.colors.primary);
+    const pair: [string, string] = [
+      primary,
+      distinctRandomPartnerR27(primary, random),
+    ];
+    return { ordered: [...pair], pair };
+  }
+  if (
+    recipe.colors.mode === "tonal" &&
+    seedPolicy === "property-streams-r27"
+  ) {
+    const primary = canonicalColor(recipe.colors.primary);
+    const brightness = [1, 3, 5]
+      .map((offset) => Number.parseInt(primary.slice(offset, offset + 2), 16))
+      .reduce((total, channel) => total + channel, 0) / 3;
+    const pair: [string, string] = [
+      primary,
+      mixColor(primary, brightness < 128 ? 255 : 0, 0.5),
+    ];
     return { ordered: [...pair], pair };
   }
   const resolved = resolveNativeColors(recipe, random);
@@ -936,6 +1047,7 @@ function resolveRandomizedColorsV3(
   recipe: AppearanceRecipeV3,
   material: AppearanceMaterialV4,
   seed: number,
+  seedPolicy: AppearanceResolutionSeedPolicyV3,
   authoredPalette?: readonly [string, string, ...string[]],
 ): NativeColors {
   if (usesFullSpectrumRandomizationV3(recipe) && authoredPalette !== undefined) {
@@ -948,7 +1060,7 @@ function resolveRandomizedColorsV3(
   ) {
     return fullSpectrumGradientColorsV3(seed);
   }
-  return resolveColorsV3(recipe, namedRandomV3(seed, "colors"));
+  return resolveColorsV3(recipe, namedRandomV3(seed, "colors"), seedPolicy);
 }
 
 function resolveLightingV3(
@@ -1027,6 +1139,7 @@ export function resolveAppearanceRecipeV3(
     recipe.material,
     propertyRandomV3(
       recipe,
+      context,
       seed,
       seedPolicy,
       "material",
@@ -1043,16 +1156,29 @@ export function resolveAppearanceRecipeV3(
       ? randomSpecial.d20Material
       : selectedMaterial),
   };
+  const colorSeedValue = {
+    colors: recipe.colors,
+    ...(seedPolicy === "property-streams-r27" &&
+    !usesFullSpectrumRandomization
+      ? {}
+      : { material }),
+    ...(recipe.randomization === undefined
+      ? {}
+      : { randomization: recipe.randomization }),
+  };
   const colors = resolveRandomizedColorsV3(
     recipe,
     material,
-    propertySeedV3(recipe, seed, seedPolicy, "colors", {
-      colors: recipe.colors,
-      material,
-      ...(recipe.randomization === undefined
-        ? {}
-        : { randomization: recipe.randomization }),
-    }),
+    propertySeedV3(
+      recipe,
+      context,
+      seed,
+      seedPolicy,
+      "colors",
+      colorSeedValue,
+      true,
+    ),
+    seedPolicy,
     randomSpecial?.palette,
   );
   const form =
@@ -1067,7 +1193,7 @@ export function resolveAppearanceRecipeV3(
           : resolveCompatiblePolyhedralFormV4(
               recipe.form.polyhedral,
               material.family,
-              propertyRandomV3(recipe, seed, seedPolicy, "form", {
+              propertyRandomV3(recipe, context, seed, seedPolicy, "form", {
                 form: recipe.form,
                 materialFamily: material.family,
                 ...(recipe.randomization === undefined
@@ -1077,12 +1203,20 @@ export function resolveAppearanceRecipeV3(
             );
   const fontId = resolveAppearanceSelectionV4(
     recipe.font,
-    propertyRandomV3(recipe, seed, seedPolicy, "font", recipe.font),
+    propertyRandomV3(
+      recipe,
+      context,
+      seed,
+      seedPolicy,
+      "font",
+      recipe.font,
+    ),
   );
   const engravingFinish = resolveAppearanceSelectionV4(
     recipe.engraving,
     propertyRandomV3(
       recipe,
+      context,
       seed,
       seedPolicy,
       "engraving",
@@ -1093,6 +1227,7 @@ export function resolveAppearanceRecipeV3(
     recipe.gradient.scope,
     propertyRandomV3(
       recipe,
+      context,
       seed,
       seedPolicy,
       "gradient-scope",
@@ -1103,6 +1238,7 @@ export function resolveAppearanceRecipeV3(
     recipe.gradient.direction,
     propertyRandomV3(
       recipe,
+      context,
       seed,
       seedPolicy,
       "gradient-direction",
@@ -1111,13 +1247,23 @@ export function resolveAppearanceRecipeV3(
   );
   const isClassicGradient =
     material.family === "classic" && material.treatment === "gradient";
+  const isBalancedClassicSolid =
+    seedPolicy === "property-streams-r27" &&
+    material.family === "classic" &&
+    material.treatment === "solid";
   const textureScope =
-    isClassicGradient &&
     context.target !== "other" &&
-    gradientScope === "repeated"
+    form === "standard" &&
+    (isBalancedClassicSolid ||
+      (isClassicGradient && gradientScope === "repeated"))
       ? "face-local"
       : "die-wide";
-  if (textureScope === "face-local" && form !== "standard") {
+  if (
+    isClassicGradient &&
+    context.target !== "other" &&
+    gradientScope === "repeated" &&
+    form !== "standard"
+  ) {
     throw new Error(
       "Appearance repeated gradient requires standard polyhedral form",
     );
@@ -1126,6 +1272,7 @@ export function resolveAppearanceRecipeV3(
     recipe,
     propertySeedV3(
       recipe,
+      context,
       seed,
       seedPolicy,
       "lighting",
@@ -1149,7 +1296,7 @@ export function resolveAppearanceRecipeV3(
         generatorId:
           TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4[material.family],
         seed: deriveNamedSeedV4(
-          propertySeedV3(recipe, seed, seedPolicy, "texture", {
+          propertySeedV3(recipe, context, seed, seedPolicy, "texture", {
             material,
             ...(recipe.randomization === undefined
               ? {}

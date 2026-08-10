@@ -1434,6 +1434,150 @@ describe("resolveAppearanceRecipeV3", () => {
     expect(changed.appearance.engraving.fontId).toBe("syncopate");
   });
 
+  it("rerolls generated r27 palettes while keeping one palette across dice", () => {
+    for (const colors of [
+      { mode: "vivid-random-pair" as const },
+      { mode: "random-pair" as const },
+      { mode: "random" as const, primary: "#f4b82f" },
+    ]) {
+      const recipe = appearanceRecipeV3({
+        variation: "fixed",
+        varyBy: "die",
+        colors,
+      });
+      const first = resolveAppearanceRecipeV3(
+        recipe,
+        contextV3({ renderSeed: 100, target: "d4", dieIndex: 0 }),
+        "property-streams-r27",
+      );
+      const samePalette = resolveAppearanceRecipeV3(
+        recipe,
+        contextV3({ renderSeed: 100, target: "other", dieIndex: 8 }),
+        "property-streams-r27",
+      );
+      const reseeded = resolveAppearanceRecipeV3(
+        recipe,
+        contextV3({ renderSeed: 101, target: "d4", dieIndex: 0 }),
+        "property-streams-r27",
+      );
+
+      expect(samePalette.appearance.palette).toEqual(first.appearance.palette);
+      expect(reseeded.appearance.palette).not.toEqual(first.appearance.palette);
+      if (colors.mode === "random") {
+        expect(first.appearance.palette[0]).toBe(colors.primary);
+        expect(reseeded.appearance.palette[0]).toBe(colors.primary);
+      }
+      const [firstColor, secondColor] = first.appearance.palette.map((color) =>
+        [1, 3, 5].map((offset) =>
+          Number.parseInt(color.slice(offset, offset + 2), 16),
+        ),
+      );
+      if (firstColor === undefined || secondColor === undefined) {
+        throw new Error("Generated palette fixture is missing");
+      }
+      expect(
+        Math.hypot(
+          ...firstColor.map(
+            (channel, index) => channel - (secondColor[index] ?? channel),
+          ),
+        ),
+      ).toBeGreaterThan(colors.mode === "vivid-random-pair" ? 120 : 109);
+    }
+  });
+
+  it("keeps every r27 chosen random partner visibly distinct", () => {
+    const recipe = appearanceRecipeV3({
+      variation: "fixed",
+      colors: { mode: "random", primary: "#808080" },
+    });
+    for (let renderSeed = 0; renderSeed < 64; renderSeed += 1) {
+      const [primary, partner] = resolveAppearanceRecipeV3(
+        recipe,
+        contextV3({ renderSeed }),
+        "property-streams-r27",
+      ).appearance.palette.map((color) =>
+        [1, 3, 5].map((offset) =>
+          Number.parseInt(color.slice(offset, offset + 2), 16),
+        ),
+      );
+      if (primary === undefined || partner === undefined) {
+        throw new Error("Random partner fixture is missing");
+      }
+      expect(
+        Math.hypot(
+          ...primary.map(
+            (channel, index) => channel - (partner[index] ?? channel),
+          ),
+        ),
+      ).toBeGreaterThanOrEqual(110);
+    }
+  });
+
+  it("rerolls r27 texture placement without coupling it to font edits", () => {
+    const recipe = appearanceRecipeV3({
+      variation: "fixed",
+      colors: { mode: "palette", colors: ["#18cfd1", "#095b62"] },
+    });
+    const changedFont: AppearanceRecipeV3 = {
+      ...recipe,
+      font: { mode: "fixed", value: "syncopate" },
+    };
+    const first = resolveAppearanceRecipeV3(
+      recipe,
+      contextV3({ renderSeed: 200 }),
+      "property-streams-r27",
+    );
+    const fontOnly = resolveAppearanceRecipeV3(
+      changedFont,
+      contextV3({ renderSeed: 200 }),
+      "property-streams-r27",
+    );
+    const reseeded = resolveAppearanceRecipeV3(
+      recipe,
+      contextV3({ renderSeed: 201 }),
+      "property-streams-r27",
+    );
+
+    expect(fontOnly.appearance.engraving.fontId).toBe("syncopate");
+    expect({
+      ...fontOnly.appearance,
+      engraving: { ...fontOnly.appearance.engraving, fontId: "font" },
+    }).toEqual({
+      ...first.appearance,
+      engraving: { ...first.appearance.engraving, fontId: "font" },
+    });
+    expect(first.appearance.texture.scope).toBe("face-local");
+    expect(reseeded.appearance.palette).toEqual(first.appearance.palette);
+    expect(reseeded.appearance.texture.seed).not.toBe(
+      first.appearance.texture.seed,
+    );
+  });
+
+  it("gives r27 tonal palettes a visible shade endpoint", () => {
+    const resolved = resolveAppearanceRecipeV3(
+      appearanceRecipeV3({
+        variation: "fixed",
+        colors: { mode: "tonal", primary: "#18cfd1" },
+      }),
+      contextV3(),
+      "property-streams-r27",
+    );
+    const [primary, shade] = resolved.appearance.palette.map((color) =>
+      [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16)),
+    );
+    if (primary === undefined || shade === undefined) {
+      throw new Error("Tonal palette fixture is missing");
+    }
+
+    expect(
+      primary.reduce(
+        (distance, channel, index) =>
+          distance + Math.abs(channel - (shade[index] ?? channel)),
+        0,
+      ),
+    ).toBeGreaterThan(125);
+  });
+
   it("builds a valid r2 snapshot for every built-in and target", () => {
     const resultByTarget = {
       d4: 4,
