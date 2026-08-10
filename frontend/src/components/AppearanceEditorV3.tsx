@@ -173,23 +173,31 @@ export function AppearanceEditorV3({
   const tabRefs = React.useRef<
     Partial<Record<AppearanceEditorTab, HTMLButtonElement | null>>
   >({});
+  const baselineProfileRef = React.useRef(baselineProfile);
+  const draftProfileRef = React.useRef(draftProfile);
+  const nameDraftsRef = React.useRef(nameDrafts);
+  baselineProfileRef.current = baselineProfile;
+  draftProfileRef.current = draftProfile;
+  nameDraftsRef.current = nameDrafts;
 
   React.useEffect(() => {
+    const baseline = baselineProfileRef.current;
+    const draft = draftProfileRef.current;
     const localDesignChanged =
-      !sameValue(designState(draftProfile), designState(baselineProfile)) ||
-      hasDesignNameChanges(draftProfile, nameDrafts);
+      !sameValue(designState(draft), designState(baseline)) ||
+      hasDesignNameChanges(draft, nameDraftsRef.current);
     const localCameraChanged =
-      draftProfile.version === 4 &&
-      baselineProfile.version === 4 &&
-      !sameValue(draftProfile.diceView, baselineProfile.diceView);
+      draft.version === 4 &&
+      baseline.version === 4 &&
+      !sameValue(draft.diceView, baseline.diceView);
     const remoteDesignChanged = !sameValue(
       designState(resourceProfile),
-      designState(baselineProfile),
+      designState(baseline),
     );
     const remoteCameraChanged =
       resourceProfile.version === 4 &&
-      baselineProfile.version === 4 &&
-      !sameValue(resourceProfile.diceView, baselineProfile.diceView);
+      baseline.version === 4 &&
+      !sameValue(resourceProfile.diceView, baseline.diceView);
     if (
       (localDesignChanged && remoteDesignChanged) ||
       (localCameraChanged && remoteCameraChanged)
@@ -202,11 +210,11 @@ export function AppearanceEditorV3({
 
     const next = structuredClone(resourceProfile);
     if (localDesignChanged) {
-      next.designs = structuredClone(draftProfile.designs);
-      next.assignments = structuredClone(draftProfile.assignments);
+      next.designs = structuredClone(draft.designs);
+      next.assignments = structuredClone(draft.assignments);
     }
-    if (localCameraChanged && next.version === 4 && draftProfile.version === 4) {
-      next.diceView = structuredClone(draftProfile.diceView);
+    if (localCameraChanged && next.version === 4 && draft.version === 4) {
+      next.diceView = structuredClone(draft.diceView);
     }
     setDraftProfile(next);
     setBaselineProfile(structuredClone(resourceProfile));
