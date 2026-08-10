@@ -165,6 +165,34 @@ function revision2Request(
 }
 
 describe("RenderRequestV4", () => {
+  it("accepts percentile-ones labels only on d10 dice and preserves omitted labels", () => {
+    const d10 = {
+      ...die(),
+      target: "d10",
+      result: 10,
+      faceLabelSet: "percentile-ones",
+    };
+    expect(validateRenderRequestV4(requestWithDie(d10))).toEqual(
+      requestWithDie(d10),
+    );
+
+    const historicalD10 = { ...d10 };
+    delete (historicalD10 as { faceLabelSet?: unknown }).faceLabelSet;
+    expect(validateRenderRequestV4(requestWithDie(historicalD10))).toEqual(
+      requestWithDie(historicalD10),
+    );
+    expect(() =>
+      validateRenderRequestV4(
+        requestWithDie({ ...die(), faceLabelSet: "percentile-ones" }),
+      ),
+    ).toThrow("groups[0][0].faceLabelSet is invalid for d20");
+    expect(() =>
+      validateRenderRequestV4(
+        requestWithDie({ ...d10, faceLabelSet: "native" }),
+      ),
+    ).toThrow("groups[0][0].faceLabelSet is not supported");
+  });
+
   it("requires resolved camera angles only for the camera revision", () => {
     const legacy = validRequest();
     expect(validateRenderRequestV4(legacy)).toEqual(legacy);

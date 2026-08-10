@@ -19,6 +19,7 @@ import {
   type EngravingContrastEdgeV4,
   type EngravingFinishV4,
   type EngravingLayerRecipeV4,
+  type FaceLabelSetV4,
   type FontIdV4,
   type IconNameV4,
   type MaterialFamilyV4,
@@ -358,6 +359,7 @@ export type RenderCanonicalGeometryV4Options = {
   criticalEffect?: RenderCriticalEffectV4 | null;
   renderPolicy?: PolyhedralRenderPolicyV4;
   allowD20LabelClearanceShortfall?: boolean;
+  faceLabelSet?: FaceLabelSetV4;
   blankFaces?: boolean;
 };
 
@@ -1635,10 +1637,15 @@ function drawLabel(
   uniformInkDimensions: UniformInkDimensionsV4 | null = null,
   engravingFontScale = 1,
   allowD20LabelClearanceShortfall = false,
+  faceLabelSet?: FaceLabelSetV4,
 ): LabelPixelBoundsV4 | null {
-  const value = formatFaceLabelV4(target, label.value);
+  const value = formatFaceLabelV4(target, label.value, faceLabelSet);
   if (value === "") return null;
-  const hasOrientationMark = requiresOrientationMarkV4(target, label.value);
+  const hasOrientationMark = requiresOrientationMarkV4(
+    target,
+    label.value,
+    faceLabelSet,
+  );
   const rightX = label.right[0] * size;
   const rightY = label.right[1] * size;
   const downX = -label.up[0] * size;
@@ -1932,6 +1939,7 @@ function drawPolyhedralGeometry(
     criticalEffect,
     renderPolicy = "legacy",
     allowD20LabelClearanceShortfall = false,
+    faceLabelSet,
     blankFaces = false,
   }: RenderCanonicalGeometryV4Options,
   textureSize: number,
@@ -2113,6 +2121,7 @@ function drawPolyhedralGeometry(
         uniformInkDimensions,
         engravingFontScale,
         allowD20LabelClearanceShortfall,
+        faceLabelSet,
       );
     });
   });
@@ -3150,6 +3159,7 @@ type RenderGridAppearanceOptionsV4 = Pick<
   | "engravingFinish"
   | "engravingContrastEdge"
   | "engravingFontScale"
+  | "faceLabelSet"
   | "lighting"
   | "materialFamily"
   | "renderPolicy"
@@ -3175,6 +3185,9 @@ function gridAppearanceOptions(
   }
   if (die.engravingFontScale !== undefined) {
     options.engravingFontScale = die.engravingFontScale;
+  }
+  if (die.kind === "polyhedral" && die.faceLabelSet !== undefined) {
+    options.faceLabelSet = die.faceLabelSet;
   }
   if (die.lighting !== undefined) options.lighting = die.lighting;
   if (die.materialFamily !== undefined) {

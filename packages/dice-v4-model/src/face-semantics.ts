@@ -1,4 +1,4 @@
-import type { AppearanceTargetV4 } from "./types";
+import type { AppearanceTargetV4, FaceLabelSetV4 } from "./types";
 
 export type FaceLabelLayoutV4 =
   | "face-centered"
@@ -56,8 +56,15 @@ function requireFaceValue(target: AppearanceTargetV4, value: number): void {
 export function formatFaceLabelV4(
   target: AppearanceTargetV4,
   value: number,
+  faceLabelSet?: FaceLabelSetV4,
 ): string {
   requireFaceValue(target, value);
+  if (faceLabelSet !== undefined) {
+    if (target !== "d10") {
+      throw new Error("Face label set is invalid for target");
+    }
+    return value === 10 ? "0" : String(value);
+  }
   if (target === "percentile") return String(value).padStart(2, "0");
   if (target === "fudge") {
     if (value < 0) return "−";
@@ -70,8 +77,9 @@ export function formatFaceLabelV4(
 export function requiresOrientationMarkV4(
   target: AppearanceTargetV4,
   value: number,
+  faceLabelSet?: FaceLabelSetV4,
 ): boolean {
-  const label = formatFaceLabelV4(target, value);
+  const label = formatFaceLabelV4(target, value, faceLabelSet);
   return label === "6" || label === "9";
 }
 

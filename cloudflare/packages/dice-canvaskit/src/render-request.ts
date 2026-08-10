@@ -283,6 +283,9 @@ function geometryGridDie(
       ? {}
       : { engravingContrastEdge }),
     engravingFontScale,
+    ...(die.target === "d10" && die.faceLabelSet !== undefined
+      ? { faceLabelSet: die.faceLabelSet }
+      : {}),
     lighting,
     materialFamily: die.appearance.material.family,
     requiresLocalSeparation: die.appearance.requiresLocalSeparation,

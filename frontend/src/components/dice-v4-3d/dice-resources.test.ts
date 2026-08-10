@@ -1,4 +1,9 @@
 import {
+  D10_STANDARD_GEOMETRY_V4,
+  parsePublicRenderModelV4,
+  type RenderDieV4,
+} from "@dice-witch/dice-v4-model";
+import {
   BufferGeometry,
   DataTexture,
   Float32BufferAttribute,
@@ -7,12 +12,41 @@ import {
   Uint16BufferAttribute,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import fixture from "./fixtures/d20-r3.json";
+
+const createPhysicalLabelAtlasSourceV4 = vi.hoisted(() =>
+  vi.fn(
+    (physical: {
+      geometryId: string;
+      result: number;
+      labels: readonly unknown[];
+    }) => ({
+      canvas: {} as HTMLCanvasElement,
+      geometryId: physical.geometryId,
+      result: physical.result,
+      labelCount: physical.labels.length,
+      minimumVisibleLabelGapPixelsAt150: 1,
+      minimumVisibleLabelFontScale: 1,
+      resultLabelFontScale: 1,
+    }),
+  ),
+);
+
+vi.mock("./face-atlas", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./face-atlas")>()),
+  createPhysicalLabelAtlasSourceV4,
+}));
+
 import {
   cloneThreeDiceGroupV4,
   disposeThreeDiceResourcesV4,
   measureThreeDiceResourceOwnershipV4,
+  prepareThreeDiceV4,
   type ThreeDiceResourcesV4,
 } from "./dice-resources";
+
+const sourceDie = parsePublicRenderModelV4(fixture).groups[0]?.[0];
+if (sourceDie === undefined) throw new Error("Dice-resource fixture is empty");
 
 function createResources(): ThreeDiceResourcesV4 {
   const geometry = new BufferGeometry();
@@ -43,6 +77,39 @@ function createResources(): ThreeDiceResourcesV4 {
 }
 
 describe("V4 Three.js dice resource ownership", () => {
+  it("passes percentile ones labels only to d100 component atlases", () => {
+    const native: RenderDieV4 = {
+      ...sourceDie,
+      target: "d10",
+      result: 10,
+      form: "standard",
+    };
+    const percentileOnes: RenderDieV4 = {
+      ...native,
+      faceLabelSet: "percentile-ones",
+    };
+
+    prepareThreeDiceV4(
+      D10_STANDARD_GEOMETRY_V4,
+      percentileOnes,
+      "Liberation Sans",
+      "full-atlas",
+      "canvaskit-v4-r19",
+    );
+    expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[7]).toBe(
+      "percentile-ones",
+    );
+
+    prepareThreeDiceV4(
+      D10_STANDARD_GEOMETRY_V4,
+      native,
+      "Liberation Sans",
+      "full-atlas",
+      "canvaskit-v4-r19",
+    );
+    expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[7]).toBeUndefined();
+  });
+
   it("counts unique owned resources and their deterministic source bytes", () => {
     const resources = createResources();
 

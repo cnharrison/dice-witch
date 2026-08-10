@@ -952,9 +952,14 @@ function validateRenderSnapshotV4(
       }
       const target = renderTargetForRollDieV4(rollDie);
       const expectedIcons = modifierIconsForRollDieV4(rollDie.modifiers);
+      const invalidFaceLabelSet =
+        renderDie.target === "d10" &&
+        renderDie.faceLabelSet !== undefined &&
+        !rollDie.appearanceDieIdentity?.endsWith(":ones");
       if (
         renderDie.target !== target ||
         renderDie.result !== renderedRollFaceV4(rollDie) ||
+        invalidFaceLabelSet ||
         (target === "other" &&
           (renderDie.target !== "other" || renderDie.sides !== rollDie.sides)) ||
         renderDie.icons.length !== expectedIcons.length ||

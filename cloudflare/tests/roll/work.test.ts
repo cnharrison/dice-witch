@@ -1337,8 +1337,33 @@ describe("RollWork Durable Object", () => {
     };
 
     expect(outcome.outcomes[0]?.dice[1]?.rolled).toBe(0);
-    expect(record.renderRequest.groups[0]?.[1]?.result).toBe(10);
+    expect(record.renderRequest.groups[0]?.[1]).toMatchObject({
+      target: "d10",
+      result: 10,
+      faceLabelSet: "percentile-ones",
+    });
     expect(parseRecord(JSON.stringify(record))).toEqual(record);
+
+    const historical = structuredClone(record);
+    const historicalOnes = historical.renderRequest.groups[0]?.[1];
+    if (historicalOnes?.target !== "d10") {
+      throw new Error("Historical percentile ones die is missing");
+    }
+    delete historicalOnes.faceLabelSet;
+    expect(parseRecord(JSON.stringify(historical))).toEqual(historical);
+
+    const invalidContext = structuredClone(record);
+    const invalidOnes = invalidContext.outcome.outcomes[0]?.dice[1];
+    if (invalidOnes?.appearanceDieIdentity === undefined) {
+      throw new Error("Percentile ones identity is missing");
+    }
+    invalidOnes.appearanceDieIdentity = invalidOnes.appearanceDieIdentity.replace(
+      /:ones$/,
+      ":native",
+    );
+    expect(() => parseRecord(JSON.stringify(invalidContext))).toThrow(
+      "Stored roll work render snapshot does not match outcome",
+    );
   });
 
   it("persists the original physical face for out-of-range V4 results", () => {

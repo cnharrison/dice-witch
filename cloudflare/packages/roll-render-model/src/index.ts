@@ -619,6 +619,9 @@ function renderDieV4(
   return {
     target,
     result,
+    ...(onesIdentity === undefined
+      ? {}
+      : { faceLabelSet: "percentile-ones" as const }),
     form: resolved.form,
     appearance: renderAppearanceV4(resolved, die.modifiers),
     icons: iconsFor(die.modifiers),

@@ -12,6 +12,7 @@ import {
   type EngravingContrastEdgeV4,
   type EngravingLayerColorV4,
   type EngravingLayerRecipeV4,
+  type FaceLabelSetV4,
   type GeometryCameraV4,
   type GeometryIdV4,
   type LabelContainmentPointV4,
@@ -774,6 +775,7 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
   clipToTile: boolean,
   rendererRevision?: RendererRevisionV4,
   contrastEdge: EngravingContrastEdgeV4 | null = null,
+  faceLabelSet?: FaceLabelSetV4,
 ): PhysicalLabelAtlasSourceV4 {
   if (
     physical.geometryId !== projection.geometryId ||
@@ -820,13 +822,21 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
     const containment =
       projectedContainmentFrameV4(projection, camera, label) ??
       physicalContainmentFrameV4(face, label);
-    const text = formatFaceLabelV4(physical.target, label.value);
+    const text = formatFaceLabelV4(
+      physical.target,
+      label.value,
+      faceLabelSet,
+    );
     const drawLabel = (): FittedPhysicalLabelV4 =>
       drawPhysicalLabelV4(
         context,
         label,
         text,
-        requiresOrientationMarkV4(physical.target, label.value),
+        requiresOrientationMarkV4(
+          physical.target,
+          label.value,
+          faceLabelSet,
+        ),
         containment,
         labelIndex,
         engraving,
@@ -900,6 +910,7 @@ export function createPhysicalLabelAtlasSourceV4(
   fontFamily: string,
   rendererRevision?: RendererRevisionV4,
   contrastEdge: EngravingContrastEdgeV4 | null = null,
+  faceLabelSet?: FaceLabelSetV4,
 ): PhysicalLabelAtlasSourceV4 {
   return createPhysicalLabelAtlasSourceWithPolicyV4(
     physical,
@@ -910,6 +921,7 @@ export function createPhysicalLabelAtlasSourceV4(
     false,
     rendererRevision,
     contrastEdge,
+    faceLabelSet,
   );
 }
 
@@ -921,6 +933,7 @@ export function createTileClippedPhysicalLabelAtlasSourceV4(
   fontFamily: string,
   rendererRevision?: RendererRevisionV4,
   contrastEdge: EngravingContrastEdgeV4 | null = null,
+  faceLabelSet?: FaceLabelSetV4,
 ): PhysicalLabelAtlasSourceV4 {
   return createPhysicalLabelAtlasSourceWithPolicyV4(
     physical,
@@ -931,6 +944,7 @@ export function createTileClippedPhysicalLabelAtlasSourceV4(
     true,
     rendererRevision,
     contrastEdge,
+    faceLabelSet,
   );
 }
 

@@ -344,6 +344,8 @@ export type RenderViewV4 =
       labelRotationDegrees?: number;
     };
 
+export type FaceLabelSetV4 = "percentile-ones";
+
 type RenderDieV4Base = {
   result: number;
   form: RenderFormV4;
@@ -354,7 +356,11 @@ type RenderDieV4Base = {
 
 export type RenderDieV4 =
   | (RenderDieV4Base & {
-      target: Exclude<AppearanceTargetV4, "other">;
+      target: "d10";
+      faceLabelSet?: FaceLabelSetV4;
+    })
+  | (RenderDieV4Base & {
+      target: Exclude<AppearanceTargetV4, "d10" | "other">;
     })
   | (RenderDieV4Base & {
       target: "other";

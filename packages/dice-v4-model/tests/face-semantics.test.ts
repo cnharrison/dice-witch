@@ -24,6 +24,12 @@ describe("V4 face and label semantics", () => {
 
   it("formats numeric, percentile, and Fudge labels explicitly", () => {
     expect(formatFaceLabelV4("d10", 10)).toBe("10");
+    expect(formatFaceLabelV4("d10", 10, "percentile-ones")).toBe("0");
+    expect(
+      CANONICAL_FACE_VALUES_V4.d10.map((value) =>
+        formatFaceLabelV4("d10", value, "percentile-ones"),
+      ),
+    ).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
     expect(formatFaceLabelV4("percentile", 0)).toBe("00");
     expect(formatFaceLabelV4("percentile", 90)).toBe("90");
     expect(formatFaceLabelV4("fudge", -1)).toBe("−");
@@ -33,6 +39,9 @@ describe("V4 face and label semantics", () => {
     expect(() => formatFaceLabelV4("percentile", 85)).toThrow(
       "Percentile face value must be a multiple of 10 from 0 through 90",
     );
+    expect(() =>
+      formatFaceLabelV4("d20", 20, "percentile-ones"),
+    ).toThrow("Face label set is invalid for target");
   });
 
   it("marks only standalone six and nine labels", () => {

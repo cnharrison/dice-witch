@@ -535,6 +535,35 @@ describe("CanvasKit Render Request V4", () => {
     canvasKit = await loadCanvasKitV4();
   });
 
+  it("renders percentile ones labels without changing native d10 requests", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const native: RenderRequestV4 = {
+      version: 4,
+      rendererRevision: "canvaskit-v4-r1",
+      groups: [[die("d10", 10)]],
+    };
+    const percentileOnesDie = die("d10", 10);
+    if (percentileOnesDie.target !== "d10") {
+      throw new Error("Percentile ones fixture is not a d10");
+    }
+    const percentileOnes: RenderRequestV4 = {
+      ...native,
+      groups: [[{ ...percentileOnesDie, faceLabelSet: "percentile-ones" }]],
+    };
+
+    const nativeRender = await renderDiceRequestV4ToPng(native, createRenderer);
+    const percentileOnesRender = await renderDiceRequestV4ToPng(
+      percentileOnes,
+      createRenderer,
+    );
+
+    expect(percentileOnesRender.png).not.toEqual(nativeRender.png);
+    expect(await renderDiceRequestV4ToPng(native, createRenderer)).toMatchObject({
+      png: nativeRender.png,
+      rendererRevision: "canvaskit-v4-r1",
+    });
+  });
+
   it("validates and composes a mixed request with one final deterministic PNG", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
 

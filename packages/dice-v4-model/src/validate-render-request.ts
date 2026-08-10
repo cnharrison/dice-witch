@@ -94,7 +94,12 @@ import {
 
 const REQUEST_KEYS = ["groups", "rendererRevision", "version"] as const;
 const DIE_KEYS = ["appearance", "form", "icons", "result", "target"] as const;
+const DIE_WITH_LABEL_SET_KEYS = [...DIE_KEYS, "faceLabelSet"] as const;
 const DIE_WITH_VIEW_KEYS = [...DIE_KEYS, "view"] as const;
+const DIE_WITH_VIEW_AND_LABEL_SET_KEYS = [
+  ...DIE_WITH_LABEL_SET_KEYS,
+  "view",
+] as const;
 const OTHER_DIE_KEYS = [...DIE_KEYS, "sides"] as const;
 const OTHER_DIE_WITH_VIEW_KEYS = [...OTHER_DIE_KEYS, "view"] as const;
 const CAMERA_VIEW_KEYS = [
@@ -1102,13 +1107,17 @@ function parseDie(
   );
   const withView =
     rendererRevisionPolicyV4(rendererRevision).cameraAngles !== "legacy";
-  const expected = target === "other"
-    ? withView
-      ? OTHER_DIE_WITH_VIEW_KEYS
-      : OTHER_DIE_KEYS
-    : withView
-      ? DIE_WITH_VIEW_KEYS
-      : DIE_KEYS;
+  const withFaceLabelSet = Object.hasOwn(value, "faceLabelSet");
+  let expected: readonly string[];
+  if (target === "other") {
+    expected = withView ? OTHER_DIE_WITH_VIEW_KEYS : OTHER_DIE_KEYS;
+  } else if (withFaceLabelSet) {
+    expected = withView
+      ? DIE_WITH_VIEW_AND_LABEL_SET_KEYS
+      : DIE_WITH_LABEL_SET_KEYS;
+  } else {
+    expected = withView ? DIE_WITH_VIEW_KEYS : DIE_KEYS;
+  }
   if (!hasExactKeys(value, expected)) {
     throw new Error(`${path} has invalid fields`);
   }
@@ -1144,6 +1153,16 @@ function parseDie(
   }
   const form = parseForm(value.form, target, appearance.material, path);
   const result = parseResult(value.result, target, undefined, path);
+  const faceLabelSet = withFaceLabelSet
+    ? supportedValue(
+        value.faceLabelSet,
+        ["percentile-ones"] as const,
+        `${path}.faceLabelSet is not supported`,
+      )
+    : undefined;
+  if (faceLabelSet !== undefined && target !== "d10") {
+    throw new Error(`${path}.faceLabelSet is invalid for ${target}`);
+  }
   validateTextureScopeForDie(appearance, target, form);
   const view = parseView(
     value.view,
@@ -1159,6 +1178,7 @@ function parseDie(
     form,
     appearance,
     icons,
+    ...(faceLabelSet === undefined ? {} : { faceLabelSet }),
     ...(view === undefined ? {} : { view }),
   };
 }

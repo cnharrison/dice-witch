@@ -818,10 +818,15 @@ describe("buildRollRenderRequestV4", () => {
       request.groups[6]?.[1]?.appearance,
     );
     expect(request.groups[6]?.[0]?.form).toBe(request.groups[6]?.[1]?.form);
+    expect(request.groups[3]?.[0]).not.toHaveProperty("faceLabelSet");
+    expect(request.groups[6]?.[1]).toHaveProperty(
+      "faceLabelSet",
+      "percentile-ones",
+    );
     expect(validateRenderRequestV4(request)).toEqual(request);
   });
 
-  it("normalizes a percentile ones-die zero to physical d10 face ten", () => {
+  it("marks a percentile ones die with 0–9 labels while retaining physical face ten", () => {
     const roll: RollExecutionResult = {
       version: 1,
       seed: 0,
@@ -831,8 +836,18 @@ describe("buildRollRenderRequestV4", () => {
           output: "[100]",
           total: 100,
           dice: [
-            { sides: "%", rolled: 0, modifiers: [] },
-            { sides: 10, rolled: 0, modifiers: [] },
+            {
+              sides: "%",
+              rolled: 0,
+              modifiers: [],
+              appearanceDieIdentity: "roll:0:percentile",
+            },
+            {
+              sides: 10,
+              rolled: 0,
+              modifiers: [],
+              appearanceDieIdentity: "roll:0:ones",
+            },
           ],
         },
       ],
@@ -845,6 +860,12 @@ describe("buildRollRenderRequestV4", () => {
     );
 
     expect(request.groups[0]?.map(({ result }) => result)).toEqual([0, 10]);
+    expect(request.groups[0]?.[0]).not.toHaveProperty("faceLabelSet");
+    expect(request.groups[0]?.[1]).toMatchObject({
+      target: "d10",
+      result: 10,
+      faceLabelSet: "percentile-ones",
+    });
   });
 
   it("renders a penetrating zero contribution on its physical d2 face", () => {

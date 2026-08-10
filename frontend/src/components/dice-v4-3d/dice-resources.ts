@@ -252,6 +252,7 @@ export function prepareThreeDiceV4(
       fontFamily,
       rendererRevision,
       contrastEdge,
+      die.target === "d10" ? die.faceLabelSet : undefined,
     ),
   };
 }
