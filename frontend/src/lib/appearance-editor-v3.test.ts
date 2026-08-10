@@ -21,6 +21,7 @@ import {
   withAutomaticMaterialFormsV3,
   resolveAppearanceEditorSelectionV3,
   setGuildAppearanceModeV3,
+  updateAppearanceDesignV3,
   upsertAppearanceDesignV3,
 } from "./appearance-editor-v3";
 
@@ -198,7 +199,7 @@ describe("appearance editor V3 draft operations", () => {
     );
     expect(all.assignments).toEqual({
       all: { source: "builtin", id: "dice-witch" },
-      overrides: {},
+      overrides: { d20: { source: "builtin", id: "hex-appeal" } },
     });
   });
 
@@ -230,6 +231,32 @@ describe("appearance editor V3 draft operations", () => {
       source: "custom",
       id: designId,
     });
+  });
+
+  it("updates a shared design without changing its target assignments", () => {
+    const recipe = styleRecipe("pride");
+    const assigned = upsertAppearanceDesignV3(
+      personalProfile(),
+      "all",
+      { id: designId, name: "Shared", recipe },
+      APPEARANCE_CATALOG_V3,
+    );
+    const nextRecipe = structuredClone(recipe);
+    nextRecipe.colors = { mode: "tonal", primary: "#123456" };
+
+    const updated = updateAppearanceDesignV3(
+      assigned,
+      { id: designId, name: "Shared", recipe: nextRecipe },
+      APPEARANCE_CATALOG_V3,
+    );
+
+    expect(updated.assignments).toEqual(assigned.assignments);
+    expect(updated.designs[0]?.id).toBe(designId);
+    expect(updated.designs[0]?.recipe.colors).toEqual({
+      mode: "tonal",
+      primary: "#123456",
+    });
+    expect(assigned.designs[0]?.recipe.colors).toEqual(recipe.colors);
   });
 
   it("rejects design and material-option limits without mutating drafts", () => {

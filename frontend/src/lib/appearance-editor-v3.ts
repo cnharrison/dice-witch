@@ -327,7 +327,7 @@ export function applyAppearanceReferenceV3<
 ): Profile {
   const validated = validateProfile(profile, catalog);
   const assignments = target === "all"
-    ? { all: reference, overrides: {} }
+    ? { all: reference, overrides: validated.assignments.overrides }
     : {
         all: validated.assignments.all,
         overrides: {
@@ -376,6 +376,73 @@ export function upsertAppearanceDesignV3<
     validateProfile({ ...validated, designs } as Profile, catalog),
     target,
     { source: "custom", id: draft.id },
+    catalog,
+  );
+}
+
+export function updateAppearanceDesignV3<
+  Profile extends EditableAppearanceProfileV3,
+>(
+  profile: Profile,
+  draft: AppearanceDesignDraftV3,
+  catalog: AppearanceCatalogV3,
+): Profile {
+  const validated = validateProfile(profile, catalog);
+  if (!validated.designs.some(({ id }) => id === draft.id)) {
+    throw new Error(`Appearance custom design is missing: ${draft.id}`);
+  }
+  const assignedTargets: AppearanceEditorTargetV3[] = [];
+  if (
+    validated.assignments.all?.source === "custom" &&
+    validated.assignments.all.id === draft.id
+  ) {
+    assignedTargets.push("all");
+  } else {
+    for (const [target, reference] of Object.entries(
+      validated.assignments.overrides,
+    )) {
+      if (reference?.source === "custom" && reference.id === draft.id) {
+        assignedTargets.push(target as AppearanceTargetV4);
+      }
+    }
+  }
+  let recipe = parseAppearanceRecipeV3(draft.recipe);
+  for (const assignedTarget of assignedTargets) {
+    recipe = assertAppearanceRecipeSupportsTargetV3(recipe, assignedTarget);
+  }
+  return validateProfile(
+    {
+      ...validated,
+      designs: validated.designs.map((design) =>
+        design.id === draft.id
+          ? { id: draft.id, name: draft.name, recipe }
+          : design,
+      ),
+    } as Profile,
+    catalog,
+  );
+}
+
+export function renameAppearanceDesignV3<
+  Profile extends EditableAppearanceProfileV3,
+>(
+  profile: Profile,
+  designId: string,
+  name: string,
+  catalog: AppearanceCatalogV3,
+): Profile {
+  const validated = validateProfile(profile, catalog);
+  const design = validated.designs.find(({ id }) => id === designId);
+  if (design === undefined) {
+    throw new Error(`Appearance custom design is missing: ${designId}`);
+  }
+  return validateProfile(
+    {
+      ...validated,
+      designs: validated.designs.map((candidate) =>
+        candidate.id === designId ? { ...candidate, name } : candidate,
+      ),
+    } as Profile,
     catalog,
   );
 }

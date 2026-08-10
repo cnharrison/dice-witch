@@ -5,7 +5,6 @@ import { AppearanceRecipeControlsV3 } from "@/components/AppearanceRecipeControl
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { AppearanceTargetPickerV3 } from "@/components/AppearanceTargetPickerV3";
 import { SavedAppearanceDesigns } from "@/components/SavedAppearanceDesigns";
-import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +19,9 @@ import {
   createEmptyAppearanceProfileV4,
   deleteAppearanceDesignV3,
   nextPresetEditNameV3,
+  renameAppearanceDesignV3,
   resolveAppearanceEditorSelectionV3,
+  updateAppearanceDesignV3,
   upsertAppearanceDesignV3,
   withAutomaticMaterialFormsV3,
   type AppearanceEditorTargetV3,
@@ -33,10 +34,10 @@ import {
 } from "@/types/appearance";
 import type {
   AppearanceRecipeV3,
+  AppearanceTargetV4,
   CustomAppearanceDesignV3,
-  DiceViewPreferencesV4 as DiceViewPreferencesValueV4,
 } from "@dice-witch/dice-v4-model";
-import { Check, Save } from "lucide-react";
+import { Save } from "lucide-react";
 import * as React from "react";
 
 type AppearanceEditorV3Props = {
@@ -47,10 +48,17 @@ type AppearanceEditorV3Props = {
   isSaving: boolean;
   version?: 3 | 4;
   settingsPanel?: React.ReactNode;
-  onSave(profile: EditableAppearanceProfileV3): Promise<void>;
+  onDirtyChange?(dirty: boolean): void;
+  onSave(profile: EditableAppearanceProfileV3, revision: number): Promise<void>;
 };
 
 type AppearanceEditorTab = "design" | "camera" | "server";
+
+type DeletionNotice = Readonly<{
+  id: string;
+  name: string;
+  targets: readonly string[];
+}>;
 
 const TAB_LABELS: Readonly<Record<AppearanceEditorTab, string>> = {
   design: "Design",
@@ -78,6 +86,46 @@ function errorMessage(error: unknown): string {
   }
 }
 
+function designState(profile: EditableAppearanceProfileV3): unknown {
+  return { designs: profile.designs, assignments: profile.assignments };
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function hasDesignNameChanges(
+  profile: EditableAppearanceProfileV3,
+  nameDrafts: Readonly<Record<string, string>>,
+): boolean {
+  return Object.entries(nameDrafts).some(([id, name]) =>
+    profile.designs.some((design) => design.id === id && design.name !== name),
+  );
+}
+
+function designTargets(
+  profile: EditableAppearanceProfileV3,
+  designId: string,
+): string[] {
+  if (
+    profile.assignments.all?.source === "custom" &&
+    profile.assignments.all.id === designId
+  ) {
+    return [APPEARANCE_TARGET_LABELS.all];
+  }
+  return Object.entries(profile.assignments.overrides)
+    .filter(([, reference]) =>
+      reference?.source === "custom" && reference.id === designId,
+    )
+    .map(([target]) => APPEARANCE_TARGET_LABELS[target as AppearanceTargetV4]);
+}
+
+function targetList(targets: readonly string[]): string {
+  if (targets.length === 0) return "no currently assigned targets";
+  if (targets.length === 1) return targets[0] ?? "";
+  return `${targets.slice(0, -1).join(", ")} and ${targets.at(-1)}`;
+}
+
 export function AppearanceEditorV3({
   catalog,
   resource,
@@ -86,6 +134,7 @@ export function AppearanceEditorV3({
   isSaving,
   version = 3,
   settingsPanel,
+  onDirtyChange,
   onSave,
 }: AppearanceEditorV3Props) {
   const resourceProfile = React.useMemo(
@@ -96,59 +145,131 @@ export function AppearanceEditorV3({
         : createEmptyAppearanceProfileV3(kind)),
     [kind, resource.profile, version],
   );
-  const [currentProfile, setCurrentProfile] =
-    React.useState<EditableAppearanceProfileV3>(resourceProfile);
-  const [diceViewDraft, setDiceViewDraft] =
-    React.useState<DiceViewPreferencesValueV4 | null>(
-      resourceProfile.version === 4
-        ? structuredClone(resourceProfile.diceView)
-        : null,
+  const [baselineProfile, setBaselineProfile] =
+    React.useState<EditableAppearanceProfileV3>(() =>
+      structuredClone(resourceProfile),
     );
-  const diceViewDirtyRef = React.useRef(false);
-  const initial = resolveAppearanceEditorSelectionV3(
-    currentProfile,
-    "all",
-    catalog,
-  );
-  const [target, setTarget] =
-    React.useState<AppearanceEditorTargetV3>("all");
+  const [baselineRevision, setBaselineRevision] = React.useState(resource.revision);
+  const [draftProfile, setDraftProfile] =
+    React.useState<EditableAppearanceProfileV3>(() =>
+      structuredClone(resourceProfile),
+    );
+  const [target, setTarget] = React.useState<AppearanceEditorTargetV3>("all");
   const [previewTarget, setPreviewTarget] =
     React.useState<AppearanceEditorTargetV3>("all");
-  const [recipe, setRecipe] = React.useState(initial.recipe);
-  const [selectedStyleId, setSelectedStyleId] = React.useState(initial.styleId);
-  const [editingDesignId, setEditingDesignId] = React.useState<string | null>(
-    initial.designId,
+  const [editingDesignId, setEditingDesignId] =
+    React.useState<string | null>(null);
+  const [nameDrafts, setNameDrafts] = React.useState<Record<string, string>>({});
+  const [basedOnStyles, setBasedOnStyles] = React.useState<
+    Record<string, string>
+  >({});
+  const [deletionNotices, setDeletionNotices] = React.useState<DeletionNotice[]>(
+    [],
   );
-  const [designName, setDesignName] = React.useState(initial.name);
-  const [automaticDesignName, setAutomaticDesignName] = React.useState(
-    initial.styleId !== "",
-  );
-  const [status, setStatus] = React.useState<string | null>(null);
-  const [presetState, setPresetState] = React.useState<
-    "idle" | "applying" | "applied"
-  >("idle");
-  const [customizing, setCustomizing] = React.useState(false);
   const [personalDesignId, setPersonalDesignId] = React.useState("");
-  const [activeTab, setActiveTab] =
-    React.useState<AppearanceEditorTab>("design");
+  const [status, setStatus] = React.useState<string | null>(null);
+  const [activeTab, setActiveTab] = React.useState<AppearanceEditorTab>("design");
   const [previewExpanded, setPreviewExpanded] = React.useState(true);
   const tabRefs = React.useRef<
     Partial<Record<AppearanceEditorTab, HTMLButtonElement | null>>
   >({});
 
   React.useEffect(() => {
-    setCurrentProfile(resourceProfile);
-    if (resourceProfile.version === 4 && !diceViewDirtyRef.current) {
-      setDiceViewDraft(structuredClone(resourceProfile.diceView));
+    const localDesignChanged =
+      !sameValue(designState(draftProfile), designState(baselineProfile)) ||
+      hasDesignNameChanges(draftProfile, nameDrafts);
+    const localCameraChanged =
+      draftProfile.version === 4 &&
+      baselineProfile.version === 4 &&
+      !sameValue(draftProfile.diceView, baselineProfile.diceView);
+    const remoteDesignChanged = !sameValue(
+      designState(resourceProfile),
+      designState(baselineProfile),
+    );
+    const remoteCameraChanged =
+      resourceProfile.version === 4 &&
+      baselineProfile.version === 4 &&
+      !sameValue(resourceProfile.diceView, baselineProfile.diceView);
+    if (
+      (localDesignChanged && remoteDesignChanged) ||
+      (localCameraChanged && remoteCameraChanged)
+    ) {
+      setStatus(
+        "This appearance changed elsewhere. Cancel to load the newer settings before saving again.",
+      );
+      return;
     }
+
+    const next = structuredClone(resourceProfile);
+    if (localDesignChanged) {
+      next.designs = structuredClone(draftProfile.designs);
+      next.assignments = structuredClone(draftProfile.assignments);
+    }
+    if (localCameraChanged && next.version === 4 && draftProfile.version === 4) {
+      next.diceView = structuredClone(draftProfile.diceView);
+    }
+    setDraftProfile(next);
+    setBaselineProfile(structuredClone(resourceProfile));
+    setBaselineRevision(resource.revision);
   }, [resource.revision, resourceProfile]);
 
-  const diceViewDirty =
-    currentProfile.version === 4 &&
-    diceViewDraft !== null &&
-    JSON.stringify(currentProfile.diceView) !== JSON.stringify(diceViewDraft);
-  diceViewDirtyRef.current = diceViewDirty;
-  const hasCameraTab = currentProfile.version === 4;
+  React.useEffect(() => {
+    if (
+      personalDesignId !== "" &&
+      !personalDesigns.some(({ id }) => id === personalDesignId)
+    ) {
+      setPersonalDesignId("");
+    }
+  }, [personalDesignId, personalDesigns]);
+
+  const assignedSelection = resolveAppearanceEditorSelectionV3(
+    draftProfile,
+    target,
+    catalog,
+  );
+  const editingDesign = editingDesignId === null
+    ? undefined
+    : draftProfile.designs.find(({ id }) => id === editingDesignId);
+  const activeSelection = editingDesign === undefined
+    ? assignedSelection
+    : {
+        recipe: editingDesign.recipe,
+        styleId: "",
+        designId: editingDesign.id,
+        name: editingDesign.name,
+      };
+  const previewSelection = resolveAppearanceEditorSelectionV3(
+    draftProfile,
+    previewTarget,
+    catalog,
+  );
+  const previewRecipe =
+    editingDesign !== undefined && previewTarget === target
+      ? editingDesign.recipe
+      : previewSelection.recipe;
+  const activeReference = appearanceAssignmentForV3(draftProfile, target);
+  const activeDesign = activeSelection.designId === null
+    ? undefined
+    : draftProfile.designs.find(({ id }) => id === activeSelection.designId);
+  const assignedDesignName = assignedSelection.designId === null
+    ? assignedSelection.name
+    : nameDrafts[assignedSelection.designId] ?? assignedSelection.name;
+  const activeDesignName = activeDesign === undefined
+    ? ""
+    : nameDrafts[activeDesign.id] ?? activeDesign.name;
+  const displayedDesigns = draftProfile.designs.map((design) => ({
+    ...design,
+    name: nameDrafts[design.id] ?? design.name,
+  }));
+  const hasNameChanges = hasDesignNameChanges(draftProfile, nameDrafts);
+  const designDirty =
+    !sameValue(designState(draftProfile), designState(baselineProfile)) ||
+    hasNameChanges;
+  const cameraDirty =
+    draftProfile.version === 4 &&
+    baselineProfile.version === 4 &&
+    !sameValue(draftProfile.diceView, baselineProfile.diceView);
+  const hasCameraTab = draftProfile.version === 4;
   const hasServerTab = settingsPanel !== undefined;
   const editorTabs: readonly AppearanceEditorTab[] = [
     "design",
@@ -156,13 +277,26 @@ export function AppearanceEditorV3({
     ...(hasServerTab ? (["server"] as const) : []),
   ];
   const unsavedDrafts = [
-    ...(customizing ? ["Design"] : []),
-    ...(diceViewDirty ? ["Camera"] : []),
+    ...(designDirty ? ["Design"] : []),
+    ...(cameraDirty ? ["Camera"] : []),
   ];
   const hasUnsavedChanges = unsavedDrafts.length > 0;
-  const tabHasUnsavedChanges = (tab: AppearanceEditorTab): boolean =>
-    (tab === "design" && customizing) ||
-    (tab === "camera" && diceViewDirty);
+  const hasTargetOverride =
+    target !== "all" && draftProfile.assignments.overrides[target] !== undefined;
+
+  React.useEffect(() => {
+    onDirtyChange?.(hasUnsavedChanges);
+  }, [hasUnsavedChanges, onDirtyChange]);
+
+  React.useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventUnload);
+    return () => window.removeEventListener("beforeunload", preventUnload);
+  }, [hasUnsavedChanges]);
 
   React.useEffect(() => {
     if (
@@ -199,147 +333,116 @@ export function AppearanceEditorV3({
     activateTab(nextTab, true);
   };
 
-  const withDiceViewDraft = <Profile extends EditableAppearanceProfileV3>(
-    profile: Profile,
-  ): Profile => {
-    if (profile.version !== 4 || diceViewDraft === null) return profile;
-    return { ...profile, diceView: structuredClone(diceViewDraft) } as Profile;
-  };
-
-  React.useEffect(() => {
-    if (
-      personalDesignId !== "" &&
-      !personalDesigns.some(({ id }) => id === personalDesignId)
-    ) {
-      setPersonalDesignId("");
-    }
-  }, [personalDesignId, personalDesigns]);
-
-  const saveProfile = async (
-    profile: EditableAppearanceProfileV3,
-    message: string | null,
-  ): Promise<boolean> => {
-    setStatus(null);
-    try {
-      await onSave(profile);
-      setCurrentProfile(profile);
-      setStatus(message);
-      return true;
-    } catch (error) {
-      setStatus(errorMessage(error));
-      return false;
-    }
-  };
-
-  const loadSelection = (
-    profile: EditableAppearanceProfileV3,
-    nextTarget: AppearanceEditorTargetV3,
-  ) => {
-    const selection = resolveAppearanceEditorSelectionV3(
-      profile,
-      nextTarget,
-      catalog,
-    );
+  const selectTarget = (nextTarget: AppearanceEditorTargetV3) => {
     setTarget(nextTarget);
     setPreviewTarget(nextTarget);
-    setRecipe(selection.recipe);
-    setSelectedStyleId(selection.styleId);
-    setEditingDesignId(selection.designId);
-    setDesignName(selection.name);
-    setAutomaticDesignName(selection.styleId !== "");
-    setCustomizing(false);
-  };
-
-  const selectTarget = (nextTarget: AppearanceEditorTargetV3) => {
-    loadSelection(currentProfile, nextTarget);
+    setEditingDesignId(null);
     setStatus(null);
-    setPresetState("idle");
   };
 
-  const selectStyle = async (styleId: string) => {
-    setPresetState("applying");
-    const profile = applyAppearanceReferenceV3(
-      currentProfile,
-      target,
-      { source: "builtin", id: styleId },
-      catalog,
-    );
-    const saved = await saveProfile(profile, null);
-    if (saved) {
-      loadSelection(profile, target);
-      setPresetState("applied");
-    } else {
-      setPresetState("idle");
+  const removeDraftMetadata = (designId: string) => {
+    setNameDrafts((drafts) => {
+      const updated = { ...drafts };
+      delete updated[designId];
+      return updated;
+    });
+    setBasedOnStyles((styles) => {
+      const updated = { ...styles };
+      delete updated[designId];
+      return updated;
+    });
+  };
+
+  const removeReplacedDraftDesign = (
+    profile: EditableAppearanceProfileV3,
+    previousDesignId: string | null,
+  ): EditableAppearanceProfileV3 | null => {
+    if (
+      previousDesignId === null ||
+      baselineProfile.designs.some(({ id }) => id === previousDesignId) ||
+      designTargets(profile, previousDesignId).length > 0
+    ) {
+      return profile;
     }
+    const design = draftProfile.designs.find(({ id }) => id === previousDesignId);
+    const designName = design === undefined
+      ? null
+      : nameDrafts[design.id] ?? design.name;
+    if (
+      designName !== null &&
+      !window.confirm(`Discard the unsaved custom design ${designName}?`)
+    ) {
+      return null;
+    }
+    removeDraftMetadata(previousDesignId);
+    return deleteAppearanceDesignV3(profile, previousDesignId, catalog);
   };
 
-  const setCustomRecipe = (next: AppearanceRecipeV3) => {
-    setPresetState("idle");
+  const selectStyle = (styleId: string) => {
     try {
-      const editingPreset = selectedStyleId !== "";
-      setRecipe(beginAppearanceRecipeEditV3(recipe, next, editingPreset));
-      if (editingPreset && automaticDesignName) {
-        setDesignName(
-          nextPresetEditNameV3(currentProfile.designs),
-        );
-      }
-      setAutomaticDesignName(false);
-      setSelectedStyleId("");
+      const next = removeReplacedDraftDesign(
+        applyAppearanceReferenceV3(
+          draftProfile,
+          target,
+          { source: "builtin", id: styleId },
+          catalog,
+        ),
+        activeSelection.designId,
+      );
+      if (next === null) return;
+      setDraftProfile(next);
+      setEditingDesignId(null);
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
     }
   };
 
-  const saveCustomDesign = async () => {
-    const name = designName.trim();
-    const id = editingDesignId ?? crypto.randomUUID();
-    let profile: EditableAppearanceProfileV3;
+  const setCustomRecipe = (nextRecipe: AppearanceRecipeV3) => {
+    if (sameValue(activeSelection.recipe, nextRecipe)) return;
     try {
-      profile = withDiceViewDraft(
-        upsertAppearanceDesignV3(
-          currentProfile,
-          target,
-          { id, name, recipe },
-          catalog,
-        ),
-      );
+      if (activeDesign === undefined) {
+        const id = crypto.randomUUID();
+        const name = nextPresetEditNameV3(draftProfile.designs);
+        const recipe = beginAppearanceRecipeEditV3(
+          activeSelection.recipe,
+          nextRecipe,
+          true,
+        );
+        setDraftProfile(
+          upsertAppearanceDesignV3(
+            draftProfile,
+            target,
+            { id, name, recipe },
+            catalog,
+          ),
+        );
+        setEditingDesignId(id);
+        setBasedOnStyles((styles) => ({
+          ...styles,
+          [id]: activeSelection.name,
+        }));
+      } else {
+        setDraftProfile(
+          updateAppearanceDesignV3(
+            draftProfile,
+            {
+              id: activeDesign.id,
+              name: activeDesign.name,
+              recipe: beginAppearanceRecipeEditV3(
+                activeSelection.recipe,
+                nextRecipe,
+                false,
+              ),
+            },
+            catalog,
+          ),
+        );
+      }
+      setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
-      return;
     }
-    const saved = await saveProfile(
-      profile,
-      `${name} was saved and applied to ${APPEARANCE_TARGET_LABELS[target]}.`,
-    );
-    if (!saved) return;
-    setEditingDesignId(id);
-    setSelectedStyleId("");
-    setDesignName(name);
-    setAutomaticDesignName(false);
-    setCustomizing(false);
-    diceViewDirtyRef.current = false;
-    if (profile.version === 4) {
-      setDiceViewDraft(structuredClone(profile.diceView));
-    }
-  };
-
-  const saveDiceView = async () => {
-    const profile = withDiceViewDraft(currentProfile);
-    const saved = await saveProfile(profile, "Dice view settings were saved.");
-    if (!saved) return;
-    diceViewDirtyRef.current = false;
-    if (profile.version === 4) {
-      setDiceViewDraft(structuredClone(profile.diceView));
-    }
-  };
-
-  const cancelDraft = () => {
-    loadSelection(currentProfile, target);
-    if (currentProfile.version === 4) {
-      setDiceViewDraft(structuredClone(currentProfile.diceView));
-    }
-    diceViewDirtyRef.current = false;
   };
 
   const copyPersonalDesign = () => {
@@ -349,16 +452,22 @@ export function AppearanceEditorV3({
       return;
     }
     try {
-      const next = assertAppearanceRecipeSupportsTargetV3(
-        design.recipe,
-        target,
+      const recipe = withAutomaticMaterialFormsV3(
+        assertAppearanceRecipeSupportsTargetV3(design.recipe, target),
       );
-      setRecipe(withAutomaticMaterialFormsV3(next));
-      setSelectedStyleId("");
-      setEditingDesignId(null);
-      setDesignName(design.name);
-      setAutomaticDesignName(false);
-      setCustomizing(true);
+      const id = crypto.randomUUID();
+      const next = removeReplacedDraftDesign(
+        upsertAppearanceDesignV3(
+          draftProfile,
+          target,
+          { id, name: design.name, recipe },
+          catalog,
+        ),
+        activeSelection.designId,
+      );
+      if (next === null) return;
+      setDraftProfile(next);
+      setEditingDesignId(id);
       setStatus(
         `${design.name} was copied into this server draft. Save & apply to keep the detached copy.`,
       );
@@ -367,82 +476,127 @@ export function AppearanceEditorV3({
     }
   };
 
-  const applySavedDesign = async (designId: string) => {
-    const design = currentProfile.designs.find(({ id }) => id === designId);
+  const applySavedDesign = (designId: string) => {
+    const design = draftProfile.designs.find(({ id }) => id === designId);
     if (design === undefined) return;
     try {
       assertAppearanceRecipeSupportsTargetV3(design.recipe, target);
-      const profile = applyAppearanceReferenceV3(
-        currentProfile,
-        target,
-        { source: "custom", id: design.id },
-        catalog,
-      );
-      const saved = await saveProfile(
-        profile,
-        `${design.name} now applies to ${APPEARANCE_TARGET_LABELS[target]}.`,
-      );
-      if (saved) loadSelection(profile, target);
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
-  };
-
-  const editDesign = (designId: string) => {
-    const design = currentProfile.designs.find(({ id }) => id === designId);
-    if (design === undefined) return;
-    try {
-      setRecipe(
-        withAutomaticMaterialFormsV3(
-          assertAppearanceRecipeSupportsTargetV3(design.recipe, target),
+      const next = removeReplacedDraftDesign(
+        applyAppearanceReferenceV3(
+          draftProfile,
+          target,
+          { source: "custom", id: design.id },
+          catalog,
         ),
+        activeSelection.designId,
       );
-      setEditingDesignId(design.id);
-      setSelectedStyleId("");
-      setDesignName(design.name);
-      setAutomaticDesignName(false);
-      setCustomizing(true);
+      if (next === null) return;
+      setDraftProfile(next);
+      setEditingDesignId(null);
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
     }
   };
 
-  const deleteDesign = async (designId: string) => {
-    const design = currentProfile.designs.find(({ id }) => id === designId);
+  const editDesign = (designId: string) => {
+    if (!draftProfile.designs.some(({ id }) => id === designId)) return;
+    setEditingDesignId(designId);
+    setStatus(null);
+  };
+
+  const deleteDesign = (designId: string) => {
+    const design = draftProfile.designs.find(({ id }) => id === designId);
     if (design === undefined) return;
-    const profile = deleteAppearanceDesignV3(
-      currentProfile,
-      designId,
-      catalog,
-    );
-    const saved = await saveProfile(profile, `${design.name} was deleted.`);
-    if (saved && editingDesignId === designId) loadSelection(profile, target);
+    const targets = designTargets(draftProfile, designId);
+    try {
+      setDraftProfile(deleteAppearanceDesignV3(draftProfile, designId, catalog));
+      setDeletionNotices((notices) => [
+        ...notices.filter(({ id }) => id !== designId),
+        { id: designId, name: design.name, targets },
+      ]);
+      removeDraftMetadata(designId);
+      if (editingDesignId === designId) setEditingDesignId(null);
+      setStatus(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
   };
 
-  const clearTargetOverride = async () => {
+  const clearTargetOverride = () => {
     if (target === "all") return;
-    const profile = clearAppearanceTargetOverrideV3(
-      currentProfile,
-      target,
-      catalog,
-    );
-    const saved = await saveProfile(
-      profile,
-      `${APPEARANCE_TARGET_LABELS[target]} now inherits the All dice design.`,
-    );
-    if (saved) loadSelection(profile, target);
+    try {
+      setDraftProfile(
+        clearAppearanceTargetOverrideV3(draftProfile, target, catalog),
+      );
+      setStatus(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
   };
 
-  const activeReference = appearanceAssignmentForV3(currentProfile, target);
-  const activeSelection = resolveAppearanceEditorSelectionV3(
-    currentProfile,
-    target,
-    catalog,
-  );
-  const hasTargetOverride =
-    target !== "all" &&
-    currentProfile.assignments.overrides[target] !== undefined;
+  const materializeNames = (): EditableAppearanceProfileV3 => {
+    let profile = draftProfile;
+    for (const [id, name] of Object.entries(nameDrafts)) {
+      if (
+        profile.designs.some(
+          (design) => design.id === id && design.name !== name,
+        )
+      ) {
+        profile = renameAppearanceDesignV3(profile, id, name.trim(), catalog);
+      }
+    }
+    return profile;
+  };
+
+  const saveDraft = async () => {
+    setStatus(null);
+    let profile: EditableAppearanceProfileV3;
+    try {
+      profile = materializeNames();
+    } catch (error) {
+      setStatus(errorMessage(error));
+      return;
+    }
+    try {
+      await onSave(profile, baselineRevision);
+      setBaselineProfile(structuredClone(profile));
+      setDraftProfile(structuredClone(profile));
+      setEditingDesignId(null);
+      setNameDrafts({});
+      setBasedOnStyles({});
+      setDeletionNotices([]);
+      setStatus("Appearance changes were saved and applied.");
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const cancelDraft = () => {
+    const latestProfile =
+      resource.revision === baselineRevision ? baselineProfile : resourceProfile;
+    setBaselineProfile(structuredClone(latestProfile));
+    setBaselineRevision(resource.revision);
+    setDraftProfile(structuredClone(latestProfile));
+    setEditingDesignId(null);
+    setNameDrafts({});
+    setBasedOnStyles({});
+    setDeletionNotices([]);
+    setStatus(null);
+  };
+
+  const changedSharedDesigns = draftProfile.designs.flatMap((design) => {
+    const baseline = baselineProfile.designs.find(({ id }) => id === design.id);
+    const displayedName = nameDrafts[design.id] ?? design.name;
+    if (
+      baseline === undefined ||
+      (sameValue(baseline.recipe, design.recipe) && baseline.name === displayedName)
+    ) {
+      return [];
+    }
+    const targets = designTargets(draftProfile, design.id);
+    return [`Changes to ${displayedName} affect: ${targetList(targets)}.`];
+  });
 
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
@@ -454,14 +608,14 @@ export function AppearanceEditorV3({
         />
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <p>
-            Current design: {activeSelection.name}
+            Current design: {assignedDesignName}
             {activeReference === null ? " (default)" : ""}
           </p>
           {hasTargetOverride && (
             <button
               type="button"
               disabled={isSaving}
-              onClick={() => void clearTargetOverride()}
+              onClick={clearTargetOverride}
               className="font-semibold text-brand underline-offset-2 hover:underline disabled:opacity-50"
             >
               Use All dice design
@@ -487,8 +641,10 @@ export function AppearanceEditorV3({
         >
           <AppearancePreviewPaneV3
             target={previewTarget}
-            recipe={recipe}
-            {...(diceViewDraft === null ? {} : { diceView: diceViewDraft })}
+            recipe={previewRecipe}
+            {...(draftProfile.version === 4
+              ? { diceView: draftProfile.diceView }
+              : {})}
           />
         </div>
       </aside>
@@ -499,38 +655,43 @@ export function AppearanceEditorV3({
           aria-label="Appearance editor"
           className="flex gap-1 overflow-x-auto border-b"
         >
-          {editorTabs.map((tab) => (
-            <button
-              key={tab}
-              ref={(element) => {
-                tabRefs.current[tab] = element;
-              }}
-              id={`${kind}-${tab}-tab`}
-              type="button"
-              role="tab"
-              aria-controls={`${kind}-${tab}-panel`}
-              aria-selected={activeTab === tab}
-              tabIndex={activeTab === tab ? 0 : -1}
-              onClick={() => activateTab(tab)}
-              onKeyDown={(event) => handleTabKeyDown(event, tab)}
-              className={`min-h-11 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                activeTab === tab
-                  ? "border-brand text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {TAB_LABELS[tab]}
-              {tabHasUnsavedChanges(tab) && (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="ml-2 inline-block h-2 w-2 rounded-full bg-brand"
-                  />
-                  <span className="sr-only">, unsaved changes</span>
-                </>
-              )}
-            </button>
-          ))}
+          {editorTabs.map((tab) => {
+            const dirty =
+              (tab === "design" && designDirty) ||
+              (tab === "camera" && cameraDirty);
+            return (
+              <button
+                key={tab}
+                ref={(element) => {
+                  tabRefs.current[tab] = element;
+                }}
+                id={`${kind}-${tab}-tab`}
+                type="button"
+                role="tab"
+                aria-controls={`${kind}-${tab}-panel`}
+                aria-selected={activeTab === tab}
+                tabIndex={activeTab === tab ? 0 : -1}
+                onClick={() => activateTab(tab)}
+                onKeyDown={(event) => handleTabKeyDown(event, tab)}
+                className={`min-h-11 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                  activeTab === tab
+                    ? "border-brand text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {TAB_LABELS[tab]}
+                {dirty && (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className="ml-2 inline-block h-2 w-2 rounded-full bg-brand"
+                    />
+                    <span className="sr-only">, unsaved changes</span>
+                  </>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div
@@ -572,66 +733,77 @@ export function AppearanceEditorV3({
             </div>
           )}
 
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-            <AppearancePresetGalleryV3
-              catalog={catalog}
-              selectedStyleId={selectedStyleId}
-              disabled={isSaving || presetState === "applying" || customizing}
-              onSelect={(styleId) => void selectStyle(styleId)}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSaving || presetState === "applying" || customizing}
-              onClick={() => {
-                setPresetState("idle");
-                setRecipe(withAutomaticMaterialFormsV3(recipe));
-                setCustomizing(true);
-                setStatus(null);
-              }}
-            >
-              Customize
-            </Button>
-          </div>
+          <AppearancePresetGalleryV3
+            catalog={catalog}
+            selectedStyleId={activeSelection.styleId}
+            disabled={isSaving}
+            onSelect={selectStyle}
+          />
 
-          {customizing && (
-            <>
-              <div className="space-y-1.5 rounded-lg border bg-muted/20 p-4">
-                <Label htmlFor={`${kind}-design-name-v3`}>
-                  Custom design name
-                </Label>
-                <Input
-                  id={`${kind}-design-name-v3`}
-                  aria-label="Custom design name"
-                  value={designName}
-                  maxLength={catalog.bounds.maximumDesignNameCharacters}
-                  onChange={(event) => {
-                    setDesignName(event.target.value);
-                    setAutomaticDesignName(false);
-                  }}
-                />
-              </div>
-              <AppearanceRecipeControlsV3
-                recipe={recipe}
-                catalog={catalog}
-                target={target}
-                onChange={setCustomRecipe}
+          {activeDesign !== undefined && (
+            <div className="space-y-1.5 rounded-lg border bg-muted/20 p-4">
+              {basedOnStyles[activeDesign.id] !== undefined && (
+                <p className="text-xs font-medium text-muted-foreground">
+                  Based on {basedOnStyles[activeDesign.id]}
+                </p>
+              )}
+              <Label htmlFor={`${kind}-design-name-v3`}>
+                Custom design name
+              </Label>
+              <Input
+                id={`${kind}-design-name-v3`}
+                aria-label="Custom design name"
+                value={activeDesignName}
+                maxLength={catalog.bounds.maximumDesignNameCharacters}
+                onChange={(event) => {
+                  setNameDrafts((drafts) => ({
+                    ...drafts,
+                    [activeDesign.id]: event.target.value,
+                  }));
+                  setStatus(null);
+                }}
               />
-            </>
+            </div>
           )}
 
-          {currentProfile.designs.length > 0 && (
+          <AppearanceRecipeControlsV3
+            recipe={activeSelection.recipe}
+            catalog={catalog}
+            target={target}
+            onChange={setCustomRecipe}
+          />
+
+          {(changedSharedDesigns.length > 0 || deletionNotices.length > 0) && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="space-y-1 rounded-lg border border-brand/35 bg-muted/20 p-4 text-sm"
+            >
+              {changedSharedDesigns.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
+              {deletionNotices.map((notice) => (
+                <p key={notice.id}>
+                  {notice.targets.length === 0
+                    ? `Deleting ${notice.name} is staged.`
+                    : `Deleting ${notice.name} returns ${targetList(notice.targets)} to inheritance/default.`}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {displayedDesigns.length > 0 && (
             <SavedAppearanceDesigns
-              designs={currentProfile.designs}
+              designs={displayedDesigns}
               isSaving={isSaving}
-              onApply={(designId) => void applySavedDesign(designId)}
+              onApply={applySavedDesign}
               onEdit={editDesign}
-              onDelete={(designId) => void deleteDesign(designId)}
+              onDelete={deleteDesign}
             />
           )}
         </div>
 
-        {hasCameraTab && diceViewDraft !== null && (
+        {draftProfile.version === 4 && (
           <div
             id={`${kind}-camera-panel`}
             role="tabpanel"
@@ -639,10 +811,10 @@ export function AppearanceEditorV3({
             hidden={activeTab !== "camera"}
           >
             <DiceViewPreferencesV4
-              value={diceViewDraft}
+              value={draftProfile.diceView}
               disabled={isSaving}
-              onChange={(next) => {
-                setDiceViewDraft(next);
+              onChange={(diceView) => {
+                setDraftProfile({ ...draftProfile, diceView });
                 setStatus(null);
               }}
               onPreviewTargetChange={setPreviewTarget}
@@ -682,9 +854,7 @@ export function AppearanceEditorV3({
               <Button
                 type="button"
                 disabled={isSaving}
-                onClick={() =>
-                  void (customizing ? saveCustomDesign() : saveDiceView())
-                }
+                onClick={() => void saveDraft()}
               >
                 <Save className="mr-2 h-4 w-4" aria-hidden="true" />
                 Save &amp; apply
@@ -693,23 +863,11 @@ export function AppearanceEditorV3({
           </div>
         )}
 
-        {presetState === "applying" ? (
-          <SparkleLoadingIndicator label="Applying preset" className="w-fit" />
-        ) : presetState === "applied" ? (
-          <p role="status" className="text-brand">
-            <Check
-              data-completion-glyph="check"
-              className="h-7 w-7"
-              strokeWidth={3}
-              aria-hidden="true"
-            />
-            <span className="sr-only">Preset applied</span>
-          </p>
-        ) : status !== null ? (
+        {status !== null && (
           <p role="status" className="text-sm font-medium text-brand">
             {status}
           </p>
-        ) : null}
+        )}
       </div>
     </section>
   );

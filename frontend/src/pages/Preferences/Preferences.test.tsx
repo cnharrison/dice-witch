@@ -142,13 +142,36 @@ describe("appearance preference authorization", () => {
     expect(heading.className).toContain("UnifrakturMaguntia");
     expect(await screen.findByText("Preview")).toBeDefined();
     expect(
-      screen.getByRole("button", { name: "Personal appearance" }),
+      screen.getByRole("button", { name: "Personal" }),
     ).toBeDefined();
     expect(screen.queryByText("Dice Witch workbench")).toBeNull();
     expect(screen.queryByText(/Start with one design/)).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Server appearance" }),
+      screen.queryByRole("button", { name: "Server" }),
     ).toBeNull();
+  });
+
+  it("confirms before leaving a section with an appearance draft", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockFetch({ isAdmin: true });
+    renderPreferences();
+
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Preset" }),
+      "dice-witch",
+    );
+    await user.click(screen.getByRole("button", { name: "Server" }));
+    expect(confirm).toHaveBeenCalledWith("Discard unsaved appearance changes?");
+    expect(
+      screen.getByRole("button", { name: "Personal" }).getAttribute("aria-current"),
+    ).toBe("page");
+
+    confirm.mockReturnValue(true);
+    await user.click(screen.getByRole("button", { name: "Server" }));
+    expect(
+      await screen.findByRole("heading", { name: "Server appearance" }),
+    ).toBeDefined();
   });
 
   it("saves camera drafts through the profile Save & apply action", async () => {
@@ -204,6 +227,7 @@ describe("appearance preference authorization", () => {
       screen.getByRole("combobox", { name: "Preset" }),
       "dice-witch",
     );
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
     await waitFor(() => {
       const mutation = vi.mocked(fetch).mock.calls.find(
         ([input, init]) =>
@@ -224,7 +248,7 @@ describe("appearance preference authorization", () => {
     renderPreferences();
 
     await user.click(
-      await screen.findByRole("button", { name: "Server appearance" }),
+      await screen.findByRole("button", { name: "Server" }),
     );
     const sectionHeading = await screen.findByRole("heading", {
       name: "Server appearance",
@@ -281,7 +305,7 @@ describe("appearance preference authorization", () => {
     renderPreferences();
 
     await user.click(
-      await screen.findByRole("button", { name: "Server appearance" }),
+      await screen.findByRole("button", { name: "Server" }),
     );
     await user.click(
       await screen.findByRole("tab", { name: "Server settings" }),
@@ -318,7 +342,7 @@ describe("appearance preference authorization", () => {
       ),
     ).toBeDefined();
     expect(
-      screen.queryByRole("button", { name: "Server appearance" }),
+      screen.queryByRole("button", { name: "Server" }),
     ).toBeNull();
   });
 });

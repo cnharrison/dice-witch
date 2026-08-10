@@ -174,33 +174,43 @@ describe("AppearanceEditorV3", () => {
     expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
   });
 
-  it("keeps detailed controls transactional and removes redundant preset actions", async () => {
+  it("keeps controls open and detaches a preset only after a meaningful edit", async () => {
     const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const onSave = vi.fn(async () => undefined);
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 4, profile: personalProfile() },
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
-      onSave: vi.fn(async () => undefined),
+      onSave,
     });
 
+    expect(screen.queryByRole("button", { name: "Customize" })).toBeNull();
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Randomize" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Apply to/ })).toBeNull();
+    expect(screen.getByRole("group", { name: "Colors" })).toBeDefined();
+    expect(screen.queryByRole("tab", { name: /Design, unsaved/ })).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Customize" }));
-    expect(screen.getByLabelText("Custom design name")).toBeDefined();
-    expect(
-      screen.getByRole("tab", { name: "Design, unsaved changes" }),
-    ).toBeDefined();
-    expect(screen.getByText("Unsaved changes: Design.")).toBeDefined();
-    expect(screen.getByRole("button", { name: "Save & apply" })).toBeDefined();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
+    const hex = screen.getByRole("textbox", { name: "Hex color" });
+    await user.clear(hex);
+    await user.type(hex, "#123456");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(screen.getByText("Based on Pride")).toBeDefined();
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty("value", "Edit 1");
+    expect(screen.getByRole("tab", { name: "Design, unsaved changes" })).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Preset" })).toHaveProperty("value", "chaotic");
   });
 
-  it("keeps V4 camera changes in the shared Save & apply draft", async () => {
+  it("keeps preset and Camera changes in one Save & apply transaction", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn(async () => undefined);
     renderEditor({
@@ -215,33 +225,25 @@ describe("AppearanceEditorV3", () => {
 
     await user.click(screen.getByRole("tab", { name: "Camera" }));
     await user.click(screen.getByLabelText("Keep rolled results clear"));
-    expect(onSave).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("tab", { name: "Camera, unsaved changes" }),
-    ).toBeDefined();
-    expect(screen.getByText("Unsaved changes: Camera.")).toBeDefined();
-    expect(screen.getByRole("button", { name: "Save & apply" })).toBeDefined();
-
     await user.click(screen.getByRole("tab", { name: "Design" }));
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "dice-witch",
-    );
+    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "dice-witch");
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Unsaved changes: Design and Camera.")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     expect(onSave.mock.calls[0]?.[0]).toMatchObject({
       version: 4,
-      diceView: { mode: "normal" },
-    });
-
-    await user.click(screen.getByRole("button", { name: "Save & apply" }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
-    expect(onSave.mock.calls[1]?.[0]).toMatchObject({
-      version: 4,
+      assignments: {
+        all: { source: "builtin", id: "dice-witch" },
+        overrides: { d20: { source: "builtin", id: "hex-appeal" } },
+      },
       diceView: { mode: "clear" },
     });
   });
 
-  it("preserves appearance and camera drafts through one save", async () => {
+  it("preserves custom Design and Camera drafts through one save", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
     const onSave = vi.fn(async () => undefined);
@@ -255,52 +257,30 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "pride",
-    );
-    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    await user.click(screen.getByRole("button", { name: "Customize" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
     await user.click(screen.getByRole("button", { name: "Choose color 1" }));
     const hex = screen.getByRole("textbox", { name: "Hex color" });
     await user.clear(hex);
     await user.type(hex, "#123456");
     await user.click(screen.getByRole("button", { name: "Apply" }));
     await user.clear(screen.getByLabelText("Custom design name"));
-    await user.type(
-      screen.getByLabelText("Custom design name"),
-      "Combined draft",
-    );
+    await user.type(screen.getByLabelText("Custom design name"), "Combined draft");
 
     await user.click(screen.getByRole("tab", { name: "Camera" }));
     await user.click(screen.getByLabelText("Keep rolled results clear"));
-    expect(
-      screen.queryByRole("textbox", { name: "Custom design name" }),
-    ).toBeNull();
     expect(screen.getByText("Unsaved changes: Design and Camera.")).toBeDefined();
-    expect(
-      screen.getByRole("tab", { name: "Design, unsaved changes" }),
-    ).toBeDefined();
-    expect(
-      screen.getByRole("tab", { name: "Camera, unsaved changes" }),
-    ).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
-    const saved = onSave.mock.calls[1]?.[0];
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    const saved = onSave.mock.calls[0]?.[0];
     expect(saved).toMatchObject({
       version: 4,
       diceView: { mode: "clear" },
       designs: [{ id: designId, name: "Combined draft" }],
     });
-    const colors = saved?.designs[0]?.recipe.colors;
-    if (colors?.mode !== "palette") {
-      throw new Error("Combined draft palette is missing");
-    }
-    expect(colors.colors[0]).toBe("#123456");
   });
 
-  it("applies Random directly from the preset selector", async () => {
+  it("stages preset choices until Save & apply", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn(async () => undefined);
     renderEditor({
@@ -311,28 +291,54 @@ describe("AppearanceEditorV3", () => {
       isSaving: false,
       onSave,
     });
+
     const preset = screen.getByRole("combobox", { name: "Preset" });
-
     await user.selectOptions(preset, "dice-witch");
-    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave).not.toHaveBeenCalled();
     await user.selectOptions(preset, "chaotic");
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
-
-    expect(onSave.mock.calls[1]?.[0].assignments).toEqual({
-      all: { source: "builtin", id: "chaotic" },
-      overrides: {},
-    });
+    expect(screen.queryByRole("button", { name: "Save & apply" })).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("shows branded progress and a check while applying a preset", async () => {
+  it("confirms before replacing an unsaved custom design draft", async () => {
     const user = userEvent.setup();
-    let completeSave: (() => void) | undefined;
-    const onSave = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          completeSave = resolve;
-        }),
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    const preset = screen.getByRole("combobox", { name: "Preset" });
+    await user.selectOptions(preset, "pride");
+    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
+    const hex = screen.getByRole("textbox", { name: "Hex color" });
+    await user.clear(hex);
+    await user.type(hex, "#123456");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.selectOptions(preset, "dice-witch");
+
+    expect(confirm).toHaveBeenCalledWith(
+      "Discard the unsaved custom design Edit 1?",
     );
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Edit 1",
+    );
+
+    confirm.mockReturnValue(true);
+    await user.selectOptions(preset, "dice-witch");
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
+    expect(preset).toHaveProperty("value", "dice-witch");
+  });
+
+  it("preserves staged Design changes across die targets", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => undefined);
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 4, profile: personalProfile() },
@@ -342,33 +348,23 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "dice-witch",
-    );
+    await user.selectOptions(screen.getByRole("combobox", { name: "Appearance target" }), "d20");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Appearance target" }), "all");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "dice-witch");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Appearance target" }), "d20");
+    expect(screen.getByRole("combobox", { name: "Preset" })).toHaveProperty("value", "pride");
+    expect(onSave).not.toHaveBeenCalled();
 
-    expect(screen.getByRole("status").textContent).toBe("Applying preset");
-    expect(
-      screen.getByRole("status").querySelector('[data-loading-glyph="sparkles"]'),
-    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
       all: { source: "builtin", id: "dice-witch" },
-      overrides: {},
+      overrides: { d20: { source: "builtin", id: "pride" } },
     });
-
-    completeSave?.();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("status").querySelector('[data-completion-glyph="check"]'),
-      ).toBeTruthy(),
-    );
-    expect(screen.getByRole("status").textContent).toBe("Preset applied");
-    expect(
-      screen.queryByText("All dice now uses the selected preset."),
-    ).toBeNull();
   });
 
-  it("applies a target preset without changing the All dice assignment", async () => {
+  it("stages a target preset without changing the All dice assignment", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn(async () => undefined);
     renderEditor({
@@ -380,15 +376,10 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Appearance target" }),
-      "d20",
-    );
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "pride",
-    );
-
+    await user.selectOptions(screen.getByRole("combobox", { name: "Appearance target" }), "d20");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
+    expect(onSave).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
       all: { source: "builtin", id: "chaotic" },
@@ -396,17 +387,11 @@ describe("AppearanceEditorV3", () => {
     });
   });
 
-  it("assigns an existing saved design immediately without opening Customize", async () => {
+  it("stages saved-design assignment and deletion until Save & apply", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn(async () => undefined);
     const profile = personalProfile();
-    profile.designs = [
-      {
-        id: designId,
-        name: "Night garden",
-        recipe: styleRecipe("pride"),
-      },
-    ];
+    profile.designs = [{ id: designId, name: "Night garden", recipe: styleRecipe("pride") }];
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 4, profile },
@@ -417,12 +402,43 @@ describe("AppearanceEditorV3", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Use Night garden" }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
-      all: { source: "custom", id: designId },
-      overrides: {},
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty("value", "Night garden");
+    await user.click(screen.getByRole("button", { name: "Delete Night garden" }));
+    expect(screen.queryByText("Night garden")).toBeNull();
+    expect(screen.getByText(/Deleting Night garden returns All dice/)).toBeDefined();
+    expect(onSave).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("Night garden")).toBeDefined();
+  });
+
+  it("edits an unassigned saved design without assigning it to the current target", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => undefined);
+    const profile = personalProfile();
+    profile.designs = [
+      { id: designId, name: "Night garden", recipe: styleRecipe("pride") },
+    ];
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
     });
-    expect(screen.queryByLabelText("Custom design name")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Edit Night garden" }));
+    await user.clear(screen.getByLabelText("Custom design name"));
+    await user.type(screen.getByLabelText("Custom design name"), "Night sky");
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({
+      designs: [{ id: designId, name: "Night sky" }],
+      assignments: profile.assignments,
+    });
   });
 
   it("detaches the first preset edit into a validated custom design", async () => {
@@ -438,50 +454,61 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "pride",
-    );
-    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    await user.click(screen.getByRole("button", { name: "Customize" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
     await user.click(screen.getByRole("button", { name: "Choose color 1" }));
     const hex = screen.getByRole("textbox", { name: "Hex color" });
     await user.clear(hex);
     await user.type(hex, "#123456");
     await user.click(screen.getByRole("button", { name: "Apply" }));
-    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
-      "value",
-      "Edit 1",
-    );
+    expect(screen.getByText("Based on Pride")).toBeDefined();
     await user.clear(screen.getByLabelText("Custom design name"));
-    await user.type(
-      screen.getByLabelText("Custom design name"),
-      "Night garden",
-    );
+    await user.type(screen.getByLabelText("Custom design name"), "Night garden");
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
-    const saved = onSave.mock.calls[1]?.[0] as AppearanceProfileV3;
-    expect(saved.designs).toHaveLength(1);
-    expect(saved.designs[0]).toMatchObject({
-      id: designId,
-      name: "Night garden",
-      recipe: { version: 3, variation: "fixed" },
-    });
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV3;
+    expect(saved.designs[0]).toMatchObject({ id: designId, name: "Night garden" });
     expect(saved.assignments.all).toEqual({ source: "custom", id: designId });
+  });
+
+  it("edits an assigned saved design in place and shows its affected targets", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => undefined);
+    const profile = personalProfile();
+    profile.designs = [
+      { id: designId, name: "Shared garden", recipe: styleRecipe("pride") },
+    ];
+    profile.assignments = {
+      all: { source: "custom", id: designId },
+      overrides: {},
+    };
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
+    const hex = screen.getByRole("textbox", { name: "Hex color" });
+    await user.clear(hex);
+    await user.type(hex, "#123456");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(screen.getByText("Changes to Shared garden affect: All dice.")).toBeDefined();
+    expect(onSave).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0].designs[0]?.id).toBe(designId);
   });
 
   it("reports optimistic revision conflicts without claiming a save", async () => {
     const user = userEvent.setup();
-    const onSave = vi.fn(() =>
-      Promise.reject(
-        new AppearanceApiError(
-          "appearance_revision_conflict",
-          409,
-          "appearance_revision_conflict",
-        ),
-      ),
-    );
+    const onSave = vi.fn(() => Promise.reject(new AppearanceApiError(
+      "appearance_revision_conflict", 409, "appearance_revision_conflict",
+    )));
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 4, profile: personalProfile() },
@@ -491,15 +518,153 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
+    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "dice-witch");
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    expect(await screen.findByText(
+      "This appearance changed elsewhere. Reloaded settings are required before saving again.",
+    )).toBeDefined();
+  });
+
+  it("keeps the original revision when a remote update overlaps a local draft", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => undefined);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const props: React.ComponentProps<typeof AppearanceEditorV3> = {
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    };
+    const view = render(
+      <QueryClientProvider client={client}>
+        <AppearanceEditorV3 {...props} />
+      </QueryClientProvider>,
+    );
+
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Preset" }),
       "dice-witch",
     );
+    const remoteProfile = personalProfile();
+    remoteProfile.assignments.all = { source: "builtin", id: "pride" };
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AppearanceEditorV3
+          {...props}
+          resource={{ revision: 5, profile: remoteProfile }}
+        />
+      </QueryClientProvider>,
+    );
+
     expect(
-      await screen.findByText(
-        "This appearance changed elsewhere. Reloaded settings are required before saving again.",
+      screen.getByText(
+        "This appearance changed elsewhere. Cancel to load the newer settings before saving again.",
       ),
     ).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[1]).toBe(4);
+  });
+
+  it("accepts a remote Design update after a name is restored", async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const profile = personalProfile();
+    profile.designs = [
+      { id: designId, name: "Night garden", recipe: styleRecipe("pride") },
+    ];
+    profile.assignments.all = { source: "custom", id: designId };
+    const props: React.ComponentProps<typeof AppearanceEditorV3> = {
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+    };
+    const view = render(
+      <QueryClientProvider client={client}>
+        <AppearanceEditorV3 {...props} />
+      </QueryClientProvider>,
+    );
+
+    const name = screen.getByLabelText("Custom design name");
+    await user.clear(name);
+    await user.type(name, "Temporary name");
+    await user.clear(name);
+    await user.type(name, "Night garden");
+    const remoteProfile = structuredClone(profile);
+    remoteProfile.assignments.all = { source: "builtin", id: "dice-witch" };
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AppearanceEditorV3
+          {...props}
+          resource={{ revision: 5, profile: remoteProfile }}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Preset" })).toHaveProperty(
+      "value",
+      "dice-witch",
+    );
+    expect(
+      screen.queryByText(/This appearance changed elsewhere/),
+    ).toBeNull();
+  });
+
+  it("merges an independent server-mode update into a Design draft", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => undefined);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const profile: GuildAppearanceProfileV3 = {
+      version: 3,
+      mode: "default",
+      designs: [],
+      assignments: { all: null, overrides: {} },
+    };
+    const props: React.ComponentProps<typeof AppearanceEditorV3> = {
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "guild",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    };
+    const view = render(
+      <QueryClientProvider client={client}>
+        <AppearanceEditorV3 {...props} />
+      </QueryClientProvider>,
+    );
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Preset" }),
+      "dice-witch",
+    );
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AppearanceEditorV3
+          {...props}
+          resource={{ revision: 5, profile: { ...profile, mode: "enforced" } }}
+        />
+      </QueryClientProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({
+      mode: "enforced",
+      assignments: { all: { source: "builtin", id: "dice-witch" } },
+    });
+    expect(onSave.mock.calls[0]?.[1]).toBe(5);
   });
 
   it("copies a personal design into an independent guild draft", async () => {

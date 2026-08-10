@@ -206,6 +206,23 @@ export default function Preferences() {
   const [section, setSection] = React.useState<"personal" | "guild">(
     "personal",
   );
+  const [appearanceDraftDirty, setAppearanceDraftDirty] = React.useState(false);
+
+  const discardAppearanceDraft = (): boolean =>
+    !appearanceDraftDirty ||
+    window.confirm("Discard unsaved appearance changes?");
+
+  const selectSection = (nextSection: "personal" | "guild") => {
+    if (nextSection === section || !discardAppearanceDraft()) return;
+    setAppearanceDraftDirty(false);
+    setSection(nextSection);
+  };
+
+  const selectGuild = (guildId: string) => {
+    if (guildId === selectedGuildId || !discardAppearanceDraft()) return;
+    setAppearanceDraftDirty(false);
+    setSelectedGuildId(guildId);
+  };
 
   const personalBootstrapQuery = useQuery({
     queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
@@ -411,14 +428,12 @@ export default function Preferences() {
         personalDesigns={personalResource.profile?.designs ?? []}
         isSaving={personalMutation.isPending}
         version={personalResource.profile?.version ?? 4}
-        onSave={async (profile) => {
+        onDirtyChange={setAppearanceDraftDirty}
+        onSave={async (profile, revision) => {
           if ("mode" in profile) {
             throw new Error("Personal appearance profile is required");
           }
-          await personalMutation.mutateAsync({
-            profile,
-            revision: personalResource.revision,
-          });
+          await personalMutation.mutateAsync({ profile, revision });
         }}
       />
     );
@@ -494,6 +509,7 @@ export default function Preferences() {
           personalDesigns={personalResource.profile?.designs ?? []}
           isSaving={guildAppearanceMutation.isPending}
           version={guildResource.profile?.version ?? 4}
+          onDirtyChange={setAppearanceDraftDirty}
           settingsPanel={
             <>
               <ServerAppearanceModeV3
@@ -527,14 +543,14 @@ export default function Preferences() {
               </section>
             </>
           }
-          onSave={async (profile) => {
+          onSave={async (profile, revision) => {
             if (!("mode" in profile)) {
               throw new Error("Guild appearance profile is required");
             }
             await guildAppearanceMutation.mutateAsync({
               profile,
               guildId: selectedGuildId,
-              revision: guildResource.revision,
+              revision,
             });
           }}
         />
@@ -551,7 +567,7 @@ export default function Preferences() {
             <SearchableGuildPicker
               guilds={adminGuilds}
               value={selectedGuildId ?? ""}
-              onValueChange={setSelectedGuildId}
+              onValueChange={selectGuild}
             />
           </div>
         </div>
@@ -571,7 +587,7 @@ export default function Preferences() {
       <nav className="mb-6 flex gap-2" aria-label="Appearance sections">
         <button
           type="button"
-          onClick={() => setSection("personal")}
+          onClick={() => selectSection("personal")}
           aria-current={section === "personal" ? "page" : undefined}
           className={`rounded-full px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             section === "personal"
@@ -579,12 +595,12 @@ export default function Preferences() {
               : "border bg-card hover:border-brand/70"
           }`}
         >
-          Personal appearance
+          Personal
         </button>
         {adminGuilds.length > 0 && (
           <button
             type="button"
-            onClick={() => setSection("guild")}
+            onClick={() => selectSection("guild")}
             aria-current={section === "guild" ? "page" : undefined}
             className={`rounded-full px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               section === "guild"
@@ -592,7 +608,7 @@ export default function Preferences() {
                 : "border bg-card hover:border-brand/70"
             }`}
           >
-            Server appearance
+            Server
           </button>
         )}
       </nav>
