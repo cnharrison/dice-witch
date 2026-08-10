@@ -11,9 +11,6 @@ export interface DiceAnimation3DProps {
   renderModel?: PublicRenderModelV4 | null;
   isRolling: boolean;
   blankFaces?: boolean;
-  animateResult?: boolean;
-  viewOnlyUpdates?: boolean;
-  maximumResultRows?: number;
   appearanceIdentities?: readonly (readonly string[])[];
   rerolledAppearanceIdentities?: readonly string[];
   onReadyChange?: (ready: boolean) => void;
@@ -29,9 +26,6 @@ export function DiceAnimation3D({
   renderModel = null,
   isRolling,
   blankFaces = false,
-  animateResult = true,
-  viewOnlyUpdates = false,
-  maximumResultRows,
   appearanceIdentities,
   rerolledAppearanceIdentities,
   onReadyChange,
@@ -69,7 +63,7 @@ export function DiceAnimation3D({
           onReadyChangeRef.current?.(false);
           onUnavailableRef.current(error);
         },
-      }, { maximumResultRows });
+      });
       rendererRef.current = renderer;
     } catch (error) {
       const failure = asDiceAnimationErrorV4(
@@ -89,40 +83,20 @@ export function DiceAnimation3D({
       rendererRef.current = null;
       hasReadySceneRef.current = false;
     };
-  }, [enabled, maximumResultRows]);
+  }, [enabled]);
 
   React.useEffect(() => {
     const renderer = rendererRef.current;
     if (renderer === null || renderModel === null) return;
     const revision = ++replacementRevisionRef.current;
     const initialReplacement = !hasReadySceneRef.current;
-    if (viewOnlyUpdates && !initialReplacement) {
-      try {
-        if (renderer.updateViews(renderModel)) {
-          setStatus("ready");
-          return;
-        }
-      } catch (error) {
-        const failure = asDiceAnimationErrorV4(
-          error,
-          "Three.js V4 view update failed",
-        );
-        renderer.dispose();
-        rendererRef.current = null;
-        hasReadySceneRef.current = false;
-        setStatus("unavailable");
-        onReadyChangeRef.current?.(false);
-        onUnavailableRef.current(failure);
-        return;
-      }
-    }
     if (initialReplacement) {
       setStatus("loading");
       onReadyChangeRef.current?.(false);
     }
     void renderer
       .replaceModel(renderModel, {
-        animateResult: animateResult && !blankFaces,
+        animateResult: !blankFaces,
         blankFaces,
         reducedMotion: reducedMotionRef.current,
         ...(appearanceIdentities === undefined
@@ -164,12 +138,10 @@ export function DiceAnimation3D({
         onUnavailableRef.current(failure);
       });
   }, [
-    animateResult,
     appearanceIdentities,
     blankFaces,
     renderModel,
     rerolledAppearanceIdentities,
-    viewOnlyUpdates,
   ]);
 
   React.useEffect(() => {
@@ -185,7 +157,7 @@ export function DiceAnimation3D({
     >
       <div
         ref={containerRef}
-        className="flex h-full min-h-[150px] w-full min-w-[150px] items-center justify-center"
+        className="h-full min-h-[150px] w-full min-w-[150px]"
         aria-hidden={status !== "ready"}
       />
     </div>

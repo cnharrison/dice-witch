@@ -21,7 +21,6 @@ import {
   handleAuthRequest,
   type WebApiBindings,
 } from "../../workers/web-api/src/auth";
-import rollWorkV4Fixture from "../roll/fixtures/roll-work-v4.json";
 
 const now = 1_767_225_600_123;
 const frontendOrigin = "https://app.example.com";
@@ -871,7 +870,6 @@ describe("web appearance API", () => {
       seed: 42,
       state: "normal",
     };
-    const renderModel = rollWorkV4Fixture.renderRequest;
     const previewV4 = vi.fn(() =>
       Promise.resolve({
         version: 4,
@@ -881,7 +879,6 @@ describe("web appearance API", () => {
         diceCount: 1,
         rowCount: 1,
         png: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
-        renderModel,
       }),
     );
     env.ROLL_WEB.previewV4 = previewV4;
@@ -903,7 +900,6 @@ describe("web appearance API", () => {
       width: 150,
       height: 150,
       base64: "iVBORw0KGgo=",
-      renderModel,
     });
     expect(previewV4).toHaveBeenCalledWith(input);
   });

@@ -639,7 +639,6 @@ export function AppearanceEditorV3({
           <AppearancePreviewPaneV3
             target={previewTarget}
             recipe={previewRecipe}
-            mode={activeTab === "camera" ? "camera" : "design"}
             {...(draftProfile.version === 4
               ? { diceView: draftProfile.diceView }
               : {})}

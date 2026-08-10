@@ -65,7 +65,7 @@ export function AppearanceTargetIconV3({
         <svg viewBox="0 0 100 100" className={iconClassName} aria-hidden="true">
           <path d="m50 5 26 9 18 23v28L76 88l-26 8-26-8L6 65V37l18-23Z" />
           <path d="m50 25 23 17-9 28H36l-9-28Z" />
-          <path d="M50 5v20m26-11-3 28m21-5L64 70m12 18L64 70M50 96l14-26M24 88l12-18M6 65l30 5M6 37l21 5M24 14l3 28" />
+          <path d="M50 5v20m44 12-21 5m3 46L64 70M24 88l12-18M6 37l21 5" />
         </svg>
       );
     case "d20":

@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const rendererMocks = vi.hoisted(() => ({
   replaceModel: vi.fn(async () => {}),
-  updateViews: vi.fn(() => true),
   setRolling: vi.fn(),
   dispose: vi.fn(),
   create: vi.fn(),
@@ -57,12 +56,10 @@ beforeEach(() => {
   stubMatchMedia();
   rendererMocks.runtimeUnavailable = null;
   rendererMocks.replaceModel.mockReset().mockResolvedValue(undefined);
-  rendererMocks.updateViews.mockReset().mockReturnValue(true);
   rendererMocks.create.mockReset().mockImplementation((_container, callbacks) => {
     rendererMocks.runtimeUnavailable = callbacks.onUnavailable;
     return {
       replaceModel: rendererMocks.replaceModel,
-      updateViews: rendererMocks.updateViews,
       setRolling: rendererMocks.setRolling,
       dispose: rendererMocks.dispose,
     };
@@ -77,18 +74,6 @@ afterEach(() => {
 });
 
 describe("DiceAnimation3D", () => {
-  it("configures a two-row result grid for appearance previews", async () => {
-    renderAnimation({
-      renderModel: parsePublicRenderModelV4(fixture),
-      maximumResultRows: 2,
-    });
-
-    await waitFor(() => expect(rendererMocks.create).toHaveBeenCalled());
-    expect(rendererMocks.create.mock.calls[0]?.[2]).toEqual({
-      maximumResultRows: 2,
-    });
-  });
-
   it("uses the exact prepared model with blank faces, then reveals authoritative results", async () => {
     const onReadyChange = vi.fn();
     const authoritative = parsePublicRenderModelV4(fixture);
@@ -171,32 +156,6 @@ describe("DiceAnimation3D", () => {
       await Promise.resolve();
     });
     expect(onReadyChange).not.toHaveBeenCalled();
-  });
-
-  it("updates camera views without replacing ready resources", async () => {
-    const model = parsePublicRenderModelV4(fixture);
-    const view = renderAnimation({
-      renderModel: model,
-      viewOnlyUpdates: true,
-      animateResult: false,
-    });
-    await waitFor(() => expect(rendererMocks.replaceModel).toHaveBeenCalledOnce());
-
-    const updated = parsePublicRenderModelV4(structuredClone(model));
-    view.rerender(
-      <ThemeProvider defaultTheme="dark" storageKey="dice-animation-test-theme">
-        <DiceAnimation3D
-          renderModel={updated}
-          isRolling={false}
-          viewOnlyUpdates
-          animateResult={false}
-          onUnavailable={vi.fn()}
-        />
-      </ThemeProvider>,
-    );
-
-    await waitFor(() => expect(rendererMocks.updateViews).toHaveBeenCalledWith(updated));
-    expect(rendererMocks.replaceModel).toHaveBeenCalledTimes(1);
   });
 
   it("honors reduced motion and disposes the renderer on unmount", async () => {

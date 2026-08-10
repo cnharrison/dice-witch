@@ -51,8 +51,6 @@ import {
   parseGuildAppearanceProfileV3,
   parseGuildAppearanceProfileV4,
   parseDiceViewPreferencesV4,
-  parsePublicRenderModelV4,
-  serializeRenderRequestV4,
   type AppearanceProfileV3,
   type AppearanceProfileV4,
   type AppearanceRecipeV3,
@@ -1100,7 +1098,6 @@ function parsePreviewResponse(
       "base64",
       "contentType",
       "height",
-      ...(version === 4 ? ["renderModel"] : []),
       "version",
       "width",
     ],
@@ -1129,10 +1126,7 @@ function parsePreviewResponse(
     height: Number(preview.height),
     base64: preview.base64,
   };
-  if (version === 3) return { version, ...image };
-  const renderModel = parsePublicRenderModelV4(preview.renderModel);
-  serializeRenderRequestV4(renderModel);
-  return { version, ...image, renderModel };
+  return { version, ...image };
 }
 
 export async function getAppearancePreviewV3(

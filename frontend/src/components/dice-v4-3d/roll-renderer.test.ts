@@ -72,20 +72,12 @@ vi.mock("./grid-render", () => ({
   renderThreeDiceGridV4: mocks.render,
 }));
 
-vi.mock("./camera", () => ({
-  createThreeOrthographicCameraV4: vi.fn(() => ({ id: "updated-camera" })),
+vi.mock("./geometry", () => ({
+  geometryDescriptorForDieV4: vi.fn(() => ({
+    id: "d6-standard-r1",
+    kind: "polyhedral",
+  })),
 }));
-
-vi.mock("./geometry", async () => {
-  const { Quaternion } = await import("three");
-  return {
-    geometryDescriptorForDieV4: vi.fn(() => ({
-      id: "d6-standard-r1",
-      kind: "polyhedral",
-    })),
-    resultQuaternionForDieV4: vi.fn(() => new Quaternion()),
-  };
-});
 
 vi.mock("./tray-physics", () => ({
   createTrayPhysicsV4: mocks.createTrayPhysics,
@@ -312,27 +304,6 @@ describe("Three.js V4 roll renderer lifecycle", () => {
   it("uses the approved compact result handoff", () => {
     expect(THREE_RESULT_TRANSITION_MILLISECONDS_V4).toBe(400);
   });
-
-  it("lays nine appearance targets across at most two rows", async () => {
-    const container = document.createElement("div");
-    const renderer = createThreeRollRendererV4(
-      container,
-      { onUnavailable: vi.fn() },
-      { maximumResultRows: 2 },
-    );
-    const die = {} as Parameters<typeof renderer.replaceModel>[0]["groups"][number][number];
-    const model = {
-      groups: [Array.from({ length: 9 }, () => die)],
-    } as Parameters<typeof renderer.replaceModel>[0];
-
-    await renderer.replaceModel(model, {
-      animateResult: false,
-      blankFaces: false,
-      reducedMotion: true,
-    });
-
-    expect(mocks.prepare).toHaveBeenCalledWith(model, 5);
-  });
   it("commits a prepared replacement before disposing the previous model and cleans up on context loss", async () => {
     const container = document.createElement("div");
     const onUnavailable = vi.fn();
@@ -379,69 +350,6 @@ describe("Three.js V4 roll renderer lifecycle", () => {
 
     renderer.dispose();
     expect(mocks.rendererInstances[0]?.dispose).toHaveBeenCalledTimes(1);
-  });
-
-  it("updates compatible camera views without preparing replacement resources", async () => {
-    const die = {
-      target: "d6",
-      result: 4,
-      form: "standard",
-      appearance: {
-        material: { family: "classic" },
-        texture: { seed: 7 },
-      },
-      icons: [],
-      view: {
-        kind: "camera",
-        elevationDegrees: 40,
-        azimuthOffsetDegrees: 0,
-        poseAzimuthDegrees: 0,
-      },
-    };
-    const initialModel = {
-      rendererRevision: "canvaskit-v4-r25",
-      groups: [[die]],
-    } as Parameters<
-      ReturnType<typeof createThreeRollRendererV4>["replaceModel"]
-    >[0];
-    const preparedResources = resources(7);
-    preparedResources.entries[0]!.cell.die = die;
-    const copyCamera = vi.fn();
-    Object.assign(preparedResources.entries[0]!, {
-      camera: { copy: copyCamera },
-    });
-    mocks.createResources.mockReset().mockReturnValueOnce(preparedResources);
-    const container = document.createElement("div");
-    const renderer = createThreeRollRendererV4(container, {
-      onUnavailable: vi.fn(),
-    });
-    await renderer.replaceModel(initialModel, {
-      animateResult: false,
-      blankFaces: false,
-      reducedMotion: true,
-    });
-
-    const nextModel = {
-      ...initialModel,
-      groups: [[{
-        ...die,
-        view: { ...die.view, elevationDegrees: 48 },
-      }]],
-    } as typeof initialModel;
-    expect(renderer.updateViews(nextModel)).toBe(true);
-    const finalModel = {
-      ...nextModel,
-      groups: [[{
-        ...die,
-        view: { ...die.view, elevationDegrees: 52 },
-      }]],
-    } as typeof initialModel;
-    expect(renderer.updateViews(finalModel)).toBe(true);
-
-    expect(mocks.prepare).toHaveBeenCalledTimes(1);
-    expect(mocks.createResources).toHaveBeenCalledTimes(1);
-    expect(copyCamera).toHaveBeenCalledTimes(2);
-    expect(container.querySelector("canvas")?.dataset.viewRevision).toBe("2");
   });
 
   it("fails closed when replacement setup throws after commit", async () => {

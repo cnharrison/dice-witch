@@ -40,6 +40,9 @@ describe("AppearanceTargetPickerV3", () => {
       expect(target.getAttribute("aria-checked")).toBe("false");
     }
     expect(targets[0]?.getAttribute("aria-checked")).toBe("true");
+    expect(
+      targets[5]?.querySelectorAll("path")[2]?.getAttribute("d"),
+    ).toBe("M50 5v20m44 12-21 5m3 46L64 70M24 88l12-18M6 37l21 5");
     expect(screen.queryByText("Appearance target")).toBeNull();
     expect(screen.queryByText(/choose which dice/i)).toBeNull();
   });

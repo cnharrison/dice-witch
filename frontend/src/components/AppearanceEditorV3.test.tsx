@@ -16,30 +16,8 @@ import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppearanceEditorV3 } from "./AppearanceEditorV3";
 
-vi.mock("@/components/DiceAnimation3D", () => ({
-  DiceAnimation3D: () => <div data-testid="camera-preview" />,
-}));
-
 vi.mock("@/lib/appearance-v3", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/appearance-v3")>();
-  const { default: baseRenderModel } = await import(
-    "./dice-v4-3d/fixtures/d6-r3.json"
-  );
-  const renderModel = {
-    ...baseRenderModel,
-    rendererRevision: "canvaskit-v4-r25",
-    groups: baseRenderModel.groups.map((group) =>
-      group.map((die) => ({
-        ...die,
-        view: {
-          kind: "camera",
-          elevationDegrees: 40,
-          azimuthOffsetDegrees: 0,
-          poseAzimuthDegrees: 0,
-        },
-      })),
-    ),
-  };
   return {
     ...actual,
     getAppearancePreviewV3: vi.fn(async () => ({
@@ -55,7 +33,6 @@ vi.mock("@/lib/appearance-v3", async (importOriginal) => {
       width: 150,
       height: 150,
       base64: "iVBORw0KGgo=",
-      renderModel,
     })),
   };
 });

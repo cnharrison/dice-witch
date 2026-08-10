@@ -1,10 +1,8 @@
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
-import { DiceAnimation3D } from "@/components/DiceAnimation3D";
 import { PixelatedPreviewImage } from "@/components/PixelatedPreviewImage";
 import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { Button } from "@/components/ui/button";
 import { AppearanceApiError } from "@/lib/appearance";
-import { applyDiceViewToPreviewModelV4 } from "@/lib/appearance-preview-model";
 import {
   getAppearancePreviewV3,
   getAppearancePreviewV4,
@@ -15,18 +13,11 @@ import {
   type AppearanceRecipeV3,
 } from "@/types/appearance";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import type { DiceViewPreferencesV4 } from "@dice-witch/dice-v4-model";
 import { RefreshCw } from "lucide-react";
-import {
-  createDefaultDiceViewPreferencesV4,
-  type DiceViewPreferencesV4,
-  type PublicRenderModelV4,
-} from "@dice-witch/dice-v4-model";
 import * as React from "react";
 
 type PreviewState = "normal" | "critical-success" | "critical-failure";
-type PreviewMode = "design" | "camera";
-
-const CAMERA_BASE_DICE_VIEW = createDefaultDiceViewPreferencesV4();
 
 function randomUint32(): number {
   const value = crypto.getRandomValues(new Uint32Array(1))[0];
@@ -64,49 +55,32 @@ export function AppearancePreviewPaneV3({
   target,
   recipe,
   diceView,
-  mode = "design",
 }: {
   target: AppearanceEditorTargetV3;
   recipe: AppearanceRecipeV3;
   diceView?: DiceViewPreferencesV4;
-  mode?: PreviewMode;
 }) {
   const [seed, setSeed] = React.useState(0x51ce_b00c);
   const [state, setState] = React.useState<PreviewState>("normal");
   const [hasDisplayedPreview, setHasDisplayedPreview] = React.useState(false);
-  const [cameraBaseModel, setCameraBaseModel] =
-    React.useState<PublicRenderModelV4 | null>(null);
-  const [cameraReady, setCameraReady] = React.useState(false);
-  const [cameraError, setCameraError] = React.useState<Error | null>(null);
   const [imageError, setImageError] = React.useState<Error | null>(null);
   const [imageRetryKey, setImageRetryKey] = React.useState(0);
-  const handleDisplay = React.useCallback(() => setHasDisplayedPreview(true), []);
-  const handleImageError = React.useCallback((error: Error) => {
-    setImageError(error);
-  }, []);
   const debouncedRecipe = useDebouncedValue(recipe, 300);
-  const cameraMode = mode === "camera" && diceView !== undefined;
-  const requestedDiceView = cameraMode ? CAMERA_BASE_DICE_VIEW : diceView;
+  const debouncedDiceView = useDebouncedValue(diceView, 300);
   const previewQuery = useQuery({
     queryKey: [
       diceView === undefined ? "appearancePreviewV3" : "appearancePreviewV4",
-      cameraMode ? "camera-base" : "design",
       target,
       seed,
       state,
       debouncedRecipe,
-      requestedDiceView,
+      debouncedDiceView,
     ],
     queryFn: () => {
-      const input = {
-        target,
-        recipe: debouncedRecipe,
-        seed,
-        state,
-      };
-      return requestedDiceView === undefined
+      const input = { target, recipe: debouncedRecipe, seed, state };
+      return debouncedDiceView === undefined
         ? getAppearancePreviewV3(input)
-        : getAppearancePreviewV4({ ...input, diceView: requestedDiceView });
+        : getAppearancePreviewV4({ ...input, diceView: debouncedDiceView });
     },
     placeholderData: keepPreviousData,
     staleTime: Infinity,
@@ -114,33 +88,7 @@ export function AppearancePreviewPaneV3({
     retry: false,
   });
 
-  React.useEffect(() => {
-    setImageError(null);
-  }, [previewQuery.data]);
-
-  React.useEffect(() => {
-    if (cameraMode && previewQuery.data?.version === 4) {
-      setCameraBaseModel(previewQuery.data.renderModel);
-      setCameraError(null);
-    }
-  }, [cameraMode, previewQuery.data]);
-
-  const cameraModel = React.useMemo(
-    () =>
-      cameraBaseModel === null || diceView === undefined
-        ? null
-        : applyDiceViewToPreviewModelV4(
-            cameraBaseModel,
-            recipe,
-            seed,
-            diceView,
-          ),
-    [cameraBaseModel, diceView, recipe, seed],
-  );
-  const handleCameraUnavailable = React.useCallback(
-    (error: Error) => setCameraError(error),
-    [],
-  );
+  React.useEffect(() => setImageError(null), [previewQuery.data]);
 
   const retryPreview = () => {
     setImageError(null);
@@ -151,13 +99,14 @@ export function AppearancePreviewPaneV3({
     (previewQuery.isError ? previewQuery.error : null);
   const previewImage = (
     <PixelatedPreviewImage
-      candidate={cameraMode ? undefined : previewQuery.data}
+      candidate={previewQuery.data}
       alt={`${APPEARANCE_TARGET_LABELS[target]} appearance preview`}
-      onDisplay={handleDisplay}
-      onError={handleImageError}
+      onDisplay={() => setHasDisplayedPreview(true)}
+      onError={setImageError}
       retryKey={imageRetryKey}
     />
   );
+
   let previewContent: React.ReactNode;
   if (!hasDisplayedPreview && previewFailure !== null) {
     previewContent = (
@@ -187,68 +136,6 @@ export function AppearancePreviewPaneV3({
               {previewErrorMessage(previewFailure)}
             </p>
             <Button type="button" variant="outline" size="sm" onClick={retryPreview}>
-              Retry preview
-            </Button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  let cameraContent: React.ReactNode;
-  if (cameraError !== null) {
-    cameraContent = (
-      <p role="alert" className="text-sm text-destructive">
-        {cameraError.message}
-      </p>
-    );
-  } else if (cameraModel === null && previewQuery.isError) {
-    cameraContent = (
-      <div className="space-y-3 text-center">
-        <p role="alert" className="text-sm text-destructive">
-          {previewErrorMessage(previewQuery.error)}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => void previewQuery.refetch()}
-        >
-          Retry preview
-        </Button>
-      </div>
-    );
-  } else if (cameraModel === null) {
-    cameraContent = <SparkleLoadingIndicator label="Loading preview" />;
-  } else {
-    cameraContent = (
-      <div className="relative h-full w-full">
-        <DiceAnimation3D
-          className="[&_canvas]:!h-auto [&_canvas]:max-h-full"
-          renderModel={cameraModel}
-          isRolling={false}
-          animateResult
-          viewOnlyUpdates
-          maximumResultRows={2}
-          onReadyChange={setCameraReady}
-          onUnavailable={handleCameraUnavailable}
-        />
-        {!cameraReady && (
-          <div className="absolute inset-0 grid place-items-center bg-background">
-            <SparkleLoadingIndicator label="Loading preview" />
-          </div>
-        )}
-        {previewQuery.isError && (
-          <div className="absolute inset-x-0 bottom-0 space-y-2 bg-background/95 p-3 text-center">
-            <p role="alert" className="text-sm text-destructive">
-              {previewErrorMessage(previewQuery.error)}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void previewQuery.refetch()}
-            >
               Retry preview
             </Button>
           </div>
@@ -292,12 +179,7 @@ export function AppearancePreviewPaneV3({
         aria-busy={previewQuery.isFetching}
         aria-live="polite"
       >
-        <div hidden={cameraMode} className={cameraMode ? "hidden" : "contents"}>
-          {previewContent}
-        </div>
-        <div hidden={!cameraMode} className={cameraMode ? "contents" : "hidden"}>
-          {cameraContent}
-        </div>
+        {previewContent}
       </div>
     </section>
   );

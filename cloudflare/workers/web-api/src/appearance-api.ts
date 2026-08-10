@@ -1,10 +1,8 @@
 import {
   parseAppearanceProfileV3,
-  parsePublicRenderModelV4,
   parseAppearanceProfileV4,
   parseGuildAppearanceProfileV3,
   parseGuildAppearanceProfileV4,
-  serializeRenderRequestV4,
   type AppearanceProfileV3,
   type AppearanceProfileV4,
   type GuildAppearanceProfileV3,
@@ -737,7 +735,6 @@ async function previewResponse(
     "rowCount",
     "version",
     "width",
-    ...(responseVersion === 4 ? ["renderModel"] : []),
   ];
   if (
     !isRecord(result) ||
@@ -771,22 +768,12 @@ async function previewResponse(
       502,
     );
   }
-  let renderModel;
-  if (responseVersion === 4) {
-    try {
-      renderModel = parsePublicRenderModelV4(result.renderModel);
-      serializeRenderRequestV4(renderModel);
-    } catch {
-      return json({ error: "appearance_preview_response_invalid" }, 502);
-    }
-  }
   return json({
     version: responseVersion,
     contentType: "image/png",
     width: Number(result.width),
     height: Number(result.height),
     base64: bytesToBase64(result.png),
-    ...(renderModel === undefined ? {} : { renderModel }),
   });
 }
 

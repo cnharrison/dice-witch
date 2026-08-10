@@ -6,7 +6,6 @@ import type {
   GuildAppearanceProfileV3 as SharedGuildAppearanceProfileV3,
   GuildAppearanceProfileV4 as SharedGuildAppearanceProfileV4,
   MaterialFamilyV4,
-  PublicRenderModelV4,
   RenderFormV4,
 } from "@dice-witch/dice-v4-model";
 import type { AppearancePublicCatalogV3 } from "../../../cloudflare/packages/dice-appearance/src/types";
@@ -232,7 +231,6 @@ export type AppearancePreviewV3 = Omit<AppearancePreview, "version"> & {
 
 export type AppearancePreviewV4 = Omit<AppearancePreview, "version"> & {
   version: 4;
-  renderModel: PublicRenderModelV4;
 };
 
 export type AppearanceMaterialFamily = MaterialFamilyV4;

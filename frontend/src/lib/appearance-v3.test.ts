@@ -4,7 +4,6 @@ import {
   type AppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
-import renderModel from "../components/dice-v4-3d/fixtures/d6-r3.json";
 import { migrateAppearanceProfileV3ToV4 } from "../../../cloudflare/packages/dice-appearance/src/migrate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppearanceApiError } from "./appearance";
@@ -410,7 +409,6 @@ describe("appearance V3 API client", () => {
         width: 150,
         height: 150,
         base64: "iVBORw0KGgo=",
-        renderModel,
       }),
     );
     vi.stubGlobal("fetch", fetchMock);

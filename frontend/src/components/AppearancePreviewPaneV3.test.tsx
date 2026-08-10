@@ -5,11 +5,7 @@ import {
   getAppearancePreviewV3,
   getAppearancePreviewV4,
 } from "@/lib/appearance-v3";
-import {
-  createDefaultDiceViewPreferencesV4,
-  type PublicRenderModelV4,
-} from "@dice-witch/dice-v4-model";
-import baseRenderModel from "./dice-v4-3d/fixtures/d6-r3.json";
+import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -26,47 +22,10 @@ vi.mock("@/lib/appearance-v3", async (importOriginal) => {
   };
 });
 
-vi.mock("./DiceAnimation3D", () => ({
-  DiceAnimation3D: ({
-    renderModel,
-    animateResult,
-    maximumResultRows,
-  }: {
-    renderModel: PublicRenderModelV4;
-    animateResult: boolean;
-    maximumResultRows: number;
-  }) => (
-    <div
-      data-testid="camera-preview"
-      data-animate-result={String(animateResult)}
-      data-maximum-result-rows={maximumResultRows}
-      data-elevation={renderModel.groups[0]?.[0]?.view?.kind === "camera"
-        ? renderModel.groups[0][0].view.elevationDegrees
-        : "authored"}
-    />
-  ),
-}));
-
 const preview = vi.mocked(getAppearancePreviewV3);
 const previewV4 = vi.mocked(getAppearancePreviewV4);
 const recipe = APPEARANCE_CATALOG_V3.styles[0]?.recipe;
 if (recipe === undefined) throw new Error("V3 preview recipe fixture is missing");
-const cameraRenderModel = {
-  ...baseRenderModel,
-  rendererRevision: "canvaskit-v4-r25",
-  groups: baseRenderModel.groups.map((group) =>
-    group.map((die) => ({
-      ...die,
-      view: {
-        kind: "camera",
-        elevationDegrees: 40,
-        azimuthOffsetDegrees: 0,
-        poseAzimuthDegrees: 0,
-      },
-    })),
-  ),
-} as PublicRenderModelV4;
-
 function renderPreview(target: "all" | "d20" = "all") {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -164,15 +123,14 @@ describe("AppearancePreviewPaneV3", () => {
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 
-  it("updates the local camera model without requesting another preview", async () => {
+  it("requests an authoritative PNG when camera preferences change", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     previewV4.mockResolvedValue({
       version: 4,
       contentType: "image/png",
-      width: 150,
+      width: 300,
       height: 150,
       base64: "iVBORw0KGgo=",
-      renderModel: cameraRenderModel,
     });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -183,18 +141,16 @@ describe("AppearancePreviewPaneV3", () => {
           target="d6"
           recipe={recipe}
           diceView={diceView}
-          mode="camera"
         />
       </QueryClientProvider>,
     );
 
-    await waitFor(() =>
-      expect(screen.getByTestId("camera-preview").dataset.elevation).toBe("40"),
-    );
-    expect(screen.getByTestId("camera-preview").dataset.maximumResultRows).toBe("2");
-    expect(screen.getByTestId("camera-preview").dataset.animateResult).toBe("true");
+    expect(
+      await screen.findByRole("img", { name: "d6 appearance preview" }),
+    ).toBeDefined();
     expect(document.querySelector('[aria-label="Preview"] [aria-live="polite"]')?.className)
       .toContain("h-72");
+
     const adjusted = { ...diceView, elevationDegrees: 47 };
     view.rerender(
       <QueryClientProvider client={client}>
@@ -202,15 +158,18 @@ describe("AppearancePreviewPaneV3", () => {
           target="d6"
           recipe={recipe}
           diceView={adjusted}
-          mode="camera"
         />
       </QueryClientProvider>,
     );
 
-    await waitFor(() =>
-      expect(screen.getByTestId("camera-preview").dataset.elevation).toBe("47"),
-    );
-    expect(previewV4).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(previewV4).toHaveBeenCalledTimes(2));
+    expect(previewV4).toHaveBeenLastCalledWith({
+      target: "d6",
+      recipe,
+      seed: 0x51ce_b00c,
+      state: "normal",
+      diceView: adjusted,
+    });
   });
 
   it("keeps renderer failures visible and retries only on request", async () => {

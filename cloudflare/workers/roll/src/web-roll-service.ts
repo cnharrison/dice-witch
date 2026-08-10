@@ -175,9 +175,7 @@ export type AppearancePreviewResultV3 = {
   png: Uint8Array;
 };
 
-export type AppearancePreviewResultV4 = AppearancePreviewResultV3 & {
-  renderModel: PublicRenderModelV4;
-};
+export type AppearancePreviewResultV4 = AppearancePreviewResultV3;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -570,16 +568,15 @@ export function renderAppearancePreviewV3(
   );
 }
 
-export async function renderAppearancePreviewV4(
+export function renderAppearancePreviewV4(
   value: unknown,
   createRenderer: DiceRequestRendererFactoryV4 =
     createCanvasKitRequestRendererV4,
 ): Promise<AppearancePreviewResultV4> {
-  const renderModel = buildAppearancePreviewRenderRequestR25V4(value);
-  return {
-    ...(await renderAppearancePreviewRequestV4(renderModel, createRenderer)),
-    renderModel,
-  };
+  return renderAppearancePreviewRequestV4(
+    buildAppearancePreviewRenderRequestR25V4(value),
+    createRenderer,
+  );
 }
 
 function randomSeed(): number {
