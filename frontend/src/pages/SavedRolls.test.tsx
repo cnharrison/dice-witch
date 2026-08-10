@@ -75,9 +75,8 @@ it("keeps personal management available without an administrable guild", async (
     </QueryClientProvider>,
   );
 
-  const heading = await screen.findByRole("heading", { name: "Library" });
-  expect(heading.className).toContain("font-['UnifrakturMaguntia']");
-  expect(heading.className).toContain("text-brand");
+  expect(screen.queryByRole("heading", { name: "Library" })).toBeNull();
+  await screen.findByRole("button", { name: "Create" });
   expect(document.querySelector("aside")?.className).toContain("self-start");
   expect(
     screen.queryByRole("combobox", { name: "Library" }),

@@ -1,6 +1,12 @@
 import { AppearanceMaterialOptionV3 } from "@/components/AppearanceMaterialOptionV3";
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { createDefaultAppearanceMaterialV3 } from "@/lib/appearance-editor-v3";
 import {
   MATERIAL_WEIGHT_TOTAL_V3,
@@ -17,7 +23,7 @@ import {
   type AppearanceRecipeV3,
   type MaterialFamilyV4,
 } from "@dice-witch/dice-v4-model";
-import { Plus, Trash2 } from "lucide-react";
+import { Info, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 
 type MaterialSelection = AppearanceRecipeV3["material"];
@@ -258,21 +264,18 @@ export function AppearanceMaterialControlsV3({
         Materials
       </h2>
 
-      <label className="block space-y-1.5 text-xs font-medium">
-        <span className="block">Use</span>
-        <AppearanceSelectV3
-          aria-label="Material selection mode"
-          value={recipe.material.mode}
-          onChange={(event) =>
-            changeMode(event.target.value as MaterialSelection["mode"])
-          }
-          containerClassName="sm:max-w-xs"
-        >
-          <option value="fixed">One material</option>
-          <option value="allowlist">Several materials equally</option>
-          <option value="weighted">Custom mix</option>
-        </AppearanceSelectV3>
-      </label>
+      <AppearanceSelectV3
+        aria-label="Material selection mode"
+        value={recipe.material.mode}
+        onChange={(event) =>
+          changeMode(event.target.value as MaterialSelection["mode"])
+        }
+        containerClassName="sm:max-w-xs"
+      >
+        <option value="fixed">One material</option>
+        <option value="allowlist">Several materials equally</option>
+        <option value="weighted">Custom mix</option>
+      </AppearanceSelectV3>
 
       <div className="grid items-start gap-4">
         {multiple && (
@@ -310,15 +313,34 @@ export function AppearanceMaterialControlsV3({
               </AppearanceSelectV3>
             </label>
             {weighted && (
-              <label className="block max-w-xl space-y-1.5 text-xs font-medium">
-                <span className="flex items-center justify-between gap-3">
-                  <span>Share of rolls</span>
+              <div className="block max-w-xl space-y-1.5 text-xs font-medium">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-1.5">
+                    <span>Share of rolls</span>
+                    <TooltipProvider delayDuration={0}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="About material share rebalancing"
+                            className="rounded-full text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Info className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Other shares rebalance automatically to keep the mix at
+                          100%.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </span>
                   <output className="font-mono tabular-nums text-muted-foreground">
                     {formatMaterialWeightPercentV3(
                       materialWeights[activeIndex] as number,
                     )}
                   </output>
-                </span>
+                </div>
                 <input
                   aria-label={`${activeName} share`}
                   aria-valuetext={formatMaterialWeightPercentV3(
@@ -339,10 +361,7 @@ export function AppearanceMaterialControlsV3({
                   }
                   className="h-11 w-full cursor-pointer accent-brand disabled:cursor-default sm:h-9"
                 />
-                <span className="block font-normal text-muted-foreground">
-                  Other shares rebalance automatically to keep the mix at 100%.
-                </span>
-              </label>
+              </div>
             )}
           </fieldset>
         )}

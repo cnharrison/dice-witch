@@ -739,14 +739,24 @@ export function AppearanceEditorV3({
 
           {activeDesign !== undefined && (
             <div className="space-y-1.5 rounded-lg border bg-muted/20 p-4">
-              {basedOnStyles[activeDesign.id] !== undefined && (
-                <p className="text-xs font-medium text-muted-foreground">
-                  Based on {basedOnStyles[activeDesign.id]}
-                </p>
-              )}
-              <Label htmlFor={`${kind}-design-name-v3`}>
-                Custom design name
-              </Label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {basedOnStyles[activeDesign.id] !== undefined && (
+                  <>
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Based on {basedOnStyles[activeDesign.id]}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="text-muted-foreground"
+                    >
+                      ·
+                    </span>
+                  </>
+                )}
+                <Label htmlFor={`${kind}-design-name-v3`}>
+                  Custom design name
+                </Label>
+              </div>
               <Input
                 id={`${kind}-design-name-v3`}
                 aria-label="Custom design name"

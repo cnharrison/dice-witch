@@ -578,12 +578,6 @@ export default function Preferences() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <header className="mb-8 border-b pb-5">
-        <h1 className="font-['UnifrakturMaguntia'] text-5xl text-brand sm:text-6xl">
-          Preferences
-        </h1>
-      </header>
-
       <nav className="mb-6 flex gap-2" aria-label="Appearance sections">
         <button
           type="button"

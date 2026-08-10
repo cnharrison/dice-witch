@@ -1,7 +1,9 @@
 import {
   TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4,
+  canonicalJsonV4,
   deriveAppearanceSeedV4,
   deriveNamedSeedV4,
+  hashStringV4,
   materialDefaultPolyhedralFormV4,
   resolveAppearanceSelectionV4,
   resolveCompatiblePolyhedralFormV4,
@@ -837,6 +839,36 @@ function namedRandomV3(seed: number, stream: string): DeterministicRandom {
   return new DeterministicRandom(deriveNamedSeedV4(seed, stream));
 }
 
+export type AppearanceResolutionSeedPolicyV3 =
+  | "legacy"
+  | "property-streams-r26";
+
+function propertySeedV3(
+  recipe: AppearanceRecipeV3,
+  seed: number,
+  policy: AppearanceResolutionSeedPolicyV3,
+  stream: string,
+  value: unknown,
+): number {
+  if (policy === "legacy" || recipe.variation !== "fixed") return seed;
+  return hashStringV4(
+    `fixed-r26:${stream}:${canonicalJsonV4(value)}`,
+  );
+}
+
+function propertyRandomV3(
+  recipe: AppearanceRecipeV3,
+  seed: number,
+  policy: AppearanceResolutionSeedPolicyV3,
+  stream: string,
+  value: unknown,
+): DeterministicRandom {
+  return namedRandomV3(
+    propertySeedV3(recipe, seed, policy, stream, value),
+    stream,
+  );
+}
+
 function resolveColorsV3(
   recipe: AppearanceRecipeV3,
   random: DeterministicRandom,
@@ -983,6 +1015,7 @@ function contrastSurfaceV3(
 export function resolveAppearanceRecipeV3(
   recipe: AppearanceRecipeV3,
   context: AppearanceResolutionContextV3,
+  seedPolicy: AppearanceResolutionSeedPolicyV3 = "legacy",
 ): ResolvedAppearanceV3 {
   const seed = deriveAppearanceSeedV4({
     ...context,
@@ -992,7 +1025,13 @@ export function resolveAppearanceRecipeV3(
   });
   const selectedMaterial = resolveAppearanceSelectionV4(
     recipe.material,
-    namedRandomV3(seed, "material"),
+    propertyRandomV3(
+      recipe,
+      seed,
+      seedPolicy,
+      "material",
+      recipe.material,
+    ),
   );
   const usesFullSpectrumRandomization =
     usesFullSpectrumRandomizationV3(recipe);
@@ -1007,7 +1046,13 @@ export function resolveAppearanceRecipeV3(
   const colors = resolveRandomizedColorsV3(
     recipe,
     material,
-    seed,
+    propertySeedV3(recipe, seed, seedPolicy, "colors", {
+      colors: recipe.colors,
+      material,
+      ...(recipe.randomization === undefined
+        ? {}
+        : { randomization: recipe.randomization }),
+    }),
     randomSpecial?.palette,
   );
   const form =
@@ -1022,23 +1067,47 @@ export function resolveAppearanceRecipeV3(
           : resolveCompatiblePolyhedralFormV4(
               recipe.form.polyhedral,
               material.family,
-              namedRandomV3(seed, "form"),
+              propertyRandomV3(recipe, seed, seedPolicy, "form", {
+                form: recipe.form,
+                materialFamily: material.family,
+                ...(recipe.randomization === undefined
+                  ? {}
+                  : { randomization: recipe.randomization }),
+              }),
             );
   const fontId = resolveAppearanceSelectionV4(
     recipe.font,
-    namedRandomV3(seed, "font"),
+    propertyRandomV3(recipe, seed, seedPolicy, "font", recipe.font),
   );
   const engravingFinish = resolveAppearanceSelectionV4(
     recipe.engraving,
-    namedRandomV3(seed, "engraving"),
+    propertyRandomV3(
+      recipe,
+      seed,
+      seedPolicy,
+      "engraving",
+      recipe.engraving,
+    ),
   );
   const gradientScope = resolveAppearanceSelectionV4(
     recipe.gradient.scope,
-    namedRandomV3(seed, "gradient-scope"),
+    propertyRandomV3(
+      recipe,
+      seed,
+      seedPolicy,
+      "gradient-scope",
+      recipe.gradient.scope,
+    ),
   );
   const gradientDirection = resolveAppearanceSelectionV4(
     recipe.gradient.direction,
-    namedRandomV3(seed, "gradient-direction"),
+    propertyRandomV3(
+      recipe,
+      seed,
+      seedPolicy,
+      "gradient-direction",
+      recipe.gradient.direction,
+    ),
   );
   const isClassicGradient =
     material.family === "classic" && material.treatment === "gradient";
@@ -1053,7 +1122,16 @@ export function resolveAppearanceRecipeV3(
       "Appearance repeated gradient requires standard polyhedral form",
     );
   }
-  const lighting = resolveLightingV3(recipe, seed);
+  const lighting = resolveLightingV3(
+    recipe,
+    propertySeedV3(
+      recipe,
+      seed,
+      seedPolicy,
+      "lighting",
+      recipe.lighting,
+    ),
+  );
   const surface = contrastSurfaceV3(
     material,
     colors,
@@ -1070,7 +1148,15 @@ export function resolveAppearanceRecipeV3(
       texture: {
         generatorId:
           TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4[material.family],
-        seed: deriveNamedSeedV4(seed, "texture"),
+        seed: deriveNamedSeedV4(
+          propertySeedV3(recipe, seed, seedPolicy, "texture", {
+            material,
+            ...(recipe.randomization === undefined
+              ? {}
+              : { randomization: recipe.randomization }),
+          }),
+          "texture",
+        ),
         scale: material.textureScale,
         rotation: isClassicGradient
           ? TEXTURE_ROTATION_BY_DIRECTION_V3[gradientDirection]

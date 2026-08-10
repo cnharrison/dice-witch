@@ -179,11 +179,12 @@ function outerGlowMetrics(
 export function criticalEffectOutsetV4(
   size: number,
   effect: RenderCriticalEffectV4 | null | undefined,
+  ensureOuterGlow = false,
 ): number {
   if (
     effect === null ||
     effect === undefined ||
-    effect.treatment !== "classic-glow"
+    (effect.treatment !== "classic-glow" && !ensureOuterGlow)
   ) {
     return 0;
   }
@@ -530,12 +531,16 @@ function drawCriticalEffect(
   scope: CanvasKitResourceScopeV4,
   geometry: CriticalEffectGeometryV4,
   effect: RenderCriticalEffectV4 | null | undefined,
+  ensureOuterGlow = false,
 ): void {
   if (effect === null || effect === undefined) return;
   const intensity = effectIntensity(effect);
   if (intensity === 0) return;
 
   const clipped = effect.treatment !== "classic-glow";
+  if (ensureOuterGlow && clipped) {
+    drawOuterGlow(canvasKit, canvas, scope, geometry, effect, intensity);
+  }
   if (clipped) {
     canvas.save();
     canvas.clipPath(geometry.silhouette, canvasKit.ClipOp.Intersect, true);
@@ -579,6 +584,7 @@ export function drawPolyhedralCriticalEffectV4(
   facePaths: readonly Path[],
   size: number,
   effect: RenderCriticalEffectV4 | null | undefined,
+  ensureOuterGlow = false,
 ): void {
   if (effect === null || effect === undefined) return;
   const hull = convexHull(
@@ -605,6 +611,7 @@ export function drawPolyhedralCriticalEffectV4(
       size,
     },
     effect,
+    ensureOuterGlow,
   );
 }
 

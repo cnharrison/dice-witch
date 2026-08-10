@@ -279,7 +279,6 @@ export function DiceViewPreferencesV4({
                     min={-45}
                     max={45}
                     step={5}
-                    disabled={override?.mode !== "custom"}
                     value={override?.customDegrees ?? 0}
                     onChange={(event) => {
                       const next = updateOverride(value, target, "custom");

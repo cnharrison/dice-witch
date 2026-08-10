@@ -122,6 +122,21 @@ describe("DiceViewPreferencesV4", () => {
     expect(screen.getByRole("button", { name: "Reset to random" })).toBeDefined();
   });
 
+  it("switches an inherited target to Custom when its slider moves", () => {
+    const { onChange, value } = renderPreferences({ selectedTarget: "d8" });
+    const slider = screen.getByLabelText("d8 custom azimuth");
+
+    expect(slider).toHaveProperty("disabled", false);
+    fireEvent.change(slider, { target: { value: "25" } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...value,
+      azimuth: {
+        ...value.azimuth,
+        overrides: { d8: { mode: "custom", customDegrees: 25 } },
+      },
+    });
+  });
+
   it("resets only the selected target to random", () => {
     const value = createDefaultDiceViewPreferencesV4();
     value.azimuth.overrides.d8 = { mode: "custom", customDegrees: 25 };

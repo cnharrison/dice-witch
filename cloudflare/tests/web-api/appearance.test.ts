@@ -861,7 +861,7 @@ describe("web appearance API", () => {
     expect(previewV3).toHaveBeenCalledWith(input);
   });
 
-  it("delegates V4 camera previews to the r25 renderer path", async () => {
+  it("delegates V4 camera previews to the current renderer path", async () => {
     const env = bindings(() => Promise.resolve(storedSession()));
     const input = {
       target: "d20",

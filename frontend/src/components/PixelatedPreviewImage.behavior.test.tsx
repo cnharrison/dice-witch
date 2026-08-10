@@ -138,6 +138,45 @@ describe("PixelatedPreviewImage", () => {
     expect(document.querySelector("canvas")).toBeNull();
   });
 
+  it("does not restart a transition for an equivalent preview or new callbacks", async () => {
+    const current = preview("AAAA");
+    const next = preview("BBBB");
+    const view = render(
+      <PixelatedPreviewImage
+        candidate={current}
+        alt="Appearance preview"
+        onDisplay={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+    await screen.findByRole("img");
+
+    view.rerender(
+      <PixelatedPreviewImage
+        candidate={next}
+        alt="Appearance preview"
+        onDisplay={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(animationFrames.size).toBeGreaterThan(0));
+    await runNextFrame(0);
+
+    view.rerender(
+      <PixelatedPreviewImage
+        candidate={preview("BBBB")}
+        alt="Appearance preview"
+        onDisplay={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+    await runNextFrame(220);
+    await waitFor(() =>
+      expect(screen.getByRole("img").getAttribute("src")).toContain("BBBB"),
+    );
+    expect(animationFrames.size).toBe(0);
+  });
+
   it("keeps the displayed image when a running transition is reverted", async () => {
     const props = {
       alt: "Appearance preview",

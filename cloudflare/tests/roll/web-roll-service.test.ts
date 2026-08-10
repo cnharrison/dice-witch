@@ -22,6 +22,7 @@ import {
   buildAppearancePreviewRenderRequestR23V4,
   buildAppearancePreviewRenderRequestR24V4,
   buildAppearancePreviewRenderRequestR25V4,
+  buildAppearancePreviewRenderRequestR26V4,
   executeWebRoll,
   parseWebSavedRollAttribution,
   prepareWebRoll,
@@ -261,7 +262,7 @@ describe("appearance preview", () => {
   });
 
   it("uses one matching appearance for both percentile preview dice", () => {
-    const preview = buildAppearancePreviewRenderRequestR25V4({
+    const preview = buildAppearancePreviewRenderRequestR26V4({
       target: "percentile",
       recipe: recipeV3,
       diceView: createDefaultDiceViewPreferencesV4(),
@@ -270,6 +271,7 @@ describe("appearance preview", () => {
     });
     const [percentile, ones] = preview.groups[0] ?? [];
 
+    expect(preview.rendererRevision).toBe("canvaskit-v4-r26");
     expect(percentile?.target).toBe("percentile");
     expect(ones?.target).toBe("d10");
     expect(ones).toHaveProperty("faceLabelSet", "percentile-ones");
@@ -397,7 +399,7 @@ describe("appearance preview", () => {
     }
   });
 
-  it("renders Profile V4 camera previews through the r25 renderer", async () => {
+  it("renders Profile V4 camera previews through the current renderer", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     diceView.mode = "legacy";
     const rendered = await renderAppearancePreviewV4({

@@ -39,9 +39,7 @@ describe("AppearanceColorControlsV3", () => {
     expect(behavior.className).toContain("appearance-none");
     expect(behavior.className).toContain("pr-10");
     expect(behavior.parentElement?.className).toContain("relative");
-    expect(behavior.closest("label")?.firstElementChild?.className).toContain(
-      "block",
-    );
+    expect(screen.queryByText("Color behavior")).toBeNull();
     await user.selectOptions(behavior, "palette");
 
     expect(

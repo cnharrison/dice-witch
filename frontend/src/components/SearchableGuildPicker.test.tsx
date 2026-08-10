@@ -36,7 +36,7 @@ describe("SearchableGuildPicker", () => {
       screen.getByRole("radio", { name: /The Painted Tavern/ }),
     ).toHaveProperty("checked", true);
 
-    await user.type(screen.getByLabelText("Find a server"), "moon");
+    await user.type(screen.getByLabelText("Search server names"), "moon");
     expect(
       screen.queryByRole("radio", { name: /The Painted Tavern/ }),
     ).toBeNull();
@@ -55,7 +55,7 @@ describe("SearchableGuildPicker", () => {
       />,
     );
 
-    const search = screen.getByLabelText("Find a server");
+    const search = screen.getByLabelText("Search server names");
     expect(search.className).toContain("h-11");
     search.focus();
     await user.tab();
@@ -72,7 +72,7 @@ describe("SearchableGuildPicker", () => {
       <SearchableGuildPicker guilds={guilds} value="" onValueChange={vi.fn()} />,
     );
 
-    await user.type(screen.getByLabelText("Find a server"), "missing");
+    await user.type(screen.getByLabelText("Search server names"), "missing");
     expect(screen.getByRole("status")).toHaveProperty(
       "textContent",
       "No authorized servers match that search.",

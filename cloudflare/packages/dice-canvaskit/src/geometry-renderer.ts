@@ -357,6 +357,7 @@ export type RenderCanonicalGeometryV4Options = {
   materialFamily?: MaterialFamilyV4;
   requiresLocalSeparation?: boolean;
   criticalEffect?: RenderCriticalEffectV4 | null;
+  criticalOuterGlow?: boolean;
   renderPolicy?: PolyhedralRenderPolicyV4;
   allowD20LabelClearanceShortfall?: boolean;
   faceLabelSet?: FaceLabelSetV4;
@@ -509,6 +510,85 @@ function balancedGroupRows<Die>(
   });
 }
 
+function balancedGroupRowsKeepingPairs<Die>(
+  groups: readonly (readonly Die[])[],
+  keepTogether: (left: Die, right: Die) => boolean,
+): readonly (readonly Die[])[] {
+  return groups.flatMap((group) => {
+    const balanced = balancedGroupRows([group]);
+    const splitsPair = balanced.some((row, index) => {
+      const next = balanced[index + 1];
+      const left = row.at(-1);
+      const right = next?.[0];
+      return left !== undefined && right !== undefined && keepTogether(left, right);
+    });
+    if (!splitsPair) return balanced;
+
+    const minimumRowCount = Math.ceil(group.length / MAX_GRID_COLUMNS_V4);
+    for (
+      let rowCount = minimumRowCount;
+      rowCount <= group.length;
+      rowCount += 1
+    ) {
+      const targetLength = group.length / rowCount;
+      const cache = new Map<string, { score: number; rows: Die[][] } | null>();
+      const partition = (
+        offset: number,
+        remainingRows: number,
+      ): { score: number; rows: Die[][] } | null => {
+        const key = `${String(offset)}:${String(remainingRows)}`;
+        const cached = cache.get(key);
+        if (cached !== undefined) return cached;
+        if (remainingRows === 1) {
+          const length = group.length - offset;
+          const result = length >= 1 && length <= MAX_GRID_COLUMNS_V4
+            ? {
+                score: (length - targetLength) ** 2,
+                rows: [[...group.slice(offset)]],
+              }
+            : null;
+          cache.set(key, result);
+          return result;
+        }
+
+        const minimumEnd = Math.max(
+          offset + 1,
+          group.length - (remainingRows - 1) * MAX_GRID_COLUMNS_V4,
+        );
+        const maximumEnd = Math.min(
+          offset + MAX_GRID_COLUMNS_V4,
+          group.length - (remainingRows - 1),
+        );
+        let best: { score: number; rows: Die[][] } | null = null;
+        for (let end = minimumEnd; end <= maximumEnd; end += 1) {
+          const left = group[end - 1];
+          const right = group[end];
+          if (
+            left !== undefined &&
+            right !== undefined &&
+            keepTogether(left, right)
+          ) {
+            continue;
+          }
+          const remainder = partition(end, remainingRows - 1);
+          if (remainder === null) continue;
+          const length = end - offset;
+          const candidate = {
+            score: (length - targetLength) ** 2 + remainder.score,
+            rows: [[...group.slice(offset, end)], ...remainder.rows],
+          };
+          if (best === null || candidate.score < best.score) best = candidate;
+        }
+        cache.set(key, best);
+        return best;
+      };
+      const result = partition(0, rowCount);
+      if (result !== null) return result.rows;
+    }
+    throw new Error("CanvasKit V4 could not keep paired dice together");
+  });
+}
+
 function packCompactGridRows<Die>(
   groups: readonly (readonly Die[])[],
   columnCount: number,
@@ -594,6 +674,7 @@ function geometryGridLayout<Die>(
   iconSize: number,
   layout: RendererRevisionPolicyV4["gridLayout"],
   visualBoundsForDie?: (die: Die) => { left: number; right: number },
+  keepTogether?: (left: Die, right: Die) => boolean,
 ): {
   rows: readonly (readonly Die[])[];
   rowOffsets: readonly number[];
@@ -622,7 +703,9 @@ function geometryGridLayout<Die>(
   if (layout === "legacy" || layout === "group-rows-r13") {
     rows = wrappedGroupRows(groups);
   } else if (layout === "group-rows-r14") {
-    rows = balancedGroupRows(groups);
+    rows = keepTogether === undefined
+      ? balancedGroupRows(groups)
+      : balancedGroupRowsKeepingPairs(groups, keepTogether);
   } else if (layout === "compact-r9") {
     rows = compactGridRows(groups, rowHeight);
   } else {
@@ -1937,6 +2020,7 @@ function drawPolyhedralGeometry(
     materialFamily,
     requiresLocalSeparation = false,
     criticalEffect,
+    criticalOuterGlow = false,
     renderPolicy = "legacy",
     allowD20LabelClearanceShortfall = false,
     faceLabelSet,
@@ -2134,6 +2218,7 @@ function drawPolyhedralGeometry(
       facePaths,
       size,
       criticalEffect,
+      criticalOuterGlow,
     );
   }
   return projection.visibleFaces.length;
@@ -2222,6 +2307,10 @@ async function renderGeometryGridSurface<Die>(
   iconsForDie?: (die: Die) => readonly IconNameV4[],
   visualBoundsForDie?: (die: Die) => { left: number; right: number },
   verticalOffsetForDie?: (die: Die) => number,
+  sharedIconsForPair?: (
+    left: Die,
+    right: Die,
+  ) => readonly IconNameV4[] | undefined,
 ): Promise<RenderedGeometryGridV4> {
   const hasIcons =
     iconsForDie !== undefined &&
@@ -2241,6 +2330,9 @@ async function renderGeometryGridSurface<Die>(
     modifierIconSizeV4(rendererRevision),
     rendererRevisionPolicyV4(rendererRevision).gridLayout,
     visualBoundsForDie,
+    sharedIconsForPair === undefined
+      ? undefined
+      : (left, right) => sharedIconsForPair(left, right) !== undefined,
   );
   const rendered = withCanvasKitResourcesSyncV4((scope) => {
     const surface = scope.own(
@@ -2257,6 +2349,16 @@ async function renderGeometryGridSurface<Die>(
       : undefined;
     let visibleFaceCount = 0;
     rows.forEach((row, rowIndex) => {
+      const sharedIconPairs = new Map<number, readonly IconNameV4[]>();
+      if (sharedIconsForPair !== undefined) {
+        for (let index = 0; index < row.length - 1; index += 1) {
+          const left = row[index];
+          const right = row[index + 1];
+          if (left === undefined || right === undefined) continue;
+          const icons = sharedIconsForPair(left, right);
+          if (icons !== undefined) sharedIconPairs.set(index, icons);
+        }
+      }
       row.forEach((die, columnIndex) => {
         const rowOffset = rowOffsets[rowIndex];
         const columnOffset = columnOffsets[rowIndex]?.[columnIndex];
@@ -2278,13 +2380,42 @@ async function renderGeometryGridSurface<Die>(
               canvas.restore();
             }
           });
-          if (iconPainter !== undefined && iconsForDie !== undefined) {
+          if (
+            iconPainter !== undefined &&
+            iconsForDie !== undefined &&
+            !sharedIconPairs.has(columnIndex - 1) &&
+            !sharedIconPairs.has(columnIndex)
+          ) {
             iconPainter.draw(canvas, iconsForDie(die), rendererRevision);
           }
         } finally {
           canvas.restore();
         }
       });
+      if (iconPainter !== undefined) {
+        sharedIconPairs.forEach((icons, columnIndex) => {
+          const leftOffset = columnOffsets[rowIndex]?.[columnIndex];
+          const rightOffset = columnOffsets[rowIndex]?.[columnIndex + 1];
+          const rowOffset = rowOffsets[rowIndex];
+          if (
+            leftOffset === undefined ||
+            rightOffset === undefined ||
+            rowOffset === undefined
+          ) {
+            throw new Error(`CanvasKit V4 ${name} shared icon offset is missing`);
+          }
+          canvas.save();
+          try {
+            canvas.translate(
+              rowOffset + (leftOffset + rightOffset) / 2,
+              rowIndex * rowHeight,
+            );
+            iconPainter.draw(canvas, icons, rendererRevision);
+          } finally {
+            canvas.restore();
+          }
+        });
+      }
     });
     return {
       png: encodeSurface(canvasKit, scope, surface),
@@ -3155,6 +3286,7 @@ type RenderGridAppearanceOptionsV4 = Pick<
   RenderCanonicalGeometryV4Options,
   | "blankFaces"
   | "criticalEffect"
+  | "criticalOuterGlow"
   | "engravingColor"
   | "engravingFinish"
   | "engravingContrastEdge"
@@ -3173,6 +3305,9 @@ function gridAppearanceOptions(
   if (die.blankFaces !== undefined) options.blankFaces = die.blankFaces;
   if (die.criticalEffect !== null && die.criticalEffect !== undefined) {
     options.criticalEffect = die.criticalEffect;
+  }
+  if (die.kind === "polyhedral" && die.criticalOuterGlow !== undefined) {
+    options.criticalOuterGlow = die.criticalOuterGlow;
   }
   if (die.engravingColor !== undefined) {
     options.engravingColor = die.engravingColor;
@@ -3737,6 +3872,7 @@ function geometryGridDieVisualBounds(
   const effectOutset = criticalEffectOutsetV4(
     GRID_DIE_SIZE_V4,
     die.criticalEffect,
+    die.kind === "polyhedral" && die.criticalOuterGlow === true,
   );
   let left = Math.floor(artworkLeft - outlinePadding - effectOutset);
   const top = Math.floor(artworkTop - outlinePadding - effectOutset);
@@ -3767,12 +3903,37 @@ function visualCenterOffsetV4(
   return (GRID_DIE_SIZE_V4 - top - bottom) / 2;
 }
 
+function sharedPercentileIconsV4(
+  left: RenderGeometryGridDieV4,
+  right: RenderGeometryGridDieV4,
+): readonly IconNameV4[] | undefined {
+  if (
+    left.kind !== "polyhedral" ||
+    right.kind !== "polyhedral" ||
+    left.geometry.target !== "percentile" ||
+    right.geometry.target !== "d10" ||
+    right.faceLabelSet !== "percentile-ones"
+  ) {
+    return undefined;
+  }
+  const leftIcons = left.icons ?? [];
+  const rightIcons = right.icons ?? [];
+  return leftIcons.length > 0 &&
+    leftIcons.length === rightIcons.length &&
+    leftIcons.every((icon, index) => icon === rightIcons[index])
+    ? leftIcons
+    : undefined;
+}
+
 function renderGeometryGridWithGeometryRenderer(
   canvasKit: CanvasKitRuntimeV4,
   resources: GeometryRendererResourcesV4,
   { groups, rendererRevision }: RenderGeometryGridV4Options,
 ): Promise<RenderedGeometryGridV4> {
   const policy = rendererRevisionPolicyV4(rendererRevision);
+  const sharedIconsForPair = policy.sharedPercentileModifierIcons
+    ? sharedPercentileIconsV4
+    : undefined;
   const shaderCache: GeometryGridShaderCacheV4 = {
     atlasedOctahedralTextures: atlasedOctahedralTextures(groups),
     materialTextures: new Map(),
@@ -3806,6 +3967,7 @@ function renderGeometryGridWithGeometryRenderer(
             geometryGridDieVisualBounds(die, rendererRevision),
           )
       : undefined,
+    sharedIconsForPair,
   );
 }
 

@@ -342,7 +342,13 @@ export function getRenderGeometryDescriptorV4(
     radius * Math.sin(elevation),
     horizontal * Math.cos(azimuth),
   ];
-  const camera = { ...descriptor.camera, position };
+  const camera = {
+    ...descriptor.camera,
+    position,
+    ...(revisionPolicy.fudgeCameraInset && die.target === "fudge"
+      ? { orthographicHeight: descriptor.camera.orthographicHeight * 1.03 }
+      : {}),
+  };
   if (die.view.kind === "oriented-camera") {
     const { resultRotation } = die.view;
     return {

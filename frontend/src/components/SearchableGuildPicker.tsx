@@ -30,17 +30,15 @@ export function SearchableGuildPicker({
 
   return (
     <div className="space-y-3">
-      <label className="block space-y-1 text-sm font-medium">
-        <span>Find a server</span>
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          placeholder="Search server names"
-          autoComplete="off"
-          className="h-11 w-full rounded-md border bg-background px-3 text-sm sm:max-w-md"
-        />
-      </label>
+      <input
+        type="search"
+        aria-label="Search server names"
+        value={query}
+        onChange={(event) => setQuery(event.currentTarget.value)}
+        placeholder="Search server names"
+        autoComplete="off"
+        className="block h-11 w-full rounded-md border bg-background px-3 text-sm sm:max-w-md"
+      />
 
       <div
         role="radiogroup"

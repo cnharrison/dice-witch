@@ -134,12 +134,11 @@ afterEach(() => {
 });
 
 describe("appearance preference authorization", () => {
-  it("restores the concise Preferences identity for personal appearance", async () => {
+  it("keeps the personal appearance page concise", async () => {
     mockFetch();
     renderPreferences();
 
-    const heading = await screen.findByRole("heading", { name: "Preferences" });
-    expect(heading.className).toContain("UnifrakturMaguntia");
+    expect(screen.queryByRole("heading", { name: "Preferences" })).toBeNull();
     expect(await screen.findByRole("region", { name: "Preview" })).toBeDefined();
     expect(
       screen.getByRole("button", { name: "Personal" }),
@@ -254,7 +253,7 @@ describe("appearance preference authorization", () => {
       name: "Server appearance",
     });
     expect(sectionHeading.closest("section")).not.toBeNull();
-    expect(screen.getByLabelText("Find a server")).toBeDefined();
+    expect(screen.getByLabelText("Search server names")).toBeDefined();
     expect(await screen.findByRole("tab", { name: "Design" })).toBeDefined();
     expect(screen.getByRole("tab", { name: "Camera" })).toBeDefined();
     const serverSettingsTab = screen.getByRole("tab", {

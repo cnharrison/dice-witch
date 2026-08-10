@@ -34,6 +34,9 @@ export type RendererRevisionPolicyV4 = {
   strongPhysicalEdges: boolean;
   modifierIcons: ModifierIconDesignV4;
   gridVerticalAlignment: "fixed" | "visual-center-r24";
+  d10CriticalHalo: boolean;
+  sharedPercentileModifierIcons: boolean;
+  fudgeCameraInset: boolean;
   gridLayout:
     | "legacy"
     | "compact-r9"
@@ -72,6 +75,9 @@ const r1 = policy({
   strongPhysicalEdges: false,
   modifierIcons: "legacy-r1",
   gridVerticalAlignment: "fixed",
+  d10CriticalHalo: false,
+  sharedPercentileModifierIcons: false,
+  fudgeCameraInset: false,
   gridLayout: "legacy",
 });
 const r2 = policy({ ...r1, explicitTextureScope: true });
@@ -128,6 +134,12 @@ const r22 = policy({ ...r21 });
 const r23 = policy({ ...r22 });
 const r24 = policy({ ...r23, gridVerticalAlignment: "visual-center-r24" });
 const r25 = policy({ ...r24 });
+const r26 = policy({
+  ...r25,
+  d10CriticalHalo: true,
+  sharedPercentileModifierIcons: true,
+  fudgeCameraInset: true,
+});
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -155,6 +167,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r23": r23,
   "canvaskit-v4-r24": r24,
   "canvaskit-v4-r25": r25,
+  "canvaskit-v4-r26": r26,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

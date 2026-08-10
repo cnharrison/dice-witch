@@ -752,11 +752,6 @@ export default function SavedRolls() {
       </Dialog>
 
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <header className="mb-8 border-b pb-5">
-          <h1 className="font-['UnifrakturMaguntia'] text-5xl text-brand sm:text-6xl">
-            Library
-          </h1>
-        </header>
         <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
           <aside className="grid min-w-0 max-w-full self-start content-start gap-4 overflow-hidden rounded-lg border bg-card p-4">
             {canManageScope && !searchMode && (

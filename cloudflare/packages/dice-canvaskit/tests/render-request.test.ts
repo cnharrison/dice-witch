@@ -2541,6 +2541,148 @@ describe("CanvasKit Render Request V4", () => {
     expect(canvasKit.HEAPU8.buffer.byteLength).toBe(33_554_432);
   });
 
+  it("adds reliable d10 critical halos and one shared percentile icon in r26", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const view = {
+      kind: "camera" as const,
+      elevationDegrees: 40,
+      azimuthOffsetDegrees: 45,
+      poseAzimuthDegrees: 0,
+    };
+    const spectralAppearance: RenderAppearanceV4 = {
+      ...crystalAppearance,
+      texture: { ...crystalAppearance.texture, scope: "die-wide" },
+      effect: {
+        state: "critical-success",
+        treatment: "spectral-rim",
+        color: "#ffd447",
+        intensity: 72,
+      },
+    };
+    const d10 = {
+      ...die("d10", 9),
+      appearance: spectralAppearance,
+      icons: ["critical-success" as const],
+      view,
+    };
+    const renderSingle = (rendererRevision: "canvaskit-v4-r25" | "canvaskit-v4-r26") =>
+      renderDiceRequestV4ToPng(
+        { version: 4, rendererRevision, groups: [[d10]] },
+        createRenderer,
+      );
+    const [singleR25, singleR26] = await Promise.all([
+      renderSingle("canvaskit-v4-r25"),
+      renderSingle("canvaskit-v4-r26"),
+    ]);
+
+    const classicCriticalAppearance: RenderAppearanceV4 = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" },
+      effect: {
+        state: "critical-success",
+        treatment: "classic-glow",
+        color: "#ffd447",
+        intensity: 72,
+      },
+    };
+    const percentile = {
+      ...die("percentile", 90),
+      appearance: classicCriticalAppearance,
+      icons: ["critical-success" as const],
+      view,
+    };
+    const ones = {
+      ...die("d10", 9),
+      faceLabelSet: "percentile-ones" as const,
+      appearance: classicCriticalAppearance,
+      icons: ["critical-success" as const],
+      view,
+    };
+    const renderPair = (rendererRevision: "canvaskit-v4-r25" | "canvaskit-v4-r26") =>
+      renderDiceRequestV4ToPng(
+        { version: 4, rendererRevision, groups: [[percentile, ones]] },
+        createRenderer,
+      );
+    const [pairR25, pairR26] = await Promise.all([
+      renderPair("canvaskit-v4-r25"),
+      renderPair("canvaskit-v4-r26"),
+    ]);
+    const filler = {
+      ...die("d6", 6),
+      appearance: {
+        ...appearance,
+        texture: { ...appearance.texture, scope: "die-wide" as const },
+      },
+      view,
+    };
+    const multiRowPair = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r26",
+        groups: [[
+          ...Array.from({ length: 5 }, () => structuredClone(filler)),
+          percentile,
+          ones,
+          ...Array.from({ length: 4 }, () => structuredClone(filler)),
+        ]],
+      },
+      createRenderer,
+    );
+
+    expect(singleR26.png).not.toEqual(singleR25.png);
+    expect(pairR26.png).not.toEqual(pairR25.png);
+    expect(multiRowPair.rowCount).toBe(2);
+    expect({
+      singleR25: sha256(singleR25.png),
+      singleR26: sha256(singleR26.png),
+      pairR25: sha256(pairR25.png),
+      pairR26: sha256(pairR26.png),
+      multiRowPair: sha256(multiRowPair.png),
+    }).toEqual({
+      singleR25: "1b688722af46b09fd2b29806889a856b627064ac0977b76c0e543bc64aeccefe",
+      singleR26: "3602a4d7eb4f9594c42301bd4c58f50b12c7fa1b7405837768f84f998d12f4e0",
+      pairR25: "d15447b28d4fb32e09ff3b4646a6c7f7759a54df83a0d8a49c06777bf2480c81",
+      pairR26: "7325c1cf413aa8664b86a868d3ed036ab3bb2611ce8f4eb3e16c54ee586fa24c",
+      multiRowPair: "b577a016270ff00ba49284226e741cc621bb5b6f155fff8a341b43fcc5c4eda5",
+    });
+  });
+
+  it("keeps the Fudge outline inside r26 preview bounds", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const fudgeAppearance: RenderAppearanceV4 = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" },
+    };
+    const render = (rendererRevision: "canvaskit-v4-r25" | "canvaskit-v4-r26") =>
+      renderDiceRequestV4ToPng(
+        {
+          version: 4,
+          rendererRevision,
+          groups: [[{
+            ...die("fudge", 1),
+            appearance: fudgeAppearance,
+            view: {
+              kind: "camera",
+              elevationDegrees: 40,
+              azimuthOffsetDegrees: -35,
+              poseAzimuthDegrees: 0,
+            },
+          }]],
+        },
+        createRenderer,
+      );
+    const [r25, r26] = await Promise.all([
+      render("canvaskit-v4-r25"),
+      render("canvaskit-v4-r26"),
+    ]);
+
+    expect(r26.png).not.toEqual(r25.png);
+    expect({ r25: sha256(r25.png), r26: sha256(r26.png) }).toEqual({
+      r25: "b5c17c69f64f4367abaf2b3b53d45ce5ceba37ad122edd7651c8e976e0bdd9ec",
+      r26: "8ffff18a0caca319b72e9b4316659b0fb7afa8b73d84418bfc73e72fe433c6d6",
+    });
+  });
+
   it("rejects invalid and unsupported requests before renderer allocation", async () => {
     let factoryCalls = 0;
     const factory = () => {
@@ -2553,7 +2695,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r26" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r27" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

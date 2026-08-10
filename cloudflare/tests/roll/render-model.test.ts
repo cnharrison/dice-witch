@@ -28,6 +28,7 @@ import {
   buildRollRenderRequestR23V4,
   buildRollRenderRequestR24V4,
   buildRollRenderRequestR25V4,
+  buildRollRenderRequestR26V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1152,6 +1153,43 @@ describe("Profile V4 roll rendering", () => {
     );
     expect(validateRenderRequestV4(requestR23)).toEqual(requestR23);
     expect(validateRenderRequestV4(requestR24)).toEqual(requestR24);
+  });
+
+  it("keeps r26 random appearance properties stable when only the font changes", () => {
+    const recipe = appearanceRecipeV3({ colors: { mode: "vivid-random-pair" } });
+    const withFont = (fontId: "stencil-ops" | "liberation-sans") => ({
+      version: 4 as const,
+      recipes: effectiveRecipesV3({
+        ...recipe,
+        font: { mode: "fixed" as const, value: fontId },
+      }) as EffectiveAppearanceV4["recipes"],
+      diceView: createDefaultDiceViewPreferencesV4(),
+    });
+    const roll = outcome(["d8"], 42);
+    const stencil = buildRollRenderRequestR26V4(
+      roll,
+      0x51ce_b00c,
+      withFont("stencil-ops"),
+    ).groups[0]?.[0];
+    const liberation = buildRollRenderRequestR26V4(
+      roll,
+      0x51ce_b00c,
+      withFont("liberation-sans"),
+    ).groups[0]?.[0];
+    if (stencil === undefined || liberation === undefined) {
+      throw new Error("Font stability fixture is missing");
+    }
+
+    expect(stencil.appearance.engraving.fontId).toBe("stencil-ops");
+    expect(liberation.appearance.engraving.fontId).toBe("liberation-sans");
+    expect({
+      ...stencil.appearance,
+      engraving: { ...stencil.appearance.engraving, fontId: "font" },
+    }).toEqual({
+      ...liberation.appearance,
+      engraving: { ...liberation.appearance.engraving, fontId: "font" },
+    });
+    expect(stencil.form).toBe(liberation.form);
   });
 
   it("carries the approved d6 and Fudge Legacy camera into r25", () => {

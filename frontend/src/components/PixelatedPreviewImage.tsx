@@ -121,7 +121,7 @@ function drawArcaneInterferenceFrame(
   }
 
   context.save();
-  context.globalCompositeOperation = "screen";
+  context.globalCompositeOperation = "source-atop";
   const sweep = context.createLinearGradient(
     width * (frame.progress - 0.22),
     0,
@@ -136,9 +136,11 @@ function drawArcaneInterferenceFrame(
   context.fillRect(0, 0, width, height);
 
   for (let index = 0; index < 24; index += 1) {
-    const x = ((index * 137 + 83) % 760) / 760 * width;
-    const y = ((index * 71 + 29) % 300) / 300 * height;
     const phase = (index % 7) / 7;
+    const angle = index * 2.4 + generation;
+    const radius = 0.12 + ((index * 37) % 100) / 100 * 0.36;
+    const x = width * (0.5 + Math.cos(angle) * radius);
+    const y = height * (0.5 + Math.sin(angle) * radius);
     const twinkle = Math.max(
       0,
       Math.sin((frame.progress * 2.6 + phase) * Math.PI * 2),
@@ -182,21 +184,30 @@ export function PixelatedPreviewImage({
   const [transition, setTransition] = React.useState<LoadedTransition | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const generationRef = React.useRef(0);
+  const requestKeyRef = React.useRef<string | null>(null);
+  const onDisplayRef = React.useRef(onDisplay);
+  const onErrorRef = React.useRef(onError);
+  onDisplayRef.current = onDisplay;
+  onErrorRef.current = onError;
 
   React.useEffect(() => {
     if (candidate === undefined) return;
+    const source = previewSource(candidate);
+    const requestKey = `${String(retryKey)}:${reducedMotion ? "reduce" : "animate"}:${alt}:${source}`;
+    if (requestKeyRef.current === requestKey) return;
+    requestKeyRef.current = requestKey;
     if (displayed === null || reducedMotion) {
       const generation = ++generationRef.current;
       setTransition(null);
-      void loadImage(previewSource(candidate))
+      void loadImage(source)
         .then(() => {
           if (generation !== generationRef.current) return;
           setDisplayed({ preview: candidate, alt });
-          onDisplay();
+          onDisplayRef.current();
         })
         .catch((error: unknown) => {
           if (generation !== generationRef.current) return;
-          onError(
+          onErrorRef.current(
             error instanceof Error
               ? error
               : new Error("Preview image could not be decoded"),
@@ -204,7 +215,7 @@ export function PixelatedPreviewImage({
         });
       return;
     }
-    if (previewSource(displayed.preview) === previewSource(candidate)) {
+    if (previewSource(displayed.preview) === source) {
       generationRef.current += 1;
       setTransition(null);
       return;
@@ -212,7 +223,7 @@ export function PixelatedPreviewImage({
     const generation = ++generationRef.current;
     void Promise.all([
       loadImage(previewSource(displayed.preview)),
-      loadImage(previewSource(candidate)),
+      loadImage(source),
     ]).then(([current, next]) => {
       if (generation !== generationRef.current) return;
       setTransition({
@@ -224,13 +235,13 @@ export function PixelatedPreviewImage({
     }).catch((error: unknown) => {
       if (generation !== generationRef.current) return;
       setTransition(null);
-      onError(
+      onErrorRef.current(
         error instanceof Error
           ? error
           : new Error("Preview image could not be decoded"),
       );
     });
-  }, [alt, candidate, displayed, onDisplay, onError, reducedMotion, retryKey]);
+  }, [alt, candidate, displayed, reducedMotion, retryKey]);
 
   React.useEffect(() => {
     if (transition === null) return;
@@ -262,14 +273,14 @@ export function PixelatedPreviewImage({
         if (transition.generation !== generationRef.current) return;
         setDisplayed(transition.display);
         setTransition(null);
-        onDisplay();
+        onDisplayRef.current();
         return;
       }
       animationFrame = window.requestAnimationFrame(animate);
     };
     animationFrame = window.requestAnimationFrame(animate);
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [onDisplay, transition]);
+  }, [transition]);
 
   React.useEffect(
     () => () => {

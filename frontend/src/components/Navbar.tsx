@@ -1,7 +1,7 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { BookOpen, Bookmark, Box, LogOut, Settings } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { MobileMenu } from "./MobileMenu";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
@@ -24,6 +24,12 @@ import {
   PERSONAL_APPEARANCE_STALE_TIME_MS,
 } from "@/lib/appearance-query";
 
+function currentSectionLabel(pathname: string): "Preferences" | "Library" | null {
+  if (pathname.startsWith("/app/preferences")) return "Preferences";
+  if (pathname.startsWith("/app/library")) return "Library";
+  return null;
+}
+
 function initials(name: string): string {
   return name
     .split(" ")
@@ -34,6 +40,8 @@ function initials(name: string): string {
 
 export function Navbar() {
   const queryClient = useQueryClient();
+  const { pathname } = useLocation();
+  const sectionLabel = currentSectionLabel(pathname);
   const { signOut } = useAuth();
   const { user } = useUser();
   const userName = user?.name || "User";
@@ -59,6 +67,11 @@ export function Navbar() {
         >
           Dice Witch
         </Link>
+        {sectionLabel !== null && (
+          <h1 className="ml-2 border-l border-border pl-2 text-sm font-semibold text-muted-foreground sm:ml-3 sm:pl-3 sm:text-base">
+            {sectionLabel}
+          </h1>
+        )}
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
           <div className="hidden items-center gap-1 sm:flex">

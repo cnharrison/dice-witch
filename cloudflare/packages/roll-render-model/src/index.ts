@@ -479,18 +479,24 @@ function renderDieV4(
   const onesIdentity = logicalPercentileIdentity(die, "ones");
   let resolved: ResolvedAppearanceV3;
   if (onesIdentity === undefined) {
-    resolved = resolveAppearanceRecipeV3(recipe, {
-      renderSeed,
-      target,
-      groupIndex,
-      dieIndex,
-      ...(die.appearanceGroupIdentity === undefined
-        ? {}
-        : { groupIdentity: die.appearanceGroupIdentity }),
-      ...(die.appearanceDieIdentity === undefined
-        ? {}
-        : { dieIdentity: die.appearanceDieIdentity }),
-    });
+    resolved = resolveAppearanceRecipeV3(
+      recipe,
+      {
+        renderSeed,
+        target,
+        groupIndex,
+        dieIndex,
+        ...(die.appearanceGroupIdentity === undefined
+          ? {}
+          : { groupIdentity: die.appearanceGroupIdentity }),
+        ...(die.appearanceDieIdentity === undefined
+          ? {}
+          : { dieIdentity: die.appearanceDieIdentity }),
+      },
+      rendererRevision === ROLL_RENDERER_REVISION_R26_V4
+        ? "property-streams-r26"
+        : "legacy",
+    );
   } else {
     const percentileAppearance = percentileAppearances.get(onesIdentity);
     if (percentileAppearance === undefined) {
@@ -555,6 +561,7 @@ export const ROLL_RENDERER_REVISION_R22_V4 = "canvaskit-v4-r22" as const;
 export const ROLL_RENDERER_REVISION_R23_V4 = "canvaskit-v4-r23" as const;
 export const ROLL_RENDERER_REVISION_R24_V4 = "canvaskit-v4-r24" as const;
 export const ROLL_RENDERER_REVISION_R25_V4 = "canvaskit-v4-r25" as const;
+export const ROLL_RENDERER_REVISION_R26_V4 = "canvaskit-v4-r26" as const;
 
 function buildRollRenderRequestForRevisionV4(
   result: RollExecutionResult,
@@ -568,7 +575,8 @@ function buildRollRenderRequestForRevisionV4(
     | typeof ROLL_RENDERER_REVISION_R22_V4
     | typeof ROLL_RENDERER_REVISION_R23_V4
     | typeof ROLL_RENDERER_REVISION_R24_V4
-    | typeof ROLL_RENDERER_REVISION_R25_V4,
+    | typeof ROLL_RENDERER_REVISION_R25_V4
+    | typeof ROLL_RENDERER_REVISION_R26_V4,
 ): RenderRequestV4 {
   validateRenderSeed(renderSeed);
   const groups = renderableRollOutcomes(result).map(
@@ -693,5 +701,19 @@ export function buildRollRenderRequestR25V4(
     effectiveAppearance.recipes,
     effectiveAppearance.diceView,
     ROLL_RENDERER_REVISION_R25_V4,
+  );
+}
+
+export function buildRollRenderRequestR26V4(
+  result: RollExecutionResult,
+  renderSeed: number,
+  effectiveAppearance: EffectiveAppearanceV4,
+): RenderRequestV4 {
+  return buildRollRenderRequestForRevisionV4(
+    result,
+    renderSeed,
+    effectiveAppearance.recipes,
+    effectiveAppearance.diceView,
+    ROLL_RENDERER_REVISION_R26_V4,
   );
 }

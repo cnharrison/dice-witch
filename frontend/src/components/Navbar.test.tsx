@@ -60,6 +60,26 @@ afterEach(() => {
 });
 
 describe("Navbar", () => {
+  it.each([
+    ["/app/preferences", "Preferences"],
+    ["/app/library", "Library"],
+  ])("shows the %s section in the top bar", (path, label) => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[path]}>
+          <Navbar />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const heading = screen.getByRole("heading", { name: label });
+    expect(heading.className).toContain("border-l");
+    expect(heading.className).toContain("text-muted-foreground");
+  });
+
   it("shows branded navigation and moves logout into the avatar menu", async () => {
     const user = userEvent.setup();
     const queryClient = new QueryClient({

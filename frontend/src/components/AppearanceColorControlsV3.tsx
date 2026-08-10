@@ -149,8 +149,7 @@ export function AppearanceColorControlsV3({
     <fieldset className="space-y-3 rounded-lg border bg-muted/20 p-4">
       <legend className="px-1 text-sm font-semibold">Colors</legend>
       <div className="grid gap-3 sm:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]">
-        <label className="block space-y-1.5 text-xs font-medium">
-          <span className="block">Color behavior</span>
+        <div>
           <AppearanceSelectV3
             aria-label="Color behavior"
             value={colors.mode}
@@ -164,7 +163,7 @@ export function AppearanceColorControlsV3({
               </option>
             ))}
           </AppearanceSelectV3>
-        </label>
+        </div>
         <div className="flex flex-wrap items-end gap-2">
           {editableColors.map((color, index) => (
             <div

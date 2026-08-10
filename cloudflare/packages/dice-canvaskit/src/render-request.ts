@@ -290,6 +290,10 @@ function geometryGridDie(
     materialFamily: die.appearance.material.family,
     requiresLocalSeparation: die.appearance.requiresLocalSeparation,
     criticalEffect: die.appearance.effect,
+    ...(rendererRevisionPolicyV4(rendererRevision).d10CriticalHalo &&
+      (die.target === "d10" || die.target === "percentile")
+      ? { criticalOuterGlow: true }
+      : {}),
     blankFaces: options.blankFaces === true,
     renderPolicy: renderPolicyV4(rendererRevision, geometry.id),
     icons: die.icons,
@@ -357,6 +361,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r23": renderCanvasKit,
   "canvaskit-v4-r24": renderCanvasKit,
   "canvaskit-v4-r25": renderCanvasKit,
+  "canvaskit-v4-r26": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {

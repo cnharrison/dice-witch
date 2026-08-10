@@ -360,7 +360,10 @@ function authoredPolyhedralViews(
   ) {
     return POLYHEDRAL_VIEWS_R23_V4;
   }
-  if (rendererRevision === "canvaskit-v4-r25") {
+  if (
+    rendererRevision === "canvaskit-v4-r25" ||
+    rendererRevision === "canvaskit-v4-r26"
+  ) {
     return POLYHEDRAL_VIEWS_R25_V4;
   }
   throw new Error(`Authored views are not supported by ${rendererRevision}`);

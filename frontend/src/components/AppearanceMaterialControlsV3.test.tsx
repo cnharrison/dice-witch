@@ -52,6 +52,24 @@ describe("AppearanceMaterialControlsV3", () => {
     expect(screen.getAllByLabelText("Material")).toHaveLength(1);
   });
 
+  it("keeps material labels concise and puts rebalancing guidance in a tooltip", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={recipe("chaotic")} />);
+
+    expect(screen.queryByText("Use")).toBeNull();
+    expect(
+      screen.queryByText(/Other shares rebalance automatically/i),
+    ).toBeNull();
+    await user.hover(
+      screen.getByRole("button", { name: "About material share rebalancing" }),
+    );
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Other shares rebalance automatically to keep the mix at 100%.",
+      }),
+    ).toBeDefined();
+  });
+
   it("gives one fixed material a full-width editor without a redundant mix", async () => {
     const user = userEvent.setup();
     render(<Harness />);
