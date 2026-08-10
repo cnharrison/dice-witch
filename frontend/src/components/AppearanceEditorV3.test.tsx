@@ -179,6 +179,8 @@ describe("AppearanceEditorV3", () => {
 
     const d8 = screen.getByRole("radio", { name: "d8" });
     await user.click(d8);
+    expect(screen.getByLabelText("d8 viewing side")).toBeDefined();
+    expect(screen.queryByLabelText("d4 viewing side")).toBeNull();
     await waitFor(() =>
       expect(vi.mocked(getAppearancePreviewV4)).toHaveBeenLastCalledWith(
         expect.objectContaining({ target: "d8" }),

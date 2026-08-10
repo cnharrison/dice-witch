@@ -20,6 +20,7 @@ import { Info } from "lucide-react";
 
 type DiceViewPreferencesV4Props = {
   value: DiceViewPreferencesV4;
+  selectedTarget: AppearanceTargetV4 | "all";
   disabled?: boolean;
   onChange(value: DiceViewPreferencesV4): void;
 };
@@ -77,10 +78,13 @@ function updateOverride(
 
 export function DiceViewPreferencesV4({
   value,
+  selectedTarget,
   disabled = false,
   onChange,
 }: DiceViewPreferencesV4Props) {
   const overrideActive = value.mode !== "normal";
+  const visibleTargets =
+    selectedTarget === "all" ? APPEARANCE_TARGETS_V4 : [selectedTarget];
 
   const setMode = (mode: "legacy" | "clear", enabled: boolean) => {
     onChange({ ...value, mode: enabled ? mode : "normal" });
@@ -97,6 +101,10 @@ export function DiceViewPreferencesV4({
   };
 
   const resetToRandom = () => {
+    if (selectedTarget !== "all") {
+      onChange(updateOverride(value, selectedTarget, "random"));
+      return;
+    }
     onChange({
       ...value,
       azimuth: {
@@ -186,52 +194,54 @@ export function DiceViewPreferencesV4({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="font-semibold">Viewing side</h3>
             <Button type="button" variant="outline" onClick={resetToRandom}>
-              Reset all to random
+              {selectedTarget === "all" ? "Reset all to random" : "Reset to random"}
             </Button>
           </div>
 
-          <div className="grid gap-3 rounded-lg border bg-background p-3 sm:grid-cols-[8rem_8rem_1fr_3.5rem] sm:items-center">
-            <span className="font-semibold">All dice</span>
-            <select
-              aria-label="All dice viewing side"
-              value={value.azimuth.all.mode}
-              onChange={(event) =>
-                setAllMode(event.target.value as DiceViewAzimuthV4["mode"])
-              }
-              className="h-9 rounded-md border bg-background px-2 text-sm"
-            >
-              <option value="random">Random</option>
-              <option value="custom">Custom</option>
-            </select>
-            <input
-              aria-label="All dice custom azimuth"
-              type="range"
-              min={-45}
-              max={45}
-              step={5}
-              disabled={value.azimuth.all.mode !== "custom"}
-              value={value.azimuth.all.customDegrees}
-              onChange={(event) => {
-                onChange({
-                  ...value,
-                  azimuth: {
-                    ...value.azimuth,
-                    all: {
-                      ...value.azimuth.all,
-                      customDegrees: Number(event.target.value),
+          {selectedTarget === "all" && (
+            <div className="grid gap-3 rounded-lg border bg-background p-3 sm:grid-cols-[8rem_8rem_1fr_3.5rem] sm:items-center">
+              <span className="font-semibold">All dice</span>
+              <select
+                aria-label="All dice viewing side"
+                value={value.azimuth.all.mode}
+                onChange={(event) =>
+                  setAllMode(event.target.value as DiceViewAzimuthV4["mode"])
+                }
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="random">Random</option>
+                <option value="custom">Custom</option>
+              </select>
+              <input
+                aria-label="All dice custom azimuth"
+                type="range"
+                min={-45}
+                max={45}
+                step={5}
+                disabled={value.azimuth.all.mode !== "custom"}
+                value={value.azimuth.all.customDegrees}
+                onChange={(event) => {
+                  onChange({
+                    ...value,
+                    azimuth: {
+                      ...value.azimuth,
+                      all: {
+                        ...value.azimuth.all,
+                        customDegrees: Number(event.target.value),
+                      },
                     },
-                  },
-                });
-              }}
-              className="w-full accent-brand"
-            />
-            <span className="text-right font-mono text-sm">
-              {azimuthLabel(value.azimuth.all.customDegrees)}
-            </span>
-          </div>
+                  });
+                }}
+                className="w-full accent-brand"
+              />
+              <span className="text-right font-mono text-sm">
+                {azimuthLabel(value.azimuth.all.customDegrees)}
+              </span>
+            </div>
+          )}
 
           <div className="divide-y rounded-lg border bg-background">
-            {APPEARANCE_TARGETS_V4.map((target) => {
+            {visibleTargets.map((target) => {
               const override = value.azimuth.overrides[target];
               return (
                 <div

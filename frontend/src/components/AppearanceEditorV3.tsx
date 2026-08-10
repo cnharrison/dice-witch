@@ -809,6 +809,7 @@ export function AppearanceEditorV3({
           >
             <DiceViewPreferencesV4
               value={draftProfile.diceView}
+              selectedTarget={previewTarget}
               disabled={isSaving}
               onChange={(diceView) => {
                 setDraftProfile({ ...draftProfile, diceView });

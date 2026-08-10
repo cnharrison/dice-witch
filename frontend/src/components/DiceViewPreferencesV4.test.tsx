@@ -16,6 +16,7 @@ function renderPreferences(
   render(
     <DiceViewPreferencesV4
       value={value}
+      selectedTarget="all"
       onChange={onChange}
       {...overrides}
     />,
@@ -107,6 +108,31 @@ describe("DiceViewPreferencesV4", () => {
         overrides: {
           d20: { mode: "random", customDegrees: 35 },
         },
+      },
+    });
+  });
+
+  it("shows only the selected target controls", () => {
+    renderPreferences({ selectedTarget: "d8" });
+
+    expect(screen.getByLabelText("d8 viewing side")).toBeDefined();
+    expect(screen.queryByLabelText("d4 viewing side")).toBeNull();
+    expect(screen.queryByLabelText("d20 viewing side")).toBeNull();
+    expect(screen.queryByLabelText("All dice viewing side")).toBeNull();
+    expect(screen.getByRole("button", { name: "Reset to random" })).toBeDefined();
+  });
+
+  it("resets only the selected target to random", () => {
+    const value = createDefaultDiceViewPreferencesV4();
+    value.azimuth.overrides.d8 = { mode: "custom", customDegrees: 25 };
+    const { onChange } = renderPreferences({ value, selectedTarget: "d8" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to random" }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...value,
+      azimuth: {
+        ...value.azimuth,
+        overrides: { d8: { mode: "random", customDegrees: 25 } },
       },
     });
   });
