@@ -140,7 +140,7 @@ describe("appearance preference authorization", () => {
 
     const heading = await screen.findByRole("heading", { name: "Preferences" });
     expect(heading.className).toContain("UnifrakturMaguntia");
-    expect(await screen.findByText("Preview")).toBeDefined();
+    expect(await screen.findByRole("region", { name: "Preview" })).toBeDefined();
     expect(
       screen.getByRole("button", { name: "Personal" }),
     ).toBeDefined();
@@ -219,8 +219,8 @@ describe("appearance preference authorization", () => {
     });
     renderPreferences();
 
-    expect(await screen.findByText("Preview")).toBeDefined();
-    expect(screen.queryByRole("heading", { name: "Dice view" })).toBeNull();
+    expect(await screen.findByRole("region", { name: "Preview" })).toBeDefined();
+    expect(screen.queryByRole("region", { name: "Dice view" })).toBeNull();
 
     const user = userEvent.setup();
     await user.selectOptions(
@@ -333,7 +333,7 @@ describe("appearance preference authorization", () => {
     mockFetch({ guildStatus: 502 });
     renderPreferences();
 
-    expect(await screen.findByText("Preview")).toBeDefined();
+    expect(await screen.findByRole("region", { name: "Preview" })).toBeDefined();
     expect(
       await screen.findByText(
         "Server appearance controls are unavailable: Guilds are unavailable",

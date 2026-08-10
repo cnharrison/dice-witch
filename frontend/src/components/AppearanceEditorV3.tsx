@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AppearanceApiError } from "@/lib/appearance";
 import {
-  appearanceAssignmentForV3,
   applyAppearanceReferenceV3,
   assertAppearanceRecipeSupportsTargetV3,
   beginAppearanceRecipeEditV3,
@@ -255,13 +254,9 @@ export function AppearanceEditorV3({
     editingDesign !== undefined && previewTarget === target
       ? editingDesign.recipe
       : previewSelection.recipe;
-  const activeReference = appearanceAssignmentForV3(draftProfile, target);
   const activeDesign = activeSelection.designId === null
     ? undefined
     : draftProfile.designs.find(({ id }) => id === activeSelection.designId);
-  const assignedDesignName = assignedSelection.designId === null
-    ? assignedSelection.name
-    : nameDrafts[assignedSelection.designId] ?? assignedSelection.name;
   const activeDesignName = activeDesign === undefined
     ? ""
     : nameDrafts[activeDesign.id] ?? activeDesign.name;
@@ -614,22 +609,16 @@ export function AppearanceEditorV3({
           disabled={isSaving}
           onChange={selectTarget}
         />
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <p>
-            Current design: {assignedDesignName}
-            {activeReference === null ? " (default)" : ""}
-          </p>
-          {hasTargetOverride && (
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={clearTargetOverride}
-              className="font-semibold text-brand underline-offset-2 hover:underline disabled:opacity-50"
-            >
-              Use All dice design
-            </button>
-          )}
-        </div>
+        {hasTargetOverride && (
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={clearTargetOverride}
+            className="mt-2 text-xs font-semibold text-brand underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            Use ALL design
+          </button>
+        )}
       </div>
 
       <aside className="order-2 xl:col-start-2 xl:row-span-2 xl:row-start-1">
@@ -650,6 +639,7 @@ export function AppearanceEditorV3({
           <AppearancePreviewPaneV3
             target={previewTarget}
             recipe={previewRecipe}
+            mode={activeTab === "camera" ? "camera" : "design"}
             {...(draftProfile.version === 4
               ? { diceView: draftProfile.diceView }
               : {})}

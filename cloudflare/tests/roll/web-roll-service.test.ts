@@ -396,6 +396,10 @@ describe("appearance preview", () => {
       contentType: "image/png",
       diceCount: 1,
       rowCount: 1,
+      renderModel: {
+        rendererRevision: "canvaskit-v4-r25",
+        groups: [[{ target: "d6" }]],
+      },
     });
     expect(rendered.png.slice(0, 8)).toEqual(
       new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),

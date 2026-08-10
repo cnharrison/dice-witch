@@ -337,8 +337,10 @@ export function DiceNotationButtons({
   const mobile = useBrowserMediaQueryV4(MOBILE_QUERY);
   const inputRef = React.useRef(input);
   const advancedId = React.useId();
-  const [advancedOpen, setAdvancedOpen] = React.useState(false);
-  const [advancedTab, setAdvancedTab] = React.useState<AdvancedTab>("dice");
+  const [advancedOpen, setAdvancedOpen] = React.useState(() => !mobile);
+  const [advancedTab, setAdvancedTab] = React.useState<AdvancedTab>(() =>
+    mobile ? "dice" : "modifiers",
+  );
 
   React.useEffect(() => {
     inputRef.current = input;
@@ -502,7 +504,7 @@ export function DiceNotationButtons({
           aria-expanded={advancedOpen}
           aria-controls={`${advancedId}-controls`}
           onClick={() => {
-            if (!advancedOpen) setAdvancedTab("dice");
+            if (!advancedOpen) setAdvancedTab(mobile ? "dice" : "modifiers");
             setAdvancedOpen((open) => !open);
           }}
           className={cn(

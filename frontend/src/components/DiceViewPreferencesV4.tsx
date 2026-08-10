@@ -118,13 +118,9 @@ export function DiceViewPreferencesV4({
 
   return (
     <TooltipProvider delayDuration={0}>
-      <section className="space-y-5 rounded-xl border border-brand/35 bg-card p-4 shadow-sm sm:p-6" aria-labelledby="dice-view-heading">
-        <h2 id="dice-view-heading" className="text-xl font-semibold">
-          Dice view
-        </h2>
-
+      <section className="space-y-5 rounded-lg border bg-muted/20 p-4" aria-label="Dice view">
         <div className="grid gap-3 md:grid-cols-2">
-        <div className="flex items-start gap-3 rounded-lg border p-3">
+        <div className="flex items-start gap-3 rounded-lg border bg-background p-3">
           <Switch
             id="legacy-dice-view"
             checked={value.mode === "legacy"}
@@ -139,7 +135,7 @@ export function DiceViewPreferencesV4({
             />
           </div>
         </div>
-        <div className="flex items-start gap-3 rounded-lg border p-3">
+        <div className="flex items-start gap-3 rounded-lg border bg-background p-3">
           <Switch
             id="clear-dice-view"
             checked={value.mode === "clear"}
@@ -164,7 +160,7 @@ export function DiceViewPreferencesV4({
       )}
 
       <fieldset disabled={disabled || overrideActive} className="space-y-5 disabled:opacity-60">
-        <div className="rounded-lg border p-4">
+        <div className="rounded-lg border bg-background p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Label htmlFor="dice-view-elevation">Shared elevation</Label>
             <span className="font-mono text-sm" aria-live="polite">
@@ -197,7 +193,7 @@ export function DiceViewPreferencesV4({
           </Button>
         </div>
 
-        <div className="space-y-3 rounded-lg border p-4">
+        <div className="space-y-3 rounded-lg border bg-background p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="font-semibold">Viewing side</h3>
             <Button type="button" variant="outline" onClick={resetToRandom}>
@@ -205,7 +201,7 @@ export function DiceViewPreferencesV4({
             </Button>
           </div>
 
-          <div className="grid gap-3 rounded-lg bg-muted/25 p-3 sm:grid-cols-[8rem_8rem_1fr_3.5rem] sm:items-center">
+          <div className="grid gap-3 rounded-lg border bg-background p-3 sm:grid-cols-[8rem_8rem_1fr_3.5rem] sm:items-center">
             <span className="font-semibold">All dice</span>
             <select
               aria-label="All dice viewing side"
@@ -246,7 +242,7 @@ export function DiceViewPreferencesV4({
             </span>
           </div>
 
-          <div className="divide-y rounded-lg border">
+          <div className="divide-y rounded-lg border bg-background">
             {APPEARANCE_TARGETS_V4.map((target) => {
               const override = value.azimuth.overrides[target];
               return (

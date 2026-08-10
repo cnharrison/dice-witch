@@ -175,6 +175,10 @@ export type AppearancePreviewResultV3 = {
   png: Uint8Array;
 };
 
+export type AppearancePreviewResultV4 = AppearancePreviewResultV3 & {
+  renderModel: PublicRenderModelV4;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -566,15 +570,16 @@ export function renderAppearancePreviewV3(
   );
 }
 
-export function renderAppearancePreviewV4(
+export async function renderAppearancePreviewV4(
   value: unknown,
   createRenderer: DiceRequestRendererFactoryV4 =
     createCanvasKitRequestRendererV4,
-): Promise<AppearancePreviewResultV3> {
-  return renderAppearancePreviewRequestV4(
-    buildAppearancePreviewRenderRequestR25V4(value),
-    createRenderer,
-  );
+): Promise<AppearancePreviewResultV4> {
+  const renderModel = buildAppearancePreviewRenderRequestR25V4(value);
+  return {
+    ...(await renderAppearancePreviewRequestV4(renderModel, createRenderer)),
+    renderModel,
+  };
 }
 
 function randomSeed(): number {
@@ -1087,7 +1092,7 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
     return renderAppearancePreviewV3(value);
   }
 
-  previewV4(value: unknown): Promise<AppearancePreviewResultV3> {
+  previewV4(value: unknown): Promise<AppearancePreviewResultV4> {
     return renderAppearancePreviewV4(value);
   }
 }

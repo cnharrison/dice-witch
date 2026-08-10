@@ -133,12 +133,8 @@ describe("dice notation quick controls", () => {
     const user = userEvent.setup();
     render(<Harness initial="1d20+" />);
 
-    expect(screen.queryByRole("region", { name: "Advanced dice notation" })).toBeNull();
     const advanced = screen.getByRole("button", { name: "Advanced" });
     const indicator = advanced.querySelector("[data-advanced-indicator]");
-    expect(indicator?.getAttribute("class")).not.toContain("rotate-180");
-    await user.click(advanced);
-
     const region = screen.getByRole("region", {
       name: "Advanced dice notation",
     });
@@ -153,9 +149,7 @@ describe("dice notation quick controls", () => {
     ).toBeDefined();
     expect(screen.getAllByRole("tab")).toHaveLength(3);
     expect(indicator?.getAttribute("class")).toContain("rotate-180");
-    expect(screen.getByRole("button", { name: "Add d%" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Add dF" })).toBeDefined();
-    await user.click(screen.getByRole("tab", { name: "Modifiers" }));
+    expect(screen.getByRole("tab", { name: "Modifiers" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("button", { name: "Keep highest" })).toBeDefined();
     expect(
       screen.getByText("Keeps the highest die result in the group."),
@@ -176,8 +170,7 @@ describe("dice notation quick controls", () => {
     const user = userEvent.setup();
     render(<Harness initial="1d20" />);
 
-    await user.click(screen.getByRole("button", { name: "Advanced" }));
-    await user.click(screen.getByRole("tab", { name: "Modifiers" }));
+    expect(screen.getByRole("tab", { name: "Modifiers" }).getAttribute("aria-selected")).toBe("true");
     await user.click(screen.getByRole("button", { name: "Reroll once" }));
 
     expect(screen.getByTestId("notation").textContent).toBe("1d20ro");

@@ -12,6 +12,7 @@ export * from "./octahedral-texture-atlas";
 export * from "./projection";
 export * from "./random";
 export * from "./registries";
+export * from "./render-view";
 export * from "./renderer-revision";
 export * from "./selection";
 export * from "./serialization";

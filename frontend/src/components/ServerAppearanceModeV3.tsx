@@ -75,7 +75,7 @@ export function ServerAppearanceModeV3({
     <fieldset
       disabled={disabled || saving}
       aria-busy={saving}
-      className="mt-4 rounded-lg border bg-muted/30 p-4"
+      className="rounded-lg border bg-muted/20 p-4"
     >
       <legend className="px-1 text-sm font-semibold">
         Server styling mode
@@ -91,7 +91,13 @@ export function ServerAppearanceModeV3({
                 </span>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <label className="flex items-start gap-2 rounded-md border bg-background p-3">
+                    <label
+                      className={`flex items-start gap-2 rounded-md border p-3 transition-colors ${
+                        selectedMode === value
+                          ? "border-brand/70 bg-brand/10"
+                          : "bg-background"
+                      }`}
+                    >
                       <input
                         type="radio"
                         name={`${descriptionPrefix}-mode`}

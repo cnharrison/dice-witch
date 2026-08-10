@@ -1,9 +1,26 @@
-import { APPEARANCE_TARGET_LABELS } from "@/types/appearance";
+import { AppearanceTargetIconV3 } from "@/components/AppearanceTargetIconsV3";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { AppearanceEditorTargetV3 } from "@/lib/appearance-editor-v3";
-import { AppearanceSelectV3 } from "./AppearanceSelectV3";
+import { APPEARANCE_TARGET_LABELS } from "@/types/appearance";
+import {
+  APPEARANCE_TARGETS_V4,
+  type AppearanceTargetV4,
+} from "@dice-witch/dice-v4-model";
+import * as React from "react";
 
-const POLYHEDRAL_TARGETS = ["d4", "d6", "d8", "d10", "d12", "d20"] as const;
-const RELATED_TARGETS = ["percentile", "fudge", "other"] as const;
+const TARGETS: readonly AppearanceEditorTargetV3[] = [
+  "all",
+  ...APPEARANCE_TARGETS_V4,
+];
+
+function targetName(target: AppearanceEditorTargetV3): string {
+  return target === "all" ? "All dice" : APPEARANCE_TARGET_LABELS[target];
+}
 
 export function AppearanceTargetPickerV3({
   value,
@@ -14,36 +31,82 @@ export function AppearanceTargetPickerV3({
   disabled?: boolean;
   onChange(value: AppearanceEditorTargetV3): void;
 }) {
+  const buttonRefs = React.useRef<
+    Partial<Record<AppearanceEditorTargetV3, HTMLButtonElement | null>>
+  >({});
+
+  const moveSelection = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    target: AppearanceEditorTargetV3,
+  ) => {
+    let nextIndex: number | null = null;
+    const index = TARGETS.indexOf(target);
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (index + 1) % TARGETS.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (index - 1 + TARGETS.length) % TARGETS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = TARGETS.length - 1;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTarget = TARGETS[nextIndex];
+    if (nextTarget === undefined) return;
+    onChange(nextTarget);
+    buttonRefs.current[nextTarget]?.focus();
+  };
+
   return (
-    <label className="block max-w-sm space-y-1.5 text-sm font-semibold">
-      <span className="block">Appearance target</span>
-      <AppearanceSelectV3
+    <TooltipProvider delayDuration={0}>
+      <div
+        role="radiogroup"
         aria-label="Appearance target"
-        value={value}
-        disabled={disabled}
-        onChange={(event) =>
-          onChange(event.target.value as AppearanceEditorTargetV3)
-        }
-        className="font-normal sm:h-10"
+        className="grid grid-cols-5 gap-2 sm:grid-cols-10"
       >
-        <option value="all">{APPEARANCE_TARGET_LABELS.all}</option>
-        <optgroup label="Standard dice">
-          {POLYHEDRAL_TARGETS.map((target) => (
-            <option key={target} value={target}>
-              {target === "d20"
-                ? `${APPEARANCE_TARGET_LABELS[target]} · special forms`
-                : APPEARANCE_TARGET_LABELS[target]}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label="Other dice">
-          {RELATED_TARGETS.map((target) => (
-            <option key={target} value={target}>
-              {APPEARANCE_TARGET_LABELS[target]}
-            </option>
-          ))}
-        </optgroup>
-      </AppearanceSelectV3>
-    </label>
+        {TARGETS.map((target) => {
+          const checked = target === value;
+          const highlighted = value === "all" || checked;
+          const name = targetName(target);
+          return (
+            <Tooltip key={target}>
+              <TooltipTrigger asChild>
+                <button
+                  ref={(element) => {
+                    buttonRefs.current[target] = element;
+                  }}
+                  type="button"
+                  role="radio"
+                  aria-label={name}
+                  aria-checked={checked}
+                  data-highlighted={highlighted}
+                  tabIndex={checked ? 0 : -1}
+                  disabled={disabled}
+                  onClick={() => onChange(target)}
+                  onKeyDown={(event) => moveSelection(event, target)}
+                  className={`relative grid aspect-square min-w-0 place-items-center rounded-md border bg-background p-2 text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:p-2.5 ${
+                    highlighted
+                      ? "border-2 border-brand bg-brand/10 p-[7px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--brand)_35%,transparent)] sm:p-[9px]"
+                      : "border-border hover:border-brand/60 hover:bg-muted/30"
+                  }`}
+                >
+                  {target === "all" ? (
+                    <span className="text-sm font-black tracking-[0.12em]">
+                      ALL
+                    </span>
+                  ) : (
+                    <AppearanceTargetIconV3
+                      target={target as AppearanceTargetV4}
+                    />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{name}</TooltipContent>
+            </Tooltip>
+          );
+        })}
+      </div>
+    </TooltipProvider>
   );
 }

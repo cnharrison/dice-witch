@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const rendererMocks = vi.hoisted(() => ({
   replaceModel: vi.fn(async () => {}),
+  updateViews: vi.fn(() => true),
   setRolling: vi.fn(),
   dispose: vi.fn(),
   create: vi.fn(),
@@ -56,10 +57,12 @@ beforeEach(() => {
   stubMatchMedia();
   rendererMocks.runtimeUnavailable = null;
   rendererMocks.replaceModel.mockReset().mockResolvedValue(undefined);
+  rendererMocks.updateViews.mockReset().mockReturnValue(true);
   rendererMocks.create.mockReset().mockImplementation((_container, callbacks) => {
     rendererMocks.runtimeUnavailable = callbacks.onUnavailable;
     return {
       replaceModel: rendererMocks.replaceModel,
+      updateViews: rendererMocks.updateViews,
       setRolling: rendererMocks.setRolling,
       dispose: rendererMocks.dispose,
     };
@@ -156,6 +159,32 @@ describe("DiceAnimation3D", () => {
       await Promise.resolve();
     });
     expect(onReadyChange).not.toHaveBeenCalled();
+  });
+
+  it("updates camera views without replacing ready resources", async () => {
+    const model = parsePublicRenderModelV4(fixture);
+    const view = renderAnimation({
+      renderModel: model,
+      viewOnlyUpdates: true,
+      animateResult: false,
+    });
+    await waitFor(() => expect(rendererMocks.replaceModel).toHaveBeenCalledOnce());
+
+    const updated = parsePublicRenderModelV4(structuredClone(model));
+    view.rerender(
+      <ThemeProvider defaultTheme="dark" storageKey="dice-animation-test-theme">
+        <DiceAnimation3D
+          renderModel={updated}
+          isRolling={false}
+          viewOnlyUpdates
+          animateResult={false}
+          onUnavailable={vi.fn()}
+        />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => expect(rendererMocks.updateViews).toHaveBeenCalledWith(updated));
+    expect(rendererMocks.replaceModel).toHaveBeenCalledTimes(1);
   });
 
   it("honors reduced motion and disposes the renderer on unmount", async () => {

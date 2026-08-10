@@ -11,6 +11,8 @@ export interface DiceAnimation3DProps {
   renderModel?: PublicRenderModelV4 | null;
   isRolling: boolean;
   blankFaces?: boolean;
+  animateResult?: boolean;
+  viewOnlyUpdates?: boolean;
   appearanceIdentities?: readonly (readonly string[])[];
   rerolledAppearanceIdentities?: readonly string[];
   onReadyChange?: (ready: boolean) => void;
@@ -26,6 +28,8 @@ export function DiceAnimation3D({
   renderModel = null,
   isRolling,
   blankFaces = false,
+  animateResult = true,
+  viewOnlyUpdates = false,
   appearanceIdentities,
   rerolledAppearanceIdentities,
   onReadyChange,
@@ -90,13 +94,33 @@ export function DiceAnimation3D({
     if (renderer === null || renderModel === null) return;
     const revision = ++replacementRevisionRef.current;
     const initialReplacement = !hasReadySceneRef.current;
+    if (viewOnlyUpdates && !initialReplacement) {
+      try {
+        if (renderer.updateViews(renderModel)) {
+          setStatus("ready");
+          return;
+        }
+      } catch (error) {
+        const failure = asDiceAnimationErrorV4(
+          error,
+          "Three.js V4 view update failed",
+        );
+        renderer.dispose();
+        rendererRef.current = null;
+        hasReadySceneRef.current = false;
+        setStatus("unavailable");
+        onReadyChangeRef.current?.(false);
+        onUnavailableRef.current(failure);
+        return;
+      }
+    }
     if (initialReplacement) {
       setStatus("loading");
       onReadyChangeRef.current?.(false);
     }
     void renderer
       .replaceModel(renderModel, {
-        animateResult: !blankFaces,
+        animateResult: animateResult && !blankFaces,
         blankFaces,
         reducedMotion: reducedMotionRef.current,
         ...(appearanceIdentities === undefined
@@ -138,10 +162,12 @@ export function DiceAnimation3D({
         onUnavailableRef.current(failure);
       });
   }, [
+    animateResult,
     appearanceIdentities,
     blankFaces,
     renderModel,
     rerolledAppearanceIdentities,
+    viewOnlyUpdates,
   ]);
 
   React.useEffect(() => {

@@ -1,12 +1,6 @@
 import {
-  CAMERA_AZIMUTH_OFFSETS_R17_V4,
-  CAMERA_ELEVATION_DEGREES_R16_V4,
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
-  POSE_AZIMUTHS_R17_V4,
-  SPHERE_LABEL_PRESETS_R18_V4,
-  createDeterministicRandomV4,
-  deriveAppearanceSeedV4,
-  deriveNamedSeedV4,
+  resolveRenderViewV4,
   validateRenderRequestV4,
   type AppearanceRecipeV3,
   type AppearanceTargetV4,
@@ -17,9 +11,7 @@ import {
   type RenderDieV4,
   type RendererRevisionV4,
   type RenderRequestV4,
-  type RenderViewV4,
 } from "@dice-witch/dice-v4-model";
-import { getAuthoredRenderViewV4 } from "@dice-witch/dice-v4-model/authored-views";
 import {
   resolveAppearanceRecipe,
   resolveAppearanceRecipeV2,
@@ -468,83 +460,6 @@ function logicalPercentileIdentity(
     : undefined;
 }
 
-function selectCameraPreset<Preset>(
-  seed: number,
-  presets: readonly Preset[],
-): Preset {
-  const preset = presets[createDeterministicRandomV4(seed).index(presets.length)];
-  if (preset === undefined) throw new Error("Camera preset is missing");
-  return preset;
-}
-
-function renderViewV4(
-  target: AppearanceTargetV4,
-  preferenceTarget: AppearanceTargetV4,
-  result: number,
-  form: RenderDieV4["form"],
-  recipe: AppearanceRecipeV3,
-  renderSeed: number,
-  groupIndex: number,
-  dieIndex: number,
-  groupIdentity: string | undefined,
-  dieIdentity: string | undefined,
-  diceView: DiceViewPreferencesV4 | null,
-  rendererRevision: RendererRevisionV4,
-): RenderViewV4 {
-  if (diceView?.mode === "legacy" || diceView?.mode === "clear") {
-    return getAuthoredRenderViewV4(rendererRevision, diceView.mode, {
-      target,
-      form,
-      result,
-    });
-  }
-  const scopedSeed = deriveAppearanceSeedV4({
-    renderSeed,
-    target,
-    groupIndex,
-    dieIndex,
-    variation: "curated",
-    varyBy: "die",
-    recipe,
-    ...(groupIdentity === undefined ? {} : { groupIdentity }),
-    ...(dieIdentity === undefined ? {} : { dieIdentity }),
-  });
-  const cameraSeed = deriveNamedSeedV4(scopedSeed, "camera");
-  const azimuthPreference =
-    diceView?.azimuth.overrides[preferenceTarget] ?? diceView?.azimuth.all;
-  if (form === "sphere") {
-    const preset = selectCameraPreset(
-      cameraSeed,
-      SPHERE_LABEL_PRESETS_R18_V4,
-    );
-    return {
-      kind: "sphere-surface",
-      rotationDegrees: preset.rotationDegrees,
-      labelLongitudeDegrees:
-        azimuthPreference?.mode === "custom"
-          ? azimuthPreference.customDegrees
-          : preset.longitudeDegrees,
-      labelLatitudeDegrees: preset.latitudeDegrees,
-      labelRotationDegrees: preset.rotationDegrees,
-    };
-  }
-  const azimuthOffsetDegrees =
-    azimuthPreference?.mode === "custom"
-      ? azimuthPreference.customDegrees
-      : selectCameraPreset(cameraSeed, CAMERA_AZIMUTH_OFFSETS_R17_V4);
-  const poseAzimuthDegrees = selectCameraPreset(
-    deriveNamedSeedV4(cameraSeed, "pose"),
-    POSE_AZIMUTHS_R17_V4,
-  );
-  return {
-    kind: "camera",
-    elevationDegrees:
-      diceView?.elevationDegrees ?? CAMERA_ELEVATION_DEGREES_R16_V4,
-    azimuthOffsetDegrees,
-    poseAzimuthDegrees,
-  };
-}
-
 function renderDieV4(
   die: RollDie,
   renderSeed: number,
@@ -587,20 +502,24 @@ function renderDieV4(
   if (percentileIdentity !== undefined) {
     percentileAppearances.set(percentileIdentity, resolved);
   }
-  const view = renderViewV4(
+  const view = resolveRenderViewV4({
     target,
-    onesIdentity === undefined ? target : "percentile",
+    preferenceTarget: onesIdentity === undefined ? target : "percentile",
     result,
-    resolved.form,
+    form: resolved.form,
     recipe,
     renderSeed,
     groupIndex,
     dieIndex,
-    die.appearanceGroupIdentity,
-    die.appearanceDieIdentity,
+    ...(die.appearanceGroupIdentity === undefined
+      ? {}
+      : { groupIdentity: die.appearanceGroupIdentity }),
+    ...(die.appearanceDieIdentity === undefined
+      ? {}
+      : { dieIdentity: die.appearanceDieIdentity }),
     diceView,
     rendererRevision,
-  );
+  });
   if (target === "other") {
     if (typeof die.sides !== "number") {
       throw new Error("Other appearance target requires numeric sides");

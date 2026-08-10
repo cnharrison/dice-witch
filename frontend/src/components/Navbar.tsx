@@ -6,6 +6,12 @@ import { MobileMenu } from "./MobileMenu";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
 import { ThemeToggle } from "./ui/theme-toggle";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./ui/tooltip";
 import { useAuth, useUser } from "@/lib/AuthProvider";
 import {
   loadDocsApp,
@@ -89,16 +95,22 @@ export function Navbar() {
                 Preferences
               </Button>
             </Link>
-            <Link
-              to="/docs"
-              onMouseEnter={() => void loadDocsApp()}
-              onFocus={() => void loadDocsApp()}
-            >
-              <Button variant="ghost" className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4" aria-hidden="true" />
-                Docs
-              </Button>
-            </Link>
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    to="/docs"
+                    aria-label="Docs"
+                    onMouseEnter={() => void loadDocsApp()}
+                    onFocus={() => void loadDocsApp()}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <BookOpen className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>Docs</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
           <div className="sm:hidden">

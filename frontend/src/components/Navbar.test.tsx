@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     catalog: {},
     resource: { revision: 0, profile: null },
   })),
+  loadDocsApp: vi.fn(async () => ({})),
   loadHomePage: vi.fn(async () => ({})),
   loadLibraryPage: vi.fn(async () => ({})),
   loadPreferencesPage: vi.fn(async () => ({})),
@@ -29,6 +30,7 @@ vi.mock("@/lib/AuthProvider", () => ({
 }));
 
 vi.mock("@/lib/app-route-loaders", () => ({
+  loadDocsApp: mocks.loadDocsApp,
   loadHomePage: mocks.loadHomePage,
   loadLibraryPage: mocks.loadLibraryPage,
   loadPreferencesPage: mocks.loadPreferencesPage,
@@ -50,6 +52,7 @@ vi.mock("@/components/theme-provider", () => ({
 afterEach(() => {
   cleanup();
   mocks.getPersonalAppearanceBootstrapV3.mockClear();
+  mocks.loadDocsApp.mockClear();
   mocks.loadHomePage.mockClear();
   mocks.loadLibraryPage.mockClear();
   mocks.loadPreferencesPage.mockClear();
@@ -76,6 +79,10 @@ describe("Navbar", () => {
     expect(brand.className).toContain("text-[2.5rem]");
     expect(brand.className).toContain("text-brand");
     expect(screen.queryByRole("button", { name: "Logout" })).toBeNull();
+    const docs = screen.getByRole("link", { name: "Docs" });
+    expect(docs.textContent).toBe("");
+    await user.hover(docs);
+    expect(mocks.loadDocsApp).toHaveBeenCalledOnce();
 
     await user.hover(screen.getByRole("link", { name: "Preferences" }));
     await waitFor(() => {

@@ -534,7 +534,7 @@ export default function Preferences() {
               />
               <section
                 aria-labelledby="roll-delivery-heading"
-                className="rounded-lg border border-brand/35 p-4"
+                className="rounded-lg border bg-muted/20 p-4"
               >
                 <h3 id="roll-delivery-heading" className="font-semibold">
                   Roll delivery

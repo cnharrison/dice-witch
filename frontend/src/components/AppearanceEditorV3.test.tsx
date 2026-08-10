@@ -16,8 +16,30 @@ import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppearanceEditorV3 } from "./AppearanceEditorV3";
 
+vi.mock("@/components/DiceAnimation3D", () => ({
+  DiceAnimation3D: () => <div data-testid="camera-preview" />,
+}));
+
 vi.mock("@/lib/appearance-v3", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/appearance-v3")>();
+  const { default: baseRenderModel } = await import(
+    "./dice-v4-3d/fixtures/d6-r3.json"
+  );
+  const renderModel = {
+    ...baseRenderModel,
+    rendererRevision: "canvaskit-v4-r25",
+    groups: baseRenderModel.groups.map((group) =>
+      group.map((die) => ({
+        ...die,
+        view: {
+          kind: "camera",
+          elevationDegrees: 40,
+          azimuthOffsetDegrees: 0,
+          poseAzimuthDegrees: 0,
+        },
+      })),
+    ),
+  };
   return {
     ...actual,
     getAppearancePreviewV3: vi.fn(async () => ({
@@ -33,6 +55,7 @@ vi.mock("@/lib/appearance-v3", async (importOriginal) => {
       width: 150,
       height: 150,
       base64: "iVBORw0KGgo=",
+      renderModel,
     })),
   };
 });
@@ -63,6 +86,13 @@ function styleRecipe(styleId: string) {
   const style = APPEARANCE_CATALOG_V3.styles.find(({ id }) => id === styleId);
   if (style === undefined) throw new Error(`Style ${styleId} is missing`);
   return structuredClone(style.recipe);
+}
+
+async function selectAppearanceTarget(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+): Promise<void> {
+  await user.click(screen.getByRole("radio", { name }));
 }
 
 function renderEditor(
@@ -104,10 +134,7 @@ describe("AppearanceEditorV3", () => {
     expect(preview.parentElement?.className).toContain("xl:sticky");
     expect(screen.queryByRole("heading", { name: "Saved designs" })).toBeNull();
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Appearance target" }),
-      "d20",
-    );
+    await selectAppearanceTarget(user, "d20");
     expect(editor?.className).toContain("xl:grid-cols");
     expect(preview.parentElement?.className).toContain("xl:sticky");
   });
@@ -129,11 +156,11 @@ describe("AppearanceEditorV3", () => {
     const cameraTab = screen.getByRole("tab", { name: "Camera" });
     expect(designTab.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("combobox", { name: "Preset" })).toBeDefined();
-    expect(screen.queryByRole("heading", { name: "Dice view" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Dice view" })).toBeNull();
 
     await user.click(cameraTab);
     expect(cameraTab.getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("heading", { name: "Dice view" })).toBeDefined();
+    expect(screen.getByRole("region", { name: "Dice view" })).toBeDefined();
     expect(screen.queryByRole("combobox", { name: "Preset" })).toBeNull();
     expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
 
@@ -348,11 +375,11 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Appearance target" }), "d20");
+    await selectAppearanceTarget(user, "d20");
     await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Appearance target" }), "all");
+    await selectAppearanceTarget(user, "All dice");
     await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "dice-witch");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Appearance target" }), "d20");
+    await selectAppearanceTarget(user, "d20");
     expect(screen.getByRole("combobox", { name: "Preset" })).toHaveProperty("value", "pride");
     expect(onSave).not.toHaveBeenCalled();
 
@@ -376,7 +403,7 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Appearance target" }), "d20");
+    await selectAppearanceTarget(user, "d20");
     await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
     expect(onSave).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
