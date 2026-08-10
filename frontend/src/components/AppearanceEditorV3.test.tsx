@@ -9,6 +9,7 @@ import {
   GuildAppearanceProfileV3,
 } from "@dice-witch/dice-v4-model";
 import { AppearanceApiError } from "@/lib/appearance";
+import { getAppearancePreviewV4 } from "@/lib/appearance-v3";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -153,6 +154,43 @@ describe("AppearanceEditorV3", () => {
     await user.keyboard("{ArrowRight}{ArrowRight}");
     expect(document.activeElement).toBe(designTab);
     expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
+  });
+
+  it("keeps the picker target authoritative while Camera controls change", async () => {
+    const user = userEvent.setup();
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfileV4() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      version: 4,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    const all = screen.getByRole("radio", { name: "All dice" });
+    await user.click(screen.getByRole("tab", { name: "Camera" }));
+    await user.selectOptions(screen.getByLabelText("d4 viewing side"), "custom");
+    expect(all.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("img", { name: "All dice appearance preview" })).toBeDefined();
+    await user.selectOptions(screen.getByLabelText("d4 viewing side"), "random");
+    expect(all.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("img", { name: "All dice appearance preview" })).toBeDefined();
+
+    const d8 = screen.getByRole("radio", { name: "d8" });
+    await user.click(d8);
+    await waitFor(() =>
+      expect(vi.mocked(getAppearancePreviewV4)).toHaveBeenLastCalledWith(
+        expect.objectContaining({ target: "d8" }),
+      ),
+    );
+    await user.click(screen.getByLabelText("Use legacy dice view"));
+    expect(d8.getAttribute("aria-checked")).toBe("true");
+    await waitFor(() =>
+      expect(vi.mocked(getAppearancePreviewV4)).toHaveBeenLastCalledWith(
+        expect.objectContaining({ target: "d8" }),
+      ),
+    );
   });
 
   it("keeps the mobile preview available as one collapsible panel", async () => {

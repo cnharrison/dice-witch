@@ -41,9 +41,23 @@ beforeEach(() => {
   nextAnimationFrame = 0;
   vi.stubGlobal("Image", FakeImage);
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    beginPath: vi.fn(),
     clearRect: vi.fn(),
+    closePath: vi.fn(),
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
     drawImage: vi.fn(),
+    fill: vi.fn(),
+    fillRect: vi.fn(),
+    fillStyle: "",
+    filter: "none",
+    globalAlpha: 1,
+    globalCompositeOperation: "source-over",
     imageSmoothingEnabled: true,
+    lineTo: vi.fn(),
+    moveTo: vi.fn(),
+    restore: vi.fn(),
+    save: vi.fn(),
+    translate: vi.fn(),
   } as unknown as CanvasRenderingContext2D);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     const id = ++nextAnimationFrame;
@@ -97,6 +111,31 @@ describe("PixelatedPreviewImage", () => {
     );
     await screen.findByRole("img");
     expect(onDisplay).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches immediately without a canvas when reduced motion is enabled", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    const props = {
+      alt: "Appearance preview",
+      onDisplay: vi.fn(),
+      onError: vi.fn(),
+    };
+    const view = render(
+      <PixelatedPreviewImage candidate={preview("AAAA")} {...props} />,
+    );
+    await screen.findByRole("img");
+
+    view.rerender(
+      <PixelatedPreviewImage candidate={preview("BBBB")} {...props} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("img").getAttribute("src")).toContain("BBBB"),
+    );
+    expect(document.querySelector("canvas")).toBeNull();
   });
 
   it("keeps the displayed image when a running transition is reverted", async () => {

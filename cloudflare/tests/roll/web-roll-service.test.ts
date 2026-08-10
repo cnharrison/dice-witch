@@ -260,6 +260,23 @@ describe("appearance preview", () => {
     ).toEqual(new Set(["die-wide"]));
   });
 
+  it("uses one matching appearance for both percentile preview dice", () => {
+    const preview = buildAppearancePreviewRenderRequestR25V4({
+      target: "percentile",
+      recipe: recipeV3,
+      diceView: createDefaultDiceViewPreferencesV4(),
+      seed: 7,
+      state: "normal",
+    });
+    const [percentile, ones] = preview.groups[0] ?? [];
+
+    expect(percentile?.target).toBe("percentile");
+    expect(ones?.target).toBe("d10");
+    expect(ones).toHaveProperty("faceLabelSet", "percentile-ones");
+    expect(ones?.form).toBe(percentile?.form);
+    expect(ones?.appearance).toEqual(percentile?.appearance);
+  });
+
   it("builds Profile V4 camera drafts through immutable r20 and r21", () => {
     const clear = createDefaultDiceViewPreferencesV4();
     clear.mode = "clear";

@@ -22,7 +22,6 @@ type DiceViewPreferencesV4Props = {
   value: DiceViewPreferencesV4;
   disabled?: boolean;
   onChange(value: DiceViewPreferencesV4): void;
-  onPreviewTargetChange?(target: AppearanceTargetV4 | "all"): void;
 };
 
 function ModeDescriptionTooltip({
@@ -80,13 +79,11 @@ export function DiceViewPreferencesV4({
   value,
   disabled = false,
   onChange,
-  onPreviewTargetChange,
 }: DiceViewPreferencesV4Props) {
   const overrideActive = value.mode !== "normal";
 
   const setMode = (mode: "legacy" | "clear", enabled: boolean) => {
     onChange({ ...value, mode: enabled ? mode : "normal" });
-    onPreviewTargetChange?.("all");
   };
 
   const setAllMode = (mode: DiceViewAzimuthV4["mode"]) => {
@@ -97,7 +94,6 @@ export function DiceViewPreferencesV4({
         overrides: {},
       },
     });
-    onPreviewTargetChange?.("all");
   };
 
   const resetToRandom = () => {
@@ -113,7 +109,6 @@ export function DiceViewPreferencesV4({
         ),
       },
     });
-    onPreviewTargetChange?.("all");
   };
 
   return (
@@ -152,14 +147,10 @@ export function DiceViewPreferencesV4({
         </div>
       </div>
 
-      {overrideActive && (
-        <p className="rounded-lg border border-info-border bg-info p-3 text-sm text-info-foreground">
-          The selected readability view temporarily overrides elevation and
-          azimuth. Your normal camera settings remain saved below.
-        </p>
-      )}
-
-      <fieldset disabled={disabled || overrideActive} className="space-y-5 disabled:opacity-60">
+      <fieldset
+        disabled={disabled || overrideActive}
+        className="space-y-5 disabled:cursor-not-allowed disabled:opacity-60 [&_button:disabled]:cursor-not-allowed [&_input:disabled]:cursor-not-allowed [&_select:disabled]:cursor-not-allowed"
+      >
         <div className="rounded-lg border bg-background p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Label htmlFor="dice-view-elevation">Shared elevation</Label>
@@ -231,7 +222,6 @@ export function DiceViewPreferencesV4({
                     },
                   },
                 });
-                onPreviewTargetChange?.("all");
               }}
               className="w-full accent-brand"
             />
@@ -247,7 +237,6 @@ export function DiceViewPreferencesV4({
                 <div
                   key={target}
                   className="grid gap-3 p-3 sm:grid-cols-[8rem_8rem_1fr_3.5rem] sm:items-center"
-                  onFocus={() => onPreviewTargetChange?.(target)}
                 >
                   <span className="font-medium">
                     {target === "percentile"
@@ -267,7 +256,6 @@ export function DiceViewPreferencesV4({
                             | DiceViewAzimuthV4["mode"],
                         ),
                       );
-                      onPreviewTargetChange?.(target);
                     }}
                     className="h-9 rounded-md border bg-background px-2 text-sm"
                   >
@@ -289,7 +277,6 @@ export function DiceViewPreferencesV4({
                       if (setting === undefined) return;
                       setting.customDegrees = Number(event.target.value);
                       onChange(next);
-                      onPreviewTargetChange?.(target);
                     }}
                     className="w-full accent-brand"
                   />

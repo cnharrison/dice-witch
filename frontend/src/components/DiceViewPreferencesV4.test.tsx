@@ -70,23 +70,10 @@ describe("DiceViewPreferencesV4", () => {
     value.mode = "clear";
     renderPreferences({ value });
 
-    expect(
-      screen.getByLabelText("Shared elevation").closest("fieldset"),
-    ).toHaveProperty("disabled", true);
-    expect(
-      screen.getByText(/temporarily overrides elevation and azimuth/i),
-    ).not.toBeNull();
-  });
-
-  it("keeps the selected preview target when elevation changes", () => {
-    const onPreviewTargetChange = vi.fn();
-    renderPreferences({ onPreviewTargetChange });
-
-    fireEvent.change(screen.getByLabelText("Shared elevation"), {
-      target: { value: "47" },
-    });
-
-    expect(onPreviewTargetChange).not.toHaveBeenCalled();
+    const fieldset = screen.getByLabelText("Shared elevation").closest("fieldset");
+    expect(fieldset).toHaveProperty("disabled", true);
+    expect(fieldset?.className).toContain("disabled:cursor-not-allowed");
+    expect(screen.queryByText(/temporarily overrides elevation and azimuth/i)).toBeNull();
   });
 
   it("updates All dice and clears target overrides", () => {
@@ -124,9 +111,8 @@ describe("DiceViewPreferencesV4", () => {
     });
   });
 
-  it("creates and removes per-target overrides and selects their preview", () => {
-    const onPreviewTargetChange = vi.fn();
-    const { onChange, value } = renderPreferences({ onPreviewTargetChange });
+  it("creates and removes per-target overrides", () => {
+    const { onChange, value } = renderPreferences();
     const d20 = screen.getByLabelText("d20 viewing side");
 
     fireEvent.change(d20, { target: { value: "custom" } });
@@ -137,8 +123,6 @@ describe("DiceViewPreferencesV4", () => {
         overrides: { d20: { mode: "custom", customDegrees: 0 } },
       },
     });
-    expect(onPreviewTargetChange).toHaveBeenLastCalledWith("d20");
-
     fireEvent.change(d20, { target: { value: "inherit" } });
     expect(onChange).toHaveBeenLastCalledWith(value);
   });

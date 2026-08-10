@@ -814,7 +814,6 @@ export function AppearanceEditorV3({
                 setDraftProfile({ ...draftProfile, diceView });
                 setStatus(null);
               }}
-              onPreviewTargetChange={setPreviewTarget}
             />
           </div>
         )}

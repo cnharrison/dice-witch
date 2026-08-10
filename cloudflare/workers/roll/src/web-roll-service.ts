@@ -359,11 +359,23 @@ function previewDice(
       return [{ sides: 12, rolled: 12, modifiers }];
     case "d20":
       return [{ sides: 20, rolled: 20, modifiers }];
-    case "percentile":
+    case "percentile": {
+      const identity = "appearance-preview:percentile:0";
       return [
-        { sides: "%", rolled: 90, modifiers },
-        { sides: 10, rolled: 9, modifiers },
+        {
+          sides: "%",
+          rolled: 90,
+          modifiers,
+          appearanceDieIdentity: `${identity}:percentile`,
+        },
+        {
+          sides: 10,
+          rolled: 9,
+          modifiers,
+          appearanceDieIdentity: `${identity}:ones`,
+        },
       ];
+    }
     case "fudge":
       return [{ sides: "F", rolled: 1, modifiers }];
     case "other":
