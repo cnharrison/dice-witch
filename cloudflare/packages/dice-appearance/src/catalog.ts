@@ -1608,6 +1608,37 @@ export const RANDOM_SPECIAL_MATERIALS_V3: readonly RandomSpecialMaterialV3[] =
 const LEGACY_RANDOM_SPECIAL_MATERIALS_V3 =
   RANDOM_SPECIAL_MATERIALS_V3.slice(0, 6);
 
+const R33_ELEMENTAL_RANDOM_SPECIAL_MATERIALS_V3 = Object.freeze([
+  {
+    id: "elemental-lava",
+    material: fixedMaterialV3(elementalLavaR33RecipeV3),
+    d20Material: fixedMaterialV3(elementalLavaR33RecipeV3),
+    d20Form: "standard",
+    palette: fixedPaletteV3(elementalLavaR33RecipeV3),
+  },
+  {
+    id: "elemental-sand",
+    material: fixedMaterialV3(elementalSandRecipeV3),
+    d20Material: fixedMaterialV3(elementalSandRecipeV3),
+    d20Form: "standard",
+    palette: fixedPaletteV3(elementalSandRecipeV3),
+  },
+  {
+    id: "elemental-blue-sky",
+    material: fixedMaterialV3(elementalBlueSkyR33RecipeV3),
+    d20Material: fixedMaterialV3(elementalBlueSkyR33RecipeV3),
+    d20Form: "standard",
+    palette: fixedPaletteV3(elementalBlueSkyR33RecipeV3),
+  },
+  {
+    id: "elemental-sunset",
+    material: fixedMaterialV3(elementalSunsetR33RecipeV3),
+    d20Material: fixedMaterialV3(elementalSunsetR33RecipeV3),
+    d20Form: "standard",
+    palette: fixedPaletteV3(elementalSunsetR33RecipeV3),
+  },
+] satisfies readonly RandomSpecialMaterialV3[]);
+
 function randomSpecialMaterialKeyV3(material: AppearanceMaterialV4): string {
   return Object.entries(material)
     .sort(([first], [second]) => first.localeCompare(second))
@@ -1616,10 +1647,9 @@ function randomSpecialMaterialKeyV3(material: AppearanceMaterialV4): string {
 }
 
 const RANDOM_SPECIAL_MATERIAL_BY_KEY_V3 = new Map(
-  RANDOM_SPECIAL_MATERIALS_V3.map((candidate) => [
-    randomSpecialMaterialKeyV3(candidate.material),
-    candidate,
-  ]),
+  [...RANDOM_SPECIAL_MATERIALS_V3, ...R33_ELEMENTAL_RANDOM_SPECIAL_MATERIALS_V3].map(
+    (candidate) => [randomSpecialMaterialKeyV3(candidate.material), candidate],
+  ),
 );
 
 export function randomSpecialMaterialV3(
@@ -1754,6 +1784,50 @@ const randomRecipeV3 = createRandomRecipeV3(
   R32_RANDOM_FONT_OPTIONS_V3,
 );
 
+function randomSpecialByIdV3(id: RandomSpecialMaterialV3["id"]): RandomSpecialMaterialV3 {
+  const candidate = RANDOM_SPECIAL_MATERIALS_V3.find((entry) => entry.id === id);
+  if (candidate === undefined) throw new Error(`Random special material is missing: ${id}`);
+  return candidate;
+}
+
+const r34RandomRecipeV3 = createRandomRecipeV3(
+  [
+    ...classicRandomMaterialsV3(150, 18).map(({ value, weight }) => ({
+      value,
+      weight: weight * 8,
+    })),
+    {
+      value: randomSpecialByIdV3("figured-walnut").material,
+      weight: 360,
+    },
+    { value: DEFAULT_MATERIALS_V3.stone, weight: 360 },
+    {
+      value: randomSpecialByIdV3("striated-steel").material,
+      weight: 180,
+    },
+    {
+      value: randomSpecialByIdV3("brass-filigree").material,
+      weight: 180,
+    },
+    ...FANTASY_ESSENCES_V4.map((essence) => ({
+      value: { ...DEFAULT_MATERIALS_V3.fantasy, essence },
+      weight: 45,
+    })),
+    ...(["nacreous-resin", "vortical-core", "prismatic-glass"] as const).map(
+      (id) => ({ value: randomSpecialByIdV3(id).material, weight: 80 }),
+    ),
+    ...R33_ELEMENTAL_RANDOM_SPECIAL_MATERIALS_V3.map(({ material: value }) => ({
+      value,
+      weight: 90,
+    })),
+    {
+      value: randomSpecialByIdV3("paint-splatter").material,
+      weight: 120,
+    },
+  ],
+  R32_RANDOM_FONT_OPTIONS_V3,
+);
+
 const simpleStylesV3: readonly AppearanceBuiltinStyleV3[] = [
   {
     id: "solid",
@@ -1860,12 +1934,14 @@ const LEGACY_RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(
   legacyRandomRecipeV3,
 );
 const RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(randomRecipeV3);
+const R34_RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(r34RandomRecipeV3);
 
 export function isBuiltinRandomRecipeV3(recipe: AppearanceRecipeV3): boolean {
   const canonical = canonicalJsonV4(recipe);
   return (
     canonical === LEGACY_RANDOM_RECIPE_CANONICAL_V3 ||
-    canonical === RANDOM_RECIPE_CANONICAL_V3
+    canonical === RANDOM_RECIPE_CANONICAL_V3 ||
+    canonical === R34_RANDOM_RECIPE_CANONICAL_V3
   );
 }
 
@@ -1875,6 +1951,12 @@ export function randomRecipeForResolutionV3(
 ): AppearanceRecipeV3 {
   if (!isBuiltinRandomRecipeV3(recipe)) return recipe;
   return useR32 ? randomRecipeV3 : legacyRandomRecipeV3;
+}
+
+export function randomRecipeForR34ResolutionV3(
+  recipe: AppearanceRecipeV3,
+): AppearanceRecipeV3 {
+  return isBuiltinRandomRecipeV3(recipe) ? r34RandomRecipeV3 : recipe;
 }
 
 export const BUILTIN_APPEARANCE_STYLES_V3: readonly AppearanceBuiltinStyleV3[] =

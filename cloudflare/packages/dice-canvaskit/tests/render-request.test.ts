@@ -663,6 +663,45 @@ describe("CanvasKit Render Request V4", () => {
     canvasKit = await loadCanvasKitV4();
   });
 
+  it("skips labels on exactly edge-on faces without failing the roll", async () => {
+    const edgeOnRequest: RenderRequestV4 = {
+      version: 4,
+      rendererRevision: "canvaskit-v4-r34",
+      groups: [[{
+        ...die("d6", 5),
+        appearance: {
+          ...appearance,
+          material: {
+            family: "classic",
+            treatment: "solid",
+            opacity: "opaque",
+            finish: "satin",
+            textureScale: 100,
+          },
+          palette: ["#31e673", "#31e673"],
+          texture: { ...appearance.texture, scope: "die-wide" },
+          engraving: {
+            ...appearance.engraving,
+            fontId: "bricolage-grotesque",
+            color: "#111111",
+          },
+        },
+        view: {
+          kind: "camera",
+          elevationDegrees: 40,
+          azimuthOffsetDegrees: -5,
+          poseAzimuthDegrees: 180,
+        },
+      }]],
+    };
+
+    const rendered = await renderDiceRequestV4ToPng(
+      edgeOnRequest,
+      () => createRequestRenderer(canvasKit),
+    );
+    expect(rendered.png.length).toBeGreaterThan(1_000);
+  });
+
   it("renders every r32 material and Alcarin as one deterministic field", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
     const request = r32MaterialRequest();
@@ -3119,7 +3158,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r34" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r35" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

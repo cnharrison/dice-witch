@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
-import {
-  formatEngravingLabelV4,
-  type AppearanceRecipeV3,
-} from "@dice-witch/dice-v4-model";
+import type { AppearanceRecipeV3 } from "@dice-witch/dice-v4-model";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
@@ -53,6 +50,9 @@ describe("AppearanceRecipeControlsV3", () => {
         name: "Material: Weighted mix · 23 materials",
       }),
     ).toBeDefined();
+    expect(
+      screen.getByRole("combobox", { name: "Primary font" }).textContent,
+    ).toContain("Procedural mix");
     expect(screen.queryByText("Form")).toBeNull();
     expect(
       screen.queryByRole("group", { name: /Polyhedral/i }),
@@ -174,7 +174,7 @@ describe("AppearanceRecipeControlsV3", () => {
     expect(value.font).toEqual({ mode: "fixed", value: "new-rocker" });
   });
 
-  it("shows authentic Tengwar numerals without styling its Latin name", async () => {
+  it("shows the full Alcarin Tengwar name in its own typeface", async () => {
     const user = userEvent.setup();
     render(<Harness initial={recipe("chaotic")} />);
 
@@ -182,20 +182,12 @@ describe("AppearanceRecipeControlsV3", () => {
     font.focus();
     await user.keyboard("{Enter}");
     const option = screen.getByRole("option", { name: "Alcarin Tengwar" });
-    expect(option.style.fontFamily).toBe("");
-    const optionSample = option.querySelector<HTMLElement>("[aria-hidden=true]");
-    expect(optionSample?.textContent).toBe(
-      formatEngravingLabelV4("alcarin-tengwar", "20"),
-    );
-    expect(optionSample?.style.fontFamily).toBe(
-      "DiceWitchV4-alcarin-tengwar",
-    );
+    expect(option.style.fontFamily).toBe("DiceWitchV4-alcarin-tengwar");
+    expect(option.textContent).toContain("Alcarin Tengwar");
+    expect(option.querySelector("[aria-hidden=true]")).toBeNull();
 
     await user.keyboard("{End}{Enter}");
-    const triggerSample = font.querySelector<HTMLElement>("[aria-hidden=true]");
-    expect(triggerSample?.textContent).toBe(
-      formatEngravingLabelV4("alcarin-tengwar", "20"),
-    );
-    expect(font.style.fontFamily).toBe("");
+    expect(font.textContent).toContain("Alcarin Tengwar");
+    expect(font.style.fontFamily).toBe("DiceWitchV4-alcarin-tengwar");
   });
 });

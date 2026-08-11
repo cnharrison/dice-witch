@@ -18,6 +18,7 @@ import {
 } from "@dice-witch/dice-v4-model";
 import {
   isBuiltinRandomRecipeV3,
+  randomRecipeForR34ResolutionV3,
   randomRecipeForResolutionV3,
   randomSpecialMaterialV3,
 } from "./catalog";
@@ -901,7 +902,8 @@ export type AppearanceResolutionSeedPolicyV3 =
   | "property-streams-r30"
   | "property-streams-r31"
   | "property-streams-r32"
-  | "property-streams-r33";
+  | "property-streams-r33"
+  | "property-streams-r34";
 
 function usesR27ColorBehaviorV3(
   policy: AppearanceResolutionSeedPolicyV3,
@@ -913,7 +915,8 @@ function usesR27ColorBehaviorV3(
     policy === "property-streams-r30" ||
     policy === "property-streams-r31" ||
     policy === "property-streams-r32" ||
-    policy === "property-streams-r33"
+    policy === "property-streams-r33" ||
+    policy === "property-streams-r34"
   );
 }
 
@@ -955,7 +958,8 @@ function propertySeedV3(
       policy === "property-streams-r30" ||
       policy === "property-streams-r31" ||
       policy === "property-streams-r32" ||
-      policy === "property-streams-r33") &&
+      policy === "property-streams-r33" ||
+      policy === "property-streams-r34") &&
     (usesFullSpectrumRandomizationV3(recipe) ||
       recipe.randomization === "one-palette-color-v1");
   const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
@@ -1233,9 +1237,12 @@ export function resolveAppearanceRecipeV3(
   context: AppearanceResolutionContextV3,
   seedPolicy: AppearanceResolutionSeedPolicyV3 = "legacy",
 ): ResolvedAppearanceV3 {
-  const usesR33 = seedPolicy === "property-streams-r33";
+  const usesR34 = seedPolicy === "property-streams-r34";
+  const usesR33 = seedPolicy === "property-streams-r33" || usesR34;
   const usesR32OrLater = seedPolicy === "property-streams-r32" || usesR33;
-  const recipe = randomRecipeForResolutionV3(inputRecipe, usesR32OrLater);
+  const recipe = usesR34
+    ? randomRecipeForR34ResolutionV3(inputRecipe)
+    : randomRecipeForResolutionV3(inputRecipe, usesR32OrLater);
   const seed = deriveAppearanceSeedV4({
     ...context,
     variation: recipe.variation,
@@ -1261,7 +1268,8 @@ export function resolveAppearanceRecipeV3(
   const usesR30 = seedPolicy === "property-streams-r30";
   const usesR31 = seedPolicy === "property-streams-r31";
   let specialFormRevision: RendererRevisionV4 | undefined;
-  if (usesR33) specialFormRevision = "canvaskit-v4-r33";
+  if (usesR34) specialFormRevision = "canvaskit-v4-r34";
+  else if (usesR33) specialFormRevision = "canvaskit-v4-r33";
   else if (usesR32OrLater) specialFormRevision = "canvaskit-v4-r32";
   else if (usesR31) specialFormRevision = "canvaskit-v4-r31";
   else if (usesR30) specialFormRevision = "canvaskit-v4-r30";

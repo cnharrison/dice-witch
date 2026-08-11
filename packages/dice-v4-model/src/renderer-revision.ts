@@ -206,6 +206,7 @@ const r33 = policy({
   polyhedralSurfaceMapping: "view-octahedral-r33",
   textureGeneration: "r33-v2",
 });
+const r34 = policy({ ...r33 });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -241,6 +242,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r31": r31,
   "canvaskit-v4-r32": r32,
   "canvaskit-v4-r33": r33,
+  "canvaskit-v4-r34": r34,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

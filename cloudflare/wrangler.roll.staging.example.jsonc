@@ -7,7 +7,7 @@
   "preview_urls": false,
   "vars": {
     "ROLL_RENDER_VERSION": "4",
-    "ROLL_VIEW_POLICY": "r33"
+    "ROLL_VIEW_POLICY": "r34"
   },
   "alias": {
     "crypto": "./packages/roll-domain/src/worker-crypto.ts"

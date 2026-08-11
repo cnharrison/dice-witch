@@ -194,11 +194,13 @@ describe("V4 renderer revision policies", () => {
       r32Fonts: true,
       r32Materials: true,
     });
-    expect(rendererRevisionPolicyV4("canvaskit-v4-r33")).toEqual({
+    const revision33 = rendererRevisionPolicyV4("canvaskit-v4-r33");
+    expect(revision33).toEqual({
       ...revision32,
       polyhedralSurfaceMapping: "view-octahedral-r33",
       textureGeneration: "r33-v2",
     });
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r34")).toEqual(revision33);
     expect(revision31.r32Fonts).toBe(false);
     expect(revision31.r32Materials).toBe(false);
     expect(revision19.resolvedViews).toBe(false);
@@ -207,7 +209,7 @@ describe("V4 renderer revision policies", () => {
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r34" as RendererRevisionV4,
+        "canvaskit-v4-r35" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

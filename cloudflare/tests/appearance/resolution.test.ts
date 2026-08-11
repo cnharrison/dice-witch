@@ -2121,6 +2121,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ["canvaskit-v4-r31", "property-streams-r31"],
     ["canvaskit-v4-r32", "property-streams-r32"],
     ["canvaskit-v4-r33", "property-streams-r33"],
+    ["canvaskit-v4-r34", "property-streams-r34"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -2142,6 +2143,7 @@ describe("resolveAppearanceRecipeV3", () => {
         if (
           rendererRevision !== "canvaskit-v4-r32" &&
           rendererRevision !== "canvaskit-v4-r33" &&
+          rendererRevision !== "canvaskit-v4-r34" &&
           r32OnlyStyle
         ) {
           continue;

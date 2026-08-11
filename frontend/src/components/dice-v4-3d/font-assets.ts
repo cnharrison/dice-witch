@@ -14,7 +14,7 @@ import zillaSlabUrl from "../../../../cloudflare/packages/dice-svg/assets/ZillaS
 import spaceGroteskUrl from "../../../../cloudflare/packages/dice-svg/assets/SpaceGrotesk-SemiBold-subset.ttf?url";
 import frauncesUrl from "../../../../cloudflare/packages/dice-svg/assets/Fraunces-SemiBold-subset.ttf?url";
 import bricolageGrotesqueUrl from "../../../../cloudflare/packages/dice-svg/assets/BricolageGrotesque-SemiBold-subset.ttf?url";
-import alcarinTengwarUrl from "../../../../cloudflare/packages/dice-svg/assets/AlcarinTengwar-Bold-subset.ttf?url";
+import alcarinTengwarUrl from "@/assets/fonts/appearance/AlcarinTengwar-Bold-ui.ttf?url";
 
 const FONT_URLS_V4: Readonly<Record<FontIdV4, string>> = Object.freeze({
   "liberation-sans": liberationSansUrl,

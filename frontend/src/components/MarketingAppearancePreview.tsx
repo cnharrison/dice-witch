@@ -4,6 +4,7 @@ import randomPreview3 from "@/assets/marketing-random-previews/random-3.webp";
 import randomPreview4 from "@/assets/marketing-random-previews/random-4.webp";
 import randomPreview5 from "@/assets/marketing-random-previews/random-5.webp";
 import randomPreview6 from "@/assets/marketing-random-previews/random-6.webp";
+import { PixelatedImageTransition } from "@/components/PixelatedPreviewImage";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import * as React from "react";
@@ -15,7 +16,7 @@ const RANDOM_PREVIEWS = [
   randomPreview4,
   randomPreview5,
   randomPreview6,
-] as const;
+].map((source) => ({ source, width: 750, height: 300 }));
 
 function nextPreviewIndex(current: number): number {
   const value = crypto.getRandomValues(new Uint32Array(1))[0];
@@ -25,6 +26,7 @@ function nextPreviewIndex(current: number): number {
 
 export default function MarketingAppearancePreview() {
   const [previewIndex, setPreviewIndex] = React.useState(0);
+  const [previewFailed, setPreviewFailed] = React.useState(false);
 
   return (
     <section
@@ -34,7 +36,10 @@ export default function MarketingAppearancePreview() {
       <div className="flex justify-end">
         <Button
           type="button"
-          onClick={() => setPreviewIndex(nextPreviewIndex)}
+          onClick={() => {
+            setPreviewFailed(false);
+            setPreviewIndex(nextPreviewIndex);
+          }}
           className="bg-marketing-accent text-marketing-background hover:bg-marketing-accent-hover"
         >
           <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -45,14 +50,18 @@ export default function MarketingAppearancePreview() {
         className="mt-4 flex min-h-48 items-center justify-center overflow-hidden rounded-lg border border-marketing-border bg-marketing-background p-3 sm:min-h-72"
         aria-live="polite"
       >
-        <img
-          src={RANDOM_PREVIEWS[previewIndex]}
-          width="750"
-          height="300"
-          decoding="async"
-          alt={`Random Dice Witch appearance ${String(previewIndex + 1)}`}
-          className="h-auto w-full max-w-[750px] object-contain"
-        />
+        {previewFailed ? (
+          <p role="alert" className="text-sm text-marketing-muted">
+            Preview unavailable.
+          </p>
+        ) : (
+          <PixelatedImageTransition
+            candidate={RANDOM_PREVIEWS[previewIndex]}
+            alt={`Random Dice Witch appearance ${String(previewIndex + 1)}`}
+            onDisplay={() => setPreviewFailed(false)}
+            onError={() => setPreviewFailed(true)}
+          />
+        )}
       </div>
     </section>
   );

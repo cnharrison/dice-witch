@@ -59,6 +59,7 @@ import {
   parseAppearanceRecipeV2,
   RANDOM_SPECIAL_MATERIALS_V3,
   R32_RANDOM_FONT_OPTIONS_V3,
+  randomRecipeForR34ResolutionV3,
   randomRecipeForResolutionV3,
   randomSpecialMaterialV3,
   resolveAppearanceRecipe,
@@ -698,6 +699,65 @@ describe("built-in appearance catalog", () => {
     expect(
       random.font.options.reduce((total, { weight }) => total + weight, 0),
     ).toBe(1_000);
+  });
+
+  it("uses the approved r34 Random family allocation without changing the published recipe", () => {
+    const published = BUILTIN_APPEARANCE_RECIPES_V3.chaotic?.recipe;
+    if (published === undefined) throw new Error("Random recipe is missing");
+    const random = randomRecipeForR34ResolutionV3(published);
+    if (random.material.mode !== "weighted") {
+      throw new Error("r34 Random materials are missing");
+    }
+
+    const familyWeight = (...families: AppearanceMaterialV4["family"][]) =>
+      random.material.mode === "weighted"
+        ? random.material.options
+            .filter(({ value }) => families.includes(value.family))
+            .reduce((total, { weight }) => total + weight, 0)
+        : 0;
+
+    expect(familyWeight("classic")).toBe(9_840);
+    expect(familyWeight("wood")).toBe(360);
+    expect(familyWeight("stone")).toBe(360);
+    expect(familyWeight("metal", "hollow-metal")).toBe(360);
+    expect(familyWeight("fantasy")).toBe(360);
+    expect(familyWeight("sharp-resin", "liquid-core", "glass")).toBe(240);
+    expect(familyWeight("elemental")).toBe(360);
+    expect(familyWeight("paint")).toBe(120);
+    expect(
+      random.material.options.reduce((total, { weight }) => total + weight, 0),
+    ).toBe(12_000);
+
+    const fantasy = random.material.options.filter(
+      ({ value }) => value.family === "fantasy",
+    );
+    expect(fantasy).toHaveLength(FANTASY_ESSENCES_V4.length);
+    expect(fantasy.map(({ weight }) => weight)).toEqual(
+      FANTASY_ESSENCES_V4.map(() => 45),
+    );
+    expect(
+      fantasy.map(({ value }) =>
+        value.family === "fantasy" ? value.essence : null,
+      ),
+    ).toEqual(FANTASY_ESSENCES_V4);
+
+    const elementals = random.material.options.flatMap(({ value, weight }) =>
+      value.family === "elemental" ? [{ value, weight }] : [],
+    );
+    expect(elementals.map(({ weight }) => weight)).toEqual([90, 90, 90, 90]);
+    expect(elementals.map(({ value }) => value.style)).toEqual([
+      "lava",
+      "sand",
+      "blue-sky",
+      "sunset",
+    ]);
+    expect(elementals[0]?.value).toMatchObject({
+      fissureDensity: 30,
+      glowIntensity: 90,
+      textureScale: 340,
+    });
+    expect(elementals[2]?.value.textureScale).toBe(25);
+    expect(elementals[3]?.value.textureScale).toBe(25);
   });
 
   it("freezes approved collector identities and all-target special forms", () => {

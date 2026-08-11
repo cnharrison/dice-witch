@@ -11,8 +11,14 @@ import {
 
 type PreviewImage = AppearancePreviewV3 | AppearancePreviewV4;
 
+export type PixelatedImageCandidate = Readonly<{
+  source: string;
+  width: number;
+  height: number;
+}>;
+
 type DisplayedPreview = Readonly<{
-  preview: PreviewImage;
+  image: PixelatedImageCandidate;
   alt: string;
 }>;
 
@@ -164,14 +170,14 @@ function drawArcaneInterferenceFrame(
   context.restore();
 }
 
-export function PixelatedPreviewImage({
+export function PixelatedImageTransition({
   candidate,
   alt,
   onDisplay,
   onError,
   retryKey = 0,
 }: {
-  candidate?: PreviewImage;
+  candidate?: PixelatedImageCandidate;
   alt: string;
   onDisplay(): void;
   onError(error: Error): void;
@@ -192,7 +198,7 @@ export function PixelatedPreviewImage({
 
   React.useEffect(() => {
     if (candidate === undefined) return;
-    const source = previewSource(candidate);
+    const source = candidate.source;
     const requestKey = `${String(retryKey)}:${reducedMotion ? "reduce" : "animate"}:${alt}:${source}`;
     if (requestKeyRef.current === requestKey) return;
     requestKeyRef.current = requestKey;
@@ -202,7 +208,7 @@ export function PixelatedPreviewImage({
       void loadImage(source)
         .then(() => {
           if (generation !== generationRef.current) return;
-          setDisplayed({ preview: candidate, alt });
+          setDisplayed({ image: candidate, alt });
           onDisplayRef.current();
         })
         .catch((error: unknown) => {
@@ -215,21 +221,21 @@ export function PixelatedPreviewImage({
         });
       return;
     }
-    if (previewSource(displayed.preview) === source) {
+    if (displayed.image.source === source) {
       generationRef.current += 1;
       setTransition(null);
       return;
     }
     const generation = ++generationRef.current;
     void Promise.all([
-      loadImage(previewSource(displayed.preview)),
+      loadImage(displayed.image.source),
       loadImage(source),
     ]).then(([current, next]) => {
       if (generation !== generationRef.current) return;
       setTransition({
         current,
         next,
-        display: { preview: candidate, alt },
+        display: { image: candidate, alt },
         generation,
       });
     }).catch((error: unknown) => {
@@ -293,21 +299,53 @@ export function PixelatedPreviewImage({
   return (
     <span className="relative grid max-w-full place-items-center">
       <img
-        src={previewSource(displayed.preview)}
-        width={displayed.preview.width}
-        height={displayed.preview.height}
+        src={displayed.image.source}
+        width={displayed.image.width}
+        height={displayed.image.height}
         alt={displayed.alt}
         className="h-auto max-w-full object-contain"
       />
       {transition !== null && (
         <canvas
           ref={canvasRef}
-          width={displayed.preview.width}
-          height={displayed.preview.height}
+          width={displayed.image.width}
+          height={displayed.image.height}
           aria-hidden="true"
           className="absolute inset-0 h-full w-full"
         />
       )}
     </span>
+  );
+}
+
+export function PixelatedPreviewImage({
+  candidate,
+  alt,
+  onDisplay,
+  onError,
+  retryKey = 0,
+}: {
+  candidate?: PreviewImage;
+  alt: string;
+  onDisplay(): void;
+  onError(error: Error): void;
+  retryKey?: number;
+}) {
+  return (
+    <PixelatedImageTransition
+      candidate={
+        candidate === undefined
+          ? undefined
+          : {
+              source: previewSource(candidate),
+              width: candidate.width,
+              height: candidate.height,
+            }
+      }
+      alt={alt}
+      onDisplay={onDisplay}
+      onError={onError}
+      retryKey={retryKey}
+    />
   );
 }

@@ -1309,7 +1309,7 @@ describe("RollWork Durable Object", () => {
     const wrongRevision = structuredClone(rollWorkV4Fixture) as {
       renderRequest: { rendererRevision: string };
     };
-    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r34";
+    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r35";
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
       "Render request rendererRevision is not supported",
     );

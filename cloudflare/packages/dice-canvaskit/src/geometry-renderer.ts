@@ -1560,13 +1560,15 @@ function fitTriangleSafeFont(
     bounds: LocalTextBoundsV4,
     fontSize: number,
   ): number => {
-    const [depthX, depthY] = engravingDepthOffset(
+    const depthOffset = engravingDepthOffset(
       rightX,
       rightY,
       downX,
       downY,
       fontSize,
     );
+    if (depthOffset === null) return Number.POSITIVE_INFINITY;
+    const [depthX, depthY] = depthOffset;
     const padding = Math.max(Math.abs(depthX), Math.abs(depthY));
     const corners = transformedLabelCorners(
       {
@@ -1687,11 +1689,12 @@ function engravingDepthOffset(
   downX: number,
   downY: number,
   fontSize: number,
-): readonly [x: number, y: number] {
+): readonly [x: number, y: number] | null {
   const determinant = rightX * downY - rightY * downX;
-  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-12) {
-    throw new Error("CanvasKit V4 label transform is singular");
+  if (!Number.isFinite(determinant)) {
+    throw new Error("CanvasKit V4 label transform is invalid");
   }
+  if (Math.abs(determinant) < 1e-12) return null;
   const squaredScale =
     rightX * rightX + rightY * rightY + downX * downX + downY * downY;
   const scaleDiscriminant = Math.max(
@@ -1872,13 +1875,15 @@ function drawLabel(
     left: textBounds.left + opticalOffsetX,
     right: textBounds.right + opticalOffsetX,
   };
-  const [depthX, depthY] = engravingDepthOffset(
+  const depthOffset = engravingDepthOffset(
     rightX,
     rightY,
     downX,
     downY,
     font.getSize(),
   );
+  if (depthOffset === null) return null;
+  const [depthX, depthY] = depthOffset;
   const contrastEdgeWidth =
     engraving.contrastEdge?.widthRatio === undefined
       ? 0
