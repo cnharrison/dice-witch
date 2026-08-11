@@ -307,7 +307,13 @@ export function assertAppearanceRecipeSupportsTargetV3(
     : [target];
   for (const form of selectionValuesV3(parsed.form.polyhedral)) {
     for (const candidate of targets) {
-      if (!isPolyhedralFormImplementedForTargetV4(candidate, form)) {
+      if (
+        !isPolyhedralFormImplementedForTargetV4(
+          candidate,
+          form,
+          "canvaskit-v4-r30",
+        )
+      ) {
         throw new Error(
           `Appearance form ${form} is not implemented for ${candidate}`,
         );

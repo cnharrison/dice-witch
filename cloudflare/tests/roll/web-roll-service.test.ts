@@ -26,6 +26,7 @@ import {
   buildAppearancePreviewRenderRequestR27V4,
   buildAppearancePreviewRenderRequestR28V4,
   buildAppearancePreviewRenderRequestR29V4,
+  buildAppearancePreviewRenderRequestR30V4,
   buildAppearancePreviewRenderRequestForPolicyV4,
   executeWebRoll,
   parseWebSavedRollAttribution,
@@ -71,7 +72,23 @@ if (recipeV3 === undefined || provenanceRecipeV3 === undefined) {
   throw new Error("V3 recipe fixture is missing");
 }
 const defaultRecipeV3: AppearanceRecipeV3 = recipeV3;
-const materialProvenanceRecipeV3: AppearanceRecipeV3 = provenanceRecipeV3;
+const materialProvenanceRecipeV3: AppearanceRecipeV3 = {
+  ...provenanceRecipeV3,
+  material: {
+    mode: "fixed",
+    value: {
+      family: "metal",
+      metal: "brass",
+      finish: "polished",
+      patinaStrength: 0,
+      textureScale: 100,
+    },
+  },
+  form: {
+    polyhedral: { mode: "fixed", value: "standard" },
+    other: "sphere",
+  },
+};
 
 function appearanceService(
   onRequest?: (value: unknown, path: string) => void,
@@ -334,6 +351,10 @@ describe("appearance preview", () => {
       buildAppearancePreviewRenderRequestForPolicyV4(input, "r29")
         .rendererRevision,
     ).toBe("canvaskit-v4-r29");
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r30")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r30");
   });
 
   it("maps built-in Random solid previews across whole dice in r29", () => {
@@ -364,6 +385,37 @@ describe("appearance preview", () => {
       classicSolids.every(
         ({ appearance }) =>
           appearance.texture.scope === "bounded-die-wide",
+      ),
+    ).toBe(true);
+  });
+
+  it("makes r30 Random solid previews one color", () => {
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "chaotic",
+    )?.recipe;
+    if (randomRecipe === undefined) {
+      throw new Error("Random appearance recipe is missing");
+    }
+    const preview = buildAppearancePreviewRenderRequestR30V4({
+      target: "all",
+      recipe: randomRecipe,
+      diceView: createDefaultDiceViewPreferencesV4(),
+      seed: 7,
+      state: "normal",
+    });
+    const classicSolids = preview.groups
+      .flat()
+      .filter(
+        ({ appearance }) =>
+          appearance.material.family === "classic" &&
+          appearance.material.treatment === "solid",
+      );
+
+    expect(preview.rendererRevision).toBe("canvaskit-v4-r30");
+    expect(classicSolids.length).toBeGreaterThan(0);
+    expect(
+      classicSolids.every(
+        ({ appearance }) => new Set(appearance.palette).size === 1,
       ),
     ).toBe(true);
   });
@@ -488,18 +540,22 @@ describe("appearance preview", () => {
     }
   });
 
-  it("renders Profile V4 camera previews through the current renderer", async () => {
+  it("renders one-color Profile V4 previews through the current renderer", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     diceView.mode = "legacy";
+    const solid = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "solid",
+    )?.recipe;
+    if (solid === undefined) throw new Error("Solid recipe is missing");
     const rendered = await renderAppearancePreviewV4(
       {
         target: "d6",
-        recipe: recipeV3,
+        recipe: solid,
         diceView,
         seed: 7,
         state: "normal",
       },
-      "r29",
+      "r30",
     );
 
     expect(rendered).toMatchObject({
@@ -901,6 +957,38 @@ describe("WebRollService", () => {
       ]],
     });
   });
+
+  it.each([
+    ["hollow-victory", "hollow-cage"],
+    ["glass-cannon", "crystal-cut"],
+    ["dice-witch", "crystal-cut"],
+  ] as const)(
+    "builds every polyhedral %s die with its r30 special form",
+    async (styleId, form) => {
+      const style = BUILTIN_APPEARANCE_STYLES_V3.find(
+        ({ id }) => id === styleId,
+      );
+      if (style === undefined) throw new Error(`${styleId} style is missing`);
+      const preparation = await prepareWebRoll(
+        {
+          notation: "d4+d6+d8+d10+d12+d20+d%+dF",
+          repetitions: 1,
+          userId,
+          guildId,
+          renderSeed: 0x51ce_b00c,
+        },
+        appearanceService(undefined, style.recipe),
+        "4",
+        "r30",
+      );
+      if (preparation.status !== "prepared") {
+        throw new Error("Expected an r30 special-form preparation");
+      }
+      expect(
+        preparation.renderModel?.groups.flat().map((die) => die.form),
+      ).toEqual(Array.from({ length: 9 }, () => form));
+    },
+  );
 
   it("keeps the Preferences-resolved material on original and exploded dice", async () => {
     const dataService = appearanceService(

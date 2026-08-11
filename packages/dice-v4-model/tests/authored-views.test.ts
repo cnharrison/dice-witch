@@ -593,6 +593,38 @@ describe("authored V4 render views", () => {
     }
   });
 
+  it("authors r30 crystal-cut and hollow-cage views for every polyhedral target", () => {
+    for (const subject of [
+      { target: "d4" as const, results: [1, 2, 3, 4] },
+      { target: "d6" as const, results: [1, 2, 3, 4, 5, 6] },
+      { target: "d8" as const, results: Array.from({ length: 8 }, (_, index) => index + 1) },
+      { target: "d10" as const, results: Array.from({ length: 10 }, (_, index) => index + 1) },
+      { target: "d12" as const, results: Array.from({ length: 12 }, (_, index) => index + 1) },
+      { target: "d20" as const, results: Array.from({ length: 20 }, (_, index) => index + 1) },
+      { target: "percentile" as const, results: Array.from({ length: 10 }, (_, index) => index * 10) },
+      { target: "fudge" as const, results: [-1, 0, 1] },
+    ]) {
+      for (const result of subject.results) {
+        for (const mode of ["legacy", "clear"] as const) {
+          const standard = getAuthoredRenderViewV4(
+            "canvaskit-v4-r30",
+            mode,
+            { target: subject.target, form: "standard", result },
+          );
+          for (const form of ["crystal-cut", "hollow-cage"] as const) {
+            expect(
+              getAuthoredRenderViewV4("canvaskit-v4-r30", mode, {
+                target: subject.target,
+                form,
+                result,
+              }),
+            ).toEqual(standard);
+          }
+        }
+      }
+    }
+  });
+
   it("fails instead of substituting an unauthored target or revision", () => {
     expect(() =>
       getAuthoredRenderViewV4("canvaskit-v4-r20", "legacy", {

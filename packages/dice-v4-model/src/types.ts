@@ -81,7 +81,7 @@ export type AppearanceSelection<Value> =
   | { mode: "weighted"; options: WeightedSelectionOption<Value>[] };
 
 export type AppearanceColorsV3 =
-  | { mode: "tonal" | "random"; primary: HexColor }
+  | { mode: "solid" | "tonal" | "random"; primary: HexColor }
   | { mode: "palette"; colors: HexColor[] }
   | { mode: "random-pair" | "vivid-random-pair" };
 

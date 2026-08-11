@@ -62,6 +62,7 @@ import {
   buildRollRenderRequestR27V4,
   buildRollRenderRequestR28V4,
   buildRollRenderRequestR29V4,
+  buildRollRenderRequestR30V4,
 } from "../../../packages/roll-render-model/src";
 import {
   loadEffectiveAppearanceV2,
@@ -582,6 +583,15 @@ export function buildAppearancePreviewRenderRequestR29V4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR30V4(
+  value: unknown,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR30V4,
+  );
+}
+
 export function buildAppearancePreviewRenderRequestForPolicyV4(
   value: unknown,
   viewPolicy: RollViewPolicy,
@@ -609,6 +619,8 @@ export function buildAppearancePreviewRenderRequestForPolicyV4(
       return buildAppearancePreviewRenderRequestR28V4(value);
     case "r29":
       return buildAppearancePreviewRenderRequestR29V4(value);
+    case "r30":
+      return buildAppearancePreviewRenderRequestR30V4(value);
   }
 }
 
@@ -834,9 +846,16 @@ function buildWebRenderRequest(
       appearance.effective,
     );
   }
-  return appearance.viewPolicy === "r28"
-    ? buildRollRenderRequestR28V4(outcome, renderSeed, appearance.effective)
-    : buildRollRenderRequestR29V4(outcome, renderSeed, appearance.effective);
+  if (appearance.viewPolicy === "r28") {
+    return buildRollRenderRequestR28V4(
+      outcome,
+      renderSeed,
+      appearance.effective,
+    );
+  }
+  return appearance.viewPolicy === "r29"
+    ? buildRollRenderRequestR29V4(outcome, renderSeed, appearance.effective)
+    : buildRollRenderRequestR30V4(outcome, renderSeed, appearance.effective);
 }
 
 function appearanceIdentities(outcome: RollExecutionResult): string[][] {

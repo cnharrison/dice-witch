@@ -1,10 +1,12 @@
 import {
+  getAuthoredRenderViewV4,
   validateRenderRequestV4,
   type AppearanceRecipeV3,
   type RenderDieV4,
 } from "@dice-witch/dice-v4-model";
 import { describe, expect, it } from "vitest";
 import {
+  APPEARANCE_CATALOG_V3,
   APPEARANCE_TARGETS,
   BUILTIN_APPEARANCE_STYLES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
@@ -1596,6 +1598,153 @@ describe("resolveAppearanceRecipeV3", () => {
     }
   });
 
+  it("makes r30 Random solids one nearly-flat hue without changing r29", () => {
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === CHAOTIC_APPEARANCE_STYLE_ID,
+    )?.recipe;
+    if (randomRecipe === undefined) {
+      throw new Error("Random appearance recipe is missing");
+    }
+    const resolutionContext = contextV3({
+      renderSeed: 7,
+      target: "d6",
+      groupIndex: 0,
+      dieIndex: 1,
+    });
+    const r29 = resolveAppearanceRecipeV3(
+      randomRecipe,
+      resolutionContext,
+      "property-streams-r29",
+    );
+    const r30 = resolveAppearanceRecipeV3(
+      randomRecipe,
+      resolutionContext,
+      "property-streams-r30",
+    );
+
+    expect(r30.appearance.material).toEqual(r29.appearance.material);
+    expect(new Set(r29.appearance.palette).size).toBe(2);
+    expect(new Set(r30.appearance.palette).size).toBe(1);
+    expect(r30.appearance.palette[0]).toBe(r29.appearance.palette[0]);
+    expect(r30.appearance.texture.scope).toBe("bounded-die-wide");
+  });
+
+  it("chooses one independent six-color Rainbow hue per die in r30", () => {
+    const rainbow = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "rainbow",
+    )?.recipe;
+    if (rainbow === undefined) throw new Error("Rainbow recipe is missing");
+    const allowed = new Set([
+      "#d7263d",
+      "#f46036",
+      "#f9c80e",
+      "#2e933c",
+      "#3366cc",
+      "#8a4fff",
+    ]);
+    const palettes = Array.from({ length: 24 }, (_, dieIndex) =>
+      resolveAppearanceRecipeV3(
+        rainbow,
+        contextV3({ target: "d6", dieIndex, dieIdentity: `rainbow:${String(dieIndex)}` }),
+        "property-streams-r30",
+      ).appearance.palette,
+    );
+
+    expect(palettes.every((palette) => new Set(palette).size === 1)).toBe(true);
+    expect(palettes.every(([color]) => allowed.has(color))).toBe(true);
+    expect(new Set(palettes.map(([color]) => color)).size).toBeGreaterThan(1);
+  });
+
+  it("defaults compatible materials to all-target r30 special forms", () => {
+    const targets = ["d4", "d6", "d8", "d10", "d12", "d20", "percentile", "fudge"] as const;
+    const crystalFamilies = ["sharp-resin", "gemstone", "glass", "fantasy"] as const;
+    for (const family of crystalFamilies) {
+      const material = RANDOM_SPECIAL_MATERIALS_V3.find(
+        ({ d20Material }) => d20Material.family === family,
+      )?.d20Material;
+      const fallback = APPEARANCE_CATALOG_V3.materials.find(
+        (candidate) => candidate.family === family,
+      )?.defaultValue;
+      const selected = material ?? fallback;
+      if (selected === undefined) throw new Error(`${family} material is missing`);
+      const recipe = appearanceRecipeV3({
+        material: { mode: "fixed", value: selected },
+        form: {
+          policy: "material-default-v1",
+          polyhedral: { mode: "fixed", value: "standard" },
+          other: "sphere",
+        },
+        gradient: {
+          scope: { mode: "fixed", value: "die-wide" },
+          direction: { mode: "fixed", value: "upper-left-to-lower-right" },
+        },
+      });
+      for (const target of targets) {
+        expect(
+          resolveAppearanceRecipeV3(
+            recipe,
+            contextV3({ target }),
+            "property-streams-r30",
+          ).form,
+        ).toBe("crystal-cut");
+      }
+    }
+
+    const hollow = APPEARANCE_CATALOG_V3.materials.find(
+      ({ family }) => family === "hollow-metal",
+    )?.defaultValue;
+    if (hollow === undefined) throw new Error("Hollow material is missing");
+    const hollowRecipe = appearanceRecipeV3({
+      material: { mode: "fixed", value: hollow },
+      form: {
+        policy: "material-default-v1",
+        polyhedral: { mode: "fixed", value: "standard" },
+        other: "sphere",
+      },
+      gradient: {
+        scope: { mode: "fixed", value: "die-wide" },
+        direction: { mode: "fixed", value: "upper-left-to-lower-right" },
+      },
+    });
+    for (const target of targets) {
+      expect(
+        resolveAppearanceRecipeV3(
+          hollowRecipe,
+          contextV3({ target }),
+          "property-streams-r30",
+        ).form,
+      ).toBe("hollow-cage");
+    }
+  });
+
+  it("uses every Random special form across non-d20 dice in r30", () => {
+    const random = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === CHAOTIC_APPEARANCE_STYLE_ID,
+    )?.recipe;
+    if (random === undefined) throw new Error("Random recipe is missing");
+
+    for (const special of RANDOM_SPECIAL_MATERIALS_V3) {
+      const recipe: AppearanceRecipeV3 = {
+        ...random,
+        material: { mode: "fixed", value: special.material },
+      };
+      const resolved = resolveAppearanceRecipeV3(
+        recipe,
+        contextV3({ target: "d6" }),
+        "property-streams-r30",
+      );
+      expect(resolved.appearance.material).toEqual(special.d20Material);
+      const family = special.d20Material.family;
+      expect(resolved.form).toBe(
+        family === "hollow-metal"
+          ? "hollow-cage"
+          : ["sharp-resin", "gemstone", "glass", "fantasy"].includes(family)
+            ? "crystal-cut"
+            : "standard",
+      );
+    }
+  });
+
   it("keeps custom generated palettes consistent across dice in r28", () => {
     const recipe = appearanceRecipeV3({
       variation: "fixed",
@@ -1730,7 +1879,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toBeGreaterThan(125);
   });
 
-  it("builds a valid r2 snapshot for every built-in and target", () => {
+  it("builds a valid r30 snapshot for every built-in and target", () => {
     const resultByTarget = {
       d4: 4,
       d6: 6,
@@ -1749,6 +1898,7 @@ describe("resolveAppearanceRecipeV3", () => {
         const resolved = resolveAppearanceRecipeV3(
           recipe,
           contextV3({ target }),
+          "property-streams-r30",
         );
         const common = {
           target,
@@ -1756,6 +1906,15 @@ describe("resolveAppearanceRecipeV3", () => {
           form: resolved.form,
           appearance: { ...resolved.appearance, effect: null },
           icons: [] as RenderDieV4["icons"],
+          view: getAuthoredRenderViewV4(
+            "canvaskit-v4-r30",
+            "legacy",
+            {
+              target,
+              result: resultByTarget[target],
+              form: resolved.form,
+            },
+          ),
         };
         const die: RenderDieV4 =
           target === "other"
@@ -1764,7 +1923,7 @@ describe("resolveAppearanceRecipeV3", () => {
         expect(() =>
           validateRenderRequestV4({
             version: 4,
-            rendererRevision: "canvaskit-v4-r2",
+            rendererRevision: "canvaskit-v4-r30",
             groups: [[die]],
           }),
         ).not.toThrow();

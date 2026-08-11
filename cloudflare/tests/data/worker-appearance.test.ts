@@ -833,7 +833,7 @@ describe("Data Worker appearance service", () => {
     expect(mixed.status).toBe(400);
   });
 
-  it("resolves target-authored V3 recipes only after successful lookups", async () => {
+  it("resolves all-target V3 special forms only after successful lookups", async () => {
     const empty = await post("/internal/appearance/v3/effective", {
       userId,
       guildId: null,
@@ -866,8 +866,11 @@ describe("Data Worker appearance service", () => {
     }
     expect(Object.values(value.recipes)).toHaveLength(9);
     expect(value.recipes.d6).toMatchObject({
-      material: { mode: "fixed", value: { family: "metal", metal: "brass" } },
-      form: { polyhedral: { mode: "fixed", value: "standard" } },
+      material: {
+        mode: "fixed",
+        value: { family: "hollow-metal", metal: "brass" },
+      },
+      form: { polyhedral: { mode: "fixed", value: "hollow-cage" } },
     });
     expect(value.recipes.d20).toMatchObject({
       material: { mode: "fixed", value: { family: "hollow-metal" } },

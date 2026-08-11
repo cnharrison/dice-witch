@@ -13,6 +13,7 @@ import { D6_STANDARD_GEOMETRY_V4 } from "./geometry-d6";
 import { D8_STANDARD_GEOMETRY_V4 } from "./geometry-d8";
 import { FUDGE_STANDARD_GEOMETRY_V4 } from "./geometry-fudge";
 import { OTHER_SPHERE_GEOMETRY_V4 } from "./geometry-other";
+import { ALL_TARGET_SPECIAL_FORM_GEOMETRIES_V4 } from "./geometry-special-targets";
 import {
   APPEARANCE_TARGETS_V4,
   POLYHEDRAL_FORMS_V4,
@@ -165,6 +166,9 @@ const CANONICAL_GEOMETRIES_V4 = new Map<GeometryIdV4, GeometryDescriptorV4>([
   [D20_CRYSTAL_CUT_GEOMETRY_V4.id, D20_CRYSTAL_CUT_GEOMETRY_V4],
   [D20_HOLLOW_CAGE_GEOMETRY_V4.id, D20_HOLLOW_CAGE_GEOMETRY_V4],
   [FUDGE_STANDARD_GEOMETRY_V4.id, FUDGE_STANDARD_GEOMETRY_V4],
+  ...ALL_TARGET_SPECIAL_FORM_GEOMETRIES_V4.map(
+    (geometry) => [geometry.id, geometry] as const,
+  ),
   [OTHER_SPHERE_GEOMETRY_V4.id, OTHER_SPHERE_GEOMETRY_V4],
 ]);
 

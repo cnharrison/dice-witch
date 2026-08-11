@@ -14,7 +14,11 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 function editablePrimary(colors: AppearanceColorsV3): string | null {
   if (colors.mode === "palette") return colors.colors[0] ?? null;
-  if (colors.mode === "tonal" || colors.mode === "random") {
+  if (
+    colors.mode === "solid" ||
+    colors.mode === "tonal" ||
+    colors.mode === "random"
+  ) {
     return colors.primary;
   }
   return null;
@@ -39,7 +43,9 @@ export function AppearanceColorControlsV3({
   const palette = colors.mode === "palette" ? colors.colors : null;
   const editableColors =
     palette ??
-    (colors.mode === "tonal" || colors.mode === "random"
+    (colors.mode === "solid" ||
+    colors.mode === "tonal" ||
+    colors.mode === "random"
       ? [colors.primary]
       : []);
 
@@ -51,6 +57,15 @@ export function AppearanceColorControlsV3({
 
   const emit = (next: AppearanceColorsV3) => {
     setError(null);
+    if (
+      recipe.randomization === "one-palette-color-v1" &&
+      next.mode !== "palette"
+    ) {
+      const withoutRandomization = { ...recipe };
+      delete withoutRandomization.randomization;
+      onChange({ ...withoutRandomization, colors: next });
+      return;
+    }
     onChange({ ...recipe, colors: next });
   };
 
@@ -82,7 +97,13 @@ export function AppearanceColorControlsV3({
       return;
     }
     if (palette === null) {
-      if (colors.mode !== "tonal" && colors.mode !== "random") return;
+      if (
+        colors.mode !== "solid" &&
+        colors.mode !== "tonal" &&
+        colors.mode !== "random"
+      ) {
+        return;
+      }
       emit({ ...colors, primary: color.toLowerCase() });
       return;
     }

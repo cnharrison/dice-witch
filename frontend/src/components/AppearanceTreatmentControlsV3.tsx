@@ -65,6 +65,13 @@ function PrimarySelection<Value extends string>({
   );
 }
 
+function usesClassicGradient(recipe: AppearanceRecipeV3): boolean {
+  return selectionValuesV3(recipe.material).some(
+    (material) =>
+      material.family === "classic" && material.treatment === "gradient",
+  );
+}
+
 function supportsRepeatedGradient(recipe: AppearanceRecipeV3): boolean {
   return (
     selectionValuesV3(recipe.material).every(
@@ -92,6 +99,8 @@ export function AppearanceTreatmentControlsV3({
   const showLightingDirection = lightingModes.some(
     (mode) => mode === "directional" || mode === "combined",
   );
+  const showGradientControls =
+    recipe.colors.mode !== "solid" && usesClassicGradient(recipe);
   const repeatedSupported = supportsRepeatedGradient(recipe);
   const selectedGradientScopes = new Set(
     selectionValuesV3(recipe.gradient.scope),
@@ -170,28 +179,32 @@ export function AppearanceTreatmentControlsV3({
           getOptionFontFamily={browserFontFamilyV4}
           onChange={(font) => emit({ ...recipe, font })}
         />
-        <PrimarySelection
-          label="Gradient scope"
-          selection={recipe.gradient.scope}
-          options={gradientScopeOptions}
-          onChange={(scope) =>
-            emit({
-              ...recipe,
-              gradient: { ...recipe.gradient, scope },
-            })
-          }
-        />
-        <PrimarySelection
-          label="Gradient direction"
-          selection={recipe.gradient.direction}
-          options={catalog.gradient.directions}
-          onChange={(direction) =>
-            emit({
-              ...recipe,
-              gradient: { ...recipe.gradient, direction },
-            })
-          }
-        />
+        {showGradientControls && (
+          <>
+            <PrimarySelection
+              label="Gradient scope"
+              selection={recipe.gradient.scope}
+              options={gradientScopeOptions}
+              onChange={(scope) =>
+                emit({
+                  ...recipe,
+                  gradient: { ...recipe.gradient, scope },
+                })
+              }
+            />
+            <PrimarySelection
+              label="Gradient direction"
+              selection={recipe.gradient.direction}
+              options={catalog.gradient.directions}
+              onChange={(direction) =>
+                emit({
+                  ...recipe,
+                  gradient: { ...recipe.gradient, direction },
+                })
+              }
+            />
+          </>
+        )}
         <PrimarySelection
           label="Lighting mode"
           selection={recipe.lighting.mode}
@@ -254,32 +267,36 @@ export function AppearanceTreatmentControlsV3({
             maximumTotalWeight={catalog.bounds.maximumTotalSelectionWeight}
             onChange={(engraving) => emit({ ...recipe, engraving })}
           />
-          <AppearanceStringSelectionV3
-            label="Gradient scope"
-            selection={recipe.gradient.scope}
-            options={gradientScopeOptions}
-            weightBounds={catalog.bounds.selectionWeight}
-            maximumTotalWeight={catalog.bounds.maximumTotalSelectionWeight}
-            onChange={(scope) =>
-              emit({
-                ...recipe,
-                gradient: { ...recipe.gradient, scope },
-              })
-            }
-          />
-          <AppearanceStringSelectionV3
-            label="Gradient direction"
-            selection={recipe.gradient.direction}
-            options={catalog.gradient.directions}
-            weightBounds={catalog.bounds.selectionWeight}
-            maximumTotalWeight={catalog.bounds.maximumTotalSelectionWeight}
-            onChange={(direction) =>
-              emit({
-                ...recipe,
-                gradient: { ...recipe.gradient, direction },
-              })
-            }
-          />
+          {showGradientControls && (
+            <>
+              <AppearanceStringSelectionV3
+                label="Gradient scope"
+                selection={recipe.gradient.scope}
+                options={gradientScopeOptions}
+                weightBounds={catalog.bounds.selectionWeight}
+                maximumTotalWeight={catalog.bounds.maximumTotalSelectionWeight}
+                onChange={(scope) =>
+                  emit({
+                    ...recipe,
+                    gradient: { ...recipe.gradient, scope },
+                  })
+                }
+              />
+              <AppearanceStringSelectionV3
+                label="Gradient direction"
+                selection={recipe.gradient.direction}
+                options={catalog.gradient.directions}
+                weightBounds={catalog.bounds.selectionWeight}
+                maximumTotalWeight={catalog.bounds.maximumTotalSelectionWeight}
+                onChange={(direction) =>
+                  emit({
+                    ...recipe,
+                    gradient: { ...recipe.gradient, direction },
+                  })
+                }
+              />
+            </>
+          )}
           <AppearanceStringSelectionV3
             label="Lighting mode"
             selection={recipe.lighting.mode}

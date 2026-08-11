@@ -2,6 +2,8 @@ import {
   D20_HOLLOW_CAGE_GEOMETRY_V4,
   D20_STANDARD_GEOMETRY_R2_V4,
   buildPhysicalPolyhedralMeshV4,
+  getCanonicalGeometryDescriptorV4,
+  getGeometryIdV4,
 } from "@dice-witch/dice-v4-model";
 import { describe, expect, it } from "vitest";
 import { createPhysicalPolyhedralGeometryV4 } from "./geometry";
@@ -68,6 +70,41 @@ describe("V4 Three.js physical edge geometry", () => {
 
     edge.geometry.dispose();
     base.dispose();
+  });
+
+  it("builds hollow-cage edge layers for every r30 target", () => {
+    for (const [target, result] of [
+      ["d4", 4],
+      ["d6", 6],
+      ["d8", 8],
+      ["d10", 10],
+      ["d12", 12],
+      ["percentile", 90],
+      ["fudge", 1],
+    ] as const) {
+      const descriptor = getCanonicalGeometryDescriptorV4(
+        getGeometryIdV4(target, "hollow-cage"),
+      );
+      if (descriptor.kind !== "polyhedral") {
+        throw new Error("Expected polyhedral hollow geometry");
+      }
+      const physical = buildPhysicalPolyhedralMeshV4(descriptor, result);
+      const base = createPhysicalPolyhedralGeometryV4(
+        descriptor,
+        result,
+        placement,
+      );
+      const edge = createPhysicalEdgeGeometryV4(base, physical);
+
+      expect(edge.vertexColors).toBe(true);
+      expect(edge.geometry.userData).toMatchObject({
+        geometryId: `${target}-hollow-cage-r1`,
+        edgePolicy: "hollow-cage",
+      });
+      expect(edge.geometry.getAttribute("position").count).toBeGreaterThan(0);
+      edge.geometry.dispose();
+      base.dispose();
+    }
   });
 
   it("rejects an unknown hollow-cage surface instead of outlining it", () => {

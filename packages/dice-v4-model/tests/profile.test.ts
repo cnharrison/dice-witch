@@ -196,6 +196,17 @@ describe("Appearance Profile V3", () => {
       const randomized = { ...recipe(), randomization };
       expect(parseAppearanceRecipeV3(randomized)).toEqual(randomized);
     }
+    const onePaletteColor = {
+      ...recipe(),
+      randomization: "one-palette-color-v1" as const,
+    };
+    expect(parseAppearanceRecipeV3(onePaletteColor)).toEqual(onePaletteColor);
+    expect(() =>
+      parseAppearanceRecipeV3({
+        ...onePaletteColor,
+        colors: { mode: "solid", primary: "#123456" },
+      }),
+    ).toThrow("One-color palette randomization requires a palette");
     expect(() =>
       parseAppearanceRecipeV3({
         ...recipe(),
@@ -218,6 +229,23 @@ describe("Appearance Profile V3", () => {
         form: { ...recipe().form, policy: "unversioned-automatic" },
       }),
     ).toThrow("Appearance form policy is not supported");
+  });
+
+  it("accepts one exact solid body color", () => {
+    const solid = {
+      ...recipe(),
+      colors: { mode: "solid" as const, primary: "#D2042D" },
+    };
+    expect(parseAppearanceRecipeV3(solid).colors).toEqual({
+      mode: "solid",
+      primary: "#d2042d",
+    });
+    expect(() =>
+      parseAppearanceRecipeV3({
+        ...solid,
+        colors: { ...solid.colors, secondary: "#ffffff" },
+      }),
+    ).toThrow("Appearance colors are invalid");
   });
 
   it("rejects malformed colors, materials, and treatment fields", () => {

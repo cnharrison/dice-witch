@@ -366,6 +366,30 @@ describe("V4 material texture generation", () => {
     expect(Math.abs(redRegions - blueRegions) / pixelCount).toBeLessThan(0.08);
   });
 
+  it("keeps duplicate one-color palettes nearly flat", () => {
+    const material: ClassicMaterialV4 = {
+      family: "classic",
+      treatment: "solid",
+      opacity: "opaque",
+      finish: "satin",
+      textureScale: 100,
+    };
+    const texture = generateMaterialTextureV4(
+      { ...input(material), palette: ["#d2042d", "#d2042d"] },
+      "balanced-surface-r27",
+    );
+    const channels = [0, 1, 2].map((channel) => {
+      const values: number[] = [];
+      for (let offset = channel; offset < texture.pixels.length; offset += 4) {
+        const value = texture.pixels[offset];
+        if (value !== undefined) values.push(value);
+      }
+      return Math.max(...values) - Math.min(...values);
+    });
+
+    expect(channels.every((range) => range <= 15)).toBe(true);
+  });
+
   it("keeps multi-color r27 solid palettes balanced in either order", () => {
     const material: ClassicMaterialV4 = {
       family: "classic",

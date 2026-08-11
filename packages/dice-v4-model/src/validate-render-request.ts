@@ -565,14 +565,23 @@ export function parseAppearanceMaterialV4(
   }
 }
 
-function parsePalette(value: unknown, path: string): [string, string, ...string[]] {
+function parsePalette(
+  value: unknown,
+  path: string,
+  rendererRevision: RendererRevisionV4,
+): [string, string, ...string[]] {
   if (!Array.isArray(value) || value.length < 2 || value.length > 6) {
     throw new Error(`${path} is invalid`);
   }
   const colors = value.map((color, index) =>
     hexColor(color, `${path}[${String(index)}]`),
   );
-  if (new Set(colors).size < 2) throw new Error(`${path} is invalid`);
+  if (
+    new Set(colors).size < 2 &&
+    !rendererRevisionPolicyV4(rendererRevision).allowSingleColorPalette
+  ) {
+    throw new Error(`${path} is invalid`);
+  }
   const first = colors[0];
   const second = colors[1];
   if (first === undefined || second === undefined) {
@@ -762,7 +771,11 @@ function parseAppearance(
       appearance.material,
       `${path}.material`,
     ),
-    palette: parsePalette(appearance.palette, `${path}.palette`),
+    palette: parsePalette(
+      appearance.palette,
+      `${path}.palette`,
+      rendererRevision,
+    ),
     texture: parseTexture(
       appearance.texture,
       `${path}.texture`,
@@ -852,6 +865,7 @@ function parseForm(
   target: AppearanceTargetV4,
   material: AppearanceMaterialV4,
   path: string,
+  rendererRevision: RendererRevisionV4,
 ): RenderFormV4 {
   if (target === "other") {
     if (value !== "sphere") {
@@ -864,7 +878,13 @@ function parseForm(
     POLYHEDRAL_FORMS_V4,
     `${path}.form is invalid for ${target}`,
   );
-  if (!isPolyhedralFormImplementedForTargetV4(target, form)) {
+  if (
+    !isPolyhedralFormImplementedForTargetV4(
+      target,
+      form,
+      rendererRevision,
+    )
+  ) {
     throw new Error(`${path}.form is not implemented for ${target}`);
   }
   const family = material.family;
@@ -1151,7 +1171,13 @@ function parseDie(
   validateCriticalState(appearance, icons, path);
   if (target === "other") {
     const sides = boundedInteger(value.sides, 1, 999, `${path}.sides`);
-    const form = parseForm(value.form, target, appearance.material, path);
+    const form = parseForm(
+      value.form,
+      target,
+      appearance.material,
+      path,
+      rendererRevision,
+    );
     const result = parseResult(value.result, target, sides, path);
     validateTextureScopeForDie(appearance, target, form, rendererRevision);
     const view = parseView(
@@ -1172,7 +1198,13 @@ function parseDie(
       ...(view === undefined ? {} : { view }),
     };
   }
-  const form = parseForm(value.form, target, appearance.material, path);
+  const form = parseForm(
+    value.form,
+    target,
+    appearance.material,
+    path,
+    rendererRevision,
+  );
   const result = parseResult(value.result, target, undefined, path);
   const faceLabelSet = withFaceLabelSet
     ? supportedValue(

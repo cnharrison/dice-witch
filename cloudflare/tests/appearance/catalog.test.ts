@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_TARGETS_V4,
   APPEARANCE_VARIATIONS_V3,
   APPEARANCE_VARIATION_SCOPES_V3,
   CLASSIC_FINISHES_V4,
+  canonicalJsonV4,
   CLASSIC_OPACITIES_V4,
   CLASSIC_TREATMENTS_V4,
   ENGRAVING_FINISHES_V4,
@@ -150,9 +152,11 @@ describe("built-in appearance catalog", () => {
     const v2Ids = APPEARANCE_CATALOG_V2.styles.map(({ id }) => id);
     const v3Ids = BUILTIN_APPEARANCE_STYLES_V3.map(({ id }) => id);
     expect(v3Ids.slice(0, v2Ids.length)).toEqual(v2Ids);
-    expect(v3Ids.slice(v2Ids.length)).toEqual(
-      APPROVED_COLLECTOR_STYLE_IDS_V3,
-    );
+    expect(v3Ids.slice(v2Ids.length)).toEqual([
+      "solid",
+      "rainbow",
+      ...APPROVED_COLLECTOR_STYLE_IDS_V3,
+    ]);
     expect(new Set(v3Ids).size).toBe(v3Ids.length);
     expect(APPEARANCE_VALIDATION_CATALOG_V3.builtinStyleIds).toEqual(v3Ids);
     expect(Object.keys(BUILTIN_APPEARANCE_RECIPES_V3)).toEqual(v3Ids);
@@ -163,6 +167,70 @@ describe("built-in appearance catalog", () => {
         expect(parseAppearanceRecipeV3(recipe)).toEqual(recipe);
       }
     }
+  });
+
+  it("publishes the cherry Solid, per-die Rainbow, and staging Dice Witch Alt recipes", () => {
+    const solid = BUILTIN_APPEARANCE_RECIPES_V3.solid?.recipe;
+    expect(solid).toMatchObject({
+      variation: "fixed",
+      varyBy: "die",
+      colors: { mode: "solid", primary: "#d2042d" },
+      material: {
+        mode: "fixed",
+        value: {
+          family: "classic",
+          treatment: "solid",
+          opacity: "opaque",
+          finish: "satin",
+        },
+      },
+      font: { mode: "fixed", value: "liberation-sans" },
+    });
+
+    const rainbow = BUILTIN_APPEARANCE_RECIPES_V3.rainbow?.recipe;
+    expect(rainbow).toMatchObject({
+      variation: "wild",
+      varyBy: "die",
+      randomization: "one-palette-color-v1",
+      colors: {
+        mode: "palette",
+        colors: [
+          "#d7263d",
+          "#f46036",
+          "#f9c80e",
+          "#2e933c",
+          "#3366cc",
+          "#8a4fff",
+        ],
+      },
+      material: {
+        mode: "fixed",
+        value: { family: "classic", treatment: "solid", finish: "gloss" },
+      },
+      font: { mode: "fixed", value: "liberation-sans" },
+    });
+
+    const diceWitch = BUILTIN_APPEARANCE_RECIPES_V3["dice-witch"]?.recipe;
+    expect(diceWitch).toMatchObject({
+      colors: { mode: "tonal", primary: "#ff00ff" },
+      material: {
+        mode: "fixed",
+        value: {
+          family: "sharp-resin",
+          style: "clear",
+          inclusion: "mylar",
+          clarity: 84,
+          inclusionDensity: 24,
+          finish: "polished",
+        },
+      },
+      form: { policy: "material-default-v1" },
+      font: { mode: "fixed", value: "new-rocker" },
+      engraving: { mode: "fixed", value: "luminous" },
+    });
+    expect(
+      createHash("sha256").update(canonicalJsonV4(diceWitch)).digest("hex"),
+    ).toBe("8766791af34f4e44b47ab1998c349e398d77e9b57d36a27b87ffdd3f0367abea");
   });
 
   it("pins Random V2 to the approved solid-first material recipe", () => {
@@ -275,6 +343,7 @@ describe("built-in appearance catalog", () => {
       APPEARANCE_VARIATION_SCOPES_V3,
     );
     expect(optionIds(APPEARANCE_CATALOG_V3.colorModes)).toEqual([
+      "solid",
       "tonal",
       "random",
       "palette",
@@ -362,8 +431,32 @@ describe("built-in appearance catalog", () => {
         ],
       }),
       expect.objectContaining({ id: "sharp", targets: ["d20"] }),
-      expect.objectContaining({ id: "crystal-cut", targets: ["d20"] }),
-      expect.objectContaining({ id: "hollow-cage", targets: ["d20"] }),
+      expect.objectContaining({
+        id: "crystal-cut",
+        targets: [
+          "d4",
+          "d6",
+          "d8",
+          "d10",
+          "d12",
+          "d20",
+          "percentile",
+          "fudge",
+        ],
+      }),
+      expect.objectContaining({
+        id: "hollow-cage",
+        targets: [
+          "d4",
+          "d6",
+          "d8",
+          "d10",
+          "d12",
+          "d20",
+          "percentile",
+          "fudge",
+        ],
+      }),
       expect.objectContaining({ id: "sphere", targets: ["other"] }),
     ]);
     const formsById = new Map(
@@ -438,7 +531,7 @@ describe("built-in appearance catalog", () => {
     ).toBe(1_000);
   });
 
-  it("freezes approved collector identities and target-authored forms", () => {
+  it("freezes approved collector identities and all-target special forms", () => {
     const byId = new Map(
       BUILTIN_APPEARANCE_STYLES_V3.map((style) => [style.id, style]),
     );
@@ -484,26 +577,20 @@ describe("built-in appearance catalog", () => {
       grainDensity: 64,
     });
 
-    const hexD20 = byId.get("hex-appeal")?.overrides?.d20;
-    const glassD20 = byId.get("glass-cannon")?.overrides?.d20;
-    const hollowD20 = byId.get("hollow-victory")?.overrides?.d20;
-    const hollowOther = byId.get("hollow-victory")?.overrides?.other;
-    expect(hexD20?.form.polyhedral).toEqual({ mode: "fixed", value: "sharp" });
-    expect(glassD20?.form.polyhedral).toEqual({
+    expect(byId.get("hex-appeal")?.recipe.form.polyhedral).toEqual({
       mode: "fixed",
       value: "crystal-cut",
     });
-    expect(hollowD20?.form.polyhedral).toEqual({
+    expect(byId.get("glass-cannon")?.recipe.form.polyhedral).toEqual({
+      mode: "fixed",
+      value: "crystal-cut",
+    });
+    expect(byId.get("hollow-victory")?.recipe.form.polyhedral).toEqual({
       mode: "fixed",
       value: "hollow-cage",
     });
-    expect(hollowD20?.material).toMatchObject({
-      mode: "fixed",
-      value: { family: "hollow-metal" },
-    });
-    expect(hollowOther?.material).toEqual(hollowD20?.material);
     expect(fixedMaterial("hollow-victory")).toMatchObject({
-      family: "metal",
+      family: "hollow-metal",
       metal: "brass",
     });
   });
@@ -575,9 +662,11 @@ describe("built-in appearance catalog", () => {
     }
   });
 
-  it("publishes nine featured V2 presets with exact fixed themes", () => {
+  it("publishes the featured presets and preserves V2 fixed themes", () => {
     expect(FEATURED_APPEARANCE_STYLE_IDS).toEqual([
       "dice-witch",
+      "solid",
+      "rainbow",
       "pride",
       "trans",
       "crimson-palette",
@@ -594,7 +683,10 @@ describe("built-in appearance catalog", () => {
       "triangles",
       "crosshatch",
     ]);
-    const featured = FEATURED_APPEARANCE_STYLE_IDS.map((id) => {
+    const v2FeaturedIds = FEATURED_APPEARANCE_STYLE_IDS.filter(
+      (id) => id !== "solid" && id !== "rainbow",
+    );
+    const featured = v2FeaturedIds.map((id) => {
       const style = APPEARANCE_CATALOG_V2.styles.find(
         (candidate) => candidate.id === id,
       );

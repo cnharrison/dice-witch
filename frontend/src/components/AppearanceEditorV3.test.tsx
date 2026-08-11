@@ -117,6 +117,74 @@ describe("AppearanceEditorV3", () => {
     expect(preview.parentElement?.className).toContain("xl:sticky");
   });
 
+  it("places saved designs below the preview and omits the empty dialog", () => {
+    const empty = personalProfile();
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AppearanceEditorV3
+          catalog={APPEARANCE_CATALOG_V3}
+          resource={{ revision: 4, profile: empty }}
+          kind="personal"
+          personalDesigns={[]}
+          isSaving={false}
+          onSave={vi.fn(async () => undefined)}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole("heading", { name: "Saved designs" })).toBeNull();
+    unmount();
+
+    const profile = personalProfile();
+    profile.designs = [
+      { id: designId, name: "Night garden", recipe: styleRecipe("solid") },
+    ];
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 5, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    const preview = screen.getByRole("region", { name: "Preview" });
+    const heading = screen.getByRole("heading", { name: "Saved designs" });
+    const aside = preview.closest("aside");
+    expect(aside?.contains(heading)).toBe(true);
+    expect(preview.compareDocumentPosition(heading)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("opens Design when editing a saved design from another tab", async () => {
+    const user = userEvent.setup();
+    const profile = personalProfileV4();
+    profile.designs = [
+      { id: designId, name: "Night garden", recipe: styleRecipe("solid") },
+    ];
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 5, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      version: 4,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    const designTab = screen.getByRole("tab", { name: "Design" });
+    await user.click(screen.getByRole("tab", { name: "Camera" }));
+    expect(designTab.getAttribute("aria-selected")).toBe("false");
+    await user.click(screen.getByRole("button", { name: "Edit Night garden" }));
+
+    expect(designTab.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(designTab);
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Night garden",
+    );
+  });
+
   it("keeps one preview mounted while switching between Design and Camera tabs", async () => {
     const user = userEvent.setup();
     renderEditor({

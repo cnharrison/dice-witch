@@ -5,7 +5,7 @@ import type { AppearanceRecipeV3 } from "@dice-witch/dice-v4-model";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppearanceColorControlsV3 } from "./AppearanceColorControlsV3";
 
 function recipe(styleId: string): AppearanceRecipeV3 {
@@ -28,6 +28,51 @@ function Harness({ initial }: { initial: AppearanceRecipeV3 }) {
 afterEach(cleanup);
 
 describe("AppearanceColorControlsV3", () => {
+  it("edits a true solid with one body-color control", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={recipe("solid")} />);
+
+    expect(screen.getByLabelText("Color behavior")).toHaveProperty(
+      "value",
+      "solid",
+    );
+    expect(
+      screen.getByRole("button", { name: "Choose color 1" }),
+    ).toHaveProperty("value", "#d2042d");
+    expect(screen.queryByRole("button", { name: "Choose color 2" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add color" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Randomize palette" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
+    const hex = screen.getByRole("textbox", { name: "Hex color" });
+    await user.clear(hex);
+    await user.type(hex, "#123456");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(
+      screen.getByRole("button", { name: "Choose color 1" }),
+    ).toHaveProperty("value", "#123456");
+  });
+
+  it("removes Rainbow-only selection when switching to one fixed color", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <AppearanceColorControlsV3
+        recipe={recipe("rainbow")}
+        catalog={APPEARANCE_CATALOG_V3}
+        onChange={onChange}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText("Color behavior"), "solid");
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        colors: { mode: "solid", primary: "#d7263d" },
+      }),
+    );
+    expect(onChange.mock.calls[0]?.[0]).not.toHaveProperty("randomization");
+  });
+
   it("uses catalog-owned colors when changing a generated pair to a palette", async () => {
     const user = userEvent.setup();
     render(<Harness initial={recipe("chaotic")} />);

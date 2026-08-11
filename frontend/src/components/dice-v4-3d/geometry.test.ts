@@ -1,6 +1,8 @@
 import {
   D4_STANDARD_GEOMETRY_V4,
   buildPhysicalPolyhedralMeshV4,
+  getCanonicalGeometryDescriptorV4,
+  getGeometryIdV4,
   projectGeometryPointV4,
 } from "@dice-witch/dice-v4-model";
 import { describe, expect, it } from "vitest";
@@ -8,6 +10,45 @@ import { createPhysicalPolyhedralGeometryV4 } from "./geometry";
 import { placedTextureUvV4 } from "./texture";
 
 describe("V4 physical material mapping", () => {
+  it("builds finite Three.js geometry for every r30 special form", () => {
+    for (const [target, result] of [
+      ["d4", 4],
+      ["d6", 6],
+      ["d8", 8],
+      ["d10", 10],
+      ["d12", 12],
+      ["d20", 20],
+      ["percentile", 90],
+      ["fudge", 1],
+    ] as const) {
+      for (const form of ["crystal-cut", "hollow-cage"] as const) {
+        const descriptor = getCanonicalGeometryDescriptorV4(
+          getGeometryIdV4(target, form),
+        );
+        if (descriptor.kind !== "polyhedral") {
+          throw new Error("Expected polyhedral descriptor");
+        }
+        const geometry = createPhysicalPolyhedralGeometryV4(
+          descriptor,
+          result,
+          {
+            rotation: 0,
+            offsetU: 0,
+            offsetV: 0,
+            scope: "die-wide",
+          },
+        );
+        for (const attribute of ["position", "normal", "uv"] as const) {
+          const values = geometry.getAttribute(attribute).array;
+          expect([...values].every(Number.isFinite)).toBe(true);
+        }
+        expect(geometry.index?.count).toBeGreaterThan(0);
+        expect(geometry.boundingSphere?.radius).toBeGreaterThan(0);
+        geometry.dispose();
+      }
+    }
+  });
+
   it("maps r4 coherent gradients across the projected whole die", () => {
     const placement = {
       rotation: 90,

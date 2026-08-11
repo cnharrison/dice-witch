@@ -97,7 +97,7 @@ describe("appearance editor V3 draft operations", () => {
     expect(selection.styleId).toBe("hex-appeal");
     expect(selection.recipe.form.polyhedral).toEqual({
       mode: "fixed",
-      value: "sharp",
+      value: "crystal-cut",
     });
 
     const next = structuredClone(selection.recipe);
@@ -344,7 +344,7 @@ describe("appearance editor V3 draft operations", () => {
         "d6",
         APPEARANCE_CATALOG_V3,
       ).map(({ id }) => id),
-    ).toEqual(["standard"]);
+    ).toEqual(["standard", "crystal-cut"]);
     const crystalGlass = structuredClone(glass);
     crystalGlass.form.polyhedral = {
       mode: "fixed",
@@ -358,13 +358,16 @@ describe("appearance editor V3 draft operations", () => {
       ).map(({ family }) => family),
     ).toEqual(["sharp-resin", "gemstone", "glass", "fantasy"]);
 
+    expect(() =>
+      assertAppearanceRecipeSupportsTargetV3(crystalGlass, "d6"),
+    ).not.toThrow();
     const unsupported = structuredClone(glass);
-    unsupported.form.polyhedral = { mode: "fixed", value: "crystal-cut" };
+    unsupported.form.polyhedral = { mode: "fixed", value: "sharp" };
     expect(() => assertAppearanceRecipeSupportsTargetV3(unsupported, "d6"))
-      .toThrow("Appearance form crystal-cut is not implemented for d6");
+      .toThrow("Appearance form sharp is not implemented for d6");
     expect(unsupported.form.polyhedral).toEqual({
       mode: "fixed",
-      value: "crystal-cut",
+      value: "sharp",
     });
 
     const repeated = styleRecipe("pride");

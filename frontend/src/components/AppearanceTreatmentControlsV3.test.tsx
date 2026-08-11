@@ -47,18 +47,36 @@ describe("AppearanceTreatmentControlsV3", () => {
     expect(within(primary).queryByLabelText("Lighting direction")).toBeNull();
   });
 
-  it("hides repeated gradients when the selected material cannot use them", () => {
-    render(<Harness initial={recipe("glass-cannon")} />);
+  it("shows gradient controls only for a selected gradient material", () => {
+    const { rerender } = render(<Harness initial={recipe("glass-cannon")} />);
 
-    const primary = screen.getByRole("group", {
+    let primary = screen.getByRole("group", {
       name: "Primary appearance treatment",
     });
-    expect(
-      within(primary).queryByRole("option", { name: "Repeated per side" }),
-    ).toBeNull();
-    expect(
-      screen.queryByText(/Repeated gradients require classic gradient material/),
-    ).toBeNull();
+    expect(within(primary).queryByLabelText("Gradient scope")).toBeNull();
+    expect(within(primary).queryByLabelText("Gradient direction")).toBeNull();
+
+    rerender(<Harness key="gradient" initial={recipe("pride")} />);
+    primary = screen.getByRole("group", {
+      name: "Primary appearance treatment",
+    });
+    expect(within(primary).getByLabelText("Gradient scope")).toBeDefined();
+    expect(within(primary).getByLabelText("Gradient direction")).toBeDefined();
+
+    const oneColorGradient = recipe("solid");
+    if (
+      oneColorGradient.material.mode !== "fixed" ||
+      oneColorGradient.material.value.family !== "classic"
+    ) {
+      throw new Error("Solid fixture is not classic");
+    }
+    oneColorGradient.material.value.treatment = "gradient";
+    rerender(<Harness key="one-color" initial={oneColorGradient} />);
+    primary = screen.getByRole("group", {
+      name: "Primary appearance treatment",
+    });
+    expect(within(primary).queryByLabelText("Gradient scope")).toBeNull();
+    expect(within(primary).queryByLabelText("Gradient direction")).toBeNull();
   });
 
   it("keeps weighted engraving and all five finishes under Advanced", async () => {

@@ -894,7 +894,8 @@ export type AppearanceResolutionSeedPolicyV3 =
   | "property-streams-r26"
   | "property-streams-r27"
   | "property-streams-r28"
-  | "property-streams-r29";
+  | "property-streams-r29"
+  | "property-streams-r30";
 
 function usesR27ColorBehaviorV3(
   policy: AppearanceResolutionSeedPolicyV3,
@@ -902,7 +903,8 @@ function usesR27ColorBehaviorV3(
   return (
     policy === "property-streams-r27" ||
     policy === "property-streams-r28" ||
-    policy === "property-streams-r29"
+    policy === "property-streams-r29" ||
+    policy === "property-streams-r30"
   );
 }
 
@@ -940,8 +942,10 @@ function propertySeedV3(
   }
   const usesPerDieRandomPalette =
     (policy === "property-streams-r28" ||
-      policy === "property-streams-r29") &&
-    usesFullSpectrumRandomizationV3(recipe);
+      policy === "property-streams-r29" ||
+      policy === "property-streams-r30") &&
+    (usesFullSpectrumRandomizationV3(recipe) ||
+      recipe.randomization === "one-palette-color-v1");
   const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
   return hashStringV4(
     `property-r27:${propertyScopeV3(recipe, context, sharePropertyAcrossDice)}:${stream}:${canonicalJsonV4(value)}`,
@@ -967,6 +971,10 @@ function resolveColorsV3(
   random: DeterministicRandom,
   seedPolicy: AppearanceResolutionSeedPolicyV3,
 ): NativeColors {
+  if (recipe.colors.mode === "solid") {
+    const color = canonicalColor(recipe.colors.primary);
+    return { ordered: [color, color], pair: [color, color] };
+  }
   if (recipe.colors.mode === "vivid-random-pair") {
     const pair = (usesR27ColorBehaviorV3(seedPolicy)
       ? vividRandomPairR27(random)
@@ -1071,6 +1079,18 @@ function resolveRandomizedColorsV3(
   seedPolicy: AppearanceResolutionSeedPolicyV3,
   authoredPalette?: readonly [string, string, ...string[]],
 ): NativeColors {
+  if (recipe.randomization === "one-palette-color-v1") {
+    if (recipe.colors.mode !== "palette") {
+      throw new Error("One-color palette randomization requires a palette");
+    }
+    const random = namedRandomV3(seed, "one-palette-color");
+    const color = recipe.colors.colors[random.index(recipe.colors.colors.length)];
+    if (color === undefined) {
+      throw new Error("One-color palette randomization requires a color");
+    }
+    const canonical = canonicalColor(color);
+    return { ordered: [canonical, canonical], pair: [canonical, canonical] };
+  }
   if (usesFullSpectrumRandomizationV3(recipe) && authoredPalette !== undefined) {
     return colorsFromPaletteV3(authoredPalette);
   }
@@ -1172,8 +1192,9 @@ export function resolveAppearanceRecipeV3(
   const randomSpecial = usesFullSpectrumRandomization
     ? randomSpecialMaterialV3(selectedMaterial)
     : undefined;
+  const usesR30 = seedPolicy === "property-streams-r30";
   const material: AppearanceMaterialV4 = {
-    ...(context.target === "d20" && randomSpecial !== undefined
+    ...(randomSpecial !== undefined && (usesR30 || context.target === "d20")
       ? randomSpecial.d20Material
       : selectedMaterial),
   };
@@ -1187,7 +1208,7 @@ export function resolveAppearanceRecipeV3(
       ? {}
       : { randomization: recipe.randomization }),
   };
-  const colors = resolveRandomizedColorsV3(
+  let colors = resolveRandomizedColorsV3(
     recipe,
     material,
     propertySeedV3(
@@ -1202,26 +1223,50 @@ export function resolveAppearanceRecipeV3(
     seedPolicy,
     randomSpecial?.palette,
   );
-  const form =
-    context.target === "other"
-      ? recipe.form.other
-      : usesFullSpectrumRandomization
-        ? context.target === "d20" && randomSpecial !== undefined
+  if (
+    usesR30 &&
+    isBuiltinRandomRecipeV3(recipe) &&
+    material.family === "classic" &&
+    material.treatment === "solid"
+  ) {
+    const color = colors.ordered[0];
+    colors = { ordered: [color, color], pair: [color, color] };
+  }
+  let form: ResolvedAppearanceV3["form"];
+  if (context.target === "other") {
+    form = recipe.form.other;
+  } else if (usesFullSpectrumRandomization) {
+    if (randomSpecial !== undefined && usesR30) {
+      form = materialDefaultPolyhedralFormV4(
+        material.family,
+        context.target,
+        "canvaskit-v4-r30",
+      );
+    } else {
+      form =
+        context.target === "d20" && randomSpecial !== undefined
           ? randomSpecial.d20Form
-          : "standard"
-        : recipe.form.policy === "material-default-v1"
-          ? materialDefaultPolyhedralFormV4(material.family, context.target)
-          : resolveCompatiblePolyhedralFormV4(
-              recipe.form.polyhedral,
-              material.family,
-              propertyRandomV3(recipe, context, seed, seedPolicy, "form", {
-                form: recipe.form,
-                materialFamily: material.family,
-                ...(recipe.randomization === undefined
-                  ? {}
-                  : { randomization: recipe.randomization }),
-              }),
-            );
+          : "standard";
+    }
+  } else if (recipe.form.policy === "material-default-v1") {
+    form = materialDefaultPolyhedralFormV4(
+      material.family,
+      context.target,
+      usesR30 ? "canvaskit-v4-r30" : undefined,
+    );
+  } else {
+    form = resolveCompatiblePolyhedralFormV4(
+      recipe.form.polyhedral,
+      material.family,
+      propertyRandomV3(recipe, context, seed, seedPolicy, "form", {
+        form: recipe.form,
+        materialFamily: material.family,
+        ...(recipe.randomization === undefined
+          ? {}
+          : { randomization: recipe.randomization }),
+      }),
+    );
+  }
   const fontId = resolveAppearanceSelectionV4(
     recipe.font,
     propertyRandomV3(
@@ -1273,7 +1318,8 @@ export function resolveAppearanceRecipeV3(
     material.family === "classic" &&
     material.treatment === "solid";
   const usesBoundedRandomSolid =
-    seedPolicy === "property-streams-r29" &&
+    (seedPolicy === "property-streams-r29" ||
+      seedPolicy === "property-streams-r30") &&
     isBuiltinRandomRecipeV3(recipe) &&
     isBalancedClassicSolid &&
     context.target !== "other" &&

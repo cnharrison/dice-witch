@@ -165,7 +165,11 @@ function parseColors(value: unknown): AppearanceColorsV3 {
   if (!isRecord(value) || typeof value.mode !== "string") {
     throw new Error("Appearance colors are invalid");
   }
-  if (value.mode === "tonal" || value.mode === "random") {
+  if (
+    value.mode === "solid" ||
+    value.mode === "tonal" ||
+    value.mode === "random"
+  ) {
     if (!hasExactKeys(value, ["mode", "primary"])) {
       throw new Error("Appearance colors are invalid");
     }
@@ -400,6 +404,12 @@ export function parseAppearanceRecipeV3(value: unknown): AppearanceRecipeV3 {
       ),
     },
   };
+  if (
+    parsed.randomization === "one-palette-color-v1" &&
+    parsed.colors.mode !== "palette"
+  ) {
+    throw new Error("One-color palette randomization requires a palette");
+  }
   if (parsed.form.policy === undefined) {
     validateMaterialForms(parsed.material, parsed.form.polyhedral);
     validateFaceLocalGradientForms(
@@ -548,7 +558,12 @@ function validateAssignedCustomForms(
     if (
       design.recipe.form.policy === undefined &&
       selectionValues(design.recipe.form.polyhedral).some(
-        (form) => !isPolyhedralFormImplementedForTargetV4(target, form),
+        (form) =>
+          !isPolyhedralFormImplementedForTargetV4(
+            target,
+            form,
+            "canvaskit-v4-r30",
+          ),
       )
     ) {
       throw new Error(

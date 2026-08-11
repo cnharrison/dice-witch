@@ -37,6 +37,7 @@ export const APPEARANCE_VARIATION_SCOPES_V3 = Object.freeze([
 export const APPEARANCE_RANDOMIZATION_POLICIES_V3 = Object.freeze([
   "full-spectrum-v1",
   "full-spectrum-v2",
+  "one-palette-color-v1",
 ] as const);
 
 export const APPEARANCE_FORM_POLICIES_V3 = Object.freeze([
@@ -362,4 +363,5 @@ export const RENDERER_REVISIONS_V4 = Object.freeze([
   "canvaskit-v4-r27",
   "canvaskit-v4-r28",
   "canvaskit-v4-r29",
+  "canvaskit-v4-r30",
 ] as const);

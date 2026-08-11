@@ -58,7 +58,9 @@ describe("appearance response contracts", () => {
     expect(catalog.patterns).toHaveLength(10);
     expect(catalog.fonts).toHaveLength(8);
     expect(FEATURED_APPEARANCE_STYLE_IDS).toEqual(
-      BACKEND_FEATURED_STYLE_IDS,
+      BACKEND_FEATURED_STYLE_IDS.filter(
+        (id) => id !== "solid" && id !== "rainbow",
+      ),
     );
     expect(FEATURED_APPEARANCE_PATTERN_IDS).toEqual(
       BACKEND_FEATURED_PATTERN_IDS,

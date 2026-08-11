@@ -771,6 +771,56 @@ describe("RenderRequestV4", () => {
     }
   });
 
+  it("adds non-d20 crystal-cut and hollow-cage forms only in r30", () => {
+    for (const [form, material] of [
+      ["crystal-cut", materials[4]],
+      ["hollow-cage", materials[7]],
+    ] as const) {
+      if (material === undefined) throw new Error("Test material is missing");
+      const value = revision2Request({
+        ...die(material),
+        target: "d6",
+        result: 6,
+        form,
+        view: getAuthoredRenderViewV4("canvaskit-v4-r30", "legacy", {
+          target: "d6",
+          result: 6,
+          form,
+        }),
+      });
+      value.rendererRevision = "canvaskit-v4-r30";
+      expect(validateRenderRequestV4(value)).toEqual(value);
+
+      const historical = structuredClone(value);
+      historical.rendererRevision = "canvaskit-v4-r29";
+      expect(() => validateRenderRequestV4(historical)).toThrow(
+        "Render request groups[0][0].form is not implemented for d6",
+      );
+    }
+  });
+
+  it("accepts a duplicated one-color render palette only in r30", () => {
+    const value = revision2Request({
+      ...die(),
+      target: "d6",
+      result: 6,
+      appearance: { ...die().appearance, palette: ["#d2042d", "#d2042d"] },
+      view: getAuthoredRenderViewV4("canvaskit-v4-r30", "legacy", {
+        target: "d6",
+        result: 6,
+        form: "standard",
+      }),
+    });
+    value.rendererRevision = "canvaskit-v4-r30";
+    expect(validateRenderRequestV4(value)).toEqual(value);
+
+    const historical = structuredClone(value);
+    historical.rendererRevision = "canvaskit-v4-r29";
+    expect(() => validateRenderRequestV4(historical)).toThrow(
+      "Render request groups[0][0].appearance.palette is invalid",
+    );
+  });
+
   it("rejects invalid material parameters and mismatched renderer assets", () => {
     const base = die(materials[1]);
     expect(() =>

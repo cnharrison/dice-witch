@@ -325,6 +325,35 @@ function specialD20Request(
   };
 }
 
+function allTargetSpecialFormRequest(): RenderRequestV4 {
+  const targets = GRADIENT_SCOPE_TARGETS_V4;
+  const group = (
+    form: "crystal-cut" | "hollow-cage",
+    specialAppearance: RenderAppearanceV4,
+  ): RenderDieV4[] =>
+    targets.map(([target, result]) => ({
+      ...die(target, result),
+      form,
+      appearance: {
+        ...specialAppearance,
+        texture: { ...specialAppearance.texture, scope: "die-wide" },
+      },
+      view: getAuthoredRenderViewV4("canvaskit-v4-r30", "legacy", {
+        target,
+        form,
+        result,
+      }),
+    }));
+  return {
+    version: 4,
+    rendererRevision: "canvaskit-v4-r30",
+    groups: [
+      group("crystal-cut", crystalAppearance),
+      group("hollow-cage", hollowAppearance),
+    ],
+  };
+}
+
 function renderedFixture(): RenderedDiceRequestV4 {
   return {
     rendererRevision: "canvaskit-v4-r1",
@@ -2390,6 +2419,25 @@ describe("CanvasKit Render Request V4", () => {
     }
   });
 
+  it("renders r30 crystal-cut and hollow-cage models for every polyhedral target", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const first = await renderDiceRequestV4ToPng(
+      allTargetSpecialFormRequest(),
+      createRenderer,
+    );
+    const second = await renderDiceRequestV4ToPng(
+      allTargetSpecialFormRequest(),
+      createRenderer,
+    );
+
+    expect(first.png).toEqual(second.png);
+    expect(first.diceCount).toBe(16);
+    expect(first.rowCount).toBe(2);
+    expect(first.visibleFaceCount).toBeGreaterThan(16);
+    const decoded = await decodePngRgba8(first.png);
+    expect(transparentPixelCount(decoded.pixels)).toBeGreaterThan(1_000);
+  });
+
   it("preserves custom die-wide classic solid bytes in r29", async () => {
     const requestFor = (
       rendererRevision: "canvaskit-v4-r28" | "canvaskit-v4-r29",
@@ -2904,7 +2952,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r30" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r31" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

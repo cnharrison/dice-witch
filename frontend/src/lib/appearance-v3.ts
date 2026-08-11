@@ -98,6 +98,7 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const GUILD_ID = /^[1-9][0-9]{16,19}$/;
 const PREVIEW_STATES = ["normal", "critical-success", "critical-failure"] as const;
 const COLOR_MODES = [
+  "solid",
   "tonal",
   "random",
   "palette",
@@ -390,7 +391,12 @@ function expectedFormTargets(form: RenderFormV4): readonly AppearanceTargetV4[] 
   if (form === "sphere") return ["other"];
   return APPEARANCE_TARGETS_V4.filter(
     (target): target is Exclude<AppearanceTargetV4, "other"> =>
-      target !== "other" && isPolyhedralFormImplementedForTargetV4(target, form),
+      target !== "other" &&
+      isPolyhedralFormImplementedForTargetV4(
+        target,
+        form,
+        "canvaskit-v4-r30",
+      ),
   );
 }
 

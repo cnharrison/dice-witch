@@ -504,6 +504,7 @@ export function AppearanceEditorV3({
 
   const editDesign = (designId: string) => {
     if (!draftProfile.designs.some(({ id }) => id === designId)) return;
+    activateTab("design", true);
     setEditingDesignId(designId);
     setStatus(null);
   };
@@ -621,11 +622,11 @@ export function AppearanceEditorV3({
         )}
       </div>
 
-      <aside className="order-2 xl:col-start-2 xl:row-span-2 xl:row-start-1">
+      <aside className="order-2 space-y-4 xl:col-start-2 xl:row-span-2 xl:row-start-1">
         <Button
           type="button"
           variant="outline"
-          className="mb-3 w-full xl:hidden"
+          className="w-full xl:hidden"
           aria-controls={`${kind}-appearance-preview`}
           aria-expanded={previewExpanded}
           onClick={() => setPreviewExpanded((expanded) => !expanded)}
@@ -644,6 +645,15 @@ export function AppearanceEditorV3({
               : {})}
           />
         </div>
+        {displayedDesigns.length > 0 && (
+          <SavedAppearanceDesigns
+            designs={displayedDesigns}
+            isSaving={isSaving}
+            onApply={applySavedDesign}
+            onEdit={editDesign}
+            onDelete={deleteDesign}
+          />
+        )}
       </aside>
 
       <div className="order-3 space-y-6 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-2">
@@ -799,15 +809,6 @@ export function AppearanceEditorV3({
             </div>
           )}
 
-          {displayedDesigns.length > 0 && (
-            <SavedAppearanceDesigns
-              designs={displayedDesigns}
-              isSaving={isSaving}
-              onApply={applySavedDesign}
-              onEdit={editDesign}
-              onDelete={deleteDesign}
-            />
-          )}
         </div>
 
         {draftProfile.version === 4 && (

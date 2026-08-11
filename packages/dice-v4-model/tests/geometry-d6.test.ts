@@ -43,14 +43,13 @@ function expectVector(actual: Point3V4, expected: Point3V4): void {
 }
 
 describe("canonical V4 d6 geometry", () => {
-  it("registers one complete standard descriptor", () => {
+  it("registers the complete standard descriptor", () => {
     expect(IMPLEMENTED_GEOMETRY_IDS_V4).toContain("d6-standard-r1");
+    expect(IMPLEMENTED_GEOMETRY_IDS_V4).toContain("d6-crystal-cut-r1");
+    expect(IMPLEMENTED_GEOMETRY_IDS_V4).toContain("d6-hollow-cage-r1");
     expect(getCanonicalGeometryDescriptorV4("d6-standard-r1")).toBe(
       D6_STANDARD_GEOMETRY_V4,
     );
-    expect(() =>
-      getCanonicalGeometryDescriptorV4("d6-crystal-cut-r1"),
-    ).toThrow("Geometry descriptor is not implemented: d6-crystal-cut-r1");
     expect(D6_STANDARD_GEOMETRY_V4.vertices).toHaveLength(8);
     expect(D6_STANDARD_GEOMETRY_V4.faces).toHaveLength(6);
     expect(D6_STANDARD_GEOMETRY_V4.resultOrientations).toHaveLength(6);

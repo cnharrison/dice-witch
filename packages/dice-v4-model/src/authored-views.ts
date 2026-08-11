@@ -365,6 +365,24 @@ for (const key of ["d10:standard", "percentile:standard"] as const) {
   POLYHEDRAL_VIEWS_R29_V4.set(key, swapAuthoredModes(entry));
 }
 
+const POLYHEDRAL_VIEWS_R30_V4 = new Map(POLYHEDRAL_VIEWS_R29_V4);
+for (const target of [
+  "d4",
+  "d6",
+  "d8",
+  "d10",
+  "d12",
+  "percentile",
+  "fudge",
+] as const) {
+  const entry = POLYHEDRAL_VIEWS_R30_V4.get(`${target}:standard`);
+  if (entry === undefined) {
+    throw new Error(`Authored ${target} standard views are missing`);
+  }
+  POLYHEDRAL_VIEWS_R30_V4.set(`${target}:crystal-cut`, entry);
+  POLYHEDRAL_VIEWS_R30_V4.set(`${target}:hollow-cage`, entry);
+}
+
 const CENTERED_SPHERE_VIEW_V4 = Object.freeze({
   kind: "sphere-surface",
   rotationDegrees: 0,
@@ -397,6 +415,9 @@ function authoredPolyhedralViews(
   }
   if (rendererRevision === "canvaskit-v4-r29") {
     return POLYHEDRAL_VIEWS_R29_V4;
+  }
+  if (rendererRevision === "canvaskit-v4-r30") {
+    return POLYHEDRAL_VIEWS_R30_V4;
   }
   if (
     rendererRevision === "canvaskit-v4-r25" ||

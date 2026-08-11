@@ -81,6 +81,8 @@ import { migrateAppearanceRecipeV1 } from "./migrate";
 export const CHAOTIC_APPEARANCE_STYLE_ID = "chaotic";
 export const FEATURED_APPEARANCE_STYLE_IDS = [
   "dice-witch",
+  "solid",
+  "rainbow",
   "pride",
   "trans",
   "crimson-palette",
@@ -171,8 +173,16 @@ const VARIATION_SCOPES_V3 = catalogOptions(APPEARANCE_VARIATION_SCOPES_V3, {
   roll: "Whole roll",
 });
 const COLOR_MODES_V3 = catalogOptions(
-  ["tonal", "random", "palette", "random-pair", "vivid-random-pair"] as const,
+  [
+    "solid",
+    "tonal",
+    "random",
+    "palette",
+    "random-pair",
+    "vivid-random-pair",
+  ] as const,
   {
+    solid: "One color",
     tonal: "One color + shade",
     random: "Chosen color + random",
     palette: "Choose colors",
@@ -557,7 +567,11 @@ const FORMS_V3 = [
     id: form,
     name: FORM_NAMES_V3[form],
     targets: POLYHEDRAL_TARGETS_V3.filter((target) =>
-      isPolyhedralFormImplementedForTargetV4(target, form),
+      isPolyhedralFormImplementedForTargetV4(
+        target,
+        form,
+        "canvaskit-v4-r30",
+      ),
     ),
     materialFamilies: MATERIAL_FAMILIES_V4.filter((family) =>
       isMaterialFormCompatibleV4(family, form),
@@ -1120,6 +1134,95 @@ function withPolyhedralFormV3(
   };
 }
 
+function simpleSolidRecipeV3(
+  colors: AppearanceRecipeV3["colors"],
+  finish: "satin" | "gloss",
+  randomization?: AppearanceRecipeV3["randomization"],
+): AppearanceRecipeV3 {
+  return {
+    version: 3,
+    variation: randomization === undefined ? "fixed" : "wild",
+    varyBy: "die",
+    ...(randomization === undefined ? {} : { randomization }),
+    colors,
+    material: {
+      mode: "fixed",
+      value: {
+        family: "classic",
+        treatment: "solid",
+        opacity: "opaque",
+        finish,
+        textureScale: 100,
+      },
+    },
+    form: {
+      polyhedral: { mode: "fixed", value: "standard" },
+      other: "sphere",
+    },
+    font: { mode: "fixed", value: "liberation-sans" },
+    engraving: { mode: "fixed", value: "matte-ink" },
+    gradient: {
+      scope: { mode: "fixed", value: "die-wide" },
+      direction: { mode: "fixed", value: "upper-left-to-lower-right" },
+    },
+    lighting: {
+      mode: { mode: "fixed", value: "combined" },
+      strength: { mode: "fixed", value: "gentle" },
+      direction: { mode: "fixed", value: "upper-left" },
+    },
+  };
+}
+
+const solidRecipeV3 = simpleSolidRecipeV3(
+  { mode: "solid", primary: "#d2042d" },
+  "satin",
+);
+const rainbowRecipeV3 = simpleSolidRecipeV3(
+  { mode: "palette", colors: [...SPECTRUM] },
+  "gloss",
+  "one-palette-color-v1",
+);
+const diceWitchAltRecipeV3: AppearanceRecipeV3 = {
+  version: 3,
+  variation: "fixed",
+  varyBy: "die",
+  colors: { mode: "tonal", primary: "#ff00ff" },
+  material: {
+    mode: "fixed",
+    value: {
+      family: "sharp-resin",
+      style: "clear",
+      inclusion: "mylar",
+      clarity: 84,
+      inclusionDensity: 24,
+      finish: "polished",
+      textureScale: 100,
+    },
+  },
+  form: {
+    policy: "material-default-v1",
+    polyhedral: { mode: "fixed", value: "standard" },
+    other: "sphere",
+  },
+  font: { mode: "fixed", value: "new-rocker" },
+  engraving: { mode: "fixed", value: "luminous" },
+  gradient: {
+    scope: { mode: "fixed", value: "die-wide" },
+    direction: {
+      mode: "weighted",
+      options: LINEAR_DIRECTIONS_V4.map((value) => ({
+        value,
+        weight: value.includes("upper-") || value.includes("lower-") ? 2 : 1,
+      })),
+    },
+  },
+  lighting: {
+    mode: { mode: "fixed", value: "combined" },
+    strength: { mode: "fixed", value: "gentle" },
+    direction: { mode: "fixed", value: "upper-left" },
+  },
+};
+
 const hexAppealRecipeV3 = fixedCollectorRecipeV3(
   {
     family: "sharp-resin",
@@ -1383,13 +1486,27 @@ const randomRecipeV3: AppearanceRecipeV3 = {
   },
 };
 
+const simpleStylesV3: readonly AppearanceBuiltinStyleV3[] = [
+  {
+    id: "solid",
+    name: "Solid",
+    description: "Cherry red with clean white numerals.",
+    recipe: solidRecipeV3,
+  },
+  {
+    id: "rainbow",
+    name: "Rainbow",
+    description: "One glossy rainbow hue per die.",
+    recipe: rainbowRecipeV3,
+  },
+];
+
 const collectorStylesV3: readonly AppearanceBuiltinStyleV3[] = [
   {
     id: "hex-appeal",
     name: "Nacreous Resin",
     description: "Clear sharp resin with iridescent foil inclusions.",
-    recipe: hexAppealRecipeV3,
-    overrides: { d20: withPolyhedralFormV3(hexAppealRecipeV3, "sharp") },
+    recipe: withPolyhedralFormV3(hexAppealRecipeV3, "crystal-cut"),
   },
   {
     id: "critical-mass",
@@ -1401,10 +1518,7 @@ const collectorStylesV3: readonly AppearanceBuiltinStyleV3[] = [
     id: "glass-cannon",
     name: "Prismatic Glass",
     description: "Prismatic crystal glass with spectral color.",
-    recipe: glassCannonRecipeV3,
-    overrides: {
-      d20: withPolyhedralFormV3(glassCannonRecipeV3, "crystal-cut"),
-    },
+    recipe: withPolyhedralFormV3(glassCannonRecipeV3, "crystal-cut"),
   },
   {
     id: "heavy-metal",
@@ -1415,12 +1529,8 @@ const collectorStylesV3: readonly AppearanceBuiltinStyleV3[] = [
   {
     id: "hollow-victory",
     name: "Brass Filigree",
-    description: "Polished brass with an authored open filigree d20.",
-    recipe: hollowVictoryStandardRecipeV3,
-    overrides: {
-      d20: withPolyhedralFormV3(hollowVictoryRecipeV3, "hollow-cage"),
-      other: withPolyhedralFormV3(hollowVictoryRecipeV3, "hollow-cage"),
-    },
+    description: "Polished brass with open filigree forms.",
+    recipe: withPolyhedralFormV3(hollowVictoryRecipeV3, "hollow-cage"),
   },
   {
     id: "grain-expectations",
@@ -1445,8 +1555,11 @@ export const BUILTIN_APPEARANCE_STYLES_V3: readonly AppearanceBuiltinStyleV3[] =
       recipe:
         id === CHAOTIC_APPEARANCE_STYLE_ID
           ? randomRecipeV3
-          : classicRecipeV3(recipe),
+          : id === "dice-witch"
+            ? diceWitchAltRecipeV3
+            : classicRecipeV3(recipe),
     })),
+    ...simpleStylesV3,
     ...collectorStylesV3,
   ]);
 
