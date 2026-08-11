@@ -7,11 +7,14 @@ export type GuildDisplayProfile = {
 
 export type GuildSettings = {
   skipDiceDelay: boolean;
+  hideRollResultText: boolean;
 };
 
 export type GuildSettingsResult =
   | { status: "found"; settings: GuildSettings }
   | { status: "missing" };
+
+type LegacyGuildSettings = Pick<GuildSettings, "skipDiceDelay">;
 
 export type SetSkipDiceDelayInput = {
   guildId: string;
@@ -21,6 +24,17 @@ export type SetSkipDiceDelayInput = {
 };
 
 export type SetSkipDiceDelayResult =
+  | { status: "applied" | "existing"; settings: LegacyGuildSettings }
+  | { status: "missing" | "conflict" };
+
+export type SetGuildSettingsInput = {
+  guildId: string;
+  settings: GuildSettings;
+  mutationId: string;
+  occurredAt: number;
+};
+
+export type SetGuildSettingsResult =
   | { status: "applied" | "existing"; settings: GuildSettings }
   | { status: "missing" | "conflict" };
 
@@ -125,6 +139,42 @@ function validateMutation(input: SetSkipDiceDelayInput): {
   };
 }
 
+function validateSettingsMutation(input: SetGuildSettingsInput): {
+  guildId: string;
+  settings: GuildSettings;
+  mutationId: string;
+  occurredAt: number;
+  payloadJson: string;
+} {
+  const guildId = validateGuildId(input.guildId);
+  if (
+    typeof input.mutationId !== "string" ||
+    input.mutationId.length === 0 ||
+    input.mutationId.length > 255
+  ) {
+    throw new Error("Mutation id is invalid");
+  }
+  if (
+    typeof input.settings.skipDiceDelay !== "boolean" ||
+    typeof input.settings.hideRollResultText !== "boolean" ||
+    !Number.isSafeInteger(input.occurredAt) ||
+    input.occurredAt < 0
+  ) {
+    throw new Error("Guild preference mutation is invalid");
+  }
+  const settings = {
+    skipDiceDelay: input.settings.skipDiceDelay,
+    hideRollResultText: input.settings.hideRollResultText,
+  };
+  return {
+    guildId,
+    settings,
+    mutationId: input.mutationId,
+    occurredAt: input.occurredAt,
+    payloadJson: JSON.stringify(settings),
+  };
+}
+
 function validateDisplayProfile(input: SetGuildDisplayProfileInput): {
   guildId: string;
   profile: GuildDisplayProfile;
@@ -171,6 +221,18 @@ function existingDisplayResult(
     : { status: "conflict" };
 }
 
+function existingSettingsMutationResult(
+  row: MutationReceiptRow,
+  input: ReturnType<typeof validateSettingsMutation>,
+): SetGuildSettingsResult {
+  return row.entity_type === "guild" &&
+      row.entity_key === input.guildId &&
+      row.operation === "upsert" &&
+      row.payload_json === input.payloadJson
+    ? { status: "existing", settings: input.settings }
+    : { status: "conflict" };
+}
+
 function existingMutationResult(
   row: MutationReceiptRow,
   input: ReturnType<typeof validateMutation>,
@@ -179,8 +241,7 @@ function existingMutationResult(
     row.entity_type !== "guild" ||
     row.entity_key !== input.guildId ||
     row.operation !== "upsert" ||
-    row.payload_json !== input.payloadJson ||
-    row.occurred_at !== input.occurredAt
+    row.payload_json !== input.payloadJson
   ) {
     return { status: "conflict" };
   }
@@ -563,14 +624,79 @@ export class D1GuildRepository {
     const id = validateGuildId(guildId);
     const row = await this.db
       .withSession("first-primary")
-      .prepare("SELECT skip_dice_delay FROM guilds WHERE id = ?")
+      .prepare(
+        `SELECT skip_dice_delay, hide_roll_result_text
+         FROM guilds WHERE id = ?`,
+      )
       .bind(id)
-      .first<{ skip_dice_delay: number }>();
+      .first<{ skip_dice_delay: number; hide_roll_result_text: number }>();
     if (row === null) return { status: "missing" };
     return {
       status: "found",
-      settings: { skipDiceDelay: row.skip_dice_delay === 1 },
+      settings: {
+        skipDiceDelay: row.skip_dice_delay === 1,
+        hideRollResultText: row.hide_roll_result_text === 1,
+      },
     };
+  }
+
+  async setSettings(
+    value: SetGuildSettingsInput,
+  ): Promise<SetGuildSettingsResult> {
+    const input = validateSettingsMutation(value);
+    const existing = await this.readMutation(input.mutationId);
+    if (existing !== null) {
+      return existingSettingsMutationResult(existing, input);
+    }
+
+    try {
+      const [update, receipt] = await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE guilds
+             SET skip_dice_delay = ?, hide_roll_result_text = ?, updated_at = ?
+             WHERE id = ?`,
+          )
+          .bind(
+            input.settings.skipDiceDelay ? 1 : 0,
+            input.settings.hideRollResultText ? 1 : 0,
+            input.occurredAt,
+            input.guildId,
+          ),
+        this.db
+          .prepare(
+            `INSERT INTO mutation_receipts (
+               mutation_id, entity_type, entity_key,
+               operation, payload_json, occurred_at
+             )
+             SELECT ?, 'guild', ?, 'upsert', ?, ?
+             WHERE EXISTS (SELECT 1 FROM guilds WHERE id = ?)`,
+          )
+          .bind(
+            input.mutationId,
+            input.guildId,
+            input.payloadJson,
+            input.occurredAt,
+            input.guildId,
+          ),
+      ]);
+      if (update === undefined || receipt === undefined) {
+        throw new Error("Guild preference batch result is incomplete");
+      }
+      const updated = update.meta.changes;
+      const receiptCreated = receipt.meta.changes;
+      if (updated === 0 && receiptCreated === 0) return { status: "missing" };
+      if (updated !== 1 || receiptCreated !== 1) {
+        throw new Error("Guild preference mutation was not atomic");
+      }
+      return { status: "applied", settings: input.settings };
+    } catch (error) {
+      const concurrent = await this.readMutation(input.mutationId);
+      if (concurrent !== null) {
+        return existingSettingsMutationResult(concurrent, input);
+      }
+      throw error;
+    }
   }
 
   async setSkipDiceDelay(

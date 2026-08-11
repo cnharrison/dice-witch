@@ -1,0 +1,325 @@
+===== renderer/AlcarinTengwar-Bold-renderer.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/renderer/AlcarinTengwar-Bold-renderer.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GDEF  0x00120021        22     20476
+    GPOS  0x44764C75        32     20500
+    GSUB  0xC09DC47C       378     20532
+    OS/2  0x67F15260        96       408
+    cmap  0x0061E12D        68       644
+    cvt   0x09F0028A        52      4476
+    fpgm  0x622EFB7B      3596       712
+    gasp  0x00000010         8     20468
+    glyf  0xEA2B630F      9192      4600
+    head  0x208F7C64        54       284
+    hhea  0x06A40021        36       340
+    hmtx  0x5599FC67       140       504
+    loca  0xA0A9A913        72      4528
+    maxp  0x02280F84        32       376
+    name  0x2E34CE2C      6256     13792
+    post  0xCDED0D2C       420     20048
+    prep  0x6846C89C       167      4308
+
+
+===== renderer/BarlowCondensed-SemiBold-renderer.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/renderer/BarlowCondensed-SemiBold-renderer.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GPOS  0x98709879       192     14656
+    GSUB  0xC467C3C0       588     14848
+    OS/2  0x54448A81        96       392
+    cmap  0x00AE22A6        68       696
+    cvt   0x218E1122       160      4588
+    fpgm  0x9E3615D2      3605       764
+    gasp  0x00000010         8     14648
+    glyf  0xB5462A7E      7718      4856
+    head  0x10B3B0E6        54       268
+    hhea  0x057302C1        36       324
+    hmtx  0x426504EB       206       488
+    loca  0xFD80F644       106      4748
+    maxp  0x01860F77        32       360
+    name  0x9A97A861      1577     12576
+    post  0x7364C7C9       490     14156
+    prep  0x6E7F9046       214      4372
+
+
+===== renderer/BricolageGrotesque-SemiBold-renderer.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/renderer/BricolageGrotesque-SemiBold-renderer.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GDEF  0x030102FE        88      9640
+    GPOS  0x776F6E77      2148      9728
+    GSUB  0xFD881C9A       870     11876
+    OS/2  0x666978F2        96       392
+    STAT  0x6404529A        72     12748
+    cmap  0x00EC22A6        68       820
+    gasp  0x00000010         8      9632
+    glyf  0xEAA731CB      6184      1064
+    head  0x1F17F0A5        54       268
+    hhea  0x07BB02C9        36       324
+    hmtx  0x8BF00952       330       488
+    loca  0x3DE34331       168       896
+    maxp  0x006500D6        32       360
+    name  0x7E5405FE      1549      7248
+    post  0x3405F25D       830      8800
+    prep  0x68068C85         7       888
+
+
+===== renderer/Cinzel-SemiBold-renderer.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/renderer/Cinzel-SemiBold-renderer.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GPOS  0x302425D2       948      4296
+    GSUB  0x2EF728CE        98      5244
+    OS/2  0x60B47D67        96       376
+    STAT  0x7872688C        28      5344
+    cmap  0x006022A6        68       564
+    gasp  0x00000010         8      4288
+    glyf  0x3A5A0977      2366       688
+    head  0x0BB3135B        54       252
+    hhea  0x09D80148        36       308
+    hmtx  0x31CB03C7        92       472
+    loca  0x192A1B53        48       640
+    maxp  0x00450144        32       344
+    name  0x02FC3AAD      1049      3056
+    post  0x48C0FB6A       180      4108
+    prep  0x68068C85         7       632
+
+
+===== renderer/Fraunces-SemiBold-renderer.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/renderer/Fraunces-SemiBold-renderer.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GPOS  0x2BEC23CB       126      3676
+    GSUB  0xB8FAB8F4        42      3804
+    OS/2  0x755B91BB        96       376
+    STAT  0x063BDADA       170      3848
+    cmap  0x006022A6        68       524
+    gasp  0x00000010         8      3668
+    glyf  0xF39EBE16      1724       628
+    head  0x20BCB1E5        54       252
+    hhea  0x11D30810        36       308
+    hmtx  0x34A10369        50       472
+    loca  0x0B220CCD        28       600
+    maxp  0x001F0163        32       344
+    name  0x76616052      1256      2352
+    post  0xFF640199        60      3608
+    prep  0x68068C85         7       592
+
+
+===== renderer/SourceSans3-SemiBold-renderer.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/renderer/SourceSans3-SemiBold-renderer.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GPOS  0xA0E790FC      1178     15624
+    GSUB  0xB9A01FAA      1508     16804
+    OS/2  0x5B3F7585        96       376
+    STAT  0xE58ECC6F        68     18312
+    cmap  0x012422A6        68       916
+    gasp  0x00000010         8     15616
+    glyf  0xA056E755      6534      1216
+    head  0x268B2639        54       252
+    hhea  0x09FB05AF        36       308
+    hmtx  0xC3E7114A       442       472
+    loca  0x92779892       224       992
+    maxp  0x00890102        32       344
+    name  0x6B48FB9C      6912      7752
+    post  0x2A5563F3       949     14664
+    prep  0x68068C85         7       984
+
+
+===== renderer/SpaceGrotesk-SemiBold-renderer.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/renderer/SpaceGrotesk-SemiBold-renderer.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GPOS  0x3A6C2E09      1710      7928
+    GSUB  0x1DAC133A      1034      9640
+    OS/2  0x121E75DF        96       376
+    STAT  0x7870688C        28     10676
+    cmap  0x006022A6        68       876
+    gasp  0x00000010         8      7920
+    glyf  0xAA40B4C5      4618      1160
+    head  0x1AD3F427        54       252
+    hhea  0x085E0173        36       308
+    hmtx  0xC4200EAD       402       472
+    loca  0x063E0184       206       952
+    maxp  0x007700C3        32       344
+    name  0xD3D35085      1066      5780
+    post  0xAAE92AEF      1069      6848
+    prep  0x68068C85         7       944
+
+
+===== renderer/ZillaSlab-SemiBold-renderer.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/renderer/ZillaSlab-SemiBold-renderer.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GPOS  0xE8EEF2A9      1656     19496
+    GSUB  0x9D5070C7      2312     21152
+    OS/2  0x610F7D1A        96       392
+    cmap  0x006222A7        68       856
+    cvt   0x2C6A1B11       204      4580
+    fpgm  0x4D248E7C      3437       924
+    gasp  0x00000010         8     19488
+    glyf  0xD538393D     12152      4972
+    head  0x15EDD6D6        54       268
+    hhea  0x0FDB0B93        36       324
+    hmtx  0xA7610EDE       368       488
+    loca  0x27881B90       186      4784
+    maxp  0x04BC100B        32       360
+    name  0x5BCD88F5       956     17124
+    post  0x8FBAD596      1406     18080
+    prep  0xED05789F       213      4364
+
+
+===== ui/BarlowCondensed-SemiBold-ui.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/ui/BarlowCondensed-SemiBold-ui.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GDEF  0x00300025        34     11204
+    GPOS  0x99E89B7F       584     11240
+    GSUB  0x37113708       280     11824
+    OS/2  0x543968E6        96       408
+    cmap  0x01F001E8       108       608
+    cvt   0x218E1122       160      4540
+    fpgm  0x9E3615D2      3605       716
+    gasp  0x00000010         8     11196
+    glyf  0x91A5B8CB      4714      4756
+    head  0x10B3B0E6        54       284
+    hhea  0x057302A8        36       340
+    hmtx  0x295A036B       104       504
+    loca  0x3C93384B        54      4700
+    maxp  0x016C0F77        32       376
+    name  0x9A97A861      1577      9472
+    post  0xF1FCF6C5       141     11052
+    prep  0x6E7F9046       214      4324
+
+
+===== ui/BricolageGrotesque-SemiBold-ui.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/ui/BricolageGrotesque-SemiBold-ui.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GDEF  0x00210013        28      4312
+    GPOS  0x2EB829FF       644      4340
+    GSUB  0x1C8500BD       166      4984
+    OS/2  0x665E5755        96       392
+    STAT  0x6404529A        72      5152
+    cmap  0x023902E6       132       576
+    gasp  0x00000010         8      4304
+    glyf  0xBE102A57      1884       764
+    head  0x1F17F0A5        54       268
+    hhea  0x07BB028D        36       324
+    hmtx  0x20E202BE        88       488
+    loca  0x17FC1634        46       716
+    maxp  0x002800D6        32       360
+    name  0x7E5405FE      1549      2648
+    post  0x10640D0E       104      4200
+    prep  0x68068C85         7       708
+
+
+===== ui/Cinzel-SemiBold-ui.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/ui/Cinzel-SemiBold-ui.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GDEF  0x0041002F        40      4764
+    GPOS  0x2EFF25A7       536      4804
+    GSUB  0xC20E7DA9       318      5340
+    OS/2  0x608C5BCF        96       392
+    STAT  0x7872688C        28      5660
+    cmap  0x01AC018B        92       584
+    gasp  0x00000010         8      4756
+    glyf  0xDDE1F996      2804       736
+    head  0x0BB3135B        54       268
+    hhea  0x09D80149        36       324
+    hmtx  0x336B03FB        96       488
+    loca  0x25002248        50       684
+    maxp  0x00460144        32       360
+    name  0x02FC3AAD      1049      3540
+    post  0x995164C6       162      4592
+    prep  0x68068C85         7       676
+
+
+===== ui/Fraunces-SemiBold-ui.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/ui/Fraunces-SemiBold-ui.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GPOS  0x2DFE25BC       496      5472
+    GSUB  0x4D5CA048       138      5968
+    OS/2  0x7536701E        96       376
+    STAT  0x063BDADA       170      6108
+    cmap  0x017E023F       100       544
+    gasp  0x00000010         8      5464
+    glyf  0x185714C9      3430       692
+    head  0x20BCB1E5        54       252
+    hhea  0x11D30816        36       308
+    hmtx  0x5188047B        72       472
+    loca  0x20A31D06        38       652
+    maxp  0x00240163        32       344
+    name  0x76616052      1256      4124
+    post  0xA21FA320        82      5380
+    prep  0x68068C85         7       644
+
+
+===== ui/SourceSans3-SemiBold-ui.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/ui/SourceSans3-SemiBold-ui.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GDEF  0x002B0021        28     11528
+    GPOS  0x7E7373F3      1134     11556
+    GSUB  0x35A0A7D1      1424     12692
+    OS/2  0x5B3453E8        96       392
+    STAT  0xE58ECC6F        68     14116
+    cmap  0x01A2027C       116       656
+    gasp  0x00000010         8     11520
+    glyf  0xB51DAB8B      3456       868
+    head  0x268B2639        54       268
+    hhea  0x09FB056B        36       324
+    hmtx  0x49A5068A       168       488
+    loca  0x4B5147BF        86       780
+    maxp  0x00440102        32       360
+    name  0x6B48FB9C      6912      4324
+    post  0x01D308AD       281     11236
+    prep  0x68068C85         7       772
+
+
+===== ui/SpaceGrotesk-SemiBold-ui.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/ui/SpaceGrotesk-SemiBold-ui.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GDEF  0x021D0039        54      3168
+    GPOS  0x2C4E2541       346      3224
+    GSUB  0x2658728E       154      3572
+    OS/2  0x11D35441        96       392
+    STAT  0x7870688C        28      3728
+    cmap  0x01B6026E       116       548
+    gasp  0x00000010         8      3160
+    glyf  0x48965E25      1306       704
+    head  0x1AD3F427        54       268
+    hhea  0x085E011F        36       324
+    hmtx  0x225C02E1        60       488
+    loca  0x08C90A0F        32       672
+    maxp  0x002000C3        32       360
+    name  0xD3D35085      1066      2012
+    post  0x5C7F3DF3        80      3080
+    prep  0x68068C85         7       664
+
+
+===== ui/ZillaSlab-SemiBold-ui.ttf =====
+Listing table info for "/tmp/dw-r32-font-build/ui/ZillaSlab-SemiBold-ui.ttf":
+    tag     checksum    length    offset
+    ----  ----------  --------  --------
+    GPOS  0xD98EEA6F       504      9300
+    GSUB  0x361D4FFE       450      9804
+    OS/2  0x60C45B74        96       392
+    cmap  0x01830137        92       584
+    cvt   0x2C6A1B11       204      4332
+    fpgm  0x4D248E7C      3437       676
+    gasp  0x00000010         8      9292
+    glyf  0x4E1AA65F      3390      4588
+    head  0x15EDD6D6        54       268
+    hhea  0x0FDB0B4F        36       324
+    hmtx  0x25120282        96       488
+    loca  0x28BA25E6        50      4536
+    maxp  0x0478100B        32       360
+    name  0x5BCD88F5       956      7980
+    post  0xC5DF3BA3       353      8936
+    prep  0xED05789F       213      4116

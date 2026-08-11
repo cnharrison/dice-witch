@@ -28,6 +28,8 @@ const R6_PARITY_EMISSIVE_INTENSITY_BY_FAMILY_V4: Readonly<
   "hollow-metal": 1,
   wood: 0.16,
   fantasy: 0.16,
+  elemental: 0.16,
+  paint: 0.16,
 });
 
 export type ThreeMaterialPolicyV4 = {
@@ -244,6 +246,14 @@ export function resolveThreeMaterialPolicyV4(
         emissiveIntensity,
       });
     }
+    case "elemental": {
+      let roughness = 0.48;
+      if (material.style === "lava") roughness = 0.74;
+      else if (material.style === "sand") roughness = 0.94;
+      return baselinePolicyV4({ roughness });
+    }
+    case "paint":
+      return baselinePolicyV4({ roughness: 0.62 });
     default:
       throw new Error("Three.js V4 material family is invalid");
   }

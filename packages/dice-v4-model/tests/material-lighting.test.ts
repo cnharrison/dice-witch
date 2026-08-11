@@ -18,6 +18,8 @@ describe("V4 material light response", () => {
       "hollow-metal": { highlight: 1.35, shadow: 1.15, rim: 1.2 },
       wood: { highlight: 0.68, shadow: 1.05, rim: 0.45 },
       fantasy: { highlight: 1.25, shadow: 1, rim: 1.35 },
+      elemental: { highlight: 0.9, shadow: 1.04, rim: 0.8 },
+      paint: { highlight: 0.88, shadow: 1.02, rim: 0.72 },
     });
     expect(
       Object.fromEntries(

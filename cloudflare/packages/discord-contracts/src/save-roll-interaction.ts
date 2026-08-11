@@ -12,7 +12,7 @@ import {
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAVE_ROLL_CUSTOM_ID = /^save-roll:v([12]):([dw]):([^:]+)(?::(retry|submit))?$/;
 const SAVE_ROLL_NAME_CUSTOM_ID = "save-roll-name";
 const SAVE_ROLL_TITLE_MODE_CUSTOM_ID = "save-roll-title-mode";

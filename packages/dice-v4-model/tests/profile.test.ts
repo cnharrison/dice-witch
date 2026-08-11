@@ -456,7 +456,12 @@ describe("Appearance Profile V3", () => {
         polyhedral: weighted(POLYHEDRAL_FORMS_V4, 1_000),
         other: "sphere" as const,
       },
-      font: weighted(FONT_IDS_V4, 1_000),
+      font: weighted(
+        [...FONT_IDS_V4]
+          .sort((left, right) => right.length - left.length)
+          .slice(0, 10),
+        1_000,
+      ),
       engraving: weighted(ENGRAVING_FINISHES_V4, 1_000),
       gradient: {
         scope: weighted(GRADIENT_SCOPES_V4, 1_000),

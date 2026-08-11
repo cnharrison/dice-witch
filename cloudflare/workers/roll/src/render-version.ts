@@ -15,6 +15,7 @@ import {
   buildRollRenderRequestR29V4,
   buildRollRenderRequestR30V4,
   buildRollRenderRequestR31V4,
+  buildRollRenderRequestR32V4,
 } from "../../../packages/roll-render-model/src";
 import type { RenderRequestV3 } from "../../../packages/dice-svg/src";
 import {
@@ -38,8 +39,28 @@ export type RollViewPolicy =
   | "r28"
   | "r29"
   | "r30"
-  | "r31";
+  | "r31"
+  | "r32";
 export type EmittedRollRenderRequest = RenderRequestV3 | RenderRequestV4;
+
+const ROLL_VIEW_BUILDERS_V4 = {
+  r20: buildRollRenderRequestR20V4,
+  r21: buildRollRenderRequestR21V4,
+  r22: buildRollRenderRequestR22V4,
+  r23: buildRollRenderRequestR23V4,
+  r24: buildRollRenderRequestR24V4,
+  r25: buildRollRenderRequestR25V4,
+  r26: buildRollRenderRequestR26V4,
+  r27: buildRollRenderRequestR27V4,
+  r28: buildRollRenderRequestR28V4,
+  r29: buildRollRenderRequestR29V4,
+  r30: buildRollRenderRequestR30V4,
+  r31: buildRollRenderRequestR31V4,
+  r32: buildRollRenderRequestR32V4,
+} satisfies Record<
+  Exclude<RollViewPolicy, "r19">,
+  typeof buildRollRenderRequestR20V4
+>;
 
 export function parseRollRenderVersion(value: unknown): RollRenderVersion {
   if (value === "3") return 3;
@@ -61,12 +82,13 @@ export function parseRollViewPolicy(value: unknown): RollViewPolicy {
     value === "r28" ||
     value === "r29" ||
     value === "r30" ||
-    value === "r31"
+    value === "r31" ||
+    value === "r32"
   ) {
     return value;
   }
   throw new Error(
-    "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, or r31",
+    "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, or r32",
   );
 }
 
@@ -101,37 +123,5 @@ export async function buildRollRenderRequestForVersion(
     userId,
     guildId,
   );
-  if (viewPolicy === "r20") {
-    return buildRollRenderRequestR20V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r21") {
-    return buildRollRenderRequestR21V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r22") {
-    return buildRollRenderRequestR22V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r23") {
-    return buildRollRenderRequestR23V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r24") {
-    return buildRollRenderRequestR24V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r25") {
-    return buildRollRenderRequestR25V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r26") {
-    return buildRollRenderRequestR26V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r27") {
-    return buildRollRenderRequestR27V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r28") {
-    return buildRollRenderRequestR28V4(outcome, renderSeed, appearance);
-  }
-  if (viewPolicy === "r29") {
-    return buildRollRenderRequestR29V4(outcome, renderSeed, appearance);
-  }
-  return viewPolicy === "r30"
-    ? buildRollRenderRequestR30V4(outcome, renderSeed, appearance)
-    : buildRollRenderRequestR31V4(outcome, renderSeed, appearance);
+  return ROLL_VIEW_BUILDERS_V4[viewPolicy](outcome, renderSeed, appearance);
 }

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   CANONICAL_FACE_VALUES_V4,
   FACE_LABEL_LAYOUT_BY_TARGET_V4,
+  formatEngravingLabelV4,
   formatFaceLabelV4,
   getOppositeFaceValueV4,
+  requiredEngravingCharactersV4,
   requiresOrientationMarkV4,
 } from "../src";
 
@@ -42,6 +44,22 @@ describe("V4 face and label semantics", () => {
     expect(() =>
       formatFaceLabelV4("d20", 20, "percentile-ones"),
     ).toThrow("Face label set is invalid for target");
+  });
+
+  it("formats authentic Alcarin decimal labels in units-first order", () => {
+    expect(formatEngravingLabelV4("liberation-sans", "100")).toBe("100");
+    expect(formatEngravingLabelV4("alcarin-tengwar", "0")).toBe("\ue070");
+    expect(formatEngravingLabelV4("alcarin-tengwar", "9")).toBe("\ue079");
+    expect(formatEngravingLabelV4("alcarin-tengwar", "10")).toBe(
+      "\ue070\ue071",
+    );
+    expect(formatEngravingLabelV4("alcarin-tengwar", "100")).toBe(
+      "\ue070\ue070\ue071",
+    );
+    expect(formatEngravingLabelV4("alcarin-tengwar", "−")).toBe("-");
+    expect(requiredEngravingCharactersV4("alcarin-tengwar")).toBe(
+      "\ue079\ue078\ue077\ue076\ue075\ue074\ue073\ue072\ue071\ue070+-",
+    );
   });
 
   it("marks only standalone six and nine labels", () => {

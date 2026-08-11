@@ -18,6 +18,7 @@ import {
   rollInteractionContextMissingReasons,
   parseStaticInteractionCommand,
   parseStatusCommandInteraction,
+  parseTextResultInteraction,
   verifyDiscordRequestSignature,
   type RollDeliveryTelemetryV2,
   type RollHelperDmInteraction,
@@ -33,6 +34,7 @@ import {
   completeSaveRollSubmit,
   openSaveRollModal,
 } from "./save-roll-handler";
+import { handleTextResultInteraction } from "./text-result-handler";
 
 export type InteractionEnv = {
   DISCORD_APPLICATION_ID: string;
@@ -174,21 +176,25 @@ async function deliverRequestedRollHelper(
   }
 }
 
-// A roll's Durable Object is new for every interaction, so its first call to
-// another Worker costs roughly half a second. This Worker is long lived, so it
-// resolves the setting here and the roll never waits for it. A null result
-// means unresolved, and the roll then falls back to its own lookup.
-async function resolveSkipDiceDelay(
+// Resolve settings in the long-lived Interaction Worker to avoid adding a
+// cross-Worker cold start to each new Roll object. If this lookup is unavailable,
+// Roll must resolve the authoritative settings before delivery.
+type GuildDeliverySettings = {
+  skipDiceDelay: boolean;
+  hideRollResultText: boolean;
+};
+
+async function resolveGuildDeliverySettings(
   dataService: Fetcher,
   guildId: string | null,
-): Promise<boolean | null> {
+): Promise<GuildDeliverySettings | null> {
   if (guildId === null) return null;
   try {
     const response = await dataService.fetch(
       new Request("https://data.internal/internal/guilds/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ guildId }),
+        body: JSON.stringify({ guildId, version: 2 }),
       }),
     );
     if (!response.ok) return null;
@@ -197,11 +203,15 @@ async function resolveSkipDiceDelay(
       !isRecord(value) ||
       value.status !== "found" ||
       !isRecord(value.settings) ||
-      typeof value.settings.skipDiceDelay !== "boolean"
+      typeof value.settings.skipDiceDelay !== "boolean" ||
+      typeof value.settings.hideRollResultText !== "boolean"
     ) {
       return null;
     }
-    return value.settings.skipDiceDelay;
+    return {
+      skipDiceDelay: value.settings.skipDiceDelay,
+      hideRollResultText: value.settings.hideRollResultText,
+    };
   } catch {
     return null;
   }
@@ -213,16 +223,14 @@ async function acceptDeferredRoll(
   roll: DeferredRoll,
   dataService: Fetcher,
 ): Promise<void> {
-  const skipDiceDelay = await resolveSkipDiceDelay(
+  const settings = await resolveGuildDeliverySettings(
     dataService,
     payload.accounting.guildId,
   );
   const acceptanceStartedAt = Date.now();
   try {
     const accepted = await stub.acceptDelivery(
-      skipDiceDelay === null
-        ? payload
-        : { ...payload, settings: { skipDiceDelay } },
+      settings === null ? payload : { ...payload, settings },
     );
     const acceptanceCompletedAt = Date.now();
     if (isAcceptedRollDelivery(accepted)) {
@@ -417,6 +425,13 @@ export async function handleInteractionRequest(
     else ctx.waitUntil(delivery);
     return json({ type: 6 });
   }
+  const textResult = parseTextResultInteraction(interaction, {
+    applicationId: env.DISCORD_APPLICATION_ID,
+  });
+  if (textResult !== null) {
+    return json(await handleTextResultInteraction(textResult, env));
+  }
+
   const saveRoll = parseSaveRollInteraction(interaction, {
     applicationId: env.DISCORD_APPLICATION_ID,
   });

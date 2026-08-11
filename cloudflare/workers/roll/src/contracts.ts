@@ -115,6 +115,21 @@ export type RollDeliveryResponseMode =
   | "edit-original"
   | "followup";
 
+export type RollDeliverySettings = {
+  skipDiceDelay: boolean;
+  hideRollResultText: boolean;
+};
+
+type LegacyRollDeliverySettings = Pick<
+  RollDeliverySettings,
+  "skipDiceDelay"
+>;
+
+type ParsedRollDeliverySettings = {
+  skipDiceDelay: boolean;
+  hideRollResultText: boolean | null;
+};
+
 export type RollDeliveryRequest = {
   interaction: {
     id: string;
@@ -138,7 +153,7 @@ export type RollDeliveryRequest = {
   rollSeed?: number;
   renderSeed?: number;
   clatter?: { deliveredAt: number };
-  settings?: { skipDiceDelay: boolean };
+  settings?: LegacyRollDeliverySettings | RollDeliverySettings;
   telemetry?: RollDeliveryTelemetryV2;
   logging: {
     source: "discord" | "web";
@@ -239,6 +254,7 @@ export type StoredDeliveryRow = {
   clatter_sent_at: number | null;
   followup_message_id: string | null;
   skip_dice_delay: number | null;
+  hide_roll_result_text: number | null;
   delay_ms: number | null;
   result_not_before: number | null;
   snapshot_ms: number | null;
@@ -280,7 +296,7 @@ type ValidatedRollDeliveryRequest = Omit<
   logging: RollDeliveryRequest["logging"] | null;
   responseMode: RollDeliveryResponseMode;
   savedRoll: SavedRollInvocationV1 | null;
-  settings: { skipDiceDelay: boolean } | null;
+  settings: ParsedRollDeliverySettings | null;
   renderSeed: number | null;
   clatter: { deliveredAt: number } | null;
 };
@@ -551,16 +567,30 @@ export function validateDeliveryRequest(
     rollSeed = value.rollSeed;
   }
 
-  let settings: { skipDiceDelay: boolean } | null = null;
+  let settings: ParsedRollDeliverySettings | null = null;
   if (hasSettings) {
+    const rawSettings = value.settings;
+    if (!isRecord(rawSettings)) {
+      throw new Error("Roll delivery settings are invalid");
+    }
+    const legacy = hasExactKeys(rawSettings, ["skipDiceDelay"]);
+    const current = hasExactKeys(rawSettings, [
+      "hideRollResultText",
+      "skipDiceDelay",
+    ]);
     if (
-      !isRecord(value.settings) ||
-      !hasExactKeys(value.settings, ["skipDiceDelay"]) ||
-      typeof value.settings.skipDiceDelay !== "boolean"
+      (!legacy && !current) ||
+      typeof rawSettings.skipDiceDelay !== "boolean" ||
+      (current && typeof rawSettings.hideRollResultText !== "boolean")
     ) {
       throw new Error("Roll delivery settings are invalid");
     }
-    settings = { skipDiceDelay: value.settings.skipDiceDelay };
+    settings = {
+      skipDiceDelay: rawSettings.skipDiceDelay,
+      hideRollResultText: current
+        ? rawSettings.hideRollResultText === true
+        : null,
+    };
   }
 
   let renderSeed: number | null = null;
@@ -1039,7 +1069,8 @@ export function parseRecord(value: string): RollWorkRecord {
           parsed.viewPolicy !== "r28" &&
           parsed.viewPolicy !== "r29" &&
           parsed.viewPolicy !== "r30" &&
-          parsed.viewPolicy !== "r31")) ||
+          parsed.viewPolicy !== "r31" &&
+          parsed.viewPolicy !== "r32")) ||
       common.outcome.outcomes.length === 0
     ) {
       throw new Error("Stored roll work is invalid");

@@ -228,11 +228,32 @@ export function reconcileAppearanceColorEditV3(
   });
 }
 
+function curatedMaterialColorsV3(
+  recipe: AppearanceRecipeV3,
+  catalog: AppearanceCatalogV3,
+): AppearanceRecipeV3["colors"] | null {
+  if (recipe.material.mode !== "fixed") return null;
+  const material = recipe.material.value;
+  if (material.family !== "elemental" && material.family !== "paint") {
+    return null;
+  }
+  const styleId = `${material.family}-${material.style}`;
+  const style = catalog.styles.find(({ id }) => id === styleId);
+  if (style?.recipe.colors.mode !== "palette") {
+    throw new Error(`Curated material palette is missing: ${styleId}`);
+  }
+  return structuredClone(style.recipe.colors);
+}
+
 export function reconcileAppearanceMaterialEditV3(
   recipe: AppearanceRecipeV3,
-  defaultColor: string,
+  catalog: AppearanceCatalogV3,
 ): AppearanceRecipeV3 {
   const parsed = parseAppearanceRecipeV3(recipe);
+  const curatedColors = curatedMaterialColorsV3(parsed, catalog);
+  if (curatedColors !== null) {
+    return parseAppearanceRecipeV3({ ...parsed, colors: curatedColors });
+  }
   if (
     !usesFixedClassicSolidV3(parsed) ||
     parsed.colors.mode === "solid" ||
@@ -244,7 +265,10 @@ export function reconcileAppearanceMaterialEditV3(
     ...parsed,
     colors: {
       mode: "solid",
-      primary: appearancePrimaryColorV3(parsed, defaultColor),
+      primary: appearancePrimaryColorV3(
+        parsed,
+        catalog.editorDefaults.primaryColor,
+      ),
     },
   });
 }
@@ -383,7 +407,7 @@ export function assertAppearanceRecipeSupportsTargetV3(
         !isPolyhedralFormImplementedForTargetV4(
           candidate,
           form,
-          "canvaskit-v4-r31",
+          "canvaskit-v4-r32",
         )
       ) {
         throw new Error(

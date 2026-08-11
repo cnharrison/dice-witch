@@ -17,6 +17,7 @@ import {
 } from "@dice-witch/dice-v4-model";
 import {
   isBuiltinRandomRecipeV3,
+  randomRecipeForResolutionV3,
   randomSpecialMaterialV3,
 } from "./catalog";
 import {
@@ -897,7 +898,8 @@ export type AppearanceResolutionSeedPolicyV3 =
   | "property-streams-r28"
   | "property-streams-r29"
   | "property-streams-r30"
-  | "property-streams-r31";
+  | "property-streams-r31"
+  | "property-streams-r32";
 
 function usesR27ColorBehaviorV3(
   policy: AppearanceResolutionSeedPolicyV3,
@@ -907,7 +909,8 @@ function usesR27ColorBehaviorV3(
     policy === "property-streams-r28" ||
     policy === "property-streams-r29" ||
     policy === "property-streams-r30" ||
-    policy === "property-streams-r31"
+    policy === "property-streams-r31" ||
+    policy === "property-streams-r32"
   );
 }
 
@@ -947,7 +950,8 @@ function propertySeedV3(
     (policy === "property-streams-r28" ||
       policy === "property-streams-r29" ||
       policy === "property-streams-r30" ||
-      policy === "property-streams-r31") &&
+      policy === "property-streams-r31" ||
+      policy === "property-streams-r32") &&
     (usesFullSpectrumRandomizationV3(recipe) ||
       recipe.randomization === "one-palette-color-v1");
   const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
@@ -1169,11 +1173,64 @@ function contrastSurfaceV3(
   };
 }
 
+function randomIntegerV3(
+  random: DeterministicRandom,
+  minimum: number,
+  maximum: number,
+): number {
+  return minimum + random.index(maximum - minimum + 1);
+}
+
+function randomizeR32MaterialControlsV3(
+  material: AppearanceMaterialV4,
+  random: DeterministicRandom,
+): AppearanceMaterialV4 {
+  if (material.family === "elemental") {
+    if (material.style === "lava") {
+      return {
+        ...material,
+        fissureDensity: randomIntegerV3(random, 48, 86),
+        glowIntensity: randomIntegerV3(random, 56, 92),
+        textureScale: randomIntegerV3(random, 75, 165),
+      };
+    }
+    if (material.style === "sand") {
+      return {
+        ...material,
+        grainSize: randomIntegerV3(random, 70, 96),
+        windDirection: randomIntegerV3(random, -35, 35),
+        textureScale: randomIntegerV3(random, 105, 225),
+      };
+    }
+    return {
+      ...material,
+      cloudCover: randomIntegerV3(
+        random,
+        material.style === "blue-sky" ? 42 : 54,
+        material.style === "blue-sky" ? 74 : 82,
+      ),
+      horizonHeight: randomIntegerV3(random, 34, 68),
+      textureScale: randomIntegerV3(random, 185, 305),
+    };
+  }
+  if (material.family === "paint") {
+    return {
+      ...material,
+      dropDensity: randomIntegerV3(random, 50, 82),
+      streakLength: randomIntegerV3(random, 34, 78),
+      textureScale: randomIntegerV3(random, 90, 185),
+    };
+  }
+  return material;
+}
+
 export function resolveAppearanceRecipeV3(
-  recipe: AppearanceRecipeV3,
+  inputRecipe: AppearanceRecipeV3,
   context: AppearanceResolutionContextV3,
   seedPolicy: AppearanceResolutionSeedPolicyV3 = "legacy",
 ): ResolvedAppearanceV3 {
+  const usesR32 = seedPolicy === "property-streams-r32";
+  const recipe = randomRecipeForResolutionV3(inputRecipe, usesR32);
   const seed = deriveAppearanceSeedV4({
     ...context,
     variation: recipe.variation,
@@ -1199,14 +1256,28 @@ export function resolveAppearanceRecipeV3(
   const usesR30 = seedPolicy === "property-streams-r30";
   const usesR31 = seedPolicy === "property-streams-r31";
   let specialFormRevision: RendererRevisionV4 | undefined;
-  if (usesR31) specialFormRevision = "canvaskit-v4-r31";
+  if (usesR32) specialFormRevision = "canvaskit-v4-r32";
+  else if (usesR31) specialFormRevision = "canvaskit-v4-r31";
   else if (usesR30) specialFormRevision = "canvaskit-v4-r30";
   const resolvedMaterial =
     randomSpecial !== undefined &&
     (specialFormRevision !== undefined || context.target === "d20")
       ? randomSpecial.d20Material
       : selectedMaterial;
-  const material: AppearanceMaterialV4 = { ...resolvedMaterial };
+  let material: AppearanceMaterialV4 = { ...resolvedMaterial };
+  if (usesR32 && isBuiltinRandomRecipeV3(recipe)) {
+    material = randomizeR32MaterialControlsV3(
+      material,
+      propertyRandomV3(
+        recipe,
+        context,
+        seed,
+        seedPolicy,
+        "material-controls",
+        selectedMaterial,
+      ),
+    );
+  }
   const colorSeedValue = {
     colors: recipe.colors,
     ...(usesR27ColorBehaviorV3(seedPolicy) &&
@@ -1235,7 +1306,7 @@ export function resolveAppearanceRecipeV3(
   if (
     material.family === "classic" &&
     material.treatment === "solid" &&
-    (usesR31 || (usesR30 && isBuiltinRandomRecipeV3(recipe)))
+    (usesR31 || usesR32 || (usesR30 && isBuiltinRandomRecipeV3(recipe)))
   ) {
     const color = colors.ordered[0];
     colors = { ordered: [color, color], pair: [color, color] };
@@ -1323,6 +1394,7 @@ export function resolveAppearanceRecipeV3(
     material.family === "classic" && material.treatment === "gradient";
   const isBalancedClassicSolid =
     !usesR31 &&
+    !usesR32 &&
     usesR27ColorBehaviorV3(seedPolicy) &&
     material.family === "classic" &&
     material.treatment === "solid";

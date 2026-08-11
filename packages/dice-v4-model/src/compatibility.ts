@@ -17,7 +17,8 @@ function supportsAllTargetSpecialFormsV4(
 ): boolean {
   return (
     rendererRevision === "canvaskit-v4-r30" ||
-    rendererRevision === "canvaskit-v4-r31"
+    rendererRevision === "canvaskit-v4-r31" ||
+    rendererRevision === "canvaskit-v4-r32"
   );
 }
 

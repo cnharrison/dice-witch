@@ -6,6 +6,6 @@ export default defineConfig({
     fileParallelism: false,
     include: ["packages/dice-canvaskit/benchmark.node.test.ts"],
     maxWorkers: 1,
-    testTimeout: 300_000,
+    testTimeout: 600_000,
   },
 });

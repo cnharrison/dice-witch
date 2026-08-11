@@ -360,6 +360,10 @@ describe("appearance preview", () => {
       buildAppearancePreviewRenderRequestForPolicyV4(input, "r31")
         .rendererRevision,
     ).toBe("canvaskit-v4-r31");
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r32")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r32");
   });
 
   it("maps built-in Random solid previews across whole dice in r29", () => {
@@ -587,7 +591,7 @@ describe("appearance preview", () => {
         seed: 7,
         state: "normal",
       },
-      "r31",
+      "r32",
     );
 
     expect(rendered).toMatchObject({

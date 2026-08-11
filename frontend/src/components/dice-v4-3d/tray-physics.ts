@@ -176,6 +176,20 @@ const MATERIAL_PHYSICS_V4 = Object.freeze({
     linearDamping: 0.4,
     angularDamping: 1.45,
   },
+  elemental: {
+    density: 1,
+    friction: 0.68,
+    restitution: 0.18,
+    linearDamping: 0.46,
+    angularDamping: 1.65,
+  },
+  paint: {
+    density: 1,
+    friction: 0.7,
+    restitution: 0.17,
+    linearDamping: 0.48,
+    angularDamping: 1.72,
+  },
 } satisfies Readonly<Record<MaterialFamilyV4, MaterialPhysicsProfileV4>>);
 
 const colliderPointCacheV4 = new WeakMap<

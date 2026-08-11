@@ -65,6 +65,15 @@ export {
   type InteractionResponseTarget,
 } from "./responses";
 export {
+  buildTextResultCustomId,
+  buildTextResultResponse,
+  parseTextResultInteraction,
+  parseTextResultIntent,
+  textResultIntentIdentity,
+  type ParsedTextResultInteractionV1,
+  type TextResultIntentV1,
+} from "./text-result-interaction";
+export {
   buildSaveRollCustomId,
   buildSaveRollDuplicateResponse,
   buildSaveRollErrorResponse,

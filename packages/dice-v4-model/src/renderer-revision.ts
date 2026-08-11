@@ -50,6 +50,8 @@ export type RendererRevisionPolicyV4 = {
   allTargetHollowCage: boolean;
   allowSingleColorPalette: boolean;
   singleColorClassicSolid: boolean;
+  r32Fonts: boolean;
+  r32Materials: boolean;
   d6FiveOpticalOffsetX: number;
   faceWidePhysicalSeparation: boolean;
   gridLayout:
@@ -99,6 +101,8 @@ const r1 = policy({
   allTargetHollowCage: false,
   allowSingleColorPalette: false,
   singleColorClassicSolid: false,
+  r32Fonts: false,
+  r32Materials: false,
   d6FiveOpticalOffsetX: 0,
   faceWidePhysicalSeparation: true,
   gridLayout: "legacy",
@@ -188,6 +192,11 @@ const r31 = policy({
   singleColorClassicSolid: true,
   engravingContrastEdge: "protective-r31",
 });
+const r32 = policy({
+  ...r31,
+  r32Fonts: true,
+  r32Materials: true,
+});
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -221,6 +230,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r29": r29,
   "canvaskit-v4-r30": r30,
   "canvaskit-v4-r31": r31,
+  "canvaskit-v4-r32": r32,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

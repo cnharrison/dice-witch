@@ -51,7 +51,7 @@ describe("D1GuildRepository", () => {
     await insertGuild(false);
     await expect(repository.getSettings(guildId)).resolves.toEqual({
       status: "found",
-      settings: { skipDiceDelay: false },
+      settings: { skipDiceDelay: false, hideRollResultText: false },
     });
   });
 
@@ -398,7 +398,7 @@ describe("D1GuildRepository", () => {
     });
     await expect(repository.getSettings(guildId)).resolves.toEqual({
       status: "found",
-      settings: { skipDiceDelay: true },
+      settings: { skipDiceDelay: true, hideRollResultText: false },
     });
 
     const receipt = await dataEnv.DATA.prepare(
@@ -416,6 +416,64 @@ describe("D1GuildRepository", () => {
     });
   });
 
+  it("updates complete guild settings and preserves them on identical retries", async () => {
+    await insertGuild();
+    const repository = new D1GuildRepository(dataEnv.DATA);
+    const input = {
+      guildId,
+      settings: { skipDiceDelay: true, hideRollResultText: true },
+      mutationId: "preference-v2-100000000000000025",
+      occurredAt,
+    };
+
+    await expect(repository.setSettings(input)).resolves.toEqual({
+      status: "applied",
+      settings: input.settings,
+    });
+    await expect(repository.setSettings({
+      ...input,
+      occurredAt: occurredAt + 1,
+    })).resolves.toEqual({
+      status: "existing",
+      settings: input.settings,
+    });
+    await expect(repository.getSettings(guildId)).resolves.toEqual({
+      status: "found",
+      settings: input.settings,
+    });
+    const row = await dataEnv.DATA.prepare(
+      `SELECT skip_dice_delay, hide_roll_result_text
+       FROM guilds WHERE id = ?`,
+    ).bind(guildId).first();
+    expect(row).toEqual({ skip_dice_delay: 1, hide_roll_result_text: 1 });
+    const receipt = await dataEnv.DATA.prepare(
+      "SELECT payload_json FROM mutation_receipts",
+    ).first<{ payload_json: string }>();
+    expect(receipt?.payload_json).toBe(JSON.stringify(input.settings));
+  });
+
+  it("keeps the hidden-result setting when a legacy delay mutation arrives", async () => {
+    await insertGuild();
+    const repository = new D1GuildRepository(dataEnv.DATA);
+    await repository.setSettings({
+      guildId,
+      settings: { skipDiceDelay: false, hideRollResultText: true },
+      mutationId: "preference-v2-100000000000000026",
+      occurredAt,
+    });
+
+    await repository.setSkipDiceDelay({
+      guildId,
+      skipDiceDelay: true,
+      mutationId: "preference-100000000000000027",
+      occurredAt: occurredAt + 1,
+    });
+    await expect(repository.getSettings(guildId)).resolves.toEqual({
+      status: "found",
+      settings: { skipDiceDelay: true, hideRollResultText: true },
+    });
+  });
+
   it("returns the same result for an identical mutation retry", async () => {
     await insertGuild();
     const repository = new D1GuildRepository(dataEnv.DATA);
@@ -427,7 +485,10 @@ describe("D1GuildRepository", () => {
     };
 
     const first = await repository.setSkipDiceDelay(input);
-    const retry = await repository.setSkipDiceDelay(input);
+    const retry = await repository.setSkipDiceDelay({
+      ...input,
+      occurredAt: occurredAt + 1,
+    });
 
     expect(first).toEqual({
       status: "applied",
@@ -488,7 +549,7 @@ describe("D1GuildRepository", () => {
     ).resolves.toEqual({ status: "conflict" });
     await expect(repository.getSettings(guildId)).resolves.toEqual({
       status: "found",
-      settings: { skipDiceDelay: true },
+      settings: { skipDiceDelay: true, hideRollResultText: false },
     });
   });
 

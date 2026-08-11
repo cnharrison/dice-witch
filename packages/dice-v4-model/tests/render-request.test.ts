@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
+  R32_FONT_IDS_V4,
   TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4,
   getAuthoredRenderViewV4,
   validateRenderRequestV4,
@@ -84,6 +85,44 @@ const materials: AppearanceMaterialV4[] = [
     intensity: 80,
     finish: "radiant",
     textureScale: 140,
+  },
+];
+
+const r32Materials: AppearanceMaterialV4[] = [
+  {
+    family: "elemental",
+    style: "lava",
+    fissureDensity: 65,
+    glowIntensity: 78,
+    textureScale: 110,
+  },
+  {
+    family: "elemental",
+    style: "sand",
+    grainSize: 78,
+    windDirection: -10,
+    textureScale: 150,
+  },
+  {
+    family: "elemental",
+    style: "blue-sky",
+    cloudCover: 58,
+    horizonHeight: 48,
+    textureScale: 240,
+  },
+  {
+    family: "elemental",
+    style: "sunset",
+    cloudCover: 68,
+    horizonHeight: 62,
+    textureScale: 255,
+  },
+  {
+    family: "paint",
+    style: "splatter",
+    dropDensity: 64,
+    streakLength: 56,
+    textureScale: 130,
   },
 ];
 
@@ -470,6 +509,56 @@ describe("RenderRequestV4", () => {
     expect(
       validateRenderRequestV4(uppercase).groups[0]?.[0]?.appearance.palette,
     ).toEqual(["#abcdef", "#123456"]);
+  });
+
+  it("gates the new fonts and materials to r32", () => {
+    for (const material of r32Materials) {
+      const candidate = die(material);
+      candidate.appearance.texture.scope = "die-wide";
+      candidate.view = getAuthoredRenderViewV4("canvaskit-v4-r32", "legacy", {
+        target: candidate.target,
+        result: candidate.result,
+        form: candidate.form,
+      });
+      const request = {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r32",
+        groups: [[candidate]],
+      };
+      expect(validateRenderRequestV4(request).groups[0]?.[0]?.appearance.material)
+        .toEqual(material);
+      expect(() =>
+        validateRenderRequestV4({
+          ...request,
+          rendererRevision: "canvaskit-v4-r31",
+        }),
+      ).toThrow("appearance.material is not supported before r32");
+    }
+
+    for (const fontId of R32_FONT_IDS_V4) {
+      const candidate = die();
+      candidate.appearance.texture.scope = "die-wide";
+      candidate.appearance.palette = ["#0f172a", "#0f172a"];
+      candidate.appearance.engraving.fontId = fontId;
+      candidate.view = getAuthoredRenderViewV4("canvaskit-v4-r32", "legacy", {
+        target: candidate.target,
+        result: candidate.result,
+        form: candidate.form,
+      });
+      const request = {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r32",
+        groups: [[candidate]],
+      };
+      expect(validateRenderRequestV4(request).groups[0]?.[0]?.appearance.engraving.fontId)
+        .toBe(fontId);
+      expect(() =>
+        validateRenderRequestV4({
+          ...request,
+          rendererRevision: "canvaskit-v4-r31",
+        }),
+      ).toThrow("appearance.engraving.fontId is not supported before r32");
+    }
   });
 
   it("keeps r1 scope-free and requires explicit texture scope in later revisions", () => {

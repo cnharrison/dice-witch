@@ -4,6 +4,7 @@ import {
   BUILTIN_APPEARANCE_RECIPES_V2,
   BUILTIN_APPEARANCE_RECIPES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
+  randomRecipeForResolutionV3,
 } from "./packages/dice-appearance/src/catalog";
 import { APPEARANCE_TARGETS } from "./packages/dice-appearance/src/types";
 
@@ -59,7 +60,9 @@ function effectiveRecipesV2(primary: string | null): Record<string, unknown> {
 function effectiveRecipesV3(primary: string | null): Record<string, unknown> {
   const builtin = BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID];
   if (builtin === undefined) throw new Error("Chaotic V3 test recipe is missing");
-  const recipe = structuredClone(builtin.recipe);
+  const recipe = structuredClone(
+    randomRecipeForResolutionV3(builtin.recipe, false),
+  );
   if (primary !== null) {
     delete recipe.randomization;
     recipe.colors = { mode: "palette", colors: [primary, "#550000"] };
@@ -184,13 +187,21 @@ async function dataTestResponse(request: Request): Promise<Response> {
     });
   }
   if (path === "/internal/guilds/settings") {
-    if (!isRecord(value) || typeof value.guildId !== "string") {
+    if (
+      !isRecord(value) ||
+      typeof value.guildId !== "string" ||
+      value.version !== 2
+    ) {
       return Response.json({ error: "invalid" }, { status: 400 });
     }
     return Response.json({
       status: "found",
       settings: {
-        skipDiceDelay: value.guildId === "100000000000000003",
+        skipDiceDelay: [
+          "100000000000000003",
+          "100000000000000004",
+        ].includes(value.guildId),
+        hideRollResultText: value.guildId === "100000000000000004",
       },
     });
   }
@@ -255,10 +266,10 @@ async function discordTestResponse(request: Request): Promise<Response> {
     ) {
       return Response.json({ message: "clatter missing" }, { status: 400 });
     }
-    return Response.json({ id: "development-message" });
+    return Response.json({ id: "100000000000000087" });
   }
   if (token === "delivery-success") {
-    return Response.json({ id: "development-message" });
+    return Response.json({ id: "100000000000000087" });
   }
   if (token === "invalid-private-help") {
     return Response.json(
@@ -278,7 +289,7 @@ async function discordTestResponse(request: Request): Promise<Response> {
     ) {
       return Response.json({ message: "public original response is invalid" }, { status: 400 });
     }
-    return Response.json({ id: "development-message" });
+    return Response.json({ id: "100000000000000087" });
   }
   if (token.startsWith("saved-channel-")) {
     const pathname = new URL(request.url).pathname;
@@ -299,7 +310,7 @@ async function discordTestResponse(request: Request): Promise<Response> {
     if (attempts === 1) {
       return Response.json({ message: "temporary" }, { status: 503 });
     }
-    return Response.json({ id: "development-message" });
+    return Response.json({ id: "100000000000000087" });
   }
   if (token === "delivery-temporary") {
     return Response.json({ message: "temporary" }, { status: 503 });
@@ -315,7 +326,7 @@ async function discordTestResponse(request: Request): Promise<Response> {
           "This roll could not be completed. Please try again.",
         )
       ) {
-        return Response.json({ id: "development-message" });
+        return Response.json({ id: "100000000000000087" });
       }
     }
     return Response.json({ message: "temporary" }, { status: 503 });
@@ -454,7 +465,10 @@ export default defineConfig({
                       if (payloadJson.includes("## web failed")) {
                         return { status: "failed", httpStatus: 400 };
                       }
-                      return { status: "delivered" };
+                      return {
+                        status: "delivered",
+                        messageId: "100000000000000098"
+                      };
                     }
                     deliverRollLogV1(value) {
                       const artifact = value.artifact;

@@ -20,12 +20,14 @@ import {
 import type {
   AppearanceMaterialV4,
   ClassicMaterialV4,
+  ElementalMaterialV4,
   FantasyMaterialV4,
   GemstoneMaterialV4,
   GlassMaterialV4,
   HollowMetalMaterialV4,
   LiquidCoreMaterialV4,
   MetalMaterialV4,
+  PaintMaterialV4,
   PatternIdV4,
   SharpResinMaterialV4,
   StoneMaterialV4,
@@ -606,6 +608,184 @@ const fantasyPixel: PixelGeneratorV4<FantasyMaterialV4> = (
   return color;
 };
 
+function circularDistance(value: number, center: number): number {
+  const distance = Math.abs(value - center);
+  return Math.min(distance, 256 - distance);
+}
+
+function lavaPixel(
+  context: PixelContextV4,
+  material: Extract<ElementalMaterialV4, { style: "lava" }>,
+): TextureColorV4 {
+  const body = context.noise(200);
+  const rift = context.noise(207);
+  const detail = context.noise(211);
+  const cycles = materialCycles(material.textureScale, 5);
+  const diagonal = modulo(
+    phase(context.x, cycles) +
+      phase(context.y, cycles) +
+      body -
+      128,
+    256,
+  );
+  const fissureDistance = Math.min(
+    Math.abs(body - rift),
+    Math.abs(diagonal - 128) / 2,
+  );
+  let color = paletteTextureColorV4(
+    context.palette,
+    byte(12 + body * 0.24 + detail * 0.08),
+  );
+  const fissureWidth = 3 + material.fissureDensity * 0.17;
+  if (fissureDistance >= fissureWidth) return color;
+  const centerStrength = 1 - fissureDistance / fissureWidth;
+  const glowAmount = byte(
+    150 + centerStrength * (55 + material.glowIntensity * 0.5),
+  );
+  color = mixTextureColorV4(
+    color,
+    paletteTextureColorV4(context.palette, glowAmount),
+    byte(138 + centerStrength * 117),
+  );
+  if (centerStrength > 0.72) {
+    color = mixTextureColorV4(
+      color,
+      paletteTextureColorV4(context.palette, 255),
+      byte((centerStrength - 0.72) * 640),
+    );
+  }
+  return color;
+}
+
+function sandPixel(
+  context: PixelContextV4,
+  material: Extract<ElementalMaterialV4, { style: "sand" }>,
+): TextureColorV4 {
+  const cycles = materialCycles(material.textureScale, 7);
+  const horizontal = phase(context.x, cycles);
+  const vertical = phase(context.y, cycles);
+  const diagonalInfluence = Math.round(
+    (vertical * Math.abs(material.windDirection)) / 45,
+  );
+  const sweep = modulo(
+    horizontal +
+      (material.windDirection < 0
+        ? -diagonalInfluence
+        : diagonalInfluence),
+    256,
+  );
+  const dune = 255 - Math.abs(sweep - 128) * 2;
+  const body = context.noise(220);
+  let color = paletteTextureColorV4(
+    context.palette,
+    byte(46 + dune * 0.56 + body * 0.18),
+  );
+  const sampleX = Math.round((context.x * 63) / PERIOD);
+  const sampleY = Math.round((context.y * 63) / PERIOD);
+  const grain = textureHashV4(context.seed, sampleX, sampleY, 227);
+  color = shadeTextureColorV4(color, (grain & 15) - 7);
+  if (grain % 1_000 < 110 + material.grainSize * 1.45) {
+    const grainColor = paletteTextureColorV4(
+      context.palette,
+      (grain & 2) === 0 ? 0 : 255,
+    );
+    color = mixTextureColorV4(color, grainColor, 255);
+  }
+  const cluster = textureHashV4(
+    context.seed,
+    Math.floor(sampleX / 2),
+    Math.floor(sampleY / 2),
+    231,
+  );
+  if (cluster % 1_000 < Math.max(0, material.grainSize - 52) * 2.2) {
+    color = mixTextureColorV4(
+      color,
+      paletteTextureColorV4(
+        context.palette,
+        (cluster & 1) === 0 ? 24 : 246,
+      ),
+      byte(132 + material.grainSize * 0.92),
+    );
+  }
+  return color;
+}
+
+function skyPixel(
+  context: PixelContextV4,
+  material: Extract<
+    ElementalMaterialV4,
+    { style: "blue-sky" | "sunset" }
+  >,
+): TextureColorV4 {
+  const horizon = byte(material.horizonHeight * 2.55);
+  const distance = circularDistance(phase(context.y, 1), horizon);
+  const horizonGlow = byte(255 - Math.min(255, distance * 2.2));
+  let color = paletteTextureColorV4(context.palette, horizonGlow);
+  const body = context.noise(240);
+  const detail = context.noise(247);
+  const cloudBand = 255 - Math.min(255, distance * 2.8);
+  const cloudSignal = byte(body * 0.64 + detail * 0.24 + cloudBand * 0.22);
+  const threshold = 232 - material.cloudCover * 1.35;
+  const softness = 16 + ((material.textureScale - 25) * 72) / 375;
+  const opacity = byte(((cloudSignal - threshold) * 255) / softness);
+  if (opacity <= 0) return color;
+  let cloudAmount = 92;
+  if (material.style === "blue-sky" || detail > 132) cloudAmount = 255;
+  color = mixTextureColorV4(
+    color,
+    paletteTextureColorV4(context.palette, cloudAmount),
+    opacity,
+  );
+  return color;
+}
+
+const elementalPixel: PixelGeneratorV4<ElementalMaterialV4> = (
+  context,
+  material,
+) => {
+  if (material.style === "lava") return lavaPixel(context, material);
+  if (material.style === "sand") return sandPixel(context, material);
+  return skyPixel(context, material);
+};
+
+const paintPixel: PixelGeneratorV4<PaintMaterialV4> = (
+  context,
+  material,
+) => {
+  let color = context.palette[0] ?? textureColorV4(234, 223, 197);
+  const cycles = materialCycles(material.textureScale, 10);
+  const cellX = Math.floor((context.x * cycles) / PERIOD);
+  const cellY = Math.floor((context.y * cycles) / PERIOD);
+  const localX = phase(context.x, cycles);
+  const localY = phase(context.y, cycles);
+  const cell = textureHashV4(context.seed, cellX, cellY, 260);
+  const active = cell % 100 < 8 + material.dropDensity * 0.38;
+  if (active) {
+    const centerX = 52 + ((cell >>> 8) & 127);
+    const centerY = 52 + ((cell >>> 16) & 127);
+    const dx = localX - centerX;
+    const dy = localY - centerY;
+    const radius = 44 + ((material.textureScale - 25) * 90) / 375;
+    const irregularity = (context.noise(267) - 128) / 18;
+    const inDrop = dx * dx + dy * dy < (radius + irregularity) ** 2;
+    const streakLength = 18 + material.streakLength * 1.45;
+    const inStreak =
+      dx >= 0 &&
+      dx <= streakLength &&
+      Math.abs(dy) < Math.max(3, radius * 0.22 - dx * 0.05);
+    if (inDrop || inStreak) {
+      const paletteIndex = 1 + (cell % (context.palette.length - 1));
+      color = context.palette[paletteIndex] ?? color;
+    }
+  }
+  const speckle = textureHashV4(context.seed, context.x, context.y, 271);
+  if (speckle % 2_000 < material.dropDensity * 1.6) {
+    const paletteIndex = 1 + (speckle % (context.palette.length - 1));
+    color = context.palette[paletteIndex] ?? color;
+  }
+  return color;
+};
+
 function validateInput(input: TextureGenerationInputV4): void {
   if (
     !Number.isInteger(input.seed) ||
@@ -657,6 +837,10 @@ function generateMaterialPixel(
       return woodPixel(context, material);
     case "fantasy":
       return fantasyPixel(context, material);
+    case "elemental":
+      return elementalPixel(context, material);
+    case "paint":
+      return paintPixel(context, material);
   }
 }
 

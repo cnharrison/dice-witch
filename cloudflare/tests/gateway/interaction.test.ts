@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRollDeliveryPayload,
   parseRollInteraction,
+  type RollDeliveryPayload,
 } from "../../packages/discord-contracts/src";
 
 const applicationId = "100000000000000001";
@@ -20,6 +21,33 @@ function interaction(overrides: Record<string, unknown> = {}) {
 }
 
 describe("buildRollDeliveryPayload", () => {
+  it("keeps the legacy one-setting payload type compatible", () => {
+    const payload: RollDeliveryPayload = {
+      interaction: {
+        id: "1400000000000000000",
+        applicationId,
+        token: "interaction-token-value",
+      },
+      request: { notation: "1d20", repetitions: 1 },
+      message: { title: null, username: "roller" },
+      accounting: {
+        guildId,
+        userId: "1400000000000000003",
+        receivedAt: 1_753_856_410_742,
+      },
+      deferredAt: 1_753_856_410_750,
+      rollSeed: 1,
+      settings: { skipDiceDelay: false },
+      logging: {
+        source: "discord",
+        channelId: "1400000000000000002",
+        notation: "1d20",
+      },
+    };
+
+    expect(payload.settings).toEqual({ skipDiceDelay: false });
+  });
+
   it("passes delivery fields with partial logging context to the roll Worker", () => {
     const parsed = parseRollInteraction(
       {

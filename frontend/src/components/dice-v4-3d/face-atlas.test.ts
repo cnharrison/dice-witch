@@ -5,13 +5,18 @@ import {
   D20_STANDARD_GEOMETRY_R2_V4,
   D4_STANDARD_GEOMETRY_V4,
   OTHER_SPHERE_GEOMETRY_V4,
+  R32_FONT_IDS_V4,
   buildPhysicalPolyhedralMeshV4,
+  parsePublicRenderModelV4,
+  projectPolyhedralGeometryV4,
 } from "@dice-witch/dice-v4-model";
 import { Vector3 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import d20Fixture from "./fixtures/d20-r3.json";
 import {
   createFaceAtlasLayoutV4,
   createPhysicalLabelAtlasResourcesFromSourceV4,
+  createPhysicalLabelAtlasSourceV4,
   createPhysicalLabelGeometryV4,
   createSphericalLabelGeometryV4,
   faceAtlasUvV4,
@@ -19,7 +24,83 @@ import {
   usesProjectedLabelClearanceV4,
 } from "./face-atlas";
 
+function labelCanvasHarness() {
+  const drawn: string[] = [];
+  const canvas = { width: 0, height: 0 } as HTMLCanvasElement;
+  const context = {
+    canvas,
+    font: "",
+    beginPath: () => undefined,
+    clip: () => undefined,
+    drawImage: () => undefined,
+    fillText: (text: string) => drawn.push(text),
+    lineTo: () => undefined,
+    measureText: (text: string) => {
+      const fontSize = Number.parseFloat(context.font) || 100;
+      const width = Array.from(text).length * fontSize * 0.56;
+      return {
+        width,
+        actualBoundingBoxLeft: 0,
+        actualBoundingBoxRight: width,
+        actualBoundingBoxAscent: fontSize * 0.72,
+        actualBoundingBoxDescent: fontSize * 0.18,
+      } as TextMetrics;
+    },
+    moveTo: () => undefined,
+    rect: () => undefined,
+    restore: () => undefined,
+    save: () => undefined,
+    stroke: () => undefined,
+    strokeText: (text: string) => drawn.push(text),
+  } as unknown as CanvasRenderingContext2D;
+  canvas.getContext = (() => context) as HTMLCanvasElement["getContext"];
+  return { canvas, drawn };
+}
+
 describe("V4 Three.js face atlas layout", () => {
+  it("formats and draws every r32 font before browser-atlas measurement", () => {
+    const die = parsePublicRenderModelV4(d20Fixture).groups[0]?.[0];
+    if (die === undefined) throw new Error("D20 font fixture is missing");
+    const physical = buildPhysicalPolyhedralMeshV4(
+      D20_STANDARD_GEOMETRY_R2_V4,
+      20,
+    );
+    const projection = projectPolyhedralGeometryV4(
+      D20_STANDARD_GEOMETRY_R2_V4,
+      20,
+    );
+
+    try {
+      for (const fontId of R32_FONT_IDS_V4) {
+        const harness = labelCanvasHarness();
+        vi.stubGlobal("document", {
+          createElement: () => harness.canvas,
+        });
+        const source = createPhysicalLabelAtlasSourceV4(
+          physical,
+          projection,
+          D20_STANDARD_GEOMETRY_R2_V4.camera,
+          {
+            ...die.appearance,
+            engraving: { ...die.appearance.engraving, fontId },
+          },
+          `DiceWitchV4-${fontId}`,
+          "canvaskit-v4-r32",
+        );
+
+        expect(Number.isFinite(source.minimumVisibleLabelFontScale)).toBe(true);
+        if (fontId === "alcarin-tengwar") {
+          expect(harness.drawn).toContain("\ue070\ue072");
+          expect(harness.drawn.some((text) => /[0-9]/.test(text))).toBe(false);
+        } else {
+          expect(harness.drawn).toContain("20");
+        }
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("honors renderer revisions that allow minimum-size label clearance shortfalls", () => {
     const clearanceAt = (fontSize: number) => 1 - fontSize / 100;
 

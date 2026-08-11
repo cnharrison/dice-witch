@@ -10,7 +10,7 @@ import {
 
 const TABLETOP_COLOR = 0x96_6f_33;
 const ERROR_COLOR = 0xe7_4c_3c;
-const MAX_RESULT_DESCRIPTION_LENGTH = 4_096;
+const MAX_RESULT_DESCRIPTION_LENGTH = 4_000;
 const MAX_TEXT_DISPLAY_LENGTH = 4_000;
 const MAX_TITLE_LENGTH = 256;
 const MAX_USERNAME_LENGTH = 32;
@@ -25,6 +25,7 @@ export type RollResultMessageOptions = {
   clatter?: string;
   savedRoll?: { scope: "Mine" | "Server"; name: string };
   saveRollCustomId?: string;
+  textResultCustomId?: string;
 };
 
 function escapeDiscordMarkdown(value: string): string {
@@ -217,17 +218,31 @@ export function rollResultText(result: RollExecutionResult): string {
     result.outcomes.length > 1 ? `\ngrand total = ${String(grandTotal)}` : ""
   }`;
   return description.length > MAX_RESULT_DESCRIPTION_LENGTH
-    ? "Roll result exceeds Discord's 4,096-character message limit."
+    ? "Roll result exceeds Discord's 4,000-character message limit."
     : description;
 }
 
-function saveRollButton(customId: string) {
+function actionButton(label: string, customId: string) {
   return {
     type: 2 as const,
     style: 2 as const,
-    label: "Save",
+    label,
     custom_id: customId,
   };
+}
+
+function actionRow(label: string, customId: string): DiscordContainerChild {
+  return { type: 1, components: [actionButton(label, customId)] };
+}
+
+function headingAction(options: RollResultMessageOptions) {
+  if (options.textResultCustomId !== undefined) {
+    return actionButton("Text result", options.textResultCustomId);
+  }
+  if (options.saveRollCustomId !== undefined) {
+    return actionButton("Save", options.saveRollCustomId);
+  }
+  return null;
 }
 
 function resultHeading(
@@ -236,36 +251,45 @@ function resultHeading(
   const heading = options.title;
   if (heading === null) return [];
   const content = `## ${escapeDiscordMarkdown(heading)}`;
-  if (options.saveRollCustomId === undefined) {
-    return [{ type: 10, content }];
-  }
-  return [
-    {
-      type: 9,
-      components: [{ type: 10, content }],
-      accessory: saveRollButton(options.saveRollCustomId),
-    },
-  ];
+  const accessory = headingAction(options);
+  return accessory === null
+    ? [{ type: 10, content }]
+    : [{ type: 9, components: [{ type: 10, content }], accessory }];
 }
 
 function resultContent(
   content: string,
   options: RollResultMessageOptions,
 ): DiscordContainerChild[] {
+  if (options.textResultCustomId !== undefined) return [];
   const displays = textDisplays(content);
-  if (
-    options.title !== null ||
-    options.saveRollCustomId === undefined
-  ) {
+  if (options.title !== null || options.saveRollCustomId === undefined) {
     return displays;
   }
   return [
     {
       type: 9,
       components: displays,
-      accessory: saveRollButton(options.saveRollCustomId),
+      accessory: actionButton("Save", options.saveRollCustomId),
     },
   ];
+}
+
+function textResultAction(
+  options: RollResultMessageOptions,
+): DiscordContainerChild[] {
+  return options.title === null && options.textResultCustomId !== undefined
+    ? [actionRow("Text result", options.textResultCustomId)]
+    : [];
+}
+
+function movedSaveAction(
+  options: RollResultMessageOptions,
+): DiscordContainerChild[] {
+  return options.textResultCustomId !== undefined &&
+      options.saveRollCustomId !== undefined
+    ? [actionRow("Save", options.saveRollCustomId)]
+    : [];
 }
 
 export function buildRollResultMessage(
@@ -294,13 +318,17 @@ export function buildRollResultMessage(
         options.savedRoll === undefined &&
         options.repetitions === 1) ||
         options.saveRollCustomId.length < 1 ||
-        options.saveRollCustomId.length > 100))
+        options.saveRollCustomId.length > 100)) ||
+    (options.textResultCustomId !== undefined &&
+      (options.textResultCustomId.length < 1 ||
+        options.textResultCustomId.length > 100))
   ) {
     throw new Error("Roll result message options are invalid");
   }
   const resultText = rollResultText(result);
   const container: DiscordContainerChild[] = [
     ...resultHeading(options),
+    ...textResultAction(options),
     ...resultContent(resultText, options),
     {
       type: 12,
@@ -311,6 +339,7 @@ export function buildRollResultMessage(
         },
       ],
     },
+    ...movedSaveAction(options),
     { type: 14, divider: true, spacing: 1 },
     {
       type: 10,

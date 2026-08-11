@@ -15,6 +15,7 @@ import {
   buildRollRenderRequestV4,
 } from "../../packages/roll-render-model/src";
 import { executeRoll } from "../../packages/roll-domain/src";
+import { rollResultText } from "../../packages/discord-contracts/src";
 import rollWorkV2Fixture from "./fixtures/roll-work-v2.json";
 import rollWorkV3Fixture from "./fixtures/roll-work-v3.json";
 import rollWorkV4Fixture from "./fixtures/roll-work-v4.json";
@@ -22,7 +23,9 @@ import rollWorker, {
   type RollDeliveryRequest,
 } from "../../workers/roll/src";
 import {
+  deliveryMetadata,
   parseRecord,
+  tokenFingerprint,
   validateDeliveryRequest,
 } from "../../workers/roll/src/contracts";
 
@@ -284,8 +287,22 @@ async function seedPendingV5Delivery(
 }
 
 describe("RollWork Durable Object", () => {
-  it("upgrades pre-clatter delivery tables in place", async () => {
-    const stub = work("1400000000000000021");
+  it("upgrades pending pre-clatter deliveries without defaulting privacy settings", async () => {
+    const id = snowflakeAt(Date.now(), 21);
+    const stub = work(id);
+    const input = deliveryRequest(id, "delivery-success");
+    input.accounting.guildId = "100000000000000004";
+    input.logging.context = {
+      kind: "guild",
+      guildId: "100000000000000004",
+      guildName: "Hidden Result Guild",
+      channelId: input.logging.channelId,
+      channelName: "dice-rolls",
+      channelType: 0,
+    };
+    const validated = validateDeliveryRequest(input);
+    const metadataJson = deliveryMetadata(validated);
+    const fingerprint = await tokenFingerprint(input.interaction.token);
     await stub.deliveryStatus();
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(`
@@ -302,10 +319,27 @@ describe("RollWork Durable Object", () => {
           attempts INTEGER NOT NULL DEFAULT 0
         );
       `);
+      state.storage.sql.exec(
+        `INSERT INTO interaction_delivery (
+           singleton, metadata_json, token, token_fingerprint, expires_at,
+           state, delivered_at, last_http_status, attempts
+         ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        metadataJson,
+        input.interaction.token,
+        fingerprint,
+        interactionExpiresAt(id),
+        "pending",
+        null,
+        null,
+        0,
+      );
     });
     await evictDurableObject(stub);
 
-    await expect(stub.deliveryStatus()).resolves.toEqual({ state: "missing" });
+    await expect(stub.deliveryStatus()).resolves.toMatchObject({
+      state: "pending",
+      attempts: 0,
+    });
     await runInDurableObject(stub, (_instance, state) => {
       const columns = state.storage.sql
         .exec<{ name: string }>("PRAGMA table_info(interaction_delivery)")
@@ -315,6 +349,7 @@ describe("RollWork Durable Object", () => {
           "clatter_sent_at",
           "followup_message_id",
           "skip_dice_delay",
+          "hide_roll_result_text",
           "delay_ms",
           "result_not_before",
           "snapshot_ms",
@@ -334,6 +369,13 @@ describe("RollWork Durable Object", () => {
           "failure_phase",
         ]),
       );
+      expect(
+        state.storage.sql
+          .exec<{ hide_roll_result_text: number | null }>(
+            "SELECT hide_roll_result_text FROM interaction_delivery",
+          )
+          .one().hide_roll_result_text,
+      ).toBeNull();
     });
   });
 
@@ -546,7 +588,7 @@ describe("RollWork Durable Object", () => {
     const context = {
       version: 1 as const,
       userId: "100000000000000003",
-      guildId: "100000000000000003",
+      guildId: "100000000000000004",
       channelId: "100000000000000010",
     };
     const selection = {
@@ -584,9 +626,9 @@ describe("RollWork Durable Object", () => {
         username: "roller",
         loggingContext: {
           kind: "guild" as const,
-          guildId: "100000000000000003",
+          guildId: context.guildId,
           guildName: "Fixture Guild",
-          channelId: "100000000000000010",
+          channelId: context.channelId,
           channelName: "dice-rolls",
           channelType: 0 as const,
         },
@@ -612,7 +654,19 @@ describe("RollWork Durable Object", () => {
     consoleInfo.mockRestore();
     const destinationPayload = JSON.stringify(completed?.destinationPayload);
     expect(destinationPayload).toContain(`save-roll:v1:d:${sessionId}`);
+    expect(destinationPayload).toContain(`text-result:v1:d:${sessionId}`);
     expect(destinationPayload).not.toContain(`save-roll:v1:d:${runId}`);
+    const textResult = await stub.getTextResult({
+      applicationId: request.interaction.applicationId,
+      guildId: context.guildId,
+      channelId: context.channelId,
+      messageId: "100000000000000099",
+    });
+    expect(textResult).toMatchObject({ status: "available" });
+    if (textResult.status !== "available") {
+      throw new Error("Saved roll text result is unavailable");
+    }
+    expect(destinationPayload).not.toContain(textResult.resultText);
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
       lastHttpStatus: 200,
@@ -1232,7 +1286,7 @@ describe("RollWork Durable Object", () => {
     const wrongRevision = structuredClone(rollWorkV4Fixture) as {
       renderRequest: { rendererRevision: string };
     };
-    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r32";
+    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r33";
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
       "Render request rendererRevision is not supported",
     );
@@ -2323,7 +2377,7 @@ describe("RollWork Durable Object", () => {
     const id = snowflakeAt(Date.now(), 63);
     const stub = work(id);
     const input = telemetryDeliveryRequest(id, "delivery-clatter-contract");
-    const deliveredAt = input.accounting.receivedAt;
+    const deliveredAt = input.accounting.receivedAt + 5_000;
     input.renderSeed = 4_242;
     input.clatter = { deliveredAt };
     input.settings = { skipDiceDelay: false };
@@ -3118,14 +3172,14 @@ describe("RollWork Durable Object", () => {
     });
   });
 
-  it("never looks up a dice-delay setting the request already carries", async () => {
+  it("captures complete delivery settings without looking them up again", async () => {
     const id = snowflakeAt(Date.now(), 71);
     const stub = work(id);
     // The fixture guild skips the delay, so honouring "false" proves the
     // carried setting wins without any lookup of its own.
     const input = {
       ...deliveryRequest(id, "delivery-success"),
-      settings: { skipDiceDelay: false },
+      settings: { skipDiceDelay: false, hideRollResultText: true },
     };
     const dataService = rollEnv.DATA_SERVICE as unknown as {
       fetch: (request: Request) => Promise<Response>;
@@ -3148,23 +3202,139 @@ describe("RollWork Durable Object", () => {
       await runInDurableObject(stub, (_instance, state) => {
         expect(
           state.storage.sql
-            .exec<{ skip_dice_delay: number }>(
-              "SELECT skip_dice_delay FROM interaction_delivery",
+            .exec<{
+              skip_dice_delay: number;
+              hide_roll_result_text: number;
+            }>(
+              `SELECT skip_dice_delay, hide_roll_result_text
+               FROM interaction_delivery`,
             )
-            .one().skip_dice_delay,
-        ).toBe(0);
+            .one(),
+        ).toEqual({ skip_dice_delay: 0, hide_roll_result_text: 1 });
       });
     } finally {
       dataService.fetch = originalFetch;
     }
   });
 
-  it("skips the dice delay a preflighted request already resolved", async () => {
+  it("retains a hidden result for its bound Discord message", async () => {
+    const id = snowflakeAt(Date.now(), 74);
+    const stub = work(id);
+    const input = {
+      ...deliveryRequest(id, "delivery-success"),
+      settings: { skipDiceDelay: true, hideRollResultText: true },
+    };
+
+    await expect(stub.deliver(input)).resolves.toEqual({ status: "delivered" });
+    const stored = await runInDurableObject(stub, (_instance, state) => {
+      const record = parseRecord(
+        state.storage.sql
+          .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
+          .one().record_json,
+      );
+      const intent = state.storage.sql
+        .exec<{ intent_json: string; expires_at: number }>(
+          "SELECT intent_json, expires_at FROM text_result_intent",
+        )
+        .one();
+      const artifact = state.storage.sql
+        .exec<{ artifact_json: string }>(
+          "SELECT artifact_json FROM roll_log_outbox",
+        )
+        .one();
+      return {
+        expectedResult: rollResultText(record.outcome),
+        intent: JSON.parse(intent.intent_json) as Record<string, unknown>,
+        expiresAt: intent.expires_at,
+        artifactPayload: (
+          JSON.parse(artifact.artifact_json) as { payload: unknown }
+        ).payload,
+      };
+    });
+    expect(stored.intent).toMatchObject({
+      version: 1,
+      resultText: stored.expectedResult,
+      applicationId: input.interaction.applicationId,
+      guildId: input.accounting.guildId,
+      channelId: input.logging.channelId,
+      messageId: "100000000000000087",
+      expiresAt: stored.expiresAt,
+    });
+    expect(JSON.stringify(stored.artifactPayload)).not.toContain(
+      stored.expectedResult,
+    );
+    expect(JSON.stringify(stored.artifactPayload)).toContain("Text result");
+    const binding = {
+      applicationId: input.interaction.applicationId,
+      guildId: input.accounting.guildId,
+      channelId: input.logging.channelId,
+      messageId: "100000000000000087",
+    };
+    await expect(stub.getTextResult(binding)).resolves.toEqual({
+      status: "available",
+      resultText: stored.expectedResult,
+    });
+    await expect(stub.getTextResult({
+      ...binding,
+      applicationId: "100000000000000009",
+    })).resolves.toEqual({ status: "missing" });
+    await expect(stub.getTextResult({
+      ...binding,
+      channelId: "100000000000000011",
+    })).resolves.toEqual({ status: "missing" });
+
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        `UPDATE interaction_delivery
+         SET expires_at = 0, logging_state = 'delivered'`,
+      );
+    });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.getTextResult(binding)).resolves.toMatchObject({
+      status: "available",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM interaction_delivery",
+          )
+          .one().count,
+      ).toBe(0);
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM save_roll_intent",
+          )
+          .one().count,
+      ).toBe(1);
+      state.storage.sql.exec("UPDATE save_roll_intent SET expires_at = 0");
+      state.storage.sql.exec("UPDATE text_result_intent SET expires_at = 0");
+    });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.getTextResult(binding)).resolves.toEqual({
+      status: "missing",
+    });
+    await runInDurableObject(stub, async (_instance, state) => {
+      await expect(state.storage.getAlarm()).resolves.toBeNull();
+    });
+  });
+
+  it("preserves a legacy delay setting while resolving hidden results", async () => {
     const id = snowflakeAt(Date.now(), 73);
     const stub = work(id);
     const input = {
       ...telemetryDeliveryRequest(id, "delivery-success"),
       settings: { skipDiceDelay: true },
+    };
+    input.accounting.guildId = "100000000000000004";
+    input.logging.context = {
+      kind: "guild",
+      guildId: "100000000000000004",
+      guildName: "Hidden Result Guild",
+      channelId: input.logging.channelId,
+      channelName: "dice-rolls",
+      channelType: 0,
     };
     const dataService = rollEnv.DATA_SERVICE as unknown as {
       fetch: (request: Request) => Promise<Response>;
@@ -3182,22 +3352,35 @@ describe("RollWork Durable Object", () => {
       await expect(stub.deliver(input)).resolves.toEqual({
         status: "delivered",
       });
-      expect(settingsCalls).toBe(0);
+      expect(settingsCalls).toBe(1);
       await runInDurableObject(stub, (_instance, state) => {
         expect(
           state.storage.sql
-            .exec<{ settings_ms: number | null; skip_dice_delay: number }>(
-              "SELECT settings_ms, skip_dice_delay FROM interaction_delivery",
+            .exec<{
+              skip_dice_delay: number;
+              hide_roll_result_text: number;
+            }>(
+              `SELECT skip_dice_delay, hide_roll_result_text
+               FROM interaction_delivery`,
             )
             .one(),
-        ).toMatchObject({ settings_ms: 0, skip_dice_delay: 1 });
+        ).toEqual({
+          skip_dice_delay: 1,
+          hide_roll_result_text: 1,
+        });
       });
+      await expect(stub.getTextResult({
+        applicationId: input.interaction.applicationId,
+        guildId: "100000000000000004",
+        channelId: input.logging.channelId,
+        messageId: "100000000000000087",
+      })).resolves.toMatchObject({ status: "available" });
     } finally {
       dataService.fetch = originalFetch;
     }
   });
 
-  it("looks the dice-delay setting up itself when the request omits it", async () => {
+  it("looks complete delivery settings up when the request omits them", async () => {
     const id = snowflakeAt(Date.now(), 72);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");

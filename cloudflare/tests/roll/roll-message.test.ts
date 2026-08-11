@@ -18,6 +18,13 @@ function clatterText(message: ReturnType<typeof buildRollClatterMessage>): strin
   return component.content;
 }
 
+function componentText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(componentText).join("\n");
+  if (typeof value !== "object" || value === null) return "";
+  return Object.values(value).map(componentText).filter(Boolean).join("\n");
+}
+
 describe("buildRollClatterMessage", () => {
   it("preserves the legacy singular and plural default phrases as V2 text", () => {
     const single = result(["1d20"]);
@@ -124,6 +131,73 @@ describe("buildRollResultMessage", () => {
         },
       ],
     });
+  });
+
+  it("hides titled result text behind the upper-right action and moves Save below", () => {
+    const roll = result(["1d20+5", "2d6"]);
+    const message = buildRollResultMessage(roll, {
+      source: "discord",
+      title: "Enchanted sword",
+      repetitions: 1,
+      username: "roller",
+      filename: "dice.png",
+      saveRollCustomId: "save-roll:v1:d:1400000000000000000",
+      textResultCustomId: "text-result:v1:d:1400000000000000000",
+    });
+    const container = message.components[0];
+    if (container?.type !== 17) throw new Error("Result container is missing");
+
+    expect(container.components[0]).toEqual({
+      type: 9,
+      components: [{ type: 10, content: "## Enchanted sword" }],
+      accessory: {
+        type: 2,
+        style: 2,
+        label: "Text result",
+        custom_id: "text-result:v1:d:1400000000000000000",
+      },
+    });
+    expect(container.components[1]).toMatchObject({ type: 12 });
+    expect(container.components[2]).toEqual({
+      type: 1,
+      components: [{
+        type: 2,
+        style: 2,
+        label: "Save",
+        custom_id: "save-roll:v1:d:1400000000000000000",
+      }],
+    });
+    expect(componentText(message)).not.toContain(rollResultText(roll));
+    expect(componentText(message)).toContain("sent to roller via discord");
+  });
+
+  it("uses a top action row without inventing a heading for untitled hidden results", () => {
+    const roll = result(["1d20"]);
+    const message = buildRollResultMessage(roll, {
+      source: "web",
+      title: null,
+      repetitions: 1,
+      username: "roller",
+      filename: "dice.png",
+      textResultCustomId:
+        "text-result:v1:w:1400000000000000004.123e4567-e89b-42d3-a456-426614174000",
+    });
+    const container = message.components[0];
+    if (container?.type !== 17) throw new Error("Result container is missing");
+
+    expect(container.components[0]).toEqual({
+      type: 1,
+      components: [{
+        type: 2,
+        style: 2,
+        label: "Text result",
+        custom_id:
+          "text-result:v1:w:1400000000000000004.123e4567-e89b-42d3-a456-426614174000",
+      }],
+    });
+    expect(container.components[1]).toMatchObject({ type: 12 });
+    expect(componentText(message)).not.toContain("## Roll");
+    expect(componentText(message)).not.toContain(rollResultText(roll));
   });
 
   it("keeps an untitled library replay untitled with Save and attribution", () => {
@@ -287,7 +361,7 @@ describe("buildRollResultMessage", () => {
     const roll = result(["1d20"]);
     const outcome = roll.outcomes[0];
     if (outcome === undefined) throw new Error("Fixture outcome is missing");
-    outcome.output = "x".repeat(4_097);
+    outcome.output = "x".repeat(4_001);
 
     const message = buildRollResultMessage(roll, {
       source: "discord",
@@ -300,7 +374,7 @@ describe("buildRollResultMessage", () => {
     if (container?.type !== 17) throw new Error("Result Container is missing");
     expect(container.components).toContainEqual({
       type: 10,
-      content: "Roll result exceeds Discord's 4,096-character message limit.",
+      content: "Roll result exceeds Discord's 4,000-character message limit.",
     });
     expect(container.components).toContainEqual({
       type: 12,

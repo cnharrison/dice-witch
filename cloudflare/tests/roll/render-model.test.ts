@@ -11,6 +11,7 @@ import {
   BUILTIN_APPEARANCE_STYLES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
   migrateAppearanceRecipeV1,
+  randomRecipeForResolutionV3,
   type AppearanceRecipeV1,
   type AppearanceRecipeV2,
   type AppearanceTarget,
@@ -33,6 +34,8 @@ import {
   buildRollRenderRequestR26V4,
   buildRollRenderRequestR27V4,
   buildRollRenderRequestR28V4,
+  buildRollRenderRequestR31V4,
+  buildRollRenderRequestR32V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1250,7 +1253,7 @@ describe("Profile V4 roll rendering", () => {
       throw new Error("Random appearance recipe is missing");
     }
     const recipe: AppearanceRecipeV3 = {
-      ...randomRecipe,
+      ...randomRecipeForResolutionV3(randomRecipe, false),
       material: {
         mode: "fixed",
         value: {
@@ -1274,6 +1277,46 @@ describe("Profile V4 roll rendering", () => {
     ).groups.flat().map(({ appearance }) => appearance.palette.join(","));
 
     expect(new Set(palettes).size).toBe(palettes.length);
+  });
+
+  it("routes r32-only materials and manual Tengwar through immutable roll snapshots", () => {
+    const sand = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "elemental-sand",
+    )?.recipe;
+    if (sand === undefined) throw new Error("Sand recipe is missing");
+    const recipe: AppearanceRecipeV3 = {
+      ...structuredClone(sand),
+      font: { mode: "fixed", value: "alcarin-tengwar" },
+    };
+    const effective: EffectiveAppearanceV4 = {
+      version: 4,
+      recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
+      diceView: createDefaultDiceViewPreferencesV4(),
+    };
+
+    expect(() =>
+      buildRollRenderRequestR31V4(outcome(["1d6"], 42), 0x51ce_b00c, effective)
+    ).toThrow("material is not supported before r32");
+    const request = buildRollRenderRequestR32V4(
+      outcome(["2d6"], 42),
+      0x51ce_b00c,
+      effective,
+    );
+
+    expect(request.rendererRevision).toBe("canvaskit-v4-r32");
+    expect(validateRenderRequestV4(request)).toEqual(request);
+    const dice = request.groups.flat();
+    expect(dice).toHaveLength(2);
+    for (const die of dice) {
+      expect(die.appearance.material.family).toBe("elemental");
+      if (die.appearance.material.family !== "elemental") {
+        throw new Error("r32 Sand material is missing");
+      }
+      expect(die.appearance.material.style).toBe("sand");
+      expect(die.appearance.engraving.fontId).toBe("alcarin-tengwar");
+      expect(die.appearance.texture.generatorId).toBe("elemental-v1");
+      expect(die.appearance.texture.scope).toBe("die-wide");
+    }
   });
 
   it("carries the approved d6 and Fudge Legacy camera into r25", () => {

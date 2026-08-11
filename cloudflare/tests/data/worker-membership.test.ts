@@ -116,6 +116,15 @@ describe("Data Worker membership service", () => {
       settings: { skipDiceDelay: false },
     });
 
+    const initialV2 = await post("/internal/guilds/settings", {
+      guildId: activeGuildId,
+      version: 2,
+    });
+    await expect(initialV2.json()).resolves.toEqual({
+      status: "found",
+      settings: { skipDiceDelay: false, hideRollResultText: false },
+    });
+
     const updated = await post("/internal/guilds/settings/update", {
       guildId: activeGuildId,
       skipDiceDelay: true,
@@ -127,10 +136,35 @@ describe("Data Worker membership service", () => {
       status: "applied",
       settings: { skipDiceDelay: true },
     });
-    const receipt = await dataEnv.DATA.prepare(
-      "SELECT payload_json FROM mutation_receipts",
-    ).first<{ payload_json: string }>();
-    expect(receipt?.payload_json).toBe(JSON.stringify({ skipDiceDelay: true }));
+    const updatedV2 = await post("/internal/guilds/settings/update", {
+      version: 2,
+      guildId: activeGuildId,
+      skipDiceDelay: false,
+      hideRollResultText: true,
+      mutationId: "web-preference-v2:fixture",
+      occurredAt: occurredAt + 1,
+    });
+    expect(updatedV2.status).toBe(200);
+    await expect(updatedV2.json()).resolves.toEqual({
+      status: "applied",
+      settings: { skipDiceDelay: false, hideRollResultText: true },
+    });
+
+    const currentV2 = await post("/internal/guilds/settings", {
+      guildId: activeGuildId,
+      version: 2,
+    });
+    await expect(currentV2.json()).resolves.toEqual({
+      status: "found",
+      settings: { skipDiceDelay: false, hideRollResultText: true },
+    });
+    const receipts = await dataEnv.DATA.prepare(
+      "SELECT payload_json FROM mutation_receipts ORDER BY occurred_at",
+    ).all<{ payload_json: string }>();
+    expect(receipts.results.map(({ payload_json }) => payload_json)).toEqual([
+      JSON.stringify({ skipDiceDelay: true }),
+      JSON.stringify({ skipDiceDelay: false, hideRollResultText: true }),
+    ]);
   });
 
   it("applies strict Gateway guild lifecycle mutations", async () => {

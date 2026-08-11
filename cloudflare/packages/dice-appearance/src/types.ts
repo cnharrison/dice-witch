@@ -306,6 +306,34 @@ export type AppearanceMaterialCatalogV3 =
       >[];
       intensity: AppearanceIntegerRangeV3;
       textureScale: AppearanceIntegerRangeV3;
+    }>
+  | Readonly<{
+      family: "elemental";
+      name: string;
+      defaultValue: MaterialV3<"elemental">;
+      styles: readonly AppearanceCatalogOptionV3<
+        MaterialV3<"elemental">["style"]
+      >[];
+      styleDefaults: readonly MaterialV3<"elemental">[];
+      fissureDensity: AppearanceIntegerRangeV3;
+      glowIntensity: AppearanceIntegerRangeV3;
+      grainSize: AppearanceIntegerRangeV3;
+      windDirection: AppearanceIntegerRangeV3;
+      cloudCover: AppearanceIntegerRangeV3;
+      horizonHeight: AppearanceIntegerRangeV3;
+      textureScale: AppearanceIntegerRangeV3;
+    }>
+  | Readonly<{
+      family: "paint";
+      name: string;
+      defaultValue: MaterialV3<"paint">;
+      styles: readonly AppearanceCatalogOptionV3<
+        MaterialV3<"paint">["style"]
+      >[];
+      styleDefaults: readonly MaterialV3<"paint">[];
+      dropDensity: AppearanceIntegerRangeV3;
+      streakLength: AppearanceIntegerRangeV3;
+      textureScale: AppearanceIntegerRangeV3;
     }>;
 
 export type AppearanceFormCatalogV3 = Readonly<{

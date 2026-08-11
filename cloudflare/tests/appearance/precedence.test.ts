@@ -5,10 +5,12 @@ import {
   type AppearanceProfileV4,
   type AppearanceRecipeV3,
   type DiceViewModeV4,
+  type GuildAppearanceProfileV3,
   type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_TARGETS,
+  BUILTIN_APPEARANCE_RECIPES_V3,
   resolveEffectiveAppearanceRecipes,
   resolveEffectiveAppearanceRecipesV3,
   resolveEffectiveAppearanceV4,
@@ -279,6 +281,47 @@ describe("appearance V3 precedence", () => {
       mode: "tonal",
       primary: "#aa00aa",
     });
+  });
+
+  it("preserves r32 recipes while applying personal and enforced precedence", () => {
+    const sand = BUILTIN_APPEARANCE_RECIPES_V3["elemental-sand"]?.recipe;
+    if (sand === undefined) throw new Error("Sand recipe is missing");
+    const runicSand: AppearanceRecipeV3 = {
+      ...structuredClone(sand),
+      font: { mode: "fixed", value: "alcarin-tengwar" },
+    };
+    const personal: AppearanceProfileV3 = {
+      version: 3,
+      designs: [{ id: personalDesignId, name: "Runic sand", recipe: runicSand }],
+      assignments: {
+        all: { source: "custom", id: personalDesignId },
+        overrides: {},
+      },
+    };
+    const guild = (mode: GuildAppearanceProfileV3["mode"]): GuildAppearanceProfileV3 => ({
+      version: 3,
+      mode,
+      designs: [],
+      assignments: {
+        all: { source: "builtin", id: "collector" },
+        overrides: {},
+      },
+    });
+
+    const personalFirst = resolveEffectiveAppearanceRecipesV3({
+      personalProfile: personal,
+      guildProfile: guild("default"),
+      builtins,
+    });
+    expect(personalFirst.d6.material).toEqual(runicSand.material);
+    expect(personalFirst.d6.font).toEqual(runicSand.font);
+
+    const guildFirst = resolveEffectiveAppearanceRecipesV3({
+      personalProfile: personal,
+      guildProfile: guild("enforced"),
+      builtins,
+    });
+    expect(guildFirst.d6).toEqual(builtins.collector?.recipe);
   });
 
   it("requires both the Random default and referenced built-ins", () => {

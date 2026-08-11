@@ -91,6 +91,68 @@ const materials = [
   },
 ] as const satisfies readonly AppearanceMaterialV4[];
 
+const r32Materials = [
+  {
+    id: "lava",
+    material: {
+      family: "elemental",
+      style: "lava",
+      fissureDensity: 65,
+      glowIntensity: 78,
+      textureScale: 110,
+    },
+    palette: ["#0c0909", "#3b2924", "#f24b22", "#ffd16a"],
+  },
+  {
+    id: "sand",
+    material: {
+      family: "elemental",
+      style: "sand",
+      grainSize: 78,
+      windDirection: -10,
+      textureScale: 150,
+    },
+    palette: ["#9c632b", "#c88c45", "#e4b766", "#f5dc9c"],
+  },
+  {
+    id: "blue-sky",
+    material: {
+      family: "elemental",
+      style: "blue-sky",
+      cloudCover: 58,
+      horizonHeight: 48,
+      textureScale: 240,
+    },
+    palette: ["#0b68c7", "#2caee8", "#88d2f3", "#f4f9fc"],
+  },
+  {
+    id: "sunset",
+    material: {
+      family: "elemental",
+      style: "sunset",
+      cloudCover: 68,
+      horizonHeight: 62,
+      textureScale: 255,
+    },
+    palette: ["#4a2782", "#b23f8d", "#ff6858", "#ffd18c"],
+  },
+  {
+    id: "splatter",
+    material: {
+      family: "paint",
+      style: "splatter",
+      dropDensity: 64,
+      streakLength: 56,
+      textureScale: 130,
+    },
+    palette: ["#eadfc5", "#102d38", "#00a9c2", "#ef3f78", "#f2ad2e"],
+  },
+] as const satisfies readonly {
+  id: string;
+  material: AppearanceMaterialV4;
+  palette: readonly [string, string, ...string[]];
+}[];
+
 function input(
   material: AppearanceMaterialV4,
   seed = 0x1234_5678,
@@ -240,6 +302,33 @@ describe("V4 material texture generation", () => {
       wood: "cc37e459d69e96f5bc7232a7217ffe1a756edc88fc44643b7ceba226265abd5e",
       fantasy:
         "cbbc9ded8bfe38042b8c83e3b449f564faffcaab653dfa514d29c7305d3dc357",
+    });
+  });
+
+  it("pins deterministic seamless r32 material fields", () => {
+    const hashes = Object.fromEntries(
+      r32Materials.map(({ id, material, palette: materialPalette }) => {
+        const textureInput: TextureGenerationInputV4 = {
+          ...input(material),
+          palette: materialPalette,
+        };
+        const first = generateMaterialTextureV4(textureInput);
+        const second = generateMaterialTextureV4(textureInput);
+        expect(first.pixels).toEqual(second.pixels);
+        expect(row(first.pixels, 0)).toEqual(row(first.pixels, 191));
+        expect(column(first.pixels, 0)).toEqual(column(first.pixels, 191));
+        return [id, sha256(first.pixels)];
+      }),
+    );
+    expect(hashes).toEqual({
+      lava: "99a6b60c1ae54cdbed9a464542df7cbbe8428fbe22428988316288bad184b340",
+      sand: "df9932f2d1a8945aad4c4ae46255a689d33c97af73e81ee0244ccfa7071d50cf",
+      "blue-sky":
+        "879faa8e3d1b975c2093f700c00c6653db5ce385403599e33000f784d76224ce",
+      sunset:
+        "a86a2793f73c0425a1cb2add599529685d6e7b794b4dd8be8f14b8a3ca100a76",
+      splatter:
+        "e3f1c8f8fa33a3198bd47e9a57815d7db452ff1925cfc82c398eb9af1f415c21",
     });
   });
 

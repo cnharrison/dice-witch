@@ -561,11 +561,116 @@ function createRequestRenderer(
   });
 }
 
+function r32MaterialRequest(): RenderRequestV4 {
+  const materials: readonly RenderAppearanceV4["material"][] = [
+    {
+      family: "elemental",
+      style: "lava",
+      fissureDensity: 62,
+      glowIntensity: 84,
+      textureScale: 112,
+    },
+    {
+      family: "elemental",
+      style: "sand",
+      grainSize: 58,
+      windDirection: 28,
+      textureScale: 126,
+    },
+    {
+      family: "elemental",
+      style: "blue-sky",
+      cloudCover: 48,
+      horizonHeight: 54,
+      textureScale: 118,
+    },
+    {
+      family: "elemental",
+      style: "sunset",
+      cloudCover: 36,
+      horizonHeight: 46,
+      textureScale: 108,
+    },
+    {
+      family: "paint",
+      style: "splatter",
+      dropDensity: 64,
+      streakLength: 42,
+      textureScale: 116,
+    },
+  ];
+  const palettes = [
+    ["#160806", "#5b120b", "#ff4a1c", "#ffd166"],
+    ["#5a3d24", "#b7834a", "#e6c58f", "#fff0c2"],
+    ["#1673bf", "#68b8ee", "#dff6ff", "#ffffff"],
+    ["#25134a", "#8e2b75", "#f35d5f", "#ffb35c"],
+    ["#f7f0df", "#111827", "#e11d48", "#2563eb", "#facc15"],
+  ] as const;
+  const fonts = [
+    "source-sans-3",
+    "cinzel",
+    "zilla-slab",
+    "fraunces",
+    "alcarin-tengwar",
+  ] as const;
+
+  return {
+    version: 4,
+    rendererRevision: "canvaskit-v4-r32",
+    groups: [materials.map((material, index): RenderDieV4 => {
+      const palette = palettes[index];
+      const fontId = fonts[index];
+      if (palette === undefined || fontId === undefined) {
+        throw new Error("r32 material fixture is incomplete");
+      }
+      const target = index === materials.length - 1 ? "d20" : "d6";
+      const result = target === "d20" ? 20 : index + 2;
+      return {
+        ...die(target, result),
+        appearance: {
+          ...appearance,
+          material,
+          palette: [...palette],
+          texture: {
+            generatorId:
+              TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4[material.family],
+            seed: (0x3200_0000 + index * 0x0101_0101) >>> 0,
+            scale: material.textureScale,
+            rotation: index * 37,
+            offsetU: index * 7_919,
+            offsetV: index * 10_007,
+            scope: "die-wide",
+          },
+          engraving: {
+            ...appearance.engraving,
+            fontId,
+          },
+        },
+        view: getAuthoredRenderViewV4("canvaskit-v4-r32", "legacy", {
+          target,
+          result,
+          form: "standard",
+        }),
+      };
+    })],
+  };
+}
+
 describe("CanvasKit Render Request V4", () => {
   let canvasKit: CanvasKitRuntimeV4;
 
   beforeAll(async () => {
     canvasKit = await loadCanvasKitV4();
+  });
+
+  it("renders every r32 material and Alcarin as one deterministic field", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const request = r32MaterialRequest();
+    const first = await renderDiceRequestV4ToPng(request, createRenderer);
+    const second = await renderDiceRequestV4ToPng(request, createRenderer);
+
+    expect(sha256(second.png)).toBe(sha256(first.png));
+    expect(sha256(first.png)).toBe("269d4fb2e75041cdd79734d160363f136c855756eba89ddb0490935f51259706");
   });
 
   it("renders percentile ones labels without changing native d10 requests", async () => {
@@ -3014,7 +3119,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r32" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r33" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

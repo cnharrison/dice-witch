@@ -83,6 +83,20 @@ const MATERIALS = [
     finish: "radiant",
     textureScale: 100,
   },
+  {
+    family: "elemental",
+    style: "lava",
+    fissureDensity: 65,
+    glowIntensity: 78,
+    textureScale: 110,
+  },
+  {
+    family: "paint",
+    style: "splatter",
+    dropDensity: 64,
+    streakLength: 56,
+    textureScale: 130,
+  },
 ] as const satisfies readonly AppearanceMaterialV4[];
 
 const d6 = parsePublicRenderModelV4(d6Fixture).groups[0]?.[0];
@@ -157,7 +171,40 @@ describe("V4 Three.js material policy", () => {
         roughness: 0.22,
         emissiveIntensity: (60 / 100) * 0.34,
       },
+      elemental: {
+        shader: "standard",
+        costTier: "baseline",
+        roughness: 0.74,
+      },
+      paint: {
+        shader: "standard",
+        costTier: "baseline",
+        roughness: 0.62,
+      },
     });
+  });
+
+  it("gives each elemental surface an intentional roughness", () => {
+    expect(
+      resolveThreeMaterialPolicyV4({
+        family: "elemental",
+        style: "sand",
+        grainSize: 78,
+        windDirection: -10,
+        textureScale: 150,
+      }).roughness,
+    ).toBe(0.94);
+    for (const style of ["blue-sky", "sunset"] as const) {
+      expect(
+        resolveThreeMaterialPolicyV4({
+          family: "elemental",
+          style,
+          cloudCover: 58,
+          horizonHeight: 48,
+          textureScale: 240,
+        }).roughness,
+      ).toBe(0.48);
+    }
   });
 
   it("keeps every policy parameter within Three.js physical bounds", () => {

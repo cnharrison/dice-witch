@@ -8,6 +8,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const PROCEDURAL_FONT_VALUE = "__procedural-font__";
+const MANUAL_TENGWAR_FONT_VALUE = "alcarin-tengwar";
 
 type FontOption<Value extends string> = Readonly<{
   id: Value;
@@ -31,6 +32,8 @@ export function AppearanceFontSelectV3<Value extends string>({
   getFontFamily(value: Value): string;
   onChange(value: Value): void;
 }) {
+  const previewFontFamily = (fontId: Value) =>
+    fontId === MANUAL_TENGWAR_FONT_VALUE ? undefined : getFontFamily(fontId);
   return (
     <Select
       value={value ?? PROCEDURAL_FONT_VALUE}
@@ -41,7 +44,9 @@ export function AppearanceFontSelectV3<Value extends string>({
       <SelectTrigger
         aria-label={ariaLabel}
         className={cn("h-11 sm:h-9", className)}
-        style={value === null ? undefined : { fontFamily: getFontFamily(value) }}
+        style={
+          value === null ? undefined : { fontFamily: previewFontFamily(value) }
+        }
       >
         <SelectValue />
       </SelectTrigger>
@@ -53,7 +58,7 @@ export function AppearanceFontSelectV3<Value extends string>({
           <SelectItem
             key={option.id}
             value={option.id}
-            style={{ fontFamily: getFontFamily(option.id) }}
+            style={{ fontFamily: previewFontFamily(option.id) }}
           >
             {option.name}
           </SelectItem>

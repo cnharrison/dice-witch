@@ -9,6 +9,7 @@ import {
   CLASSIC_FINISHES_V4,
   CLASSIC_OPACITIES_V4,
   CLASSIC_TREATMENTS_V4,
+  ELEMENTAL_STYLES_V4,
   ENGRAVING_FINISHES_V4,
   FANTASY_ESSENCES_V4,
   FANTASY_FINISHES_V4,
@@ -33,6 +34,7 @@ import {
   MAX_TOTAL_APPEARANCE_SELECTION_WEIGHT_V3,
   METALS_V4,
   METAL_FINISHES_V4,
+  PAINT_STYLES_V4,
   PATTERN_IDS_V4,
   POLYHEDRAL_FORMS_V4,
   RESIN_FINISHES_V4,
@@ -115,6 +117,7 @@ type Range = Readonly<{ minimum: number; maximum: number; step: number }>;
 type MaterialDefinition = Readonly<{
   options: Readonly<Record<string, readonly string[]>>;
   ranges: Readonly<Record<string, Range>>;
+  styleDefaults?: readonly string[];
 }>;
 
 const MATERIAL_DEFINITIONS = {
@@ -201,6 +204,28 @@ const MATERIAL_DEFINITIONS = {
       intensity: APPEARANCE_PERCENTAGE_RANGE_V4,
       textureScale: APPEARANCE_TEXTURE_SCALE_RANGE_V4,
     },
+  },
+  elemental: {
+    options: { styles: ELEMENTAL_STYLES_V4 },
+    ranges: {
+      fissureDensity: APPEARANCE_PERCENTAGE_RANGE_V4,
+      glowIntensity: APPEARANCE_PERCENTAGE_RANGE_V4,
+      grainSize: APPEARANCE_PERCENTAGE_RANGE_V4,
+      windDirection: { minimum: -45, maximum: 45, step: 1 },
+      cloudCover: APPEARANCE_PERCENTAGE_RANGE_V4,
+      horizonHeight: APPEARANCE_PERCENTAGE_RANGE_V4,
+      textureScale: APPEARANCE_TEXTURE_SCALE_RANGE_V4,
+    },
+    styleDefaults: ELEMENTAL_STYLES_V4,
+  },
+  paint: {
+    options: { styles: PAINT_STYLES_V4 },
+    ranges: {
+      dropDensity: APPEARANCE_PERCENTAGE_RANGE_V4,
+      streakLength: APPEARANCE_PERCENTAGE_RANGE_V4,
+      textureScale: APPEARANCE_TEXTURE_SCALE_RANGE_V4,
+    },
+    styleDefaults: PAINT_STYLES_V4,
   },
 } as const satisfies Record<MaterialFamilyV4, MaterialDefinition>;
 
@@ -362,6 +387,7 @@ function validateMaterials(value: unknown): void {
       "name",
       ...Object.keys(definition.options),
       ...Object.keys(definition.ranges),
+      ...(definition.styleDefaults === undefined ? [] : ["styleDefaults"]),
     ];
     const material = requireRecord(
       value[index],
@@ -384,6 +410,24 @@ function validateMaterials(value: unknown): void {
     for (const [key, range] of Object.entries(definition.ranges)) {
       requireRange(material[key], range, "Appearance material catalog is invalid");
     }
+    if (definition.styleDefaults !== undefined) {
+      if (
+        !Array.isArray(material.styleDefaults) ||
+        material.styleDefaults.length !== definition.styleDefaults.length
+      ) {
+        throw new Error("Appearance material catalog is invalid");
+      }
+      material.styleDefaults.forEach((entry, defaultIndex) => {
+        const parsed = parseAppearanceMaterialV4(entry);
+        if (
+          parsed.family !== family ||
+          !("style" in parsed) ||
+          parsed.style !== definition.styleDefaults?.[defaultIndex]
+        ) {
+          throw new Error("Appearance material catalog is invalid");
+        }
+      });
+    }
   }
 }
 
@@ -395,7 +439,7 @@ function expectedFormTargets(form: RenderFormV4): readonly AppearanceTargetV4[] 
       isPolyhedralFormImplementedForTargetV4(
         target,
         form,
-        "canvaskit-v4-r31",
+        "canvaskit-v4-r32",
       ),
   );
 }

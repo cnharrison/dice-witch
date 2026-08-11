@@ -180,20 +180,28 @@ describe("V4 renderer revision policies", () => {
       allTargetHollowCage: true,
       allowSingleColorPalette: true,
     });
-    expect(rendererRevisionPolicyV4("canvaskit-v4-r31")).toEqual({
+    const revision31 = rendererRevisionPolicyV4("canvaskit-v4-r31");
+    expect(revision31).toEqual({
       ...revision30,
       balancedClassicSolidFaceLocal: false,
       boundedClassicSolidScope: false,
       singleColorClassicSolid: true,
       engravingContrastEdge: "protective-r31",
     });
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r32")).toEqual({
+      ...revision31,
+      r32Fonts: true,
+      r32Materials: true,
+    });
+    expect(revision31.r32Fonts).toBe(false);
+    expect(revision31.r32Materials).toBe(false);
     expect(revision19.resolvedViews).toBe(false);
   });
 
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r32" as RendererRevisionV4,
+        "canvaskit-v4-r33" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

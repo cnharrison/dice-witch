@@ -4,12 +4,16 @@ import {
   LOG_WORK_RETRY_WINDOW_MS,
   MAX_LOG_ARTIFACT_PNG_BYTES,
   buildSaveRollCustomId,
+  buildTextResultCustomId,
   parseSaveRollIntent,
+  parseTextResultIntent,
   saveRollIntentIdentity,
+  textResultIntentIdentity,
   ROLL_SAVE_INTENT_RETENTION_MS,
   validateRollLogArtifact,
   type RollLogArtifactV2,
   type SaveRollIntent,
+  type TextResultIntentV1,
 } from "../../../packages/discord-contracts/src";
 import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
 import {
@@ -37,6 +41,7 @@ type StoredWebDeliveryState = WebDeliveryState | "preparing";
 
 type WebDeliveryInput = {
   deliveryId: string;
+  applicationId: string | null;
   notation: string;
   repetitions: number;
   username: string;
@@ -45,6 +50,7 @@ type WebDeliveryInput = {
   guildId: string;
   channelId: string;
   skipDelay: boolean;
+  hideRollResultText: boolean;
   savedRoll?: WebSavedRollAttribution;
   renderSeed?: number;
   appearanceDigest?: string;
@@ -109,7 +115,7 @@ type WebDeliveryService = {
     skipDelay: boolean;
     delayMs: number;
   }): Promise<
-    | { status: "delivered" }
+    | { status: "delivered"; messageId: string }
     | { status: "permission_error" }
     | { status: "failed"; httpStatus: number }
     | {
@@ -136,28 +142,54 @@ function hasExactKeys(
   );
 }
 
-function validateInput(value: unknown): WebDeliveryInput {
-  const baseKeys = [
-    "channelId",
-    "deliveryId",
-    "guildId",
-    "notation",
-    "repetitions",
-    "skipDelay",
-    "title",
-    "userId",
-    "username",
-  ] as const;
-  const hasSavedRoll = isRecord(value) && value.savedRoll !== undefined;
-  const required = hasSavedRoll ? [...baseKeys, "savedRoll"] : baseKeys;
-  const prepared =
-    isRecord(value) &&
-    hasExactKeys(value, [...required, "appearanceDigest", "renderSeed"]);
+const LEGACY_INPUT_KEYS = [
+  "channelId",
+  "deliveryId",
+  "guildId",
+  "notation",
+  "repetitions",
+  "skipDelay",
+  "title",
+  "userId",
+  "username",
+] as const;
+
+function parseInput(
+  value: unknown,
+  acceptPersistedLegacy: boolean,
+): WebDeliveryInput {
+  if (!isRecord(value)) throw new Error("Web delivery request is invalid");
+  const hasSavedRoll = value.savedRoll !== undefined;
+  const legacyKeys = hasSavedRoll
+    ? [...LEGACY_INPUT_KEYS, "savedRoll"]
+    : LEGACY_INPUT_KEYS;
+  const currentKeys = [
+    ...legacyKeys,
+    "applicationId",
+    "hideRollResultText",
+  ];
+  const currentPrepared = hasExactKeys(value, [
+    ...currentKeys,
+    "appearanceDigest",
+    "renderSeed",
+  ]);
+  const current = hasExactKeys(value, currentKeys) || currentPrepared;
+  const legacyPrepared = acceptPersistedLegacy && hasExactKeys(value, [
+    ...legacyKeys,
+    "appearanceDigest",
+    "renderSeed",
+  ]);
+  const legacy = acceptPersistedLegacy &&
+    (hasExactKeys(value, legacyKeys) || legacyPrepared);
+  const prepared = currentPrepared || legacyPrepared;
   if (
-    !isRecord(value) ||
-    (!hasExactKeys(value, required) && !prepared) ||
+    (!current && !legacy) ||
     typeof value.deliveryId !== "string" ||
     !DELIVERY_ID.test(value.deliveryId) ||
+    (current &&
+      (typeof value.applicationId !== "string" ||
+        !SNOWFLAKE.test(value.applicationId) ||
+        typeof value.hideRollResultText !== "boolean")) ||
     typeof value.guildId !== "string" ||
     !SNOWFLAKE.test(value.guildId) ||
     typeof value.channelId !== "string" ||
@@ -190,6 +222,10 @@ function validateInput(value: unknown): WebDeliveryInput {
   }
   return {
     deliveryId: value.deliveryId,
+    applicationId:
+      current && typeof value.applicationId === "string"
+        ? value.applicationId
+        : null,
     notation: value.notation,
     repetitions: Number(value.repetitions),
     username: value.username,
@@ -198,6 +234,7 @@ function validateInput(value: unknown): WebDeliveryInput {
     guildId: value.guildId,
     channelId: value.channelId,
     skipDelay: value.skipDelay,
+    hideRollResultText: current && value.hideRollResultText === true,
     ...(hasSavedRoll
       ? { savedRoll: parseWebSavedRollAttribution(value.savedRoll) }
       : {}),
@@ -208,6 +245,24 @@ function validateInput(value: unknown): WebDeliveryInput {
         }
       : {}),
   };
+}
+
+function validateInput(value: unknown): WebDeliveryInput {
+  return parseInput(value, false);
+}
+
+function validateStoredInput(value: unknown): WebDeliveryInput {
+  return parseInput(value, true);
+}
+
+function matchesStoredInput(
+  stored: WebDeliveryInput,
+  current: WebDeliveryInput,
+): boolean {
+  const comparable = stored.applicationId === null
+    ? { ...current, applicationId: null }
+    : current;
+  return JSON.stringify(stored) === JSON.stringify(comparable);
 }
 
 function randomSeed(): number {
@@ -302,7 +357,7 @@ function restoreResult(
     typeof parsed.discord.clatter !== "string" ||
     typeof parsed.discord.resultText !== "string" ||
     parsed.discord.resultText.length < 1 ||
-    parsed.discord.resultText.length > 4_096 ||
+    parsed.discord.resultText.length > 4_000 ||
     !Number.isSafeInteger(parsed.renderedImage.width) ||
     Number(parsed.renderedImage.width) < 1 ||
     !Number.isSafeInteger(parsed.renderedImage.height) ||
@@ -388,6 +443,11 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
         intent_json TEXT NOT NULL,
         expires_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS text_result_intent (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        intent_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS web_delivery (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         identity_sha256 TEXT NOT NULL,
@@ -430,7 +490,8 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     const existing = this.readRow();
     if (existing !== undefined) {
       await this.verifyIdentity(existing);
-      if (existing.request_json !== requestJson) return { status: "conflict" };
+      const storedInput = validateStoredInput(JSON.parse(existing.request_json));
+      if (!matchesStoredInput(storedInput, input)) return { status: "conflict" };
       return this.resume(existing);
     }
 
@@ -492,6 +553,15 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
               }),
             }
           : {}),
+        ...(input.hideRollResultText
+          ? {
+              textResultCustomId: buildTextResultCustomId({
+                kind: "web",
+                id: input.deliveryId,
+                userId: input.userId,
+              }),
+            }
+          : {}),
         ...(input.savedRoll === undefined ? {} : { savedRoll: input.savedRoll }),
         ...(input.appearanceDigest === undefined
           ? {}
@@ -529,6 +599,9 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
       throw new Error("Web delivery PNG exceeds the durable artifact limit");
     }
     if (saveRollEligible) this.ensureSaveRollIntent(input, row.accepted_at);
+    if (input.hideRollResultText) {
+      this.ensureTextResultIntent(input, roll.discord.resultText, row.accepted_at);
+    }
 
     sourceLogArtifact(input, row.roll_id, roll, 0);
     const resultJson = serializeResult(roll);
@@ -562,19 +635,19 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
   private async runAlarm(): Promise<void> {
     const row = this.readRow();
     if (row === undefined) {
-      await this.scheduleSaveRollIntentExpiry();
+      await this.scheduleRetainedIntentExpiry();
       return;
     }
     await this.verifyIdentity(row);
     const now = Date.now();
     if (now >= row.expires_at) {
       this.ctx.storage.sql.exec("DELETE FROM web_delivery WHERE singleton = 1");
-      await this.scheduleSaveRollIntentExpiry();
+      await this.scheduleRetainedIntentExpiry();
       return;
     }
     if (row.state === "preparing") {
       await this.prepareResult(
-        validateInput(JSON.parse(row.request_json)),
+        validateStoredInput(JSON.parse(row.request_json)),
         row,
       );
       return;
@@ -594,7 +667,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
   ): Promise<WebDeliveryExecutionResult> {
     if (row.state === "preparing") {
       return this.prepareResult(
-        validateInput(JSON.parse(row.request_json)),
+        validateStoredInput(JSON.parse(row.request_json)),
         row,
       );
     }
@@ -618,7 +691,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     }
     await this.verifyImage(row);
     const result = restoreResult(row.result_json, row.image_bytes);
-    const input = validateInput(JSON.parse(row.request_json));
+    const input = validateStoredInput(JSON.parse(row.request_json));
     sourceLogArtifact(
       input,
       row.roll_id,
@@ -664,6 +737,9 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     }
 
     if (delivery.status === "delivered") {
+      if (input.hideRollResultText) {
+        this.bindTextResultMessage(delivery.messageId);
+      }
       const deliveredAt = Date.now();
       this.ctx.storage.sql.exec(
         `UPDATE web_delivery
@@ -711,7 +787,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     );
     let accepted: unknown;
     try {
-      const input = validateInput(JSON.parse(row.request_json));
+      const input = validateStoredInput(JSON.parse(row.request_json));
       const result = restoreResult(row.result_json, row.image_bytes);
       accepted = await this.env.LOG_WORK.getByName(row.roll_id).accept(
         sourceLogArtifact(
@@ -850,6 +926,97 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     return stored;
   }
 
+  private ensureTextResultIntent(
+    input: WebDeliveryInput,
+    resultText: string,
+    createdAt: number,
+  ): TextResultIntentV1 {
+    if (input.applicationId === null) {
+      throw new Error("Text result application context is unavailable");
+    }
+    const intent = parseTextResultIntent({
+      version: 1,
+      resultText,
+      applicationId: input.applicationId,
+      guildId: input.guildId,
+      channelId: input.channelId,
+      messageId: null,
+      createdAt,
+      expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
+    });
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO text_result_intent (
+         singleton, intent_json, expires_at
+       ) VALUES (1, ?, ?)`,
+      JSON.stringify(intent),
+      intent.expiresAt,
+    );
+    const stored = this.readTextResultIntent();
+    if (
+      stored === undefined ||
+      textResultIntentIdentity(stored) !== textResultIntentIdentity(intent)
+    ) {
+      throw new Error("Text result intent conflicts with stored web delivery");
+    }
+    return stored;
+  }
+
+  private readTextResultIntent(): TextResultIntentV1 | undefined {
+    const row = this.ctx.storage.sql
+      .exec<{ intent_json: string }>(
+        "SELECT intent_json FROM text_result_intent WHERE singleton = 1",
+      )
+      .toArray()[0];
+    return row === undefined
+      ? undefined
+      : parseTextResultIntent(JSON.parse(row.intent_json));
+  }
+
+  private bindTextResultMessage(messageId: string): void {
+    if (!SNOWFLAKE.test(messageId)) {
+      throw new Error("Text result message id is invalid");
+    }
+    const intent = this.readTextResultIntent();
+    if (intent === undefined) {
+      throw new Error("Text result intent is unavailable");
+    }
+    if (intent.messageId !== null && intent.messageId !== messageId) {
+      throw new Error("Text result message conflicts with stored web delivery");
+    }
+    if (intent.messageId === null) {
+      this.ctx.storage.sql.exec(
+        "UPDATE text_result_intent SET intent_json = ? WHERE singleton = 1",
+        JSON.stringify({ ...intent, messageId }),
+      );
+    }
+  }
+
+  getTextResult(value: unknown) {
+    const intent = this.readTextResultIntent();
+    if (intent === undefined) return { status: "missing" as const };
+    if (intent.expiresAt <= Date.now()) return { status: "expired" as const };
+    if (
+      !isRecord(value) ||
+      !hasExactKeys(value, [
+        "applicationId",
+        "channelId",
+        "guildId",
+        "messageId",
+      ]) ||
+      typeof value.applicationId !== "string" ||
+      typeof value.guildId !== "string" ||
+      typeof value.channelId !== "string" ||
+      typeof value.messageId !== "string" ||
+      intent.applicationId !== value.applicationId ||
+      intent.guildId !== value.guildId ||
+      intent.channelId !== value.channelId ||
+      intent.messageId !== value.messageId
+    ) {
+      return { status: "missing" as const };
+    }
+    return { status: "available" as const, resultText: intent.resultText };
+  }
+
   private readSaveRollIntent(): SaveRollIntent | undefined {
     const row = this.ctx.storage.sql
       .exec<{ intent_json: string }>(
@@ -868,14 +1035,29 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     return { status: "available" as const, intent };
   }
 
-  private async scheduleSaveRollIntentExpiry(): Promise<void> {
-    const intent = this.readSaveRollIntent();
-    if (intent !== undefined && intent.expiresAt > Date.now()) {
-      await this.ctx.storage.setAlarm(intent.expiresAt);
+  private deleteExpiredRetainedIntents(): void {
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "DELETE FROM save_roll_intent WHERE expires_at <= ?",
+      now,
+    );
+    this.ctx.storage.sql.exec(
+      "DELETE FROM text_result_intent WHERE expires_at <= ?",
+      now,
+    );
+  }
+
+  private async scheduleRetainedIntentExpiry(): Promise<void> {
+    this.deleteExpiredRetainedIntents();
+    const expiries = [
+      this.readSaveRollIntent()?.expiresAt,
+      this.readTextResultIntent()?.expiresAt,
+    ].filter((value): value is number => value !== undefined);
+    if (expiries.length === 0) {
+      await this.ctx.storage.deleteAlarm();
       return;
     }
-    this.ctx.storage.sql.exec("DELETE FROM save_roll_intent");
-    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.setAlarm(Math.min(...expiries));
   }
 
   private serialize<T>(operation: () => Promise<T>): Promise<T> {

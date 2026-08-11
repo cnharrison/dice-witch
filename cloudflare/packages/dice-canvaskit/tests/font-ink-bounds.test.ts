@@ -1,4 +1,7 @@
-import { FONT_IDS_V4 } from "@dice-witch/dice-v4-model";
+import {
+  FONT_IDS_V4,
+  formatEngravingLabelV4,
+} from "@dice-witch/dice-v4-model";
 import type { Font } from "canvaskit-wasm";
 import { describe, expect, it } from "vitest";
 import { CANVASKIT_FONT_DATA_V4 } from "../src/font-assets";
@@ -60,7 +63,7 @@ describe("CanvasKit V4 font ink bounds", () => {
         font.setLinearMetrics(true);
         font.setSubpixel(true);
         for (let value = 1; value <= 12; value += 1) {
-          const text = String(value);
+          const text = formatEngravingLabelV4(fontId, String(value));
           const measured = measureFontInkBoundsV4(font, text);
           const comparison = boundsAtSize(
             font,

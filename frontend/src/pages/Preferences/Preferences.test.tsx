@@ -100,7 +100,12 @@ function mockFetch(options: {
       if (url.pathname === `/api/guilds/${GUILD_ID}/preferences`) {
         return init?.method === "PATCH"
           ? Response.json({ success: true })
-          : Response.json({ preferences: { skipDiceDelay: false } });
+          : Response.json({
+              preferences: {
+                skipDiceDelay: false,
+                hideRollResultText: false,
+              },
+            });
       }
       if (url.pathname === "/api/guilds/mutual") {
         if (guildStatus !== 200) {
@@ -275,6 +280,7 @@ describe("appearance preference authorization", () => {
     expect(
       screen.getByText("Skip dice roll delay and clatter message"),
     ).toBeDefined();
+    expect(screen.getByText("Hide text results")).toBeDefined();
     expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
     expect(
       screen.queryByText("Control whether server rolls pause for the animated clatter notice."),
@@ -298,7 +304,7 @@ describe("appearance preference authorization", () => {
     expect(screen.queryByText("Preview")).toBeNull();
   });
 
-  it("keeps roll-delay persistence independent from appearance profiles", async () => {
+  it("persists both roll-delivery preferences as one independent object", async () => {
     const user = userEvent.setup();
     mockFetch({ isAdmin: true });
     renderPreferences();
@@ -310,20 +316,40 @@ describe("appearance preference authorization", () => {
       await screen.findByRole("tab", { name: "Server settings" }),
     );
     await user.click(
-      screen.getByRole("switch", {
-        name: "Skip dice roll delay and clatter message",
-      }),
+      screen.getByRole("switch", { name: "Hide text results" }),
     );
 
     await waitFor(() => {
       const calls = vi.mocked(fetch).mock.calls;
-      const mutation = calls.find(([input, init]) =>
+      const read = calls.find(([input, init]) =>
+        requestUrl(input).pathname === `/api/guilds/${GUILD_ID}/preferences` &&
+        init?.method === undefined,
+      );
+      expect(requestUrl(read?.[0] as string).searchParams.get("version")).toBe("2");
+      const mutations = calls.filter(([input, init]) =>
         requestUrl(input).pathname === `/api/guilds/${GUILD_ID}/preferences` &&
         init?.method === "PATCH",
       );
-      expect(mutation).toBeDefined();
-      expect(JSON.parse(String(mutation?.[1]?.body))).toEqual({
+      expect(JSON.parse(String(mutations.at(-1)?.[1]?.body))).toEqual({
+        skipDiceDelay: false,
+        hideRollResultText: true,
+      });
+    });
+
+    await user.click(
+      screen.getByRole("switch", {
+        name: "Skip dice roll delay and clatter message",
+      }),
+    );
+    await waitFor(() => {
+      const mutations = vi.mocked(fetch).mock.calls.filter(([input, init]) =>
+        requestUrl(input).pathname === `/api/guilds/${GUILD_ID}/preferences` &&
+        init?.method === "PATCH",
+      );
+      expect(mutations).toHaveLength(2);
+      expect(JSON.parse(String(mutations.at(-1)?.[1]?.body))).toEqual({
         skipDiceDelay: true,
+        hideRollResultText: true,
       });
     });
   });

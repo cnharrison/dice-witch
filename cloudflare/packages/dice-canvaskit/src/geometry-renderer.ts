@@ -5,9 +5,11 @@ import {
   IDENTITY_TEXTURE_PLACEMENT_V4,
   createEngravingLayerRecipeV4,
   enhanceD4EngravingLayerRecipeV4,
+  formatEngravingLabelV4,
   formatFaceLabelV4,
   projectPolyhedralGeometryV4,
   rendererRevisionPolicyV4,
+  requiredEngravingCharactersV4,
   requiresOrientationMarkV4,
   SOURCE_TEXTURE_SIZE_V4,
   modifierIconLeftV4,
@@ -91,7 +93,6 @@ const ORIENTATION_MARK_GAP_RATIO_V4 = 0.02;
 const ORIENTATION_MARK_HALF_WIDTH_RATIO_V4 = 0.2;
 const ORIENTATION_MARK_STROKE_RATIO_V4 = 0.026;
 const ORIENTATION_MARK_MINIMUM_STROKE_V4 = 0.025;
-const REQUIRED_FONT_CHARACTERS_V4 = "0123456789+−";
 const FACET_INK_FILL_RATIO_V4 = 0.8;
 const D20_R3_LABEL_CLEARANCE_RATIO_V4 = 0.75 / GRID_DIE_SIZE_V4;
 const D20_R3_MINIMUM_FONT_SCALE_V4 = 0.35;
@@ -351,6 +352,7 @@ export type RenderCanonicalGeometryV4Options = {
   size?: number;
   engravingColor?: string;
   engravingFinish?: EngravingFinishV4;
+  fontId?: FontIdV4;
   engravingContrastEdge?: EngravingContrastEdgeV4;
   engravingFontScale?: number;
   d6FiveOpticalOffsetX?: number;
@@ -379,6 +381,7 @@ export type RenderCanonicalSphereV4Options = {
   size?: number;
   engravingColor?: string;
   engravingFinish?: EngravingFinishV4;
+  fontId?: FontIdV4;
   engravingContrastEdge?: EngravingContrastEdgeV4;
   engravingFontScale?: number;
   lighting?: RenderLightingV4;
@@ -1433,14 +1436,20 @@ function normalizedInkText(
   };
 }
 
-function d20UniformInkDimensions(font: Font): UniformInkDimensionsV4 {
+function d20UniformInkDimensions(
+  font: Font,
+  fontId?: FontIdV4,
+): UniformInkDimensionsV4 {
   const cached = D20_UNIFORM_INK_DIMENSIONS_BY_FONT_V4.get(font);
   if (cached !== undefined) return cached;
 
   const dimensions = CANONICAL_FACE_VALUES_V4.d20.map((value) => {
     const { bounds } = normalizedInkText(
       font,
-      formatFaceLabelV4("d20", value),
+      formatEngravingLabelV4(
+        fontId ?? "liberation-sans",
+        formatFaceLabelV4("d20", value),
+      ),
       false,
     );
     return {
@@ -1747,6 +1756,7 @@ function drawLabel(
   target: AppearanceTargetV4,
   size: number,
   font: Font,
+  fontId: FontIdV4 | undefined,
   engraving: EngravingPaintsV4,
   containment: LabelContainmentV4 | null = null,
   uniformInkDimensions: UniformInkDimensionsV4 | null = null,
@@ -1755,7 +1765,10 @@ function drawLabel(
   faceLabelSet?: FaceLabelSetV4,
   opticalOffsetX = 0,
 ): LabelPixelBoundsV4 | null {
-  const value = formatFaceLabelV4(target, label.value, faceLabelSet);
+  const value = formatEngravingLabelV4(
+    fontId ?? "liberation-sans",
+    formatFaceLabelV4(target, label.value, faceLabelSet),
+  );
   if (value === "") return null;
   const hasOrientationMark = requiresOrientationMarkV4(
     target,
@@ -2056,6 +2069,7 @@ function drawPolyhedralGeometry(
     size = 600,
     engravingColor,
     engravingFinish,
+    fontId,
     engravingContrastEdge,
     engravingFontScale = 1,
     d6FiveOpticalOffsetX = 0,
@@ -2159,7 +2173,7 @@ function drawPolyhedralGeometry(
     !blankFaces &&
     usesStandardR4PresentationV4(renderPolicy) &&
     geometry.target === "d20"
-      ? d20UniformInkDimensions(font)
+      ? d20UniformInkDimensions(font, fontId)
       : null;
 
   canvas.drawVertices(vertices, canvasKit.BlendMode.SrcOver, materialPaint);
@@ -2246,6 +2260,7 @@ function drawPolyhedralGeometry(
         geometry.target,
         size,
         font,
+        fontId,
         engraving,
         containment,
         uniformInkDimensions,
@@ -2678,6 +2693,7 @@ function drawSphericalBackground(
 function drawSphericalLabel(
   canvasKit: CanvasKitRuntimeV4,
   font: Font,
+  fontId: FontIdV4 | undefined,
   labelEffect: RuntimeEffect,
   canvas: Canvas,
   scope: CanvasKitResourceScopeV4,
@@ -2743,6 +2759,7 @@ function drawSphericalLabel(
     "other",
     size,
     font,
+    fontId,
     engraving,
     null,
     null,
@@ -2869,6 +2886,7 @@ function drawSphericalGeometry(
     drawSphericalLabel(
       canvasKit,
       font,
+      options.fontId,
       labelEffect,
       canvas,
       scope,
@@ -3404,6 +3422,7 @@ function drawSphereGridLabel(
   if (!die.blankFaces) drawSphericalLabel(
     canvasKit,
     geometryFont(resources, die.fontId),
+    die.fontId,
     sphereLabelEffect(resources, die.geometry),
     canvas,
     scope,
@@ -3447,6 +3466,7 @@ function drawSphereGeometryGridDie(
     sides: die.sides,
     result: die.result,
     size: GRID_DIE_SIZE_V4,
+    fontId: die.fontId,
     ...gridAppearanceOptions(die),
   };
   const texture = die.texture;
@@ -3633,6 +3653,7 @@ function drawPolyhedralGeometryGridDie(
     geometry: die.geometry,
     result: die.result,
     size: GRID_DIE_SIZE_V4,
+    fontId: die.fontId,
     ...gridAppearanceOptions(die),
     allowD20LabelClearanceShortfall,
   };
@@ -4057,7 +4078,7 @@ function initializeGeometryRendererV4(
       font.setLinearMetrics(true);
       font.setSubpixel(true);
       if (
-        [...font.getGlyphIDs(REQUIRED_FONT_CHARACTERS_V4)].some(
+        [...font.getGlyphIDs(requiredEngravingCharactersV4(fontId))].some(
           (glyphId) => glyphId === 0,
         )
       ) {

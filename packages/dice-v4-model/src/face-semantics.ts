@@ -1,4 +1,8 @@
-import type { AppearanceTargetV4, FaceLabelSetV4 } from "./types";
+import type {
+  AppearanceTargetV4,
+  FaceLabelSetV4,
+  FontIdV4,
+} from "./types";
 
 export type FaceLabelLayoutV4 =
   | "face-centered"
@@ -72,6 +76,33 @@ export function formatFaceLabelV4(
     return "";
   }
   return String(value);
+}
+
+const ASCII_DIGIT_RUN = /[0-9]+/g;
+const TENGWAR_DECIMAL_ZERO = 0xe070;
+
+function formatTengwarDigits(digits: string): string {
+  let formatted = "";
+  for (let index = digits.length - 1; index >= 0; index -= 1) {
+    formatted += String.fromCodePoint(
+      TENGWAR_DECIMAL_ZERO + digits.charCodeAt(index) - 48,
+    );
+  }
+  return formatted;
+}
+
+export function formatEngravingLabelV4(
+  fontId: FontIdV4,
+  label: string,
+): string {
+  if (fontId !== "alcarin-tengwar") return label;
+  return label
+    .replace(ASCII_DIGIT_RUN, formatTengwarDigits)
+    .replaceAll("−", "-");
+}
+
+export function requiredEngravingCharactersV4(fontId: FontIdV4): string {
+  return formatEngravingLabelV4(fontId, "0123456789+−");
 }
 
 export function requiresOrientationMarkV4(

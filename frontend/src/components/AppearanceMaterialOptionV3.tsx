@@ -69,8 +69,17 @@ function rangeValueDescription(
 ): string {
   const position = (value - range.minimum) / (range.maximum - range.minimum);
   const index = Math.min(4, Math.floor(position * 5));
-  if (label === "Texture scale") {
-    return ["Fine", "Compact", "Balanced", "Broad", "Expansive"][index] as string;
+  if (label === "Texture scale" || label === "Crust scale") {
+    return ["Fine", "Compact", "Balanced", "Broad", "Coarse"][index] as string;
+  }
+  if (label === "Dune scale") {
+    return ["Tight", "Compact", "Balanced", "Broad", "Sweeping"][index] as string;
+  }
+  if (label === "Cloud softness") {
+    return ["Defined", "Crisp", "Balanced", "Soft", "Diffuse"][index] as string;
+  }
+  if (label === "Drop scale") {
+    return ["Fine", "Small", "Balanced", "Bold", "Broad"][index] as string;
   }
   if (label === "Clarity") {
     return ["Clouded", "Soft", "Balanced", "Clear", "Crystal clear"][index] as string;
@@ -83,6 +92,22 @@ function rangeValueDescription(
   }
   if (label === "Patina strength") {
     return ["Fresh", "Light", "Balanced", "Aged", "Heavy"][index] as string;
+  }
+  if (label === "Wind direction") {
+    if (value === 0) return "Straight";
+    return `${String(Math.abs(value))}° ${value < 0 ? "left" : "right"}`;
+  }
+  if (label === "Grain size") {
+    return ["Fine", "Small", "Balanced", "Coarse", "Chunky"][index] as string;
+  }
+  if (label === "Cloud cover") {
+    return ["Clear", "Sparse", "Balanced", "Layered", "Overcast"][index] as string;
+  }
+  if (label === "Horizon height") {
+    return ["Low", "Lower", "Centered", "High", "Upper"][index] as string;
+  }
+  if (label === "Streak length") {
+    return ["Short", "Brief", "Balanced", "Long", "Extended"][index] as string;
   }
   return ["Faint", "Soft", "Balanced", "Vivid", "Intense"][index] as string;
 }
@@ -514,6 +539,152 @@ export function AppearanceMaterialOptionV3({
             value={material.textureScale}
             range={metadata.textureScale}
             onChange={(textureScale) => onChange({ ...material, textureScale })}
+          />
+        </>
+      );
+      break;
+    }
+    case "elemental": {
+      const metadata = metadataFor(catalog, "elemental");
+      const selectedStyle = metadata.styleDefaults.find(
+        ({ style }) => style === material.style,
+      );
+      if (selectedStyle === undefined) {
+        throw new Error("Elemental material default is missing");
+      }
+      let styleControls: React.ReactNode;
+      if (material.style === "lava") {
+        styleControls = (
+          <>
+            <RangeField
+              label="Fissure density"
+              value={material.fissureDensity}
+              range={metadata.fissureDensity}
+              onChange={(fissureDensity) =>
+                onChange({ ...material, fissureDensity })
+              }
+            />
+            <RangeField
+              label="Glow intensity"
+              value={material.glowIntensity}
+              range={metadata.glowIntensity}
+              onChange={(glowIntensity) =>
+                onChange({ ...material, glowIntensity })
+              }
+            />
+            <RangeField
+              label="Crust scale"
+              value={material.textureScale}
+              range={metadata.textureScale}
+              onChange={(textureScale) =>
+                onChange({ ...material, textureScale })
+              }
+            />
+          </>
+        );
+      } else if (material.style === "sand") {
+        styleControls = (
+          <>
+            <RangeField
+              label="Dune scale"
+              value={material.textureScale}
+              range={metadata.textureScale}
+              onChange={(textureScale) =>
+                onChange({ ...material, textureScale })
+              }
+            />
+            <RangeField
+              label="Wind direction"
+              value={material.windDirection}
+              range={metadata.windDirection}
+              onChange={(windDirection) =>
+                onChange({ ...material, windDirection })
+              }
+            />
+            <RangeField
+              label="Grain size"
+              value={material.grainSize}
+              range={metadata.grainSize}
+              onChange={(grainSize) => onChange({ ...material, grainSize })}
+            />
+          </>
+        );
+      } else {
+        styleControls = (
+          <>
+            <RangeField
+              label="Cloud cover"
+              value={material.cloudCover}
+              range={metadata.cloudCover}
+              onChange={(cloudCover) =>
+                onChange({ ...material, cloudCover })
+              }
+            />
+            <RangeField
+              label="Horizon height"
+              value={material.horizonHeight}
+              range={metadata.horizonHeight}
+              onChange={(horizonHeight) =>
+                onChange({ ...material, horizonHeight })
+              }
+            />
+            <RangeField
+              label="Cloud softness"
+              value={material.textureScale}
+              range={metadata.textureScale}
+              onChange={(textureScale) =>
+                onChange({ ...material, textureScale })
+              }
+            />
+          </>
+        );
+      }
+      controls = (
+        <>
+          <SelectField
+            label="Elemental style"
+            value={material.style}
+            options={metadata.styles}
+            onChange={(style) => {
+              const next = metadata.styleDefaults.find(
+                (candidate) => candidate.style === style,
+              );
+              if (next === undefined) {
+                throw new Error("Elemental material default is missing");
+              }
+              onChange(structuredClone(next));
+            }}
+          />
+          {styleControls}
+        </>
+      );
+      break;
+    }
+    case "paint": {
+      const metadata = metadataFor(catalog, "paint");
+      controls = (
+        <>
+          <RangeField
+            label="Drop density"
+            value={material.dropDensity}
+            range={metadata.dropDensity}
+            onChange={(dropDensity) => onChange({ ...material, dropDensity })}
+          />
+          <RangeField
+            label="Drop scale"
+            value={material.textureScale}
+            range={metadata.textureScale}
+            onChange={(textureScale) =>
+              onChange({ ...material, textureScale })
+            }
+          />
+          <RangeField
+            label="Streak length"
+            value={material.streakLength}
+            range={metadata.streakLength}
+            onChange={(streakLength) =>
+              onChange({ ...material, streakLength })
+            }
           />
         </>
       );

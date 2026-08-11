@@ -45,7 +45,10 @@ function dataFetch(request: Request): Promise<Response> {
       return Promise.resolve(
         Response.json({
           status: "found",
-          settings: { skipDiceDelay: false },
+          settings: {
+            skipDiceDelay: false,
+            hideRollResultText: false,
+          },
         }),
       );
     default:
@@ -81,7 +84,11 @@ function bindings(
   renderModel: unknown,
   deliveryStatus: "delivered" | "permission_error" = "delivered",
 ): { env: WebApiBindings; deliverWebRoll: ReturnType<typeof vi.fn> } {
-  const deliverWebRoll = vi.fn(() => Promise.resolve({ status: deliveryStatus }));
+  const deliverWebRoll = vi.fn(() => Promise.resolve(
+    deliveryStatus === "delivered"
+      ? { status: deliveryStatus, messageId: "100000000000000020" }
+      : { status: deliveryStatus },
+  ));
   return {
     env: {
       DATA_SERVICE: { fetch: dataFetch } as Fetcher,

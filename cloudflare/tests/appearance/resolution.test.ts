@@ -12,6 +12,8 @@ import {
   CHAOTIC_APPEARANCE_STYLE_ID,
   MINIMUM_APPEARANCE_CONTRAST,
   RANDOM_SPECIAL_MATERIALS_V3,
+  R32_MATERIAL_PALETTES_V3,
+  R32_RANDOM_FONT_OPTIONS_V3,
   migrateAppearanceRecipeV1,
   resolveAppearanceInkV2,
   resolveAppearanceRecipe,
@@ -1345,6 +1347,111 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toBe("sphere");
   }, 15_000);
 
+  it("resolves r32 Random with deterministic new-material ranges and no Tengwar", () => {
+    const random = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === CHAOTIC_APPEARANCE_STYLE_ID,
+    )?.recipe;
+    if (random === undefined) throw new Error("Random recipe is missing");
+
+    const sampleCount = 6_000;
+    const firstIndexByMaterial = new Map<string, number>();
+    const countByMaterial = new Map<string, number>();
+    const fonts = new Set<string>();
+    let classicSolids = 0;
+    for (let dieIndex = 0; dieIndex < sampleCount; dieIndex += 1) {
+      const resolutionContext = contextV3({
+        target: "d6",
+        dieIndex,
+        dieIdentity: `r32-random:${String(dieIndex)}`,
+      });
+      const resolved = resolveAppearanceRecipeV3(
+        random,
+        resolutionContext,
+        "property-streams-r32",
+      );
+      expect(
+        resolveAppearanceRecipeV3(
+          random,
+          resolutionContext,
+          "property-streams-r32",
+        ),
+      ).toEqual(resolved);
+      const { material } = resolved.appearance;
+      fonts.add(resolved.appearance.engraving.fontId);
+      if (material.family === "classic" && material.treatment === "solid") {
+        classicSolids += 1;
+      }
+
+      const id = material.family === "elemental"
+        ? `elemental-${material.style}`
+        : material.family === "paint"
+          ? "paint-splatter"
+          : null;
+      if (id === null) continue;
+      firstIndexByMaterial.set(id, firstIndexByMaterial.get(id) ?? dieIndex);
+      countByMaterial.set(id, (countByMaterial.get(id) ?? 0) + 1);
+      expect(resolved.form).toBe("standard");
+      expect(resolved.appearance.texture.scope).toBe("die-wide");
+      expect(resolved.appearance.palette).toEqual(
+        R32_MATERIAL_PALETTES_V3[id as keyof typeof R32_MATERIAL_PALETTES_V3],
+      );
+      if (material.family === "elemental") {
+        if (material.style === "lava") {
+          expect(material.fissureDensity).toBeGreaterThanOrEqual(48);
+          expect(material.fissureDensity).toBeLessThanOrEqual(86);
+          expect(material.glowIntensity).toBeGreaterThanOrEqual(56);
+          expect(material.glowIntensity).toBeLessThanOrEqual(92);
+          expect(material.textureScale).toBeGreaterThanOrEqual(75);
+          expect(material.textureScale).toBeLessThanOrEqual(165);
+        } else if (material.style === "sand") {
+          expect(material.grainSize).toBeGreaterThanOrEqual(70);
+          expect(material.grainSize).toBeLessThanOrEqual(96);
+          expect(material.windDirection).toBeGreaterThanOrEqual(-35);
+          expect(material.windDirection).toBeLessThanOrEqual(35);
+          expect(material.textureScale).toBeGreaterThanOrEqual(105);
+          expect(material.textureScale).toBeLessThanOrEqual(225);
+        } else {
+          expect(material.cloudCover).toBeGreaterThanOrEqual(
+            material.style === "blue-sky" ? 42 : 54,
+          );
+          expect(material.cloudCover).toBeLessThanOrEqual(
+            material.style === "blue-sky" ? 74 : 82,
+          );
+          expect(material.horizonHeight).toBeGreaterThanOrEqual(34);
+          expect(material.horizonHeight).toBeLessThanOrEqual(68);
+          expect(material.textureScale).toBeGreaterThanOrEqual(185);
+          expect(material.textureScale).toBeLessThanOrEqual(305);
+        }
+      } else if (material.family === "paint") {
+        expect(material.dropDensity).toBeGreaterThanOrEqual(50);
+        expect(material.dropDensity).toBeLessThanOrEqual(82);
+        expect(material.streakLength).toBeGreaterThanOrEqual(34);
+        expect(material.streakLength).toBeLessThanOrEqual(78);
+        expect(material.textureScale).toBeGreaterThanOrEqual(90);
+        expect(material.textureScale).toBeLessThanOrEqual(185);
+      }
+    }
+
+    expect(Object.fromEntries(firstIndexByMaterial)).toEqual({
+      "elemental-sunset": 6,
+      "elemental-lava": 21,
+      "elemental-sand": 29,
+      "elemental-blue-sky": 37,
+      "paint-splatter": 63,
+    });
+    expect(classicSolids / sampleCount).toBeGreaterThan(0.57);
+    expect(classicSolids / sampleCount).toBeLessThan(0.63);
+    expect([...countByMaterial.values()]).toHaveLength(5);
+    for (const count of countByMaterial.values()) {
+      expect(count / sampleCount).toBeGreaterThan(0.014);
+      expect(count / sampleCount).toBeLessThan(0.026);
+    }
+    expect(fonts).toEqual(
+      new Set(R32_RANDOM_FONT_OPTIONS_V3.map(({ value }) => value)),
+    );
+    expect(fonts.has("alcarin-tengwar")).toBe(false);
+  }, 20_000);
+
   it("keeps Brass Filigree bright enough for black engraving without a wash", () => {
     const style = BUILTIN_APPEARANCE_STYLES_V3.find(
       ({ id }) => id === "hollow-victory",
@@ -1927,6 +2034,7 @@ describe("resolveAppearanceRecipeV3", () => {
   it.each([
     ["canvaskit-v4-r30", "property-streams-r30"],
     ["canvaskit-v4-r31", "property-streams-r31"],
+    ["canvaskit-v4-r32", "property-streams-r32"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -1943,6 +2051,9 @@ describe("resolveAppearanceRecipeV3", () => {
       } as const;
 
       for (const style of BUILTIN_APPEARANCE_STYLES_V3) {
+        const r32OnlyStyle =
+          style.id.startsWith("elemental-") || style.id === "paint-splatter";
+        if (rendererRevision !== "canvaskit-v4-r32" && r32OnlyStyle) continue;
         for (const target of APPEARANCE_TARGETS) {
           const recipe = style.overrides?.[target] ?? style.recipe;
           const resolved = resolveAppearanceRecipeV3(

@@ -18,6 +18,7 @@ import {
   CLASSIC_TREATMENTS_V4,
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
   CRITICAL_TREATMENTS_V4,
+  ELEMENTAL_STYLES_V4,
   ENGRAVING_FINISHES_V4,
   FANTASY_ESSENCES_V4,
   FANTASY_FINISHES_V4,
@@ -34,11 +35,13 @@ import {
   MATERIAL_FAMILIES_V4,
   METALS_V4,
   METAL_FINISHES_V4,
+  PAINT_STYLES_V4,
   PATTERN_IDS_V4,
   POLYHEDRAL_FORMS_V4,
   RENDERER_REVISIONS_V4,
   RESIN_FINISHES_V4,
   RESIN_INCLUSIONS_V4,
+  R32_FONT_IDS_V4,
   SHARP_RESIN_STYLES_V4,
   STONE_FINISHES_V4,
   STONE_STYLES_V4,
@@ -62,6 +65,7 @@ import type {
   AppearanceMaterialV4,
   AppearanceTargetV4,
   ClassicMaterialV4,
+  ElementalMaterialV4,
   FantasyMaterialV4,
   GemstoneMaterialV4,
   GlassMaterialV4,
@@ -69,6 +73,7 @@ import type {
   IconNameV4,
   LiquidCoreMaterialV4,
   MetalMaterialV4,
+  PaintMaterialV4,
   RenderAppearanceV4,
   RenderCriticalEffectV4,
   RenderDieV4,
@@ -531,6 +536,123 @@ function parseFantasyMaterial(
   };
 }
 
+function parseElementalMaterial(
+  value: Record<string, unknown>,
+  path: string,
+): ElementalMaterialV4 {
+  const style = supportedValue(
+    value.style,
+    ELEMENTAL_STYLES_V4,
+    `${path}.style is not supported`,
+  );
+  if (style === "lava") {
+    if (
+      !hasExactKeys(value, [
+        "family",
+        "fissureDensity",
+        "glowIntensity",
+        "style",
+        "textureScale",
+      ])
+    ) {
+      throw new Error(`${path} has invalid fields`);
+    }
+    return {
+      family: "elemental",
+      style,
+      fissureDensity: parsePercentage(
+        value.fissureDensity,
+        `${path}.fissureDensity`,
+      ),
+      glowIntensity: parsePercentage(
+        value.glowIntensity,
+        `${path}.glowIntensity`,
+      ),
+      textureScale: parseTextureScale(
+        value.textureScale,
+        `${path}.textureScale`,
+      ),
+    };
+  }
+  if (style === "sand") {
+    if (
+      !hasExactKeys(value, [
+        "family",
+        "grainSize",
+        "style",
+        "textureScale",
+        "windDirection",
+      ])
+    ) {
+      throw new Error(`${path} has invalid fields`);
+    }
+    return {
+      family: "elemental",
+      style,
+      grainSize: parsePercentage(value.grainSize, `${path}.grainSize`),
+      windDirection: boundedInteger(
+        value.windDirection,
+        -45,
+        45,
+        `${path}.windDirection`,
+      ),
+      textureScale: parseTextureScale(
+        value.textureScale,
+        `${path}.textureScale`,
+      ),
+    };
+  }
+  if (
+    !hasExactKeys(value, [
+      "cloudCover",
+      "family",
+      "horizonHeight",
+      "style",
+      "textureScale",
+    ])
+  ) {
+    throw new Error(`${path} has invalid fields`);
+  }
+  return {
+    family: "elemental",
+    style,
+    cloudCover: parsePercentage(value.cloudCover, `${path}.cloudCover`),
+    horizonHeight: parsePercentage(
+      value.horizonHeight,
+      `${path}.horizonHeight`,
+    ),
+    textureScale: parseTextureScale(value.textureScale, `${path}.textureScale`),
+  };
+}
+
+function parsePaintMaterial(
+  value: Record<string, unknown>,
+  path: string,
+): PaintMaterialV4 {
+  if (
+    !hasExactKeys(value, [
+      "dropDensity",
+      "family",
+      "streakLength",
+      "style",
+      "textureScale",
+    ])
+  ) {
+    throw new Error(`${path} has invalid fields`);
+  }
+  return {
+    family: "paint",
+    style: supportedValue(
+      value.style,
+      PAINT_STYLES_V4,
+      `${path}.style is not supported`,
+    ),
+    dropDensity: parsePercentage(value.dropDensity, `${path}.dropDensity`),
+    streakLength: parsePercentage(value.streakLength, `${path}.streakLength`),
+    textureScale: parseTextureScale(value.textureScale, `${path}.textureScale`),
+  };
+}
+
 export function parseAppearanceMaterialV4(
   value: unknown,
   path = "Appearance material",
@@ -562,6 +684,10 @@ export function parseAppearanceMaterialV4(
       return parseWoodMaterial(value, path);
     case "fantasy":
       return parseFantasyMaterial(value, path);
+    case "elemental":
+      return parseElementalMaterial(value, path);
+    case "paint":
+      return parsePaintMaterial(value, path);
   }
 }
 
@@ -790,8 +916,22 @@ function parseAppearance(
     requiresLocalSeparation: appearance.requiresLocalSeparation,
     effect: parseEffect(appearance.effect, `${path}.effect`),
   };
+  const revisionPolicy = rendererRevisionPolicyV4(rendererRevision);
+  const materialFamily = parsed.material.family;
   if (
-    rendererRevisionPolicyV4(rendererRevision).singleColorClassicSolid &&
+    !revisionPolicy.r32Materials &&
+    (materialFamily === "elemental" || materialFamily === "paint")
+  ) {
+    throw new Error(`${path}.material is not supported before r32`);
+  }
+  if (
+    !revisionPolicy.r32Fonts &&
+    R32_FONT_IDS_V4.some((fontId) => fontId === parsed.engraving.fontId)
+  ) {
+    throw new Error(`${path}.engraving.fontId is not supported before r32`);
+  }
+  if (
+    revisionPolicy.singleColorClassicSolid &&
     parsed.material.family === "classic" &&
     parsed.material.treatment === "solid" &&
     new Set(parsed.palette).size !== 1

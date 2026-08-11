@@ -91,6 +91,9 @@ function materialVariant(material: AppearanceMaterialV4): string {
       return plainOptionName(material.wood);
     case "fantasy":
       return plainOptionName(material.essence);
+    case "elemental":
+    case "paint":
+      return plainOptionName(material.style);
   }
 }
 

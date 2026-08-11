@@ -198,7 +198,7 @@ describe("V4 Rapier pre-roll tray physics", () => {
 
   it("defines a bounded physics profile for every material family", () => {
     const profiles = MATERIAL_FAMILIES_V4.map(materialPhysicsProfileV4);
-    expect(profiles).toHaveLength(10);
+    expect(profiles).toHaveLength(12);
     expect(new Set(profiles.map(({ density }) => density)).size).toBeGreaterThan(
       5,
     );

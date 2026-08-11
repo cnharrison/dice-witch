@@ -64,6 +64,7 @@ import {
   buildRollRenderRequestR29V4,
   buildRollRenderRequestR30V4,
   buildRollRenderRequestR31V4,
+  buildRollRenderRequestR32V4,
 } from "../../../packages/roll-render-model/src";
 import {
   loadEffectiveAppearanceV2,
@@ -79,6 +80,25 @@ import {
 } from "./render-version";
 import type { WebDeliveryExecutionResult } from "./web-delivery-work";
 type WebRollEnv = RollBindings;
+
+const ROLL_VIEW_BUILDERS_V4 = {
+  r20: buildRollRenderRequestR20V4,
+  r21: buildRollRenderRequestR21V4,
+  r22: buildRollRenderRequestR22V4,
+  r23: buildRollRenderRequestR23V4,
+  r24: buildRollRenderRequestR24V4,
+  r25: buildRollRenderRequestR25V4,
+  r26: buildRollRenderRequestR26V4,
+  r27: buildRollRenderRequestR27V4,
+  r28: buildRollRenderRequestR28V4,
+  r29: buildRollRenderRequestR29V4,
+  r30: buildRollRenderRequestR30V4,
+  r31: buildRollRenderRequestR31V4,
+  r32: buildRollRenderRequestR32V4,
+} satisfies Record<
+  Exclude<RollViewPolicy, "r19">,
+  typeof buildRollRenderRequestR20V4
+>;
 
 type WebRollDie = {
   sides: number | "%" | "F";
@@ -137,6 +157,7 @@ type WebRollRequest = {
   guildId: string;
   savedRoll?: WebSavedRollAttribution;
   saveRollCustomId?: string;
+  textResultCustomId?: string;
   renderSeed?: number;
   appearanceDigest?: string;
 };
@@ -240,10 +261,13 @@ function validateRequest(value: unknown): WebRollRequest {
   const hasSavedRoll = isRecord(value) && value.savedRoll !== undefined;
   const hasSaveRollCustomId = isRecord(value) &&
     value.saveRollCustomId !== undefined;
+  const hasTextResultCustomId = isRecord(value) &&
+    value.textResultCustomId !== undefined;
   const requestKeys = [
     ...legacyKeys,
     ...(hasSavedRoll ? ["savedRoll" as const] : []),
     ...(hasSaveRollCustomId ? ["saveRollCustomId" as const] : []),
+    ...(hasTextResultCustomId ? ["textResultCustomId" as const] : []),
   ];
   const prepared =
     isRecord(value) &&
@@ -278,6 +302,11 @@ function validateRequest(value: unknown): WebRollRequest {
         value.saveRollCustomId.length < 1 ||
         value.saveRollCustomId.length > 100 ||
         !value.saveRollCustomId.startsWith("save-roll:v1:w:"))) ||
+    (hasTextResultCustomId &&
+      (typeof value.textResultCustomId !== "string" ||
+        value.textResultCustomId.length < 1 ||
+        value.textResultCustomId.length > 100 ||
+        !value.textResultCustomId.startsWith("text-result:v1:w:"))) ||
     (value.title !== null &&
       (typeof value.title !== "string" ||
         value.title.length < 1 ||
@@ -297,6 +326,9 @@ function validateRequest(value: unknown): WebRollRequest {
       : {}),
     ...(hasSaveRollCustomId
       ? { saveRollCustomId: value.saveRollCustomId as string }
+      : {}),
+    ...(hasTextResultCustomId
+      ? { textResultCustomId: value.textResultCustomId as string }
       : {}),
     ...(prepared
       ? {
@@ -602,6 +634,15 @@ export function buildAppearancePreviewRenderRequestR31V4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR32V4(
+  value: unknown,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR32V4,
+  );
+}
+
 export function buildAppearancePreviewRenderRequestForPolicyV4(
   value: unknown,
   viewPolicy: RollViewPolicy,
@@ -633,6 +674,8 @@ export function buildAppearancePreviewRenderRequestForPolicyV4(
       return buildAppearancePreviewRenderRequestR30V4(value);
     case "r31":
       return buildAppearancePreviewRenderRequestR31V4(value);
+    case "r32":
+      return buildAppearancePreviewRenderRequestR32V4(value);
   }
 }
 
@@ -802,79 +845,11 @@ function buildWebRenderRequest(
   if (appearance.viewPolicy === "r19") {
     return buildRollRenderRequestV4(outcome, renderSeed, appearance.recipes);
   }
-  if (appearance.viewPolicy === "r20") {
-    return buildRollRenderRequestR20V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r21") {
-    return buildRollRenderRequestR21V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r22") {
-    return buildRollRenderRequestR22V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r23") {
-    return buildRollRenderRequestR23V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r24") {
-    return buildRollRenderRequestR24V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r25") {
-    return buildRollRenderRequestR25V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r26") {
-    return buildRollRenderRequestR26V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r27") {
-    return buildRollRenderRequestR27V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r28") {
-    return buildRollRenderRequestR28V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  if (appearance.viewPolicy === "r29") {
-    return buildRollRenderRequestR29V4(
-      outcome,
-      renderSeed,
-      appearance.effective,
-    );
-  }
-  return appearance.viewPolicy === "r30"
-    ? buildRollRenderRequestR30V4(outcome, renderSeed, appearance.effective)
-    : buildRollRenderRequestR31V4(outcome, renderSeed, appearance.effective);
+  return ROLL_VIEW_BUILDERS_V4[appearance.viewPolicy](
+    outcome,
+    renderSeed,
+    appearance.effective,
+  );
 }
 
 function appearanceIdentities(outcome: RollExecutionResult): string[][] {
@@ -1179,6 +1154,9 @@ export async function executeWebRoll(
         ...(request.saveRollCustomId === undefined
           ? {}
           : { saveRollCustomId: request.saveRollCustomId }),
+        ...(request.textResultCustomId === undefined
+          ? {}
+          : { textResultCustomId: request.textResultCustomId }),
         ...(request.savedRoll === undefined
           ? {}
           : {

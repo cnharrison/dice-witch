@@ -33,10 +33,13 @@ import {
   buildRollResultMessage,
   rollResultText,
   buildSaveRollCustomId,
+  buildTextResultCustomId,
   DISCORD_COMPONENTS_V2_FLAG,
   DISCORD_EPHEMERAL_FLAG,
   parseSaveRollIntent,
+  parseTextResultIntent,
   saveRollIntentIdentity,
+  textResultIntentIdentity,
   ROLL_SAVE_INTENT_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   parseRollLifecycleSnapshot,
@@ -46,6 +49,7 @@ import {
   type RollLifecycleDiagnosticsV2,
   type RollLogArtifact,
   type SaveRollIntent,
+  type TextResultIntentV1,
 } from "../../../packages/discord-contracts/src";
 import {
   buildRollRenderRequest,
@@ -61,6 +65,7 @@ import {
   ROLL_RENDERER_REVISION_R29_V4,
   ROLL_RENDERER_REVISION_R30_V4,
   ROLL_RENDERER_REVISION_R31_V4,
+  ROLL_RENDERER_REVISION_R32_V4,
   ROLL_RENDERER_REVISION_V4,
 } from "../../../packages/roll-render-model/src";
 import {
@@ -83,6 +88,7 @@ import {
   type RenderRollWorkResult,
   type RollDeliveryDiagnostics,
   type RollDeliveryFailurePhase,
+  type RollDeliverySettings,
   type RollDeliveryStatus,
   type RollWorkRecord,
   type RollWorkRecordV5,
@@ -403,6 +409,15 @@ function hasExactKeys(value: Record<string, unknown>, expected: readonly string[
 
 const SAVED_ROLL_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SAVED_ROLL_SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+
+async function readDiscordMessageId(response: Response): Promise<string | null> {
+  const parsed = await readBoundedDiscordJson(response);
+  return isRecord(parsed) &&
+      typeof parsed.id === "string" &&
+      SAVED_ROLL_SNOWFLAKE.test(parsed.id)
+    ? parsed.id
+    : null;
+}
 const SAVED_ROLL_PICKER_MAX_PAGE = { mine: 2, server: 4 } as const;
 const SAVED_ROLL_PICKER_SCHEMA = `
   CREATE TABLE IF NOT EXISTS saved_roll_picker (
@@ -555,6 +570,7 @@ function rollRecordRendererRevision(record: RollWorkRecord): string | null {
       return record.renderRequest.rendererRevision;
     }
     const viewPolicy = rollRecordV5ViewPolicy(record);
+    if (viewPolicy === "r32") return ROLL_RENDERER_REVISION_R32_V4;
     if (viewPolicy === "r31") return ROLL_RENDERER_REVISION_R31_V4;
     if (viewPolicy === "r30") return ROLL_RENDERER_REVISION_R30_V4;
     if (viewPolicy === "r29") return ROLL_RENDERER_REVISION_R29_V4;
@@ -724,6 +740,8 @@ export class RollWork extends DurableObject<RollEnv> {
         clatter_sent_at INTEGER,
         followup_message_id TEXT,
         skip_dice_delay INTEGER CHECK (skip_dice_delay IN (0, 1)),
+        hide_roll_result_text INTEGER
+          CHECK (hide_roll_result_text IN (0, 1)),
         delay_ms INTEGER CHECK (delay_ms BETWEEN 1 AND 5000),
         result_not_before INTEGER CHECK (result_not_before >= 0),
         snapshot_ms INTEGER CHECK (snapshot_ms >= 0),
@@ -782,6 +800,11 @@ export class RollWork extends DurableObject<RollEnv> {
         intent_json TEXT NOT NULL,
         expires_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS text_result_intent (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        intent_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
     `);
     const savedRollPickerSchema = this.ctx.storage.sql
       .exec<{ sql: string | null }>(
@@ -819,6 +842,11 @@ export class RollWork extends DurableObject<RollEnv> {
       [
         "skip_dice_delay",
         "skip_dice_delay INTEGER CHECK (skip_dice_delay IN (0, 1))",
+      ],
+      [
+        "hide_roll_result_text",
+        `hide_roll_result_text INTEGER
+          CHECK (hide_roll_result_text IN (0, 1))`,
       ],
       ["delay_ms", "delay_ms INTEGER CHECK (delay_ms BETWEEN 1 AND 5000)"],
       [
@@ -1631,7 +1659,7 @@ export class RollWork extends DurableObject<RollEnv> {
     });
     const accepted = acceptance.result;
     if (delivery.settings !== null) {
-      this.storeSkipDiceDelay(delivery.settings.skipDiceDelay);
+      this.storeDeliverySettings(delivery.settings);
     }
     const continuesInline =
       deliverInline &&
@@ -1734,8 +1762,8 @@ export class RollWork extends DurableObject<RollEnv> {
             `INSERT INTO interaction_delivery (
                singleton, metadata_json, token, token_fingerprint, expires_at,
                state, accounting_state, accounting_occurred_at, logging_state,
-               helper_state, clatter_sent_at
-             ) VALUES (1, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+               helper_state, clatter_sent_at, hide_roll_result_text
+             ) VALUES (1, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, NULL)`,
             metadataJson,
             delivery.interaction.token,
             fingerprint,
@@ -2292,7 +2320,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private async processAlarm(): Promise<void> {
-    this.deleteExpiredSaveRollIntent();
+    this.deleteExpiredRetainedIntents();
     if (await this.rescheduleAlarmForActiveWork()) return;
     let delivery = this.readDelivery();
     if (delivery === undefined) {
@@ -2311,7 +2339,7 @@ export class RollWork extends DurableObject<RollEnv> {
           return;
         }
         this.deleteStoredWork();
-        await this.scheduleSaveRollIntentExpiry();
+        await this.scheduleRetainedIntentExpiry();
         return;
       }
     }
@@ -2388,7 +2416,7 @@ export class RollWork extends DurableObject<RollEnv> {
       return;
     }
     this.deleteStoredWork();
-    await this.scheduleSaveRollIntentExpiry();
+    await this.scheduleRetainedIntentExpiry();
   }
 
   private async handleUnexpectedAlarmFailure(): Promise<void> {
@@ -2780,29 +2808,43 @@ export class RollWork extends DurableObject<RollEnv> {
     return this.activeDelivery;
   }
 
-  private async resolveSkipDiceDelay(
+  private async resolveDeliverySettings(
     delivery: StoredDeliveryRow,
     metadata: ReturnType<typeof parseDeliveryMetadata>,
-  ): Promise<boolean> {
-    if (delivery.skip_dice_delay !== null) {
-      return delivery.skip_dice_delay === 1;
+  ): Promise<RollDeliverySettings> {
+    if (
+      delivery.skip_dice_delay !== null &&
+      delivery.hide_roll_result_text !== null
+    ) {
+      return {
+        skipDiceDelay: delivery.skip_dice_delay === 1,
+        hideRollResultText: delivery.hide_roll_result_text === 1,
+      };
     }
     const guildId = metadata.accounting?.guildId ?? null;
-    if (guildId === null) {
-      this.storeSkipDiceDelay(false);
-      return false;
-    }
-    const skipDiceDelay = await this.fetchGuildSkipDiceDelay(guildId);
-    this.storeSkipDiceDelay(skipDiceDelay);
-    return skipDiceDelay;
+    const fetched = guildId === null
+      ? { skipDiceDelay: false, hideRollResultText: false }
+      : await this.fetchGuildDeliverySettings(guildId);
+    const settings = {
+      skipDiceDelay: delivery.skip_dice_delay === null
+        ? fetched.skipDiceDelay
+        : delivery.skip_dice_delay === 1,
+      hideRollResultText: delivery.hide_roll_result_text === null
+        ? fetched.hideRollResultText
+        : delivery.hide_roll_result_text === 1,
+    };
+    this.storeDeliverySettings(settings);
+    return settings;
   }
 
-  private async fetchGuildSkipDiceDelay(guildId: string): Promise<boolean> {
+  private async fetchGuildDeliverySettings(
+    guildId: string,
+  ): Promise<RollDeliverySettings> {
     const response = await this.env.DATA_SERVICE.fetch(
       new Request("https://data.internal/internal/guilds/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ guildId }),
+        body: JSON.stringify({ guildId, version: 2 }),
       }),
     );
     if (!response.ok) throw new Error("Guild settings lookup failed");
@@ -2811,19 +2853,31 @@ export class RollWork extends DurableObject<RollEnv> {
       !isRecord(value) ||
       value.status !== "found" ||
       !isRecord(value.settings) ||
-      typeof value.settings.skipDiceDelay !== "boolean"
+      typeof value.settings.skipDiceDelay !== "boolean" ||
+      typeof value.settings.hideRollResultText !== "boolean"
     ) {
       throw new Error("Guild settings response is invalid");
     }
-    return value.settings.skipDiceDelay;
+    return {
+      skipDiceDelay: value.settings.skipDiceDelay,
+      hideRollResultText: value.settings.hideRollResultText,
+    };
   }
 
-  private storeSkipDiceDelay(skipDiceDelay: boolean): void {
+  private storeDeliverySettings(settings: {
+    skipDiceDelay: boolean;
+    hideRollResultText: boolean | null;
+  }): void {
+    const hideRollResultText = settings.hideRollResultText === null
+      ? null
+      : Number(settings.hideRollResultText);
     this.ctx.storage.sql.exec(
       `UPDATE interaction_delivery
-       SET skip_dice_delay = ?
-       WHERE singleton = 1 AND skip_dice_delay IS NULL`,
-      skipDiceDelay ? 1 : 0,
+       SET skip_dice_delay = COALESCE(skip_dice_delay, ?),
+           hide_roll_result_text = COALESCE(hide_roll_result_text, ?)
+       WHERE singleton = 1`,
+      Number(settings.skipDiceDelay),
+      hideRollResultText,
     );
   }
 
@@ -3188,15 +3242,18 @@ export class RollWork extends DurableObject<RollEnv> {
       );
     }
 
-    let skipDiceDelay = false;
+    let settings: RollDeliverySettings = {
+      skipDiceDelay: false,
+      hideRollResultText: false,
+    };
     let delayMs: number | null = null;
     let resultNotBefore: number | null = null;
     if (record.outcome.outcomes.length > 0) {
       const settingsStartedAt = Date.now();
       try {
-        skipDiceDelay = await this.resolveSkipDiceDelay(delivery, metadata);
+        settings = await this.resolveDeliverySettings(delivery, metadata);
         this.recordDeliverySegment("settings_ms", elapsedMs(settingsStartedAt));
-        if (!skipDiceDelay) {
+        if (!settings.skipDiceDelay) {
           const delay = this.resolveRollDelay(delivery);
           delayMs = delay.delayMs;
           resultNotBefore = delay.resultNotBefore;
@@ -3279,7 +3336,7 @@ export class RollWork extends DurableObject<RollEnv> {
           "response",
         );
       }
-      if (!skipDiceDelay && delivery.clatter_sent_at === null) {
+      if (!settings.skipDiceDelay && delivery.clatter_sent_at === null) {
         const discordOperation: DiscordOperation =
           metadata.responseMode === "edit-original"
             ? "edit-original-clatter"
@@ -3458,7 +3515,7 @@ export class RollWork extends DurableObject<RollEnv> {
       if (terminal !== null) return terminal;
       if (record.version !== 5) {
         const pending = await this.deferUntilResultNotBefore(
-          skipDiceDelay,
+          settings.skipDiceDelay,
           resultNotBefore,
           delivery.expires_at,
         );
@@ -3555,12 +3612,23 @@ export class RollWork extends DurableObject<RollEnv> {
           filename = `dice-${metadata.interactionId}.png`;
           png = rendered.png;
           const saveRollIntent = this.ensureSaveRollIntent(record, metadata);
+          const textResultIntent = settings.hideRollResultText
+            ? this.ensureTextResultIntent(record, metadata)
+            : null;
           payload = buildRollResultMessage(record.outcome, {
             ...metadata.message,
             source: "discord",
             repetitions: record.request.repetitions,
             filename,
-            ...(skipDiceDelay ? {} : { clatter }),
+            ...(settings.skipDiceDelay ? {} : { clatter }),
+            ...(textResultIntent === null
+              ? {}
+              : {
+                  textResultCustomId: buildTextResultCustomId({
+                    kind: "discord",
+                    id: this.saveRollSourceId(),
+                  }),
+                }),
             ...(saveRollIntent === null
               ? {}
               : {
@@ -3617,7 +3685,7 @@ export class RollWork extends DurableObject<RollEnv> {
       if (terminal !== null) return terminal;
       if (record.version === 5) {
         const pending = await this.deferUntilResultNotBefore(
-          skipDiceDelay,
+          settings.skipDiceDelay,
           resultNotBefore,
           delivery.expires_at,
         );
@@ -3663,6 +3731,9 @@ export class RollWork extends DurableObject<RollEnv> {
           discordOperation,
         );
         if ("result" in attempt) return attempt.result;
+        if (settings.hideRollResultText) {
+          this.bindTextResultMessage(attempt.delivery.messageId);
+        }
         try {
           const cleanupResponse = await fetch(buildDeleteOriginalResponse(target));
           if (!cleanupResponse.ok) {
@@ -3683,7 +3754,7 @@ export class RollWork extends DurableObject<RollEnv> {
           delivery,
           record,
           attempt.delivery.httpStatus,
-          skipDiceDelay ? 0 : delayMs,
+          settings.skipDiceDelay ? 0 : delayMs,
           elapsedMs(channelUploadStartedAt),
         );
       }
@@ -3719,6 +3790,21 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     const resultUploadMs = elapsedMs(resultUploadStartedAt);
     if (response.ok) {
+      if (settings.hideRollResultText && record.outcome.outcomes.length > 0) {
+        const messageId = followupMessageId ??
+          await readDiscordMessageId(response);
+        if (messageId === null) {
+          return this.scheduleRetry(
+            target.id,
+            attempts,
+            delivery.expires_at,
+            "discord",
+            undefined,
+            response.status,
+          );
+        }
+        this.bindTextResultMessage(messageId);
+      }
       if (
         metadata.responseMode === "followup" &&
         record.outcome.outcomes.length > 0
@@ -3753,7 +3839,7 @@ export class RollWork extends DurableObject<RollEnv> {
         delivery,
         record,
         response.status,
-        skipDiceDelay ? 0 : delayMs,
+        settings.skipDiceDelay ? 0 : delayMs,
         resultUploadMs,
       );
     }
@@ -4509,21 +4595,123 @@ export class RollWork extends DurableObject<RollEnv> {
     return { status: "available" as const, intent };
   }
 
-  private deleteExpiredSaveRollIntent(): void {
+  private ensureTextResultIntent(
+    record: RollWorkRecord,
+    metadata: DeliveryMetadata,
+  ): TextResultIntentV1 {
+    const guildId = metadata.accounting?.guildId ?? null;
+    const channelId = metadata.logging?.channelId ?? null;
+    if (guildId === null || channelId === null) {
+      throw new Error("Text result message context is unavailable");
+    }
+    const intent = parseTextResultIntent({
+      version: 1,
+      resultText: rollResultText(record.outcome),
+      applicationId: metadata.applicationId,
+      guildId,
+      channelId,
+      messageId: null,
+      createdAt: record.createdAt,
+      expiresAt: record.createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
+    });
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO text_result_intent (
+         singleton, intent_json, expires_at
+       ) VALUES (1, ?, ?)`,
+      JSON.stringify(intent),
+      intent.expiresAt,
+    );
+    const stored = this.readTextResultIntent();
+    if (
+      stored === undefined ||
+      textResultIntentIdentity(stored) !== textResultIntentIdentity(intent)
+    ) {
+      throw new Error("Text result intent conflicts with stored delivery");
+    }
+    return stored;
+  }
+
+  private readTextResultIntent(): TextResultIntentV1 | undefined {
+    const row = this.ctx.storage.sql
+      .exec<{ intent_json: string }>(
+        "SELECT intent_json FROM text_result_intent WHERE singleton = 1",
+      )
+      .toArray()[0];
+    return row === undefined
+      ? undefined
+      : parseTextResultIntent(JSON.parse(row.intent_json));
+  }
+
+  private bindTextResultMessage(messageId: string): void {
+    if (!SAVED_ROLL_SNOWFLAKE.test(messageId)) {
+      throw new Error("Text result message id is invalid");
+    }
+    const intent = this.readTextResultIntent();
+    if (intent === undefined) {
+      throw new Error("Text result intent is unavailable");
+    }
+    if (intent.messageId !== null && intent.messageId !== messageId) {
+      throw new Error("Text result message conflicts with stored delivery");
+    }
+    if (intent.messageId === null) {
+      this.ctx.storage.sql.exec(
+        `UPDATE text_result_intent
+         SET intent_json = ?
+         WHERE singleton = 1`,
+        JSON.stringify({ ...intent, messageId }),
+      );
+    }
+  }
+
+  getTextResult(value: unknown) {
+    const intent = this.readTextResultIntent();
+    if (intent === undefined) return { status: "missing" as const };
+    if (intent.expiresAt <= Date.now()) return { status: "expired" as const };
+    if (
+      !isRecord(value) ||
+      !hasExactKeys(value, [
+        "applicationId",
+        "channelId",
+        "guildId",
+        "messageId",
+      ]) ||
+      typeof value.applicationId !== "string" ||
+      typeof value.guildId !== "string" ||
+      typeof value.channelId !== "string" ||
+      typeof value.messageId !== "string" ||
+      intent.applicationId !== value.applicationId ||
+      intent.guildId !== value.guildId ||
+      intent.channelId !== value.channelId ||
+      intent.messageId !== value.messageId
+    ) {
+      return { status: "missing" as const };
+    }
+    return { status: "available" as const, resultText: intent.resultText };
+  }
+
+  private deleteExpiredRetainedIntents(): void {
+    const now = Date.now();
     this.ctx.storage.sql.exec(
       "DELETE FROM save_roll_intent WHERE expires_at <= ?",
-      Date.now(),
+      now,
+    );
+    this.ctx.storage.sql.exec(
+      "DELETE FROM text_result_intent WHERE expires_at <= ?",
+      now,
     );
   }
 
-  private async scheduleSaveRollIntentExpiry(): Promise<void> {
-    const intent = this.readSaveRollIntent();
-    if (intent !== undefined && intent.expiresAt > Date.now()) {
-      await this.ctx.storage.setAlarm(intent.expiresAt);
+  private async scheduleRetainedIntentExpiry(): Promise<void> {
+    this.deleteExpiredRetainedIntents();
+    const expiries = [
+      this.readSaveRollIntent()?.expiresAt,
+      this.readTextResultIntent()?.expiresAt,
+    ].filter((value): value is number => value !== undefined);
+    if (expiries.length === 0) {
+      await this.ctx.storage.deleteAlarm();
       return;
     }
-    this.ctx.storage.sql.exec("DELETE FROM save_roll_intent");
-    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.setAlarm(Math.min(...expiries));
   }
 
   private deleteSensitiveWorkPreservingLifecycle(): void {
@@ -4547,7 +4735,8 @@ export class RollWork extends DurableObject<RollEnv> {
       .exec<StoredDeliveryRow>(
         `SELECT metadata_json, token, token_fingerprint, expires_at, state,
                 delivered_at, last_http_status, attempts, clatter_sent_at,
-                followup_message_id, skip_dice_delay, delay_ms, result_not_before,
+                followup_message_id, skip_dice_delay, hide_roll_result_text,
+                delay_ms, result_not_before,
                 snapshot_ms, settings_ms, clatter_post_ms,
                 lifecycle_sync_ms, accounting_ms,
                 accounting_state, accounting_occurred_at,

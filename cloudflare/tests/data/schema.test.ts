@@ -186,6 +186,7 @@ describe("D1 business schema migration", () => {
       "created_at",
       "updated_at",
       "is_active",
+      "hide_roll_result_text",
     ]);
     await expect(columns("users")).resolves.toEqual([
       "id",
@@ -303,6 +304,7 @@ describe("D1 business schema migration", () => {
       { name: "0012_game_detection_active_play.sql" },
       { name: "0013_discord_channel_directory.sql" },
       { name: "0013_roll_lifecycle_diagnostics.sql" },
+      { name: "0014_hide_roll_result_text.sql" },
     ]);
   });
 
@@ -311,16 +313,20 @@ describe("D1 business schema migration", () => {
       .bind(guildId)
       .run();
     const guild = await dataEnv.DATA.prepare(
-      "SELECT skip_dice_delay, is_active, typeof(created_at) AS timestamp_type FROM guilds WHERE id = ?",
+      `SELECT skip_dice_delay, hide_roll_result_text, is_active,
+              typeof(created_at) AS timestamp_type
+       FROM guilds WHERE id = ?`,
     )
       .bind(guildId)
       .first<{
         skip_dice_delay: number;
+        hide_roll_result_text: number;
         is_active: number;
         timestamp_type: string;
       }>();
     expect(guild).toEqual({
       skip_dice_delay: 0,
+      hide_roll_result_text: 0,
       is_active: 1,
       timestamp_type: "integer",
     });
@@ -353,6 +359,7 @@ describe("D1 business schema migration", () => {
       owner_id: "100000000000000005",
       roll_count: 7,
       skip_dice_delay: 0,
+      hide_roll_result_text: 0,
       is_active: 1,
       created_at: timestamp,
     });
@@ -389,6 +396,13 @@ describe("D1 business schema migration", () => {
     await expect(
       dataEnv.DATA.prepare(
         "UPDATE guilds SET skip_dice_delay = 2 WHERE id = ?",
+      )
+        .bind(guildId)
+        .run(),
+    ).rejects.toThrow(/constraint/i);
+    await expect(
+      dataEnv.DATA.prepare(
+        "UPDATE guilds SET hide_roll_result_text = 2 WHERE id = ?",
       )
         .bind(guildId)
         .run(),

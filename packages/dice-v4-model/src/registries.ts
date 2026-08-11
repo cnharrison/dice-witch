@@ -55,6 +55,8 @@ export const MATERIAL_FAMILIES_V4 = Object.freeze([
   "hollow-metal",
   "wood",
   "fantasy",
+  "elemental",
+  "paint",
 ] as const);
 
 export const PATTERN_IDS_V4 = Object.freeze([
@@ -79,6 +81,50 @@ export const FONT_IDS_V4 = Object.freeze([
   "luckiest-guy",
   "fontdiner-swanky",
   "syncopate",
+  "source-sans-3",
+  "cinzel",
+  "barlow-condensed",
+  "zilla-slab",
+  "space-grotesk",
+  "fraunces",
+  "bricolage-grotesque",
+  "alcarin-tengwar",
+] as const);
+
+export const R32_FONT_IDS_V4 = Object.freeze([
+  "source-sans-3",
+  "cinzel",
+  "barlow-condensed",
+  "zilla-slab",
+  "space-grotesk",
+  "fraunces",
+  "bricolage-grotesque",
+  "alcarin-tengwar",
+] as const);
+
+export const NEUTRAL_RANDOM_FONT_IDS_V4 = Object.freeze([
+  "liberation-sans",
+  "source-sans-3",
+  "cinzel",
+  "barlow-condensed",
+  "zilla-slab",
+  "space-grotesk",
+] as const);
+
+export const EXPRESSIVE_RANDOM_FONT_IDS_V4 = Object.freeze([
+  "new-rocker",
+  "stencil-ops",
+  "creeping-horror",
+  "special-elite",
+  "luckiest-guy",
+  "fontdiner-swanky",
+  "syncopate",
+  "fraunces",
+  "bricolage-grotesque",
+] as const);
+
+export const MANUAL_ONLY_FONT_IDS_V4 = Object.freeze([
+  "alcarin-tengwar",
 ] as const);
 
 export const ENGRAVING_FINISHES_V4 = Object.freeze([
@@ -273,6 +319,15 @@ export const FANTASY_ESSENCES_V4 = Object.freeze([
   "blood",
   "bone",
 ] as const);
+
+export const ELEMENTAL_STYLES_V4 = Object.freeze([
+  "lava",
+  "sand",
+  "blue-sky",
+  "sunset",
+] as const);
+
+export const PAINT_STYLES_V4 = Object.freeze(["splatter"] as const);
 export const FANTASY_FINISHES_V4 = Object.freeze([
   "subdued",
   "radiant",
@@ -296,6 +351,8 @@ export const TEXTURE_GENERATOR_IDS_V4 = Object.freeze([
   "hollow-metal-v1",
   "wood-v1",
   "fantasy-v1",
+  "elemental-v1",
+  "paint-v1",
 ] as const);
 
 export const TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4 = Object.freeze({
@@ -309,6 +366,8 @@ export const TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4 = Object.freeze({
   "hollow-metal": "hollow-metal-v1",
   wood: "wood-v1",
   fantasy: "fantasy-v1",
+  elemental: "elemental-v1",
+  paint: "paint-v1",
 } as const);
 
 export const CRITICAL_TREATMENTS_V4 = Object.freeze([
@@ -331,6 +390,8 @@ export const CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4 = Object.freeze({
   "hollow-metal": "inner-cage",
   wood: "engraving-burn",
   fantasy: "internal-flare",
+  elemental: "spectral-rim",
+  paint: "classic-glow",
 } as const);
 
 export const RENDERER_REVISIONS_V4 = Object.freeze([
@@ -365,4 +426,5 @@ export const RENDERER_REVISIONS_V4 = Object.freeze([
   "canvaskit-v4-r29",
   "canvaskit-v4-r30",
   "canvaskit-v4-r31",
+  "canvaskit-v4-r32",
 ] as const);

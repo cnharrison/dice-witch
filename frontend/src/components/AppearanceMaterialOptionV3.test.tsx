@@ -69,6 +69,44 @@ describe("AppearanceMaterialOptionV3", () => {
     expect(screen.queryByLabelText("Clarity")).toBeNull();
   });
 
+  it("switches elemental styles atomically with three style controls", async () => {
+    const user = userEvent.setup();
+    render(<Harness family="elemental" />);
+
+    expect(screen.getAllByRole("slider")).toHaveLength(3);
+    expect(screen.getByLabelText("Fissure density")).toBeDefined();
+    expect(screen.getByLabelText("Glow intensity")).toBeDefined();
+    expect(screen.getByLabelText("Crust scale")).toBeDefined();
+
+    await user.selectOptions(screen.getByLabelText("Elemental style"), "sand");
+    expect(screen.getAllByRole("slider")).toHaveLength(3);
+    expect(screen.getByLabelText("Dune scale")).toBeDefined();
+    expect(screen.getByLabelText("Wind direction")).toBeDefined();
+    expect(screen.getByLabelText("Grain size")).toBeDefined();
+
+    await user.selectOptions(
+      screen.getByLabelText("Elemental style"),
+      "blue-sky",
+    );
+    expect(screen.getAllByRole("slider")).toHaveLength(3);
+    expect(screen.getByLabelText("Cloud cover")).toBeDefined();
+    expect(screen.getByLabelText("Horizon height")).toBeDefined();
+    expect(screen.getByLabelText("Cloud softness")).toBeDefined();
+
+    await user.selectOptions(screen.getByLabelText("Elemental style"), "sunset");
+    expect(screen.getAllByRole("slider")).toHaveLength(3);
+    expect(screen.getByLabelText("Cloud cover")).toBeDefined();
+  });
+
+  it("exposes exactly three paint splatter controls", () => {
+    render(<Harness family="paint" />);
+
+    expect(screen.getAllByRole("slider")).toHaveLength(3);
+    expect(screen.getByLabelText("Drop density")).toBeDefined();
+    expect(screen.getByLabelText("Drop scale")).toBeDefined();
+    expect(screen.getByLabelText("Streak length")).toBeDefined();
+  });
+
   it.each(MATERIAL_FAMILIES_V4)(
     "uses qualitative sliders instead of raw numbers for %s",
     (family) => {

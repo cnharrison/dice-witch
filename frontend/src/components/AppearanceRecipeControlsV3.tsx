@@ -60,23 +60,26 @@ export function AppearanceRecipeControlsV3({
     throw new Error("Appearance recipe catalog metadata is missing");
   }
   const fontValue = recipe.font.mode === "fixed" ? recipe.font.value : null;
+  const usesCuratedMaterialPalette =
+    recipe.material.mode === "fixed" &&
+    (recipe.material.value.family === "elemental" ||
+      recipe.material.value.family === "paint");
   const changeColors = (next: AppearanceRecipeV3) =>
     onChange(reconcileAppearanceColorEditV3(next));
   const changeMaterial = (next: AppearanceRecipeV3) =>
     onChange(
-      reconcileAppearanceMaterialEditV3(
-        next,
-        catalog.editorDefaults.primaryColor,
-      ),
+      reconcileAppearanceMaterialEditV3(next, catalog),
     );
 
   return (
     <div className="space-y-5">
-      <AppearanceColorControlsV3
-        recipe={recipe}
-        catalog={catalog}
-        onChange={changeColors}
-      />
+      {!usesCuratedMaterialPalette && (
+        <AppearanceColorControlsV3
+          recipe={recipe}
+          catalog={catalog}
+          onChange={changeColors}
+        />
+      )}
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
         <label className="block space-y-1.5 text-xs font-medium">

@@ -78,6 +78,62 @@
   src: url("./assets/fonts/appearance/Syncopate-Bold-ui.ttf") format("truetype");
 }
 
+@font-face {
+  font-family: "DiceWitchV4-source-sans-3";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/SourceSans3-SemiBold-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-cinzel";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/Cinzel-SemiBold-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-barlow-condensed";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/BarlowCondensed-SemiBold-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-zilla-slab";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/ZillaSlab-SemiBold-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-space-grotesk";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/SpaceGrotesk-SemiBold-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-fraunces";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/Fraunces-SemiBold-ui.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DiceWitchV4-bricolage-grotesque";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/BricolageGrotesque-SemiBold-ui.ttf") format("truetype");
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -40,7 +40,7 @@ describe("AppearanceMaterialControlsV3", () => {
     const selector = within(mix).getByRole("combobox", {
       name: "Material in mix",
     });
-    expect(within(selector).getAllByRole("option")).toHaveLength(18);
+    expect(within(selector).getAllByRole("option")).toHaveLength(23);
     expect(within(mix).getAllByRole("slider")).toHaveLength(1);
     expect(screen.getAllByLabelText("Material")).toHaveLength(1);
 

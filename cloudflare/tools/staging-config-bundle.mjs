@@ -72,7 +72,7 @@ function applyReleaseConfiguration(configs) {
     enabled: true,
     logs: { invocation_logs: true, head_sampling_rate: 1 },
   };
-  configs.roll.vars.ROLL_VIEW_POLICY = "r31";
+  configs.roll.vars.ROLL_VIEW_POLICY = "r32";
 
   const messageProbe = configs.roll.services.find(
     ({ binding }) => binding === "DISCORD_MESSAGE_PROBE",

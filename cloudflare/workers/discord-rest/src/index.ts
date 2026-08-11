@@ -118,7 +118,7 @@ export type RollLifecycleAlertDeliveryResult =
     };
 
 export type WebRollDeliveryResult =
-  | { status: "delivered" }
+  | { status: "delivered"; messageId: string }
   | { status: "permission_error" }
   | { status: "failed"; httpStatus: number }
   | {
@@ -2295,7 +2295,15 @@ export async function deliverWebRoll(
     }
     return { status: "failed", httpStatus: response.status };
   }
-  return { status: "delivered" };
+  const message = await readBoundedDiscordJson(response);
+  if (
+    !isRecord(message) ||
+    typeof message.id !== "string" ||
+    !SNOWFLAKE.test(message.id)
+  ) {
+    throw new Error("Discord web roll response is invalid");
+  }
+  return { status: "delivered", messageId: message.id };
 }
 
 export async function resolveDiscordChannelContextV1(

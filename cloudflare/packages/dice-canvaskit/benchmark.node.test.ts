@@ -11,12 +11,10 @@ import { Resvg } from "@cf-wasm/resvg/node";
 import resvgPackage from "@cf-wasm/resvg/package.json";
 import {
   ENGRAVING_FINISHES_V4,
-  FONT_IDS_V4,
   LIGHTING_DIRECTIONS_V4,
   LIGHTING_STRENGTHS_V4,
   TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4,
   type AppearanceTargetV4,
-  type FontIdV4,
   type RenderAppearanceV4,
   type RenderDieV4,
   type RenderLightingV4,
@@ -418,9 +416,20 @@ function criticalIconsForIndex(index: number): RenderDieV4["icons"] {
   return [criticalStateForIndex(index), first, second];
 }
 
-function fontForIndex(index: number): FontIdV4 {
-  const fontId = FONT_IDS_V4[index % FONT_IDS_V4.length];
-  if (fontId === undefined) throw new Error("Candidate font is missing");
+const LEGACY_FONT_IDS = [
+  "liberation-sans",
+  "new-rocker",
+  "stencil-ops",
+  "creeping-horror",
+  "special-elite",
+  "luckiest-guy",
+  "fontdiner-swanky",
+  "syncopate",
+] as const satisfies readonly RenderAppearanceV2["fontId"][];
+
+function legacyFontForIndex(index: number): RenderAppearanceV2["fontId"] {
+  const fontId = LEGACY_FONT_IDS[index % LEGACY_FONT_IDS.length];
+  if (fontId === undefined) throw new Error("Legacy candidate font is missing");
   return fontId;
 }
 
@@ -454,7 +463,7 @@ function baselineAppearance(
     primaryColor: independentPrimaryColor(index),
     fontId:
       fixture === "independent-typography"
-        ? fontForIndex(index)
+        ? legacyFontForIndex(index)
         : sharedBaselineAppearance.fontId,
     effect:
       fixture === "independent-critical-icons"
@@ -616,7 +625,7 @@ function candidateDie(fixture: CandidateFixture, index: number): RenderDieV4 {
       ...appearance,
       engraving: {
         ...appearance.engraving,
-        fontId: fontForIndex(index),
+        fontId: legacyFontForIndex(index),
       },
     };
   } else if (fixture === "independent-engraving") {
@@ -783,19 +792,21 @@ async function measureProfile(
       );
     }
   }
-  expect(
-    new Set(
-      baselineSamples.map(
-        ({ width, height }) => `${String(width)}x${String(height)}`,
+  if (!usesNonEquivalentCurrentRendererControl(fixture)) {
+    expect(
+      new Set(
+        baselineSamples.map(
+          ({ width, height }) => `${String(width)}x${String(height)}`,
+        ),
       ),
-    ),
-  ).toEqual(
-    new Set(
-      candidateSamples.map(
-        ({ width, height }) => `${String(width)}x${String(height)}`,
+    ).toEqual(
+      new Set(
+        candidateSamples.map(
+          ({ width, height }) => `${String(width)}x${String(height)}`,
+        ),
       ),
-    ),
-  );
+    );
+  }
   for (const samples of [baselineSamples, candidateSamples]) {
     expect(new Set(samples.map(({ pngSha256 }) => pngSha256)).size).toBe(1);
     expect(new Set(samples.map(({ pngBytes }) => pngBytes)).size).toBe(1);

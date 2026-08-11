@@ -6,6 +6,7 @@ import {
   parseGuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
+  BUILTIN_APPEARANCE_RECIPES_V3,
   legacyAppearanceRecipeV1,
   migrateAppearanceProfileV1,
   migrateAppearanceRecipeV1,
@@ -191,6 +192,32 @@ describe("appearance V3 to V4 migration", () => {
       source: "builtin",
       id: "chaotic",
     });
+  });
+
+  it("preserves r32 materials and manual Tengwar through V4 migration", () => {
+    const sand = BUILTIN_APPEARANCE_RECIPES_V3["elemental-sand"]?.recipe;
+    if (sand === undefined) throw new Error("Sand recipe is missing");
+    const recipe = {
+      ...structuredClone(sand),
+      font: { mode: "fixed" as const, value: "alcarin-tengwar" as const },
+    };
+    const source = parseAppearanceProfileV3(
+      {
+        version: 3,
+        designs: [{ id: designId, name: "Runic sand", recipe }],
+        assignments: {
+          all: { source: "custom", id: designId },
+          overrides: {},
+        },
+      },
+      catalogV3,
+    );
+
+    const migrated = migrateAppearanceProfileV3ToV4(source);
+
+    expect(migrated.designs[0]?.recipe).toEqual(recipe);
+    expect(parseAppearanceProfileV4(migrated, catalogV3)).toEqual(migrated);
+    expect(projectAppearanceProfileV4ToV3(migrated)).toEqual(source);
   });
 
   it("preserves guild mode and projects migrated rows for V3 reads", () => {

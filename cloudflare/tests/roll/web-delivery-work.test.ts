@@ -7,6 +7,7 @@ import {
 import { describe, expect, it } from "vitest";
 import type { WebDeliveryExecutionResult } from "../../workers/roll/src";
 
+const APPLICATION_ID = "100000000000000001";
 const USER_ID = "100000000000000003";
 const GUILD_ID = "100000000000000002";
 const CHANNEL_ID = "100000000000000010";
@@ -17,6 +18,7 @@ function request(
 ) {
   return {
     deliveryId,
+    applicationId: APPLICATION_ID,
     notation: "1d20",
     repetitions: 1,
     username: "web-user",
@@ -25,6 +27,7 @@ function request(
     guildId: GUILD_ID,
     channelId: CHANNEL_ID,
     skipDelay: true,
+    hideRollResultText: false,
     ...overrides,
   };
 }
@@ -38,6 +41,24 @@ async function executeWork(
   value: unknown,
 ): Promise<WebDeliveryExecutionResult> {
   return stub.execute(value);
+}
+
+async function storedIdentity(value: {
+  requestJson: string;
+  resultJson: string | null;
+  imageSha256: string;
+  rollId: string;
+  renderSeed: number;
+  rollSeed: number;
+}): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify({
+    version: 1,
+    ...value,
+  }));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 describe("WebDeliveryWork Durable Object", () => {
@@ -108,6 +129,69 @@ describe("WebDeliveryWork Durable Object", () => {
     });
   });
 
+  it("retains a hidden web result for its bound Discord message", async () => {
+    const deliveryId = "12121212-1212-4212-8212-121212121212";
+    const stub = work(deliveryId);
+    const result = await executeWork(stub, request(deliveryId, {
+      title: null,
+      hideRollResultText: true,
+    }));
+
+    expect(result).toMatchObject({ status: "delivered", roll: { status: "rolled" } });
+    if (!("roll" in result) || result.roll.status !== "rolled") {
+      throw new Error("Expected a delivered web roll");
+    }
+    const payload = JSON.stringify(result.roll.discord.payload);
+    expect(payload).toContain('"label":"Text result"');
+    expect(payload).not.toContain(result.roll.discord.resultText);
+    const binding = {
+      applicationId: APPLICATION_ID,
+      guildId: GUILD_ID,
+      channelId: CHANNEL_ID,
+      messageId: "100000000000000098",
+    };
+    await expect(stub.getTextResult(binding)).resolves.toEqual({
+      status: "available",
+      resultText: result.roll.discord.resultText,
+    });
+    await expect(stub.getTextResult({
+      ...binding,
+      applicationId: "100000000000000009",
+    })).resolves.toEqual({ status: "missing" });
+    await expect(stub.getTextResult({
+      ...binding,
+      channelId: "100000000000000011",
+    })).resolves.toEqual({ status: "missing" });
+    await expect(stub.getSaveRollIntent()).resolves.toEqual({
+      status: "missing",
+    });
+
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec("UPDATE web_delivery SET expires_at = 0");
+    });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.getTextResult(binding)).resolves.toMatchObject({
+      status: "available",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM web_delivery",
+          )
+          .one().count,
+      ).toBe(0);
+      state.storage.sql.exec("UPDATE text_result_intent SET expires_at = 0");
+    });
+    await runDurableObjectAlarm(stub);
+    await expect(stub.getTextResult(binding)).resolves.toEqual({
+      status: "missing",
+    });
+    await runInDurableObject(stub, async (_instance, state) => {
+      await expect(state.storage.getAlarm()).resolves.toBeNull();
+    });
+  });
+
   it("serializes concurrent same-ID execution and rejects a conflicting request", async () => {
     const deliveryId = "99999999-9999-4999-8999-999999999999";
     const stub = work(deliveryId);
@@ -147,7 +231,10 @@ describe("WebDeliveryWork Durable Object", () => {
   it("reuses the exact stored result when a retryable destination recovers", async () => {
     const deliveryId = "33333333-3333-4333-8333-333333333333";
     const stub = work(deliveryId);
-    const input = request(deliveryId, { title: "web retry" });
+    const input = request(deliveryId, {
+      title: "web retry",
+      hideRollResultText: true,
+    });
     const first = await executeWork(stub, input);
     expect(first).toMatchObject({ status: "pending", roll: { status: "rolled" } });
     if (!("roll" in first) || first.roll.status !== "rolled") {
@@ -163,6 +250,71 @@ describe("WebDeliveryWork Durable Object", () => {
     }
     expect(retry.roll.renderedImage.png).toEqual(png);
     expect(retry.roll.resultArray).toEqual(first.roll.resultArray);
+    expect(JSON.stringify(retry.roll.discord.payload)).toContain("Text result");
+    expect(JSON.stringify(retry.roll.discord.payload)).not.toContain(
+      retry.roll.discord.resultText,
+    );
+    await expect(stub.getTextResult({
+      applicationId: APPLICATION_ID,
+      guildId: GUILD_ID,
+      channelId: CHANNEL_ID,
+      messageId: "100000000000000098",
+    })).resolves.toEqual({
+      status: "available",
+      resultText: retry.roll.discord.resultText,
+    });
+  });
+
+  it("resumes a delivery persisted before complete settings were captured", async () => {
+    const deliveryId = "34343434-3434-4434-8434-343434343434";
+    const stub = work(deliveryId);
+    const input = request(deliveryId, { title: "web retry" });
+    await expect(executeWork(stub, input)).resolves.toMatchObject({
+      status: "pending",
+    });
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const row = state.storage.sql
+        .exec<{
+          request_json: string;
+          result_json: string | null;
+          image_sha256: string;
+          roll_id: string;
+          render_seed: number;
+          roll_seed: number;
+        }>(
+          `SELECT request_json, result_json, image_sha256, roll_id,
+                  render_seed, roll_seed
+           FROM web_delivery`,
+        )
+        .one();
+      const legacy = JSON.parse(row.request_json) as Record<string, unknown>;
+      delete legacy.applicationId;
+      delete legacy.hideRollResultText;
+      const requestJson = JSON.stringify(legacy);
+      const identitySha256 = await storedIdentity({
+        requestJson,
+        resultJson: row.result_json,
+        imageSha256: row.image_sha256,
+        rollId: row.roll_id,
+        renderSeed: row.render_seed,
+        rollSeed: row.roll_seed,
+      });
+      state.storage.sql.exec(
+        `UPDATE web_delivery
+         SET request_json = ?, identity_sha256 = ?
+         WHERE singleton = 1`,
+        requestJson,
+        identitySha256,
+      );
+    });
+
+    await evictDurableObject(stub);
+    await runDurableObjectAlarm(stub);
+    await expect(executeWork(stub, input)).resolves.toMatchObject({
+      status: "delivered",
+      roll: { status: "rolled" },
+    });
   });
 
   it("recovers from seeds persisted before an interrupted render commit", async () => {

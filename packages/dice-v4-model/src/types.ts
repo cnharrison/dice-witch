@@ -7,6 +7,7 @@ import type {
   CLASSIC_FINISHES_V4,
   CLASSIC_OPACITIES_V4,
   CRITICAL_TREATMENTS_V4,
+  ELEMENTAL_STYLES_V4,
   ENGRAVING_FINISHES_V4,
   FANTASY_ESSENCES_V4,
   FANTASY_FINISHES_V4,
@@ -26,6 +27,7 @@ import type {
   MATERIAL_FAMILIES_V4,
   METALS_V4,
   METAL_FINISHES_V4,
+  PAINT_STYLES_V4,
   PATTERN_IDS_V4,
   POLYHEDRAL_FORMS_V4,
   RENDERER_REVISIONS_V4,
@@ -178,6 +180,40 @@ export type FantasyMaterialV4 = {
   textureScale: number;
 };
 
+export type ElementalMaterialV4 =
+  | {
+      family: "elemental";
+      style: Extract<(typeof ELEMENTAL_STYLES_V4)[number], "lava">;
+      fissureDensity: number;
+      glowIntensity: number;
+      textureScale: number;
+    }
+  | {
+      family: "elemental";
+      style: Extract<(typeof ELEMENTAL_STYLES_V4)[number], "sand">;
+      grainSize: number;
+      windDirection: number;
+      textureScale: number;
+    }
+  | {
+      family: "elemental";
+      style: Extract<
+        (typeof ELEMENTAL_STYLES_V4)[number],
+        "blue-sky" | "sunset"
+      >;
+      cloudCover: number;
+      horizonHeight: number;
+      textureScale: number;
+    };
+
+export type PaintMaterialV4 = {
+  family: "paint";
+  style: (typeof PAINT_STYLES_V4)[number];
+  dropDensity: number;
+  streakLength: number;
+  textureScale: number;
+};
+
 export type AppearanceMaterialV4 =
   | ClassicMaterialV4
   | SharpResinMaterialV4
@@ -188,7 +224,9 @@ export type AppearanceMaterialV4 =
   | MetalMaterialV4
   | HollowMetalMaterialV4
   | WoodMaterialV4
-  | FantasyMaterialV4;
+  | FantasyMaterialV4
+  | ElementalMaterialV4
+  | PaintMaterialV4;
 
 export type AppearanceLightingV3 = {
   mode: AppearanceSelection<LightingModeV4>;

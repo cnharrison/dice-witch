@@ -32,7 +32,9 @@ import {
   CLASSIC_FINISHES_V4,
   CLASSIC_OPACITIES_V4,
   CLASSIC_TREATMENTS_V4,
+  ELEMENTAL_STYLES_V4,
   ENGRAVING_FINISHES_V4,
+  EXPRESSIVE_RANDOM_FONT_IDS_V4,
   FANTASY_ESSENCES_V4,
   FANTASY_FINISHES_V4,
   GEMSTONE_FINISHES_V4,
@@ -46,9 +48,12 @@ import {
   LIGHTING_STRENGTHS_V4,
   LINEAR_DIRECTIONS_V4,
   LIQUID_CORE_STYLES_V4,
+  MANUAL_ONLY_FONT_IDS_V4,
   MATERIAL_FAMILIES_V4,
   METALS_V4,
   METAL_FINISHES_V4,
+  NEUTRAL_RANDOM_FONT_IDS_V4,
+  PAINT_STYLES_V4,
   POLYHEDRAL_FORMS_V4,
   RESIN_FINISHES_V4,
   RESIN_INCLUSIONS_V4,
@@ -106,6 +111,11 @@ export const APPROVED_COLLECTOR_STYLE_IDS_V3 = [
   "heavy-metal",
   "hollow-victory",
   "grain-expectations",
+  "elemental-lava",
+  "elemental-sand",
+  "elemental-blue-sky",
+  "elemental-sunset",
+  "paint-splatter",
 ] as const;
 
 const PATTERNS: AppearanceCatalogOptionV3<PatternIdV4>[] = [
@@ -121,7 +131,7 @@ const PATTERNS: AppearanceCatalogOptionV3<PatternIdV4>[] = [
   { id: "swirl", name: "Swirl" },
 ];
 
-const FONTS: AppearanceCatalogOptionV3<FontIdV4>[] = [
+const LEGACY_FONTS = [
   { id: "liberation-sans", name: "Liberation Sans" },
   { id: "new-rocker", name: "New Rocker" },
   { id: "stencil-ops", name: "Stencil Ops" },
@@ -130,6 +140,18 @@ const FONTS: AppearanceCatalogOptionV3<FontIdV4>[] = [
   { id: "luckiest-guy", name: "Luckiest Guy" },
   { id: "fontdiner-swanky", name: "Fontdiner Swanky" },
   { id: "syncopate", name: "Syncopate" },
+] as const satisfies readonly AppearanceCatalogOptionV3<FontIdV4>[];
+
+const FONTS: readonly AppearanceCatalogOptionV3<FontIdV4>[] = [
+  ...LEGACY_FONTS,
+  { id: "source-sans-3", name: "Source Sans 3" },
+  { id: "cinzel", name: "Cinzel" },
+  { id: "barlow-condensed", name: "Barlow Condensed" },
+  { id: "zilla-slab", name: "Zilla Slab" },
+  { id: "space-grotesk", name: "Space Grotesk" },
+  { id: "fraunces", name: "Fraunces" },
+  { id: "bricolage-grotesque", name: "Bricolage Grotesque" },
+  { id: "alcarin-tengwar", name: "Alcarin Tengwar" },
 ];
 
 function catalogOptions<Id extends string>(
@@ -372,6 +394,66 @@ const FANTASY_FINISHES_CATALOG_V3 = catalogOptions(FANTASY_FINISHES_V4, {
   radiant: "Radiant",
   fractured: "Fractured",
 });
+const ELEMENTAL_STYLES_CATALOG_V3 = catalogOptions(ELEMENTAL_STYLES_V4, {
+  lava: "Lava",
+  sand: "Sand",
+  "blue-sky": "Blue Sky",
+  sunset: "Sunset",
+});
+const PAINT_STYLES_CATALOG_V3 = catalogOptions(PAINT_STYLES_V4, {
+  splatter: "Splatter",
+});
+const WIND_DIRECTION_RANGE_V3 = Object.freeze({
+  minimum: -45,
+  maximum: 45,
+  step: 1,
+} as const);
+
+const ELEMENTAL_MATERIAL_DEFAULTS_V3 = [
+  {
+    family: "elemental",
+    style: "lava",
+    fissureDensity: 65,
+    glowIntensity: 78,
+    textureScale: 110,
+  },
+  {
+    family: "elemental",
+    style: "sand",
+    grainSize: 78,
+    windDirection: -10,
+    textureScale: 150,
+  },
+  {
+    family: "elemental",
+    style: "blue-sky",
+    cloudCover: 58,
+    horizonHeight: 48,
+    textureScale: 240,
+  },
+  {
+    family: "elemental",
+    style: "sunset",
+    cloudCover: 68,
+    horizonHeight: 62,
+    textureScale: 255,
+  },
+] as const satisfies readonly Extract<
+  AppearanceMaterialV4,
+  { family: "elemental" }
+>[];
+const PAINT_MATERIAL_DEFAULTS_V3 = [
+  {
+    family: "paint",
+    style: "splatter",
+    dropDensity: 64,
+    streakLength: 56,
+    textureScale: 130,
+  },
+] as const satisfies readonly Extract<
+  AppearanceMaterialV4,
+  { family: "paint" }
+>[];
 
 const DEFAULT_MATERIALS_V3 = {
   classic: {
@@ -448,6 +530,8 @@ const DEFAULT_MATERIALS_V3 = {
     finish: "radiant",
     textureScale: 100,
   },
+  elemental: ELEMENTAL_MATERIAL_DEFAULTS_V3[0],
+  paint: PAINT_MATERIAL_DEFAULTS_V3[0],
 } as const satisfies {
   readonly [Family in MaterialFamilyV4]: Extract<
     AppearanceMaterialV4,
@@ -550,6 +634,30 @@ const MATERIALS_V3 = [
     intensity: APPEARANCE_PERCENTAGE_RANGE_V4,
     textureScale: APPEARANCE_TEXTURE_SCALE_RANGE_V4,
   },
+  {
+    family: "elemental",
+    name: "Elemental",
+    defaultValue: DEFAULT_MATERIALS_V3.elemental,
+    styles: ELEMENTAL_STYLES_CATALOG_V3,
+    styleDefaults: ELEMENTAL_MATERIAL_DEFAULTS_V3,
+    fissureDensity: APPEARANCE_PERCENTAGE_RANGE_V4,
+    glowIntensity: APPEARANCE_PERCENTAGE_RANGE_V4,
+    grainSize: APPEARANCE_PERCENTAGE_RANGE_V4,
+    windDirection: WIND_DIRECTION_RANGE_V3,
+    cloudCover: APPEARANCE_PERCENTAGE_RANGE_V4,
+    horizonHeight: APPEARANCE_PERCENTAGE_RANGE_V4,
+    textureScale: APPEARANCE_TEXTURE_SCALE_RANGE_V4,
+  },
+  {
+    family: "paint",
+    name: "Paint",
+    defaultValue: DEFAULT_MATERIALS_V3.paint,
+    styles: PAINT_STYLES_CATALOG_V3,
+    styleDefaults: PAINT_MATERIAL_DEFAULTS_V3,
+    dropDensity: APPEARANCE_PERCENTAGE_RANGE_V4,
+    streakLength: APPEARANCE_PERCENTAGE_RANGE_V4,
+    textureScale: APPEARANCE_TEXTURE_SCALE_RANGE_V4,
+  },
 ] as const satisfies readonly AppearanceMaterialCatalogV3[];
 
 const POLYHEDRAL_TARGETS_V3 = APPEARANCE_TARGETS_V4.filter(
@@ -570,7 +678,7 @@ const FORMS_V3 = [
       isPolyhedralFormImplementedForTargetV4(
         target,
         form,
-        "canvaskit-v4-r31",
+        "canvaskit-v4-r32",
       ),
     ),
     materialFamilies: MATERIAL_FAMILIES_V4.filter((family) =>
@@ -681,7 +789,7 @@ function proceduralFill(): AppearanceRecipeV1["fill"] {
 function proceduralFont(): AppearanceRecipeV1["font"] {
   return {
     mode: "weighted",
-    options: FONTS.map(({ id }) => ({
+    options: LEGACY_FONTS.map(({ id }) => ({
       fontId: id,
       weight: id === "liberation-sans" ? 490 : 30,
     })),
@@ -1303,6 +1411,41 @@ const grainExpectationsRecipeV3 = fixedCollectorRecipeV3(
   ["#1b0e09", "#6f351b", "#d3924b"],
 );
 
+export const R32_MATERIAL_PALETTES_V3 = Object.freeze({
+  "elemental-lava": ["#0c0909", "#3b2924", "#f24b22", "#ffd16a"],
+  "elemental-sand": ["#9c632b", "#c88c45", "#e4b766", "#f5dc9c"],
+  "elemental-blue-sky": ["#0b68c7", "#2caee8", "#88d2f3", "#f4f9fc"],
+  "elemental-sunset": ["#4a2782", "#b23f8d", "#ff6858", "#ffd18c"],
+  "paint-splatter": [
+    "#eadfc5",
+    "#102d38",
+    "#00a9c2",
+    "#ef3f78",
+    "#f2ad2e",
+  ],
+} as const);
+
+const elementalLavaRecipeV3 = fixedCollectorRecipeV3(
+  ELEMENTAL_MATERIAL_DEFAULTS_V3[0],
+  R32_MATERIAL_PALETTES_V3["elemental-lava"],
+);
+const elementalSandRecipeV3 = fixedCollectorRecipeV3(
+  ELEMENTAL_MATERIAL_DEFAULTS_V3[1],
+  R32_MATERIAL_PALETTES_V3["elemental-sand"],
+);
+const elementalBlueSkyRecipeV3 = fixedCollectorRecipeV3(
+  ELEMENTAL_MATERIAL_DEFAULTS_V3[2],
+  R32_MATERIAL_PALETTES_V3["elemental-blue-sky"],
+);
+const elementalSunsetRecipeV3 = fixedCollectorRecipeV3(
+  ELEMENTAL_MATERIAL_DEFAULTS_V3[3],
+  R32_MATERIAL_PALETTES_V3["elemental-sunset"],
+);
+const paintSplatterRecipeV3 = fixedCollectorRecipeV3(
+  PAINT_MATERIAL_DEFAULTS_V3[0],
+  R32_MATERIAL_PALETTES_V3["paint-splatter"],
+);
+
 function fixedMaterialV3(recipe: AppearanceRecipeV3): AppearanceMaterialV4 {
   if (recipe.material.mode !== "fixed") {
     throw new Error("Built-in special material must be fixed");
@@ -1330,7 +1473,12 @@ export type RandomSpecialMaterialV3 = Readonly<{
     | "prismatic-glass"
     | "striated-steel"
     | "brass-filigree"
-    | "figured-walnut";
+    | "figured-walnut"
+    | "elemental-lava"
+    | "elemental-sand"
+    | "elemental-blue-sky"
+    | "elemental-sunset"
+    | "paint-splatter";
   material: AppearanceMaterialV4;
   d20Material: AppearanceMaterialV4;
   d20Form: PolyhedralFormV4;
@@ -1381,7 +1529,45 @@ export const RANDOM_SPECIAL_MATERIALS_V3: readonly RandomSpecialMaterialV3[] =
       d20Form: "standard",
       palette: fixedPaletteV3(grainExpectationsRecipeV3),
     },
+    {
+      id: "elemental-lava",
+      material: fixedMaterialV3(elementalLavaRecipeV3),
+      d20Material: fixedMaterialV3(elementalLavaRecipeV3),
+      d20Form: "standard",
+      palette: fixedPaletteV3(elementalLavaRecipeV3),
+    },
+    {
+      id: "elemental-sand",
+      material: fixedMaterialV3(elementalSandRecipeV3),
+      d20Material: fixedMaterialV3(elementalSandRecipeV3),
+      d20Form: "standard",
+      palette: fixedPaletteV3(elementalSandRecipeV3),
+    },
+    {
+      id: "elemental-blue-sky",
+      material: fixedMaterialV3(elementalBlueSkyRecipeV3),
+      d20Material: fixedMaterialV3(elementalBlueSkyRecipeV3),
+      d20Form: "standard",
+      palette: fixedPaletteV3(elementalBlueSkyRecipeV3),
+    },
+    {
+      id: "elemental-sunset",
+      material: fixedMaterialV3(elementalSunsetRecipeV3),
+      d20Material: fixedMaterialV3(elementalSunsetRecipeV3),
+      d20Form: "standard",
+      palette: fixedPaletteV3(elementalSunsetRecipeV3),
+    },
+    {
+      id: "paint-splatter",
+      material: fixedMaterialV3(paintSplatterRecipeV3),
+      d20Material: fixedMaterialV3(paintSplatterRecipeV3),
+      d20Form: "standard",
+      palette: fixedPaletteV3(paintSplatterRecipeV3),
+    },
   ] satisfies readonly RandomSpecialMaterialV3[]);
+
+const LEGACY_RANDOM_SPECIAL_MATERIALS_V3 =
+  RANDOM_SPECIAL_MATERIALS_V3.slice(0, 6);
 
 function randomSpecialMaterialKeyV3(material: AppearanceMaterialV4): string {
   return Object.entries(material)
@@ -1405,86 +1591,129 @@ export function randomSpecialMaterialV3(
   );
 }
 
-const RANDOM_CLASSIC_MATERIALS_V3: readonly WeightedSelectionOption<AppearanceMaterialV4>[] = [
-  {
-    value: {
-      family: "classic",
-      treatment: "solid",
-      opacity: "opaque",
-      finish: "satin",
-      textureScale: 100,
+function classicRandomMaterialsV3(
+  gradientWeight: number,
+  patternWeight: number,
+): readonly WeightedSelectionOption<AppearanceMaterialV4>[] {
+  return [
+    {
+      value: {
+        family: "classic",
+        treatment: "solid",
+        opacity: "opaque",
+        finish: "satin",
+        textureScale: 100,
+      },
+      weight: 900,
     },
-    weight: 900,
-  },
-  {
-    value: {
-      family: "classic",
-      treatment: "gradient",
-      opacity: "opaque",
-      finish: "satin",
-      textureScale: 100,
+    {
+      value: {
+        family: "classic",
+        treatment: "gradient",
+        opacity: "opaque",
+        finish: "satin",
+        textureScale: 100,
+      },
+      weight: gradientWeight,
     },
-    weight: 240,
-  },
-  ...PATTERNS.map(({ id: patternId }) => ({
-    value: {
-      family: "classic" as const,
-      treatment: "pattern" as const,
-      patternId,
-      opacity: "opaque" as const,
-      finish: "satin" as const,
-      textureScale: 100,
-    },
-    weight: 21,
-  })),
-];
-const randomRecipeV3: AppearanceRecipeV3 = {
-  version: 3,
-  variation: "wild",
-  varyBy: "die",
-  randomization: "full-spectrum-v2",
-  colors: { mode: "vivid-random-pair" },
-  material: {
-    mode: "weighted",
-    options: [
-      ...RANDOM_CLASSIC_MATERIALS_V3,
-      ...RANDOM_SPECIAL_MATERIALS_V3.map(({ material: value }) => ({
-        value,
-        weight: 25,
-      })),
-    ],
-  },
-  form: {
-    polyhedral: { mode: "fixed", value: "standard" },
-    other: "sphere",
-  },
-  font: {
-    mode: "weighted",
-    options: FONTS.map(({ id }, index) => ({
-      value: fontIdV3(id),
-      weight: id === "liberation-sans" ? 700 : index === FONTS.length - 1 ? 42 : 43,
+    ...PATTERNS.map(({ id: patternId }) => ({
+      value: {
+        family: "classic" as const,
+        treatment: "pattern" as const,
+        patternId,
+        opacity: "opaque" as const,
+        finish: "satin" as const,
+        textureScale: 100,
+      },
+      weight: patternWeight,
     })),
-  },
-  engraving: {
-    mode: "weighted",
-    options: ENGRAVING_FINISHES_V4.map((value) => ({ value, weight: 1 })),
-  },
-  gradient: {
-    scope: { mode: "fixed", value: "die-wide" },
-    direction: {
-      mode: "weighted",
-      options: LINEAR_DIRECTIONS_V4.map((value) => ({
-        value,
-        weight: value.includes("upper-") || value.includes("lower-") ? 2 : 1,
-      })),
+  ];
+}
+
+const LEGACY_RANDOM_FONT_OPTIONS_V3 = LEGACY_FONTS.map(({ id }, index) => {
+  let weight = 43;
+  if (id === "liberation-sans") weight = 700;
+  else if (index === LEGACY_FONTS.length - 1) weight = 42;
+  return { value: fontIdV3(id), weight };
+});
+
+export const R32_RANDOM_FONT_OPTIONS_V3 = Object.freeze([
+  ...NEUTRAL_RANDOM_FONT_IDS_V4.map((value, index) => ({
+    value,
+    weight: index === 0 ? 120 : 116,
+  })),
+  ...EXPRESSIVE_RANDOM_FONT_IDS_V4.map((value, index) => ({
+    value,
+    weight: index < 3 ? 34 : 33,
+  })),
+] satisfies readonly WeightedSelectionOption<FontIdV4>[]);
+
+const r32RandomFontIds = new Set<FontIdV4>(
+  R32_RANDOM_FONT_OPTIONS_V3.map(({ value }) => value),
+);
+if (MANUAL_ONLY_FONT_IDS_V4.some((fontId) => r32RandomFontIds.has(fontId))) {
+  throw new Error("Manual-only appearance fonts cannot enter Random");
+}
+
+function createRandomRecipeV3(
+  materialOptions: readonly WeightedSelectionOption<AppearanceMaterialV4>[],
+  fontOptions: readonly WeightedSelectionOption<FontIdV4>[],
+): AppearanceRecipeV3 {
+  return {
+    version: 3,
+    variation: "wild",
+    varyBy: "die",
+    randomization: "full-spectrum-v2",
+    colors: { mode: "vivid-random-pair" },
+    material: { mode: "weighted", options: [...materialOptions] },
+    form: {
+      polyhedral: { mode: "fixed", value: "standard" },
+      other: "sphere",
     },
-  },
-  lighting: {
-    mode: { mode: "fixed", value: "combined" },
-    strength: { mode: "fixed", value: "gentle" },
-    direction: { mode: "fixed", value: "upper-left" },
-  },
-};
+    font: { mode: "weighted", options: [...fontOptions] },
+    engraving: {
+      mode: "weighted",
+      options: ENGRAVING_FINISHES_V4.map((value) => ({ value, weight: 1 })),
+    },
+    gradient: {
+      scope: { mode: "fixed", value: "die-wide" },
+      direction: {
+        mode: "weighted",
+        options: LINEAR_DIRECTIONS_V4.map((value) => ({
+          value,
+          weight:
+            value.includes("upper-") || value.includes("lower-") ? 2 : 1,
+        })),
+      },
+    },
+    lighting: {
+      mode: { mode: "fixed", value: "combined" },
+      strength: { mode: "fixed", value: "gentle" },
+      direction: { mode: "fixed", value: "upper-left" },
+    },
+  };
+}
+
+const legacyRandomRecipeV3 = createRandomRecipeV3(
+  [
+    ...classicRandomMaterialsV3(240, 21),
+    ...LEGACY_RANDOM_SPECIAL_MATERIALS_V3.map(({ material: value }) => ({
+      value,
+      weight: 25,
+    })),
+  ],
+  LEGACY_RANDOM_FONT_OPTIONS_V3,
+);
+const randomRecipeV3 = createRandomRecipeV3(
+  [
+    ...classicRandomMaterialsV3(150, 18),
+    ...RANDOM_SPECIAL_MATERIALS_V3.map(({ material: value }, index) => ({
+      value,
+      weight: index < LEGACY_RANDOM_SPECIAL_MATERIALS_V3.length ? 20 : 30,
+    })),
+  ],
+  R32_RANDOM_FONT_OPTIONS_V3,
+);
 
 const simpleStylesV3: readonly AppearanceBuiltinStyleV3[] = [
   {
@@ -1538,12 +1767,57 @@ const collectorStylesV3: readonly AppearanceBuiltinStyleV3[] = [
     description: "Polished walnut with fine longitudinal grain.",
     recipe: grainExpectationsRecipeV3,
   },
+  {
+    id: "elemental-lava",
+    name: "Lava",
+    description: "Basalt crust with incandescent fissures.",
+    recipe: elementalLavaRecipeV3,
+  },
+  {
+    id: "elemental-sand",
+    name: "Sand",
+    description: "Wind-shaped dunes with visible mineral grains.",
+    recipe: elementalSandRecipeV3,
+  },
+  {
+    id: "elemental-blue-sky",
+    name: "Blue Sky",
+    description: "Clear atmosphere with soft cloud banks.",
+    recipe: elementalBlueSkyRecipeV3,
+  },
+  {
+    id: "elemental-sunset",
+    name: "Sunset",
+    description: "A warm horizon beneath violet cloud layers.",
+    recipe: elementalSunsetRecipeV3,
+  },
+  {
+    id: "paint-splatter",
+    name: "Splatter",
+    description: "Contrasting drops and short directional streaks.",
+    recipe: paintSplatterRecipeV3,
+  },
 ];
 
+const LEGACY_RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(
+  legacyRandomRecipeV3,
+);
 const RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(randomRecipeV3);
 
 export function isBuiltinRandomRecipeV3(recipe: AppearanceRecipeV3): boolean {
-  return canonicalJsonV4(recipe) === RANDOM_RECIPE_CANONICAL_V3;
+  const canonical = canonicalJsonV4(recipe);
+  return (
+    canonical === LEGACY_RANDOM_RECIPE_CANONICAL_V3 ||
+    canonical === RANDOM_RECIPE_CANONICAL_V3
+  );
+}
+
+export function randomRecipeForResolutionV3(
+  recipe: AppearanceRecipeV3,
+  useR32: boolean,
+): AppearanceRecipeV3 {
+  if (!isBuiltinRandomRecipeV3(recipe)) return recipe;
+  return useR32 ? randomRecipeV3 : legacyRandomRecipeV3;
 }
 
 export const BUILTIN_APPEARANCE_STYLES_V3: readonly AppearanceBuiltinStyleV3[] =
@@ -1582,7 +1856,7 @@ export const APPEARANCE_CATALOG_V1: AppearancePublicCatalogV1 = {
   defaultStyleId: CHAOTIC_APPEARANCE_STYLE_ID,
   styles: publicStylesV1,
   patterns: PATTERNS,
-  fonts: FONTS,
+  fonts: [...LEGACY_FONTS],
 };
 
 export const APPEARANCE_CATALOG_V2: AppearancePublicCatalogV2 = {
@@ -1590,7 +1864,7 @@ export const APPEARANCE_CATALOG_V2: AppearancePublicCatalogV2 = {
   defaultStyleId: CHAOTIC_APPEARANCE_STYLE_ID,
   styles: stylesV2,
   patterns: PATTERNS,
-  fonts: FONTS,
+  fonts: [...LEGACY_FONTS],
 };
 
 export const APPEARANCE_CATALOG_V3: AppearancePublicCatalogV3 = {
@@ -1649,7 +1923,7 @@ export const APPEARANCE_CATALOG_V3: AppearancePublicCatalogV3 = {
 export const APPEARANCE_VALIDATION_CATALOG: AppearanceCatalog = {
   builtinStyleIds: styles.map(({ id }) => id),
   patternIds: PATTERNS.map(({ id }) => id),
-  fontIds: FONTS.map(({ id }) => id),
+  fontIds: LEGACY_FONTS.map(({ id }) => id),
 };
 
 export const BUILTIN_APPEARANCE_RECIPES = Object.fromEntries(

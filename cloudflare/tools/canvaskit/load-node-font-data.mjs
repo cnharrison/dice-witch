@@ -16,6 +16,14 @@ const FONT_ASSET_FILENAME_BY_ID = Object.freeze({
   "luckiest-guy": "LuckiestGuy-subset.ttf",
   "fontdiner-swanky": "FontdinerSwanky-subset.ttf",
   syncopate: "Syncopate-Bold-subset.ttf",
+  "source-sans-3": "SourceSans3-SemiBold-subset.ttf",
+  cinzel: "Cinzel-SemiBold-subset.ttf",
+  "barlow-condensed": "BarlowCondensed-SemiBold-subset.ttf",
+  "zilla-slab": "ZillaSlab-SemiBold-subset.ttf",
+  "space-grotesk": "SpaceGrotesk-SemiBold-subset.ttf",
+  fraunces: "Fraunces-SemiBold-subset.ttf",
+  "bricolage-grotesque": "BricolageGrotesque-SemiBold-subset.ttf",
+  "alcarin-tengwar": "AlcarinTengwar-Bold-subset.ttf",
 });
 
 export async function loadNodeCanvasKitFontDataV4() {

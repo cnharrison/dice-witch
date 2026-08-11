@@ -1780,7 +1780,39 @@ describe("Discord REST service", () => {
         },
         discordFetch,
       ),
-    ).resolves.toEqual({ status: "delivered" });
+    ).resolves.toEqual({
+      status: "delivered",
+      messageId: "100000000000000020",
+    });
+  });
+
+  it("rejects a successful web delivery without a message id", async () => {
+    const channelId = "100000000000000010";
+    const discordFetch = vi.fn((request: Request) =>
+      Promise.resolve(
+        new URL(request.url).pathname.endsWith("/channels")
+          ? Response.json([{ id: channelId, name: "general", type: 0 }])
+          : Response.json({ id: "invalid" }),
+      )
+    );
+
+    await expect(
+      deliverWebRoll(
+        env,
+        {
+          rollId: "1400000000000000001",
+          guildId,
+          channelId,
+          payload: { embeds: [] },
+          clatter: "_clatter_",
+          filename: "dice-witch-roll.png",
+          png: new Uint8Array([137, 80, 78, 71]),
+          skipDelay: true,
+          delayMs: 0,
+        },
+        discordFetch,
+      ),
+    ).rejects.toThrow("Discord web roll response is invalid");
   });
 
   it("edits the public web clatter message into the rendered result", async () => {
@@ -1847,7 +1879,10 @@ describe("Discord REST service", () => {
         discordFetch,
         wait,
       ),
-    ).resolves.toEqual({ status: "delivered" });
+    ).resolves.toEqual({
+      status: "delivered",
+      messageId: clatterMessageId,
+    });
     expect(wait).toHaveBeenCalledWith(1_234);
     expect(deliveryAttempt).toBe(2);
   });

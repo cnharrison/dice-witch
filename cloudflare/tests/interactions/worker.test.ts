@@ -15,6 +15,7 @@ async function signedRequest(
   overrides: {
     path?: string;
     rollWork?: Record<string, (value: unknown) => Promise<unknown>>;
+    webDeliveryWork?: Record<string, (value: unknown) => Promise<unknown>>;
     discordRest?: { sendRollHelper(value: unknown): Promise<unknown> };
     dataFetch?: (request: Request) => Promise<Response>;
     signature?: string;
@@ -77,7 +78,7 @@ async function signedRequest(
         getByName: () => overrides.rollWork ?? {},
       } as unknown as DurableObjectNamespace,
       WEB_DELIVERY_WORK: {
-        getByName: () => ({}),
+        getByName: () => overrides.webDeliveryWork ?? {},
       } as unknown as DurableObjectNamespace,
     },
     request: new Request(
@@ -193,6 +194,76 @@ describe("Discord HTTP interaction Worker", () => {
     expect(JSON.stringify(result)).toContain('"value":"Initiative"');
     expect(getSaveRollIntent).toHaveBeenCalledOnce();
   });
+  it("returns a message-bound Text result ephemerally to any clicker", async () => {
+    const getTextResult = vi.fn(() => Promise.resolve({
+      status: "available",
+      resultText: "1d20: [17] = 17",
+    }));
+    const { env, request } = await signedRequest(JSON.stringify({
+      id: "1400000000000000001",
+      application_id: "100000000000000001",
+      token: "interaction-token",
+      type: 3,
+      guild_id: "100000000000000002",
+      channel_id: "1400000000000000002",
+      message: { id: "1400000000000000003" },
+      member: {
+        user: { id: "1400000000000000099", username: "another-reader" },
+      },
+      data: {
+        component_type: 2,
+        custom_id: "text-result:v1:d:1400000000000000000",
+      },
+    }), { rollWork: { getTextResult } });
+
+    const response = await handleInteractionRequest(request, env);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      type: 4,
+      data: {
+        flags: (1 << 15) | (1 << 6),
+        allowed_mentions: { parse: [] },
+        components: [{ type: 10, content: "1d20: [17] = 17" }],
+      },
+    });
+    expect(getTextResult).toHaveBeenCalledWith({
+      applicationId: "100000000000000001",
+      guildId: "100000000000000002",
+      channelId: "1400000000000000002",
+      messageId: "1400000000000000003",
+    });
+  });
+
+  it("does not reveal whether unavailable Text result ids existed", async () => {
+    const getTextResult = vi.fn(() => Promise.resolve({ status: "missing" }));
+    const { env, request } = await signedRequest(JSON.stringify({
+      id: "1400000000000000001",
+      application_id: "100000000000000001",
+      token: "interaction-token",
+      type: 3,
+      guild_id: "100000000000000002",
+      channel_id: "1400000000000000002",
+      message: { id: "1400000000000000003" },
+      member: {
+        user: { id: "1400000000000000004", username: "reader" },
+      },
+      data: {
+        component_type: 2,
+        custom_id:
+          "text-result:v1:w:1400000000000000004.123e4567-e89b-42d3-a456-426614174000",
+      },
+    }), { webDeliveryWork: { getTextResult } });
+
+    const response = await handleInteractionRequest(request, env);
+    const result = await response.json();
+
+    expect(JSON.stringify(result)).toContain(
+      "This text result is no longer available.",
+    );
+    expect(JSON.stringify(result)).not.toContain("1d20");
+  });
+
   it("acknowledges an authenticated Discord PING", async () => {
     const { env, request } = await signedRequest('{"type":1}');
 
@@ -647,7 +718,10 @@ describe("Discord HTTP interaction Worker", () => {
       if (path === "/internal/guilds/settings") {
         return Response.json({
           status: "found",
-          settings: { skipDiceDelay: false },
+          settings: {
+            skipDiceDelay: false,
+            hideRollResultText: false,
+          },
         });
       }
       contextMutations += 1;
@@ -877,11 +951,14 @@ describe("Discord HTTP interaction Worker", () => {
           channelType: 0,
         },
       },
-      settings: { skipDiceDelay: false },
+      settings: {
+        skipDiceDelay: false,
+        hideRollResultText: false,
+      },
     });
   });
 
-  it("resolves the guild dice-delay setting before accepting a roll", async () => {
+  it("resolves complete guild delivery settings before accepting a roll", async () => {
     const interactionTimestamp = 1_783_800_000_101;
     const interactionId = String(
       ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
@@ -894,17 +971,17 @@ describe("Discord HTTP interaction Worker", () => {
         expiresAt: interactionTimestamp + 15 * 60 * 1_000,
       });
     });
-    const settingsRequests: string[] = [];
+    const settingsRequests: unknown[] = [];
     const dataFetch = vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
       if (path !== "/internal/guilds/settings") {
         return new Response(null, { status: 503 });
       }
-      const body = await request.json<{ guildId?: unknown }>();
-      settingsRequests.push(String(body.guildId));
+      const body: unknown = await request.json();
+      settingsRequests.push(body);
       return Response.json({
         status: "found",
-        settings: { skipDiceDelay: true },
+        settings: { skipDiceDelay: true, hideRollResultText: true },
       });
     });
     const { env, request } = await signedRequest(
@@ -945,10 +1022,13 @@ describe("Discord HTTP interaction Worker", () => {
     await expect(response.json()).resolves.toMatchObject({ type: 4 });
     await Promise.all(pending);
 
-    expect(settingsRequests).toEqual(["100000000000000002"]);
+    expect(settingsRequests).toEqual([{
+      guildId: "100000000000000002",
+      version: 2,
+    }]);
     expect(acceptDelivery).toHaveBeenCalledOnce();
     expect(acceptDelivery.mock.calls[0]?.[0]).toMatchObject({
-      settings: { skipDiceDelay: true },
+      settings: { skipDiceDelay: true, hideRollResultText: true },
     });
   });
 

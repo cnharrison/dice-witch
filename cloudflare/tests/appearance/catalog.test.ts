@@ -8,6 +8,7 @@ import {
   canonicalJsonV4,
   CLASSIC_OPACITIES_V4,
   CLASSIC_TREATMENTS_V4,
+  ELEMENTAL_STYLES_V4,
   ENGRAVING_FINISHES_V4,
   FANTASY_ESSENCES_V4,
   FANTASY_FINISHES_V4,
@@ -26,6 +27,7 @@ import {
   MATERIAL_FAMILIES_V4,
   METALS_V4,
   METAL_FINISHES_V4,
+  PAINT_STYLES_V4,
   PATTERN_IDS_V4,
   RESIN_FINISHES_V4,
   RESIN_INCLUSIONS_V4,
@@ -56,6 +58,9 @@ import {
   parseAppearanceProfile,
   parseAppearanceRecipeV2,
   RANDOM_SPECIAL_MATERIALS_V3,
+  R32_RANDOM_FONT_OPTIONS_V3,
+  randomRecipeForResolutionV3,
+  randomSpecialMaterialV3,
   resolveAppearanceRecipe,
   resolveAppearanceRecipeV2,
   type AppearanceCatalogOptionV3,
@@ -233,14 +238,14 @@ describe("built-in appearance catalog", () => {
     ).toBe("8766791af34f4e44b47ab1998c349e398d77e9b57d36a27b87ffdd3f0367abea");
   });
 
-  it("pins Random V2 to the approved solid-first material recipe", () => {
+  it("pins r32 Random to the approved solid-first material recipe", () => {
     const random = BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID]
       ?.recipe;
     if (random === undefined || random.material.mode !== "weighted") {
       throw new Error("Random V3 weighted material recipe is missing");
     }
     expect(random.randomization).toBe("full-spectrum-v2");
-    expect(random.material.options).toHaveLength(18);
+    expect(random.material.options).toHaveLength(23);
     expect(
       random.material.options.reduce((total, option) => total + option.weight, 0),
     ).toBe(1_500);
@@ -254,7 +259,7 @@ describe("built-in appearance catalog", () => {
       ({ value }) =>
         value.family === "classic" && value.treatment === "gradient",
     );
-    expect(gradient?.weight).toBe(240);
+    expect(gradient?.weight).toBe(150);
     const patterns = random.material.options.filter(
       ({ value }) =>
         value.family === "classic" && value.treatment === "pattern",
@@ -265,7 +270,7 @@ describe("built-in appearance catalog", () => {
         ? value.patternId
         : null,
     )).toEqual(PATTERN_IDS_V4);
-    expect(patterns.every(({ weight }) => weight === 21)).toBe(true);
+    expect(patterns.every(({ weight }) => weight === 18)).toBe(true);
 
     const specials = random.material.options.filter(
       ({ value }) => value.family !== "classic",
@@ -273,7 +278,10 @@ describe("built-in appearance catalog", () => {
     expect(specials.map(({ value }) => value)).toEqual(
       RANDOM_SPECIAL_MATERIALS_V3.map(({ material }) => material),
     );
-    expect(specials.every(({ weight }) => weight === 25)).toBe(true);
+    expect(specials.slice(0, 6).every(({ weight }) => weight === 20)).toBe(
+      true,
+    );
+    expect(specials.slice(6).every(({ weight }) => weight === 30)).toBe(true);
 
     expect(random.engraving).toEqual({
       mode: "weighted",
@@ -415,6 +423,19 @@ describe("built-in appearance catalog", () => {
     const fantasy = materialCatalog("fantasy");
     expect(optionIds(fantasy.essences)).toEqual(FANTASY_ESSENCES_V4);
     expect(optionIds(fantasy.finishes)).toEqual(FANTASY_FINISHES_V4);
+    const elemental = materialCatalog("elemental");
+    expect(optionIds(elemental.styles)).toEqual(ELEMENTAL_STYLES_V4);
+    expect(elemental.styleDefaults.map(({ style }) => style)).toEqual(
+      ELEMENTAL_STYLES_V4,
+    );
+    elemental.styleDefaults.forEach((material) => {
+      expect(parseAppearanceMaterialV4(material)).toEqual(material);
+    });
+    const paint = materialCatalog("paint");
+    expect(optionIds(paint.styles)).toEqual(PAINT_STYLES_V4);
+    expect(paint.styleDefaults.map(({ style }) => style)).toEqual(
+      PAINT_STYLES_V4,
+    );
 
     expect(APPEARANCE_CATALOG_V3.forms).toEqual([
       expect.objectContaining({
@@ -481,6 +502,57 @@ describe("built-in appearance catalog", () => {
     );
   });
 
+  it("preserves the r1-r31 Random option order and weights", () => {
+    const published = BUILTIN_APPEARANCE_RECIPES_V3.chaotic?.recipe;
+    if (published === undefined) throw new Error("Random recipe is missing");
+    const legacy = randomRecipeForResolutionV3(published, false);
+    if (legacy.material.mode !== "weighted" || legacy.font.mode !== "weighted") {
+      throw new Error("Legacy Random selections are missing");
+    }
+
+    expect(
+      legacy.material.options.map(({ value }) => {
+        if (value.family === "classic") {
+          return value.treatment === "pattern"
+            ? `classic:pattern:${value.patternId}`
+            : `classic:${value.treatment}`;
+        }
+        return randomSpecialMaterialV3(value)?.id;
+      }),
+    ).toEqual([
+      "classic:solid",
+      "classic:gradient",
+      ...PATTERN_IDS_V4.map((patternId) => `classic:pattern:${patternId}`),
+      "nacreous-resin",
+      "vortical-core",
+      "prismatic-glass",
+      "striated-steel",
+      "brass-filigree",
+      "figured-walnut",
+    ]);
+    expect(legacy.material.options.map(({ weight }) => weight)).toEqual([
+      900,
+      240,
+      ...PATTERN_IDS_V4.map(() => 21),
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+    ]);
+    expect(legacy.font.options).toEqual([
+      { value: "liberation-sans", weight: 700 },
+      { value: "new-rocker", weight: 43 },
+      { value: "stencil-ops", weight: 43 },
+      { value: "creeping-horror", weight: 43 },
+      { value: "special-elite", weight: 43 },
+      { value: "luckiest-guy", weight: 43 },
+      { value: "fontdiner-swanky", weight: 43 },
+      { value: "syncopate", weight: 42 },
+    ]);
+  });
+
   it("gives V3 Random explicit 60% solid and retained font weights", () => {
     const random = BUILTIN_APPEARANCE_RECIPES_V3.chaotic?.recipe;
     if (
@@ -500,12 +572,14 @@ describe("built-in appearance catalog", () => {
             .filter(({ value }) => value.family === family)
             .reduce((total, { weight }) => total + weight, 0)
         : 0;
-    expect(materialWeight("classic")).toBe(1_350);
+    expect(materialWeight("classic")).toBe(1_230);
+    expect(materialWeight("elemental")).toBe(120);
+    expect(materialWeight("paint")).toBe(30);
     expect(
       random.material.options
         .filter(({ value }) => value.family !== "classic")
         .reduce((total, { weight }) => total + weight, 0),
-    ).toBe(150);
+    ).toBe(270);
     expect(
       random.material.options.reduce(
         (total, { weight }) => total + weight,
@@ -522,10 +596,21 @@ describe("built-in appearance catalog", () => {
       ),
     ).toEqual(new Set(PATTERN_IDS_V4));
 
-    const liberation = random.font.options.find(
-      ({ value }) => value === "liberation-sans",
-    );
-    expect(liberation?.weight).toBe(700);
+    expect(random.font.options).toEqual(R32_RANDOM_FONT_OPTIONS_V3);
+    expect(random.font.options.some(({ value }) => value === "alcarin-tengwar"))
+      .toBe(false);
+    const neutralFonts = new Set([
+      "liberation-sans",
+      "source-sans-3",
+      "cinzel",
+      "barlow-condensed",
+      "zilla-slab",
+      "space-grotesk",
+    ]);
+    const neutralWeight = random.font.options
+      .filter(({ value }) => neutralFonts.has(value))
+      .reduce((total, { weight }) => total + weight, 0);
+    expect(neutralWeight).toBe(700);
     expect(
       random.font.options.reduce((total, { weight }) => total + weight, 0),
     ).toBe(1_000);
@@ -544,6 +629,11 @@ describe("built-in appearance catalog", () => {
       "Striated Steel",
       "Brass Filigree",
       "Figured Walnut",
+      "Lava",
+      "Sand",
+      "Blue Sky",
+      "Sunset",
+      "Splatter",
     ]);
 
     const fixedMaterial = (id: string): AppearanceMaterialV4 => {

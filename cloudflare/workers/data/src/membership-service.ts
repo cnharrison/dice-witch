@@ -100,18 +100,33 @@ async function getGuildSettings(
   db: D1Database,
 ): Promise<Response> {
   let guildId: string;
+  let version: 1 | 2;
   try {
-    const value = await parseBody(request, ["guildId"]);
-    if (typeof value.guildId !== "string" || !SNOWFLAKE.test(value.guildId)) {
+    const value: unknown = await request.json();
+    if (
+      !isRecord(value) ||
+      (!hasExactKeys(value, ["guildId"]) &&
+        !hasExactKeys(value, ["guildId", "version"])) ||
+      typeof value.guildId !== "string" ||
+      !SNOWFLAKE.test(value.guildId) ||
+      (value.version !== undefined && value.version !== 2)
+    ) {
       throw new Error("Guild settings request is invalid");
     }
     guildId = value.guildId;
+    version = value.version === 2 ? 2 : 1;
   } catch {
     return errorResponse("Guild settings request is invalid", 400);
   }
   try {
     const result = await new D1GuildRepository(db).getSettings(guildId);
-    return Response.json(result, {
+    const body = result.status === "missing" || version === 2
+      ? result
+      : {
+          status: "found" as const,
+          settings: { skipDiceDelay: result.settings.skipDiceDelay },
+        };
+    return Response.json(body, {
       status: result.status === "missing" ? 404 : 200,
       headers: responseHeaders,
     });
@@ -125,36 +140,55 @@ async function updateGuildSettings(
   db: D1Database,
 ): Promise<Response> {
   let value: Record<string, unknown>;
+  let version: 1 | 2;
   try {
-    value = await parseBody(request, [
-      "guildId",
-      "mutationId",
-      "occurredAt",
-      "skipDiceDelay",
-    ]);
+    const parsed: unknown = await request.json();
+    if (!isRecord(parsed)) throw new Error("Guild settings update is invalid");
+    const v1Keys = ["guildId", "mutationId", "occurredAt", "skipDiceDelay"];
+    const v2Keys = [
+      ...v1Keys,
+      "hideRollResultText",
+      "version",
+    ];
     if (
-      typeof value.guildId !== "string" ||
-      !SNOWFLAKE.test(value.guildId) ||
-      typeof value.skipDiceDelay !== "boolean" ||
-      typeof value.mutationId !== "string" ||
-      value.mutationId.length < 1 ||
-      value.mutationId.length > 255 ||
-      typeof value.occurredAt !== "number" ||
-      !Number.isSafeInteger(value.occurredAt) ||
-      value.occurredAt < 0
+      (!hasExactKeys(parsed, v1Keys) && !hasExactKeys(parsed, v2Keys)) ||
+      typeof parsed.guildId !== "string" ||
+      !SNOWFLAKE.test(parsed.guildId) ||
+      typeof parsed.skipDiceDelay !== "boolean" ||
+      typeof parsed.mutationId !== "string" ||
+      parsed.mutationId.length < 1 ||
+      parsed.mutationId.length > 255 ||
+      typeof parsed.occurredAt !== "number" ||
+      !Number.isSafeInteger(parsed.occurredAt) ||
+      parsed.occurredAt < 0 ||
+      (parsed.version !== undefined &&
+        (parsed.version !== 2 || typeof parsed.hideRollResultText !== "boolean"))
     ) {
       throw new Error("Guild settings update is invalid");
     }
+    value = parsed;
+    version = parsed.version === 2 ? 2 : 1;
   } catch {
     return errorResponse("Guild settings update is invalid", 400);
   }
   try {
-    const result = await new D1GuildRepository(db).setSkipDiceDelay({
-      guildId: value.guildId,
-      skipDiceDelay: value.skipDiceDelay,
-      mutationId: value.mutationId,
-      occurredAt: value.occurredAt,
-    });
+    const repository = new D1GuildRepository(db);
+    const result = version === 1
+      ? await repository.setSkipDiceDelay({
+          guildId: value.guildId as string,
+          skipDiceDelay: value.skipDiceDelay as boolean,
+          mutationId: value.mutationId as string,
+          occurredAt: value.occurredAt as number,
+        })
+      : await repository.setSettings({
+          guildId: value.guildId as string,
+          settings: {
+            skipDiceDelay: value.skipDiceDelay as boolean,
+            hideRollResultText: value.hideRollResultText as boolean,
+          },
+          mutationId: value.mutationId as string,
+          occurredAt: value.occurredAt as number,
+        });
     let status = 200;
     if (result.status === "missing") status = 404;
     if (result.status === "conflict") status = 409;

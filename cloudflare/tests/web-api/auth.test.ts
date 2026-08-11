@@ -649,6 +649,199 @@ describe("web API Discord OAuth", () => {
     });
   });
 
+  it("reads and updates the complete V2 guild preferences contract", async () => {
+    const sessionToken = "T".repeat(43);
+    const dataRequests: Array<{ path: string; body: unknown }> = [];
+    let settingsUpdateCount = 0;
+    const dataFetch = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      const body: unknown = await request.json();
+      dataRequests.push({ path, body });
+      if (path === "/internal/sessions/current") {
+        return Response.json({
+          user: {
+            id: "100000000000000003",
+            username: "fixture-user",
+            email: null,
+            avatar: null,
+          },
+          createdAt: now - 1,
+          expiresAt: now + 1,
+        });
+      }
+      if (path === "/internal/memberships/list") {
+        return Response.json({
+          memberships: [{
+            guild: {
+              id: "100000000000000001",
+              name: "Fixture guild",
+              icon: null,
+            },
+            isAdmin: true,
+            isDiceWitchAdmin: false,
+          }],
+        });
+      }
+      if (path === "/internal/guilds/settings") {
+        expect(body).toEqual({
+          guildId: "100000000000000001",
+          version: 2,
+        });
+        return Response.json({
+          status: "found",
+          settings: {
+            skipDiceDelay: false,
+            hideRollResultText: false,
+          },
+        });
+      }
+      expect(path).toBe("/internal/guilds/settings/update");
+      settingsUpdateCount += 1;
+      return Response.json({
+        status: settingsUpdateCount === 1 ? "applied" : "existing",
+        settings: {
+          skipDiceDelay: true,
+          hideRollResultText: true,
+        },
+      });
+    });
+    const env = bindings(dataFetch);
+    const url =
+      "https://api.example.com/api/guilds/100000000000000001/preferences?version=2";
+    const headers = {
+      cookie: `session_id=${sessionToken}`,
+      origin: frontendOrigin,
+    };
+
+    const read = await handleAuthRequest(
+      new Request(url, { headers }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+    expect(read.status).toBe(200);
+    await expect(read.json()).resolves.toEqual({
+      preferences: {
+        skipDiceDelay: false,
+        hideRollResultText: false,
+      },
+    });
+
+    const updated = await handleAuthRequest(
+      new Request(url, {
+        method: "PATCH",
+        headers: {
+          ...headers,
+          "content-type": "application/json",
+          "idempotency-key": "123e4567-e89b-42d3-a456-426614174001",
+        },
+        body: JSON.stringify({
+          skipDiceDelay: true,
+          hideRollResultText: true,
+        }),
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+    expect(updated.status).toBe(200);
+    await expect(updated.json()).resolves.toEqual({ success: true });
+    expect(dataRequests.at(-1)).toEqual({
+      path: "/internal/guilds/settings/update",
+      body: {
+        version: 2,
+        guildId: "100000000000000001",
+        skipDiceDelay: true,
+        hideRollResultText: true,
+        mutationId:
+          "web-preference-v2:123e4567-e89b-42d3-a456-426614174001",
+        occurredAt: now,
+      },
+    });
+
+    const retried = await handleAuthRequest(
+      new Request(url, {
+        method: "PATCH",
+        headers: {
+          ...headers,
+          "content-type": "application/json",
+          "idempotency-key": "123e4567-e89b-42d3-a456-426614174001",
+        },
+        body: JSON.stringify({
+          skipDiceDelay: true,
+          hideRollResultText: true,
+        }),
+      }),
+      env,
+      vi.fn(),
+      () => now + 1,
+    );
+    expect(retried.status).toBe(200);
+    await expect(retried.json()).resolves.toEqual({ success: true });
+    expect(dataRequests.at(-1)).toMatchObject({
+      path: "/internal/guilds/settings/update",
+      body: { occurredAt: now + 1 },
+    });
+  });
+
+  it("rejects ambiguous guild preference query versions", async () => {
+    const sessionToken = "T".repeat(43);
+    const dataFetch = vi.fn((request: Request): Promise<Response> => {
+      const path = new URL(request.url).pathname;
+      if (path === "/internal/sessions/current") {
+        return Promise.resolve(Response.json({
+          user: {
+            id: "100000000000000003",
+            username: "fixture-user",
+            email: null,
+            avatar: null,
+          },
+          createdAt: now - 1,
+          expiresAt: now + 1,
+        }));
+      }
+      if (path === "/internal/memberships/list") {
+        return Promise.resolve(Response.json({
+          memberships: [{
+            guild: {
+              id: "100000000000000001",
+              name: "Fixture guild",
+              icon: null,
+            },
+            isAdmin: true,
+            isDiceWitchAdmin: false,
+          }],
+        }));
+      }
+      return Promise.reject(new Error(`Unexpected Data Worker route ${path}`));
+    });
+    const baseUrl =
+      "https://api.example.com/api/guilds/100000000000000001/preferences";
+    const headers = {
+      cookie: `session_id=${sessionToken}`,
+      origin: frontendOrigin,
+    };
+
+    const duplicate = await handleAuthRequest(
+      new Request(`${baseUrl}?version=2&version=1`, { headers }),
+      bindings(dataFetch),
+      vi.fn(),
+      () => now,
+    );
+    expect(duplicate.status).toBe(400);
+
+    const unknown = await handleAuthRequest(
+      new Request(`${baseUrl}?cache=1`, {
+        method: "PATCH",
+        headers,
+      }),
+      bindings(dataFetch),
+      vi.fn(),
+      () => now,
+    );
+    expect(unknown.status).toBe(400);
+  });
+
   it("returns only channels available to the current guild member", async () => {
     const sessionToken = "T".repeat(43);
     const dataFetch = vi.fn((request: Request) => {
@@ -698,6 +891,7 @@ describe("web API Discord OAuth", () => {
 
   it("executes and delivers a current guild member's web roll", async () => {
     const sessionToken = "T".repeat(43);
+    let hideRollResultText = false;
     const dataFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
       if (path === "/internal/sessions/current") {
@@ -731,7 +925,10 @@ describe("web API Discord OAuth", () => {
       return Promise.resolve(
         Response.json({
           status: "found",
-          settings: { skipDiceDelay: false },
+          settings: {
+            skipDiceDelay: false,
+            hideRollResultText,
+          },
         }),
       );
     });
@@ -742,7 +939,10 @@ describe("web API Discord OAuth", () => {
     env.DISCORD_REST.listTextChannels = listTextChannels;
     const deliverWebRoll = vi.fn<
       WebApiBindings["DISCORD_REST"]["deliverWebRoll"]
-    >(() => Promise.resolve({ status: "delivered" as const }));
+    >(() => Promise.resolve({
+      status: "delivered" as const,
+      messageId: "100000000000000020",
+    }));
     env.DISCORD_REST.deliverWebRoll = deliverWebRoll;
     const png = new Uint8Array([137, 80, 78, 71]);
     const deliveryId = "11111111-1111-4111-8111-111111111111";
@@ -826,8 +1026,10 @@ describe("web API Discord OAuth", () => {
         nameColor: "#AABBCC",
       },
       deliveryId,
+      applicationId: "100000000000000001",
       channelId: "100000000000000010",
       skipDelay: false,
+      hideRollResultText: false,
       renderSeed: 123,
       appearanceDigest: "a".repeat(64),
     });
@@ -873,6 +1075,35 @@ describe("web API Discord OAuth", () => {
     expect(legacyDelivery).toMatchObject({ skipDelay: false });
     expect(legacyDelivery?.delayMs).toBeGreaterThanOrEqual(1);
     expect(legacyDelivery?.delayMs).toBeLessThanOrEqual(5_000);
+
+    hideRollResultText = true;
+    executeWebRoll.mockClear();
+    deliverWebRoll.mockClear();
+    const staleClientResponse = await handleAuthRequest(
+      new Request("https://api.example.com/api/dice/roll", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: `session_id=${sessionToken}`,
+          origin: frontendOrigin,
+        },
+        body: JSON.stringify({
+          guildId: "100000000000000001",
+          channelId: "100000000000000010",
+          notation: "1d20",
+          timesToRepeat: 1,
+        }),
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+    expect(staleClientResponse.status).toBe(409);
+    await expect(staleClientResponse.json()).resolves.toEqual({
+      error: "Reload Dice Witch before rolling in this server",
+    });
+    expect(executeWebRoll).not.toHaveBeenCalled();
+    expect(deliverWebRoll).not.toHaveBeenCalled();
   });
 
   it("allows a current non-admin guild member to prepare a web roll", async () => {

@@ -68,7 +68,9 @@ export type RollDeliveryPayload = {
   deferredAt: number;
   rollSeed: number;
   telemetry?: RollDeliveryTelemetryV2;
-  settings?: { skipDiceDelay: boolean };
+  settings?:
+    | { skipDiceDelay: boolean }
+    | { skipDiceDelay: boolean; hideRollResultText: boolean };
   // Present when the acknowledgement already carried the clatter, so the roll
   // reuses this seed instead of drawing its own and the two texts agree.
   renderSeed?: number;

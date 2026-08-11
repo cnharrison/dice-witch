@@ -1288,22 +1288,48 @@ async function authorizeGuild(
       };
 }
 
+function guildPreferencesVersion(request: Request): 1 | 2 | null {
+  const parameters = [...new URL(request.url).searchParams];
+  if (parameters.length === 0) return 1;
+  return parameters.length === 1 &&
+      parameters[0]?.[0] === "version" &&
+      parameters[0][1] === "2"
+    ? 2
+    : null;
+}
+
 async function getGuildPreferences(
+  request: Request,
   env: WebApiBindings,
   guildId: string,
 ): Promise<Response> {
-  const response = await postData(env, "/internal/guilds/settings", { guildId });
+  const version = guildPreferencesVersion(request);
+  if (version === null) {
+    return json({ error: "Guild preference version is invalid" }, 400);
+  }
+  const response = await postData(env, "/internal/guilds/settings", {
+    guildId,
+    ...(version === 2 ? { version: 2 } : {}),
+  });
   if (!response.ok) return json({ error: "Guild settings lookup failed" }, 502);
   const value: unknown = await response.json();
   if (
     !isRecord(value) ||
     value.status !== "found" ||
     !isRecord(value.settings) ||
-    typeof value.settings.skipDiceDelay !== "boolean"
+    typeof value.settings.skipDiceDelay !== "boolean" ||
+    (version === 2 && typeof value.settings.hideRollResultText !== "boolean")
   ) {
     return json({ error: "Guild settings response is invalid" }, 502);
   }
-  return json({ preferences: value.settings });
+  return json({
+    preferences: version === 1
+      ? { skipDiceDelay: value.settings.skipDiceDelay }
+      : {
+          skipDiceDelay: value.settings.skipDiceDelay,
+          hideRollResultText: value.settings.hideRollResultText,
+        },
+  });
 }
 
 async function patchGuildPreferences(
@@ -1312,6 +1338,10 @@ async function patchGuildPreferences(
   guildId: string,
   now: number,
 ): Promise<Response> {
+  const version = guildPreferencesVersion(request);
+  if (version === null) {
+    return json({ error: "Guild preference version is invalid" }, 400);
+  }
   const idempotencyKey = request.headers.get("idempotency-key");
   if (idempotencyKey === null || !UUID_V4.test(idempotencyKey)) {
     return json({ error: "Idempotency key is invalid" }, 400);
@@ -1324,15 +1354,25 @@ async function patchGuildPreferences(
   }
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ["skipDiceDelay"]) ||
-    typeof value.skipDiceDelay !== "boolean"
+    !hasExactKeys(
+      value,
+      version === 1
+        ? ["skipDiceDelay"]
+        : ["hideRollResultText", "skipDiceDelay"],
+    ) ||
+    typeof value.skipDiceDelay !== "boolean" ||
+    (version === 2 && typeof value.hideRollResultText !== "boolean")
   ) {
     return json({ error: "Guild preference request is invalid" }, 400);
   }
   const response = await postData(env, "/internal/guilds/settings/update", {
+    ...(version === 2 ? { version: 2 } : {}),
     guildId,
     skipDiceDelay: value.skipDiceDelay,
-    mutationId: `web-preference:${idempotencyKey}`,
+    ...(version === 2
+      ? { hideRollResultText: value.hideRollResultText }
+      : {}),
+    mutationId: `web-preference${version === 2 ? "-v2" : ""}:${idempotencyKey}`,
     occurredAt: now,
   });
   if (response.status === 409) {
@@ -1717,6 +1757,7 @@ async function postWebRoll(
 
   const settingsResponse = await postData(env, "/internal/guilds/settings", {
     guildId: value.guildId,
+    version: 2,
   });
   if (!settingsResponse.ok) {
     return json({ error: "Guild settings lookup failed" }, 502);
@@ -1726,13 +1767,20 @@ async function postWebRoll(
     !isRecord(settings) ||
     settings.status !== "found" ||
     !isRecord(settings.settings) ||
-    typeof settings.settings.skipDiceDelay !== "boolean"
+    typeof settings.settings.skipDiceDelay !== "boolean" ||
+    typeof settings.settings.hideRollResultText !== "boolean"
   ) {
     return json({ error: "Guild settings response is invalid" }, 502);
   }
 
   if (session.user.username === null || session.user.username.length === 0) {
     return json({ error: "Session username is missing" }, 502);
+  }
+  if (
+    settings.settings.hideRollResultText &&
+    value.deliveryId === undefined
+  ) {
+    return json({ error: "Reload Dice Witch before rolling in this server" }, 409);
   }
   const roll: unknown = await env.ROLL_WEB.execute({
     notation: value.notation,
@@ -1748,8 +1796,10 @@ async function postWebRoll(
       ? {}
       : {
           deliveryId: value.deliveryId,
+          applicationId: env.DISCORD_CLIENT_ID,
           channelId: value.channelId,
           skipDelay: settings.settings.skipDiceDelay,
+          hideRollResultText: settings.settings.hideRollResultText,
         }),
     ...(preparedRequest
       ? {
@@ -2273,7 +2323,7 @@ export async function handleAuthRequest(
       }
       const response =
         request.method === "GET"
-          ? await getGuildPreferences(env, guildId)
+          ? await getGuildPreferences(request, env, guildId)
           : await patchGuildPreferences(request, env, guildId, now);
       return exactOrigin ? withCors(response, configuration) : response;
     }

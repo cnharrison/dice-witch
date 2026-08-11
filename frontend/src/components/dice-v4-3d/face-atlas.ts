@@ -4,6 +4,7 @@ import {
   createEngravingLayerRecipeV4,
   enhanceD4EngravingLayerRecipeV4,
   engravingFontScaleV4,
+  formatEngravingLabelV4,
   formatFaceLabelV4,
   minimumConvexPolygonClearanceV4,
   projectGeometryVectorV4,
@@ -13,6 +14,7 @@ import {
   type EngravingLayerColorV4,
   type EngravingLayerRecipeV4,
   type FaceLabelSetV4,
+  type FontIdV4,
   type GeometryCameraV4,
   type GeometryIdV4,
   type LabelContainmentPointV4,
@@ -597,13 +599,16 @@ function drawPhysicalLabelV4(
 function d20UniformInkDimensionsV4(
   context: CanvasRenderingContext2D,
   fontFamily: string,
+  fontId: FontIdV4,
 ): UniformInkDimensionsV4 {
   const cached = D20_UNIFORM_INK_DIMENSIONS_BY_FONT_V4.get(fontFamily);
   if (cached !== undefined) return cached;
 
   context.font = `${LABEL_REFERENCE_SIZE_V4}px "${fontFamily}"`;
   const dimensions = CANONICAL_FACE_VALUES_V4.d20.map((value) => {
-    const metrics = context.measureText(formatFaceLabelV4("d20", value));
+    const metrics = context.measureText(
+      formatEngravingLabelV4(fontId, formatFaceLabelV4("d20", value)),
+    );
     return {
       width:
         metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight,
@@ -821,7 +826,11 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
   );
   const uniformInkDimensions =
     revisionPolicy?.uniformD20Ink === true && physical.target === "d20"
-      ? d20UniformInkDimensionsV4(context, fontFamily)
+      ? d20UniformInkDimensionsV4(
+          context,
+          fontFamily,
+          appearance.engraving.fontId,
+        )
       : null;
   physical.labels.forEach((label, labelIndex) => {
     const face = faces.get(label.faceId);
@@ -833,10 +842,13 @@ function createPhysicalLabelAtlasSourceWithPolicyV4(
       ? projectedContainmentFrameV4(projection, camera, label) ??
         physicalContainment
       : physicalContainment;
-    const text = formatFaceLabelV4(
-      physical.target,
-      label.value,
-      faceLabelSet,
+    const text = formatEngravingLabelV4(
+      appearance.engraving.fontId,
+      formatFaceLabelV4(
+        physical.target,
+        label.value,
+        faceLabelSet,
+      ),
     );
     const drawLabel = (): FittedPhysicalLabelV4 =>
       drawPhysicalLabelV4(
@@ -1053,7 +1065,10 @@ export function createSphericalLabelAtlasSourceV4(
   drawPhysicalLabelV4(
     context,
     label,
-    formatFaceLabelV4("other", result),
+    formatEngravingLabelV4(
+      appearance.engraving.fontId,
+      formatFaceLabelV4("other", result),
+    ),
     requiresOrientationMarkV4("other", result),
     containment,
     0,

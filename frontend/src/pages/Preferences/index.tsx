@@ -124,8 +124,15 @@ async function getGuildMemberships(): Promise<GuildMembership[]> {
   );
 }
 
-async function getGuildPreferences(guildId: string): Promise<boolean> {
-  const response = await customFetch(`/api/guilds/${guildId}/preferences`);
+type GuildPreferences = {
+  skipDiceDelay: boolean;
+  hideRollResultText: boolean;
+};
+
+async function getGuildPreferences(guildId: string): Promise<GuildPreferences> {
+  const response = await customFetch(
+    `/api/guilds/${guildId}/preferences?version=2`,
+  );
   if (!response.ok) throw new Error("Guild preferences are unavailable");
   const value = await readJsonResponse(
     response,
@@ -135,12 +142,19 @@ async function getGuildPreferences(guildId: string): Promise<boolean> {
     !isRecord(value) ||
     !hasExactKeys(value, ["preferences"]) ||
     !isRecord(value.preferences) ||
-    !hasExactKeys(value.preferences, ["skipDiceDelay"]) ||
-    typeof value.preferences.skipDiceDelay !== "boolean"
+    !hasExactKeys(value.preferences, [
+      "hideRollResultText",
+      "skipDiceDelay",
+    ]) ||
+    typeof value.preferences.skipDiceDelay !== "boolean" ||
+    typeof value.preferences.hideRollResultText !== "boolean"
   ) {
     throw new Error("Guild preferences are unavailable");
   }
-  return value.preferences.skipDiceDelay;
+  return {
+    skipDiceDelay: value.preferences.skipDiceDelay,
+    hideRollResultText: value.preferences.hideRollResultText,
+  };
 }
 
 function LoadingPanel({ label }: { label: string }) {
@@ -366,22 +380,20 @@ export default function Preferences() {
   });
 
   const guildPreferencesMutation = useMutation({
-    mutationFn: async ({
-      guildId,
-      skipDiceDelay,
-    }: {
+    mutationFn: async ({ guildId, ...preferences }: {
       guildId: string;
       skipDiceDelay: boolean;
+      hideRollResultText: boolean;
     }) => {
       const response = await customFetch(
-        `/api/guilds/${guildId}/preferences`,
+        `/api/guilds/${guildId}/preferences?version=2`,
         {
           method: "PATCH",
           headers: {
             "content-type": "application/json",
             "idempotency-key": crypto.randomUUID(),
           },
-          body: JSON.stringify({ skipDiceDelay }),
+          body: JSON.stringify(preferences),
         },
       );
       if (!response.ok) {
@@ -398,12 +410,12 @@ export default function Preferences() {
       ) {
         throw new Error("Guild preference could not be saved");
       }
-      return skipDiceDelay;
+      return preferences;
     },
-    onSuccess: (skipDiceDelay, variables) => {
+    onSuccess: (preferences, variables) => {
       queryClient.setQueryData(
         ["guildPreferences", variables.guildId],
-        skipDiceDelay,
+        preferences,
       );
     },
   });
@@ -474,15 +486,16 @@ export default function Preferences() {
         );
       } else {
         deliverySetting = (
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-3">
             <div className="flex items-center gap-3">
               <Switch
                 id="skipDiceDelay"
-                checked={guildPreferencesQuery.data}
+                checked={guildPreferencesQuery.data.skipDiceDelay}
                 disabled={guildPreferencesMutation.isPending}
                 onCheckedChange={(skipDiceDelay) =>
                   guildPreferencesMutation.mutate({
                     guildId: selectedGuildId,
+                    ...guildPreferencesQuery.data,
                     skipDiceDelay,
                   })
                 }
@@ -490,6 +503,21 @@ export default function Preferences() {
               <Label htmlFor="skipDiceDelay">
                 Skip dice roll delay and clatter message
               </Label>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                id="hideRollResultText"
+                checked={guildPreferencesQuery.data.hideRollResultText}
+                disabled={guildPreferencesMutation.isPending}
+                onCheckedChange={(hideRollResultText) =>
+                  guildPreferencesMutation.mutate({
+                    guildId: selectedGuildId,
+                    ...guildPreferencesQuery.data,
+                    hideRollResultText,
+                  })
+                }
+              />
+              <Label htmlFor="hideRollResultText">Hide text results</Label>
             </div>
             {guildPreferencesMutation.isError && (
               <p role="alert" className="text-sm text-destructive">
