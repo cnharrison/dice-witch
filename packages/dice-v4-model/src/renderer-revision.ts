@@ -22,7 +22,10 @@ export type RendererRevisionPolicyV4 = {
   restrainedClassicGradientLighting: boolean;
   materialGradientLift: boolean;
   materialParityEmissive: boolean;
-  engravingContrastEdge: boolean;
+  engravingContrastEdge:
+    | false
+    | "adaptive-r6"
+    | "protective-r31";
   d4EngravingFinishEnhancement: boolean;
   d20LiberationSansScale: boolean;
   allowD20LabelClearanceShortfall: boolean;
@@ -46,6 +49,7 @@ export type RendererRevisionPolicyV4 = {
   allTargetCrystalCut: boolean;
   allTargetHollowCage: boolean;
   allowSingleColorPalette: boolean;
+  singleColorClassicSolid: boolean;
   d6FiveOpticalOffsetX: number;
   faceWidePhysicalSeparation: boolean;
   gridLayout:
@@ -94,6 +98,7 @@ const r1 = policy({
   allTargetCrystalCut: false,
   allTargetHollowCage: false,
   allowSingleColorPalette: false,
+  singleColorClassicSolid: false,
   d6FiveOpticalOffsetX: 0,
   faceWidePhysicalSeparation: true,
   gridLayout: "legacy",
@@ -121,7 +126,7 @@ const r6 = policy({
   ...r5,
   presentation: "standard-r6",
   materialParityEmissive: true,
-  engravingContrastEdge: true,
+  engravingContrastEdge: "adaptive-r6",
   d4EngravingFinishEnhancement: true,
   d20LiberationSansScale: true,
 });
@@ -176,6 +181,13 @@ const r30 = policy({
   allTargetHollowCage: true,
   allowSingleColorPalette: true,
 });
+const r31 = policy({
+  ...r30,
+  balancedClassicSolidFaceLocal: false,
+  boundedClassicSolidScope: false,
+  singleColorClassicSolid: true,
+  engravingContrastEdge: "protective-r31",
+});
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -208,6 +220,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r28": r28,
   "canvaskit-v4-r29": r29,
   "canvaskit-v4-r30": r30,
+  "canvaskit-v4-r31": r31,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

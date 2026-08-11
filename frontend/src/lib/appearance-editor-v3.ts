@@ -179,6 +179,76 @@ export function selectionValuesV3<Value>(
   }
 }
 
+function appearancePrimaryColorV3(
+  recipe: AppearanceRecipeV3,
+  defaultColor: string,
+): string {
+  const colors = recipe.colors;
+  if (
+    colors.mode === "solid" ||
+    colors.mode === "tonal" ||
+    colors.mode === "random"
+  ) {
+    return colors.primary;
+  }
+  return colors.mode === "palette"
+    ? colors.colors[0] ?? defaultColor
+    : defaultColor;
+}
+
+function usesFixedClassicSolidV3(recipe: AppearanceRecipeV3): boolean {
+  return (
+    recipe.material.mode === "fixed" &&
+    recipe.material.value.family === "classic" &&
+    recipe.material.value.treatment === "solid"
+  );
+}
+
+export function reconcileAppearanceColorEditV3(
+  recipe: AppearanceRecipeV3,
+): AppearanceRecipeV3 {
+  const parsed = parseAppearanceRecipeV3(recipe);
+  if (
+    parsed.colors.mode === "solid" ||
+    parsed.randomization === "one-palette-color-v1" ||
+    !usesFixedClassicSolidV3(parsed)
+  ) {
+    return parsed;
+  }
+  const material = parsed.material;
+  if (material.mode !== "fixed" || material.value.family !== "classic") {
+    throw new Error("Fixed Classic Solid appearance is invalid");
+  }
+  return parseAppearanceRecipeV3({
+    ...parsed,
+    material: {
+      mode: "fixed",
+      value: { ...material.value, treatment: "gradient" },
+    },
+  });
+}
+
+export function reconcileAppearanceMaterialEditV3(
+  recipe: AppearanceRecipeV3,
+  defaultColor: string,
+): AppearanceRecipeV3 {
+  const parsed = parseAppearanceRecipeV3(recipe);
+  if (
+    !usesFixedClassicSolidV3(parsed) ||
+    parsed.colors.mode === "solid" ||
+    parsed.randomization === "one-palette-color-v1"
+  ) {
+    return parsed;
+  }
+  return parseAppearanceRecipeV3({
+    ...parsed,
+    colors: {
+      mode: "solid",
+      primary: appearancePrimaryColorV3(parsed, defaultColor),
+    },
+  });
+}
+
 export function createEmptyAppearanceProfileV3(
   kind: "personal",
 ): AppearanceProfileV3;
@@ -285,7 +355,9 @@ export function beginAppearanceRecipeEditV3(
     ? { mode: "fixed" as const, value: "gentle" as const }
     : parsedNext.lighting.strength;
   const editable = structuredClone(parsedNext);
-  delete editable.randomization;
+  if (editable.randomization !== "one-palette-color-v1") {
+    delete editable.randomization;
+  }
   return parseAppearanceRecipeV3({
     ...editable,
     variation: "fixed",
@@ -311,7 +383,7 @@ export function assertAppearanceRecipeSupportsTargetV3(
         !isPolyhedralFormImplementedForTargetV4(
           candidate,
           form,
-          "canvaskit-v4-r30",
+          "canvaskit-v4-r31",
         )
       ) {
         throw new Error(

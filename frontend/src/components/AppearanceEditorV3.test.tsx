@@ -108,13 +108,17 @@ describe("AppearanceEditorV3", () => {
 
     const preview = screen.getByRole("region", { name: "Preview" });
     const editor = preview.closest("section.grid");
+    const stickyStack = preview.parentElement?.parentElement;
     expect(editor?.className).toContain("xl:grid-cols");
-    expect(preview.parentElement?.className).toContain("xl:sticky");
+    expect(stickyStack?.className).toContain("xl:sticky");
+    expect(stickyStack?.className).toContain("xl:self-start");
+    expect(stickyStack?.classList.contains("sticky")).toBe(false);
+    expect(preview.parentElement?.className).not.toContain("xl:sticky");
     expect(screen.queryByRole("heading", { name: "Saved designs" })).toBeNull();
 
     await selectAppearanceTarget(user, "d20");
     expect(editor?.className).toContain("xl:grid-cols");
-    expect(preview.parentElement?.className).toContain("xl:sticky");
+    expect(stickyStack?.className).toContain("xl:sticky");
   });
 
   it("places saved designs below the preview and omits the empty dialog", () => {
@@ -149,8 +153,9 @@ describe("AppearanceEditorV3", () => {
 
     const preview = screen.getByRole("region", { name: "Preview" });
     const heading = screen.getByRole("heading", { name: "Saved designs" });
-    const aside = preview.closest("aside");
-    expect(aside?.contains(heading)).toBe(true);
+    const stickyStack = preview.parentElement?.parentElement;
+    expect(stickyStack?.className).toContain("xl:sticky");
+    expect(stickyStack?.contains(heading)).toBe(true);
     expect(preview.compareDocumentPosition(heading)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );

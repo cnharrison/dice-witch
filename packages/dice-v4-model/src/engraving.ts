@@ -41,6 +41,8 @@ export const ENGRAVING_CONTRAST_EDGE_MINIMUM_RATIO_V4 = 3;
 export const ENGRAVING_CONTRAST_EDGE_LOW_PIXEL_FRACTION_V4 = 0.02;
 export const ENGRAVING_CONTRAST_EDGE_OPACITY_V4 = 0.78;
 export const ENGRAVING_CONTRAST_EDGE_WIDTH_RATIO_V4 = 0.028;
+export const ENGRAVING_PROTECTIVE_EDGE_OPACITY_R31_V4 = 0.92;
+export const ENGRAVING_PROTECTIVE_EDGE_WIDTH_RATIO_R31_V4 = 0.05;
 
 export function engravingFontScaleV4(
   rendererRevision: RendererRevisionV4 | undefined,
@@ -91,11 +93,16 @@ function parseEngravingColorV4(
 
 function contrastEdgeForInkV4(
   inkLuminance: number,
+  protectiveEdge: boolean,
 ): EngravingContrastEdgeV4 {
   return {
     color: inkLuminance < 0.5 ? "#ffffff" : "#000000",
-    opacity: ENGRAVING_CONTRAST_EDGE_OPACITY_V4,
-    widthRatio: ENGRAVING_CONTRAST_EDGE_WIDTH_RATIO_V4,
+    opacity: protectiveEdge
+      ? ENGRAVING_PROTECTIVE_EDGE_OPACITY_R31_V4
+      : ENGRAVING_CONTRAST_EDGE_OPACITY_V4,
+    widthRatio: protectiveEdge
+      ? ENGRAVING_PROTECTIVE_EDGE_WIDTH_RATIO_R31_V4
+      : ENGRAVING_CONTRAST_EDGE_WIDTH_RATIO_V4,
   };
 }
 
@@ -103,6 +110,7 @@ export function resolveEngravingContrastEdgeV4(
   appearance: RenderAppearanceV4,
   texture: EngravingContrastRasterV4,
   enhanceD4Finish = false,
+  protectiveEdge = false,
 ): EngravingContrastEdgeV4 | null {
   const [red, green, blue] = parseEngravingColorV4(
     appearance.engraving.color,
@@ -124,13 +132,15 @@ export function resolveEngravingContrastEdgeV4(
     recipe.ink[1] * 255,
     recipe.ink[2] * 255,
   );
-  const edge = contrastEdgeForInkV4(inkLuminance);
+  const edge = contrastEdgeForInkV4(inkLuminance, protectiveEdge);
   if (appearance.requiresLocalSeparation) return edge;
 
   const pixelCount = texture.width * texture.height;
-  const requiredLowContrastPixels = Math.ceil(
-    pixelCount * ENGRAVING_CONTRAST_EDGE_LOW_PIXEL_FRACTION_V4,
-  );
+  const requiredLowContrastPixels = protectiveEdge
+    ? 1
+    : Math.ceil(
+        pixelCount * ENGRAVING_CONTRAST_EDGE_LOW_PIXEL_FRACTION_V4,
+      );
   let lowContrastPixels = 0;
   for (let offset = 0; offset < texture.pixels.length; offset += 4) {
     const redChannel = texture.pixels[offset];

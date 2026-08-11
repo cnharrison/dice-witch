@@ -157,6 +157,17 @@ describe("appearance editor V3 draft operations", () => {
       mode: "palette",
       colors: ["#123456", "#abcdef"],
     });
+
+    const rainbow = styleRecipe("rainbow");
+    const editedRainbow = beginAppearanceRecipeEditV3(
+      rainbow,
+      {
+        ...rainbow,
+        font: { mode: "fixed", value: "new-rocker" },
+      },
+      true,
+    );
+    expect(editedRainbow.randomization).toBe("one-palette-color-v1");
   });
 
   it("makes material-driven forms automatic without rewriting the stored manual selection", () => {

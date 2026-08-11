@@ -121,7 +121,7 @@ describe("V4 deterministic texture input", () => {
     }
   });
 
-  it("projects bounded classic solids from r29 onward", () => {
+  it("projects bounded classic solids only in r29 and r30", () => {
     const solid = appearance();
     solid.material = {
       family: "classic",
@@ -147,6 +147,9 @@ describe("V4 deterministic texture input", () => {
     );
     expect(usesProjectedTextureMappingV4("canvaskit-v4-r30", solid)).toBe(
       true,
+    );
+    expect(usesProjectedTextureMappingV4("canvaskit-v4-r31", solid)).toBe(
+      false,
     );
     solid.texture.scope = "face-local";
     expect(usesProjectedTextureMappingV4("canvaskit-v4-r29", solid)).toBe(

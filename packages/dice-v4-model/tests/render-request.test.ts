@@ -799,7 +799,7 @@ describe("RenderRequestV4", () => {
     }
   });
 
-  it("accepts a duplicated one-color render palette only in r30", () => {
+  it("accepts a duplicated one-color render palette from r30", () => {
     const value = revision2Request({
       ...die(),
       target: "d6",
@@ -819,6 +819,37 @@ describe("RenderRequestV4", () => {
     expect(() => validateRenderRequestV4(historical)).toThrow(
       "Render request groups[0][0].appearance.palette is invalid",
     );
+  });
+
+  it("requires one distinct Classic Solid color in r31", () => {
+    const value = revision2Request({
+      ...die(),
+      target: "d6",
+      result: 6,
+      view: getAuthoredRenderViewV4("canvaskit-v4-r31", "legacy", {
+        target: "d6",
+        result: 6,
+        form: "standard",
+      }),
+    });
+    value.rendererRevision = "canvaskit-v4-r31";
+    expect(() => validateRenderRequestV4(value)).toThrow(
+      "Render request groups[0][0].appearance.palette requires one Classic Solid color",
+    );
+
+    const appearance = value.groups[0]?.[0]?.appearance;
+    if (appearance === undefined) throw new Error("Test appearance is missing");
+    appearance.palette = ["#d2042d", "#d2042d"];
+    expect(validateRenderRequestV4(value)).toEqual(value);
+
+    const historical = structuredClone(value);
+    historical.rendererRevision = "canvaskit-v4-r30";
+    const historicalAppearance = historical.groups[0]?.[0]?.appearance;
+    if (historicalAppearance === undefined) {
+      throw new Error("Historical test appearance is missing");
+    }
+    historicalAppearance.palette = ["#123456", "#abcdef"];
+    expect(validateRenderRequestV4(historical)).toEqual(historical);
   });
 
   it("rejects invalid material parameters and mismatched renderer assets", () => {

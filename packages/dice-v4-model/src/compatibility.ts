@@ -12,14 +12,25 @@ const CRYSTAL_CUT_FAMILIES: ReadonlySet<MaterialFamilyV4> = new Set([
   "fantasy",
 ]);
 
+function supportsAllTargetSpecialFormsV4(
+  rendererRevision?: RendererRevisionV4,
+): boolean {
+  return (
+    rendererRevision === "canvaskit-v4-r30" ||
+    rendererRevision === "canvaskit-v4-r31"
+  );
+}
+
 export function isPolyhedralFormImplementedForTargetV4(
   target: Exclude<AppearanceTargetV4, "other">,
   form: PolyhedralFormV4,
   rendererRevision?: RendererRevisionV4,
 ): boolean {
   if (form === "standard" || target === "d20") return true;
-  if (rendererRevision !== "canvaskit-v4-r30") return false;
-  return form === "crystal-cut" || form === "hollow-cage";
+  return (
+    supportsAllTargetSpecialFormsV4(rendererRevision) &&
+    (form === "crystal-cut" || form === "hollow-cage")
+  );
 }
 
 export function materialDefaultPolyhedralFormV4(
@@ -27,10 +38,9 @@ export function materialDefaultPolyhedralFormV4(
   target: Exclude<AppearanceTargetV4, "other">,
   rendererRevision?: RendererRevisionV4,
 ): PolyhedralFormV4 {
-  if (rendererRevision === "canvaskit-v4-r30") {
+  if (supportsAllTargetSpecialFormsV4(rendererRevision)) {
     if (family === "hollow-metal") return "hollow-cage";
     if (CRYSTAL_CUT_FAMILIES.has(family)) return "crystal-cut";
-    return "standard";
   }
   if (target !== "d20") return "standard";
   if (family === "sharp-resin") return "sharp";

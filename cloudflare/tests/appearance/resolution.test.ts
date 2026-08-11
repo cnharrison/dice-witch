@@ -1629,6 +1629,51 @@ describe("resolveAppearanceRecipeV3", () => {
     expect(r30.appearance.texture.scope).toBe("bounded-die-wide");
   });
 
+  it("removes multi-color Classic Solid fields only in r31", () => {
+    const material = {
+      family: "classic" as const,
+      treatment: "solid" as const,
+      opacity: "opaque" as const,
+      finish: "satin" as const,
+      textureScale: 100,
+    };
+    const recipe = appearanceRecipeV3({
+      material: { mode: "fixed", value: material },
+      colors: { mode: "vivid-random-pair" },
+    });
+    const resolutionContext = contextV3({ target: "d6" });
+    const r30 = resolveAppearanceRecipeV3(
+      recipe,
+      resolutionContext,
+      "property-streams-r30",
+    );
+    const r31 = resolveAppearanceRecipeV3(
+      recipe,
+      resolutionContext,
+      "property-streams-r31",
+    );
+
+    expect(new Set(r30.appearance.palette).size).toBe(2);
+    expect(r30.appearance.texture.scope).toBe("face-local");
+    expect(new Set(r31.appearance.palette).size).toBe(1);
+    expect(r31.appearance.palette[0]).toBe(r30.appearance.palette[0]);
+    expect(r31.appearance.texture.scope).toBe("die-wide");
+
+    const gradient = resolveAppearanceRecipeV3(
+      {
+        ...recipe,
+        material: {
+          mode: "fixed",
+          value: { ...material, treatment: "gradient" },
+        },
+      },
+      resolutionContext,
+      "property-streams-r31",
+    );
+    expect(new Set(gradient.appearance.palette).size).toBe(2);
+    expect(gradient.appearance.texture.scope).toBe("face-local");
+  });
+
   it("chooses one independent six-color Rainbow hue per die in r30", () => {
     const rainbow = BUILTIN_APPEARANCE_STYLES_V3.find(
       ({ id }) => id === "rainbow",
@@ -1879,57 +1924,63 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toBeGreaterThan(125);
   });
 
-  it("builds a valid r30 snapshot for every built-in and target", () => {
-    const resultByTarget = {
-      d4: 4,
-      d6: 6,
-      d8: 8,
-      d10: 10,
-      d12: 12,
-      d20: 20,
-      percentile: 90,
-      fudge: 1,
-      other: 999,
-    } as const;
+  it.each([
+    ["canvaskit-v4-r30", "property-streams-r30"],
+    ["canvaskit-v4-r31", "property-streams-r31"],
+  ] as const)(
+    "builds a valid %s snapshot for every built-in and target",
+    (rendererRevision, seedPolicy) => {
+      const resultByTarget = {
+        d4: 4,
+        d6: 6,
+        d8: 8,
+        d10: 10,
+        d12: 12,
+        d20: 20,
+        percentile: 90,
+        fudge: 1,
+        other: 999,
+      } as const;
 
-    for (const style of BUILTIN_APPEARANCE_STYLES_V3) {
-      for (const target of APPEARANCE_TARGETS) {
-        const recipe = style.overrides?.[target] ?? style.recipe;
-        const resolved = resolveAppearanceRecipeV3(
-          recipe,
-          contextV3({ target }),
-          "property-streams-r30",
-        );
-        const common = {
-          target,
-          result: resultByTarget[target],
-          form: resolved.form,
-          appearance: { ...resolved.appearance, effect: null },
-          icons: [] as RenderDieV4["icons"],
-          view: getAuthoredRenderViewV4(
-            "canvaskit-v4-r30",
-            "legacy",
-            {
-              target,
-              result: resultByTarget[target],
-              form: resolved.form,
-            },
-          ),
-        };
-        const die: RenderDieV4 =
-          target === "other"
-            ? { ...common, target, sides: 999 }
-            : { ...common, target };
-        expect(() =>
-          validateRenderRequestV4({
-            version: 4,
-            rendererRevision: "canvaskit-v4-r30",
-            groups: [[die]],
-          }),
-        ).not.toThrow();
+      for (const style of BUILTIN_APPEARANCE_STYLES_V3) {
+        for (const target of APPEARANCE_TARGETS) {
+          const recipe = style.overrides?.[target] ?? style.recipe;
+          const resolved = resolveAppearanceRecipeV3(
+            recipe,
+            contextV3({ target }),
+            seedPolicy,
+          );
+          const common = {
+            target,
+            result: resultByTarget[target],
+            form: resolved.form,
+            appearance: { ...resolved.appearance, effect: null },
+            icons: [] as RenderDieV4["icons"],
+            view: getAuthoredRenderViewV4(
+              rendererRevision,
+              "legacy",
+              {
+                target,
+                result: resultByTarget[target],
+                form: resolved.form,
+              },
+            ),
+          };
+          const die: RenderDieV4 =
+            target === "other"
+              ? { ...common, target, sides: 999 }
+              : { ...common, target };
+          expect(() =>
+            validateRenderRequestV4({
+              version: 4,
+              rendererRevision,
+              groups: [[die]],
+            }),
+          ).not.toThrow();
+        }
       }
-    }
-  });
+    },
+  );
 
   it("requires physical local separation when Void turns light ink dark", () => {
     const resolved = resolveAppearanceRecipeV3(

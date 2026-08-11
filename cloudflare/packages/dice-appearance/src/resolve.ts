@@ -12,6 +12,7 @@ import {
   type EngravingFinishV4,
   type LinearDirectionV4,
   type RenderLightingV4,
+  type RendererRevisionV4,
   type TextureScopeV4,
 } from "@dice-witch/dice-v4-model";
 import {
@@ -895,7 +896,8 @@ export type AppearanceResolutionSeedPolicyV3 =
   | "property-streams-r27"
   | "property-streams-r28"
   | "property-streams-r29"
-  | "property-streams-r30";
+  | "property-streams-r30"
+  | "property-streams-r31";
 
 function usesR27ColorBehaviorV3(
   policy: AppearanceResolutionSeedPolicyV3,
@@ -904,7 +906,8 @@ function usesR27ColorBehaviorV3(
     policy === "property-streams-r27" ||
     policy === "property-streams-r28" ||
     policy === "property-streams-r29" ||
-    policy === "property-streams-r30"
+    policy === "property-streams-r30" ||
+    policy === "property-streams-r31"
   );
 }
 
@@ -943,7 +946,8 @@ function propertySeedV3(
   const usesPerDieRandomPalette =
     (policy === "property-streams-r28" ||
       policy === "property-streams-r29" ||
-      policy === "property-streams-r30") &&
+      policy === "property-streams-r30" ||
+      policy === "property-streams-r31") &&
     (usesFullSpectrumRandomizationV3(recipe) ||
       recipe.randomization === "one-palette-color-v1");
   const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
@@ -1193,11 +1197,16 @@ export function resolveAppearanceRecipeV3(
     ? randomSpecialMaterialV3(selectedMaterial)
     : undefined;
   const usesR30 = seedPolicy === "property-streams-r30";
-  const material: AppearanceMaterialV4 = {
-    ...(randomSpecial !== undefined && (usesR30 || context.target === "d20")
+  const usesR31 = seedPolicy === "property-streams-r31";
+  let specialFormRevision: RendererRevisionV4 | undefined;
+  if (usesR31) specialFormRevision = "canvaskit-v4-r31";
+  else if (usesR30) specialFormRevision = "canvaskit-v4-r30";
+  const resolvedMaterial =
+    randomSpecial !== undefined &&
+    (specialFormRevision !== undefined || context.target === "d20")
       ? randomSpecial.d20Material
-      : selectedMaterial),
-  };
+      : selectedMaterial;
+  const material: AppearanceMaterialV4 = { ...resolvedMaterial };
   const colorSeedValue = {
     colors: recipe.colors,
     ...(usesR27ColorBehaviorV3(seedPolicy) &&
@@ -1224,10 +1233,9 @@ export function resolveAppearanceRecipeV3(
     randomSpecial?.palette,
   );
   if (
-    usesR30 &&
-    isBuiltinRandomRecipeV3(recipe) &&
     material.family === "classic" &&
-    material.treatment === "solid"
+    material.treatment === "solid" &&
+    (usesR31 || (usesR30 && isBuiltinRandomRecipeV3(recipe)))
   ) {
     const color = colors.ordered[0];
     colors = { ordered: [color, color], pair: [color, color] };
@@ -1236,11 +1244,11 @@ export function resolveAppearanceRecipeV3(
   if (context.target === "other") {
     form = recipe.form.other;
   } else if (usesFullSpectrumRandomization) {
-    if (randomSpecial !== undefined && usesR30) {
+    if (randomSpecial !== undefined && specialFormRevision !== undefined) {
       form = materialDefaultPolyhedralFormV4(
         material.family,
         context.target,
-        "canvaskit-v4-r30",
+        specialFormRevision,
       );
     } else {
       form =
@@ -1252,7 +1260,7 @@ export function resolveAppearanceRecipeV3(
     form = materialDefaultPolyhedralFormV4(
       material.family,
       context.target,
-      usesR30 ? "canvaskit-v4-r30" : undefined,
+      specialFormRevision,
     );
   } else {
     form = resolveCompatiblePolyhedralFormV4(
@@ -1314,6 +1322,7 @@ export function resolveAppearanceRecipeV3(
   const isClassicGradient =
     material.family === "classic" && material.treatment === "gradient";
   const isBalancedClassicSolid =
+    !usesR31 &&
     usesR27ColorBehaviorV3(seedPolicy) &&
     material.family === "classic" &&
     material.treatment === "solid";

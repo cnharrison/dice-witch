@@ -416,7 +416,10 @@ function authoredPolyhedralViews(
   if (rendererRevision === "canvaskit-v4-r29") {
     return POLYHEDRAL_VIEWS_R29_V4;
   }
-  if (rendererRevision === "canvaskit-v4-r30") {
+  if (
+    rendererRevision === "canvaskit-v4-r30" ||
+    rendererRevision === "canvaskit-v4-r31"
+  ) {
     return POLYHEDRAL_VIEWS_R30_V4;
   }
   if (

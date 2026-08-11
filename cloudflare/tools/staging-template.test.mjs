@@ -55,7 +55,7 @@ test("keeps staging Data private with lifecycle and audience schedules", async (
     crons: ["0 * * * *", "*/5 * * * *"],
   });
   assert.equal(configs.roll.vars.ROLL_RENDER_VERSION, "4");
-  assert.equal(configs.roll.vars.ROLL_VIEW_POLICY, "r30");
+  assert.equal(configs.roll.vars.ROLL_VIEW_POLICY, "r31");
 });
 
 test("requires local resource identifiers and build metadata", async () => {

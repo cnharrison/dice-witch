@@ -27,6 +27,7 @@ import {
   buildAppearancePreviewRenderRequestR28V4,
   buildAppearancePreviewRenderRequestR29V4,
   buildAppearancePreviewRenderRequestR30V4,
+  buildAppearancePreviewRenderRequestR31V4,
   buildAppearancePreviewRenderRequestForPolicyV4,
   executeWebRoll,
   parseWebSavedRollAttribution,
@@ -355,6 +356,10 @@ describe("appearance preview", () => {
       buildAppearancePreviewRenderRequestForPolicyV4(input, "r30")
         .rendererRevision,
     ).toBe("canvaskit-v4-r30");
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r31")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r31");
   });
 
   it("maps built-in Random solid previews across whole dice in r29", () => {
@@ -418,6 +423,33 @@ describe("appearance preview", () => {
         ({ appearance }) => new Set(appearance.palette).size === 1,
       ),
     ).toBe(true);
+  });
+
+  it("removes custom multi-color Classic Solid fields in r31 previews", () => {
+    const solid = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "solid",
+    )?.recipe;
+    if (solid === undefined) throw new Error("Solid recipe is missing");
+    const recipe = {
+      ...solid,
+      colors: { mode: "vivid-random-pair" as const },
+    };
+    const input = {
+      target: "d6" as const,
+      recipe,
+      diceView: createDefaultDiceViewPreferencesV4(),
+      seed: 7,
+      state: "normal" as const,
+    };
+    const r30 = buildAppearancePreviewRenderRequestR30V4(input);
+    const r31 = buildAppearancePreviewRenderRequestR31V4(input);
+    const r30Appearance = r30.groups[0]?.[0]?.appearance;
+    const r31Appearance = r31.groups[0]?.[0]?.appearance;
+
+    expect(new Set(r30Appearance?.palette).size).toBe(2);
+    expect(r30Appearance?.texture.scope).toBe("face-local");
+    expect(new Set(r31Appearance?.palette).size).toBe(1);
+    expect(r31Appearance?.texture.scope).toBe("die-wide");
   });
 
   it("builds Profile V4 camera drafts through immutable r20 and r21", () => {
@@ -555,7 +587,7 @@ describe("appearance preview", () => {
         seed: 7,
         state: "normal",
       },
-      "r30",
+      "r31",
     );
 
     expect(rendered).toMatchObject({

@@ -364,4 +364,5 @@ export const RENDERER_REVISIONS_V4 = Object.freeze([
   "canvaskit-v4-r28",
   "canvaskit-v4-r29",
   "canvaskit-v4-r30",
+  "canvaskit-v4-r31",
 ] as const);

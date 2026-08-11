@@ -73,7 +73,7 @@ describe("all-target V4 special forms", () => {
     }
   });
 
-  it("gates all-target special forms and defaults to r30", () => {
+  it("gates all-target special forms from r30", () => {
     for (const target of TARGETS) {
       for (const form of FORMS) {
         expect(isPolyhedralFormImplementedForTargetV4(target, form)).toBe(false);
@@ -84,28 +84,23 @@ describe("all-target V4 special forms", () => {
             "canvaskit-v4-r29",
           ),
         ).toBe(false);
-        expect(
-          isPolyhedralFormImplementedForTargetV4(
-            target,
-            form,
-            "canvaskit-v4-r30",
-          ),
-        ).toBe(true);
       }
-      expect(
-        materialDefaultPolyhedralFormV4(
-          "sharp-resin",
-          target,
-          "canvaskit-v4-r30",
-        ),
-      ).toBe("crystal-cut");
-      expect(
-        materialDefaultPolyhedralFormV4(
-          "hollow-metal",
-          target,
-          "canvaskit-v4-r30",
-        ),
-      ).toBe("hollow-cage");
+      for (const revision of [
+        "canvaskit-v4-r30",
+        "canvaskit-v4-r31",
+      ] as const) {
+        for (const form of FORMS) {
+          expect(
+            isPolyhedralFormImplementedForTargetV4(target, form, revision),
+          ).toBe(true);
+        }
+        expect(
+          materialDefaultPolyhedralFormV4("sharp-resin", target, revision),
+        ).toBe("crystal-cut");
+        expect(
+          materialDefaultPolyhedralFormV4("hollow-metal", target, revision),
+        ).toBe("hollow-cage");
+      }
     }
   });
 

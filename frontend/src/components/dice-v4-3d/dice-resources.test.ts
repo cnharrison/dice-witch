@@ -1,7 +1,9 @@
 import {
   D10_STANDARD_GEOMETRY_V4,
+  SOURCE_TEXTURE_SIZE_V4,
   parsePublicRenderModelV4,
   type RenderDieV4,
+  type TextureRasterV4,
 } from "@dice-witch/dice-v4-model";
 import {
   BufferGeometry,
@@ -108,6 +110,53 @@ describe("V4 Three.js dice resource ownership", () => {
       "canvaskit-v4-r19",
     );
     expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[7]).toBeUndefined();
+  });
+
+  it("protects a single locally low-contrast texel only in r31", () => {
+    const pixels = new Uint8Array(
+      SOURCE_TEXTURE_SIZE_V4 * SOURCE_TEXTURE_SIZE_V4 * 4,
+    );
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      pixels[offset] = 255;
+      pixels[offset + 1] = 255;
+      pixels[offset + 2] = 255;
+      pixels[offset + 3] = 255;
+    }
+    pixels[0] = 17;
+    pixels[1] = 17;
+    pixels[2] = 17;
+    const contrastRaster: TextureRasterV4 = {
+      version: 1,
+      width: SOURCE_TEXTURE_SIZE_V4,
+      height: SOURCE_TEXTURE_SIZE_V4,
+      colorSpace: "srgb",
+      alphaMode: "opaque",
+      pixels,
+    };
+
+    prepareThreeDiceV4(
+      D10_STANDARD_GEOMETRY_V4,
+      { ...sourceDie, target: "d10", result: 10 },
+      "Liberation Sans",
+      "full-atlas",
+      "canvaskit-v4-r30",
+      contrastRaster,
+    );
+    expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[6]).toBeNull();
+
+    prepareThreeDiceV4(
+      D10_STANDARD_GEOMETRY_V4,
+      { ...sourceDie, target: "d10", result: 10 },
+      "Liberation Sans",
+      "full-atlas",
+      "canvaskit-v4-r31",
+      contrastRaster,
+    );
+    expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[6]).toEqual({
+      color: "#ffffff",
+      opacity: 0.92,
+      widthRatio: 0.05,
+    });
   });
 
   it("counts unique owned resources and their deterministic source bytes", () => {

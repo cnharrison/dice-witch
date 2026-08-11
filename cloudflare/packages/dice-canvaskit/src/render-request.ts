@@ -206,13 +206,14 @@ function geometryGridDie(
     usesOctahedralAtlas,
     rendererRevision,
   );
-  const engravingContrastEdge = policy.engravingContrastEdge
-      ? resolveEngravingContrastEdgeV4(
-          die.appearance,
-          sourceTexture,
-          die.target === "d4",
-        )
-      : null;
+  const engravingContrastEdge = policy.engravingContrastEdge === false
+    ? null
+    : resolveEngravingContrastEdgeV4(
+        die.appearance,
+        sourceTexture,
+        die.target === "d4",
+        policy.engravingContrastEdge === "protective-r31",
+      );
   const engravingFontScale = engravingFontScaleV4(
     rendererRevision,
     die.target,
@@ -383,6 +384,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r28": renderCanvasKit,
   "canvaskit-v4-r29": renderCanvasKit,
   "canvaskit-v4-r30": renderCanvasKit,
+  "canvaskit-v4-r31": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {

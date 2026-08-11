@@ -213,14 +213,15 @@ export function prepareThreeDiceV4(
     ? null
     : rendererRevisionPolicyV4(rendererRevision);
   const contrastEdge =
-    revisionPolicy?.engravingContrastEdge === true
-      ? resolveEngravingContrastEdgeV4(
+    revisionPolicy === null || revisionPolicy.engravingContrastEdge === false
+      ? null
+      : resolveEngravingContrastEdgeV4(
           die.appearance,
           contrastRaster ??
             createMaterialRasterV4(die.appearance, rendererRevision),
           die.target === "d4",
-        )
-      : null;
+          revisionPolicy.engravingContrastEdge === "protective-r31",
+        );
   if (descriptor.kind === "sphere") {
     return {
       kind: "sphere",

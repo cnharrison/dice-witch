@@ -790,6 +790,14 @@ function parseAppearance(
     requiresLocalSeparation: appearance.requiresLocalSeparation,
     effect: parseEffect(appearance.effect, `${path}.effect`),
   };
+  if (
+    rendererRevisionPolicyV4(rendererRevision).singleColorClassicSolid &&
+    parsed.material.family === "classic" &&
+    parsed.material.treatment === "solid" &&
+    new Set(parsed.palette).size !== 1
+  ) {
+    throw new Error(`${path}.palette requires one Classic Solid color`);
+  }
   validateMaterialAssets(parsed, path);
   return parsed;
 }

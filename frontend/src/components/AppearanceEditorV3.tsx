@@ -622,7 +622,7 @@ export function AppearanceEditorV3({
         )}
       </div>
 
-      <aside className="order-2 space-y-4 xl:col-start-2 xl:row-span-2 xl:row-start-1">
+      <aside className="order-2 space-y-4 xl:sticky xl:top-6 xl:z-10 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start">
         <Button
           type="button"
           variant="outline"
@@ -635,7 +635,7 @@ export function AppearanceEditorV3({
         </Button>
         <div
           id={`${kind}-appearance-preview`}
-          className={`${previewExpanded ? "" : "hidden xl:block"} xl:sticky xl:top-6 xl:z-10`}
+          className={previewExpanded ? "" : "hidden xl:block"}
         >
           <AppearancePreviewPaneV3
             target={previewTarget}

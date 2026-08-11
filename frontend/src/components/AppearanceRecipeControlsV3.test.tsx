@@ -61,6 +61,67 @@ describe("AppearanceRecipeControlsV3", () => {
     );
   });
 
+  it("switches fixed Classic Solid to Gradient for multi-color modes", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={recipe("solid")} />);
+
+    await user.selectOptions(
+      screen.getByLabelText("Color behavior"),
+      "vivid-random-pair",
+    );
+
+    const value = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    expect(value.colors).toEqual({ mode: "vivid-random-pair" });
+    expect(value.material).toMatchObject({
+      mode: "fixed",
+      value: { family: "classic", treatment: "gradient" },
+    });
+    expect(screen.getAllByLabelText("Gradient scope")).toHaveLength(2);
+  });
+
+  it("switches multi-color recipes to one color for fixed Classic Solid", async () => {
+    const user = userEvent.setup();
+    const initial = recipe("pride");
+    if (initial.colors.mode !== "palette") {
+      throw new Error("Pride fixture must use a palette");
+    }
+    const primary = initial.colors.colors[0];
+    const gradient = structuredClone(initial.gradient);
+    render(<Harness initial={initial} />);
+
+    await user.selectOptions(
+      screen.getByLabelText("Classic treatment"),
+      "solid",
+    );
+
+    const value = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    expect(value.colors).toEqual({ mode: "solid", primary });
+    expect(value.material).toMatchObject({
+      mode: "fixed",
+      value: { family: "classic", treatment: "solid" },
+    });
+    expect(value.gradient).toEqual(gradient);
+    expect(screen.queryAllByLabelText("Gradient scope")).toHaveLength(0);
+
+    await user.selectOptions(
+      screen.getByLabelText("Color behavior"),
+      "palette",
+    );
+    const reopened = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    expect(reopened.material).toMatchObject({
+      mode: "fixed",
+      value: { family: "classic", treatment: "gradient" },
+    });
+    expect(reopened.gradient).toEqual(gradient);
+    expect(screen.getAllByLabelText("Gradient scope")).toHaveLength(2);
+  });
+
   it("shows each font choice in its own typeface", async () => {
     const user = userEvent.setup();
     render(<Harness initial={recipe("chaotic")} />);

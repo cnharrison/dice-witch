@@ -325,7 +325,10 @@ function specialD20Request(
   };
 }
 
-function allTargetSpecialFormRequest(): RenderRequestV4 {
+function allTargetSpecialFormRequest(
+  rendererRevision: "canvaskit-v4-r30" | "canvaskit-v4-r31" =
+    "canvaskit-v4-r30",
+): RenderRequestV4 {
   const targets = GRADIENT_SCOPE_TARGETS_V4;
   const group = (
     form: "crystal-cut" | "hollow-cage",
@@ -338,7 +341,7 @@ function allTargetSpecialFormRequest(): RenderRequestV4 {
         ...specialAppearance,
         texture: { ...specialAppearance.texture, scope: "die-wide" },
       },
-      view: getAuthoredRenderViewV4("canvaskit-v4-r30", "legacy", {
+      view: getAuthoredRenderViewV4(rendererRevision, "legacy", {
         target,
         form,
         result,
@@ -346,7 +349,7 @@ function allTargetSpecialFormRequest(): RenderRequestV4 {
     }));
   return {
     version: 4,
-    rendererRevision: "canvaskit-v4-r30",
+    rendererRevision,
     groups: [
       group("crystal-cut", crystalAppearance),
       group("hollow-cage", hollowAppearance),
@@ -2355,6 +2358,63 @@ describe("CanvasKit Render Request V4", () => {
     expect(separatedLabels.png).not.toEqual(plainLabels.png);
   });
 
+  it("strengthens only the local engraving edge in r31", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const requestFor = (
+      rendererRevision: "canvaskit-v4-r30" | "canvaskit-v4-r31",
+    ): RenderRequestV4 => ({
+      version: 4,
+      rendererRevision,
+      groups: [[{
+        target: "d20",
+        result: 15,
+        form: "standard",
+        appearance: {
+          ...appearance,
+          material: {
+            family: "classic",
+            treatment: "pattern",
+            patternId: "stripes",
+            opacity: "opaque",
+            finish: "satin",
+            textureScale: 100,
+          },
+          palette: ["#f01828", "#20c55a"],
+          texture: {
+            ...appearance.texture,
+            rotation: 315,
+            scope: "die-wide",
+          },
+          engraving: {
+            ...appearance.engraving,
+            finish: "metallic",
+            color: "#111111",
+          },
+          requiresLocalSeparation: true,
+        },
+        icons: [],
+        view: getAuthoredRenderViewV4(rendererRevision, "legacy", {
+          target: "d20",
+          form: "standard",
+          result: 15,
+        }),
+      }]],
+    });
+    const r30 = requestFor("canvaskit-v4-r30");
+    const r31 = requestFor("canvaskit-v4-r31");
+    const r30Blank = await renderDiceRequestV4ToPng(r30, createRenderer, {
+      blankFaces: true,
+    });
+    const r31Blank = await renderDiceRequestV4ToPng(r31, createRenderer, {
+      blankFaces: true,
+    });
+    const r30Labels = await renderDiceRequestV4ToPng(r30, createRenderer);
+    const r31Labels = await renderDiceRequestV4ToPng(r31, createRenderer);
+
+    expect(r31Blank.png).toEqual(r30Blank.png);
+    expect(r31Labels.png).not.toEqual(r30Labels.png);
+  });
+
   it("renders r29 die-wide classic solids on every polyhedral target", async () => {
     const solidAppearance: RenderAppearanceV4 = {
       ...appearance,
@@ -2419,22 +2479,24 @@ describe("CanvasKit Render Request V4", () => {
     }
   });
 
-  it("renders r30 crystal-cut and hollow-cage models for every polyhedral target", async () => {
+  it("preserves all-target special-form geometry in r31", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
-    const first = await renderDiceRequestV4ToPng(
+    const r30 = await renderDiceRequestV4ToPng(
       allTargetSpecialFormRequest(),
       createRenderer,
+      { blankFaces: true },
     );
-    const second = await renderDiceRequestV4ToPng(
-      allTargetSpecialFormRequest(),
+    const r31 = await renderDiceRequestV4ToPng(
+      allTargetSpecialFormRequest("canvaskit-v4-r31"),
       createRenderer,
+      { blankFaces: true },
     );
 
-    expect(first.png).toEqual(second.png);
-    expect(first.diceCount).toBe(16);
-    expect(first.rowCount).toBe(2);
-    expect(first.visibleFaceCount).toBeGreaterThan(16);
-    const decoded = await decodePngRgba8(first.png);
+    expect(r31.png).toEqual(r30.png);
+    expect(r31.diceCount).toBe(16);
+    expect(r31.rowCount).toBe(2);
+    expect(r31.visibleFaceCount).toBeGreaterThan(16);
+    const decoded = await decodePngRgba8(r31.png);
     expect(transparentPixelCount(decoded.pixels)).toBeGreaterThan(1_000);
   });
 
@@ -2952,7 +3014,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r31" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r32" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

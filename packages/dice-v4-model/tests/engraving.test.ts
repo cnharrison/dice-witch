@@ -205,6 +205,29 @@ describe("V4 additive engraving legibility policy", () => {
     });
   });
 
+  it("protects any locally low-contrast texture pixel only when requested", () => {
+    const texture = solidTexture(17, 17, 17);
+    texture.pixels[0] = 246;
+    texture.pixels[1] = 230;
+    texture.pixels[2] = 94;
+
+    expect(
+      resolveEngravingContrastEdgeV4(CONTRAST_APPEARANCE, texture),
+    ).toBeNull();
+    expect(
+      resolveEngravingContrastEdgeV4(
+        CONTRAST_APPEARANCE,
+        texture,
+        false,
+        true,
+      ),
+    ).toEqual({
+      color: "#000000",
+      opacity: 0.92,
+      widthRatio: 0.05,
+    });
+  });
+
   it("leaves already legible engraving unchanged", () => {
     expect(
       resolveEngravingContrastEdgeV4(

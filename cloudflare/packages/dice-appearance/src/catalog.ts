@@ -570,7 +570,7 @@ const FORMS_V3 = [
       isPolyhedralFormImplementedForTargetV4(
         target,
         form,
-        "canvaskit-v4-r30",
+        "canvaskit-v4-r31",
       ),
     ),
     materialFamilies: MATERIAL_FAMILIES_V4.filter((family) =>

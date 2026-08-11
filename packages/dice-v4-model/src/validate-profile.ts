@@ -562,7 +562,7 @@ function validateAssignedCustomForms(
           !isPolyhedralFormImplementedForTargetV4(
             target,
             form,
-            "canvaskit-v4-r30",
+            "canvaskit-v4-r31",
           ),
       )
     ) {

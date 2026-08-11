@@ -4,6 +4,8 @@ import { AppearanceMaterialControlsV3 } from "@/components/AppearanceMaterialCon
 import { AppearanceTreatmentControlsV3 } from "@/components/AppearanceTreatmentControlsV3";
 import { browserFontFamilyV4 } from "@/components/dice-v4-3d/font-assets";
 import {
+  reconcileAppearanceColorEditV3,
+  reconcileAppearanceMaterialEditV3,
   selectionValuesV3,
   type AppearanceEditorTargetV3,
 } from "@/lib/appearance-editor-v3";
@@ -58,13 +60,22 @@ export function AppearanceRecipeControlsV3({
     throw new Error("Appearance recipe catalog metadata is missing");
   }
   const fontValue = recipe.font.mode === "fixed" ? recipe.font.value : null;
+  const changeColors = (next: AppearanceRecipeV3) =>
+    onChange(reconcileAppearanceColorEditV3(next));
+  const changeMaterial = (next: AppearanceRecipeV3) =>
+    onChange(
+      reconcileAppearanceMaterialEditV3(
+        next,
+        catalog.editorDefaults.primaryColor,
+      ),
+    );
 
   return (
     <div className="space-y-5">
       <AppearanceColorControlsV3
         recipe={recipe}
         catalog={catalog}
-        onChange={onChange}
+        onChange={changeColors}
       />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
@@ -97,7 +108,7 @@ export function AppearanceRecipeControlsV3({
         <AppearanceMaterialControlsV3
           recipe={recipe}
           catalog={catalog}
-          onChange={onChange}
+          onChange={changeMaterial}
         />
         <AppearanceTreatmentControlsV3
           recipe={recipe}

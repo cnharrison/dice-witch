@@ -173,11 +173,19 @@ describe("V4 renderer revision policies", () => {
       boundedClassicSolidScope: true,
       d6FiveOpticalOffsetX: -0.08,
     });
-    expect(rendererRevisionPolicyV4("canvaskit-v4-r30")).toEqual({
+    const revision30 = rendererRevisionPolicyV4("canvaskit-v4-r30");
+    expect(revision30).toEqual({
       ...revision29,
       allTargetCrystalCut: true,
       allTargetHollowCage: true,
       allowSingleColorPalette: true,
+    });
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r31")).toEqual({
+      ...revision30,
+      balancedClassicSolidFaceLocal: false,
+      boundedClassicSolidScope: false,
+      singleColorClassicSolid: true,
+      engravingContrastEdge: "protective-r31",
     });
     expect(revision19.resolvedViews).toBe(false);
   });
@@ -185,7 +193,7 @@ describe("V4 renderer revision policies", () => {
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r31" as RendererRevisionV4,
+        "canvaskit-v4-r32" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

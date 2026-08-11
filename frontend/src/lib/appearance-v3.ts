@@ -395,7 +395,7 @@ function expectedFormTargets(form: RenderFormV4): readonly AppearanceTargetV4[] 
       isPolyhedralFormImplementedForTargetV4(
         target,
         form,
-        "canvaskit-v4-r30",
+        "canvaskit-v4-r31",
       ),
   );
 }
