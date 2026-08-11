@@ -1,5 +1,6 @@
 import {
   APPEARANCE_TARGETS_V4,
+  FANTASY_ESSENCE_PALETTES_R33_V4,
   createDefaultDiceViewPreferencesV4,
   isPolyhedralFormImplementedForTargetV4,
   parseAppearanceMaterialV4,
@@ -234,6 +235,12 @@ function curatedMaterialColorsV3(
 ): AppearanceRecipeV3["colors"] | null {
   if (recipe.material.mode !== "fixed") return null;
   const material = recipe.material.value;
+  if (material.family === "fantasy") {
+    return {
+      mode: "palette",
+      colors: [...FANTASY_ESSENCE_PALETTES_R33_V4[material.essence]],
+    };
+  }
   if (material.family !== "elemental" && material.family !== "paint") {
     return null;
   }

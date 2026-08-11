@@ -60,7 +60,7 @@ describe("appearance V3 response contracts", () => {
   it("parses the complete published catalog and shared Profile V3 resources", () => {
     const catalog = parseAppearanceCatalogV3(APPEARANCE_CATALOG_V3);
     expect(catalog.version).toBe(3);
-    expect(catalog.styles).toHaveLength(42);
+    expect(catalog.styles).toHaveLength(45);
     expect(catalog.materials).toHaveLength(12);
     expect(catalog.forms.map(({ id }) => id)).toEqual([
       "standard",

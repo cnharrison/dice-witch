@@ -204,7 +204,8 @@ export function getGeometryIdV4(
 export type RenderGeometrySelectionV4 = Pick<
   RenderDieV4,
   "target" | "form" | "result" | "view"
->;
+> &
+  Partial<Pick<RenderDieV4, "appearance">>;
 
 export function getRenderGeometryIdV4(
   rendererRevision: RendererRevisionV4,
@@ -232,10 +233,20 @@ export function getRenderGeometryDescriptorV4(
   rendererRevision: RendererRevisionV4,
   die: RenderGeometrySelectionV4,
 ): GeometryDescriptorV4 {
-  const descriptor = getCanonicalGeometryDescriptorV4(
+  const canonicalDescriptor = getCanonicalGeometryDescriptorV4(
     getRenderGeometryIdV4(rendererRevision, die),
   );
   const revisionPolicy = rendererRevisionPolicyV4(rendererRevision);
+  const descriptor =
+    canonicalDescriptor.kind === "polyhedral" &&
+    canonicalDescriptor.skinMapping.kind === "face-coordinates" &&
+    revisionPolicy.polyhedralSurfaceMapping === "view-octahedral-r33" &&
+    die.appearance?.texture.scope !== "face-local"
+      ? {
+          ...canonicalDescriptor,
+          skinMapping: { kind: "view-octahedral" as const, subdivisions: 4 },
+        }
+      : canonicalDescriptor;
   const cameraAngles = revisionPolicy.cameraAngles;
   if (cameraAngles === "legacy") return descriptor;
   if (die.view?.kind === "sphere-surface" && descriptor.kind === "sphere") {

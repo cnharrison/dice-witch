@@ -417,7 +417,10 @@ describe("V4 Three.js model adapter", () => {
       descriptor,
     );
     const source = generateMaterialTextureV4(
-      createTextureGenerationInputV4(d20.appearance),
+      createTextureGenerationInputV4(
+        "canvaskit-v4-r32",
+        d20.appearance,
+      ),
     );
     const expectedAtlas = createOctahedralTextureAtlasV4(
       source,
@@ -609,7 +612,10 @@ describe("V4 Three.js model adapter", () => {
 
   it("uploads exact source texels with CanvasKit-compatible sampling", () => {
     const expected = generateMaterialTextureV4(
-      createTextureGenerationInputV4(d6.appearance),
+      createTextureGenerationInputV4(
+        "canvaskit-v4-r32",
+        d6.appearance,
+      ),
     );
     const texture = createMaterialDataTextureV4(d6.appearance);
 

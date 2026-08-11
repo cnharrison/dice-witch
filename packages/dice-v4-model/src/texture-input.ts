@@ -10,7 +10,7 @@ import type {
 export const SOURCE_TEXTURE_SIZE_V4 = 192;
 
 export type TextureGenerationInputV4 = {
-  version: 1;
+  version: 1 | 2;
   width: typeof SOURCE_TEXTURE_SIZE_V4;
   height: typeof SOURCE_TEXTURE_SIZE_V4;
   generatorId: TextureGeneratorIdV4;
@@ -20,7 +20,7 @@ export type TextureGenerationInputV4 = {
 };
 
 export type TextureRasterV4 = {
-  version: 1;
+  version: 1 | 2;
   width: typeof SOURCE_TEXTURE_SIZE_V4;
   height: typeof SOURCE_TEXTURE_SIZE_V4;
   colorSpace: "srgb";
@@ -49,10 +49,14 @@ export function usesProjectedTextureMappingV4(
 }
 
 export function createTextureGenerationInputV4(
+  rendererRevision: RendererRevisionV4,
   appearance: RenderAppearanceV4,
 ): TextureGenerationInputV4 {
   return {
-    version: 1,
+    version:
+      rendererRevisionPolicyV4(rendererRevision).textureGeneration === "r33-v2"
+        ? 2
+        : 1,
     width: SOURCE_TEXTURE_SIZE_V4,
     height: SOURCE_TEXTURE_SIZE_V4,
     generatorId: appearance.texture.generatorId,
@@ -63,7 +67,10 @@ export function createTextureGenerationInputV4(
 }
 
 export function canonicalTextureGenerationInputV4(
+  rendererRevision: RendererRevisionV4,
   appearance: RenderAppearanceV4,
 ): string {
-  return canonicalJsonV4(createTextureGenerationInputV4(appearance));
+  return canonicalJsonV4(
+    createTextureGenerationInputV4(rendererRevision, appearance),
+  );
 }

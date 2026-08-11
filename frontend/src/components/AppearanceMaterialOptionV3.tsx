@@ -628,14 +628,6 @@ export function AppearanceMaterialOptionV3({
                 onChange({ ...material, horizonHeight })
               }
             />
-            <RangeField
-              label="Cloud softness"
-              value={material.textureScale}
-              range={metadata.textureScale}
-              onChange={(textureScale) =>
-                onChange({ ...material, textureScale })
-              }
-            />
           </>
         );
       }

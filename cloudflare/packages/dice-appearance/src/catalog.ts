@@ -111,10 +111,10 @@ export const APPROVED_COLLECTOR_STYLE_IDS_V3 = [
   "heavy-metal",
   "hollow-victory",
   "grain-expectations",
-  "elemental-lava",
+  "elemental-lava-r33",
   "elemental-sand",
-  "elemental-blue-sky",
-  "elemental-sunset",
+  "elemental-blue-sky-r33",
+  "elemental-sunset-r33",
   "paint-splatter",
 ] as const;
 
@@ -413,9 +413,9 @@ const ELEMENTAL_MATERIAL_DEFAULTS_V3 = [
   {
     family: "elemental",
     style: "lava",
-    fissureDensity: 65,
-    glowIntensity: 78,
-    textureScale: 110,
+    fissureDensity: 30,
+    glowIntensity: 90,
+    textureScale: 340,
   },
   {
     family: "elemental",
@@ -424,6 +424,33 @@ const ELEMENTAL_MATERIAL_DEFAULTS_V3 = [
     windDirection: -10,
     textureScale: 150,
   },
+  {
+    family: "elemental",
+    style: "blue-sky",
+    cloudCover: 58,
+    horizonHeight: 48,
+    textureScale: 25,
+  },
+  {
+    family: "elemental",
+    style: "sunset",
+    cloudCover: 68,
+    horizonHeight: 62,
+    textureScale: 25,
+  },
+] as const satisfies readonly Extract<
+  AppearanceMaterialV4,
+  { family: "elemental" }
+>[];
+const R32_ELEMENTAL_MATERIAL_DEFAULTS_V3 = [
+  {
+    family: "elemental",
+    style: "lava",
+    fissureDensity: 65,
+    glowIntensity: 78,
+    textureScale: 110,
+  },
+  ELEMENTAL_MATERIAL_DEFAULTS_V3[1],
   {
     family: "elemental",
     style: "blue-sky",
@@ -1426,24 +1453,36 @@ export const R32_MATERIAL_PALETTES_V3 = Object.freeze({
 } as const);
 
 const elementalLavaRecipeV3 = fixedCollectorRecipeV3(
-  ELEMENTAL_MATERIAL_DEFAULTS_V3[0],
+  R32_ELEMENTAL_MATERIAL_DEFAULTS_V3[0],
   R32_MATERIAL_PALETTES_V3["elemental-lava"],
 );
 const elementalSandRecipeV3 = fixedCollectorRecipeV3(
-  ELEMENTAL_MATERIAL_DEFAULTS_V3[1],
+  R32_ELEMENTAL_MATERIAL_DEFAULTS_V3[1],
   R32_MATERIAL_PALETTES_V3["elemental-sand"],
 );
 const elementalBlueSkyRecipeV3 = fixedCollectorRecipeV3(
-  ELEMENTAL_MATERIAL_DEFAULTS_V3[2],
+  R32_ELEMENTAL_MATERIAL_DEFAULTS_V3[2],
   R32_MATERIAL_PALETTES_V3["elemental-blue-sky"],
 );
 const elementalSunsetRecipeV3 = fixedCollectorRecipeV3(
-  ELEMENTAL_MATERIAL_DEFAULTS_V3[3],
+  R32_ELEMENTAL_MATERIAL_DEFAULTS_V3[3],
   R32_MATERIAL_PALETTES_V3["elemental-sunset"],
 );
 const paintSplatterRecipeV3 = fixedCollectorRecipeV3(
   PAINT_MATERIAL_DEFAULTS_V3[0],
   R32_MATERIAL_PALETTES_V3["paint-splatter"],
+);
+const elementalLavaR33RecipeV3 = fixedCollectorRecipeV3(
+  ELEMENTAL_MATERIAL_DEFAULTS_V3[0],
+  R32_MATERIAL_PALETTES_V3["elemental-lava"],
+);
+const elementalBlueSkyR33RecipeV3 = fixedCollectorRecipeV3(
+  ELEMENTAL_MATERIAL_DEFAULTS_V3[2],
+  R32_MATERIAL_PALETTES_V3["elemental-blue-sky"],
+);
+const elementalSunsetR33RecipeV3 = fixedCollectorRecipeV3(
+  ELEMENTAL_MATERIAL_DEFAULTS_V3[3],
+  R32_MATERIAL_PALETTES_V3["elemental-sunset"],
 );
 
 function fixedMaterialV3(recipe: AppearanceRecipeV3): AppearanceMaterialV4 {
@@ -1796,6 +1835,24 @@ const collectorStylesV3: readonly AppearanceBuiltinStyleV3[] = [
     name: "Splatter",
     description: "Contrasting drops and short directional streaks.",
     recipe: paintSplatterRecipeV3,
+  },
+  {
+    id: "elemental-lava-r33",
+    name: "Lava",
+    description: "Basalt crust with incandescent fissures.",
+    recipe: elementalLavaR33RecipeV3,
+  },
+  {
+    id: "elemental-blue-sky-r33",
+    name: "Blue Sky",
+    description: "Clear atmosphere with soft cloud banks.",
+    recipe: elementalBlueSkyR33RecipeV3,
+  },
+  {
+    id: "elemental-sunset-r33",
+    name: "Sunset",
+    description: "A warm horizon beneath violet cloud layers.",
+    recipe: elementalSunsetR33RecipeV3,
   },
 ];
 

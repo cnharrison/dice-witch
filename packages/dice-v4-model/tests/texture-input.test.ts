@@ -44,7 +44,10 @@ function appearance(): RenderAppearanceV4 {
 
 describe("V4 deterministic texture input", () => {
   it("projects only texel-generating fields from the resolved appearance", () => {
-    const input = createTextureGenerationInputV4(appearance());
+    const input = createTextureGenerationInputV4(
+      "canvaskit-v4-r32",
+      appearance(),
+    );
     expect(input).toEqual({
       version: 1,
       width: 192,
@@ -55,6 +58,9 @@ describe("V4 deterministic texture input", () => {
       palette: ["#4b176d", "#b46ee8", "#f3dcff"],
     });
     expect(SOURCE_TEXTURE_SIZE_V4).toBe(192);
+    expect(
+      createTextureGenerationInputV4("canvaskit-v4-r33", appearance()).version,
+    ).toBe(2);
   });
 
   it("keeps r4-r6 projected patterns immutable and maps r7 patterns onto the die surface", () => {
@@ -174,10 +180,10 @@ describe("V4 deterministic texture input", () => {
       direction: "upper-left",
     };
 
-    expect(canonicalTextureGenerationInputV4(first)).toBe(
-      canonicalTextureGenerationInputV4(second),
+    expect(canonicalTextureGenerationInputV4("canvaskit-v4-r32", first)).toBe(
+      canonicalTextureGenerationInputV4("canvaskit-v4-r32", second),
     );
-    expect(canonicalTextureGenerationInputV4(first)).toBe(
+    expect(canonicalTextureGenerationInputV4("canvaskit-v4-r32", first)).toBe(
       '{"generatorId":"gemstone-v1","height":192,"material":{"family":"gemstone","finish":"polished","stone":"quartz","textureScale":125,"veinDensity":70},"palette":["#4b176d","#b46ee8","#f3dcff"],"seed":1372499980,"version":1,"width":192}',
     );
   });

@@ -58,12 +58,19 @@ describe("browser-neutral V4 octahedral texture atlas", () => {
       "88739a724e7221a9ff31a97901fa745b42441b7f8844dc903723593e5945245c",
     );
     expect(sha256(source.pixels)).toBe(sourceHash);
+
+    const revision2 = createOctahedralTextureAtlasV4({
+      ...source,
+      version: 2,
+    });
+    expect(revision2.version).toBe(2);
+    expect(revision2.pixels).not.toEqual(source.pixels);
   });
 
   it("rejects invalid raster metadata and dimensions", () => {
     const source = sourceTexture();
     const invalidValues = [
-      { ...source, version: 2 },
+      { ...source, version: 3 },
       { ...source, colorSpace: "display-p3" },
       { ...source, alphaMode: "premultiplied" },
       { ...source, width: 1 },

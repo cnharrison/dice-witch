@@ -1,6 +1,9 @@
 import {
+  FANTASY_ESSENCE_PALETTES_R33_V4,
+  FANTASY_ESSENCES_V4,
   getAuthoredRenderViewV4,
   validateRenderRequestV4,
+  type AppearanceMaterialV4,
   type AppearanceRecipeV3,
   type RenderDieV4,
 } from "@dice-witch/dice-v4-model";
@@ -1452,6 +1455,88 @@ describe("resolveAppearanceRecipeV3", () => {
     expect(fonts.has("alcarin-tengwar")).toBe(false);
   }, 20_000);
 
+  it("locks r33 Fantasy palettes and sky softness without changing r32", () => {
+    for (const essence of FANTASY_ESSENCES_V4) {
+      const recipe = appearanceRecipeV3({
+        material: {
+          mode: "fixed",
+          value: {
+            family: "fantasy",
+            essence,
+            intensity: 60,
+            finish: "radiant",
+            textureScale: 100,
+          },
+        },
+      });
+      expect(
+        resolveAppearanceRecipeV3(recipe, contextV3(), "property-streams-r33")
+          .appearance.palette,
+      ).toEqual(FANTASY_ESSENCE_PALETTES_R33_V4[essence]);
+      expect(
+        resolveAppearanceRecipeV3(recipe, contextV3(), "property-streams-r32")
+          .appearance.palette,
+      ).toEqual(recipe.colors.mode === "palette" ? recipe.colors.colors : []);
+    }
+
+    const fantasyOptions: AppearanceMaterialV4[] = [
+      {
+        family: "fantasy",
+        essence: "ice",
+        intensity: 60,
+        finish: "radiant",
+        textureScale: 100,
+      },
+      {
+        family: "fantasy",
+        essence: "bone",
+        intensity: 60,
+        finish: "radiant",
+        textureScale: 100,
+      },
+    ];
+    for (const material of [
+      { mode: "allowlist" as const, values: fantasyOptions },
+      {
+        mode: "weighted" as const,
+        options: fantasyOptions.map((value) => ({ value, weight: 1 })),
+      },
+    ]) {
+      for (let renderSeed = 0; renderSeed < 4; renderSeed += 1) {
+        const resolved = resolveAppearanceRecipeV3(
+          appearanceRecipeV3({ material }),
+          contextV3({ renderSeed }),
+          "property-streams-r33",
+        );
+        if (resolved.appearance.material.family !== "fantasy") {
+          throw new Error("Resolved Fantasy selection is invalid");
+        }
+        expect(resolved.appearance.palette).toEqual(
+          FANTASY_ESSENCE_PALETTES_R33_V4[
+            resolved.appearance.material.essence
+          ],
+        );
+      }
+    }
+
+    const sky = appearanceRecipeV3({
+      material: {
+        mode: "fixed",
+        value: {
+          family: "elemental",
+          style: "blue-sky",
+          cloudCover: 58,
+          horizonHeight: 48,
+          textureScale: 305,
+        },
+      },
+    });
+    const r32 = resolveAppearanceRecipeV3(sky, contextV3(), "property-streams-r32");
+    const r33 = resolveAppearanceRecipeV3(sky, contextV3(), "property-streams-r33");
+    expect(r32.appearance.material).toMatchObject({ textureScale: 305 });
+    expect(r33.appearance.material).toMatchObject({ textureScale: 25 });
+  });
+
   it("keeps Brass Filigree bright enough for black engraving without a wash", () => {
     const style = BUILTIN_APPEARANCE_STYLES_V3.find(
       ({ id }) => id === "hollow-victory",
@@ -2035,6 +2120,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ["canvaskit-v4-r30", "property-streams-r30"],
     ["canvaskit-v4-r31", "property-streams-r31"],
     ["canvaskit-v4-r32", "property-streams-r32"],
+    ["canvaskit-v4-r33", "property-streams-r33"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -2053,7 +2139,13 @@ describe("resolveAppearanceRecipeV3", () => {
       for (const style of BUILTIN_APPEARANCE_STYLES_V3) {
         const r32OnlyStyle =
           style.id.startsWith("elemental-") || style.id === "paint-splatter";
-        if (rendererRevision !== "canvaskit-v4-r32" && r32OnlyStyle) continue;
+        if (
+          rendererRevision !== "canvaskit-v4-r32" &&
+          rendererRevision !== "canvaskit-v4-r33" &&
+          r32OnlyStyle
+        ) {
+          continue;
+        }
         for (const target of APPEARANCE_TARGETS) {
           const recipe = style.overrides?.[target] ?? style.recipe;
           const resolved = resolveAppearanceRecipeV3(

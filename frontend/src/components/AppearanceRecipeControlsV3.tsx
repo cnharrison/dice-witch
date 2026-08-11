@@ -62,7 +62,8 @@ export function AppearanceRecipeControlsV3({
   const fontValue = recipe.font.mode === "fixed" ? recipe.font.value : null;
   const usesCuratedMaterialPalette =
     recipe.material.mode === "fixed" &&
-    (recipe.material.value.family === "elemental" ||
+    (recipe.material.value.family === "fantasy" ||
+      recipe.material.value.family === "elemental" ||
       recipe.material.value.family === "paint");
   const changeColors = (next: AppearanceRecipeV3) =>
     onChange(reconcileAppearanceColorEditV3(next));

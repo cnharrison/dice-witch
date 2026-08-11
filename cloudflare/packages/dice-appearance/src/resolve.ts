@@ -1,4 +1,5 @@
 import {
+  FANTASY_ESSENCE_PALETTES_R33_V4,
   TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4,
   canonicalJsonV4,
   deriveAppearanceSeedV4,
@@ -899,7 +900,8 @@ export type AppearanceResolutionSeedPolicyV3 =
   | "property-streams-r29"
   | "property-streams-r30"
   | "property-streams-r31"
-  | "property-streams-r32";
+  | "property-streams-r32"
+  | "property-streams-r33";
 
 function usesR27ColorBehaviorV3(
   policy: AppearanceResolutionSeedPolicyV3,
@@ -910,7 +912,8 @@ function usesR27ColorBehaviorV3(
     policy === "property-streams-r29" ||
     policy === "property-streams-r30" ||
     policy === "property-streams-r31" ||
-    policy === "property-streams-r32"
+    policy === "property-streams-r32" ||
+    policy === "property-streams-r33"
   );
 }
 
@@ -951,7 +954,8 @@ function propertySeedV3(
       policy === "property-streams-r29" ||
       policy === "property-streams-r30" ||
       policy === "property-streams-r31" ||
-      policy === "property-streams-r32") &&
+      policy === "property-streams-r32" ||
+      policy === "property-streams-r33") &&
     (usesFullSpectrumRandomizationV3(recipe) ||
       recipe.randomization === "one-palette-color-v1");
   const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
@@ -1229,8 +1233,9 @@ export function resolveAppearanceRecipeV3(
   context: AppearanceResolutionContextV3,
   seedPolicy: AppearanceResolutionSeedPolicyV3 = "legacy",
 ): ResolvedAppearanceV3 {
-  const usesR32 = seedPolicy === "property-streams-r32";
-  const recipe = randomRecipeForResolutionV3(inputRecipe, usesR32);
+  const usesR33 = seedPolicy === "property-streams-r33";
+  const usesR32OrLater = seedPolicy === "property-streams-r32" || usesR33;
+  const recipe = randomRecipeForResolutionV3(inputRecipe, usesR32OrLater);
   const seed = deriveAppearanceSeedV4({
     ...context,
     variation: recipe.variation,
@@ -1256,7 +1261,8 @@ export function resolveAppearanceRecipeV3(
   const usesR30 = seedPolicy === "property-streams-r30";
   const usesR31 = seedPolicy === "property-streams-r31";
   let specialFormRevision: RendererRevisionV4 | undefined;
-  if (usesR32) specialFormRevision = "canvaskit-v4-r32";
+  if (usesR33) specialFormRevision = "canvaskit-v4-r33";
+  else if (usesR32OrLater) specialFormRevision = "canvaskit-v4-r32";
   else if (usesR31) specialFormRevision = "canvaskit-v4-r31";
   else if (usesR30) specialFormRevision = "canvaskit-v4-r30";
   const resolvedMaterial =
@@ -1265,7 +1271,7 @@ export function resolveAppearanceRecipeV3(
       ? randomSpecial.d20Material
       : selectedMaterial;
   let material: AppearanceMaterialV4 = { ...resolvedMaterial };
-  if (usesR32 && isBuiltinRandomRecipeV3(recipe)) {
+  if (usesR32OrLater && isBuiltinRandomRecipeV3(recipe)) {
     material = randomizeR32MaterialControlsV3(
       material,
       propertyRandomV3(
@@ -1277,6 +1283,13 @@ export function resolveAppearanceRecipeV3(
         selectedMaterial,
       ),
     );
+  }
+  if (
+    usesR33 &&
+    material.family === "elemental" &&
+    (material.style === "blue-sky" || material.style === "sunset")
+  ) {
+    material = { ...material, textureScale: 25 };
   }
   const colorSeedValue = {
     colors: recipe.colors,
@@ -1303,10 +1316,17 @@ export function resolveAppearanceRecipeV3(
     seedPolicy,
     randomSpecial?.palette,
   );
+  if (usesR33 && material.family === "fantasy") {
+    colors = colorsFromPaletteV3(
+      FANTASY_ESSENCE_PALETTES_R33_V4[material.essence],
+    );
+  }
   if (
     material.family === "classic" &&
     material.treatment === "solid" &&
-    (usesR31 || usesR32 || (usesR30 && isBuiltinRandomRecipeV3(recipe)))
+    (usesR31 ||
+      usesR32OrLater ||
+      (usesR30 && isBuiltinRandomRecipeV3(recipe)))
   ) {
     const color = colors.ordered[0];
     colors = { ordered: [color, color], pair: [color, color] };
@@ -1394,7 +1414,7 @@ export function resolveAppearanceRecipeV3(
     material.family === "classic" && material.treatment === "gradient";
   const isBalancedClassicSolid =
     !usesR31 &&
-    !usesR32 &&
+    !usesR32OrLater &&
     usesR27ColorBehaviorV3(seedPolicy) &&
     material.family === "classic" &&
     material.treatment === "solid";

@@ -3,6 +3,7 @@ export * from "./compatibility";
 export * from "./dice-view-preferences";
 export * from "./engraving";
 export * from "./face-semantics";
+export * from "./fantasy-palettes";
 export * from "./geometry";
 export * from "./label-containment";
 export * from "./limits";

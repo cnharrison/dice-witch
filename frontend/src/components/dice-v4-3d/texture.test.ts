@@ -134,6 +134,96 @@ describe("V4 physical material texture mapping", () => {
     ).toBe(gradientSource);
   });
 
+  it("uses the shared r33 atlas for whole-die materials but not projected Classic", () => {
+    const source = classicDie("gradient");
+    const paintDie: RenderDieV4 = {
+      ...source,
+      target: "d6",
+      result: 6,
+      appearance: {
+        ...source.appearance,
+        material: {
+          family: "paint",
+          style: "splatter",
+          dropDensity: 64,
+          streakLength: 56,
+          textureScale: 130,
+        },
+        texture: {
+          ...source.appearance.texture,
+          generatorId: "paint-v1",
+          scope: "die-wide",
+        },
+      },
+    };
+    const revision32Descriptor = geometryDescriptorForDieV4(
+      "canvaskit-v4-r32",
+      paintDie,
+    );
+    const revision33Descriptor = geometryDescriptorForDieV4(
+      "canvaskit-v4-r33",
+      paintDie,
+    );
+    if (
+      revision32Descriptor.kind !== "polyhedral" ||
+      revision33Descriptor.kind !== "polyhedral"
+    ) {
+      throw new Error("Paint texture fixture must be polyhedral");
+    }
+    expect(revision32Descriptor.skinMapping).toEqual({
+      kind: "face-coordinates",
+    });
+    expect(revision33Descriptor.skinMapping).toEqual({
+      kind: "view-octahedral",
+      subdivisions: 4,
+    });
+    const paintSource = createMaterialRasterV4(
+      paintDie.appearance,
+      "canvaskit-v4-r33",
+    );
+    expect(
+      createPhysicalMaterialRasterV4(
+        paintDie.appearance,
+        revision32Descriptor,
+        "canvaskit-v4-r32",
+      ).pixels,
+    ).toEqual(
+      createMaterialRasterV4(
+        paintDie.appearance,
+        "canvaskit-v4-r32",
+      ).pixels,
+    );
+    expect(
+      createPhysicalMaterialRasterV4(
+        paintDie.appearance,
+        revision33Descriptor,
+        "canvaskit-v4-r33",
+        paintSource,
+      ).pixels,
+    ).not.toEqual(paintSource.pixels);
+
+    const classic = classicDie("gradient");
+    const classicDescriptor = geometryDescriptorForDieV4(
+      "canvaskit-v4-r33",
+      classic,
+    );
+    if (classicDescriptor.kind !== "polyhedral") {
+      throw new Error("Classic texture fixture must be polyhedral");
+    }
+    const classicSource = createMaterialRasterV4(
+      classic.appearance,
+      "canvaskit-v4-r33",
+    );
+    expect(
+      createPhysicalMaterialRasterV4(
+        classic.appearance,
+        classicDescriptor,
+        "canvaskit-v4-r33",
+        classicSource,
+      ),
+    ).toBe(classicSource);
+  });
+
   it("selects the exact gradient policy for r5 and later classic gradients", () => {
     const die = classicDie("gradient");
     const revision5 = createMaterialRasterV4(
@@ -149,7 +239,10 @@ describe("V4 physical material texture mapping", () => {
       "canvaskit-v4-r7",
     );
     const expected = generateMaterialTextureV4(
-      createTextureGenerationInputV4(die.appearance),
+      createTextureGenerationInputV4(
+        "canvaskit-v4-r5",
+        die.appearance,
+      ),
       "exact-gradient-r5",
     );
     const revision4 = createMaterialRasterV4(

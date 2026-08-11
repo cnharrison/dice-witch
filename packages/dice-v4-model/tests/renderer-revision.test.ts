@@ -188,10 +188,16 @@ describe("V4 renderer revision policies", () => {
       singleColorClassicSolid: true,
       engravingContrastEdge: "protective-r31",
     });
-    expect(rendererRevisionPolicyV4("canvaskit-v4-r32")).toEqual({
+    const revision32 = rendererRevisionPolicyV4("canvaskit-v4-r32");
+    expect(revision32).toEqual({
       ...revision31,
       r32Fonts: true,
       r32Materials: true,
+    });
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r33")).toEqual({
+      ...revision32,
+      polyhedralSurfaceMapping: "view-octahedral-r33",
+      textureGeneration: "r33-v2",
     });
     expect(revision31.r32Fonts).toBe(false);
     expect(revision31.r32Materials).toBe(false);
@@ -201,7 +207,7 @@ describe("V4 renderer revision policies", () => {
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r33" as RendererRevisionV4,
+        "canvaskit-v4-r34" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

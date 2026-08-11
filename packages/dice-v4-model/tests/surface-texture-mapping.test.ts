@@ -6,11 +6,13 @@ import {
   buildPhysicalPolyhedralMeshV4,
   getCanonicalGeometryDescriptorV4,
   getGeometryIdV4,
+  getRenderGeometryDescriptorV4,
   isPolyhedralFormImplementedForTargetV4,
   mapVisibleSpherePointV4,
   projectGeometryPointV4,
   type Point2V4,
   type PolyhedralGeometryDescriptorV4,
+  type RenderAppearanceV4,
 } from "../src";
 import { describe, expect, it } from "vitest";
 
@@ -103,6 +105,119 @@ function implementedPolyhedralGeometries(): PolyhedralGeometryDescriptorV4[] {
 }
 
 describe("V4 canonical surface texture mapping", () => {
+  it("uses one r33 whole-die atlas without changing r32 or face-local skins", () => {
+    for (const [target, result] of [
+      ["d6", 6],
+      ["fudge", 1],
+      ["d10", 10],
+      ["percentile", 90],
+    ] as const) {
+      const selection = { target, form: "standard" as const, result };
+      const revision32 = getRenderGeometryDescriptorV4(
+        "canvaskit-v4-r32",
+        selection,
+      );
+      const revision33 = getRenderGeometryDescriptorV4(
+        "canvaskit-v4-r33",
+        selection,
+      );
+      expect(revision32.kind).toBe("polyhedral");
+      expect(revision33.kind).toBe("polyhedral");
+      if (revision32.kind !== "polyhedral" || revision33.kind !== "polyhedral") {
+        throw new Error("Surface mapping fixture must be polyhedral");
+      }
+      expect(revision32.skinMapping).toEqual({ kind: "face-coordinates" });
+      expect(revision33.skinMapping).toEqual({
+        kind: "view-octahedral",
+        subdivisions: 4,
+      });
+      const oldMesh = buildPhysicalPolyhedralMeshV4(revision32, result);
+      const newMesh = buildPhysicalPolyhedralMeshV4(revision33, result);
+      expect(newMesh.mesh.positions.length).toBeGreaterThan(
+        oldMesh.mesh.positions.length,
+      );
+      expect(
+        newMesh.mesh.skinCoordinates.flat().every(Number.isFinite),
+      ).toBe(true);
+    }
+
+    for (const target of APPEARANCE_TARGETS_V4) {
+      if (target === "other") continue;
+      const result = CANONICAL_FACE_VALUES_V4[target][0];
+      if (result === undefined) {
+        throw new Error(`Canonical result is missing: ${target}`);
+      }
+      for (const form of POLYHEDRAL_FORMS_V4) {
+        if (
+          !isPolyhedralFormImplementedForTargetV4(
+            target,
+            form,
+            "canvaskit-v4-r33",
+          )
+        ) {
+          continue;
+        }
+        const selection = { target, form, result };
+        const revision32 = getRenderGeometryDescriptorV4(
+          "canvaskit-v4-r32",
+          selection,
+        );
+        const revision33 = getRenderGeometryDescriptorV4(
+          "canvaskit-v4-r33",
+          selection,
+        );
+        if (revision32.kind !== "polyhedral" || revision33.kind !== "polyhedral") {
+          throw new Error(`Surface mapping fixture is invalid: ${target}:${form}`);
+        }
+        expect(revision33.skinMapping, `${target}:${form}`).toEqual(
+          revision32.skinMapping.kind === "face-coordinates"
+            ? { kind: "view-octahedral", subdivisions: 4 }
+            : revision32.skinMapping,
+        );
+      }
+    }
+
+    const faceLocalAppearance = {
+      material: {
+        family: "classic",
+        treatment: "gradient",
+        opacity: "opaque",
+        finish: "satin",
+        textureScale: 100,
+      },
+      palette: ["#000000", "#ffffff"],
+      texture: {
+        generatorId: "classic-v1",
+        seed: 1,
+        scale: 100,
+        rotation: 0,
+        offsetU: 0,
+        offsetV: 0,
+        scope: "face-local",
+      },
+      lighting: { mode: "none" },
+      engraving: {
+        fontId: "liberation-sans",
+        finish: "matte-ink",
+        color: "#ffffff",
+      },
+      outlineColor: "#000000",
+      requiresLocalSeparation: false,
+      effect: null,
+    } satisfies RenderAppearanceV4;
+    const faceLocal = getRenderGeometryDescriptorV4("canvaskit-v4-r33", {
+      target: "d6",
+      form: "standard",
+      result: 6,
+      appearance: faceLocalAppearance,
+    });
+    expect(faceLocal.kind).toBe("polyhedral");
+    if (faceLocal.kind !== "polyhedral") {
+      throw new Error("Face-local mapping fixture must be polyhedral");
+    }
+    expect(faceLocal.skinMapping).toEqual({ kind: "face-coordinates" });
+  });
+
   it("cannot collapse any polyhedral skin into one screen-space affine decal", () => {
     for (const descriptor of implementedPolyhedralGeometries()) {
       for (const result of new Set(CANONICAL_FACE_VALUES_V4[descriptor.target])) {

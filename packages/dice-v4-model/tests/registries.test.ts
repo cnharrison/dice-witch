@@ -5,6 +5,7 @@ import {
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
   CRITICAL_TREATMENTS_V4,
   ENGRAVING_FINISHES_V4,
+  FANTASY_ESSENCE_PALETTES_R33_V4,
   FONT_IDS_V4,
   MATERIAL_FAMILIES_V4,
   PATTERN_IDS_V4,
@@ -28,6 +29,19 @@ function expectUniqueBoundedIds(values: readonly string[]): void {
 }
 
 describe("V4 registries", () => {
+  it("pins the locked r33 Fantasy essence palettes", () => {
+    expect(FANTASY_ESSENCE_PALETTES_R33_V4).toEqual({
+      ice: ["#071b2b", "#2f7f9d", "#a9e8f2", "#f4fdff"],
+      void: ["#020106", "#100826", "#3a1764", "#9a62d6"],
+      corruption: ["#101607", "#354d12", "#6daf25", "#c7f45b"],
+      arcane: ["#16062e", "#55208f", "#b04ee8", "#f0b7ff"],
+      "living-eye": ["#1c0805", "#7b2416", "#d89a32", "#f5e6a8"],
+      cosmic: ["#050924", "#213b86", "#8c3fc7", "#f2d36b"],
+      blood: ["#120203", "#4b070b", "#a61920", "#f06458"],
+      bone: ["#3a3022", "#8a7657", "#d2c29d", "#f2ead4"],
+    });
+  });
+
   it("pins the supported targets and forms", () => {
     expect(APPEARANCE_TARGETS_V4).toEqual([
       "d4",
@@ -140,6 +154,7 @@ describe("V4 registries", () => {
       "canvaskit-v4-r30",
       "canvaskit-v4-r31",
       "canvaskit-v4-r32",
+      "canvaskit-v4-r33",
     ]);
   });
 });

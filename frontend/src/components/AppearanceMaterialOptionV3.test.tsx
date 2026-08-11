@@ -69,14 +69,23 @@ describe("AppearanceMaterialOptionV3", () => {
     expect(screen.queryByLabelText("Clarity")).toBeNull();
   });
 
-  it("switches elemental styles atomically with three style controls", async () => {
+  it("switches elemental styles atomically with their fixed defaults", async () => {
     const user = userEvent.setup();
     render(<Harness family="elemental" />);
 
     expect(screen.getAllByRole("slider")).toHaveLength(3);
-    expect(screen.getByLabelText("Fissure density")).toBeDefined();
-    expect(screen.getByLabelText("Glow intensity")).toBeDefined();
-    expect(screen.getByLabelText("Crust scale")).toBeDefined();
+    expect(screen.getByLabelText("Fissure density")).toHaveProperty("value", "30");
+    expect(
+      screen.getByLabelText("Fissure density").getAttribute("aria-valuetext"),
+    ).toBe("Light");
+    expect(screen.getByLabelText("Glow intensity")).toHaveProperty("value", "90");
+    expect(
+      screen.getByLabelText("Glow intensity").getAttribute("aria-valuetext"),
+    ).toBe("Intense");
+    expect(screen.getByLabelText("Crust scale")).toHaveProperty("value", "340");
+    expect(
+      screen.getByLabelText("Crust scale").getAttribute("aria-valuetext"),
+    ).toBe("Coarse");
 
     await user.selectOptions(screen.getByLabelText("Elemental style"), "sand");
     expect(screen.getAllByRole("slider")).toHaveLength(3);
@@ -88,13 +97,13 @@ describe("AppearanceMaterialOptionV3", () => {
       screen.getByLabelText("Elemental style"),
       "blue-sky",
     );
-    expect(screen.getAllByRole("slider")).toHaveLength(3);
+    expect(screen.getAllByRole("slider")).toHaveLength(2);
     expect(screen.getByLabelText("Cloud cover")).toBeDefined();
     expect(screen.getByLabelText("Horizon height")).toBeDefined();
-    expect(screen.getByLabelText("Cloud softness")).toBeDefined();
+    expect(screen.queryByLabelText("Cloud softness")).toBeNull();
 
     await user.selectOptions(screen.getByLabelText("Elemental style"), "sunset");
-    expect(screen.getAllByRole("slider")).toHaveLength(3);
+    expect(screen.getAllByRole("slider")).toHaveLength(2);
     expect(screen.getByLabelText("Cloud cover")).toBeDefined();
   });
 

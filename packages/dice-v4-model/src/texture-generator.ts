@@ -657,6 +657,51 @@ function lavaPixel(
   return color;
 }
 
+function lavaPixelV2(
+  context: PixelContextV4,
+  material: Extract<ElementalMaterialV4, { style: "lava" }>,
+): TextureColorV4 {
+  const body = context.noise(200);
+  const rift = context.noise(207);
+  const detail = context.noise(211);
+  const cycles = materialCycles(material.textureScale, 5);
+  const diagonal = modulo(
+    phase(context.x, cycles) + phase(context.y, cycles) + body - 128,
+    256,
+  );
+  const fissureDistance = Math.min(
+    Math.abs(body - rift),
+    Math.abs(diagonal - 128) / 2,
+  );
+  let color = paletteTextureColorV4(
+    context.palette,
+    byte(12 + body * 0.24 + detail * 0.08),
+  );
+  const fissureWidth = 3 + material.fissureDensity * 0.17;
+  if (fissureDistance >= fissureWidth) return color;
+  const centerStrength = 1 - fissureDistance / fissureWidth;
+  const contribution = byte(
+    Math.sqrt(centerStrength) * (36 + material.glowIntensity * 2.2),
+  );
+  color = mixTextureColorV4(
+    color,
+    paletteTextureColorV4(context.palette, 190),
+    contribution,
+  );
+  if (centerStrength > 0.78 && material.glowIntensity > 60) {
+    color = mixTextureColorV4(
+      color,
+      paletteTextureColorV4(context.palette, 255),
+      byte(
+        (centerStrength - 0.78) *
+          720 *
+          ((material.glowIntensity - 60) / 40),
+      ),
+    );
+  }
+  return color;
+}
+
 function sandPixel(
   context: PixelContextV4,
   material: Extract<ElementalMaterialV4, { style: "sand" }>,
@@ -739,14 +784,21 @@ function skyPixel(
   return color;
 }
 
-const elementalPixel: PixelGeneratorV4<ElementalMaterialV4> = (
-  context,
-  material,
-) => {
-  if (material.style === "lava") return lavaPixel(context, material);
+function elementalPixel(
+  context: PixelContextV4,
+  material: ElementalMaterialV4,
+  version: 1 | 2,
+): TextureColorV4 {
+  if (material.style === "lava") {
+    return version === 2
+      ? lavaPixelV2(context, material)
+      : lavaPixel(context, material);
+  }
   if (material.style === "sand") return sandPixel(context, material);
-  return skyPixel(context, material);
-};
+  return version === 2
+    ? skyPixel(context, { ...material, textureScale: 25 })
+    : skyPixel(context, material);
+}
 
 const paintPixel: PixelGeneratorV4<PaintMaterialV4> = (
   context,
@@ -815,6 +867,7 @@ function validateInput(input: TextureGenerationInputV4): void {
 function generateMaterialPixel(
   context: PixelContextV4,
   material: AppearanceMaterialV4,
+  version: 1 | 2,
 ): TextureColorV4 {
   switch (material.family) {
     case "classic":
@@ -838,7 +891,7 @@ function generateMaterialPixel(
     case "fantasy":
       return fantasyPixel(context, material);
     case "elemental":
-      return elementalPixel(context, material);
+      return elementalPixel(context, material, version);
     case "paint":
       return paintPixel(context, material);
   }
@@ -846,6 +899,7 @@ function generateMaterialPixel(
 
 function exactClassicGradientTextureV4(
   palette: readonly TextureColorV4[],
+  version: 1 | 2,
 ): TextureRasterV4 {
   const row = new Uint8Array(SOURCE_TEXTURE_SIZE_V4 * 4);
   for (let x = 0; x < SOURCE_TEXTURE_SIZE_V4; x += 1) {
@@ -867,7 +921,7 @@ function exactClassicGradientTextureV4(
     pixels.set(row, y * row.length);
   }
   return {
-    version: 1,
+    version,
     width: SOURCE_TEXTURE_SIZE_V4,
     height: SOURCE_TEXTURE_SIZE_V4,
     colorSpace: "srgb",
@@ -888,7 +942,7 @@ export function generateMaterialTextureV4(
     input.material.family === "classic" &&
     input.material.treatment === "gradient"
   ) {
-    return exactClassicGradientTextureV4(palette);
+    return exactClassicGradientTextureV4(palette, input.version);
   }
   const noiseSamplers = new Map<number, TextureNoiseSamplerV4>();
   let currentX = 0;
@@ -922,6 +976,7 @@ export function generateMaterialTextureV4(
       samples[sampleY * GENERATION_SIZE_V4 + sampleX] = generateMaterialPixel(
         context,
         input.material,
+        input.version,
       );
     }
   }
@@ -967,7 +1022,7 @@ export function generateMaterialTextureV4(
     }
   }
   return {
-    version: 1,
+    version: input.version,
     width: SOURCE_TEXTURE_SIZE_V4,
     height: SOURCE_TEXTURE_SIZE_V4,
     colorSpace: "srgb",

@@ -160,7 +160,20 @@ describe("built-in appearance catalog", () => {
     expect(v3Ids.slice(v2Ids.length)).toEqual([
       "solid",
       "rainbow",
-      ...APPROVED_COLLECTOR_STYLE_IDS_V3,
+      "hex-appeal",
+      "critical-mass",
+      "glass-cannon",
+      "heavy-metal",
+      "hollow-victory",
+      "grain-expectations",
+      "elemental-lava",
+      "elemental-sand",
+      "elemental-blue-sky",
+      "elemental-sunset",
+      "paint-splatter",
+      "elemental-lava-r33",
+      "elemental-blue-sky-r33",
+      "elemental-sunset-r33",
     ]);
     expect(new Set(v3Ids).size).toBe(v3Ids.length);
     expect(APPEARANCE_VALIDATION_CATALOG_V3.builtinStyleIds).toEqual(v3Ids);
@@ -236,6 +249,47 @@ describe("built-in appearance catalog", () => {
     expect(
       createHash("sha256").update(canonicalJsonV4(diceWitch)).digest("hex"),
     ).toBe("8766791af34f4e44b47ab1998c349e398d77e9b57d36a27b87ffdd3f0367abea");
+  });
+
+  it("preserves r32 elemental presets and publishes corrected r33 replacements", () => {
+    const material = (id: string) => {
+      const selection = BUILTIN_APPEARANCE_RECIPES_V3[id]?.recipe.material;
+      if (selection?.mode !== "fixed") {
+        throw new Error(`Fixed elemental preset is missing: ${id}`);
+      }
+      return selection.value;
+    };
+
+    expect(material("elemental-lava")).toEqual({
+      family: "elemental",
+      style: "lava",
+      fissureDensity: 65,
+      glowIntensity: 78,
+      textureScale: 110,
+    });
+    expect(material("elemental-blue-sky")).toMatchObject({
+      style: "blue-sky",
+      textureScale: 240,
+    });
+    expect(material("elemental-sunset")).toMatchObject({
+      style: "sunset",
+      textureScale: 255,
+    });
+    expect(material("elemental-lava-r33")).toEqual({
+      family: "elemental",
+      style: "lava",
+      fissureDensity: 30,
+      glowIntensity: 90,
+      textureScale: 340,
+    });
+    expect(material("elemental-blue-sky-r33")).toMatchObject({
+      style: "blue-sky",
+      textureScale: 25,
+    });
+    expect(material("elemental-sunset-r33")).toMatchObject({
+      style: "sunset",
+      textureScale: 25,
+    });
   });
 
   it("pins r32 Random to the approved solid-first material recipe", () => {
@@ -431,6 +485,36 @@ describe("built-in appearance catalog", () => {
     elemental.styleDefaults.forEach((material) => {
       expect(parseAppearanceMaterialV4(material)).toEqual(material);
     });
+    expect(elemental.styleDefaults).toEqual([
+      {
+        family: "elemental",
+        style: "lava",
+        fissureDensity: 30,
+        glowIntensity: 90,
+        textureScale: 340,
+      },
+      {
+        family: "elemental",
+        style: "sand",
+        grainSize: 78,
+        windDirection: -10,
+        textureScale: 150,
+      },
+      {
+        family: "elemental",
+        style: "blue-sky",
+        cloudCover: 58,
+        horizonHeight: 48,
+        textureScale: 25,
+      },
+      {
+        family: "elemental",
+        style: "sunset",
+        cloudCover: 68,
+        horizonHeight: 62,
+        textureScale: 25,
+      },
+    ]);
     const paint = materialCatalog("paint");
     expect(optionIds(paint.styles)).toEqual(PAINT_STYLES_V4);
     expect(paint.styleDefaults.map(({ style }) => style)).toEqual(

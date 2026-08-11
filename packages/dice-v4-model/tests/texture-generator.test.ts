@@ -156,15 +156,17 @@ const r32Materials = [
 function input(
   material: AppearanceMaterialV4,
   seed = 0x1234_5678,
+  version: 1 | 2 = 1,
+  colors: readonly string[] = palette,
 ): TextureGenerationInputV4 {
   return {
-    version: 1,
+    version,
     width: SOURCE_TEXTURE_SIZE_V4,
     height: SOURCE_TEXTURE_SIZE_V4,
     generatorId: TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4[material.family],
     seed,
     material,
-    palette,
+    palette: colors,
   };
 }
 
@@ -191,6 +193,19 @@ function luminanceAt(pixels: Uint8Array, x: number, y: number): number {
   const green = pixels[offset + 1] ?? 0;
   const blue = pixels[offset + 2] ?? 0;
   return (red * 54 + green * 183 + blue * 19) / 256;
+}
+
+function meanChroma(pixels: Uint8Array): number {
+  let total = 0;
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    const channels = [
+      pixels[offset] ?? 0,
+      pixels[offset + 1] ?? 0,
+      pixels[offset + 2] ?? 0,
+    ];
+    total += Math.max(...channels) - Math.min(...channels);
+  }
+  return total / (pixels.length / 4);
 }
 
 function meanLuminance(pixels: Uint8Array): number {
@@ -330,6 +345,85 @@ describe("V4 material texture generation", () => {
       splatter:
         "e3f1c8f8fa33a3198bd47e9a57815d7db452ff1925cfc82c398eb9af1f415c21",
     });
+  });
+
+  it("changes only Lava and Sky pixels in r33 texture inputs", () => {
+    for (const material of materials) {
+      const revision32 = generateMaterialTextureV4(input(material));
+      const revision33 = generateMaterialTextureV4(
+        input(material, 0x1234_5678, 2),
+      );
+      expect(revision33.pixels, material.family).toEqual(revision32.pixels);
+    }
+    for (const { id, material, palette: materialPalette } of r32Materials) {
+      if (id !== "sand" && id !== "splatter") continue;
+      const revision32 = generateMaterialTextureV4(
+        input(material, 0x1234_5678, 1, materialPalette),
+      );
+      const revision33 = generateMaterialTextureV4(
+        input(material, 0x1234_5678, 2, materialPalette),
+      );
+      expect(revision33.pixels, id).toEqual(revision32.pixels);
+    }
+
+    const sky = r32Materials.find(({ id }) => id === "blue-sky");
+    if (sky === undefined) throw new Error("Blue Sky fixture is missing");
+    if (
+      sky.material.family !== "elemental" ||
+      sky.material.style !== "blue-sky"
+    ) {
+      throw new Error("Blue Sky fixture is invalid");
+    }
+    const softSky = generateMaterialTextureV4(
+      input(sky.material, 0x1234_5678, 2, sky.palette),
+    );
+    const definedSky = generateMaterialTextureV4(
+      input(
+        { ...sky.material, textureScale: 25 },
+        0x1234_5678,
+        2,
+        sky.palette,
+      ),
+    );
+    expect(softSky.pixels).toEqual(definedSky.pixels);
+    expect(softSky.pixels).not.toEqual(
+      generateMaterialTextureV4(
+        input(sky.material, 0x1234_5678, 1, sky.palette),
+      ).pixels,
+    );
+  });
+
+  it("makes r33 Lava glow stronger without washing its hue pale", () => {
+    const lavaPalette = r32Materials.find(({ id }) => id === "lava")?.palette;
+    if (lavaPalette === undefined) throw new Error("Lava palette is missing");
+    const lava = (glowIntensity: number): AppearanceMaterialV4 => ({
+      family: "elemental",
+      style: "lava",
+      fissureDensity: 30,
+      glowIntensity,
+      textureScale: 340,
+    });
+    const faint = generateMaterialTextureV4(
+      input(lava(0), 0x51ce_b00c, 2, lavaPalette),
+    );
+    const intense = generateMaterialTextureV4(
+      input(lava(100), 0x51ce_b00c, 2, lavaPalette),
+    );
+    const washedR32 = generateMaterialTextureV4(
+      input(lava(100), 0x51ce_b00c, 1, lavaPalette),
+    );
+
+    const faintLuminance = meanLuminance(faint.pixels);
+    const intenseLuminance = meanLuminance(intense.pixels);
+    const washedLuminance = meanLuminance(washedR32.pixels);
+    const faintChroma = meanChroma(faint.pixels);
+    const intenseChroma = meanChroma(intense.pixels);
+    const washedChroma = meanChroma(washedR32.pixels);
+    expect(intenseLuminance).toBeGreaterThan(faintLuminance);
+    expect(intenseChroma).toBeGreaterThan(faintChroma);
+    expect(intenseChroma / intenseLuminance).toBeGreaterThan(
+      washedChroma / washedLuminance,
+    );
   });
 
   it("adds a vivid full-range gradient policy without changing legacy texels", () => {

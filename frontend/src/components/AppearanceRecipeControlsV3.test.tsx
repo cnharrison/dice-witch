@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
-import type { AppearanceRecipeV3 } from "@dice-witch/dice-v4-model";
+import {
+  formatEngravingLabelV4,
+  type AppearanceRecipeV3,
+} from "@dice-witch/dice-v4-model";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
@@ -122,6 +125,37 @@ describe("AppearanceRecipeControlsV3", () => {
     expect(screen.getAllByLabelText("Gradient scope")).toHaveLength(2);
   });
 
+  it("locks fixed Fantasy colors to the selected essence", async () => {
+    const user = userEvent.setup();
+    const initial = recipe("elemental-lava");
+    initial.material = {
+      mode: "fixed",
+      value: {
+        family: "fantasy",
+        essence: "arcane",
+        intensity: 60,
+        finish: "radiant",
+        textureScale: 100,
+      },
+    };
+    initial.colors = {
+      mode: "palette",
+      colors: ["#111111", "#222222"],
+    };
+    render(<Harness initial={initial} />);
+
+    expect(screen.queryByLabelText("Color behavior")).toBeNull();
+    await user.selectOptions(screen.getByLabelText("Fantasy essence"), "ice");
+
+    const value = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    expect(value.colors).toEqual({
+      mode: "palette",
+      colors: ["#071b2b", "#2f7f9d", "#a9e8f2", "#f4fdff"],
+    });
+  });
+
   it("shows each font choice in its own typeface", async () => {
     const user = userEvent.setup();
     render(<Harness initial={recipe("chaotic")} />);
@@ -138,5 +172,30 @@ describe("AppearanceRecipeControlsV3", () => {
       screen.getByTestId("recipe").textContent ?? "null",
     ) as AppearanceRecipeV3;
     expect(value.font).toEqual({ mode: "fixed", value: "new-rocker" });
+  });
+
+  it("shows authentic Tengwar numerals without styling its Latin name", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={recipe("chaotic")} />);
+
+    const font = screen.getByRole("combobox", { name: "Primary font" });
+    font.focus();
+    await user.keyboard("{Enter}");
+    const option = screen.getByRole("option", { name: "Alcarin Tengwar" });
+    expect(option.style.fontFamily).toBe("");
+    const optionSample = option.querySelector<HTMLElement>("[aria-hidden=true]");
+    expect(optionSample?.textContent).toBe(
+      formatEngravingLabelV4("alcarin-tengwar", "20"),
+    );
+    expect(optionSample?.style.fontFamily).toBe(
+      "DiceWitchV4-alcarin-tengwar",
+    );
+
+    await user.keyboard("{End}{Enter}");
+    const triggerSample = font.querySelector<HTMLElement>("[aria-hidden=true]");
+    expect(triggerSample?.textContent).toBe(
+      formatEngravingLabelV4("alcarin-tengwar", "20"),
+    );
+    expect(font.style.fontFamily).toBe("");
   });
 });

@@ -144,11 +144,14 @@ function texturesForDieV4(
   useOctahedralAtlas: boolean,
   rendererRevision: RendererRevisionV4,
 ): DieTexturesV4 {
-  const key = canonicalTextureGenerationInputV4(die.appearance);
+  const key = canonicalTextureGenerationInputV4(
+    rendererRevision,
+    die.appearance,
+  );
   let source = textures.sources.get(key);
   if (source === undefined) {
     source = generateMaterialTextureV4(
-      createTextureGenerationInputV4(die.appearance),
+      createTextureGenerationInputV4(rendererRevision, die.appearance),
       textureColorPolicyV4(rendererRevision),
     );
     textures.sources.set(key, source);
@@ -224,6 +227,7 @@ function geometryGridDie(
       throw new Error("CanvasKit V4 sphere target is invalid");
     }
     const key = `${canonicalTextureGenerationInputV4(
+      rendererRevision,
       die.appearance,
     )}|${texturePlacementKeyV4(
       texturePlacement,
@@ -386,6 +390,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r30": renderCanvasKit,
   "canvaskit-v4-r31": renderCanvasKit,
   "canvaskit-v4-r32": renderCanvasKit,
+  "canvaskit-v4-r33": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {

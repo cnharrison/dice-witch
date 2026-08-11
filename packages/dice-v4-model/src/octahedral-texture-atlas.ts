@@ -89,7 +89,7 @@ export function createOctahedralTextureAtlasV4(
   const colorSpace = texture.colorSpace as string;
   const alphaMode = texture.alphaMode as string;
   if (
-    version !== 1 ||
+    (version !== 1 && version !== 2) ||
     width !== SOURCE_TEXTURE_SIZE_V4 ||
     height !== SOURCE_TEXTURE_SIZE_V4 ||
     colorSpace !== "srgb" ||

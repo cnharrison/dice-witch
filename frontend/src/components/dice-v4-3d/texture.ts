@@ -74,7 +74,10 @@ export function createMaterialRasterV4(
   rendererRevision?: RendererRevisionV4,
 ): TextureRasterV4 {
   return generateMaterialTextureV4(
-    createTextureGenerationInputV4(appearance),
+    createTextureGenerationInputV4(
+      rendererRevision ?? "canvaskit-v4-r1",
+      appearance,
+    ),
     textureColorPolicyV4(rendererRevision),
   );
 }
