@@ -305,6 +305,7 @@ describe("D1 business schema migration", () => {
       { name: "0013_discord_channel_directory.sql" },
       { name: "0013_roll_lifecycle_diagnostics.sql" },
       { name: "0014_hide_roll_result_text.sql" },
+      { name: "0015_appearance_profiles_v4.sql" },
     ]);
   });
 
