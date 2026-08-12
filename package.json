@@ -21,6 +21,7 @@
   "scripts": {
     "audit:ci": "node tools/audit-policy.mjs",
     "build": "npm run build --workspace=@dice-witch/frontend && npm run performance:budget",
+    "deploy:production": "node tools/deploy-production.mjs",
     "staging:check": "npm run staging:check --workspace=@dice-witch/cloudflare",
     "lint": "npm run lint --workspaces --if-present",
     "lint:ci": "npm run lint --workspace=@dice-witch/dice-v4-model -- --max-warnings=0 && npm run lint --workspace=@dice-witch/cloudflare -- --max-warnings=0 && npm run lint --workspace=@dice-witch/frontend -- --max-warnings=65",
