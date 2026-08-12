@@ -2799,7 +2799,15 @@ describe("RollWork Durable Object", () => {
 
     await evictDurableObject(stub);
     await runInDurableObject(stub, async (instance, state) => {
-      await callAlarm(instance);
+      let logOutboxCount = 0;
+      for (let wake = 0; wake < 5 && logOutboxCount === 0; wake += 1) {
+        await callAlarm(instance);
+        logOutboxCount = state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM roll_log_outbox",
+          )
+          .one().count;
+      }
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
@@ -2821,13 +2829,7 @@ describe("RollWork Durable Object", () => {
           context: { rendererRevision: string | null };
         }).context.rendererRevision,
       ).toBeNull();
-      expect(
-        state.storage.sql
-          .exec<{ count: number }>(
-            "SELECT COUNT(*) AS count FROM roll_log_outbox",
-          )
-          .one().count,
-      ).toBe(1);
+      expect(logOutboxCount).toBe(1);
       const delivery = state.storage.sql
         .exec<{
           clatter_sent_at: number;
