@@ -86,7 +86,8 @@ function interceptEffectiveAppearance(
     const path = new URL(request.url).pathname;
     if (
       path === "/internal/appearance/v2/effective" ||
-      path === "/internal/appearance/v3/effective"
+      path === "/internal/appearance/v3/effective" ||
+      path === "/internal/appearance/v4/effective"
     ) {
       const body = await request.clone().json<{ userId?: unknown }>();
       if (body.userId === userId) {

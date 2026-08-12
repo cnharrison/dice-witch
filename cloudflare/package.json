@@ -23,7 +23,7 @@
     "test:gateway": "vitest run --config vitest.gateway.config.ts",
     "test:discord-rest": "vitest run --config vitest.discord-rest.config.ts",
     "test:interactions": "vitest run --config vitest.interactions.config.ts",
-    "test:roll": "vitest run --config vitest.roll.config.ts",
+    "test:roll": "vitest run --config vitest.roll.config.ts --exclude tests/roll/work.test.ts && node tools/run-roll-work-tests.mjs",
     "test:data": "vitest run --config vitest.data.config.ts",
     "test:web-api": "vitest run --config vitest.web-api.config.ts",
     "commands:register": "node tools/register-commands.mjs",
