@@ -389,7 +389,14 @@ export function beginAppearanceRecipeEditV3(
     ? { mode: "fixed" as const, value: "gentle" as const }
     : parsedNext.lighting.strength;
   const editable = structuredClone(parsedNext);
-  if (editable.randomization !== "one-palette-color-v1") {
+  const preservesFullSpectrum =
+    (editable.randomization === "full-spectrum-v1" ||
+      editable.randomization === "full-spectrum-v2") &&
+    sameSelection(parsedCurrent.colors, parsedNext.colors);
+  if (
+    editable.randomization !== "one-palette-color-v1" &&
+    !preservesFullSpectrum
+  ) {
     delete editable.randomization;
   }
   return parseAppearanceRecipeV3({

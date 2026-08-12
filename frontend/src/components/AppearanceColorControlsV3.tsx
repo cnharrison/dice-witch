@@ -11,6 +11,15 @@ import * as React from "react";
 import { AppearanceSelectV3 } from "./AppearanceSelectV3";
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const BRIGHT_RANDOM_PER_DIE = "bright-random-per-die" as const;
+type ColorBehavior = AppearanceColorsV3["mode"] | typeof BRIGHT_RANDOM_PER_DIE;
+
+function usesFullSpectrumRandomization(recipe: AppearanceRecipeV3): boolean {
+  return (
+    recipe.randomization === "full-spectrum-v1" ||
+    recipe.randomization === "full-spectrum-v2"
+  );
+}
 
 function editablePrimary(colors: AppearanceColorsV3): string | null {
   if (colors.mode === "palette") return colors.colors[0] ?? null;
@@ -40,6 +49,9 @@ export function AppearanceColorControlsV3({
   const colorButtons = React.useRef<Array<HTMLButtonElement | null>>([]);
   const pendingFocusIndex = React.useRef<number | null>(null);
   const colors = recipe.colors;
+  const behavior: ColorBehavior = usesFullSpectrumRandomization(recipe)
+    ? BRIGHT_RANDOM_PER_DIE
+    : colors.mode;
   const palette = colors.mode === "palette" ? colors.colors : null;
   const editableColors =
     palette ??
@@ -57,19 +69,28 @@ export function AppearanceColorControlsV3({
 
   const emit = (next: AppearanceColorsV3) => {
     setError(null);
+    const updated = { ...recipe, colors: next };
     if (
-      recipe.randomization === "one-palette-color-v1" &&
-      next.mode !== "palette"
+      usesFullSpectrumRandomization(recipe) ||
+      (recipe.randomization === "one-palette-color-v1" &&
+        next.mode !== "palette")
     ) {
-      const withoutRandomization = { ...recipe };
-      delete withoutRandomization.randomization;
-      onChange({ ...withoutRandomization, colors: next });
-      return;
+      delete updated.randomization;
     }
-    onChange({ ...recipe, colors: next });
+    onChange(updated);
   };
 
-  const updateMode = (mode: AppearanceColorsV3["mode"]) => {
+  const updateMode = (mode: ColorBehavior) => {
+    if (mode === BRIGHT_RANDOM_PER_DIE) {
+      setError(null);
+      onChange({
+        ...recipe,
+        varyBy: "die",
+        randomization: "full-spectrum-v2",
+        colors: { mode: "vivid-random-pair" },
+      });
+      return;
+    }
     if (mode === "random-pair" || mode === "vivid-random-pair") {
       emit({ mode });
       return;
@@ -173,11 +194,14 @@ export function AppearanceColorControlsV3({
         <div>
           <AppearanceSelectV3
             aria-label="Color behavior"
-            value={colors.mode}
+            value={behavior}
             onChange={(event) =>
-              updateMode(event.target.value as AppearanceColorsV3["mode"])
+              updateMode(event.target.value as ColorBehavior)
             }
           >
+            <option value={BRIGHT_RANDOM_PER_DIE}>
+              Bright random colors per die
+            </option>
             {catalog.colorModes.map(({ id, name }) => (
               <option key={id} value={id}>
                 {name}

@@ -17,11 +17,14 @@ function recipe(styleId: string): AppearanceRecipeV3 {
 function Harness({ initial }: { initial: AppearanceRecipeV3 }) {
   const [value, setValue] = React.useState(initial);
   return (
-    <AppearanceColorControlsV3
-      recipe={value}
-      catalog={APPEARANCE_CATALOG_V3}
-      onChange={setValue}
-    />
+    <>
+      <AppearanceColorControlsV3
+        recipe={value}
+        catalog={APPEARANCE_CATALOG_V3}
+        onChange={setValue}
+      />
+      <output data-testid="recipe">{JSON.stringify(value)}</output>
+    </>
   );
 }
 
@@ -74,6 +77,39 @@ describe("AppearanceColorControlsV3", () => {
       }),
     );
     expect(onChange.mock.calls[0]?.[0]).not.toHaveProperty("randomization");
+  });
+
+  it("makes Random per-die colors explicit and reversible", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={recipe("chaotic")} />);
+
+    const behavior = screen.getByLabelText("Color behavior");
+    expect(behavior).toHaveProperty("value", "bright-random-per-die");
+    expect(
+      screen.getByRole("option", { name: "Bright random colors per die" }),
+    ).toBeDefined();
+
+    await user.selectOptions(behavior, "vivid-random-pair");
+    let value = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    expect(value.colors).toEqual({ mode: "vivid-random-pair" });
+    expect(value.randomization).toBeUndefined();
+
+    await user.selectOptions(behavior, "bright-random-per-die");
+    value = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    expect(value.colors).toEqual({ mode: "vivid-random-pair" });
+    expect(value.randomization).toBe("full-spectrum-v2");
+    expect(value.varyBy).toBe("die");
+
+    await user.selectOptions(behavior, "tonal");
+    value = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    expect(value.randomization).toBeUndefined();
+    expect(value.colors.mode).toBe("tonal");
   });
 
   it("uses catalog-owned colors when changing a generated pair to a palette", async () => {
