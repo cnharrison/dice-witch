@@ -102,11 +102,11 @@ function interceptEffectiveAppearance(
   };
 }
 
-type LifecycleSyncObservation = Readonly<{
+type LifecycleSyncObservation = {
   state: unknown;
   rendererRevision: unknown;
   httpStatus: number;
-}>;
+};
 
 function observeLifecycleSyncs(interactionId: string): Readonly<{
   observations: LifecycleSyncObservation[];
@@ -126,14 +126,16 @@ function observeLifecycleSyncs(interactionId: string): Readonly<{
           context?: { rendererRevision?: unknown };
         }>()
       : null;
+    const observation = snapshot?.interactionId === interactionId
+      ? {
+          state: snapshot.state,
+          rendererRevision: snapshot.context?.rendererRevision,
+          httpStatus: 0,
+        }
+      : null;
+    if (observation !== null) observations.push(observation);
     const response = await originalFetch.call(service, request);
-    if (snapshot?.interactionId === interactionId) {
-      observations.push({
-        state: snapshot.state,
-        rendererRevision: snapshot.context?.rendererRevision,
-        httpStatus: response.status,
-      });
-    }
+    if (observation !== null) observation.httpStatus = response.status;
     return response;
   });
   return {
@@ -2191,6 +2193,15 @@ describe("RollWork Durable Object", () => {
       .spyOn(console, "info")
       .mockImplementation(() => undefined);
     try {
+      await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+        status: "created",
+        delivery: "pending",
+      });
+      await runInDurableObject(stub, (_instance, state) => {
+        state.storage.sql.exec(
+          "UPDATE interaction_delivery SET delay_ms = 5000",
+        );
+      });
       await expect(stub.deliver(input)).resolves.toMatchObject({
         status: "pending",
       });
@@ -2225,7 +2236,11 @@ describe("RollWork Durable Object", () => {
       });
 
       const delivered = consoleInfo.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .flatMap(([entry]) =>
+          typeof entry === "string"
+            ? [JSON.parse(entry) as Record<string, unknown>]
+            : [],
+        )
         .find(
           ({ message, rollId }) =>
             message === "Roll destination delivery completed" && rollId === id,
@@ -2574,13 +2589,17 @@ describe("RollWork Durable Object", () => {
     }
     await seedPendingV5Delivery(stub, input);
     let appearanceCalls = 0;
+    let allowAppearance = false;
+    let successfulAppearanceCalls = 0;
     const restoreAppearance = interceptEffectiveAppearance(
       input.accounting.userId,
       () => {
         appearanceCalls += 1;
-        return appearanceCalls === 1
-          ? Response.json({ error: "temporary" }, { status: 503 })
-          : undefined;
+        if (!allowAppearance) {
+          return Response.json({ error: "temporary" }, { status: 503 });
+        }
+        successfulAppearanceCalls += 1;
+        return undefined;
       },
     );
     let clatterCalls = 0;
@@ -2620,6 +2639,7 @@ describe("RollWork Durable Object", () => {
           version: 5,
           renderRequest: null,
         });
+        allowAppearance = true;
         state.storage.sql.exec(
           "UPDATE interaction_delivery SET result_not_before = 0",
         );
@@ -2634,7 +2654,8 @@ describe("RollWork Durable Object", () => {
       restoreRequests();
     }
 
-    expect(appearanceCalls).toBe(2);
+    expect(appearanceCalls).toBeGreaterThanOrEqual(2);
+    expect(successfulAppearanceCalls).toBe(1);
     expect(clatterCalls).toBe(1);
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
