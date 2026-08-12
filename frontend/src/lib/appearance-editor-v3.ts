@@ -14,6 +14,7 @@ import {
   type AppearanceRecipeV3,
   type AppearanceSelection,
   type AppearanceTargetV4,
+  type CustomAppearanceDesignV3,
   type GuildAppearanceProfileV4,
   type MaterialFamilyV4,
   type PolyhedralFormV4,
@@ -583,6 +584,43 @@ export function duplicateAppearanceDesignV3<
     { ...validated, designs: [...validated.designs, duplicate] } as Profile,
     catalog,
   );
+}
+
+export function restoreAppearanceDesignV3<
+  Profile extends EditableAppearanceProfileV4,
+>(
+  profile: Profile,
+  design: CustomAppearanceDesignV3,
+  targets: readonly AppearanceEditorTargetV3[],
+  catalog: AppearanceCatalogV3,
+): Profile {
+  const validated = validateProfile(profile, catalog);
+  if (validated.designs.some(({ id }) => id === design.id)) {
+    throw new Error(`Appearance custom design already exists: ${design.id}`);
+  }
+  let restored = validateProfile(
+    {
+      ...validated,
+      designs: [
+        ...validated.designs,
+        {
+          id: design.id,
+          name: design.name,
+          recipe: cloneRecipe(design.recipe),
+        },
+      ],
+    } as Profile,
+    catalog,
+  );
+  for (const target of targets) {
+    restored = applyAppearanceReferenceV3(
+      restored,
+      target,
+      { source: "custom", id: design.id },
+      catalog,
+    );
+  }
+  return restored;
 }
 
 export function deleteAppearanceDesignV3<

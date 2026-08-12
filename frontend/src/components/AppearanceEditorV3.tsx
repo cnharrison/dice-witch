@@ -18,6 +18,7 @@ import {
   deleteAppearanceDesignV3,
   duplicateAppearanceDesignV3,
   nextAppearanceDesignNameV3,
+  restoreAppearanceDesignV3,
   nextPresetEditNameV3,
   renameAppearanceDesignV3,
   resolveAppearanceEditorSelectionV3,
@@ -55,9 +56,8 @@ type AppearanceEditorV3Props = {
 type AppearanceEditorTab = "design" | "camera" | "server";
 
 type DeletionNotice = Readonly<{
-  id: string;
-  name: string;
-  targets: readonly string[];
+  design: CustomAppearanceDesignV3;
+  targets: readonly AppearanceEditorTargetV3[];
 }>;
 
 const TAB_LABELS: Readonly<Record<AppearanceEditorTab, string>> = {
@@ -106,18 +106,24 @@ function hasDesignNameChanges(
 function designTargets(
   profile: EditableAppearanceProfileV4,
   designId: string,
-): string[] {
+): AppearanceEditorTargetV3[] {
   if (
     profile.assignments.all?.source === "custom" &&
     profile.assignments.all.id === designId
   ) {
-    return [APPEARANCE_TARGET_LABELS.all];
+    return ["all"];
   }
   return Object.entries(profile.assignments.overrides)
     .filter(([, reference]) =>
       reference?.source === "custom" && reference.id === designId,
     )
-    .map(([target]) => APPEARANCE_TARGET_LABELS[target as AppearanceTargetV4]);
+    .map(([target]) => target as AppearanceTargetV4);
+}
+
+function targetLabels(
+  targets: readonly AppearanceEditorTargetV3[],
+): string[] {
+  return targets.map((target) => APPEARANCE_TARGET_LABELS[target]);
 }
 
 function targetList(targets: readonly string[]): string {
@@ -256,10 +262,17 @@ export function AppearanceEditorV3({
   const activeDesignName = activeDesign === undefined
     ? ""
     : nameDrafts[activeDesign.id] ?? activeDesign.name;
-  const displayedDesigns = draftProfile.designs.map((design) => ({
-    ...design,
-    name: nameDrafts[design.id] ?? design.name,
-  }));
+  const displayedDesigns = [
+    ...draftProfile.designs.map((design) => ({
+      ...design,
+      name: nameDrafts[design.id] ?? design.name,
+      pendingDeletion: false,
+    })),
+    ...deletionNotices.map(({ design }) => ({
+      ...design,
+      pendingDeletion: true,
+    })),
+  ];
   const hasNameChanges = hasDesignNameChanges(draftProfile, nameDrafts);
   const designDirty =
     !sameValue(designState(draftProfile), designState(baselineProfile)) ||
@@ -568,11 +581,34 @@ export function AppearanceEditorV3({
     try {
       setDraftProfile(deleteAppearanceDesignV3(draftProfile, designId, catalog));
       setDeletionNotices((notices) => [
-        ...notices.filter(({ id }) => id !== designId),
-        { id: designId, name: design.name, targets },
+        ...notices.filter(({ design: staged }) => staged.id !== designId),
+        { design, targets },
       ]);
       removeDraftMetadata(designId);
       if (editingDesignId === designId) setEditingDesignId(null);
+      setStatus(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const restoreDesign = (designId: string) => {
+    const notice = deletionNotices.find(
+      ({ design }) => design.id === designId,
+    );
+    if (notice === undefined) return;
+    try {
+      setDraftProfile(
+        restoreAppearanceDesignV3(
+          draftProfile,
+          notice.design,
+          notice.targets,
+          catalog,
+        ),
+      );
+      setDeletionNotices((notices) =>
+        notices.filter(({ design }) => design.id !== designId),
+      );
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
@@ -653,7 +689,9 @@ export function AppearanceEditorV3({
       return [];
     }
     const targets = designTargets(draftProfile, design.id);
-    return [`Changes to ${displayedName} affect: ${targetList(targets)}.`];
+    return [
+      `Changes to ${displayedName} affect: ${targetList(targetLabels(targets))}.`,
+    ];
   });
 
   return (
@@ -706,6 +744,7 @@ export function AppearanceEditorV3({
             onEdit={editDesign}
             onDuplicate={duplicateDesign}
             onDelete={deleteDesign}
+            onRestore={restoreDesign}
           />
         )}
       </aside>
@@ -875,10 +914,10 @@ export function AppearanceEditorV3({
                 <p key={message}>{message}</p>
               ))}
               {deletionNotices.map((notice) => (
-                <p key={notice.id}>
+                <p key={notice.design.id}>
                   {notice.targets.length === 0
-                    ? `Deleting ${notice.name} is staged.`
-                    : `Deleting ${notice.name} returns ${targetList(notice.targets)} to inheritance/default.`}
+                    ? `Deleting ${notice.design.name} is staged.`
+                    : `Deleting ${notice.design.name} returns ${targetList(targetLabels(notice.targets))} to inheritance/default.`}
                 </p>
               ))}
             </div>

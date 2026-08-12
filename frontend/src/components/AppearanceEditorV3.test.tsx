@@ -507,12 +507,53 @@ describe("AppearanceEditorV3", () => {
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Custom design name")).toHaveProperty("value", "Night garden");
     await user.click(screen.getByRole("button", { name: "Delete Night garden" }));
-    expect(screen.queryByText("Night garden")).toBeNull();
+    expect(screen.getByText("Night garden").className).toContain("line-through");
+    expect(
+      screen.getByRole("button", { name: "Undo deleting Night garden" }),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Use Night garden" })).toBeNull();
     expect(screen.getByText(/Deleting Night garden returns All dice/)).toBeDefined();
     expect(onSave).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("Night garden")).toBeDefined();
+  });
+
+  it("restores a staged deletion with its target assignment", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => undefined);
+    const profile = personalProfile();
+    profile.designs = [
+      { id: designId, name: "Night garden", recipe: styleRecipe("pride") },
+    ];
+    profile.assignments = {
+      all: { source: "custom", id: designId },
+      overrides: {},
+    };
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Delete Night garden" }));
+    expect(screen.getByText("0 of 10 used")).toBeDefined();
+
+    await user.click(
+      screen.getByRole("button", { name: "Undo deleting Night garden" }),
+    );
+    expect(screen.getByText("1 of 10 used")).toBeDefined();
+    expect(screen.getByText("Night garden").className).not.toContain(
+      "line-through",
+    );
+    expect(screen.queryByText(/Deleting Night garden/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Use Night garden" })).toBeDefined();
+
+    expect(screen.queryByRole("button", { name: "Save & apply" })).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("edits an unassigned saved design without assigning it to the current target", async () => {
