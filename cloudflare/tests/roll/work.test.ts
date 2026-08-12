@@ -2337,6 +2337,12 @@ describe("RollWork Durable Object", () => {
           expect(delivery.result_not_before).toBe(
             delivery.clatter_sent_at + delivery.delay_ms,
           );
+          state.storage.sql.exec(
+            `UPDATE interaction_delivery
+             SET delay_ms = 5000, result_not_before = ?
+             WHERE singleton = 1`,
+            delivery.clatter_sent_at + 5_000,
+          );
           const pendingWork = state.storage.sql
             .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
             .one();
