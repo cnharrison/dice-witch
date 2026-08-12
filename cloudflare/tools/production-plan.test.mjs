@@ -3,13 +3,6 @@ import test from "node:test";
 import { createProductionPlan } from "./production-plan.mjs";
 
 const sha = "a".repeat(40);
-const applicationWorkers = [
-  "discord-rest",
-  "gateway",
-  "roll",
-  "interactions",
-  "web-api",
-];
 const allWorkers = [
   "discord-rest",
   "data",
@@ -22,54 +15,36 @@ const base = {
   requestedSha: sha,
   headSha: sha,
   gitStatus: "",
-  workers: applicationWorkers,
+  workers: allWorkers,
   applyMigrations: false,
   allowGatewayDeploy: true,
   configSummary: { buildSha: sha, frontendOrigin: "https://dicewit.ch" },
 };
 
-test("deploys the complete application Worker cohort in dependency order", () => {
+test("deploys the complete Worker cohort in dependency order", () => {
   const plan = createProductionPlan(base);
-  assert.deepEqual(plan.workers, applicationWorkers);
+  assert.deepEqual(plan.workers, allWorkers);
   assert.equal(plan.applyMigrations, false);
   assert.equal(plan.gatewayDeploymentAcknowledged, true);
 });
 
-test("rejects every partial application Worker deployment", () => {
+test("rejects every partial Worker deployment", () => {
   for (const workers of [
     ["roll", "interactions", "web-api"],
     ["discord-rest", "roll", "interactions", "web-api"],
-    ["discord-rest", "gateway", "roll", "web-api"],
+    ["discord-rest", "gateway", "roll", "interactions", "web-api"],
   ]) {
     assert.throws(
       () => createProductionPlan({ ...base, workers }),
-      /complete application Worker cohort/,
+      /complete Worker cohort/,
     );
   }
 });
 
-test("deploys Data only as part of the complete migration cohort", () => {
-  const plan = createProductionPlan({
-    ...base,
-    workers: allWorkers,
-    applyMigrations: true,
-  });
+test("keeps migration authorization independent from the complete cohort", () => {
+  const plan = createProductionPlan({ ...base, applyMigrations: true });
   assert.deepEqual(plan.workers, allWorkers);
   assert.equal(plan.applyMigrations, true);
-
-  assert.throws(
-    () =>
-      createProductionPlan({
-        ...base,
-        workers: ["data", ...applicationWorkers],
-        applyMigrations: false,
-      }),
-    /migration authorization must match/,
-  );
-  assert.throws(
-    () => createProductionPlan({ ...base, applyMigrations: true }),
-    /migration authorization must match/,
-  );
 });
 
 test("requires exact source, Web API metadata, and Gateway acknowledgement", () => {

@@ -17,13 +17,6 @@ const DEPLOYMENT_ORDER = [
   "interactions",
   "web-api",
 ];
-const APPLICATION_WORKERS = [
-  "discord-rest",
-  "gateway",
-  "roll",
-  "interactions",
-  "web-api",
-];
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const CLI_USAGE =
   "Usage: node tools/staging-plan.mjs --sha <full-sha> --workers <comma-list> --roll-origin <url> --gateway-origin <url> [--apply-migrations] [--allow-gateway-deploy]";
@@ -118,19 +111,11 @@ export function createStagingPlan(input) {
       throw new Error(`Unknown staging Worker: ${worker}`);
     }
   }
-  if (selected.has("data") !== (input.applyMigrations === true)) {
-    throw new Error("Data selection and migration authorization must match");
-  }
-  const requiredWorkers = input.applyMigrations === true
-    ? DEPLOYMENT_ORDER
-    : APPLICATION_WORKERS;
   if (
-    selected.size !== requiredWorkers.length ||
-    requiredWorkers.some((worker) => !selected.has(worker))
+    selected.size !== DEPLOYMENT_ORDER.length ||
+    DEPLOYMENT_ORDER.some((worker) => !selected.has(worker))
   ) {
-    throw new Error(
-      "Staging deployment must include the complete application Worker cohort",
-    );
+    throw new Error("Staging deployment must include the complete Worker cohort");
   }
   if (input.allowGatewayDeploy !== true) {
     throw new Error("Gateway deployment requires explicit acknowledgement");
@@ -147,28 +132,29 @@ export function createStagingPlan(input) {
 
   const workers = DEPLOYMENT_ORDER.filter((worker) => selected.has(worker));
   const origins = smokeOrigins(input.configSummary, input.smokeTargets);
+  const migrationList = {
+    kind: "migration-list",
+    command: command("npx", [
+      "--no-install",
+      "wrangler",
+      "d1",
+      "migrations",
+      "list",
+      "DATA",
+      "--remote",
+      "--config",
+      configFile("data"),
+    ]),
+  };
   const steps = [
     {
       kind: "quality-gate",
       commands: qualityGateCommands(input.configSummary),
     },
+    migrationList,
   ];
   if (input.applyMigrations === true) {
     steps.push(
-      {
-        kind: "migration-list",
-        command: command("npx", [
-          "--no-install",
-          "wrangler",
-          "d1",
-          "migrations",
-          "list",
-          "DATA",
-          "--remote",
-          "--config",
-          configFile("data"),
-        ]),
-      },
       {
         kind: "migration-apply",
         approvalRequired: true,
@@ -185,6 +171,7 @@ export function createStagingPlan(input) {
           configFile("data"),
         ]),
       },
+      migrationList,
     );
   }
   for (const worker of workers) {
@@ -223,7 +210,7 @@ export function createStagingPlan(input) {
     sourceSha: input.requestedSha,
     d1DatabaseName: input.configSummary.d1DatabaseName,
     workers,
-    applyMigrations: selected.has("data"),
+    applyMigrations: input.applyMigrations === true,
     gatewayDeploymentAcknowledged: true,
     steps,
   };

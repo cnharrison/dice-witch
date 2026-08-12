@@ -18,13 +18,6 @@ const DEPLOYMENT_ORDER = [
   "interactions",
   "web-api",
 ];
-const APPLICATION_WORKERS = [
-  "discord-rest",
-  "gateway",
-  "roll",
-  "interactions",
-  "web-api",
-];
 const CLI_USAGE =
   "Usage: node tools/production-plan.mjs --sha <full-sha> --workers <comma-list> [--apply-migrations] [--allow-gateway-deploy]";
 
@@ -50,19 +43,11 @@ export function createProductionPlan(input) {
       throw new Error(`Unknown production Worker: ${worker}`);
     }
   }
-  if (selected.has("data") !== (input.applyMigrations === true)) {
-    throw new Error("Data selection and migration authorization must match");
-  }
-  const requiredWorkers = input.applyMigrations === true
-    ? DEPLOYMENT_ORDER
-    : APPLICATION_WORKERS;
   if (
-    selected.size !== requiredWorkers.length ||
-    requiredWorkers.some((worker) => !selected.has(worker))
+    selected.size !== DEPLOYMENT_ORDER.length ||
+    DEPLOYMENT_ORDER.some((worker) => !selected.has(worker))
   ) {
-    throw new Error(
-      "Production deployment must include the complete application Worker cohort",
-    );
+    throw new Error("Production deployment must include the complete Worker cohort");
   }
   if (input.allowGatewayDeploy !== true) {
     throw new Error("Gateway deployment requires explicit acknowledgement");
@@ -77,7 +62,7 @@ export function createProductionPlan(input) {
     version: 1,
     sourceSha: input.requestedSha,
     workers: DEPLOYMENT_ORDER.filter((worker) => selected.has(worker)),
-    applyMigrations: selected.has("data"),
+    applyMigrations: input.applyMigrations === true,
     gatewayDeploymentAcknowledged: true,
   };
 }

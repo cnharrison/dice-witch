@@ -3,13 +3,6 @@ import test from "node:test";
 import { createStagingPlan } from "./staging-plan.mjs";
 
 const sha = "a".repeat(40);
-const applicationWorkers = [
-  "discord-rest",
-  "gateway",
-  "roll",
-  "interactions",
-  "web-api",
-];
 const allWorkers = [
   "discord-rest",
   "data",
@@ -40,7 +33,7 @@ function input(overrides = {}) {
     requestedSha: sha,
     headSha: sha,
     gitStatus: "",
-    workers: applicationWorkers,
+    workers: allWorkers,
     applyMigrations: false,
     allowGatewayDeploy: true,
     productionIsolationVerified: true,
@@ -53,57 +46,45 @@ function input(overrides = {}) {
   };
 }
 
-test("deploys the complete application Worker cohort in dependency order", () => {
+test("deploys the complete Worker cohort in dependency order", () => {
   const plan = createStagingPlan(input());
 
   assert.equal(plan.sourceSha, sha);
-  assert.deepEqual(plan.workers, applicationWorkers);
+  assert.deepEqual(plan.workers, allWorkers);
   assert.equal(plan.applyMigrations, false);
   assert.equal(plan.gatewayDeploymentAcknowledged, true);
   assert.deepEqual(
     plan.steps.filter(({ kind }) => kind === "deploy").map(({ worker }) => worker),
-    applicationWorkers,
+    allWorkers,
   );
   assert.equal(plan.steps[0].kind, "quality-gate");
-  assert.equal(plan.steps[1].kind, "deploy");
+  assert.equal(plan.steps[1].kind, "migration-list");
+  assert.equal(plan.steps[2].kind, "deploy");
   assert.equal(plan.steps.at(-1).kind, "smoke-test");
 });
 
-test("rejects every partial application Worker deployment", () => {
+test("rejects every partial Worker deployment", () => {
   for (const workers of [
     ["roll", "interactions", "web-api"],
     ["discord-rest", "roll", "interactions", "web-api"],
-    ["discord-rest", "gateway", "roll", "web-api"],
+    ["discord-rest", "gateway", "roll", "interactions", "web-api"],
   ]) {
     assert.throws(
       () => createStagingPlan(input({ workers })),
-      /complete application Worker cohort/,
+      /complete Worker cohort/,
     );
   }
 });
 
-test("deploys Data only as part of the complete migration cohort", () => {
-  const plan = createStagingPlan(
-    input({ workers: allWorkers, applyMigrations: true }),
-  );
+test("keeps migration authorization independent from the complete cohort", () => {
+  const plan = createStagingPlan(input({ applyMigrations: true }));
 
   assert.deepEqual(plan.workers, allWorkers);
   assert.equal(plan.applyMigrations, true);
   assert.equal(plan.steps[1].kind, "migration-list");
   assert.equal(plan.steps[2].kind, "migration-apply");
-  assert.equal(plan.steps[3].kind, "deploy");
-
-  assert.throws(
-    () =>
-      createStagingPlan(
-        input({ workers: allWorkers, applyMigrations: false }),
-      ),
-    /migration authorization must match/,
-  );
-  assert.throws(
-    () => createStagingPlan(input({ applyMigrations: true })),
-    /migration authorization must match/,
-  );
+  assert.equal(plan.steps[3].kind, "migration-list");
+  assert.equal(plan.steps[4].kind, "deploy");
 });
 
 test("requires exact source, valid configuration, isolation, and Gateway acknowledgement", () => {
@@ -142,7 +123,7 @@ test("rejects duplicate, unknown, and empty Worker cohorts", () => {
   assert.throws(
     () =>
       createStagingPlan(
-        input({ workers: [...applicationWorkers, "web-api"] }),
+        input({ workers: [...allWorkers, "web-api"] }),
       ),
     /contains duplicates/,
   );

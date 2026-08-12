@@ -44,7 +44,7 @@ test("derives a complete Worker cohort and has no partial-deployment escape hatc
   const value = await workflow();
   assert.doesNotMatch(value, /^ {6}workers:/m);
   assert.doesNotMatch(value, /allow_existing_dependencies|allow-existing-dependencies/);
-  assert.match(
+  assert.doesNotMatch(
     value,
     /workers="discord-rest,gateway,roll,interactions,web-api"/,
   );
@@ -62,6 +62,14 @@ test("requires exact SHA, source-derived config, explicit mutation acknowledgeme
   assert.match(value, /production:materialize/);
   assert.match(value, /production-plan\.mjs/);
   assert.match(value, /--apply-migrations/);
+  assert.match(value, /Check pending production D1 migrations/);
+  assert.match(value, /Verify production D1 migrations are current/);
+  assert.match(value, /assert-migration-state\.mjs/);
+  const check = value.indexOf("Check pending production D1 migrations");
+  const apply = value.indexOf("Apply authorized production D1 migrations");
+  const verify = value.indexOf("Verify production D1 migrations are current");
+  const deploy = value.indexOf("Deploy production Worker cohort");
+  assert.ok(check < apply && apply < verify && verify < deploy);
   assert.match(value, /--allow-gateway-deploy/);
   assert.match(value, /--strict/);
   assert.match(value, /dfe6c3ddb987a22c7f17955d1973490e/);

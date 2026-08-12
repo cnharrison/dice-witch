@@ -131,10 +131,9 @@ jobs:
           STAGING_GATEWAY_ORIGIN: ${{ secrets.STAGING_GATEWAY_ORIGIN }}
         run: |
           set -euo pipefail
-          workers="discord-rest,gateway,roll,interactions,web-api"
+          workers="discord-rest,data,gateway,roll,interactions,web-api"
           migration_flag=()
           if [[ "$APPLY_MIGRATIONS" == "true" ]]; then
-            workers="discord-rest,data,gateway,roll,interactions,web-api"
             migration_flag+=(--apply-migrations)
           fi
           gateway_flag=()
@@ -159,6 +158,20 @@ jobs:
               --config "wrangler.${worker}.jsonc" > /dev/null
           done
 
+      - name: Check pending staging D1 migrations
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          migrations="$RUNNER_TEMP/staging-migrations.txt"
+          npx --no-install wrangler d1 migrations list DATA \
+            --remote --config wrangler.data.jsonc | tee "$migrations"
+          node tools/assert-migration-state.mjs \
+            --output "$migrations" \
+            --apply-migrations "$APPLY_MIGRATIONS"
+
       - name: Apply staging D1 migrations
         if: ${{ inputs.apply_migrations == true }}
         working-directory: cloudflare
@@ -167,10 +180,22 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          npx --no-install wrangler d1 migrations list DATA \
-            --remote --config wrangler.data.jsonc > /dev/null
           npx --no-install wrangler d1 migrations apply DATA \
             --remote --config wrangler.data.jsonc > /dev/null
+
+      - name: Verify staging D1 migrations are current
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          migrations="$RUNNER_TEMP/staging-migrations-current.txt"
+          npx --no-install wrangler d1 migrations list DATA \
+            --remote --config wrangler.data.jsonc | tee "$migrations"
+          node tools/assert-migration-state.mjs \
+            --output "$migrations" \
+            --apply-migrations false
 
       - name: Deploy staging Worker cohort
         working-directory: cloudflare

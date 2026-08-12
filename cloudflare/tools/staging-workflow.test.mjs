@@ -27,7 +27,7 @@ test("derives a complete Worker cohort and exposes no partial-deployment path", 
 
   assert.doesNotMatch(value, /^ {6}workers:/m);
   assert.doesNotMatch(value, /audience_producer_only|audience-producer-only/);
-  assert.match(
+  assert.doesNotMatch(
     value,
     /workers="discord-rest,gateway,roll,interactions,web-api"/,
   );
@@ -38,12 +38,19 @@ test("derives a complete Worker cohort and exposes no partial-deployment path", 
   assert.match(value, /--workers "\$workers"/);
 });
 
-test("couples Data deployment to migration authorization", async () => {
+test("checks migration state while keeping Data in every cohort", async () => {
   const value = await workflow();
 
-  assert.match(value, /if \[\[ "\$APPLY_MIGRATIONS" == "true" \]\]; then/);
   assert.match(value, /if: \$\{\{ inputs\.apply_migrations == true \}\}/);
   assert.match(value, /--apply-migrations/);
+  assert.match(value, /Check pending staging D1 migrations/);
+  assert.match(value, /Verify staging D1 migrations are current/);
+  assert.match(value, /assert-migration-state\.mjs/);
+  const check = value.indexOf("Check pending staging D1 migrations");
+  const apply = value.indexOf("Apply staging D1 migrations");
+  const verify = value.indexOf("Verify staging D1 migrations are current");
+  const deploy = value.indexOf("Deploy staging Worker cohort");
+  assert.ok(check < apply && apply < verify && verify < deploy);
 });
 
 test("uses the expiring dependency-audit policy", async () => {
