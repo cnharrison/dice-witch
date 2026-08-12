@@ -20,7 +20,7 @@ import {
   loadPreferencesPage,
 } from "@/lib/app-route-loaders";
 import {
-  PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
+  PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
   PERSONAL_APPEARANCE_STALE_TIME_MS,
 } from "@/lib/appearance-query";
 
@@ -48,10 +48,10 @@ export function Navbar() {
   const prefetchPreferences = () => {
     void loadPreferencesPage();
     void queryClient.prefetchQuery({
-      queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY,
+      queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
       queryFn: async () => {
-        const appearance = await import("@/lib/appearance-v3");
-        return appearance.getPersonalAppearanceBootstrapV3();
+        const appearance = await import("@/lib/appearance-v4");
+        return appearance.getPersonalAppearanceBootstrapV4();
       },
       staleTime: PERSONAL_APPEARANCE_STALE_TIME_MS,
     });

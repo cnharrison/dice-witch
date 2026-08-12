@@ -2,11 +2,8 @@ import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { PixelatedPreviewImage } from "@/components/PixelatedPreviewImage";
 import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { Button } from "@/components/ui/button";
-import { AppearanceApiError } from "@/lib/appearance";
-import {
-  getAppearancePreviewV3,
-  getAppearancePreviewV4,
-} from "@/lib/appearance-v3";
+import { AppearanceApiError } from "@/lib/appearance-api-error";
+import { getAppearancePreviewV4 } from "@/lib/appearance-v4";
 import type { AppearanceEditorTargetV3 } from "@/lib/appearance-editor-v3";
 import {
   APPEARANCE_TARGET_LABELS,
@@ -56,7 +53,7 @@ export function AppearancePreviewPaneV3({
 }: {
   target: AppearanceEditorTargetV3;
   recipe: AppearanceRecipeV3;
-  diceView?: DiceViewPreferencesV4;
+  diceView: DiceViewPreferencesV4;
 }) {
   const [seed, setSeed] = React.useState(0x51ce_b00c);
   const [state, setState] = React.useState<PreviewState>("normal");
@@ -70,7 +67,7 @@ export function AppearancePreviewPaneV3({
   const debouncedDraft = useDebouncedValue(previewDraft, 300);
   const previewQuery = useQuery({
     queryKey: [
-      diceView === undefined ? "appearancePreviewV3" : "appearancePreviewV4",
+      "appearancePreviewV4",
       target,
       seed,
       state,
@@ -83,12 +80,10 @@ export function AppearancePreviewPaneV3({
         seed,
         state,
       };
-      return debouncedDraft.diceView === undefined
-        ? getAppearancePreviewV3(input, signal)
-        : getAppearancePreviewV4(
-            { ...input, diceView: debouncedDraft.diceView },
-            signal,
-          );
+      return getAppearancePreviewV4(
+        { ...input, diceView: debouncedDraft.diceView },
+        signal,
+      );
     },
     placeholderData: keepPreviousData,
     staleTime: Infinity,

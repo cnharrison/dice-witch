@@ -8,13 +8,12 @@ import { SavedAppearanceDesigns } from "@/components/SavedAppearanceDesigns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AppearanceApiError } from "@/lib/appearance";
+import { AppearanceApiError } from "@/lib/appearance-api-error";
 import {
   applyAppearanceReferenceV3,
   assertAppearanceRecipeSupportsTargetV3,
   beginAppearanceRecipeEditV3,
   clearAppearanceTargetOverrideV3,
-  createEmptyAppearanceProfileV3,
   createEmptyAppearanceProfileV4,
   deleteAppearanceDesignV3,
   nextPresetEditNameV3,
@@ -24,7 +23,7 @@ import {
   upsertAppearanceDesignV3,
   withAutomaticMaterialFormsV3,
   type AppearanceEditorTargetV3,
-  type EditableAppearanceProfileV3,
+  type EditableAppearanceProfileV4,
 } from "@/lib/appearance-editor-v3";
 import {
   APPEARANCE_TARGET_LABELS,
@@ -41,14 +40,13 @@ import * as React from "react";
 
 type AppearanceEditorV3Props = {
   catalog: AppearanceCatalogV3;
-  resource: AppearanceProfileResource<EditableAppearanceProfileV3>;
+  resource: AppearanceProfileResource<EditableAppearanceProfileV4>;
   kind: "personal" | "guild";
   personalDesigns: readonly CustomAppearanceDesignV3[];
   isSaving: boolean;
-  version?: 3 | 4;
   settingsPanel?: React.ReactNode;
   onDirtyChange?(dirty: boolean): void;
-  onSave(profile: EditableAppearanceProfileV3, revision: number): Promise<void>;
+  onSave(profile: EditableAppearanceProfileV4, revision: number): Promise<void>;
 };
 
 type AppearanceEditorTab = "design" | "camera" | "server";
@@ -85,7 +83,7 @@ function errorMessage(error: unknown): string {
   }
 }
 
-function designState(profile: EditableAppearanceProfileV3): unknown {
+function designState(profile: EditableAppearanceProfileV4): unknown {
   return { designs: profile.designs, assignments: profile.assignments };
 }
 
@@ -94,7 +92,7 @@ function sameValue(left: unknown, right: unknown): boolean {
 }
 
 function hasDesignNameChanges(
-  profile: EditableAppearanceProfileV3,
+  profile: EditableAppearanceProfileV4,
   nameDrafts: Readonly<Record<string, string>>,
 ): boolean {
   return Object.entries(nameDrafts).some(([id, name]) =>
@@ -103,7 +101,7 @@ function hasDesignNameChanges(
 }
 
 function designTargets(
-  profile: EditableAppearanceProfileV3,
+  profile: EditableAppearanceProfileV4,
   designId: string,
 ): string[] {
   if (
@@ -131,26 +129,21 @@ export function AppearanceEditorV3({
   kind,
   personalDesigns,
   isSaving,
-  version = 3,
   settingsPanel,
   onDirtyChange,
   onSave,
 }: AppearanceEditorV3Props) {
   const resourceProfile = React.useMemo(
-    () =>
-      resource.profile ??
-      (version === 4
-        ? createEmptyAppearanceProfileV4(kind)
-        : createEmptyAppearanceProfileV3(kind)),
-    [kind, resource.profile, version],
+    () => resource.profile ?? createEmptyAppearanceProfileV4(kind),
+    [kind, resource.profile],
   );
   const [baselineProfile, setBaselineProfile] =
-    React.useState<EditableAppearanceProfileV3>(() =>
+    React.useState<EditableAppearanceProfileV4>(() =>
       structuredClone(resourceProfile),
     );
   const [baselineRevision, setBaselineRevision] = React.useState(resource.revision);
   const [draftProfile, setDraftProfile] =
-    React.useState<EditableAppearanceProfileV3>(() =>
+    React.useState<EditableAppearanceProfileV4>(() =>
       structuredClone(resourceProfile),
     );
   const [target, setTarget] = React.useState<AppearanceEditorTargetV3>("all");
@@ -185,18 +178,15 @@ export function AppearanceEditorV3({
     const localDesignChanged =
       !sameValue(designState(draft), designState(baseline)) ||
       hasDesignNameChanges(draft, nameDraftsRef.current);
-    const localCameraChanged =
-      draft.version === 4 &&
-      baseline.version === 4 &&
-      !sameValue(draft.diceView, baseline.diceView);
+    const localCameraChanged = !sameValue(draft.diceView, baseline.diceView);
     const remoteDesignChanged = !sameValue(
       designState(resourceProfile),
       designState(baseline),
     );
-    const remoteCameraChanged =
-      resourceProfile.version === 4 &&
-      baseline.version === 4 &&
-      !sameValue(resourceProfile.diceView, baseline.diceView);
+    const remoteCameraChanged = !sameValue(
+      resourceProfile.diceView,
+      baseline.diceView,
+    );
     if (
       (localDesignChanged && remoteDesignChanged) ||
       (localCameraChanged && remoteCameraChanged)
@@ -212,7 +202,7 @@ export function AppearanceEditorV3({
       next.designs = structuredClone(draft.designs);
       next.assignments = structuredClone(draft.assignments);
     }
-    if (localCameraChanged && next.version === 4 && draft.version === 4) {
+    if (localCameraChanged) {
       next.diceView = structuredClone(draft.diceView);
     }
     setDraftProfile(next);
@@ -268,15 +258,14 @@ export function AppearanceEditorV3({
   const designDirty =
     !sameValue(designState(draftProfile), designState(baselineProfile)) ||
     hasNameChanges;
-  const cameraDirty =
-    draftProfile.version === 4 &&
-    baselineProfile.version === 4 &&
-    !sameValue(draftProfile.diceView, baselineProfile.diceView);
-  const hasCameraTab = draftProfile.version === 4;
+  const cameraDirty = !sameValue(
+    draftProfile.diceView,
+    baselineProfile.diceView,
+  );
   const hasServerTab = settingsPanel !== undefined;
   const editorTabs: readonly AppearanceEditorTab[] = [
     "design",
-    ...(hasCameraTab ? (["camera"] as const) : []),
+    "camera",
     ...(hasServerTab ? (["server"] as const) : []),
   ];
   const unsavedDrafts = [
@@ -303,12 +292,11 @@ export function AppearanceEditorV3({
 
   React.useEffect(() => {
     if (
-      (activeTab === "camera" && !hasCameraTab) ||
-      (activeTab === "server" && !hasServerTab)
+      activeTab === "server" && !hasServerTab
     ) {
       setActiveTab("design");
     }
-  }, [activeTab, hasCameraTab, hasServerTab]);
+  }, [activeTab, hasServerTab]);
 
   const activateTab = (tab: AppearanceEditorTab, focus = false) => {
     setActiveTab(tab);
@@ -357,9 +345,9 @@ export function AppearanceEditorV3({
   };
 
   const removeReplacedDraftDesign = (
-    profile: EditableAppearanceProfileV3,
+    profile: EditableAppearanceProfileV4,
     previousDesignId: string | null,
-  ): EditableAppearanceProfileV3 | null => {
+  ): EditableAppearanceProfileV4 | null => {
     if (
       previousDesignId === null ||
       baselineProfile.designs.some(({ id }) => id === previousDesignId) ||
@@ -539,7 +527,7 @@ export function AppearanceEditorV3({
     }
   };
 
-  const materializeNames = (): EditableAppearanceProfileV3 => {
+  const materializeNames = (): EditableAppearanceProfileV4 => {
     let profile = draftProfile;
     for (const [id, name] of Object.entries(nameDrafts)) {
       if (
@@ -555,7 +543,7 @@ export function AppearanceEditorV3({
 
   const saveDraft = async () => {
     setStatus(null);
-    let profile: EditableAppearanceProfileV3;
+    let profile: EditableAppearanceProfileV4;
     try {
       profile = materializeNames();
     } catch (error) {
@@ -640,9 +628,7 @@ export function AppearanceEditorV3({
           <AppearancePreviewPaneV3
             target={previewTarget}
             recipe={previewRecipe}
-            {...(draftProfile.version === 4
-              ? { diceView: draftProfile.diceView }
-              : {})}
+            diceView={draftProfile.diceView}
           />
         </div>
         {displayedDesigns.length > 0 && (
@@ -811,24 +797,22 @@ export function AppearanceEditorV3({
 
         </div>
 
-        {draftProfile.version === 4 && (
-          <div
-            id={`${kind}-camera-panel`}
-            role="tabpanel"
-            aria-labelledby={`${kind}-camera-tab`}
-            hidden={activeTab !== "camera"}
-          >
-            <DiceViewPreferencesV4
-              value={draftProfile.diceView}
-              selectedTarget={previewTarget}
-              disabled={isSaving}
-              onChange={(diceView) => {
-                setDraftProfile({ ...draftProfile, diceView });
-                setStatus(null);
-              }}
-            />
-          </div>
-        )}
+        <div
+          id={`${kind}-camera-panel`}
+          role="tabpanel"
+          aria-labelledby={`${kind}-camera-tab`}
+          hidden={activeTab !== "camera"}
+        >
+          <DiceViewPreferencesV4
+            value={draftProfile.diceView}
+            selectedTarget={previewTarget}
+            disabled={isSaving}
+            onChange={(diceView) => {
+              setDraftProfile({ ...draftProfile, diceView });
+              setStatus(null);
+            }}
+          />
+        </div>
 
         {hasServerTab && (
           <div

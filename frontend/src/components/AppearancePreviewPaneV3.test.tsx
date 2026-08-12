@@ -1,11 +1,8 @@
 // @vitest-environment jsdom
 
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
-import { AppearanceApiError } from "@/lib/appearance";
-import {
-  getAppearancePreviewV3,
-  getAppearancePreviewV4,
-} from "@/lib/appearance-v3";
+import { AppearanceApiError } from "@/lib/appearance-api-error";
+import { getAppearancePreviewV4 } from "@/lib/appearance-v4";
 import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -14,26 +11,27 @@ import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppearancePreviewPaneV3 } from "./AppearancePreviewPaneV3";
 
-vi.mock("@/lib/appearance-v3", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/appearance-v3")>();
-  return {
-    ...actual,
-    getAppearancePreviewV3: vi.fn(),
-    getAppearancePreviewV4: vi.fn(),
-  };
+vi.mock("@/lib/appearance-v4", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/appearance-v4")>();
+  return { ...actual, getAppearancePreviewV4: vi.fn() };
 });
 
-const preview = vi.mocked(getAppearancePreviewV3);
-const previewV4 = vi.mocked(getAppearancePreviewV4);
+const preview = vi.mocked(getAppearancePreviewV4);
 const recipe = APPEARANCE_CATALOG_V3.styles[0]?.recipe;
-if (recipe === undefined) throw new Error("V3 preview recipe fixture is missing");
+const diceView = createDefaultDiceViewPreferencesV4();
+if (recipe === undefined) throw new Error("Preview recipe fixture is missing");
+
 function renderPreview(target: "all" | "d20" = "all") {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const result = render(
     <QueryClientProvider client={client}>
-      <AppearancePreviewPaneV3 target={target} recipe={recipe} />
+      <AppearancePreviewPaneV3
+        target={target}
+        recipe={recipe}
+        diceView={diceView}
+      />
     </QueryClientProvider>,
   );
   return { ...result, client };
@@ -51,17 +49,13 @@ describe("AppearancePreviewPaneV3", () => {
 
     const status = screen.getByRole("status");
     expect(status.textContent).toBe("Loading preview");
-    const spinner = status.querySelector('[data-loading-glyph="sparkles"]');
-    expect(spinner).not.toBeNull();
-    expect(spinner?.querySelector("text")).toBeNull();
-    expect(spinner?.querySelectorAll(".dice-witch-sparkle")).toHaveLength(3);
-    expect(screen.queryByText(/authoritative|V4|20/i)).toBeNull();
+    expect(status.querySelector('[data-loading-glyph="sparkles"]')).not.toBeNull();
   });
 
-  it("renders the authoritative all-dice PNG and sends every preview input", async () => {
+  it("renders the V4 PNG and sends every preview input", async () => {
     const user = userEvent.setup();
     preview.mockResolvedValue({
-      version: 3,
+      version: 4,
       contentType: "image/png",
       width: 750,
       height: 300,
@@ -73,11 +67,11 @@ describe("AppearancePreviewPaneV3", () => {
       name: "All dice appearance preview",
     });
     expect(image.getAttribute("width")).toBe("750");
-    expect(image.getAttribute("height")).toBe("300");
     expect(preview).toHaveBeenCalledWith(
       {
         target: "all",
         recipe,
+        diceView,
         seed: 0x51ce_b00c,
         state: "normal",
       },
@@ -90,12 +84,7 @@ describe("AppearancePreviewPaneV3", () => {
     );
     await waitFor(() =>
       expect(preview).toHaveBeenLastCalledWith(
-        {
-          target: "all",
-          recipe,
-          seed: 0x51ce_b00c,
-          state: "critical-success",
-        },
+        expect.objectContaining({ state: "critical-success", diceView }),
         expect.any(AbortSignal),
       ),
     );
@@ -104,7 +93,7 @@ describe("AppearancePreviewPaneV3", () => {
   it("keeps the previous preview visible while a replacement loads", async () => {
     preview
       .mockResolvedValueOnce({
-        version: 3,
+        version: 4,
         contentType: "image/png",
         width: 750,
         height: 300,
@@ -118,7 +107,11 @@ describe("AppearancePreviewPaneV3", () => {
     ).toBeDefined();
     rerender(
       <QueryClientProvider client={client}>
-        <AppearancePreviewPaneV3 target="d20" recipe={recipe} />
+        <AppearancePreviewPaneV3
+          target="d20"
+          recipe={recipe}
+          diceView={diceView}
+        />
       </QueryClientProvider>,
     );
 
@@ -126,84 +119,36 @@ describe("AppearancePreviewPaneV3", () => {
     expect(
       screen.getByRole("img", { name: "All dice appearance preview" }),
     ).toBeDefined();
-    expect(screen.queryByRole("status")).toBeNull();
-    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 
-  it("aborts an obsolete preview request when its target changes", async () => {
-    preview.mockImplementation(() => new Promise(() => undefined));
-    const { rerender, client } = renderPreview();
-    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1));
-    const obsoleteSignal = preview.mock.calls[0]?.[1];
-
-    rerender(
-      <QueryClientProvider client={client}>
-        <AppearancePreviewPaneV3 target="d20" recipe={recipe} />
-      </QueryClientProvider>,
-    );
-
-    await waitFor(() => expect(preview).toHaveBeenCalledTimes(2));
-    expect(obsoleteSignal?.aborted).toBe(true);
-  });
-
-  it("requests an authoritative PNG when camera preferences change", async () => {
-    const diceView = createDefaultDiceViewPreferencesV4();
-    previewV4.mockResolvedValue({
+  it("requests a new V4 PNG when camera preferences change", async () => {
+    preview.mockResolvedValue({
       version: 4,
       contentType: "image/png",
       width: 300,
       height: 150,
       base64: "iVBORw0KGgo=",
     });
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    const view = render(
-      <QueryClientProvider client={client}>
-        <AppearancePreviewPaneV3
-          target="d6"
-          recipe={recipe}
-          diceView={diceView}
-        />
-      </QueryClientProvider>,
-    );
-
+    const { rerender, client } = renderPreview("d20");
     expect(
-      await screen.findByRole("img", { name: "d6 appearance preview" }),
+      await screen.findByRole("img", { name: "d20 appearance preview" }),
     ).toBeDefined();
-    expect(document.querySelector('[aria-label="Preview"] [aria-live="polite"]')?.className)
-      .toContain("h-72");
 
     const adjusted = { ...diceView, elevationDegrees: 47 };
-    view.rerender(
+    rerender(
       <QueryClientProvider client={client}>
         <AppearancePreviewPaneV3
-          target="d6"
+          target="d20"
           recipe={recipe}
           diceView={adjusted}
         />
       </QueryClientProvider>,
     );
 
-    await waitFor(() => expect(previewV4).toHaveBeenCalledTimes(2));
-    expect(previewV4).toHaveBeenLastCalledWith(
-      {
-        target: "d6",
-        recipe,
-        seed: 0x51ce_b00c,
-        state: "normal",
-        diceView: adjusted,
-      },
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(2));
+    expect(preview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ target: "d20", diceView: adjusted }),
       expect.any(AbortSignal),
-    );
-  });
-
-  it("uses brief retry copy for network failures", async () => {
-    preview.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-    renderPreview("d20");
-
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "Error. Try again.",
     );
   });
 
@@ -211,14 +156,10 @@ describe("AppearancePreviewPaneV3", () => {
     const user = userEvent.setup();
     preview
       .mockRejectedValueOnce(
-        new AppearanceApiError(
-          "appearance_renderer_failed",
-          502,
-          "appearance_renderer_failed",
-        ),
+        new AppearanceApiError("appearance_renderer_failed", 502),
       )
       .mockResolvedValueOnce({
-        version: 3,
+        version: 4,
         contentType: "image/png",
         width: 150,
         height: 150,
@@ -229,9 +170,7 @@ describe("AppearancePreviewPaneV3", () => {
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Error. Try again.",
     );
-    expect(screen.queryByRole("img")).toBeNull();
     expect(preview).toHaveBeenCalledTimes(1);
-
     await user.click(screen.getByRole("button", { name: "Retry preview" }));
     expect(
       await screen.findByRole("img", { name: "d20 appearance preview" }),

@@ -52,16 +52,8 @@ function mockFetch(options: {
     "fetch",
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = requestUrl(input);
-      if (url.pathname === "/api/appearance/v3/catalog") {
+      if (url.pathname === "/api/appearance/v4/catalog") {
         return Response.json(APPEARANCE_CATALOG_V3);
-      }
-      if (url.pathname === "/api/appearance/v3/me" && init?.method === "PUT") {
-        const body = JSON.parse(String(init.body)) as { profile: unknown };
-        return Response.json({
-          status: "applied",
-          revision: 2,
-          profile: body.profile,
-        });
       }
       if (url.pathname === "/api/appearance/v4/me") {
         if (init?.method === "PUT") {
@@ -82,12 +74,9 @@ function mockFetch(options: {
               { status: personalStatus },
             );
       }
-      if (
-        url.pathname === "/api/appearance/v3/preview" ||
-        url.pathname === "/api/appearance/v4/preview"
-      ) {
+      if (url.pathname === "/api/appearance/v4/preview") {
         return Response.json({
-          version: url.pathname.includes("/v4/") ? 4 : 3,
+          version: 4,
           contentType: "image/png",
           width: 150,
           height: 150,
@@ -209,39 +198,6 @@ describe("appearance preference authorization", () => {
           version: 4,
           diceView: { mode: "clear", elevationDegrees: 40 },
         },
-      });
-    });
-  });
-
-  it("keeps V3 rows editable without migrating them in the browser", async () => {
-    mockFetch({
-      personalProfile: {
-        version: 3,
-        designs: [],
-        assignments: { all: null, overrides: {} },
-      },
-    });
-    renderPreferences();
-
-    expect(await screen.findByRole("region", { name: "Preview" })).toBeDefined();
-    expect(screen.queryByRole("region", { name: "Dice view" })).toBeNull();
-
-    const user = userEvent.setup();
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "dice-witch",
-    );
-    await user.click(screen.getByRole("button", { name: "Save & apply" }));
-    await waitFor(() => {
-      const mutation = vi.mocked(fetch).mock.calls.find(
-        ([input, init]) =>
-          requestUrl(input).pathname === "/api/appearance/v3/me" &&
-          init?.method === "PUT",
-      );
-      expect(mutation).toBeDefined();
-      expect(JSON.parse(String(mutation?.[1]?.body))).toMatchObject({
-        expectedRevision: 1,
-        profile: { version: 3 },
       });
     });
   });

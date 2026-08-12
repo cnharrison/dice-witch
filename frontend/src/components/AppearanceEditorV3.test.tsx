@@ -3,13 +3,12 @@
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 import {
   createDefaultDiceViewPreferencesV4,
-  type AppearanceProfileV3,
   type AppearanceProfileV4,
   type CustomAppearanceDesignV3,
-  GuildAppearanceProfileV3,
+  GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
-import { AppearanceApiError } from "@/lib/appearance";
-import { getAppearancePreviewV4 } from "@/lib/appearance-v3";
+import { AppearanceApiError } from "@/lib/appearance-api-error";
+import { getAppearancePreviewV4 } from "@/lib/appearance-v4";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -17,19 +16,11 @@ import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppearanceEditorV3 } from "./AppearanceEditorV3";
 
-vi.mock("@/lib/appearance-v3", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/appearance-v3")>();
+vi.mock("@/lib/appearance-v4", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/appearance-v4")>();
   return {
     ...actual,
-    getAppearancePreviewV3: vi.fn(async () => ({
-      version: 3,
-      contentType: "image/png",
-      width: 150,
-      height: 150,
-      base64: "iVBORw0KGgo=",
-    })),
     getAppearancePreviewV4: vi.fn(async () => ({
-      version: 4,
       contentType: "image/png",
       width: 150,
       height: 150,
@@ -40,14 +31,15 @@ vi.mock("@/lib/appearance-v3", async (importOriginal) => {
 
 const designId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
-function personalProfile(): AppearanceProfileV3 {
+function personalProfile(): AppearanceProfileV4 {
   return {
-    version: 3,
+    version: 4,
     designs: [],
     assignments: {
       all: { source: "builtin", id: "chaotic" },
       overrides: { d20: { source: "builtin", id: "hex-appeal" } },
     },
+    diceView: createDefaultDiceViewPreferencesV4(),
   };
 }
 
@@ -55,7 +47,6 @@ function personalProfileV4(): AppearanceProfileV4 {
   const profile = personalProfile();
   return {
     ...profile,
-    version: 4,
     diceView: createDefaultDiceViewPreferencesV4(),
   };
 }
@@ -173,7 +164,6 @@ describe("AppearanceEditorV3", () => {
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
-      version: 4,
       onSave: vi.fn(async () => undefined),
     });
 
@@ -198,7 +188,6 @@ describe("AppearanceEditorV3", () => {
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
-      version: 4,
       onSave: vi.fn(async () => undefined),
     });
 
@@ -237,7 +226,6 @@ describe("AppearanceEditorV3", () => {
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
-      version: 4,
       onSave: vi.fn(async () => undefined),
     });
 
@@ -278,7 +266,6 @@ describe("AppearanceEditorV3", () => {
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
-      version: 4,
       onSave: vi.fn(async () => undefined),
     });
 
@@ -338,7 +325,6 @@ describe("AppearanceEditorV3", () => {
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
-      version: 4,
       onSave,
     });
 
@@ -353,7 +339,6 @@ describe("AppearanceEditorV3", () => {
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     expect(onSave.mock.calls[0]?.[0]).toMatchObject({
-      version: 4,
       assignments: {
         all: { source: "builtin", id: "dice-witch" },
         overrides: { d20: { source: "builtin", id: "hex-appeal" } },
@@ -372,7 +357,6 @@ describe("AppearanceEditorV3", () => {
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
-      version: 4,
       onSave,
     });
 
@@ -393,7 +377,6 @@ describe("AppearanceEditorV3", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     const saved = onSave.mock.calls[0]?.[0];
     expect(saved).toMatchObject({
-      version: 4,
       diceView: { mode: "clear" },
       designs: [{ id: designId, name: "Combined draft" }],
     });
@@ -585,7 +568,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV3;
+    const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV4;
     expect(saved.designs[0]).toMatchObject({ id: designId, name: "Night garden" });
     expect(saved.assignments.all).toEqual({ source: "custom", id: designId });
   });
@@ -625,9 +608,9 @@ describe("AppearanceEditorV3", () => {
 
   it("reports optimistic revision conflicts without claiming a save", async () => {
     const user = userEvent.setup();
-    const onSave = vi.fn(() => Promise.reject(new AppearanceApiError(
-      "appearance_revision_conflict", 409, "appearance_revision_conflict",
-    )));
+    const onSave = vi.fn(() => Promise.reject(
+      new AppearanceApiError("appearance_revision_conflict", 409),
+    ));
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 4, profile: personalProfile() },
@@ -744,8 +727,8 @@ describe("AppearanceEditorV3", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
-    const profile: GuildAppearanceProfileV3 = {
-      version: 3,
+    const profile: GuildAppearanceProfileV4 = {
+      ...personalProfile(),
       mode: "default",
       designs: [],
       assignments: { all: null, overrides: {} },
@@ -794,8 +777,8 @@ describe("AppearanceEditorV3", () => {
       name: "Personal glass",
       recipe: styleRecipe("glass-cannon"),
     };
-    const guild: GuildAppearanceProfileV3 = {
-      version: 3,
+    const guild: GuildAppearanceProfileV4 = {
+      ...personalProfile(),
       mode: "default",
       designs: [],
       assignments: { all: null, overrides: {} },
@@ -818,7 +801,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    const copied = onSave.mock.calls[0]?.[0] as GuildAppearanceProfileV3;
+    const copied = onSave.mock.calls[0]?.[0] as GuildAppearanceProfileV4;
     expect(copied.mode).toBe("default");
     expect(copied.designs[0]?.recipe).toEqual({
       ...personalDesign.recipe,

@@ -5,16 +5,14 @@ import { ServerAppearanceModeV3 } from "@/components/ServerAppearanceModeV3";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useGuild } from "@/context/GuildContext";
-import { AppearanceApiError } from "@/lib/appearance";
+import { AppearanceApiError } from "@/lib/appearance-api-error";
 import {
   getGuildAppearanceProfileV4,
   getPersonalAppearanceBootstrapV4,
-  putGuildAppearanceProfileV3,
   putGuildAppearanceProfileV4,
-  putPersonalAppearanceProfileV3,
   putPersonalAppearanceProfileV4,
   type PersonalAppearanceBootstrapV4,
-} from "@/lib/appearance-v3";
+} from "@/lib/appearance-v4";
 import {
   PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
   PERSONAL_APPEARANCE_STALE_TIME_MS,
@@ -26,9 +24,7 @@ import {
 import { appConfig } from "@/lib/config";
 import { customFetch } from "@/lib/api";
 import type {
-  AppearanceProfileV3,
   AppearanceProfileV4,
-  GuildAppearanceProfileV3,
   GuildAppearanceProfileV4,
 } from "@/types/appearance";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -311,22 +307,13 @@ export default function Preferences() {
       profile,
       revision,
     }: {
-      profile:
-        | AppearanceProfileV3
-        | AppearanceProfileV4
-        | GuildAppearanceProfileV3
-        | GuildAppearanceProfileV4;
+      profile: AppearanceProfileV4;
       revision: number;
     }) => {
       if (!catalog) {
         throw new Error("Personal appearance catalog is not loaded");
       }
-      if ("mode" in profile) {
-        throw new Error("Guild profile cannot be saved as a personal profile");
-      }
-      return profile.version === 4
-        ? putPersonalAppearanceProfileV4(revision, profile, catalog)
-        : putPersonalAppearanceProfileV3(revision, profile, catalog);
+      return putPersonalAppearanceProfileV4(revision, profile, catalog);
     },
     onSuccess: (resource) => {
       queryClient.setQueryData(
@@ -348,23 +335,14 @@ export default function Preferences() {
       guildId,
       revision,
     }: {
-      profile:
-        | AppearanceProfileV3
-        | AppearanceProfileV4
-        | GuildAppearanceProfileV3
-        | GuildAppearanceProfileV4;
+      profile: GuildAppearanceProfileV4;
       guildId: string;
       revision: number;
     }) => {
       if (!catalog) {
         throw new Error("Guild appearance catalog is not loaded");
       }
-      if (!("mode" in profile)) {
-        throw new Error("Personal profile cannot be saved as a guild profile");
-      }
-      return profile.version === 4
-        ? putGuildAppearanceProfileV4(guildId, revision, profile, catalog)
-        : putGuildAppearanceProfileV3(guildId, revision, profile, catalog);
+      return putGuildAppearanceProfileV4(guildId, revision, profile, catalog);
     },
     onSuccess: (resource, variables) => {
       queryClient.setQueryData(
@@ -421,6 +399,7 @@ export default function Preferences() {
   });
 
   const guildResource = guildAppearanceQuery.data;
+  const guildProfile = guildResource?.profile;
 
   let content: React.ReactNode;
   if (personalBootstrapQuery.isError) {
@@ -439,7 +418,6 @@ export default function Preferences() {
         kind="personal"
         personalDesigns={personalResource.profile?.designs ?? []}
         isSaving={personalMutation.isPending}
-        version={personalResource.profile?.version ?? 4}
         onDirtyChange={setAppearanceDraftDirty}
         onSave={async (profile, revision) => {
           if ("mode" in profile) {
@@ -536,19 +514,18 @@ export default function Preferences() {
           kind="guild"
           personalDesigns={personalResource.profile?.designs ?? []}
           isSaving={guildAppearanceMutation.isPending}
-          version={guildResource.profile?.version ?? 4}
           onDirtyChange={setAppearanceDraftDirty}
           settingsPanel={
             <>
               <ServerAppearanceModeV3
                 mode={
-                  guildResource.profile?.mode ??
+                  guildProfile?.mode ??
                   createEmptyAppearanceProfileV4("guild").mode
                 }
                 disabled={guildAppearanceMutation.isPending}
                 onChange={async (mode) => {
                   const profile = setGuildAppearanceModeV3(
-                    guildResource.profile ??
+                    guildProfile ??
                       createEmptyAppearanceProfileV4("guild"),
                     mode,
                     catalog,

@@ -3,11 +3,7 @@ import {
   serializeRenderRequestV4,
   type PublicRenderModelV4,
 } from "@dice-witch/dice-v4-model";
-import {
-  APPEARANCE_CATALOG_V1,
-  APPEARANCE_CATALOG_V2,
-  APPEARANCE_CATALOG_V3,
-} from "../../../packages/dice-appearance/src";
+import { APPEARANCE_CATALOG_V3 } from "../../../packages/dice-appearance/src";
 import { MAX_NOTATION_LENGTH } from "../../../packages/roll-domain/src/constants";
 import { parseSavedRollNameColorV2 } from "../../../packages/saved-rolls/src/color";
 import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
@@ -21,25 +17,10 @@ import {
   hashOpaqueToken,
 } from "../../data/src/session-repository";
 import {
-  getGuildAppearance,
-  getGuildAppearanceV2,
-  getGuildAppearanceV3,
   getGuildAppearanceV4,
-  getPersonalAppearance,
-  getPersonalAppearanceV2,
-  getPersonalAppearanceV3,
   getPersonalAppearanceV4,
-  previewAppearance,
-  previewAppearanceV2,
-  previewAppearanceV3,
   previewAppearanceV4,
-  putGuildAppearance,
-  putGuildAppearanceV2,
-  putGuildAppearanceV3,
   putGuildAppearanceV4,
-  putPersonalAppearance,
-  putPersonalAppearanceV2,
-  putPersonalAppearanceV3,
   putPersonalAppearanceV4,
 } from "./appearance-api";
 import { bytesToBase64, json, securityHeaders } from "./responses";
@@ -117,9 +98,6 @@ export type WebApiBindings = {
   ROLL_WEB: {
     prepare(value: unknown): Promise<unknown>;
     execute(value: unknown): Promise<unknown>;
-    preview(value: unknown): Promise<unknown>;
-    previewV2(value: unknown): Promise<unknown>;
-    previewV3(value: unknown): Promise<unknown>;
     previewV4(value: unknown): Promise<unknown>;
   };
   DISCORD_CLIENT_ID: string;
@@ -319,20 +297,11 @@ function preflight(
   ) {
     methods = "PATCH";
     allowedHeaders = "content-type, idempotency-key";
-  } else if (
-    pathname === "/api/appearance/catalog" ||
-    pathname === "/api/appearance/v2/catalog" ||
-    pathname === "/api/appearance/v3/catalog"
-  ) {
+  } else if (pathname === "/api/appearance/v4/catalog") {
     methods = "GET";
   } else if (
-    pathname === "/api/appearance/me" ||
-    pathname === "/api/appearance/v2/me" ||
-    pathname === "/api/appearance/v3/me" ||
     pathname === "/api/appearance/v4/me" ||
-    /^\/api\/guilds\/[1-9][0-9]{16,19}\/appearance(?:\/v[234])?$/.test(
-      pathname,
-    )
+    /^\/api\/guilds\/[1-9][0-9]{16,19}\/appearance\/v4$/.test(pathname)
   ) {
     methods = "GET, PUT";
     allowedHeaders = "content-type, idempotency-key";
@@ -346,12 +315,7 @@ function preflight(
   ) {
     methods = "GET, POST, PATCH, DELETE";
     allowedHeaders = "content-type, idempotency-key";
-  } else if (
-    pathname === "/api/appearance/preview" ||
-    pathname === "/api/appearance/v2/preview" ||
-    pathname === "/api/appearance/v3/preview" ||
-    pathname === "/api/appearance/v4/preview"
-  ) {
+  } else if (pathname === "/api/appearance/v4/preview") {
     methods = "POST";
     allowedHeaders = "content-type";
   } else {
@@ -459,103 +423,6 @@ function hasExactCatalogBuild(url: URL, buildSha: string): boolean {
     url.searchParams.size === 1 &&
     url.searchParams.get("build") === buildSha
   );
-}
-
-function appearanceCatalogForPath(
-  pathname: string,
-):
-  | typeof APPEARANCE_CATALOG_V1
-  | typeof APPEARANCE_CATALOG_V2
-  | typeof APPEARANCE_CATALOG_V3 {
-  if (pathname === "/api/appearance/v3/catalog") {
-    return APPEARANCE_CATALOG_V3;
-  }
-  if (pathname === "/api/appearance/v2/catalog") {
-    return APPEARANCE_CATALOG_V2;
-  }
-  return APPEARANCE_CATALOG_V1;
-}
-
-type AppearanceBrowserVersion = 1 | 2 | 3 | 4;
-
-function appearanceVersionForPath(pathname: string): AppearanceBrowserVersion {
-  if (pathname.endsWith("/v4") || pathname.includes("/v4/")) return 4;
-  if (pathname.endsWith("/v3") || pathname.includes("/v3/")) return 3;
-  if (pathname.endsWith("/v2") || pathname.includes("/v2/")) return 2;
-  return 1;
-}
-
-function getPersonalAppearanceForVersion(
-  version: AppearanceBrowserVersion,
-  dataService: Fetcher,
-  userId: string,
-): Promise<Response> {
-  if (version === 4) return getPersonalAppearanceV4(dataService, userId);
-  if (version === 3) return getPersonalAppearanceV3(dataService, userId);
-  return version === 2
-    ? getPersonalAppearanceV2(dataService, userId)
-    : getPersonalAppearance(dataService, userId);
-}
-
-function putPersonalAppearanceForVersion(
-  version: AppearanceBrowserVersion,
-  request: Request,
-  dataService: Fetcher,
-  userId: string,
-  now: number,
-): Promise<Response> {
-  if (version === 4) {
-    return putPersonalAppearanceV4(request, dataService, userId, now);
-  }
-  if (version === 3) {
-    return putPersonalAppearanceV3(request, dataService, userId, now);
-  }
-  return version === 2
-    ? putPersonalAppearanceV2(request, dataService, userId, now)
-    : putPersonalAppearance(request, dataService, userId, now);
-}
-
-function getGuildAppearanceForVersion(
-  version: AppearanceBrowserVersion,
-  dataService: Fetcher,
-  guildId: string,
-): Promise<Response> {
-  if (version === 4) return getGuildAppearanceV4(dataService, guildId);
-  if (version === 3) return getGuildAppearanceV3(dataService, guildId);
-  return version === 2
-    ? getGuildAppearanceV2(dataService, guildId)
-    : getGuildAppearance(dataService, guildId);
-}
-
-function putGuildAppearanceForVersion(
-  version: AppearanceBrowserVersion,
-  request: Request,
-  dataService: Fetcher,
-  guildId: string,
-  userId: string,
-  now: number,
-): Promise<Response> {
-  if (version === 4) {
-    return putGuildAppearanceV4(
-      request,
-      dataService,
-      guildId,
-      userId,
-      now,
-    );
-  }
-  if (version === 3) {
-    return putGuildAppearanceV3(
-      request,
-      dataService,
-      guildId,
-      userId,
-      now,
-    );
-  }
-  return version === 2
-    ? putGuildAppearanceV2(request, dataService, guildId, userId, now)
-    : putGuildAppearance(request, dataService, guildId, userId, now);
 }
 
 async function postData(
@@ -2007,17 +1874,12 @@ export async function handleAuthRequest(
     }
     if (
       request.method === "GET" &&
-      (pathname === "/api/appearance/catalog" ||
-        pathname === "/api/appearance/v2/catalog" ||
-        pathname === "/api/appearance/v3/catalog")
+      pathname === "/api/appearance/v4/catalog"
     ) {
       if (!isFrontendRequest(request, configuration)) {
         return json({ error: "Forbidden" }, 403);
       }
-      if (
-        pathname === "/api/appearance/v3/catalog" &&
-        !hasExactCatalogBuild(requestUrl, configuration.BUILD_SHA)
-      ) {
+      if (!hasExactCatalogBuild(requestUrl, configuration.BUILD_SHA)) {
         const response = json(
           { error: "appearance_catalog_build_mismatch" },
           409,
@@ -2026,14 +1888,10 @@ export async function handleAuthRequest(
           ? withCors(response, configuration)
           : response;
       }
-      const catalog = appearanceCatalogForPath(pathname);
-      const response = Response.json(catalog, {
+      const response = Response.json(APPEARANCE_CATALOG_V3, {
         headers: {
           ...securityHeaders,
-          "cache-control":
-            pathname === "/api/appearance/v3/catalog"
-              ? "public, max-age=31536000, immutable"
-              : "public, max-age=3600",
+          "cache-control": "public, max-age=31536000, immutable",
         },
       });
       return request.headers.has("origin")
@@ -2041,102 +1899,64 @@ export async function handleAuthRequest(
         : response;
     }
     if (
-      (pathname === "/api/appearance/me" ||
-        pathname === "/api/appearance/v2/me" ||
-        pathname === "/api/appearance/v3/me" ||
-        pathname === "/api/appearance/v4/me") &&
+      pathname === "/api/appearance/v4/me" &&
       (request.method === "GET" || request.method === "PUT")
     ) {
       const exactOrigin =
         request.headers.get("origin") === configuration.FRONTEND_ORIGIN;
-      const appearanceVersion = appearanceVersionForPath(pathname);
       if (
         (request.method === "GET" &&
           !isFrontendRequest(request, configuration)) ||
         (request.method === "PUT" && !exactOrigin)
       ) {
-        return json(
-          {
-            error:
-              appearanceVersion >= 3
-                ? "appearance_origin_forbidden"
-                : "Forbidden",
-          },
-          403,
-        );
+        return json({ error: "appearance_origin_forbidden" }, 403);
       }
       const authentication = await authenticateSession(request, env, now);
       if (!authentication.authenticated) {
-        const response =
-          appearanceVersion >= 3
-            ? v3AppearanceAccessError(
-                authentication.response.status === 401
-                  ? "authentication"
-                  : "service",
-                authentication.response,
-              )
-            : authentication.response;
+        const response = v3AppearanceAccessError(
+          authentication.response.status === 401
+            ? "authentication"
+            : "service",
+          authentication.response,
+        );
         return exactOrigin ? withCors(response, configuration) : response;
       }
-      const response =
-        request.method === "GET"
-          ? await getPersonalAppearanceForVersion(
-              appearanceVersion,
-              env.DATA_SERVICE,
-              authentication.session.user.id,
-            )
-          : await putPersonalAppearanceForVersion(
-              appearanceVersion,
-              request,
-              env.DATA_SERVICE,
-              authentication.session.user.id,
-              now,
-            );
+      const response = request.method === "GET"
+        ? await getPersonalAppearanceV4(
+            env.DATA_SERVICE,
+            authentication.session.user.id,
+          )
+        : await putPersonalAppearanceV4(
+            request,
+            env.DATA_SERVICE,
+            authentication.session.user.id,
+            now,
+          );
       return exactOrigin ? withCors(response, configuration) : response;
     }
     if (
       request.method === "POST" &&
-      (pathname === "/api/appearance/preview" ||
-        pathname === "/api/appearance/v2/preview" ||
-        pathname === "/api/appearance/v3/preview" ||
-        pathname === "/api/appearance/v4/preview")
+      pathname === "/api/appearance/v4/preview"
     ) {
-      const appearanceVersion = appearanceVersionForPath(pathname);
       if (request.headers.get("origin") !== configuration.FRONTEND_ORIGIN) {
-        return json(
-          {
-            error:
-              appearanceVersion >= 3
-                ? "appearance_origin_forbidden"
-                : "Forbidden",
-          },
-          403,
-        );
+        return json({ error: "appearance_origin_forbidden" }, 403);
       }
       const authentication = await authenticateSession(request, env, now);
       if (!authentication.authenticated) {
-        const response =
-          appearanceVersion >= 3
-            ? v3AppearanceAccessError(
-                authentication.response.status === 401
-                  ? "authentication"
-                  : "service",
-                authentication.response,
-              )
-            : authentication.response;
-        return withCors(response, configuration);
+        return withCors(
+          v3AppearanceAccessError(
+            authentication.response.status === 401
+              ? "authentication"
+              : "service",
+            authentication.response,
+          ),
+          configuration,
+        );
       }
-      let response: Response;
-      if (appearanceVersion === 4) {
-        response = await previewAppearanceV4(request, env.ROLL_WEB);
-      } else if (appearanceVersion === 3) {
-        response = await previewAppearanceV3(request, env.ROLL_WEB);
-      } else if (appearanceVersion === 2) {
-        response = await previewAppearanceV2(request, env.ROLL_WEB);
-      } else {
-        response = await previewAppearance(request, env.ROLL_WEB);
-      }
-      return withCors(response, configuration);
+      return withCors(
+        await previewAppearanceV4(request, env.ROLL_WEB),
+        configuration,
+      );
     }
     if (request.method === "GET" && pathname === "/api/stats/public") {
       const response = await env.DATA_SERVICE.fetch(
@@ -2239,7 +2059,7 @@ export async function handleAuthRequest(
         : response;
     }
     const appearanceMatch = pathname.match(
-      /^\/api\/guilds\/([1-9][0-9]{16,19})\/appearance(?:\/(v[234]))?$/,
+      /^\/api\/guilds\/([1-9][0-9]{16,19})\/appearance\/v4$/,
     );
     if (
       appearanceMatch !== null &&
@@ -2251,48 +2071,30 @@ export async function handleAuthRequest(
       }
       const exactOrigin =
         request.headers.get("origin") === configuration.FRONTEND_ORIGIN;
-      const appearanceVersion = appearanceVersionForPath(pathname);
       if (
         (request.method === "GET" &&
           !isFrontendRequest(request, configuration)) ||
         (request.method === "PUT" && !exactOrigin)
       ) {
-        return json(
-          {
-            error:
-              appearanceVersion >= 3
-                ? "appearance_origin_forbidden"
-                : "Forbidden",
-          },
-          403,
-        );
+        return json({ error: "appearance_origin_forbidden" }, 403);
       }
       const authorization = await authorizeGuild(request, env, guildId, now);
       if (!authorization.authorized) {
-        const response =
-          appearanceVersion >= 3
-            ? v3AppearanceAccessError(
-                authorization.reason,
-                authorization.response,
-              )
-            : authorization.response;
+        const response = v3AppearanceAccessError(
+          authorization.reason,
+          authorization.response,
+        );
         return exactOrigin ? withCors(response, configuration) : response;
       }
-      const response =
-        request.method === "GET"
-          ? await getGuildAppearanceForVersion(
-              appearanceVersion,
-              env.DATA_SERVICE,
-              guildId,
-            )
-          : await putGuildAppearanceForVersion(
-              appearanceVersion,
-              request,
-              env.DATA_SERVICE,
-              guildId,
-              authorization.userId,
-              now,
-            );
+      const response = request.method === "GET"
+        ? await getGuildAppearanceV4(env.DATA_SERVICE, guildId)
+        : await putGuildAppearanceV4(
+            request,
+            env.DATA_SERVICE,
+            guildId,
+            authorization.userId,
+            now,
+          );
       return exactOrigin ? withCors(response, configuration) : response;
     }
     const preferenceMatch = pathname.match(

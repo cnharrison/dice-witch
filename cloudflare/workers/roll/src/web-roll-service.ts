@@ -27,10 +27,8 @@ import {
   type EffectiveAppearanceV4,
 } from "../../../packages/dice-appearance/src";
 import {
-  renderBlankDiceRequestV3ToPng,
   renderDiceRequestV2ToPng,
   renderDiceRequestV3ToPng,
-  type RenderDieV3,
   type RenderRequestV2,
   type RenderRequestV3,
   type RenderResultV2,
@@ -70,15 +68,12 @@ import {
   buildRollRenderRequestR34V4,
 } from "../../../packages/roll-render-model/src";
 import {
-  loadEffectiveAppearanceV2,
-  loadEffectiveAppearanceV3,
   loadEffectiveAppearanceV4,
   type AppearanceDataService,
 } from "./appearance";
 import {
   parseRollRenderVersion,
   parseRollViewPolicy,
-  type RollRenderVersion,
   type RollViewPolicy,
 } from "./render-version";
 import type { WebDeliveryExecutionResult } from "./web-delivery-work";
@@ -780,54 +775,25 @@ function randomSeed(): number {
   return seed;
 }
 
-type LoadedWebAppearance =
-  | { version: 3; recipes: EffectiveAppearanceRecipesV2 }
-  | { version: 4; viewPolicy: "r19"; recipes: EffectiveAppearanceRecipesV3 }
-  | {
-      version: 4;
-      viewPolicy: Exclude<RollViewPolicy, "r19">;
-      effective: EffectiveAppearanceV4;
-    };
+type LoadedWebAppearance = {
+  viewPolicy: RollViewPolicy;
+  effective: EffectiveAppearanceV4;
+};
 
 async function loadWebAppearance(
   dataService: AppearanceDataService,
-  version: RollRenderVersion,
   viewPolicy: RollViewPolicy,
   userId: string,
   guildId: string,
 ): Promise<LoadedWebAppearance> {
-  if (version === 3) {
-    if (viewPolicy !== "r19") {
-      throw new Error(`${viewPolicy} ROLL_VIEW_POLICY requires ROLL_RENDER_VERSION 4`);
-    }
-    return {
-      version,
-      recipes: await loadEffectiveAppearanceV2(dataService, userId, guildId),
-    };
-  }
-  return viewPolicy === "r19"
-    ? {
-        version,
-        viewPolicy,
-        recipes: await loadEffectiveAppearanceV3(
-          dataService,
-          userId,
-          guildId,
-        ),
-      }
-    : {
-        version,
-        viewPolicy,
-        effective: await loadEffectiveAppearanceV4(
-          dataService,
-          userId,
-          guildId,
-        ),
-      };
+  return {
+    viewPolicy,
+    effective: await loadEffectiveAppearanceV4(dataService, userId, guildId),
+  };
 }
 
 async function renderAppearanceDigest(
-  renderRequest: RenderRequestV3 | RenderRequestV4,
+  renderRequest: RenderRequestV4,
   outcome: RollExecutionResult,
 ): Promise<string> {
   const renderedDice = renderRequest.groups.flat();
@@ -853,9 +819,7 @@ async function renderAppearanceDigest(
     .sort((left, right) => left.identity.localeCompare(right.identity));
   const contract = {
     version: renderRequest.version,
-    ...(renderRequest.version === 4
-      ? { rendererRevision: renderRequest.rendererRevision }
-      : {}),
+    rendererRevision: renderRequest.rendererRevision,
     dice,
   };
   const bytes = new TextEncoder().encode(canonicalJsonV4(contract));
@@ -869,18 +833,18 @@ function buildWebRenderRequest(
   outcome: RollExecutionResult,
   renderSeed: number,
   appearance: LoadedWebAppearance,
-): RenderRequestV3 | RenderRequestV4 {
-  if (appearance.version === 3) {
-    return buildRollRenderRequestV3(outcome, renderSeed, appearance.recipes);
-  }
-  if (appearance.viewPolicy === "r19") {
-    return buildRollRenderRequestV4(outcome, renderSeed, appearance.recipes);
-  }
-  return ROLL_VIEW_BUILDERS_V4[appearance.viewPolicy](
-    outcome,
-    renderSeed,
-    appearance.effective,
-  );
+): RenderRequestV4 {
+  return appearance.viewPolicy === "r19"
+    ? buildRollRenderRequestV4(
+        outcome,
+        renderSeed,
+        appearance.effective.recipes,
+      )
+    : ROLL_VIEW_BUILDERS_V4[appearance.viewPolicy](
+        outcome,
+        renderSeed,
+        appearance.effective,
+      );
 }
 
 function appearanceIdentities(outcome: RollExecutionResult): string[][] {
@@ -935,58 +899,6 @@ function rerolledAppearanceIdentities(
   });
 }
 
-function legacySides(die: RenderDieV3): number | "%" | "F" {
-  switch (die.target) {
-    case "d4":
-      return 4;
-    case "d6":
-      return 6;
-    case "d8":
-      return 8;
-    case "d10":
-    case "d10-original":
-      return 10;
-    case "d12":
-      return 12;
-    case "d20":
-      return 20;
-    case "percentile":
-      return "%";
-    case "fudge":
-      return "F";
-    case "other":
-      return die.sides;
-  }
-}
-
-function legacyColors(die: RenderDieV3): {
-  color: string;
-  secondaryColor: string;
-} {
-  const surface = die.appearance.surface;
-  if (surface.type === "solid") {
-    return { color: surface.color, secondaryColor: surface.color };
-  }
-  if (surface.type === "gradient") {
-    return { color: surface.colors[0], secondaryColor: surface.colors[1] };
-  }
-  return {
-    color: surface.primaryColor,
-    secondaryColor: surface.secondaryColor,
-  };
-}
-
-function legacyDieV3(die: RenderDieV3): WebRollDie {
-  return {
-    sides: legacySides(die),
-    rolled: die.result,
-    value: die.result,
-    icon: die.icons,
-    ...legacyColors(die),
-    textColor: die.appearance.textColor,
-  };
-}
-
 function legacySidesV4(die: RenderDieV4): number | "%" | "F" {
   switch (die.target) {
     case "d4":
@@ -1022,12 +934,8 @@ function legacyDieV4(die: RenderDieV4): WebRollDie {
   };
 }
 
-function webDiceArray(
-  renderRequest: RenderRequestV3 | RenderRequestV4,
-): WebRollDie[][] {
-  return renderRequest.version === 3
-    ? renderRequest.groups.map((group) => group.map(legacyDieV3))
-    : renderRequest.groups.map((group) => group.map(legacyDieV4));
+function webDiceArray(renderRequest: RenderRequestV4): WebRollDie[][] {
+  return renderRequest.groups.map((group) => group.map(legacyDieV4));
 }
 
 export async function prepareWebRoll(
@@ -1038,11 +946,10 @@ export async function prepareWebRoll(
 ): Promise<WebRollPreparationResult> {
   const request = validatePreparationRequest(value);
   const renderSeed = request.renderSeed ?? randomSeed();
-  const version = parseRollRenderVersion(configuredRenderVersion);
+  parseRollRenderVersion(configuredRenderVersion);
   const viewPolicy = parseRollViewPolicy(configuredViewPolicy);
   const appearance = await loadWebAppearance(
     dataService,
-    version,
     viewPolicy,
     request.userId,
     request.guildId,
@@ -1065,14 +972,11 @@ export async function prepareWebRoll(
     appearance,
   );
   const digest = await renderAppearanceDigest(renderRequest, outcome);
-  const rendered =
-    renderRequest.version === 3
-      ? await renderBlankDiceRequestV3ToPng(renderRequest)
-      : await renderV4WithSingleRetry(
-          serializeRenderRequestV4(renderRequest),
-          createCanvasKitRequestRendererV4,
-          { blankFaces: true },
-        );
+  const rendered = await renderV4WithSingleRetry(
+    serializeRenderRequestV4(renderRequest),
+    createCanvasKitRequestRendererV4,
+    { blankFaces: true },
+  );
   return {
     status: "prepared",
     renderSeed,
@@ -1085,7 +989,7 @@ export async function prepareWebRoll(
       height: rendered.height,
       png: rendered.png,
     },
-    ...(renderRequest.version === 4 ? { renderModel: renderRequest } : {}),
+    renderModel: renderRequest,
   };
 }
 
@@ -1099,7 +1003,7 @@ export async function executeWebRoll(
 ): Promise<WebRollResult> {
   const request = validateRequest(value);
   const renderSeed = request.renderSeed ?? createRenderSeed();
-  const version = parseRollRenderVersion(configuredRenderVersion);
+  parseRollRenderVersion(configuredRenderVersion);
   const viewPolicy = parseRollViewPolicy(configuredViewPolicy);
   const validation = prepareRollAppearance({
     notation: parseNotationArgs(request.notation),
@@ -1115,7 +1019,6 @@ export async function executeWebRoll(
   }
   const appearance = await loadWebAppearance(
     dataService,
-    version,
     viewPolicy,
     request.userId,
     request.guildId,
@@ -1125,7 +1028,7 @@ export async function executeWebRoll(
     repetitions: request.repetitions,
     seed: createRollSeed(),
     stableAppearanceIdentities: true,
-    preserveOutOfRangePhysicalFaces: version === 4,
+    preserveOutOfRangePhysicalFaces: true,
   });
   if (outcome.outcomes.length === 0) {
     return {
@@ -1149,13 +1052,10 @@ export async function executeWebRoll(
       message: "Prepared appearance has changed; prepare the roll again",
     };
   }
-  const rendered =
-    renderRequest.version === 3
-      ? await renderDiceRequestV3ToPng(renderRequest)
-      : await renderV4WithSingleRetry(
-          serializeRenderRequestV4(renderRequest),
-          createCanvasKitRequestRendererV4,
-        );
+  const rendered = await renderV4WithSingleRetry(
+    serializeRenderRequestV4(renderRequest),
+    createCanvasKitRequestRendererV4,
+  );
   const filename = "dice-witch-roll.png";
   const clatter = rollClatterText(outcome, outcome.seed);
   return {
@@ -1172,7 +1072,7 @@ export async function executeWebRoll(
       height: rendered.height,
       png: rendered.png,
     },
-    ...(renderRequest.version === 4 ? { renderModel: renderRequest } : {}),
+    renderModel: renderRequest,
     appearanceIdentities: appearanceIdentities(outcome),
     rerolledAppearanceIdentities: rerolledAppearanceIdentities(outcome),
     discord: {
@@ -1247,18 +1147,6 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
       this.env.ROLL_RENDER_VERSION,
       this.env.ROLL_VIEW_POLICY,
     );
-  }
-
-  preview(value: unknown): Promise<AppearancePreviewResult> {
-    return renderAppearancePreview(value);
-  }
-
-  previewV2(value: unknown): Promise<AppearancePreviewResultV2> {
-    return renderAppearancePreviewV2(value);
-  }
-
-  previewV3(value: unknown): Promise<AppearancePreviewResultV3> {
-    return renderAppearancePreviewV3(value);
   }
 
   previewV4(value: unknown): Promise<AppearancePreviewResultV4> {

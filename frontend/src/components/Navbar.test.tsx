@@ -8,7 +8,7 @@ import { MemoryRouter } from "react-router";
 import { Navbar } from "./Navbar";
 
 const mocks = vi.hoisted(() => ({
-  getPersonalAppearanceBootstrapV3: vi.fn(async () => ({
+  getPersonalAppearanceBootstrapV4: vi.fn(async () => ({
     catalog: {},
     resource: { revision: 0, profile: null },
   })),
@@ -36,11 +36,11 @@ vi.mock("@/lib/app-route-loaders", () => ({
   loadPreferencesPage: mocks.loadPreferencesPage,
 }));
 
-vi.mock("@/lib/appearance-v3", () => ({
-  getPersonalAppearanceBootstrapV3:
-    mocks.getPersonalAppearanceBootstrapV3,
-  PERSONAL_APPEARANCE_BOOTSTRAP_QUERY_KEY: [
-    "appearanceBootstrapV3",
+vi.mock("@/lib/appearance-v4", () => ({
+  getPersonalAppearanceBootstrapV4:
+    mocks.getPersonalAppearanceBootstrapV4,
+  PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY: [
+    "appearanceBootstrapV4",
     "personal",
   ],
 }));
@@ -51,7 +51,7 @@ vi.mock("@/components/theme-provider", () => ({
 
 afterEach(() => {
   cleanup();
-  mocks.getPersonalAppearanceBootstrapV3.mockClear();
+  mocks.getPersonalAppearanceBootstrapV4.mockClear();
   mocks.loadDocsApp.mockClear();
   mocks.loadHomePage.mockClear();
   mocks.loadLibraryPage.mockClear();
@@ -107,7 +107,7 @@ describe("Navbar", () => {
     await user.hover(screen.getByRole("link", { name: "Preferences" }));
     await waitFor(() => {
       expect(mocks.loadPreferencesPage).toHaveBeenCalled();
-      expect(mocks.getPersonalAppearanceBootstrapV3).toHaveBeenCalledOnce();
+      expect(mocks.getPersonalAppearanceBootstrapV4).toHaveBeenCalledOnce();
     });
 
     await user.click(

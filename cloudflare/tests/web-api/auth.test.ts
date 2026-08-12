@@ -29,9 +29,6 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
     ROLL_WEB: {
       prepare: vi.fn(),
       execute: vi.fn(),
-      preview: vi.fn(),
-      previewV2: vi.fn(),
-      previewV3: vi.fn(),
       previewV4: vi.fn(),
     },
     DISCORD_CLIENT_ID: clientId,

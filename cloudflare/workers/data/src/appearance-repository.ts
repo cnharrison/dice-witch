@@ -1,29 +1,10 @@
 import {
-  parseAppearanceProfileV3,
   parseAppearanceProfileV4,
-  parseGuildAppearanceProfileV3,
   parseGuildAppearanceProfileV4,
-  type AppearanceProfileV3,
   type AppearanceProfileV4,
   type AppearanceValidationCatalogV3,
-  type GuildAppearanceProfileV3,
   type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
-import {
-  migrateAppearanceProfileV1,
-  migrateGuildAppearanceProfileV1,
-  projectAppearanceProfileV4ToV3,
-  projectGuildAppearanceProfileV4ToV3,
-  parseAppearanceProfile,
-  parseAppearanceProfileV2,
-  parseGuildAppearanceProfile,
-  parseGuildAppearanceProfileV2,
-  type AppearanceCatalog,
-  type AppearanceProfileV1,
-  type AppearanceProfileV2,
-  type GuildAppearanceProfileV1,
-  type GuildAppearanceProfileV2,
-} from "../../../packages/dice-appearance/src";
 import {
   matchesMutationReceipt,
   readMutationReceipt,
@@ -35,11 +16,6 @@ import {
 
 const MAX_PROFILE_JSON_LENGTH = 65_536;
 
-type AppearanceRepositoryCatalogs = {
-  v1V2: AppearanceCatalog;
-  v3: AppearanceValidationCatalogV3;
-};
-
 type StoredProfileRow = {
   revision: number;
   profile_json: string;
@@ -49,14 +25,9 @@ type StoredGuildProfileRow = StoredProfileRow & {
   updated_by_user_id: string;
 };
 
-export type AppearanceProfileVersionConflict = {
-  status: "appearance_profile_version_conflict";
-};
-
 export type AppearanceProfileReadResult<Profile> =
   | { status: "found"; revision: number; profile: Profile }
-  | { status: "missing" }
-  | AppearanceProfileVersionConflict;
+  | { status: "missing" };
 
 export type GuildAppearanceProfileReadResult<Profile> =
   | {
@@ -65,8 +36,7 @@ export type GuildAppearanceProfileReadResult<Profile> =
       profile: Profile;
       updatedByUserId: string;
     }
-  | { status: "missing" }
-  | AppearanceProfileVersionConflict;
+  | { status: "missing" };
 
 export type AppearanceProfileWriteResult<Profile> =
   | {
@@ -75,10 +45,9 @@ export type AppearanceProfileWriteResult<Profile> =
       profile: Profile;
     }
   | { status: "missing" | "mutation_conflict" }
-  | { status: "revision_conflict"; revision: number }
-  | AppearanceProfileVersionConflict;
+  | { status: "revision_conflict"; revision: number };
 
-type PutPersonalAppearanceInput = {
+export type PutPersonalAppearanceV4Input = {
   userId: string;
   expectedRevision: number;
   profile: unknown;
@@ -86,12 +55,7 @@ type PutPersonalAppearanceInput = {
   occurredAt: number;
 };
 
-export type PutPersonalAppearanceV1Input = PutPersonalAppearanceInput;
-export type PutPersonalAppearanceV2Input = PutPersonalAppearanceInput;
-export type PutPersonalAppearanceV3Input = PutPersonalAppearanceInput;
-export type PutPersonalAppearanceV4Input = PutPersonalAppearanceInput;
-
-type PutGuildAppearanceInput = {
+export type PutGuildAppearanceV4Input = {
   guildId: string;
   updatedByUserId: string;
   expectedRevision: number;
@@ -100,20 +64,31 @@ type PutGuildAppearanceInput = {
   occurredAt: number;
 };
 
-export type PutGuildAppearanceV1Input = PutGuildAppearanceInput;
-export type PutGuildAppearanceV2Input = PutGuildAppearanceInput;
-export type PutGuildAppearanceV3Input = PutGuildAppearanceInput;
-export type PutGuildAppearanceV4Input = PutGuildAppearanceInput;
-
-type AppearanceProfileVersion = 1 | 2 | 3 | 4;
-
 type StoredProfileState =
   | { status: "missing" }
   | {
       status: "found";
       revision: number;
       profileJson: string;
-      version: AppearanceProfileVersion;
+    };
+
+type StoredPersonalProfile =
+  | { status: "missing" }
+  | {
+      status: "found";
+      revision: number;
+      profileJson: string;
+      profile: AppearanceProfileV4;
+    };
+
+type StoredGuildProfile =
+  | { status: "missing" }
+  | {
+      status: "found";
+      revision: number;
+      profileJson: string;
+      updatedByUserId: string;
+      profile: GuildAppearanceProfileV4;
     };
 
 type PreparedWrite<Profile> = {
@@ -121,12 +96,18 @@ type PreparedWrite<Profile> = {
   mutationId: string;
   expectedRevision: number;
   profile: Profile;
-  requestVersion: AppearanceProfileVersion;
   statements: (
     target: StoredProfileState,
   ) => [D1PreparedStatement, D1PreparedStatement];
   parentExists: () => Promise<boolean>;
   readTarget: () => Promise<StoredProfileState>;
+};
+
+type TargetGuard = {
+  predicate: string;
+  predicateBindings: readonly (number | string)[];
+  updatePredicate: string;
+  updateBindings: readonly (number | string)[];
 };
 
 function validateExpectedRevision(value: number): number {
@@ -163,110 +144,9 @@ function validateStoredRevision(value: number): number {
   return value;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-type StoredPersonalDocument =
-  | { version: 1; profile: AppearanceProfileV1 }
-  | { version: 2; profile: AppearanceProfileV2 }
-  | { version: 3; profile: AppearanceProfileV3 }
-  | { version: 4; profile: AppearanceProfileV4 };
-
-type StoredGuildDocument =
-  | { version: 1; profile: GuildAppearanceProfileV1 }
-  | { version: 2; profile: GuildAppearanceProfileV2 }
-  | { version: 3; profile: GuildAppearanceProfileV3 }
-  | { version: 4; profile: GuildAppearanceProfileV4 };
-
-type StoredPersonalProfile =
-  | { status: "missing" }
-  | {
-      status: "found";
-      revision: number;
-      profileJson: string;
-      document: StoredPersonalDocument;
-    };
-
-type StoredGuildProfile =
-  | { status: "missing" }
-  | {
-      status: "found";
-      revision: number;
-      profileJson: string;
-      updatedByUserId: string;
-      document: StoredGuildDocument;
-    };
-
-function parseStoredPersonalProfile(
-  profileJson: string,
-  catalogs: AppearanceRepositoryCatalogs,
-): StoredPersonalDocument {
+function parseStoredProfile<Profile>(parse: () => Profile): Profile {
   try {
-    const value = parseStoredJson(profileJson);
-    if (!isRecord(value)) throw new Error("Stored profile must be an object");
-    if (value.version === 1) {
-      return {
-        version: 1,
-        profile: parseAppearanceProfile(value, catalogs.v1V2),
-      };
-    }
-    if (value.version === 2) {
-      return {
-        version: 2,
-        profile: parseAppearanceProfileV2(value, catalogs.v1V2),
-      };
-    }
-    if (value.version === 3) {
-      return {
-        version: 3,
-        profile: parseAppearanceProfileV3(value, catalogs.v3),
-      };
-    }
-    if (value.version === 4) {
-      return {
-        version: 4,
-        profile: parseAppearanceProfileV4(value, catalogs.v3),
-      };
-    }
-    throw new Error("Stored profile version is not supported");
-  } catch {
-    throw new Error("Stored appearance profile is invalid");
-  }
-}
-
-function parseStoredGuildProfile(
-  profileJson: string,
-  catalogs: AppearanceRepositoryCatalogs,
-): StoredGuildDocument {
-  try {
-    const value = parseStoredJson(profileJson);
-    if (!isRecord(value)) throw new Error("Stored profile must be an object");
-    if (value.version === 1) {
-      return {
-        version: 1,
-        profile: parseGuildAppearanceProfile(value, catalogs.v1V2),
-      };
-    }
-    if (value.version === 2) {
-      return {
-        version: 2,
-        profile: parseGuildAppearanceProfileV2(value, catalogs.v1V2),
-      };
-    }
-    if (value.version === 3) {
-      return {
-        version: 3,
-        profile: parseGuildAppearanceProfileV3(value, catalogs.v3),
-      };
-    }
-    if (value.version === 4) {
-      return {
-        version: 4,
-        profile: parseGuildAppearanceProfileV4(value, catalogs.v3),
-      };
-    }
-    throw new Error("Stored profile version is not supported");
+    return parse();
   } catch {
     throw new Error("Stored appearance profile is invalid");
   }
@@ -280,42 +160,7 @@ function storedProfileState(
     status: "found",
     revision: profile.revision,
     profileJson: profile.profileJson,
-    version: profile.document.version,
   };
-}
-
-function versionConflict(): AppearanceProfileVersionConflict {
-  return { status: "appearance_profile_version_conflict" };
-}
-
-type TargetGuard = {
-  predicate: string;
-  predicateBindings: readonly (number | string)[];
-  updatePredicate: string;
-  updateBindings: readonly (number | string)[];
-};
-
-function compatibleStoredVersions(
-  requestVersion: AppearanceProfileVersion,
-): readonly AppearanceProfileVersion[] {
-  return requestVersion === 2 ? [1, 2] : [requestVersion];
-}
-
-function isVersionCompatible(
-  requestVersion: AppearanceProfileVersion,
-  storedVersion: AppearanceProfileVersion,
-): boolean {
-  return compatibleStoredVersions(requestVersion).includes(storedVersion);
-}
-
-function hasVersionConflict(
-  requestVersion: AppearanceProfileVersion,
-  target: StoredProfileState,
-): boolean {
-  return (
-    target.status === "found" &&
-    !isVersionCompatible(requestVersion, target.version)
-  );
 }
 
 function targetGuard(
@@ -323,7 +168,6 @@ function targetGuard(
   keyColumn: "user_id" | "guild_id",
   key: string,
   expectedRevision: number,
-  requestVersion: AppearanceProfileVersion,
   target: StoredProfileState,
 ): TargetGuard {
   if (target.status === "missing") {
@@ -336,28 +180,17 @@ function targetGuard(
       updateBindings: [],
     };
   }
-  const compatibleVersions = compatibleStoredVersions(requestVersion);
-  const versionPlaceholders = compatibleVersions.map(() => "?").join(", ");
   return {
     predicate: `EXISTS (
       SELECT 1 FROM ${table}
       WHERE ${keyColumn} = ? AND revision = ? AND profile_json = ?
-        AND json_extract(profile_json, '$.version') IN (${versionPlaceholders})
+        AND json_extract(profile_json, '$.version') = 4
     )`,
-    predicateBindings: [
-      key,
-      expectedRevision,
-      target.profileJson,
-      ...compatibleVersions,
-    ],
+    predicateBindings: [key, expectedRevision, target.profileJson],
     updatePredicate: `${table}.revision = ?
       AND ${table}.profile_json = ?
-      AND json_extract(${table}.profile_json, '$.version') IN (${versionPlaceholders})`,
-    updateBindings: [
-      expectedRevision,
-      target.profileJson,
-      ...compatibleVersions,
-    ],
+      AND json_extract(${table}.profile_json, '$.version') = 4`,
+    updateBindings: [expectedRevision, target.profileJson],
   };
 }
 
@@ -377,223 +210,43 @@ function existingWriteResult<Profile extends object>(
 export class D1AppearanceRepository {
   constructor(
     private readonly db: D1Database,
-    private readonly catalogs: AppearanceRepositoryCatalogs,
+    private readonly catalog: AppearanceValidationCatalogV3,
   ) {}
-
-  async getPersonalV1(
-    userIdValue: string,
-  ): Promise<AppearanceProfileReadResult<AppearanceProfileV1>> {
-    const userId = validateSnowflake(userIdValue, "User id");
-    const stored = await this.readPersonalProfile(userId);
-    if (stored.status === "missing") return stored;
-    if (stored.document.version !== 1) return versionConflict();
-    return {
-      status: "found",
-      revision: stored.revision,
-      profile: stored.document.profile,
-    };
-  }
-
-  async getPersonalV2(
-    userIdValue: string,
-  ): Promise<AppearanceProfileReadResult<AppearanceProfileV2>> {
-    const userId = validateSnowflake(userIdValue, "User id");
-    const stored = await this.readPersonalProfile(userId);
-    if (stored.status === "missing") return stored;
-    if (stored.document.version !== 1 && stored.document.version !== 2) {
-      return versionConflict();
-    }
-    return {
-      status: "found",
-      revision: stored.revision,
-      profile:
-        stored.document.version === 1
-          ? migrateAppearanceProfileV1(stored.document.profile)
-          : stored.document.profile,
-    };
-  }
-
-  async getPersonalV3(
-    userIdValue: string,
-  ): Promise<AppearanceProfileReadResult<AppearanceProfileV3>> {
-    const userId = validateSnowflake(userIdValue, "User id");
-    const stored = await this.readPersonalProfile(userId);
-    if (stored.status === "missing") return stored;
-    if (stored.document.version !== 3 && stored.document.version !== 4) {
-      return versionConflict();
-    }
-    return {
-      status: "found",
-      revision: stored.revision,
-      profile:
-        stored.document.version === 4
-          ? projectAppearanceProfileV4ToV3(stored.document.profile)
-          : stored.document.profile,
-    };
-  }
 
   async getPersonalV4(
     userIdValue: string,
-  ): Promise<
-    AppearanceProfileReadResult<AppearanceProfileV3 | AppearanceProfileV4>
-  > {
+  ): Promise<AppearanceProfileReadResult<AppearanceProfileV4>> {
     const userId = validateSnowflake(userIdValue, "User id");
     const stored = await this.readPersonalProfile(userId);
     if (stored.status === "missing") return stored;
-    if (stored.document.version !== 3 && stored.document.version !== 4) {
-      return versionConflict();
-    }
     return {
       status: "found",
       revision: stored.revision,
-      profile: stored.document.profile,
-    };
-  }
-
-  async getGuildV1(
-    guildIdValue: string,
-  ): Promise<GuildAppearanceProfileReadResult<GuildAppearanceProfileV1>> {
-    const guildId = validateSnowflake(guildIdValue, "Guild id");
-    const stored = await this.readGuildProfile(guildId);
-    if (stored.status === "missing") return stored;
-    if (stored.document.version !== 1) return versionConflict();
-    return {
-      status: "found",
-      revision: stored.revision,
-      profile: stored.document.profile,
-      updatedByUserId: stored.updatedByUserId,
-    };
-  }
-
-  async getGuildV2(
-    guildIdValue: string,
-  ): Promise<GuildAppearanceProfileReadResult<GuildAppearanceProfileV2>> {
-    const guildId = validateSnowflake(guildIdValue, "Guild id");
-    const stored = await this.readGuildProfile(guildId);
-    if (stored.status === "missing") return stored;
-    if (stored.document.version !== 1 && stored.document.version !== 2) {
-      return versionConflict();
-    }
-    return {
-      status: "found",
-      revision: stored.revision,
-      profile:
-        stored.document.version === 1
-          ? migrateGuildAppearanceProfileV1(stored.document.profile)
-          : stored.document.profile,
-      updatedByUserId: stored.updatedByUserId,
-    };
-  }
-
-  async getGuildV3(
-    guildIdValue: string,
-  ): Promise<GuildAppearanceProfileReadResult<GuildAppearanceProfileV3>> {
-    const guildId = validateSnowflake(guildIdValue, "Guild id");
-    const stored = await this.readGuildProfile(guildId);
-    if (stored.status === "missing") return stored;
-    if (stored.document.version !== 3 && stored.document.version !== 4) {
-      return versionConflict();
-    }
-    return {
-      status: "found",
-      revision: stored.revision,
-      profile:
-        stored.document.version === 4
-          ? projectGuildAppearanceProfileV4ToV3(stored.document.profile)
-          : stored.document.profile,
-      updatedByUserId: stored.updatedByUserId,
+      profile: stored.profile,
     };
   }
 
   async getGuildV4(
     guildIdValue: string,
-  ): Promise<
-    GuildAppearanceProfileReadResult<
-      GuildAppearanceProfileV3 | GuildAppearanceProfileV4
-    >
-  > {
+  ): Promise<GuildAppearanceProfileReadResult<GuildAppearanceProfileV4>> {
     const guildId = validateSnowflake(guildIdValue, "Guild id");
     const stored = await this.readGuildProfile(guildId);
     if (stored.status === "missing") return stored;
-    if (stored.document.version !== 3 && stored.document.version !== 4) {
-      return versionConflict();
-    }
     return {
       status: "found",
       revision: stored.revision,
-      profile: stored.document.profile,
+      profile: stored.profile,
       updatedByUserId: stored.updatedByUserId,
     };
   }
 
-  putPersonalV1(
-    input: PutPersonalAppearanceV1Input,
-  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV1>> {
-    return this.putPersonal(input, 1);
-  }
-
-  putPersonalV2(
-    input: PutPersonalAppearanceV2Input,
-  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV2>> {
-    return this.putPersonal(input, 2);
-  }
-
-  putPersonalV3(
-    input: PutPersonalAppearanceV3Input,
-  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV3>> {
-    return this.putPersonal(input, 3);
-  }
-
-  putPersonalV4(
+  async putPersonalV4(
     input: PutPersonalAppearanceV4Input,
   ): Promise<AppearanceProfileWriteResult<AppearanceProfileV4>> {
-    return this.putPersonal(input, 4);
-  }
-
-  private putPersonal(
-    input: PutPersonalAppearanceInput,
-    requestVersion: 1,
-  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV1>>;
-  private putPersonal(
-    input: PutPersonalAppearanceInput,
-    requestVersion: 2,
-  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV2>>;
-  private putPersonal(
-    input: PutPersonalAppearanceInput,
-    requestVersion: 3,
-  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV3>>;
-  private putPersonal(
-    input: PutPersonalAppearanceInput,
-    requestVersion: 4,
-  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV4>>;
-  private async putPersonal(
-    input: PutPersonalAppearanceInput,
-    requestVersion: AppearanceProfileVersion,
-  ): Promise<
-    AppearanceProfileWriteResult<
-      | AppearanceProfileV1
-      | AppearanceProfileV2
-      | AppearanceProfileV3
-      | AppearanceProfileV4
-    >
-  > {
     const userId = validateSnowflake(input.userId, "User id");
     const expectedRevision = validateExpectedRevision(input.expectedRevision);
     validateMutationMetadata(input.mutationId, input.occurredAt);
-    let profile:
-      | AppearanceProfileV1
-      | AppearanceProfileV2
-      | AppearanceProfileV3
-      | AppearanceProfileV4;
-    if (requestVersion === 1) {
-      profile = parseAppearanceProfile(input.profile, this.catalogs.v1V2);
-    } else if (requestVersion === 2) {
-      profile = parseAppearanceProfileV2(input.profile, this.catalogs.v1V2);
-    } else if (requestVersion === 3) {
-      profile = parseAppearanceProfileV3(input.profile, this.catalogs.v3);
-    } else {
-      profile = parseAppearanceProfileV4(input.profile, this.catalogs.v3);
-    }
+    const profile = parseAppearanceProfileV4(input.profile, this.catalog);
     const profileJson = serializeProfile(profile);
     const payloadJson = JSON.stringify({ expectedRevision, profile });
     const receipt: MutationReceipt = {
@@ -608,7 +261,6 @@ export class D1AppearanceRepository {
       mutationId: input.mutationId,
       expectedRevision,
       profile,
-      requestVersion,
       statements: (target) =>
         this.personalWriteStatements(
           {
@@ -618,7 +270,6 @@ export class D1AppearanceRepository {
             payloadJson,
             mutationId: input.mutationId,
             occurredAt: input.occurredAt,
-            requestVersion,
           },
           target,
         ),
@@ -628,57 +279,9 @@ export class D1AppearanceRepository {
     });
   }
 
-  putGuildV1(
-    input: PutGuildAppearanceV1Input,
-  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV1>> {
-    return this.putGuild(input, 1);
-  }
-
-  putGuildV2(
-    input: PutGuildAppearanceV2Input,
-  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV2>> {
-    return this.putGuild(input, 2);
-  }
-
-  putGuildV3(
-    input: PutGuildAppearanceV3Input,
-  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV3>> {
-    return this.putGuild(input, 3);
-  }
-
-  putGuildV4(
+  async putGuildV4(
     input: PutGuildAppearanceV4Input,
   ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV4>> {
-    return this.putGuild(input, 4);
-  }
-
-  private putGuild(
-    input: PutGuildAppearanceInput,
-    requestVersion: 1,
-  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV1>>;
-  private putGuild(
-    input: PutGuildAppearanceInput,
-    requestVersion: 2,
-  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV2>>;
-  private putGuild(
-    input: PutGuildAppearanceInput,
-    requestVersion: 3,
-  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV3>>;
-  private putGuild(
-    input: PutGuildAppearanceInput,
-    requestVersion: 4,
-  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV4>>;
-  private async putGuild(
-    input: PutGuildAppearanceInput,
-    requestVersion: AppearanceProfileVersion,
-  ): Promise<
-    AppearanceProfileWriteResult<
-      | GuildAppearanceProfileV1
-      | GuildAppearanceProfileV2
-      | GuildAppearanceProfileV3
-      | GuildAppearanceProfileV4
-    >
-  > {
     const guildId = validateSnowflake(input.guildId, "Guild id");
     const updatedByUserId = validateSnowflake(
       input.updatedByUserId,
@@ -686,26 +289,7 @@ export class D1AppearanceRepository {
     );
     const expectedRevision = validateExpectedRevision(input.expectedRevision);
     validateMutationMetadata(input.mutationId, input.occurredAt);
-    let profile:
-      | GuildAppearanceProfileV1
-      | GuildAppearanceProfileV2
-      | GuildAppearanceProfileV3
-      | GuildAppearanceProfileV4;
-    if (requestVersion === 1) {
-      profile = parseGuildAppearanceProfile(
-        input.profile,
-        this.catalogs.v1V2,
-      );
-    } else if (requestVersion === 2) {
-      profile = parseGuildAppearanceProfileV2(
-        input.profile,
-        this.catalogs.v1V2,
-      );
-    } else if (requestVersion === 3) {
-      profile = parseGuildAppearanceProfileV3(input.profile, this.catalogs.v3);
-    } else {
-      profile = parseGuildAppearanceProfileV4(input.profile, this.catalogs.v3);
-    }
+    const profile = parseGuildAppearanceProfileV4(input.profile, this.catalog);
     const profileJson = serializeProfile(profile);
     const payloadJson = JSON.stringify({
       expectedRevision,
@@ -724,7 +308,6 @@ export class D1AppearanceRepository {
       mutationId: input.mutationId,
       expectedRevision,
       profile,
-      requestVersion,
       statements: (target) =>
         this.guildWriteStatements(
           {
@@ -735,7 +318,6 @@ export class D1AppearanceRepository {
             payloadJson,
             mutationId: input.mutationId,
             occurredAt: input.occurredAt,
-            requestVersion,
           },
           target,
         ),
@@ -753,7 +335,6 @@ export class D1AppearanceRepository {
       payloadJson: string;
       mutationId: string;
       occurredAt: number;
-      requestVersion: AppearanceProfileVersion;
     },
     target: StoredProfileState,
   ): [D1PreparedStatement, D1PreparedStatement] {
@@ -762,7 +343,6 @@ export class D1AppearanceRepository {
       "user_id",
       input.userId,
       input.expectedRevision,
-      input.requestVersion,
       target,
     );
     const receiptStatement = this.db
@@ -826,7 +406,6 @@ export class D1AppearanceRepository {
       payloadJson: string;
       mutationId: string;
       occurredAt: number;
-      requestVersion: AppearanceProfileVersion;
     },
     target: StoredProfileState,
   ): [D1PreparedStatement, D1PreparedStatement] {
@@ -835,7 +414,6 @@ export class D1AppearanceRepository {
       "guild_id",
       input.guildId,
       input.expectedRevision,
-      input.requestVersion,
       target,
     );
     const receiptStatement = this.db
@@ -901,11 +479,7 @@ export class D1AppearanceRepository {
     if (existing !== null) return existingWriteResult(existing, write);
 
     const target = await write.readTarget();
-    if (hasVersionConflict(write.requestVersion, target)) {
-      return versionConflict();
-    }
     const statements = write.statements(target);
-
     try {
       const [receiptResult, profileResult] = await this.db.batch(statements);
       const receiptChanges = receiptResult?.meta.changes ?? 0;
@@ -924,9 +498,6 @@ export class D1AppearanceRepository {
       if (concurrent !== null) return existingWriteResult(concurrent, write);
       if (!(await write.parentExists())) return { status: "missing" };
       const current = await write.readTarget();
-      if (hasVersionConflict(write.requestVersion, current)) {
-        return versionConflict();
-      }
       return {
         status: "revision_conflict",
         revision: current.status === "found" ? current.revision : 0,
@@ -980,7 +551,8 @@ export class D1AppearanceRepository {
       status: "found",
       revision: validateStoredRevision(row.revision),
       profileJson: row.profile_json,
-      document: parseStoredPersonalProfile(row.profile_json, this.catalogs),
+      profile: parseStoredProfile(() =>
+        parseAppearanceProfileV4(parseStoredJson(row.profile_json), this.catalog)),
     };
   }
 
@@ -1003,7 +575,11 @@ export class D1AppearanceRepository {
         row.updated_by_user_id,
         "Stored appearance profile author id",
       ),
-      document: parseStoredGuildProfile(row.profile_json, this.catalogs),
+      profile: parseStoredProfile(() =>
+        parseGuildAppearanceProfileV4(
+          parseStoredJson(row.profile_json),
+          this.catalog,
+        )),
     };
   }
 }

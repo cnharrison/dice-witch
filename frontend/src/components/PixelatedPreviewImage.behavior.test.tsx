@@ -20,7 +20,7 @@ class FakeImage {
 
 function preview(base64: string) {
   return {
-    version: 3 as const,
+    version: 4 as const,
     contentType: "image/png" as const,
     width: 150,
     height: 150,

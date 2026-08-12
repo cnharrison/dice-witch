@@ -246,41 +246,32 @@ describe("D1 business schema migration", () => {
     ]);
   });
 
-  it("stores V1 and V2 appearance documents in the existing JSON columns", async () => {
+  it("stores only V4 appearance documents in the existing JSON columns", async () => {
     await insertUser();
-    await insertGuild();
-    await dataEnv.DATA.batch([
-      dataEnv.DATA.prepare(
-        `INSERT INTO user_appearance_profiles (
-           user_id, revision, profile_json, updated_at
-         ) VALUES (?, 1, ?, ?)`,
-      ).bind(userId, JSON.stringify({ version: 1 }), timestamp),
-      dataEnv.DATA.prepare(
-        `INSERT INTO guild_appearance_profiles (
-           guild_id, revision, profile_json, updated_by_user_id, updated_at
-         ) VALUES (?, 1, ?, ?, ?)`,
-      ).bind(
-        guildId,
-        JSON.stringify({ version: 2 }),
-        userId,
-        timestamp,
-      ),
-    ]);
+    const profile = JSON.stringify({
+      version: 4,
+      designs: [],
+      assignments: { all: null, overrides: {} },
+      diceView: {
+        elevationDegrees: 40,
+        mode: "normal",
+        azimuth: {
+          all: { mode: "random", customDegrees: 0 },
+          overrides: {},
+        },
+      },
+    });
+    await dataEnv.DATA.prepare(
+      `INSERT INTO user_appearance_profiles (
+         user_id, revision, profile_json, updated_at
+       ) VALUES (?, 1, ?, ?)`,
+    ).bind(userId, profile, timestamp).run();
 
-    const versions = await dataEnv.DATA.prepare(
-      `SELECT 'personal' AS owner,
-              json_extract(profile_json, '$.version') AS version
-       FROM user_appearance_profiles
-       UNION ALL
-       SELECT 'guild' AS owner,
-              json_extract(profile_json, '$.version') AS version
-       FROM guild_appearance_profiles
-       ORDER BY owner DESC`,
-    ).all<{ owner: string; version: number }>();
-    expect(versions.results).toEqual([
-      { owner: "personal", version: 1 },
-      { owner: "guild", version: 2 },
-    ]);
+    await expect(
+      dataEnv.DATA.prepare(
+        "SELECT json_extract(profile_json, '$.version') AS version FROM user_appearance_profiles",
+      ).first("version"),
+    ).resolves.toBe(4);
   });
 
   it("applies the versioned migration idempotently", async () => {
@@ -306,6 +297,7 @@ describe("D1 business schema migration", () => {
       { name: "0013_roll_lifecycle_diagnostics.sql" },
       { name: "0014_hide_roll_result_text.sql" },
       { name: "0015_appearance_profiles_v4.sql" },
+      { name: "0016_enforce_appearance_profiles_v4.sql" },
     ]);
   });
 

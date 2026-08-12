@@ -107,9 +107,6 @@ function bindings(
       ROLL_WEB: {
         prepare: vi.fn(),
         execute: vi.fn(() => Promise.resolve(rollResult(renderModel))),
-        preview: vi.fn(),
-        previewV2: vi.fn(),
-        previewV3: vi.fn(),
         previewV4: vi.fn(),
       },
       DISCORD_CLIENT_ID: "100000000000000001",

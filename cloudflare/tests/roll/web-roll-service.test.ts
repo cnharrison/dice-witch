@@ -1263,32 +1263,6 @@ describe("WebRollService", () => {
     },
   );
 
-  it("accepts the legacy Web API execute contract during the rollout window", async () => {
-    const legacyRequest = {
-      notation: "1d20",
-      repetitions: 1,
-      username: "fixture-user",
-      title: null,
-      userId,
-      guildId,
-    };
-    const result = await executeWebRoll(
-      legacyRequest,
-      appearanceService(),
-      "3",
-      "r19",
-      () => 0x1234_5678,
-    );
-
-    expect(result.status).toBe("rolled");
-    if (result.status !== "rolled") throw new Error("Expected a rolled result");
-    expect(result).not.toHaveProperty("renderModel");
-    expect(result.diceArray[0]?.[0]).toMatchObject({
-      sides: 20,
-      color: "#123456",
-    });
-  });
-
   it("keeps pending V1 web Library attribution readable", () => {
     expect(parseWebSavedRollAttribution({
       scope: "personal",
@@ -1331,7 +1305,7 @@ describe("WebRollService", () => {
     if (result.status !== "rolled") throw new Error("Expected a rolled result");
     expect(lookups).toEqual([
       {
-        path: "/internal/appearance/v3/effective",
+        path: "/internal/appearance/v4/effective",
         value: { userId, guildId },
       },
     ]);
@@ -1364,23 +1338,6 @@ describe("WebRollService", () => {
     );
   });
 
-  it("retains explicit renderer-v3 emission for production compatibility", async () => {
-    const lookups: string[] = [];
-    const dataService = appearanceService((_value, path) => lookups.push(path));
-    const value = await preparedRequest(dataService, "3");
-    lookups.length = 0;
-    const result = await executeWebRoll(value, dataService, "3", "r19");
-
-    expect(result.status).toBe("rolled");
-    if (result.status !== "rolled") throw new Error("Expected a rolled result");
-    expect(lookups).toEqual(["/internal/appearance/v2/effective"]);
-    expect(result.diceArray[0]?.[0]).toMatchObject({
-      sides: 20,
-      color: "#123456",
-    });
-    expect(result).not.toHaveProperty("renderModel");
-  });
-
   it("rejects a roll when its prepared appearance changes", async () => {
     const replacementRecipe = BUILTIN_APPEARANCE_STYLES_V3[1]?.recipe;
     if (replacementRecipe === undefined) {
@@ -1390,15 +1347,16 @@ describe("WebRollService", () => {
     const dataService = {
       fetch(request: Request): Promise<Response> {
         const path = new URL(request.url).pathname;
-        if (path !== "/internal/appearance/v3/effective") {
+        if (path !== "/internal/appearance/v4/effective") {
           throw new Error("Unexpected appearance route");
         }
         return Promise.resolve(
           Response.json({
-            version: 3,
+            version: 4,
             recipes: Object.fromEntries(
               APPEARANCE_TARGETS_V4.map((target) => [target, activeRecipe]),
             ),
+            diceView: createDefaultDiceViewPreferencesV4(),
           }),
         );
       },

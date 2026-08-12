@@ -1,7 +1,8 @@
-import type {
-  AppearanceProfileV3,
-  AppearanceRecipeV3,
-  GuildAppearanceProfileV3,
+import {
+  createDefaultDiceViewPreferencesV4,
+  type AppearanceProfileV4,
+  type AppearanceRecipeV3,
+  type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 import { describe, expect, it } from "vitest";
@@ -13,7 +14,7 @@ import {
   compatibleMaterialFamiliesV3,
   compatibleRenderFormsV3,
   createDefaultAppearanceMaterialV3,
-  createEmptyAppearanceProfileV3,
+  createEmptyAppearanceProfileV4,
   createVividAppearancePaletteV3,
   deleteAppearanceDesignV3,
   materialSelectionValuesV3,
@@ -33,14 +34,15 @@ function styleRecipe(styleId: string): AppearanceRecipeV3 {
   return structuredClone(style.recipe);
 }
 
-function personalProfile(): AppearanceProfileV3 {
+function personalProfile(): AppearanceProfileV4 {
   return {
-    version: 3,
+    version: 4,
     designs: [],
     assignments: {
       all: { source: "builtin", id: "chaotic" },
       overrides: { d20: { source: "builtin", id: "hex-appeal" } },
     },
+    diceView: createDefaultDiceViewPreferencesV4(),
   };
 }
 
@@ -217,7 +219,7 @@ describe("appearance editor V3 draft operations", () => {
   it("upserts detached custom designs without changing weighted semantics", () => {
     const recipe = styleRecipe("chaotic");
     const profile = upsertAppearanceDesignV3(
-      createEmptyAppearanceProfileV3("personal"),
+      createEmptyAppearanceProfileV4("personal"),
       "all",
       { id: designId, name: "Wild garden", recipe },
       APPEARANCE_CATALOG_V3,
@@ -277,10 +279,11 @@ describe("appearance editor V3 draft operations", () => {
       name: `Design ${index + 1}`,
       recipe,
     }));
-    const full: AppearanceProfileV3 = {
-      version: 3,
+    const full: AppearanceProfileV4 = {
+      version: 4,
       designs,
       assignments: { all: null, overrides: {} },
+      diceView: createDefaultDiceViewPreferencesV4(),
     };
     expect(() =>
       upsertAppearanceDesignV3(
@@ -304,7 +307,7 @@ describe("appearance editor V3 draft operations", () => {
     };
     expect(() =>
       upsertAppearanceDesignV3(
-        createEmptyAppearanceProfileV3("personal"),
+        createEmptyAppearanceProfileV4("personal"),
         "all",
         { id: designId, name: "Too many materials", recipe: excessiveMaterials },
         APPEARANCE_CATALOG_V3,
@@ -314,7 +317,7 @@ describe("appearance editor V3 draft operations", () => {
 
   it("deletes assigned designs explicitly and preserves guild modes", () => {
     const guild = upsertAppearanceDesignV3(
-      createEmptyAppearanceProfileV3("guild"),
+      createEmptyAppearanceProfileV4("guild"),
       "all",
       {
         id: designId,
@@ -322,7 +325,7 @@ describe("appearance editor V3 draft operations", () => {
         recipe: styleRecipe("glass-cannon"),
       },
       APPEARANCE_CATALOG_V3,
-    ) as GuildAppearanceProfileV3;
+    ) as GuildAppearanceProfileV4;
     const enforced = setGuildAppearanceModeV3(
       guild,
       "enforced",
@@ -337,7 +340,7 @@ describe("appearance editor V3 draft operations", () => {
     );
     expect(deleted.designs).toEqual([]);
     expect(deleted.assignments).toEqual({ all: null, overrides: {} });
-    expect((deleted as GuildAppearanceProfileV3).mode).toBe("enforced");
+    expect((deleted as GuildAppearanceProfileV4).mode).toBe("enforced");
   });
 
   it("filters material and form controls without substituting invalid choices", () => {

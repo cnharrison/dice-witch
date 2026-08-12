@@ -5,18 +5,15 @@ import {
 } from "../../workers/roll/src/render-version";
 
 describe("Roll render-version configuration", () => {
-  it.each([
-    ["3", 3],
-    ["4", 4],
-  ] as const)("accepts explicit version %s", (configured, expected) => {
-    expect(parseRollRenderVersion(configured)).toBe(expected);
+  it("accepts only renderer V4", () => {
+    expect(parseRollRenderVersion("4")).toBe(4);
   });
 
-  it.each([undefined, null, "", "2", "5", 4])(
+  it.each([undefined, null, "", "2", "3", "5", 4])(
     "fails closed for %j",
     (configured) => {
       expect(() => parseRollRenderVersion(configured)).toThrow(
-        "ROLL_RENDER_VERSION must be 3 or 4",
+        "ROLL_RENDER_VERSION must equal 4",
       );
     },
   );

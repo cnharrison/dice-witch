@@ -4,7 +4,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { GuildAppearanceProfileV3 } from "@dice-witch/dice-v4-model";
+import type { GuildAppearanceProfileV4 } from "@dice-witch/dice-v4-model";
 import * as React from "react";
 
 const MODE_OPTIONS = [
@@ -29,9 +29,9 @@ const MODE_OPTIONS = [
 ] as const;
 
 type ServerAppearanceModeV3Props = {
-  mode: GuildAppearanceProfileV3["mode"];
+  mode: GuildAppearanceProfileV4["mode"];
   disabled?: boolean;
-  onChange(mode: GuildAppearanceProfileV3["mode"]): Promise<void>;
+  onChange(mode: GuildAppearanceProfileV4["mode"]): Promise<void>;
 };
 
 export function ServerAppearanceModeV3({
@@ -51,7 +51,7 @@ export function ServerAppearanceModeV3({
     setSelectedMode(mode);
   }, [mode]);
 
-  const selectMode = async (nextMode: GuildAppearanceProfileV3["mode"]) => {
+  const selectMode = async (nextMode: GuildAppearanceProfileV4["mode"]) => {
     if (disabled || saving || nextMode === selectedMode) return;
     const previousMode = selectedMode;
     setSelectedMode(nextMode);

@@ -7,6 +7,7 @@ import {
   randomRecipeForResolutionV3,
 } from "./packages/dice-appearance/src/catalog";
 import { APPEARANCE_TARGETS } from "./packages/dice-appearance/src/types";
+import { createDefaultDiceViewPreferencesV4 } from "./../packages/dice-v4-model/src/dice-view-preferences";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -77,7 +78,8 @@ async function dataTestResponse(request: Request): Promise<Response> {
   const value: unknown = await request.json();
   if (
     path === "/internal/appearance/v2/effective" ||
-    path === "/internal/appearance/v3/effective"
+    path === "/internal/appearance/v3/effective" ||
+    path === "/internal/appearance/v4/effective"
   ) {
     if (
       !isRecord(value) ||
@@ -93,21 +95,27 @@ async function dataTestResponse(request: Request): Promise<Response> {
     }
     if (value.userId === "100000000000000098") {
       return Response.json({
-        version: path.includes("/v3/") ? 3 : 2,
+        version: path.includes("/v4/") ? 4 : path.includes("/v3/") ? 3 : 2,
         recipes: {},
+        ...(path.includes("/v4/")
+          ? { diceView: createDefaultDiceViewPreferencesV4() }
+          : {}),
       });
     }
     if (value.userId === "100000000000000088" && attempts > 1) {
       return Response.json({ error: "changed" }, { status: 503 });
     }
-    const version = path.includes("/v3/") ? 3 : 2;
+    const version = path.includes("/v4/") ? 4 : path.includes("/v3/") ? 3 : 2;
     const primary = value.userId === "100000000000000088" ? "#aa0000" : null;
     return Response.json({
       version,
       recipes:
-        version === 3
+        version >= 3
           ? effectiveRecipesV3(primary)
           : effectiveRecipesV2(primary),
+      ...(version === 4
+        ? { diceView: createDefaultDiceViewPreferencesV4() }
+        : {}),
     });
   }
   if (path === "/internal/saved-rolls/v1/ensure-user") {

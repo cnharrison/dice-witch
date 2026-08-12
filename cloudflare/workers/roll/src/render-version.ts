@@ -1,7 +1,6 @@
 import type { RenderRequestV4 } from "@dice-witch/dice-v4-model";
 import type { RollExecutionResult } from "../../../packages/roll-domain/src";
 import {
-  buildRollRenderRequestV3,
   buildRollRenderRequestV4,
   buildRollRenderRequestR20V4,
   buildRollRenderRequestR21V4,
@@ -21,8 +20,6 @@ import {
 } from "../../../packages/roll-render-model/src";
 import type { RenderRequestV3 } from "../../../packages/dice-svg/src";
 import {
-  loadEffectiveAppearanceV2,
-  loadEffectiveAppearanceV3,
   loadEffectiveAppearanceV4,
   type AppearanceDataService,
 } from "./appearance";
@@ -68,10 +65,9 @@ const ROLL_VIEW_BUILDERS_V4 = {
   typeof buildRollRenderRequestR20V4
 >;
 
-export function parseRollRenderVersion(value: unknown): RollRenderVersion {
-  if (value === "3") return 3;
+export function parseRollRenderVersion(value: unknown): 4 {
   if (value === "4") return 4;
-  throw new Error("ROLL_RENDER_VERSION must be 3 or 4");
+  throw new Error("ROLL_RENDER_VERSION must equal 4");
 }
 
 export function parseRollViewPolicy(value: unknown): RollViewPolicy {
@@ -110,26 +106,14 @@ export async function buildRollRenderRequestForVersion(
   renderSeed: number,
 ): Promise<EmittedRollRenderRequest> {
   if (version === 3) {
-    if (viewPolicy !== "r19") {
-      throw new Error(`${viewPolicy} ROLL_VIEW_POLICY requires ROLL_RENDER_VERSION 4`);
-    }
-    return buildRollRenderRequestV3(
-      outcome,
-      renderSeed,
-      await loadEffectiveAppearanceV2(dataService, userId, guildId),
-    );
-  }
-  if (viewPolicy === "r19") {
-    return buildRollRenderRequestV4(
-      outcome,
-      renderSeed,
-      await loadEffectiveAppearanceV3(dataService, userId, guildId),
-    );
+    throw new Error("Pending renderer V3 snapshots cannot be reconstructed");
   }
   const appearance = await loadEffectiveAppearanceV4(
     dataService,
     userId,
     guildId,
   );
-  return ROLL_VIEW_BUILDERS_V4[viewPolicy](outcome, renderSeed, appearance);
+  return viewPolicy === "r19"
+    ? buildRollRenderRequestV4(outcome, renderSeed, appearance.recipes)
+    : ROLL_VIEW_BUILDERS_V4[viewPolicy](outcome, renderSeed, appearance);
 }

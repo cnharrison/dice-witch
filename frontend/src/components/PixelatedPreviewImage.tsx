@@ -1,7 +1,4 @@
-import type {
-  AppearancePreviewV3,
-  AppearancePreviewV4,
-} from "@/types/appearance";
+import type { AppearancePreviewV4 } from "@/types/appearance";
 import * as React from "react";
 import { useBrowserMediaQueryV4 } from "./dice-v4-3d/browser-media";
 import {
@@ -9,7 +6,7 @@ import {
   pixelTransitionFrame,
 } from "./pixel-transition";
 
-type PreviewImage = AppearancePreviewV3 | AppearancePreviewV4;
+type PreviewImage = AppearancePreviewV4;
 
 export type PixelatedImageCandidate = Readonly<{
   source: string;

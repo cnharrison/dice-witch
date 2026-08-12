@@ -4269,10 +4269,7 @@ export class RollWork extends DurableObject<RollEnv> {
     if (outcome.outcomes.length === 0) {
       return {
         status: "ready",
-        record:
-          renderVersion === 3
-            ? { version: 3, ...common, renderRequest: null }
-            : { version: 4, ...common, renderRequest: null },
+        record: { version: 4, ...common, renderRequest: null },
         renderSnapshotPreparationMs: null,
       };
     }
@@ -4285,21 +4282,13 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       return {
         status: "ready",
-        record:
-          renderVersion === 3
-            ? {
-                version: 5,
-                renderVersion: 3,
-                ...common,
-                renderRequest: null,
-              }
-            : {
-                version: 5,
-                renderVersion: 4,
-                viewPolicy: parseRollViewPolicy(this.env.ROLL_VIEW_POLICY),
-                ...common,
-                renderRequest: null,
-              },
+        record: {
+          version: 5,
+          renderVersion: 4,
+          viewPolicy: parseRollViewPolicy(this.env.ROLL_VIEW_POLICY),
+          ...common,
+          renderRequest: null,
+        },
         renderSnapshotPreparationMs: null,
       };
     }
@@ -4373,6 +4362,7 @@ export class RollWork extends DurableObject<RollEnv> {
     metadata: DeliveryMetadata,
   ): Promise<RollWorkRecordV5 | null> {
     if (record.renderRequest !== null) return record;
+    if (record.renderVersion === 3) return null;
     if (metadata.accounting === null) {
       throw new Error("Roll render snapshot accounting context is unavailable");
     }
@@ -4392,18 +4382,14 @@ export class RollWork extends DurableObject<RollEnv> {
     } catch {
       return null;
     }
-    let candidate: RollWorkRecordV5;
-    if (record.renderVersion === 3) {
-      if (renderRequest.version !== 3) {
-        throw new Error("Roll render snapshot version is invalid");
-      }
-      candidate = { ...record, renderVersion: 3, renderRequest };
-    } else {
-      if (renderRequest.version !== 4) {
-        throw new Error("Roll render snapshot version is invalid");
-      }
-      candidate = { ...record, renderVersion: 4, renderRequest };
+    if (renderRequest.version !== 4) {
+      throw new Error("Roll render snapshot version is invalid");
     }
+    const candidate: RollWorkRecordV5 = {
+      ...record,
+      renderVersion: 4,
+      renderRequest,
+    };
     const finalized = parseRecord(JSON.stringify(candidate));
     if (finalized.version !== 5 || finalized.renderRequest === null) {
       throw new Error("Finalized roll render snapshot is invalid");

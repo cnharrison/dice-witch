@@ -4,19 +4,15 @@ import {
   createDefaultDiceViewPreferencesV4,
   isPolyhedralFormImplementedForTargetV4,
   parseAppearanceMaterialV4,
-  parseAppearanceProfileV3,
   parseAppearanceProfileV4,
   parseAppearanceRecipeV3,
-  parseGuildAppearanceProfileV3,
   parseGuildAppearanceProfileV4,
   type AppearanceDesignReferenceV3,
   type AppearanceMaterialV4,
-  type AppearanceProfileV3,
   type AppearanceProfileV4,
   type AppearanceRecipeV3,
   type AppearanceSelection,
   type AppearanceTargetV4,
-  type GuildAppearanceProfileV3,
   type GuildAppearanceProfileV4,
   type MaterialFamilyV4,
   type PolyhedralFormV4,
@@ -24,9 +20,7 @@ import {
 import type { AppearanceCatalogV3 } from "../types/appearance";
 
 export type AppearanceEditorTargetV3 = AppearanceTargetV4 | "all";
-export type EditableAppearanceProfileV3 =
-  | AppearanceProfileV3
-  | GuildAppearanceProfileV3
+export type EditableAppearanceProfileV4 =
   | AppearanceProfileV4
   | GuildAppearanceProfileV4;
 
@@ -120,20 +114,14 @@ function validationCatalog(catalog: AppearanceCatalogV3): {
   return { builtinStyleIds: catalog.styles.map(({ id }) => id) };
 }
 
-function validateProfile<T extends EditableAppearanceProfileV3>(
+function validateProfile<T extends EditableAppearanceProfileV4>(
   profile: T,
   catalog: AppearanceCatalogV3,
 ): T {
   const validation = validationCatalog(catalog);
-  if (profile.version === 4) {
-    const parsed = "mode" in profile
-      ? parseGuildAppearanceProfileV4(profile, validation)
-      : parseAppearanceProfileV4(profile, validation);
-    return parsed as T;
-  }
   const parsed = "mode" in profile
-    ? parseGuildAppearanceProfileV3(profile, validation)
-    : parseAppearanceProfileV3(profile, validation);
+    ? parseGuildAppearanceProfileV4(profile, validation)
+    : parseAppearanceProfileV4(profile, validation);
   return parsed as T;
 }
 
@@ -280,23 +268,12 @@ export function reconcileAppearanceMaterialEditV3(
   });
 }
 
-export function createEmptyAppearanceProfileV3(
+export function createEmptyAppearanceProfileV4(
   kind: "personal",
-): AppearanceProfileV3;
-export function createEmptyAppearanceProfileV3(
+): AppearanceProfileV4;
+export function createEmptyAppearanceProfileV4(
   kind: "guild",
-): GuildAppearanceProfileV3;
-export function createEmptyAppearanceProfileV3(
-  kind: "personal" | "guild",
-): AppearanceProfileV3 | GuildAppearanceProfileV3 {
-  const profile: AppearanceProfileV3 = {
-    version: 3,
-    designs: [],
-    assignments: { all: null, overrides: {} },
-  };
-  return kind === "guild" ? { ...profile, mode: "default" } : profile;
-}
-
+): GuildAppearanceProfileV4;
 export function createEmptyAppearanceProfileV4(
   kind: "personal" | "guild",
 ): AppearanceProfileV4 | GuildAppearanceProfileV4 {
@@ -310,7 +287,7 @@ export function createEmptyAppearanceProfileV4(
 }
 
 export function appearanceAssignmentForV3(
-  profile: Pick<AppearanceProfileV3, "assignments">,
+  profile: Pick<AppearanceProfileV4, "assignments">,
   target: AppearanceEditorTargetV3,
 ): AppearanceDesignReferenceV3 | null {
   return target === "all"
@@ -330,7 +307,7 @@ function builtinStyle(
 }
 
 export function resolveAppearanceEditorSelectionV3(
-  profile: EditableAppearanceProfileV3,
+  profile: EditableAppearanceProfileV4,
   target: AppearanceEditorTargetV3,
   catalog: AppearanceCatalogV3,
 ): AppearanceEditorSelectionV3 {
@@ -427,7 +404,7 @@ export function assertAppearanceRecipeSupportsTargetV3(
 }
 
 export function applyAppearanceReferenceV3<
-  Profile extends EditableAppearanceProfileV3,
+  Profile extends EditableAppearanceProfileV4,
 >(
   profile: Profile,
   target: AppearanceEditorTargetV3,
@@ -448,7 +425,7 @@ export function applyAppearanceReferenceV3<
 }
 
 export function clearAppearanceTargetOverrideV3<
-  Profile extends EditableAppearanceProfileV3,
+  Profile extends EditableAppearanceProfileV4,
 >(
   profile: Profile,
   target: AppearanceTargetV4,
@@ -467,7 +444,7 @@ export function clearAppearanceTargetOverrideV3<
 }
 
 export function upsertAppearanceDesignV3<
-  Profile extends EditableAppearanceProfileV3,
+  Profile extends EditableAppearanceProfileV4,
 >(
   profile: Profile,
   target: AppearanceEditorTargetV3,
@@ -490,7 +467,7 @@ export function upsertAppearanceDesignV3<
 }
 
 export function updateAppearanceDesignV3<
-  Profile extends EditableAppearanceProfileV3,
+  Profile extends EditableAppearanceProfileV4,
 >(
   profile: Profile,
   draft: AppearanceDesignDraftV3,
@@ -533,7 +510,7 @@ export function updateAppearanceDesignV3<
 }
 
 export function renameAppearanceDesignV3<
-  Profile extends EditableAppearanceProfileV3,
+  Profile extends EditableAppearanceProfileV4,
 >(
   profile: Profile,
   designId: string,
@@ -557,7 +534,7 @@ export function renameAppearanceDesignV3<
 }
 
 export function deleteAppearanceDesignV3<
-  Profile extends EditableAppearanceProfileV3,
+  Profile extends EditableAppearanceProfileV4,
 >(
   profile: Profile,
   designId: string,
@@ -572,7 +549,7 @@ export function deleteAppearanceDesignV3<
       ([, reference]) =>
         reference.source !== "custom" || reference.id !== designId,
     ),
-  ) as AppearanceProfileV3["assignments"]["overrides"];
+  ) as AppearanceProfileV4["assignments"]["overrides"];
   const all = validated.assignments.all;
   return validateProfile(
     {
@@ -588,7 +565,7 @@ export function deleteAppearanceDesignV3<
 }
 
 export function setGuildAppearanceModeV3<
-  Profile extends GuildAppearanceProfileV3 | GuildAppearanceProfileV4,
+  Profile extends GuildAppearanceProfileV4,
 >(
   profile: Profile,
   mode: Profile["mode"],
