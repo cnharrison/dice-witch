@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { Copy, Trash2 } from "lucide-react";
 
 type SavedAppearanceDesign = Readonly<{
   id: string;
@@ -10,16 +10,20 @@ type SavedAppearanceDesign = Readonly<{
 type SavedAppearanceDesignsProps = {
   designs: readonly SavedAppearanceDesign[];
   isSaving: boolean;
+  canDuplicate: boolean;
   onApply?: (designId: string) => void;
   onEdit(designId: string): void;
+  onDuplicate(designId: string): void;
   onDelete(designId: string): void;
 };
 
 export function SavedAppearanceDesigns({
   designs,
   isSaving,
+  canDuplicate,
   onApply,
   onEdit,
+  onDuplicate,
   onDelete,
 }: SavedAppearanceDesignsProps) {
   return (
@@ -66,6 +70,17 @@ export function SavedAppearanceDesigns({
                   Use
                 </Button>
               )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-10 sm:w-10"
+                aria-label={`Duplicate ${design.name}`}
+                disabled={isSaving || !canDuplicate}
+                onClick={() => onDuplicate(design.id)}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
               <Button
                 type="button"
                 variant="ghost"

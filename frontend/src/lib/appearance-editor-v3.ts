@@ -1,6 +1,7 @@
 import {
   APPEARANCE_TARGETS_V4,
   FANTASY_ESSENCE_PALETTES_R33_V4,
+  MAX_APPEARANCE_DESIGN_NAME_CHARACTERS_V3,
   createDefaultDiceViewPreferencesV4,
   isPolyhedralFormImplementedForTargetV4,
   parseAppearanceMaterialV4,
@@ -48,6 +49,30 @@ export function nextPresetEditNameV3(
     if (!names.has(candidate)) return candidate;
   }
   throw new Error("Appearance edit name could not be allocated");
+}
+
+function copySuffixV3(copy: number): string {
+  if (copy === 0) return "";
+  return copy === 1 ? " copy" : ` copy ${String(copy)}`;
+}
+
+export function nextAppearanceDesignNameV3(
+  designs: readonly NamedAppearanceDesignV3[],
+  base: string,
+): string {
+  const trimmedBase = base.trim();
+  if (trimmedBase.length === 0) {
+    throw new Error("Appearance design name base is empty");
+  }
+  const names = new Set(designs.map(({ name }) => name));
+  for (let copy = 0; copy <= designs.length + 1; copy += 1) {
+    const suffix = copySuffixV3(copy);
+    const candidate = `${trimmedBase
+      .slice(0, MAX_APPEARANCE_DESIGN_NAME_CHARACTERS_V3 - suffix.length)
+      .trimEnd()}${suffix}`;
+    if (!names.has(candidate)) return candidate;
+  }
+  throw new Error("Appearance design name could not be allocated");
 }
 
 function hslChannelV3(
@@ -529,6 +554,33 @@ export function renameAppearanceDesignV3<
         candidate.id === designId ? { ...candidate, name } : candidate,
       ),
     } as Profile,
+    catalog,
+  );
+}
+
+export function duplicateAppearanceDesignV3<
+  Profile extends EditableAppearanceProfileV4,
+>(
+  profile: Profile,
+  designId: string,
+  duplicateId: string,
+  catalog: AppearanceCatalogV3,
+): Profile {
+  const validated = validateProfile(profile, catalog);
+  const design = validated.designs.find(({ id }) => id === designId);
+  if (design === undefined) {
+    throw new Error(`Appearance custom design is missing: ${designId}`);
+  }
+  if (validated.designs.some(({ id }) => id === duplicateId)) {
+    throw new Error(`Appearance custom design already exists: ${duplicateId}`);
+  }
+  const duplicate = {
+    id: duplicateId,
+    name: nextAppearanceDesignNameV3(validated.designs, design.name),
+    recipe: cloneRecipe(design.recipe),
+  };
+  return validateProfile(
+    { ...validated, designs: [...validated.designs, duplicate] } as Profile,
     catalog,
   );
 }

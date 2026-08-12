@@ -16,6 +16,8 @@ import {
   clearAppearanceTargetOverrideV3,
   createEmptyAppearanceProfileV4,
   deleteAppearanceDesignV3,
+  duplicateAppearanceDesignV3,
+  nextAppearanceDesignNameV3,
   nextPresetEditNameV3,
   renameAppearanceDesignV3,
   resolveAppearanceEditorSelectionV3,
@@ -30,10 +32,11 @@ import {
   type AppearanceCatalogV3,
   type AppearanceProfileResource,
 } from "@/types/appearance";
-import type {
-  AppearanceRecipeV3,
-  AppearanceTargetV4,
-  CustomAppearanceDesignV3,
+import {
+  MAX_APPEARANCE_DESIGNS_V3,
+  type AppearanceRecipeV3,
+  type AppearanceTargetV4,
+  type CustomAppearanceDesignV3,
 } from "@dice-witch/dice-v4-model";
 import { Save } from "lucide-react";
 import * as React from "react";
@@ -158,6 +161,9 @@ export function AppearanceEditorV3({
   const [deletionNotices, setDeletionNotices] = React.useState<DeletionNotice[]>(
     [],
   );
+  const [explicitDesignIds, setExplicitDesignIds] = React.useState<
+    readonly string[]
+  >([]);
   const [personalDesignId, setPersonalDesignId] = React.useState("");
   const [status, setStatus] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<AppearanceEditorTab>("design");
@@ -275,6 +281,7 @@ export function AppearanceEditorV3({
   const hasUnsavedChanges = unsavedDrafts.length > 0;
   const hasTargetOverride =
     target !== "all" && draftProfile.assignments.overrides[target] !== undefined;
+  const atDesignCap = draftProfile.designs.length >= MAX_APPEARANCE_DESIGNS_V3;
 
   React.useEffect(() => {
     onDirtyChange?.(hasUnsavedChanges);
@@ -332,6 +339,7 @@ export function AppearanceEditorV3({
   };
 
   const removeDraftMetadata = (designId: string) => {
+    setExplicitDesignIds((ids) => ids.filter((id) => id !== designId));
     setNameDrafts((drafts) => {
       const updated = { ...drafts };
       delete updated[designId];
@@ -351,6 +359,7 @@ export function AppearanceEditorV3({
     if (
       previousDesignId === null ||
       baselineProfile.designs.some(({ id }) => id === previousDesignId) ||
+      explicitDesignIds.includes(previousDesignId) ||
       designTargets(profile, previousDesignId).length > 0
     ) {
       return profile;
@@ -430,6 +439,61 @@ export function AppearanceEditorV3({
           ),
         );
       }
+      setStatus(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const createDesign = () => {
+    try {
+      const id = crypto.randomUUID();
+      const basedOnStyle = activeSelection.designId === null;
+      const name = nextAppearanceDesignNameV3(
+        draftProfile.designs,
+        activeSelection.name,
+      );
+      const recipe = beginAppearanceRecipeEditV3(
+        activeSelection.recipe,
+        activeSelection.recipe,
+        basedOnStyle,
+      );
+      setDraftProfile(
+        upsertAppearanceDesignV3(
+          draftProfile,
+          target,
+          { id, name, recipe },
+          catalog,
+        ),
+      );
+      setEditingDesignId(id);
+      setExplicitDesignIds((ids) => [...ids, id]);
+      if (basedOnStyle) {
+        setBasedOnStyles((styles) => ({
+          ...styles,
+          [id]: activeSelection.name,
+        }));
+      }
+      setStatus(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const duplicateDesign = (designId: string) => {
+    try {
+      const duplicateId = crypto.randomUUID();
+      setDraftProfile(
+        duplicateAppearanceDesignV3(
+          draftProfile,
+          designId,
+          duplicateId,
+          catalog,
+        ),
+      );
+      if (activeTab !== "design") activateTab("design", true);
+      setEditingDesignId(duplicateId);
+      setExplicitDesignIds((ids) => [...ids, duplicateId]);
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
@@ -557,6 +621,7 @@ export function AppearanceEditorV3({
       setEditingDesignId(null);
       setNameDrafts({});
       setBasedOnStyles({});
+      setExplicitDesignIds([]);
       setDeletionNotices([]);
       setStatus("Appearance changes were saved and applied.");
     } catch (error) {
@@ -573,6 +638,7 @@ export function AppearanceEditorV3({
     setEditingDesignId(null);
     setNameDrafts({});
     setBasedOnStyles({});
+    setExplicitDesignIds([]);
     setDeletionNotices([]);
     setStatus(null);
   };
@@ -635,8 +701,10 @@ export function AppearanceEditorV3({
           <SavedAppearanceDesigns
             designs={displayedDesigns}
             isSaving={isSaving}
+            canDuplicate={!atDesignCap}
             onApply={applySavedDesign}
             onEdit={editDesign}
+            onDuplicate={duplicateDesign}
             onDelete={deleteDesign}
           />
         )}
@@ -733,7 +801,18 @@ export function AppearanceEditorV3({
             onSelect={selectStyle}
           />
 
-          {activeDesign !== undefined && (
+          {activeDesign === undefined ? (
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSaving || atDesignCap}
+                onClick={createDesign}
+              >
+                New design
+              </Button>
+            </div>
+          ) : (
             <div className="space-y-1.5 rounded-lg border bg-muted/20 p-4">
               <div className="flex flex-wrap items-center gap-1.5">
                 {basedOnStyles[activeDesign.id] !== undefined && (
@@ -753,19 +832,29 @@ export function AppearanceEditorV3({
                   Custom design name
                 </Label>
               </div>
-              <Input
-                id={`${kind}-design-name-v3`}
-                aria-label="Custom design name"
-                value={activeDesignName}
-                maxLength={catalog.bounds.maximumDesignNameCharacters}
-                onChange={(event) => {
-                  setNameDrafts((drafts) => ({
-                    ...drafts,
-                    [activeDesign.id]: event.target.value,
-                  }));
-                  setStatus(null);
-                }}
-              />
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                <Input
+                  id={`${kind}-design-name-v3`}
+                  aria-label="Custom design name"
+                  value={activeDesignName}
+                  maxLength={catalog.bounds.maximumDesignNameCharacters}
+                  onChange={(event) => {
+                    setNameDrafts((drafts) => ({
+                      ...drafts,
+                      [activeDesign.id]: event.target.value,
+                    }));
+                    setStatus(null);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isSaving || atDesignCap}
+                  onClick={() => duplicateDesign(activeDesign.id)}
+                >
+                  Duplicate
+                </Button>
+              </div>
             </div>
           )}
 

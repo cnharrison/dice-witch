@@ -812,4 +812,133 @@ describe("AppearanceEditorV3", () => {
     });
     expect(copied.designs[0]?.recipe).not.toBe(personalDesign.recipe);
   });
+
+  it("duplicates an assigned design instead of renaming the original", async () => {
+    const user = userEvent.setup();
+    const copyId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(copyId);
+    const onSave = vi.fn(async () => undefined);
+    const profile = personalProfile();
+    profile.designs = [
+      { id: designId, name: "Night garden", recipe: styleRecipe("pride") },
+    ];
+    profile.assignments = {
+      all: { source: "custom", id: designId },
+      overrides: {},
+    };
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Night garden",
+    );
+    await user.click(screen.getByRole("button", { name: "Duplicate" }));
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Night garden copy",
+    );
+
+    await user.clear(screen.getByLabelText("Custom design name"));
+    await user.type(screen.getByLabelText("Custom design name"), "Night sky");
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV4;
+    expect(saved.designs).toHaveLength(2);
+    expect(saved.designs[0]).toMatchObject({
+      id: designId,
+      name: "Night garden",
+    });
+    expect(saved.designs[1]).toMatchObject({ id: copyId, name: "Night sky" });
+    expect(saved.assignments.all).toEqual({ source: "custom", id: designId });
+  });
+
+  it("creates a named design from a preset without editing a control", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "New design" }));
+
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Random",
+    );
+    expect(screen.getByText("Based on Random")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV4;
+    expect(saved.designs).toHaveLength(1);
+    expect(saved.designs[0]).toMatchObject({ id: designId, name: "Random" });
+    expect(saved.assignments.all).toEqual({ source: "custom", id: designId });
+  });
+
+  it("keeps an explicitly created design when another preset is chosen", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    await user.click(screen.getByRole("button", { name: "New design" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Preset" }),
+      "dice-witch",
+    );
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Edit Random" })).toBeDefined();
+  });
+
+  it("stops creating designs at the ten-design cap", () => {
+    const profile = personalProfile();
+    profile.designs = Array.from({ length: 10 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
+      name: `Design ${index + 1}`,
+      recipe: styleRecipe("pride"),
+    }));
+    profile.assignments = {
+      all: { source: "custom", id: profile.designs[0]?.id ?? designId },
+      overrides: {},
+    };
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    expect(screen.getByRole("button", { name: "Duplicate" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(
+      screen.getByRole("button", { name: "Duplicate Design 1" }),
+    ).toHaveProperty("disabled", true);
+  });
 });

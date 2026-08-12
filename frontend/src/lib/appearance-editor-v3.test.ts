@@ -17,7 +17,9 @@ import {
   createEmptyAppearanceProfileV4,
   createVividAppearancePaletteV3,
   deleteAppearanceDesignV3,
+  duplicateAppearanceDesignV3,
   materialSelectionValuesV3,
+  nextAppearanceDesignNameV3,
   nextPresetEditNameV3,
   withAutomaticMaterialFormsV3,
   resolveAppearanceEditorSelectionV3,
@@ -62,6 +64,72 @@ describe("appearance editor V3 draft operations", () => {
       "Edit 1",
       "My resin",
     ]);
+  });
+
+  it("suffixes copy names within the stored name limit", () => {
+    const recipe = styleRecipe("pride");
+    const named = (name: string) => ({ id: designId, name, recipe });
+
+    expect(nextAppearanceDesignNameV3([], "Night garden")).toBe("Night garden");
+    expect(
+      nextAppearanceDesignNameV3([named("Night garden")], "Night garden"),
+    ).toBe("Night garden copy");
+    expect(
+      nextAppearanceDesignNameV3(
+        [named("Night garden"), named("Night garden copy")],
+        "Night garden",
+      ),
+    ).toBe("Night garden copy 2");
+
+    const longest = "N".repeat(50);
+    const truncated = nextAppearanceDesignNameV3([named(longest)], longest);
+    expect(truncated).toBe(`${"N".repeat(45)} copy`);
+    expect(truncated.length).toBe(50);
+    expect(() => nextAppearanceDesignNameV3([], "   ")).toThrow(
+      "Appearance design name base is empty",
+    );
+  });
+
+  it("duplicates a design without touching assignments or the original", () => {
+    const copyId = "7bbc98d5-c3f9-40e4-8df8-92cb2871466d";
+    const assigned = upsertAppearanceDesignV3(
+      personalProfile(),
+      "all",
+      { id: designId, name: "Night garden", recipe: styleRecipe("pride") },
+      APPEARANCE_CATALOG_V3,
+    );
+
+    const duplicated = duplicateAppearanceDesignV3(
+      assigned,
+      designId,
+      copyId,
+      APPEARANCE_CATALOG_V3,
+    );
+
+    expect(duplicated.designs).toHaveLength(2);
+    expect(duplicated.designs[0]).toEqual(assigned.designs[0]);
+    expect(duplicated.designs[1]?.id).toBe(copyId);
+    expect(duplicated.designs[1]?.name).toBe("Night garden copy");
+    expect(duplicated.designs[1]?.recipe).toEqual(assigned.designs[0]?.recipe);
+    expect(duplicated.designs[1]?.recipe).not.toBe(assigned.designs[0]?.recipe);
+    expect(duplicated.assignments).toEqual(assigned.assignments);
+
+    expect(() =>
+      duplicateAppearanceDesignV3(
+        assigned,
+        copyId,
+        "8ccc98d5-c3f9-40e4-8df8-92cb2871466d",
+        APPEARANCE_CATALOG_V3,
+      ),
+    ).toThrow(`Appearance custom design is missing: ${copyId}`);
+    expect(() =>
+      duplicateAppearanceDesignV3(
+        assigned,
+        designId,
+        designId,
+        APPEARANCE_CATALOG_V3,
+      ),
+    ).toThrow(`Appearance custom design already exists: ${designId}`);
   });
 
   it("creates distinct vivid palettes with the requested color count", () => {
