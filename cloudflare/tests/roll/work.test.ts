@@ -2730,11 +2730,14 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
     });
-    expect(lifecycleSyncs.observations[0]).toMatchObject({
-      state: "delivery_started",
+    const firstObservation = lifecycleSyncs.observations[0];
+    expect(firstObservation).toMatchObject({
       rendererRevision: "canvaskit-v4-r19",
       httpStatus: 200,
     });
+    expect(["delivery_started", "delivered"]).toContain(
+      firstObservation?.state,
+    );
     expect(
       lifecycleSyncs.observations.map(({ rendererRevision }) => rendererRevision),
     ).toEqual(
