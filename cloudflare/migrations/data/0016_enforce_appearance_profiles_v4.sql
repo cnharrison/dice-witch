@@ -62,5 +62,28 @@ BEGIN
   SELECT RAISE(ABORT, 'Appearance profiles must use version 4');
 END;
 
-UPDATE user_appearance_profiles SET profile_json = profile_json;
-UPDATE guild_appearance_profiles SET profile_json = profile_json;
+CREATE TABLE appearance_profiles_v4_migration_guard (
+  version INTEGER NOT NULL CHECK (version = 4)
+) STRICT;
+
+INSERT INTO appearance_profiles_v4_migration_guard (version)
+SELECT COALESCE(json_extract(profile_json, '$.version'), 0)
+FROM user_appearance_profiles
+WHERE COALESCE(
+  json_type(profile_json, '$.version') != 'integer'
+    OR json_extract(profile_json, '$.version') != 4,
+  1
+)
+LIMIT 1;
+
+INSERT INTO appearance_profiles_v4_migration_guard (version)
+SELECT COALESCE(json_extract(profile_json, '$.version'), 0)
+FROM guild_appearance_profiles
+WHERE COALESCE(
+  json_type(profile_json, '$.version') != 'integer'
+    OR json_extract(profile_json, '$.version') != 4,
+  1
+)
+LIMIT 1;
+
+DROP TABLE appearance_profiles_v4_migration_guard;
