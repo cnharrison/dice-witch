@@ -70,12 +70,16 @@ const recipeV3 = BUILTIN_APPEARANCE_STYLES_V3[0]?.recipe;
 const transRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
   ({ id }) => id === "trans",
 )?.recipe;
+const prismaticGlassRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
+  ({ id }) => id === "glass-cannon",
+)?.recipe;
 const provenanceRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
   ({ id }) => id === "hollow-victory",
 )?.recipe;
 if (
   recipeV3 === undefined ||
   transRecipeV3 === undefined ||
+  prismaticGlassRecipeV3 === undefined ||
   provenanceRecipeV3 === undefined
 ) {
   throw new Error("V3 recipe fixture is missing");
@@ -689,6 +693,35 @@ describe("appearance preview", () => {
         new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
       );
     }
+  });
+
+  it("renders Prismatic Glass across the all-dice r34 preview", async () => {
+    const input = {
+      target: "all" as const,
+      recipe: prismaticGlassRecipeV3,
+      seed: 0x51ce_b00c,
+      state: "normal" as const,
+    };
+    const request = buildAppearancePreviewRenderRequestV4(input);
+    expect(request.rendererRevision).toBe("canvaskit-v4-r34");
+    expect(request.groups.flat()).toHaveLength(10);
+    expect(
+      request.groups
+        .flat()
+        .filter(({ target }) => target !== "other")
+        .every(({ form }) => form === "crystal-cut"),
+    ).toBe(true);
+
+    const rendered = await renderAppearancePreviewV3(input);
+    expect(rendered).toMatchObject({
+      version: 4,
+      contentType: "image/png",
+      diceCount: 10,
+      rowCount: 2,
+    });
+    expect(rendered.png.slice(0, 8)).toEqual(
+      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+    );
   });
 
   it("renders deterministic Profile V3 previews through the real V4 renderer", async () => {
