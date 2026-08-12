@@ -897,7 +897,7 @@ const surfaceStyles = [
       variation: "curated",
       varyBy: "die",
       colors: { mode: "tonal", primary: "#6f42c1" },
-      fill: proceduralFill(),
+      fill: { mode: "fixed", value: { type: "gradient" } },
       font: proceduralFont(),
     },
   ),
