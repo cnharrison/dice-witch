@@ -5,6 +5,7 @@ import {
   type RenderDieV4,
   type RenderRequestV4,
 } from "@dice-witch/dice-v4-model";
+import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model/dice-view-preferences";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   createCanvasKitRequestRendererV4,
@@ -487,13 +488,17 @@ export function buildAppearancePreviewRenderRequestV4(
   value: unknown,
 ): RenderRequestV4 {
   const request = parseAppearancePreviewRequestV3(value);
-  const recipes = Object.fromEntries(
-    APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
-  ) as EffectiveAppearanceRecipesV3;
-  return buildRollRenderRequestV4(
+  const effectiveAppearance: EffectiveAppearanceV4 = {
+    version: 4,
+    recipes: Object.fromEntries(
+      APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
+    ) as EffectiveAppearanceRecipesV3,
+    diceView: createDefaultDiceViewPreferencesV4(),
+  };
+  return buildRollRenderRequestR34V4(
     previewOutcome(request.target, request.state, request.seed),
     request.seed,
-    recipes,
+    effectiveAppearance,
   );
 }
 

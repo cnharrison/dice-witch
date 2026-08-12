@@ -1,6 +1,7 @@
 import {
   APPEARANCE_TARGETS_V4,
   createDefaultDiceViewPreferencesV4,
+  R32_FONT_IDS_V4,
   type AppearanceRecipeV3,
 } from "@dice-witch/dice-v4-model";
 import type {
@@ -66,10 +67,17 @@ const recipeV2 = {
 };
 
 const recipeV3 = BUILTIN_APPEARANCE_STYLES_V3[0]?.recipe;
+const transRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
+  ({ id }) => id === "trans",
+)?.recipe;
 const provenanceRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
   ({ id }) => id === "hollow-victory",
 )?.recipe;
-if (recipeV3 === undefined || provenanceRecipeV3 === undefined) {
+if (
+  recipeV3 === undefined ||
+  transRecipeV3 === undefined ||
+  provenanceRecipeV3 === undefined
+) {
   throw new Error("V3 recipe fixture is missing");
 }
 const defaultRecipeV3: AppearanceRecipeV3 = recipeV3;
@@ -272,7 +280,7 @@ describe("appearance preview", () => {
 
     expect(preview).toMatchObject({
       version: 4,
-      rendererRevision: "canvaskit-v4-r19",
+      rendererRevision: "canvaskit-v4-r34",
     });
     expect(preview.groups.map((group) => group.length)).toEqual([5, 5]);
     expect(preview.groups.flat()).toHaveLength(10);
@@ -659,6 +667,28 @@ describe("appearance preview", () => {
     });
     expect(attempts).toBe(2);
     expect(disposals).toBe(2);
+  });
+
+  it("renders Trans previews with every r32 font through r34", async () => {
+    for (const fontId of R32_FONT_IDS_V4) {
+      const input = {
+        target: "d20" as const,
+        recipe: {
+          ...transRecipeV3,
+          font: { mode: "fixed" as const, value: fontId },
+        },
+        seed: 0x0bad_f00d,
+        state: "normal" as const,
+      };
+      const request = buildAppearancePreviewRenderRequestV4(input);
+      expect(request.rendererRevision).toBe("canvaskit-v4-r34");
+      expect(request.groups[0]?.[0]?.appearance.engraving.fontId).toBe(fontId);
+
+      const rendered = await renderAppearancePreviewV3(input);
+      expect(rendered.png.slice(0, 8)).toEqual(
+        new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      );
+    }
   });
 
   it("renders deterministic Profile V3 previews through the real V4 renderer", async () => {
