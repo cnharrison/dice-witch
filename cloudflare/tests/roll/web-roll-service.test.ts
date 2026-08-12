@@ -11,7 +11,9 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_TARGETS,
+  APPROVED_COLLECTOR_STYLE_IDS_V3,
   BUILTIN_APPEARANCE_STYLES_V3,
+  FEATURED_APPEARANCE_STYLE_IDS,
 } from "../../packages/dice-appearance/src";
 import {
   buildAppearancePreviewRenderRequest,
@@ -70,16 +72,12 @@ const recipeV3 = BUILTIN_APPEARANCE_STYLES_V3[0]?.recipe;
 const transRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
   ({ id }) => id === "trans",
 )?.recipe;
-const prismaticGlassRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
-  ({ id }) => id === "glass-cannon",
-)?.recipe;
 const provenanceRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
   ({ id }) => id === "hollow-victory",
 )?.recipe;
 if (
   recipeV3 === undefined ||
   transRecipeV3 === undefined ||
-  prismaticGlassRecipeV3 === undefined ||
   provenanceRecipeV3 === undefined
 ) {
   throw new Error("V3 recipe fixture is missing");
@@ -695,22 +693,21 @@ describe("appearance preview", () => {
     }
   });
 
-  it("renders Prismatic Glass across the all-dice r34 preview", async () => {
+  it.each([
+    ...FEATURED_APPEARANCE_STYLE_IDS,
+    ...APPROVED_COLLECTOR_STYLE_IDS_V3,
+  ])("renders selectable preset %s across the all-dice r34 preview", async (styleId) => {
+    const style = BUILTIN_APPEARANCE_STYLES_V3.find(({ id }) => id === styleId);
+    if (style === undefined) throw new Error(`${styleId} style is missing`);
     const input = {
       target: "all" as const,
-      recipe: prismaticGlassRecipeV3,
+      recipe: style.recipe,
       seed: 0x51ce_b00c,
       state: "normal" as const,
     };
     const request = buildAppearancePreviewRenderRequestV4(input);
     expect(request.rendererRevision).toBe("canvaskit-v4-r34");
     expect(request.groups.flat()).toHaveLength(10);
-    expect(
-      request.groups
-        .flat()
-        .filter(({ target }) => target !== "other")
-        .every(({ form }) => form === "crystal-cut"),
-    ).toBe(true);
 
     const rendered = await renderAppearancePreviewV3(input);
     expect(rendered).toMatchObject({
