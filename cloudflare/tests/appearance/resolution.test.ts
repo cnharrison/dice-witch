@@ -2091,29 +2091,17 @@ describe("resolveAppearanceRecipeV3", () => {
     );
   });
 
-  it("gives r27 tonal palettes a visible shade endpoint", () => {
+  it("keeps r27 tonal partners close to the selected color", () => {
     const resolved = resolveAppearanceRecipeV3(
       appearanceRecipeV3({
         variation: "fixed",
-        colors: { mode: "tonal", primary: "#18cfd1" },
+        colors: { mode: "tonal", primary: "#6f42c1" },
       }),
       contextV3(),
       "property-streams-r27",
     );
-    const [primary, shade] = resolved.appearance.palette.map((color) =>
-      [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16)),
-    );
-    if (primary === undefined || shade === undefined) {
-      throw new Error("Tonal palette fixture is missing");
-    }
 
-    expect(
-      primary.reduce(
-        (distance, channel, index) =>
-          distance + Math.abs(channel - (shade[index] ?? channel)),
-        0,
-      ),
-    ).toBeGreaterThan(125);
+    expect(resolved.appearance.palette).toEqual(["#6f42c1", "#9371d1"]);
   });
 
   it.each([

@@ -1029,7 +1029,7 @@ function resolveColorsV3(
       .reduce((total, channel) => total + channel, 0) / 3;
     const pair: [string, string] = [
       primary,
-      mixColor(primary, brightness < 128 ? 255 : 0, 0.5),
+      mixColor(primary, brightness < 128 ? 255 : 0, 0.25),
     ];
     return { ordered: [...pair], pair };
   }
