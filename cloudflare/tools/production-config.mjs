@@ -284,7 +284,7 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
 
   configs.roll.vars = {
     ...configs.roll.vars,
-    ROLL_VIEW_POLICY: "r19",
+    ROLL_VIEW_POLICY: "r34",
   };
 
   configs["web-api"].routes = [
@@ -383,8 +383,8 @@ export function validateProductionConfigs(configs, expectedSha) {
   if (configs.roll?.vars?.ROLL_RENDER_VERSION !== "4") {
     errors.push("Production Roll render version must be 4");
   }
-  if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r19") {
-    errors.push("Production Roll view policy must be r19");
+  if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r34") {
+    errors.push("Production Roll view policy must be r34");
   }
   if (
     configs.interactions?.durable_objects?.bindings?.length !== 2 ||

@@ -103,6 +103,7 @@ test("materializes exact production configs from source templates and bounded va
       ?.entrypoint,
     "DiscordMessageProbeService",
   );
+  assert.equal(roll.vars.ROLL_VIEW_POLICY, "r34");
   assert.equal(web.vars.ENVIRONMENT, "production");
   assert.deepEqual(web.routes, [{ pattern: "dicewit.ch", custom_domain: true }]);
   assert.deepEqual(gateway.triggers, {
