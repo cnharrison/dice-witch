@@ -19,10 +19,12 @@ import {
 } from "@/lib/material-weight-percentages";
 import type { AppearanceCatalogV3 } from "@/types/appearance";
 import {
-  materialAddsColorV4,
+  materialColorEffectV4,
+  materialPreservesColorsV4,
   parseAppearanceRecipeV3,
   type AppearanceMaterialV4,
   type AppearanceRecipeV3,
+  type MaterialColorEffectV4,
   type MaterialFamilyV4,
 } from "@dice-witch/dice-v4-model";
 import { Info, Plus, Trash2 } from "lucide-react";
@@ -96,6 +98,19 @@ function materialVariant(material: AppearanceMaterialV4): string {
     case "elemental":
     case "paint":
       return plainOptionName(material.style);
+  }
+}
+
+function colorEffectLabel(effect: MaterialColorEffectV4): string {
+  switch (effect) {
+    case "selected-colors":
+      return "Uses selected colors";
+    case "one-selected-color":
+      return "Uses one selected color";
+    case "lightens-selected-colors":
+      return "Lightens selected colors";
+    case "adds-own-colors":
+      return "Adds its own colors";
   }
 }
 
@@ -236,9 +251,9 @@ export function AppearanceMaterialControlsV3({
     setEntries(nextEntries);
   };
 
-  const removeColorAddingMaterials = () => {
-    let nextEntries = entries.filter(
-      ({ material }) => !materialAddsColorV4(material),
+  const preserveColors = () => {
+    let nextEntries = entries.filter(({ material }) =>
+      materialPreservesColorsV4(material),
     );
     if (nextEntries.length === 0 || nextEntries.length === entries.length) return;
     if (weighted) {
@@ -277,11 +292,11 @@ export function AppearanceMaterialControlsV3({
 
   const atMaterialLimit =
     multiple && entries.length >= catalog.bounds.maximumMaterialOptions;
-  const colorAddingCount = entries.filter(({ material }) =>
-    materialAddsColorV4(material),
+  const alteredColorCount = entries.filter(
+    ({ material }) => !materialPreservesColorsV4(material),
   ).length;
-  const canRemoveColorAddingMaterials =
-    colorAddingCount > 0 && colorAddingCount < entries.length;
+  const canPreserveColors =
+    alteredColorCount > 0 && alteredColorCount < entries.length;
   const activeFamilyName = materialNames.get(activeEntry.material.family) ??
     activeEntry.material.family;
   const activeName = `${activeFamilyName} · ${materialVariant(activeEntry.material)}`;
@@ -323,9 +338,9 @@ export function AppearanceMaterialControlsV3({
                     materialNames.get(entry.material.family) ??
                     entry.material.family;
                   const name = `${familyName} · ${materialVariant(entry.material)}`;
-                  const colorStatus = materialAddsColorV4(entry.material)
-                    ? " · Adds color"
-                    : "";
+                  const colorStatus = ` · ${colorEffectLabel(
+                    materialColorEffectV4(entry.material),
+                  )}`;
                   const percentage = weighted
                     ? ` — ${formatMaterialWeightPercentV3(
                         materialWeights[index] as number,
@@ -344,17 +359,17 @@ export function AppearanceMaterialControlsV3({
                 })}
               </AppearanceSelectV3>
             </label>
-            {colorAddingCount > 0 && (
+            {alteredColorCount > 0 && (
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">Some materials add color</Badge>
-                {canRemoveColorAddingMaterials && (
+                <Badge variant="outline">Some materials alter colors</Badge>
+                {canPreserveColors && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={removeColorAddingMaterials}
+                    onClick={preserveColors}
                   >
-                    Remove color-adding materials
+                    Preserve colors
                   </Button>
                 )}
               </div>
@@ -422,9 +437,9 @@ export function AppearanceMaterialControlsV3({
               <h3 id="material-editor-heading" className="text-sm font-semibold">
                 Edit {activeName}
               </h3>
-              {materialAddsColorV4(activeEntry.material) && (
-                <Badge variant="outline">Adds color</Badge>
-              )}
+              <Badge variant="outline">
+                {colorEffectLabel(materialColorEffectV4(activeEntry.material))}
+              </Badge>
             </div>
             {multiple && entries.length > 1 && (
               <Button
