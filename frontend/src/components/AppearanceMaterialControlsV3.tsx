@@ -1,5 +1,6 @@
 import { AppearanceMaterialOptionV3 } from "@/components/AppearanceMaterialOptionV3";
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/material-weight-percentages";
 import type { AppearanceCatalogV3 } from "@/types/appearance";
 import {
+  materialAddsColorV4,
   parseAppearanceRecipeV3,
   type AppearanceMaterialV4,
   type AppearanceRecipeV3,
@@ -234,6 +236,24 @@ export function AppearanceMaterialControlsV3({
     setEntries(nextEntries);
   };
 
+  const removeColorAddingMaterials = () => {
+    let nextEntries = entries.filter(
+      ({ material }) => !materialAddsColorV4(material),
+    );
+    if (nextEntries.length === 0 || nextEntries.length === entries.length) return;
+    if (weighted) {
+      const nextWeights = normalizeMaterialWeightsV3(
+        nextEntries.map(({ weight }) => weight),
+      );
+      nextEntries = nextEntries.map((entry, index) => ({
+        ...entry,
+        weight: nextWeights[index] as number,
+      }));
+    }
+    setSelectedIndex(0);
+    setEntries(nextEntries);
+  };
+
   const addEntry = () => {
     if (selectedAddFamily === undefined) return;
     const material = createDefaultAppearanceMaterialV3(
@@ -257,6 +277,11 @@ export function AppearanceMaterialControlsV3({
 
   const atMaterialLimit =
     multiple && entries.length >= catalog.bounds.maximumMaterialOptions;
+  const colorAddingCount = entries.filter(({ material }) =>
+    materialAddsColorV4(material),
+  ).length;
+  const canRemoveColorAddingMaterials =
+    colorAddingCount > 0 && colorAddingCount < entries.length;
   const activeFamilyName = materialNames.get(activeEntry.material.family) ??
     activeEntry.material.family;
   const activeName = `${activeFamilyName} · ${materialVariant(activeEntry.material)}`;
@@ -298,6 +323,9 @@ export function AppearanceMaterialControlsV3({
                     materialNames.get(entry.material.family) ??
                     entry.material.family;
                   const name = `${familyName} · ${materialVariant(entry.material)}`;
+                  const colorStatus = materialAddsColorV4(entry.material)
+                    ? " · Adds color"
+                    : "";
                   const percentage = weighted
                     ? ` — ${formatMaterialWeightPercentV3(
                         materialWeights[index] as number,
@@ -309,12 +337,28 @@ export function AppearanceMaterialControlsV3({
                       value={index}
                     >
                       {name}
+                      {colorStatus}
                       {percentage}
                     </option>
                   );
                 })}
               </AppearanceSelectV3>
             </label>
+            {colorAddingCount > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">Some materials add color</Badge>
+                {canRemoveColorAddingMaterials && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={removeColorAddingMaterials}
+                  >
+                    Remove color-adding materials
+                  </Button>
+                )}
+              </div>
+            )}
             {weighted && (
               <div className="block max-w-xl space-y-1.5 text-xs font-medium">
                 <div className="flex items-center justify-between gap-3">
@@ -374,9 +418,14 @@ export function AppearanceMaterialControlsV3({
           aria-labelledby="material-editor-heading"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 id="material-editor-heading" className="text-sm font-semibold">
-              Edit {activeName}
-            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 id="material-editor-heading" className="text-sm font-semibold">
+                Edit {activeName}
+              </h3>
+              {materialAddsColorV4(activeEntry.material) && (
+                <Badge variant="outline">Adds color</Badge>
+              )}
+            </div>
             {multiple && entries.length > 1 && (
               <Button
                 type="button"

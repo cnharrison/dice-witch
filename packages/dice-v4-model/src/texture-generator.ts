@@ -63,6 +63,27 @@ type PixelGeneratorV4<Material extends AppearanceMaterialV4> = (
   material: Material,
 ) => TextureColorV4;
 
+export function materialAddsColorV4(
+  material: AppearanceMaterialV4,
+): boolean {
+  switch (material.family) {
+    case "metal":
+    case "hollow-metal":
+    case "fantasy":
+      return true;
+    case "sharp-resin":
+      return (
+        material.inclusion === "botanical" ||
+        material.inclusion === "foil" ||
+        material.inclusion === "mica"
+      );
+    case "wood":
+      return material.finish === "vine-carved";
+    default:
+      return false;
+  }
+}
+
 function byte(value: number): number {
   return Math.max(0, Math.min(BYTE_MAX, Math.round(value)));
 }

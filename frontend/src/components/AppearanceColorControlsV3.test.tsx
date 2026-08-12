@@ -37,6 +37,9 @@ describe("AppearanceColorControlsV3", () => {
       "solid",
     );
     expect(
+      screen.getByRole("option", { name: "One base color + shade" }),
+    ).toBeDefined();
+    expect(
       screen.getByRole("button", { name: "Choose color 1" }),
     ).toHaveProperty("value", "#d2042d");
     expect(screen.queryByRole("button", { name: "Choose color 2" })).toBeNull();

@@ -13,6 +13,7 @@ import type {
   AppearanceCatalogV3,
   AppearanceRecipeV3,
 } from "@/types/appearance";
+import { materialAddsColorV4 } from "@dice-witch/dice-v4-model";
 
 function selectionSummary(
   mode: "fixed" | "allowlist" | "weighted",
@@ -23,6 +24,11 @@ function selectionSummary(
   if (mode === "fixed") return fixedName;
   if (mode === "weighted") return `Weighted mix · ${count} ${noun}`;
   return `${count} ${noun}`;
+}
+
+function materialColorStatus(materialCount: number, colorAddingCount: number) {
+  if (colorAddingCount === 0) return "";
+  return materialCount === 1 ? " · Adds color" : " · Some add color";
 }
 
 function SummaryField({ label, value }: { label: string; value: string }) {
@@ -59,6 +65,16 @@ export function AppearanceRecipeControlsV3({
   if (material === undefined) {
     throw new Error("Appearance recipe catalog metadata is missing");
   }
+  const materialSummary = selectionSummary(
+    recipe.material.mode,
+    materials.length,
+    material.name,
+    "materials",
+  );
+  const colorStatus = materialColorStatus(
+    materials.length,
+    materials.filter(materialAddsColorV4).length,
+  );
   const fontValue = recipe.font.mode === "fixed" ? recipe.font.value : null;
   const usesCuratedMaterialPalette =
     recipe.material.mode === "fixed" &&
@@ -99,12 +115,7 @@ export function AppearanceRecipeControlsV3({
         </label>
         <SummaryField
           label="Material"
-          value={selectionSummary(
-            recipe.material.mode,
-            materials.length,
-            material.name,
-            "materials",
-          )}
+          value={`${materialSummary}${colorStatus}`}
         />
       </div>
 

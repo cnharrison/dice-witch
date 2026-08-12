@@ -47,7 +47,7 @@ describe("AppearanceRecipeControlsV3", () => {
 
     expect(
       screen.getByRole("group", {
-        name: "Material: Weighted mix · 23 materials",
+        name: "Material: Weighted mix · 23 materials · Some add color",
       }),
     ).toBeDefined();
     expect(
