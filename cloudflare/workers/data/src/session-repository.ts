@@ -34,7 +34,13 @@ export type RevokeSessionResult = {
   status: "revoked" | "existing" | "missing";
 };
 
-export type CreateOAuthStateInput = {
+export type OAuthStateContext = {
+  purpose: "sign_in" | "refresh";
+  expectedUserId: string | null;
+  returnTo: string;
+};
+
+export type CreateOAuthStateInput = OAuthStateContext & {
   token: string;
   createdAt: number;
   expiresAt: number;
@@ -44,9 +50,9 @@ export type CreateOAuthStateResult = {
   status: "created" | "existing" | "conflict";
 };
 
-export type ConsumeOAuthStateResult = {
-  status: "consumed" | "already_consumed" | "expired" | "missing";
-};
+export type ConsumeOAuthStateResult =
+  | { status: "consumed"; context: OAuthStateContext }
+  | { status: "already_consumed" | "expired" | "missing" };
 
 type SessionRow = {
   user_id: string;
@@ -69,6 +75,9 @@ type OAuthStateRow = {
   created_at: number;
   expires_at: number;
   consumed_at: number | null;
+  purpose: string;
+  expected_user_id: string | null;
+  return_to: string;
 };
 
 function validateToken(value: string): string {
@@ -87,6 +96,35 @@ function validateRange(createdAt: number, expiresAt: number, name: string): void
   validateTimestamp(createdAt);
   validateTimestamp(expiresAt);
   if (expiresAt <= createdAt) throw new Error(`${name} timestamps are invalid`);
+}
+
+function validateOAuthStateContext(
+  input: OAuthStateContext,
+): OAuthStateContext {
+  const expectedUserId = input.expectedUserId;
+  if (
+    (input.purpose === "sign_in" && expectedUserId !== null) ||
+    (input.purpose === "refresh" &&
+      (expectedUserId === null || !SNOWFLAKE.test(expectedUserId))) ||
+    typeof input.returnTo !== "string" ||
+    input.returnTo.length < 1 ||
+    input.returnTo.length > 2_048
+  ) {
+    throw new Error("OAuth state context is invalid");
+  }
+  return {
+    purpose: input.purpose,
+    expectedUserId,
+    returnTo: input.returnTo,
+  };
+}
+
+function oauthStateContext(row: OAuthStateRow): OAuthStateContext {
+  return validateOAuthStateContext({
+    purpose: row.purpose as OAuthStateContext["purpose"],
+    expectedUserId: row.expected_user_id,
+    returnTo: row.return_to,
+  });
 }
 
 function encodeBase64Url(bytes: Uint8Array): string {
@@ -204,6 +242,7 @@ export class D1SessionRepository {
     input: CreateOAuthStateInput,
   ): Promise<CreateOAuthStateResult> {
     validateRange(input.createdAt, input.expiresAt, "OAuth state");
+    const context = validateOAuthStateContext(input);
     const stateHash = await hashOpaqueToken(input.token);
     const existing = await this.readOAuthState(stateHash);
     if (existing !== null) return this.existingOAuthState(existing, input);
@@ -211,10 +250,18 @@ export class D1SessionRepository {
       await this.db
         .prepare(
           `INSERT INTO oauth_states (
-             state_hash, created_at, expires_at
-           ) VALUES (?, ?, ?)`,
+             state_hash, created_at, expires_at,
+             purpose, expected_user_id, return_to
+           ) VALUES (?, ?, ?, ?, ?, ?)`,
         )
-        .bind(stateHash, input.createdAt, input.expiresAt)
+        .bind(
+          stateHash,
+          input.createdAt,
+          input.expiresAt,
+          context.purpose,
+          context.expectedUserId,
+          context.returnTo,
+        )
         .run();
       return { status: "created" };
     } catch (error) {
@@ -238,7 +285,11 @@ export class D1SessionRepository {
       )
       .bind(timestamp, stateHash, timestamp)
       .run();
-    if (result.meta.changes === 1) return { status: "consumed" };
+    if (result.meta.changes === 1) {
+      const consumed = await this.readOAuthState(stateHash);
+      if (consumed === null) throw new Error("Consumed OAuth state is missing");
+      return { status: "consumed", context: oauthStateContext(consumed) };
+    }
     const existing = await this.readOAuthState(stateHash);
     if (existing === null) return { status: "missing" };
     if (existing.consumed_at !== null) return { status: "already_consumed" };
@@ -275,7 +326,8 @@ export class D1SessionRepository {
     return this.db
       .withSession("first-primary")
       .prepare(
-        `SELECT created_at, expires_at, consumed_at
+        `SELECT created_at, expires_at, consumed_at,
+                purpose, expected_user_id, return_to
          FROM oauth_states WHERE state_hash = ?`,
       )
       .bind(stateHash)
@@ -286,9 +338,13 @@ export class D1SessionRepository {
     row: OAuthStateRow,
     input: CreateOAuthStateInput,
   ): CreateOAuthStateResult {
+    const context = validateOAuthStateContext(input);
     return row.created_at === input.createdAt &&
       row.expires_at === input.expiresAt &&
-      row.consumed_at === null
+      row.consumed_at === null &&
+      row.purpose === context.purpose &&
+      row.expected_user_id === context.expectedUserId &&
+      row.return_to === context.returnTo
       ? { status: "existing" }
       : { status: "conflict" };
   }

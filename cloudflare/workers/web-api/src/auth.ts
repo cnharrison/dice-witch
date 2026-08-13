@@ -23,6 +23,7 @@ import {
   putGuildAppearanceV4,
   putPersonalAppearanceV4,
 } from "./appearance-api";
+import { synchronizeGuildProof } from "./guild-authorization";
 import { bytesToBase64, json, securityHeaders } from "./responses";
 import { handleSavedRollApiRequest } from "./saved-roll-api";
 
@@ -125,6 +126,11 @@ type ValidatedConfiguration = Omit<
 
 type RequestFetch = (request: Request) => Promise<Response>;
 type DiscordToken = { accessToken: string };
+type OAuthStateContext = {
+  purpose: "sign_in" | "refresh";
+  expectedUserId: string | null;
+  returnTo: string;
+};
 type DiscordProfile = {
   id: string;
   username: string;
@@ -239,10 +245,6 @@ function sessionCookie(token: string, maxAge: number): string {
 
 function stateCookie(token: string, maxAge: number): string {
   return `auth_state=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
-}
-
-function authReturnCookie(returnTo: string, maxAge: number): string {
-  return `auth_return=${encodeURIComponent(returnTo)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 function appendCookie(response: Response, cookie: string): Response {
@@ -456,14 +458,20 @@ function parseAuthenticatedReturnTo(value: string): string | null {
   }
 }
 
-function readAuthenticatedReturnTo(request: Request): string {
-  const encoded = readCookie(request, "auth_return");
-  if (encoded === null) return "/app";
-  try {
-    return parseAuthenticatedReturnTo(decodeURIComponent(encoded)) ?? "/app";
-  } catch {
-    return "/app";
-  }
+function discordAuthorizationRedirect(
+  configuration: ValidatedConfiguration,
+  state: string,
+): Response {
+  const authorizationUrl = new URL(DISCORD_AUTHORIZE_URL);
+  authorizationUrl.search = new URLSearchParams({
+    client_id: configuration.DISCORD_CLIENT_ID,
+    redirect_uri: configuration.DISCORD_REDIRECT_URI,
+    response_type: "code",
+    scope: "identify email guilds",
+    state,
+  }).toString();
+  const response = redirect(authorizationUrl.toString());
+  return appendCookie(response, stateCookie(state, STATE_TTL_MS / 1_000));
 }
 
 async function startAuthorization(
@@ -482,6 +490,9 @@ async function startAuthorization(
   const stateResponse = await postData(env, "/internal/oauth-states", {
     createdAt: now,
     expiresAt: now + STATE_TTL_MS,
+    purpose: "sign_in",
+    expectedUserId: null,
+    returnTo,
   });
   if (stateResponse.status !== 201) {
     return json({ error: "OAuth state creation failed" }, 502);
@@ -495,20 +506,37 @@ async function startAuthorization(
     return json({ error: "OAuth state response is invalid" }, 502);
   }
 
-  const authorizationUrl = new URL(DISCORD_AUTHORIZE_URL);
-  authorizationUrl.search = new URLSearchParams({
-    client_id: configuration.DISCORD_CLIENT_ID,
-    redirect_uri: configuration.DISCORD_REDIRECT_URI,
-    response_type: "code",
-    scope: "identify email guilds",
-    state: value.token,
-  }).toString();
-  const response = redirect(authorizationUrl.toString());
-  appendCookie(response, stateCookie(value.token, STATE_TTL_MS / 1_000));
-  return appendCookie(
-    response,
-    authReturnCookie(returnTo, STATE_TTL_MS / 1_000),
-  );
+  return discordAuthorizationRedirect(configuration, value.token);
+}
+
+async function startGuildRefresh(
+  request: Request,
+  env: WebApiBindings,
+  configuration: ValidatedConfiguration,
+  now: number,
+): Promise<Response> {
+  const authentication = await authenticateSession(request, env, now);
+  if (!authentication.authenticated) return authentication.response;
+
+  const stateResponse = await postData(env, "/internal/oauth-states", {
+    createdAt: now,
+    expiresAt: now + STATE_TTL_MS,
+    purpose: "refresh",
+    expectedUserId: authentication.session.user.id,
+    returnTo: "/app/preferences",
+  });
+  if (stateResponse.status !== 201) {
+    return json({ error: "OAuth state creation failed" }, 502);
+  }
+  const value: unknown = await stateResponse.json();
+  if (
+    !isRecord(value) ||
+    typeof value.token !== "string" ||
+    !OPAQUE_TOKEN.test(value.token)
+  ) {
+    return json({ error: "OAuth state response is invalid" }, 502);
+  }
+  return discordAuthorizationRedirect(configuration, value.token);
 }
 
 function parseDiscordToken(value: unknown): DiscordToken | null {
@@ -626,18 +654,48 @@ async function consumeState(
   env: WebApiBindings,
   token: string,
   now: number,
-): Promise<"consumed" | "invalid" | "unavailable"> {
+): Promise<
+  | { status: "consumed"; context: OAuthStateContext }
+  | { status: "invalid" | "unavailable" }
+> {
   const response = await postData(env, "/internal/oauth-states/consume", {
     token,
     consumedAt: now,
   });
   if (response.ok) {
     const value: unknown = await response.json();
-    return isRecord(value) && value.status === "consumed"
-      ? "consumed"
-      : "unavailable";
+    if (
+      !isRecord(value) ||
+      value.status !== "consumed" ||
+      !isRecord(value.context) ||
+      (value.context.purpose !== "sign_in" &&
+        value.context.purpose !== "refresh") ||
+      (value.context.expectedUserId !== null &&
+        (typeof value.context.expectedUserId !== "string" ||
+          !SNOWFLAKE.test(value.context.expectedUserId))) ||
+      (value.context.purpose === "sign_in" &&
+        value.context.expectedUserId !== null) ||
+      (value.context.purpose === "refresh" &&
+        value.context.expectedUserId === null) ||
+      typeof value.context.returnTo !== "string" ||
+      parseAuthenticatedReturnTo(value.context.returnTo) === null
+    ) {
+      return { status: "unavailable" };
+    }
+    return {
+      status: "consumed",
+      context: {
+        purpose: value.context.purpose,
+        expectedUserId: value.context.expectedUserId,
+        returnTo: value.context.returnTo,
+      },
+    };
   }
-  return [404, 409, 410].includes(response.status) ? "invalid" : "unavailable";
+  return {
+    status: [404, 409, 410].includes(response.status)
+      ? "invalid"
+      : "unavailable",
+  };
 }
 
 async function syncMemberships(
@@ -717,21 +775,38 @@ async function completeCallback(
   ) {
     return json({ error: "Invalid OAuth state" }, 400);
   }
-  const stateStatus = await consumeState(env, state, now);
-  if (stateStatus !== "consumed") {
+  const stateResult = await consumeState(env, state, now);
+  if (stateResult.status !== "consumed") {
     return appendCookie(
       json(
         {
           error:
-            stateStatus === "invalid"
+            stateResult.status === "invalid"
               ? "Invalid OAuth state"
               : "OAuth state validation failed",
         },
-        stateStatus === "invalid" ? 400 : 502,
+        stateResult.status === "invalid" ? 400 : 502,
       ),
       stateCookie("", 0),
     );
   }
+  let refreshSession: StoredSession | null = null;
+  if (stateResult.context.purpose === "refresh") {
+    const authentication = await authenticateSession(request, env, now);
+    if (!authentication.authenticated) {
+      return appendCookie(authentication.response, stateCookie("", 0));
+    }
+    if (
+      authentication.session.user.id !== stateResult.context.expectedUserId
+    ) {
+      return appendCookie(
+        json({ error: "Discord refresh identity is invalid" }, 403),
+        stateCookie("", 0),
+      );
+    }
+    refreshSession = authentication.session;
+  }
+
   const code = url.searchParams.get("code");
   if (
     url.searchParams.has("error") ||
@@ -763,8 +838,32 @@ async function completeCallback(
     );
   }
 
-  const sessionToken = generateOpaqueToken();
   const stateHash = await hashOpaqueToken(state);
+  if (refreshSession !== null) {
+    if (profile.id !== refreshSession.user.id) {
+      return appendCookie(
+        json({ error: "Discord refresh account does not match" }, 403),
+        stateCookie("", 0),
+      );
+    }
+    try {
+      await syncMemberships(env, profile.id, guilds, stateHash, now);
+    } catch {
+      return appendCookie(
+        json({ error: "Discord membership synchronization failed" }, 502),
+        stateCookie("", 0),
+      );
+    }
+    const response = redirect(
+      new URL(
+        stateResult.context.returnTo,
+        configuration.frontendUrl,
+      ).toString(),
+    );
+    return appendCookie(response, stateCookie("", 0));
+  }
+
+  const sessionToken = generateOpaqueToken();
   const expiresAt = now + SESSION_TTL_MS;
   const loginResponse = await postData(env, "/internal/web-logins", {
     token: sessionToken,
@@ -810,11 +909,10 @@ async function completeCallback(
   }
 
   const response = redirect(
-    new URL(readAuthenticatedReturnTo(request), configuration.frontendUrl).toString(),
+    new URL(stateResult.context.returnTo, configuration.frontendUrl).toString(),
   );
   appendCookie(response, sessionCookie(sessionToken, SESSION_TTL_MS / 1_000));
-  appendCookie(response, stateCookie("", 0));
-  return appendCookie(response, authReturnCookie("", 0));
+  return appendCookie(response, stateCookie("", 0));
 }
 
 function parseStoredSession(value: unknown): StoredSession | null {
@@ -1119,39 +1217,22 @@ async function authorizeGuild(
     };
   }
   const userId = authentication.session.user.id;
-  const membershipsResponse = await postData(
-    env,
-    "/internal/memberships/list",
-    { userId },
-  );
-  if (!membershipsResponse.ok) {
+  const result = await synchronizeGuildProof(env, guildId, userId, now);
+  if (result.status === "unavailable") {
     return {
       authorized: false,
       reason: "service",
       response: json({ error: "Guild authorization failed" }, 502),
     };
   }
-  const memberships: unknown = await membershipsResponse.json();
-  if (!isRecord(memberships) || !Array.isArray(memberships.memberships)) {
-    return {
-      authorized: false,
-      reason: "service",
-      response: json({ error: "Guild authorization response is invalid" }, 502),
-    };
-  }
-  const authorized = memberships.memberships.some(
-    (membership) =>
-      isRecord(membership) &&
-      isRecord(membership.guild) &&
-      membership.guild.id === guildId &&
-      (membership.isAdmin === true || membership.isDiceWitchAdmin === true),
-  );
-  return authorized
+  const proof = result.proof;
+  return proof.status === "found" &&
+      (proof.isAdmin || proof.isDiceWitchAdmin)
     ? { authorized: true, userId }
     : {
         authorized: false,
         reason: "authorization",
-        response: json({ error: "Unauthorized" }, 401),
+        response: json({ error: "Forbidden" }, 403),
       };
 }
 
@@ -1856,6 +1937,9 @@ export async function handleAuthRequest(
   try {
     if (request.method === "GET" && pathname === "/api/auth/signin/discord") {
       return await startAuthorization(request, env, configuration, now);
+    }
+    if (request.method === "GET" && pathname === "/api/auth/refresh/discord") {
+      return await startGuildRefresh(request, env, configuration, now);
     }
     if (
       request.method === "GET" &&

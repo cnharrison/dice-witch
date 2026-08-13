@@ -84,15 +84,20 @@ describe("web API Discord OAuth", () => {
     expect(dataRequests).toEqual([
       {
         path: "/internal/oauth-states",
-        body: { createdAt: now, expiresAt: now + 10 * 60 * 1_000 },
+        body: {
+          createdAt: now,
+          expiresAt: now + 10 * 60 * 1_000,
+          purpose: "sign_in",
+          expectedUserId: null,
+          returnTo: "/app/library",
+        },
       },
     ]);
     expect(cookieValue(response, "auth_state")).toBe(
       `auth_state=${oauthState}; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
     );
-    expect(cookieValue(response, "auth_return")).toBe(
-      "auth_return=%2Fapp%2Flibrary; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Lax",
-    );
+    expect(response.headers.getSetCookie().some((cookie) =>
+      cookie.startsWith("auth_return="))).toBe(false);
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -103,7 +108,14 @@ describe("web API Discord OAuth", () => {
       const body: unknown = await request.json();
       dataRequests.push({ path, body });
       if (path.endsWith("/consume")) {
-        return Response.json({ status: "consumed" });
+        return Response.json({
+          status: "consumed",
+          context: {
+            purpose: "sign_in",
+            expectedUserId: null,
+            returnTo: "/app/library",
+          },
+        });
       }
       if (path === "/internal/web-logins") {
         return Response.json({
@@ -184,7 +196,7 @@ describe("web API Discord OAuth", () => {
         `https://api.example.com/api/auth/callback/discord?code=callback-code&state=${oauthState}`,
         {
           headers: {
-            cookie: `auth_state=${oauthState}; auth_return=%2Fapp%2Flibrary`,
+            cookie: `auth_state=${oauthState}`,
           },
         },
       ),
@@ -204,9 +216,8 @@ describe("web API Discord OAuth", () => {
     expect(cookieValue(response, "auth_state")).toBe(
       "auth_state=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
     );
-    expect(cookieValue(response, "auth_return")).toBe(
-      "auth_return=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
-    );
+    expect(response.headers.getSetCookie().some((cookie) =>
+      cookie.startsWith("auth_return="))).toBe(false);
     expect(dataRequests.map(({ path }) => path)).toEqual([
       "/internal/oauth-states/consume",
       "/internal/web-logins",
@@ -221,6 +232,203 @@ describe("web API Discord OAuth", () => {
     expect(serialized).toContain('"isAdmin":true');
     expect(serialized).toContain('"isDiceWitchAdmin":true');
     expect(serialized).toContain('"mutationId":"oauth-membership:');
+  });
+
+  it("refreshes guild memberships without replacing the authenticated session", async () => {
+    const sessionToken = "T".repeat(43);
+    const dataRequests: Array<{ path: string; body: unknown }> = [];
+    const dataFetch = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      const body: unknown = await request.json();
+      dataRequests.push({ path, body });
+      if (path === "/internal/sessions/current") {
+        return Response.json({
+          user: {
+            id: "100000000000000003",
+            username: "fixture-user",
+            email: null,
+            avatar: null,
+          },
+          createdAt: now - 1,
+          expiresAt: now + 60_000,
+        });
+      }
+      if (path === "/internal/oauth-states") {
+        return Response.json({ token: oauthState }, { status: 201 });
+      }
+      if (path === "/internal/oauth-states/consume") {
+        return Response.json({
+          status: "consumed",
+          context: {
+            purpose: "refresh",
+            expectedUserId: "100000000000000003",
+            returnTo: "/app/preferences",
+          },
+        });
+      }
+      if (path === "/internal/guilds/filter") {
+        return Response.json({ guildIds: ["100000000000000001"] });
+      }
+      if (path === "/internal/memberships") {
+        return Response.json({
+          status: "applied",
+          permissions: { isAdmin: true, isDiceWitchAdmin: false },
+        });
+      }
+      throw new Error(`Unexpected Data Worker route ${path}`);
+    });
+    const discordFetch = vi.fn((request: Request): Promise<Response> => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/oauth2/token") {
+        return Promise.resolve(Response.json({
+          access_token: "ephemeral-refresh-access-token",
+          token_type: "Bearer",
+          expires_in: 604800,
+          refresh_token: "must-not-be-stored",
+          scope: "identify email guilds",
+        }));
+      }
+      if (path === "/api/v10/users/@me") {
+        return Promise.resolve(Response.json({
+          id: "100000000000000003",
+          username: "fixture-user",
+          email: null,
+          avatar: null,
+        }));
+      }
+      return Promise.resolve(Response.json([{
+        id: "100000000000000001",
+        name: "New mutual guild",
+        icon: null,
+        permissions: "8",
+      }]));
+    });
+    const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectMembership = vi.fn(() => Promise.resolve({
+      status: "found" as const,
+      isAdmin: true,
+      isDiceWitchAdmin: false,
+    }));
+
+    const started = await handleAuthRequest(
+      new Request("https://api.example.com/api/auth/refresh/discord", {
+        headers: { cookie: `session_id=${sessionToken}` },
+      }),
+      env,
+      discordFetch,
+      () => now,
+    );
+    expect(started.status).toBe(302);
+    expect(dataRequests.at(-1)).toEqual({
+      path: "/internal/oauth-states",
+      body: {
+        createdAt: now,
+        expiresAt: now + 10 * 60 * 1_000,
+        purpose: "refresh",
+        expectedUserId: "100000000000000003",
+        returnTo: "/app/preferences",
+      },
+    });
+
+    const completed = await handleAuthRequest(
+      new Request(
+        `https://api.example.com/api/auth/callback/discord?code=callback-code&state=${oauthState}`,
+        {
+          headers: {
+            cookie: `session_id=${sessionToken}; auth_state=${oauthState}`,
+          },
+        },
+      ),
+      env,
+      discordFetch,
+      () => now,
+    );
+    expect(completed.status).toBe(302);
+    expect(completed.headers.get("location")).toBe(
+      `${frontendOrigin}/app/preferences`,
+    );
+    expect(completed.headers.getSetCookie().some((cookie) =>
+      cookie.startsWith("session_id="))).toBe(false);
+    expect(dataRequests.map(({ path }) => path)).not.toContain(
+      "/internal/web-logins",
+    );
+    const serialized = JSON.stringify(dataRequests);
+    expect(serialized).not.toContain("ephemeral-refresh-access-token");
+    expect(serialized).not.toContain("must-not-be-stored");
+  });
+
+  it("rejects a refresh completed by a different Discord account", async () => {
+    const sessionToken = "T".repeat(43);
+    const dataPaths: string[] = [];
+    const dataFetch = vi.fn((request: Request) => {
+      const path = new URL(request.url).pathname;
+      dataPaths.push(path);
+      if (path === "/internal/oauth-states/consume") {
+        return Promise.resolve(Response.json({
+          status: "consumed",
+          context: {
+            purpose: "refresh",
+            expectedUserId: "100000000000000003",
+            returnTo: "/app/preferences",
+          },
+        }));
+      }
+      if (path === "/internal/sessions/current") {
+        return Promise.resolve(Response.json({
+          user: {
+            id: "100000000000000003",
+            username: "fixture-user",
+            email: null,
+            avatar: null,
+          },
+          createdAt: now - 1,
+          expiresAt: now + 60_000,
+        }));
+      }
+      throw new Error(`Unexpected Data Worker route ${path}`);
+    });
+    const discordFetch = vi.fn((request: Request): Promise<Response> => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/oauth2/token") {
+        return Promise.resolve(Response.json({
+          access_token: "ephemeral-access-token",
+          token_type: "Bearer",
+          expires_in: 604800,
+          scope: "identify email guilds",
+        }));
+      }
+      if (path === "/api/v10/users/@me") {
+        return Promise.resolve(Response.json({
+          id: "100000000000000004",
+          username: "different-user",
+          email: null,
+          avatar: null,
+        }));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const response = await handleAuthRequest(
+      new Request(
+        `https://api.example.com/api/auth/callback/discord?code=callback-code&state=${oauthState}`,
+        {
+          headers: {
+            cookie: `session_id=${sessionToken}; auth_state=${oauthState}`,
+          },
+        },
+      ),
+      bindings(dataFetch),
+      discordFetch,
+      () => now,
+    );
+
+    expect(response.status).toBe(403);
+    expect(dataPaths).toEqual([
+      "/internal/oauth-states/consume",
+      "/internal/sessions/current",
+    ]);
+    expect(dataPaths).not.toContain("/internal/guilds/filter");
+    expect(dataPaths).not.toContain("/internal/memberships");
   });
 
   it("rejects state mismatches before calling Discord or the Data Worker", async () => {
@@ -572,19 +780,10 @@ describe("web API Discord OAuth", () => {
           expiresAt: now + 1,
         });
       }
-      if (path === "/internal/memberships/list") {
+      if (path === "/internal/memberships/permissions") {
         return Response.json({
-          memberships: [
-            {
-              guild: {
-                id: "100000000000000001",
-                name: "Fixture guild",
-                icon: null,
-              },
-              isAdmin: true,
-              isDiceWitchAdmin: false,
-            },
-          ],
+          status: "applied",
+          permissions: { isAdmin: true, isDiceWitchAdmin: false },
         });
       }
       if (path === "/internal/guilds/settings") {
@@ -600,6 +799,11 @@ describe("web API Discord OAuth", () => {
       });
     });
     const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectMembership = vi.fn(() => Promise.resolve({
+      status: "found" as const,
+      isAdmin: true,
+      isDiceWitchAdmin: false,
+    }));
     const url =
       "https://api.example.com/api/guilds/100000000000000001/preferences";
     const headers = {
@@ -666,17 +870,10 @@ describe("web API Discord OAuth", () => {
           expiresAt: now + 1,
         });
       }
-      if (path === "/internal/memberships/list") {
+      if (path === "/internal/memberships/permissions") {
         return Response.json({
-          memberships: [{
-            guild: {
-              id: "100000000000000001",
-              name: "Fixture guild",
-              icon: null,
-            },
-            isAdmin: true,
-            isDiceWitchAdmin: false,
-          }],
+          status: "applied",
+          permissions: { isAdmin: true, isDiceWitchAdmin: false },
         });
       }
       if (path === "/internal/guilds/settings") {
@@ -703,6 +900,11 @@ describe("web API Discord OAuth", () => {
       });
     });
     const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectMembership = vi.fn(() => Promise.resolve({
+      status: "found" as const,
+      isAdmin: true,
+      isDiceWitchAdmin: false,
+    }));
     const url =
       "https://api.example.com/api/guilds/100000000000000001/preferences?version=2";
     const headers = {
@@ -797,17 +999,10 @@ describe("web API Discord OAuth", () => {
           expiresAt: now + 1,
         }));
       }
-      if (path === "/internal/memberships/list") {
+      if (path === "/internal/memberships/permissions") {
         return Promise.resolve(Response.json({
-          memberships: [{
-            guild: {
-              id: "100000000000000001",
-              name: "Fixture guild",
-              icon: null,
-            },
-            isAdmin: true,
-            isDiceWitchAdmin: false,
-          }],
+          status: "applied",
+          permissions: { isAdmin: true, isDiceWitchAdmin: false },
         }));
       }
       return Promise.reject(new Error(`Unexpected Data Worker route ${path}`));
@@ -819,9 +1014,15 @@ describe("web API Discord OAuth", () => {
       origin: frontendOrigin,
     };
 
+    const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectMembership = vi.fn(() => Promise.resolve({
+      status: "found" as const,
+      isAdmin: true,
+      isDiceWitchAdmin: false,
+    }));
     const duplicate = await handleAuthRequest(
       new Request(`${baseUrl}?version=2&version=1`, { headers }),
-      bindings(dataFetch),
+      env,
       vi.fn(),
       () => now,
     );
@@ -832,7 +1033,7 @@ describe("web API Discord OAuth", () => {
         method: "PATCH",
         headers,
       }),
-      bindings(dataFetch),
+      env,
       vi.fn(),
       () => now,
     );

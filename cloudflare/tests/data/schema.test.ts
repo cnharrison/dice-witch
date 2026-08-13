@@ -230,6 +230,9 @@ describe("D1 business schema migration", () => {
       "created_at",
       "expires_at",
       "consumed_at",
+      "purpose",
+      "expected_user_id",
+      "return_to",
     ]);
     await expect(columns("user_appearance_profiles")).resolves.toEqual([
       "user_id",
@@ -298,6 +301,7 @@ describe("D1 business schema migration", () => {
       { name: "0014_hide_roll_result_text.sql" },
       { name: "0015_appearance_profiles_v4.sql" },
       { name: "0016_enforce_appearance_profiles_v4.sql" },
+      { name: "0017_oauth_state_context.sql" },
     ]);
   });
 

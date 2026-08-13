@@ -32,11 +32,11 @@ export type UpsertPermissionsResult =
   | { status: "missing" | "conflict" };
 
 type MutualGuildRow = {
-  guild_id: string | null;
+  guild_id: string;
   guild_name: string | null;
   guild_icon: string | null;
-  is_admin: number;
-  is_dice_witch_admin: number;
+  is_admin: number | null;
+  is_dice_witch_admin: number | null;
 };
 
 type ValidatedInput = UpsertPermissionsInput & {
@@ -89,23 +89,22 @@ export class D1MembershipRepository {
            guilds.icon AS guild_icon,
            users_guilds.is_admin,
            users_guilds.is_dice_witch_admin
-         FROM users_guilds
-         JOIN guilds ON guilds.id = users_guilds.guild_id
-         WHERE users_guilds.user_id = ?
-           AND guilds.is_active = 1
-         ORDER BY users_guilds.id`,
+         FROM guilds
+         LEFT JOIN users_guilds
+           ON users_guilds.guild_id = guilds.id
+          AND users_guilds.user_id = ?
+         WHERE guilds.is_active = 1
+           AND (users_guilds.user_id IS NOT NULL OR guilds.owner_id = ?)
+         ORDER BY users_guilds.id IS NULL, users_guilds.id, guilds.id`,
       )
-      .bind(id)
+      .bind(id, id)
       .all<MutualGuildRow>();
     return result.results.map((row) => ({
-      guild:
-        row.guild_id === null
-          ? null
-          : {
-              id: row.guild_id,
-              name: row.guild_name,
-              icon: row.guild_icon,
-            },
+      guild: {
+        id: row.guild_id,
+        name: row.guild_name,
+        icon: row.guild_icon,
+      },
       isAdmin: row.is_admin === 1,
       isDiceWitchAdmin: row.is_dice_witch_admin === 1,
     }));

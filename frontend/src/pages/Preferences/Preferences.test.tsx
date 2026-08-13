@@ -142,6 +142,9 @@ describe("appearance preference authorization", () => {
     expect(
       screen.queryByRole("button", { name: "Server" }),
     ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Refresh servers" }).getAttribute("href"),
+    ).toContain("/api/auth/refresh/discord");
   });
 
   it("confirms before leaving a section with an appearance draft", async () => {
@@ -165,6 +168,22 @@ describe("appearance preference authorization", () => {
     expect(
       await screen.findByRole("heading", { name: "Server appearance" }),
     ).toBeDefined();
+  });
+
+  it("keeps server refresh on the page when draft discard is declined", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockFetch();
+    renderPreferences();
+
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Preset" }),
+      "dice-witch",
+    );
+    await user.click(screen.getByRole("link", { name: "Refresh servers" }));
+
+    expect(confirm).toHaveBeenCalledWith("Discard unsaved appearance changes?");
+    expect(window.location.pathname).not.toBe("/api/auth/refresh/discord");
   });
 
   it("saves camera drafts through the profile Save & apply action", async () => {

@@ -216,8 +216,24 @@ async function createOAuthState(
 ): Promise<Response> {
   let value: Record<string, unknown>;
   try {
-    value = await parseBody(request, ["createdAt", "expiresAt"]);
-    if (!validRange(value.createdAt, value.expiresAt)) {
+    value = await parseBody(request, [
+      "createdAt",
+      "expectedUserId",
+      "expiresAt",
+      "purpose",
+      "returnTo",
+    ]);
+    if (
+      !validRange(value.createdAt, value.expiresAt) ||
+      (value.purpose !== "sign_in" && value.purpose !== "refresh") ||
+      (value.purpose === "sign_in" && value.expectedUserId !== null) ||
+      (value.purpose === "refresh" &&
+        (typeof value.expectedUserId !== "string" ||
+          !SNOWFLAKE.test(value.expectedUserId))) ||
+      typeof value.returnTo !== "string" ||
+      value.returnTo.length < 1 ||
+      value.returnTo.length > 2_048
+    ) {
       throw new Error("OAuth state request is invalid");
     }
   } catch {
@@ -230,6 +246,9 @@ async function createOAuthState(
       token,
       createdAt: value.createdAt as number,
       expiresAt: value.expiresAt as number,
+      purpose: value.purpose,
+      expectedUserId: value.expectedUserId as string | null,
+      returnTo: value.returnTo,
     });
     return result.status === "created"
       ? Response.json({ token }, { status: 201, headers: responseHeaders })

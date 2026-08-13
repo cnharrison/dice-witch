@@ -95,6 +95,9 @@ describe("Data Worker session service", () => {
     const created = await internalRequest("/internal/oauth-states", {
       createdAt,
       expiresAt: createdAt + 10 * 60 * 1_000,
+      purpose: "refresh",
+      expectedUserId: userId,
+      returnTo: "/app/preferences",
     });
     expect(created.status).toBe(201);
     const token = await responseToken(created);
@@ -105,7 +108,14 @@ describe("Data Worker session service", () => {
       consumedAt: createdAt + 1,
     });
     expect(consumed.status).toBe(200);
-    await expect(consumed.json()).resolves.toEqual({ status: "consumed" });
+    await expect(consumed.json()).resolves.toEqual({
+      status: "consumed",
+      context: {
+        purpose: "refresh",
+        expectedUserId: userId,
+        returnTo: "/app/preferences",
+      },
+    });
 
     const replay = await internalRequest("/internal/oauth-states/consume", {
       token,
@@ -185,6 +195,9 @@ describe("Data Worker session service", () => {
     const state = await internalRequest("/internal/oauth-states", {
       createdAt,
       expiresAt: createdAt + 10 * 60 * 1_000,
+      purpose: "sign_in",
+      expectedUserId: null,
+      returnTo: "/app",
     });
     const session = await internalRequest("/internal/sessions", {
       userId,

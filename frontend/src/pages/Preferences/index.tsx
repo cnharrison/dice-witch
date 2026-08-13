@@ -2,6 +2,7 @@ import { AppearanceEditorV3 } from "@/components/AppearanceEditorV3";
 import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { SearchableGuildPicker } from "@/components/SearchableGuildPicker";
 import { ServerAppearanceModeV3 } from "@/components/ServerAppearanceModeV3";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useGuild } from "@/context/GuildContext";
@@ -610,6 +611,16 @@ export default function Preferences() {
             Server
           </button>
         )}
+        <Button asChild variant="outline" size="sm" className="ml-auto">
+          <a
+            href={`${appConfig.apiBase}/api/auth/refresh/discord`}
+            onClick={(event) => {
+              if (!discardAppearanceDraft()) event.preventDefault();
+            }}
+          >
+            Refresh servers
+          </a>
+        </Button>
       </nav>
 
       {guildsQuery.isError && (
