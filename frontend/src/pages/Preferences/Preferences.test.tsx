@@ -147,6 +147,7 @@ describe("appearance preference authorization", () => {
       .closest("div");
     const refreshLink = screen.getByRole("link", { name: "Refresh" });
     expect(serverAppearanceBox?.contains(refreshLink)).toBe(true);
+    expect(refreshLink.textContent).toBe("");
     expect(refreshLink.getAttribute("href")).toContain(
       "/api/auth/refresh/discord",
     );

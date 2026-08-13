@@ -565,15 +565,15 @@ export default function Preferences() {
             <h2 id="server-appearance-heading" className="text-xl font-semibold">
               Server appearance
             </h2>
-            <Button asChild size="sm">
+            <Button asChild size="icon">
               <a
                 href={`${appConfig.apiBase}/api/auth/refresh/discord`}
+                aria-label="Refresh"
                 onClick={(event) => {
                   if (!discardAppearanceDraft()) event.preventDefault();
                 }}
               >
                 <RefreshCw aria-hidden="true" />
-                Refresh
               </a>
             </Button>
           </div>
