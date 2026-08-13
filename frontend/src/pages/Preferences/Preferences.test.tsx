@@ -128,7 +128,7 @@ afterEach(() => {
 });
 
 describe("appearance preference authorization", () => {
-  it("shows server refresh only on the server section", async () => {
+  it("shows server refresh inside the Server appearance box", async () => {
     const user = userEvent.setup();
     mockFetch();
     renderPreferences();
@@ -138,15 +138,19 @@ describe("appearance preference authorization", () => {
     expect(screen.getByRole("button", { name: "Personal" })).toBeDefined();
     expect(screen.queryByText("Dice Witch workbench")).toBeNull();
     expect(screen.queryByText(/Start with one design/)).toBeNull();
-    expect(screen.queryByRole("link", { name: "Refresh servers" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Refresh" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Server" }));
 
-    const refreshLink = screen.getByRole("link", { name: "Refresh servers" });
+    const serverAppearanceBox = screen
+      .getByRole("heading", { name: "Server appearance" })
+      .closest("div");
+    const refreshLink = screen.getByRole("link", { name: "Refresh" });
+    expect(serverAppearanceBox?.contains(refreshLink)).toBe(true);
     expect(refreshLink.getAttribute("href")).toContain(
       "/api/auth/refresh/discord",
     );
-    expect(refreshLink.className).toContain("bg-brand");
+    expect(refreshLink.className).not.toContain("bg-brand");
   });
 
   it("confirms before leaving a section with an appearance draft", async () => {
@@ -183,7 +187,7 @@ describe("appearance preference authorization", () => {
       await screen.findByRole("combobox", { name: "Preset" }),
       "dice-witch",
     );
-    await user.click(screen.getByRole("link", { name: "Refresh servers" }));
+    await user.click(screen.getByRole("link", { name: "Refresh" }));
 
     expect(confirm).toHaveBeenCalledWith("Discard unsaved appearance changes?");
     expect(window.location.pathname).not.toBe("/api/auth/refresh/discord");
@@ -345,10 +349,10 @@ describe("appearance preference authorization", () => {
         { timeout: 5_000 },
       ),
     ).toBeDefined();
-    expect(screen.queryByRole("link", { name: "Refresh servers" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Refresh" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Server" }));
 
-    expect(screen.getByRole("link", { name: "Refresh servers" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "Refresh" })).toBeDefined();
   });
 });

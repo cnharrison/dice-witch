@@ -29,6 +29,7 @@ import type {
   GuildAppearanceProfileV4,
 } from "@/types/appearance";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import * as React from "react";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
@@ -560,9 +561,22 @@ export default function Preferences() {
     content = (
       <section aria-labelledby="server-appearance-heading" className="space-y-6">
         <div className="rounded-xl border bg-card p-5 shadow-sm">
-          <h2 id="server-appearance-heading" className="text-xl font-semibold">
-            Server appearance
-          </h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 id="server-appearance-heading" className="text-xl font-semibold">
+              Server appearance
+            </h2>
+            <Button asChild size="sm">
+              <a
+                href={`${appConfig.apiBase}/api/auth/refresh/discord`}
+                onClick={(event) => {
+                  if (!discardAppearanceDraft()) event.preventDefault();
+                }}
+              >
+                <RefreshCw aria-hidden="true" />
+                Refresh
+              </a>
+            </Button>
+          </div>
           <div className="mt-4">
             <SearchableGuildPicker
               guilds={adminGuilds}
@@ -604,18 +618,6 @@ export default function Preferences() {
           >
             Server
           </button>
-        )}
-        {section === "guild" && (
-          <Button asChild variant="brand" size="sm" className="ml-auto">
-            <a
-              href={`${appConfig.apiBase}/api/auth/refresh/discord`}
-              onClick={(event) => {
-                if (!discardAppearanceDraft()) event.preventDefault();
-              }}
-            >
-              Refresh servers
-            </a>
-          </Button>
         )}
       </nav>
 
