@@ -48,6 +48,85 @@ Signed HTTP interactions handle commands. The Gateway handles presence, sessions
 
 The Web/API Worker serves the React application, OAuth and API routes, and the `/interactions` endpoint.
 
+### Roll pipeline
+```mermaid
+flowchart TB
+    accTitle: Dice Witch rolling pipeline from Discord or the web
+    accDescr: Discord interactions and web requests use the same roll domain and graphics pipeline. Every accepted roll returns a result to Discord. A web roll also displays the same result in the browser.
+
+    subgraph sources["1. Accept the roll"]
+        discord_user(["Player uses a Discord roll command"])
+        interactions["Interaction Worker<br/>verify Ed25519 signature"]
+        discord_flow["Acknowledge Discord<br/>and start Roll Work"]
+
+        web_user(["Player uses the web roller"])
+        web_api["Web API<br/>verify session, guild, and channel"]
+        web_flow["Prepare and start<br/>Web Roll delivery"]
+    end
+
+    subgraph authority["2. Generate the authoritative result"]
+        entropy["Web Crypto<br/>new 32-bit roll seed"]
+        roller["Deterministic dice roller<br/>parse notation and resolve modifiers"]
+        outcome["Authoritative roll outcome<br/>faces, totals, and identities"]
+    end
+
+    subgraph graphics["3. Build the graphics"]
+        appearance["Effective appearance<br/>and separate render seed"]
+        model["Render model<br/>result, geometry, and appearance"]
+        canvaskit["CanvasKit API"]
+        skia["Skia graphics engine<br/>CPU-only WebAssembly renderer"]
+        png["Authoritative PNG image"]
+    end
+
+    subgraph discord_delivery["4. Deliver every result to Discord"]
+        message["Discord result message<br/>result data and PNG attachment"]
+        discord_api["Discord API<br/>edit original or send follow-up"]
+        discord_channel(["Discord channel result"])
+    end
+
+    subgraph web_delivery["5. Also display a web-sourced roll in the browser"]
+        web_response["Validated web response<br/>render model, PNG, and result text"]
+        rapier["Rapier tray physics<br/>presentation motion only"]
+        three["Three.js resources<br/>geometry, materials, and lighting"]
+        webgl["WebGL display<br/>server-defined final faces"]
+        fallback["Matching 2D PNG display"]
+    end
+
+    discord_user -->|"POST /interactions"| interactions
+    interactions -->|"Immediate acknowledgement or clatter"| discord_api
+    interactions -->|"Accepted interaction"| discord_flow
+
+    web_user -->|"Prepare, then submit roll"| web_api
+    web_api -->|"Authorized request"| web_flow
+
+    discord_flow -->|"Notation and Discord destination"| entropy
+    web_flow -->|"Notation and Discord destination"| entropy
+    entropy -->|"Seed"| roller
+    roller -->|"RollExecutionResult"| outcome
+
+    outcome -->|"Resolved dice"| model
+    appearance -->|"Appearance recipes and render seed"| model
+    model -->|"Serialized drawing request"| canvaskit
+    canvaskit -->|"Drawing commands"| skia
+    skia -->|"PNG bytes"| png
+
+    outcome -->|"Result data"| message
+    png -->|"Image attachment"| message
+    message --> discord_api
+    discord_api -->|"Published message"| discord_channel
+
+    web_flow -.->|"Web source"| web_response
+    outcome -->|"Result text"| web_response
+    model -->|"Render model"| web_response
+    png -->|"Matching image"| web_response
+    web_response -->|"Prepared blank model"| rapier
+    rapier -->|"Pre-roll transforms"| three
+    web_response -->|"Final render model"| three
+    three -->|"Render and animate"| webgl
+    web_response -->|"2D mode or WebGL unavailable"| fallback
+```
+
+
 ## Repository
 
 - `cloudflare/`: Workers, Durable Objects, shared packages, D1 migrations, tests, and Wrangler examples
