@@ -128,23 +128,25 @@ afterEach(() => {
 });
 
 describe("appearance preference authorization", () => {
-  it("keeps the personal appearance page concise", async () => {
+  it("shows server refresh only on the server section", async () => {
+    const user = userEvent.setup();
     mockFetch();
     renderPreferences();
 
     expect(screen.queryByRole("heading", { name: "Preferences" })).toBeNull();
     expect(await screen.findByRole("region", { name: "Preview" })).toBeDefined();
-    expect(
-      screen.getByRole("button", { name: "Personal" }),
-    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Personal" })).toBeDefined();
     expect(screen.queryByText("Dice Witch workbench")).toBeNull();
     expect(screen.queryByText(/Start with one design/)).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Server" }),
-    ).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "Refresh servers" }).getAttribute("href"),
-    ).toContain("/api/auth/refresh/discord");
+    expect(screen.queryByRole("link", { name: "Refresh servers" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Server" }));
+
+    const refreshLink = screen.getByRole("link", { name: "Refresh servers" });
+    expect(refreshLink.getAttribute("href")).toContain(
+      "/api/auth/refresh/discord",
+    );
+    expect(refreshLink.className).toContain("bg-brand");
   });
 
   it("confirms before leaving a section with an appearance draft", async () => {
@@ -173,9 +175,10 @@ describe("appearance preference authorization", () => {
   it("keeps server refresh on the page when draft discard is declined", async () => {
     const user = userEvent.setup();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    mockFetch();
+    mockFetch({ isAdmin: true });
     renderPreferences();
 
+    await user.click(await screen.findByRole("button", { name: "Server" }));
     await user.selectOptions(
       await screen.findByRole("combobox", { name: "Preset" }),
       "dice-witch",
@@ -329,7 +332,8 @@ describe("appearance preference authorization", () => {
     });
   });
 
-  it("reports guild lookup failures without hiding personal controls", async () => {
+  it("keeps server refresh available when guild lookup fails", async () => {
+    const user = userEvent.setup();
     mockFetch({ guildStatus: 502 });
     renderPreferences();
 
@@ -341,8 +345,10 @@ describe("appearance preference authorization", () => {
         { timeout: 5_000 },
       ),
     ).toBeDefined();
-    expect(
-      screen.queryByRole("button", { name: "Server" }),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "Refresh servers" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Server" }));
+
+    expect(screen.getByRole("link", { name: "Refresh servers" })).toBeDefined();
   });
 });

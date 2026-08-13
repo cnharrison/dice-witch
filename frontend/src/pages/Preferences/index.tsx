@@ -270,12 +270,6 @@ export default function Preferences() {
     }
   }, [selectedGuildId, setSelectedGuildId, soleAdminGuildId]);
 
-  React.useEffect(() => {
-    if (!guildsQuery.isLoading && adminGuilds.length === 0) {
-      setSection("personal");
-    }
-  }, [adminGuilds.length, guildsQuery.isLoading]);
-
   const guildAppearanceQuery = useQuery({
     queryKey: ["appearanceProfileV4", "guild", selectedGuildId],
     queryFn: () => {
@@ -584,7 +578,7 @@ export default function Preferences() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <nav className="mb-6 flex gap-2" aria-label="Appearance sections">
+      <nav className="mb-6 flex flex-wrap gap-2" aria-label="Appearance sections">
         <button
           type="button"
           onClick={() => selectSection("personal")}
@@ -597,7 +591,7 @@ export default function Preferences() {
         >
           Personal
         </button>
-        {adminGuilds.length > 0 && (
+        {!guildsQuery.isLoading && (
           <button
             type="button"
             onClick={() => selectSection("guild")}
@@ -611,16 +605,18 @@ export default function Preferences() {
             Server
           </button>
         )}
-        <Button asChild variant="outline" size="sm" className="ml-auto">
-          <a
-            href={`${appConfig.apiBase}/api/auth/refresh/discord`}
-            onClick={(event) => {
-              if (!discardAppearanceDraft()) event.preventDefault();
-            }}
-          >
-            Refresh servers
-          </a>
-        </Button>
+        {section === "guild" && (
+          <Button asChild variant="brand" size="sm" className="ml-auto">
+            <a
+              href={`${appConfig.apiBase}/api/auth/refresh/discord`}
+              onClick={(event) => {
+                if (!discardAppearanceDraft()) event.preventDefault();
+              }}
+            >
+              Refresh servers
+            </a>
+          </Button>
+        )}
       </nav>
 
       {guildsQuery.isError && (
