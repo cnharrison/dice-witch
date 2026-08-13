@@ -20,7 +20,8 @@ function supportsAllTargetSpecialFormsV4(
     rendererRevision === "canvaskit-v4-r31" ||
     rendererRevision === "canvaskit-v4-r32" ||
     rendererRevision === "canvaskit-v4-r33" ||
-    rendererRevision === "canvaskit-v4-r34"
+    rendererRevision === "canvaskit-v4-r34" ||
+    rendererRevision === "canvaskit-v4-r35"
   );
 }
 

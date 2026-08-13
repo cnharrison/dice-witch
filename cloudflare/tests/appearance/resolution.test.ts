@@ -2023,6 +2023,83 @@ describe("resolveAppearanceRecipeV3", () => {
     }
   });
 
+  it("distributes shared two-color palettes across one-color materials in r35", () => {
+    const colors = ["#f05a24", "#04c9df"] as const;
+    const material = {
+      family: "classic" as const,
+      treatment: "solid" as const,
+      opacity: "opaque" as const,
+      finish: "satin" as const,
+      textureScale: 100,
+    };
+    const solid = appearanceRecipeV3({
+      variation: "fixed",
+      varyBy: "die",
+      colors: { mode: "palette", colors: [...colors] },
+      material: { mode: "fixed", value: material },
+    });
+    const gradient = appearanceRecipeV3({
+      ...solid,
+      material: {
+        mode: "fixed",
+        value: { ...material, treatment: "gradient" },
+      },
+    });
+    const palettes = (
+      recipe: AppearanceRecipeV3,
+      policy: "property-streams-r34" | "property-streams-r35",
+    ) =>
+      Array.from({ length: 24 }, (_, dieIndex) =>
+        resolveAppearanceRecipeV3(
+          recipe,
+          contextV3({ target: "d6", dieIdentity: `custom:${String(dieIndex)}` }),
+          policy,
+        ).appearance.palette,
+      );
+
+    expect(new Set(palettes(solid, "property-streams-r34").flat())).toEqual(
+      new Set([colors[0]]),
+    );
+    const solidR35 = palettes(solid, "property-streams-r35");
+    expect(
+      solidR35.every((palette) => new Set(palette).size === 1),
+    ).toBe(true);
+    expect(new Set(solidR35.flat())).toEqual(new Set(colors));
+
+    const gradientR35 = palettes(gradient, "property-streams-r35");
+    expect(
+      gradientR35.every((palette) =>
+        colors.every((color) => palette.includes(color)),
+      ),
+    ).toBe(true);
+    expect(new Set(gradientR35.map(([color]) => color))).toEqual(
+      new Set(colors),
+    );
+
+    const generatedSolid = appearanceRecipeV3({
+      ...solid,
+      colors: { mode: "vivid-random-pair" },
+    });
+    const generatedGradient = appearanceRecipeV3({
+      ...gradient,
+      colors: { mode: "vivid-random-pair" },
+    });
+    const generatedGradientR35 = palettes(
+      generatedGradient,
+      "property-streams-r35",
+    );
+    const generatedColors = new Set(generatedGradientR35[0]);
+    expect(generatedColors.size).toBe(2);
+    expect(
+      new Set(
+        generatedGradientR35.map((palette) => [...palette].sort().join(",")),
+      ).size,
+    ).toBe(1);
+    expect(
+      new Set(palettes(generatedSolid, "property-streams-r35").flat()),
+    ).toEqual(generatedColors);
+  });
+
   it("keeps every r27 chosen random partner visibly distinct", () => {
     const recipe = appearanceRecipeV3({
       variation: "fixed",
@@ -2110,6 +2187,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ["canvaskit-v4-r32", "property-streams-r32"],
     ["canvaskit-v4-r33", "property-streams-r33"],
     ["canvaskit-v4-r34", "property-streams-r34"],
+    ["canvaskit-v4-r35", "property-streams-r35"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -2132,6 +2210,7 @@ describe("resolveAppearanceRecipeV3", () => {
           rendererRevision !== "canvaskit-v4-r32" &&
           rendererRevision !== "canvaskit-v4-r33" &&
           rendererRevision !== "canvaskit-v4-r34" &&
+          rendererRevision !== "canvaskit-v4-r35" &&
           r32OnlyStyle
         ) {
           continue;
