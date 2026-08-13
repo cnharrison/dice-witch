@@ -2836,19 +2836,14 @@ describe("RollWork Durable Object", () => {
         "UPDATE roll_lifecycle_outbox SET synced_revision = ?",
         snapshot.revision,
       );
+      state.storage.sql.exec(
+        "UPDATE interaction_delivery SET delay_ms = 5000",
+      );
     });
 
     await evictDurableObject(stub);
-    await runInDurableObject(stub, async (instance, state) => {
-      let logOutboxCount = 0;
-      for (let wake = 0; wake < 5 && logOutboxCount === 0; wake += 1) {
-        await callAlarm(instance);
-        logOutboxCount = state.storage.sql
-          .exec<{ count: number }>(
-            "SELECT COUNT(*) AS count FROM roll_log_outbox",
-          )
-          .one().count;
-      }
+    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
+    await runInDurableObject(stub, (_instance, state) => {
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
@@ -2870,7 +2865,13 @@ describe("RollWork Durable Object", () => {
           context: { rendererRevision: string | null };
         }).context.rendererRevision,
       ).toBeNull();
-      expect(logOutboxCount).toBe(1);
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM roll_log_outbox",
+          )
+          .one().count,
+      ).toBe(1);
       const delivery = state.storage.sql
         .exec<{
           clatter_sent_at: number;
@@ -2887,8 +2888,8 @@ describe("RollWork Durable Object", () => {
       state.storage.sql.exec(
         "UPDATE interaction_delivery SET result_not_before = 0",
       );
-      await callAlarm(instance);
     });
+    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
 
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
