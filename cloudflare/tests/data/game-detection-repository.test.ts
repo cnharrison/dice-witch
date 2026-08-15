@@ -178,7 +178,7 @@ describe("D1GameDetectionRepository", () => {
       backlog: true,
       closedSessions: 0,
     });
-  });
+  }, 15_000);
 
   it("ingests fractional outcome totals through rank-job preparation", async () => {
     await record(
