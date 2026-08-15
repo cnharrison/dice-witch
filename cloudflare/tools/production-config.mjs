@@ -23,6 +23,7 @@ const DATABASE_ID = "9a8f7de1-8fa6-400b-8694-609fde81f2db";
 const SECRETS_STORE_ID = "68e7aff3814e40d0afbcf2a9f4357d8f";
 const DISCORD_APPLICATION_ID = "808161585876697108";
 const ROLL_LIFECYCLE_TELEMETRY_VERSION = "2";
+const PRODUCTION_APPEARANCE_POLICY = "r37";
 const REQUIRED_VALUE_KEYS = [
   "d1DatabaseId",
   "d1DatabaseName",
@@ -290,18 +291,18 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
 
   configs.roll.vars = {
     ...configs.roll.vars,
-    ROLL_VIEW_POLICY: "r34",
+    ROLL_VIEW_POLICY: PRODUCTION_APPEARANCE_POLICY,
   };
 
   configs["web-api"].routes = [
     { pattern: new URL(values.frontendOrigin).hostname, custom_domain: true },
   ];
   configs.data.vars = {
-    APPEARANCE_CATALOG_POLICY: "r34",
+    APPEARANCE_CATALOG_POLICY: PRODUCTION_APPEARANCE_POLICY,
   };
 
   configs["web-api"].vars = {
-    APPEARANCE_CATALOG_POLICY: "r34",
+    APPEARANCE_CATALOG_POLICY: PRODUCTION_APPEARANCE_POLICY,
     DISCORD_CLIENT_ID: values.discordApplicationId,
     DISCORD_REDIRECT_URI: `${values.frontendOrigin}/api/auth/callback/discord`,
     FRONTEND_ORIGIN: values.frontendOrigin,
@@ -394,14 +395,28 @@ export function validateProductionConfigs(configs, expectedSha) {
   if (configs.roll?.vars?.ROLL_RENDER_VERSION !== "4") {
     errors.push("Production Roll render version must be 4");
   }
-  if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r34") {
-    errors.push("Production Roll view policy must be r34");
+  if (
+    configs.roll?.vars?.ROLL_VIEW_POLICY !== PRODUCTION_APPEARANCE_POLICY
+  ) {
+    errors.push(
+      `Production Roll view policy must be ${PRODUCTION_APPEARANCE_POLICY}`,
+    );
   }
-  if (configs.data?.vars?.APPEARANCE_CATALOG_POLICY !== "r34") {
-    errors.push("Production Data appearance catalog policy must be r34");
+  if (
+    configs.data?.vars?.APPEARANCE_CATALOG_POLICY !==
+    PRODUCTION_APPEARANCE_POLICY
+  ) {
+    errors.push(
+      `Production Data appearance catalog policy must be ${PRODUCTION_APPEARANCE_POLICY}`,
+    );
   }
-  if (configs["web-api"]?.vars?.APPEARANCE_CATALOG_POLICY !== "r34") {
-    errors.push("Production Web API appearance catalog policy must be r34");
+  if (
+    configs["web-api"]?.vars?.APPEARANCE_CATALOG_POLICY !==
+    PRODUCTION_APPEARANCE_POLICY
+  ) {
+    errors.push(
+      `Production Web API appearance catalog policy must be ${PRODUCTION_APPEARANCE_POLICY}`,
+    );
   }
   if (
     configs.interactions?.durable_objects?.bindings?.length !== 2 ||
