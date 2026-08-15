@@ -1,12 +1,12 @@
+import {
+  synchronizeGuildProof,
+  type GuildMembershipProof,
+} from "./guild-authorization";
 import { json } from "./responses";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-type MembershipInspection =
-  | { status: "found"; isAdmin: boolean; isDiceWitchAdmin: boolean }
-  | { status: "missing" };
 
 type SavedRollApiEnv = {
   DATA_SERVICE: Fetcher;
@@ -14,7 +14,7 @@ type SavedRollApiEnv = {
     inspectMembership(
       guildId: string,
       userId: string,
-    ): Promise<MembershipInspection>;
+    ): Promise<GuildMembershipProof>;
   };
 };
 
@@ -198,61 +198,16 @@ async function postData(
   );
 }
 
-async function synchronizeGuildProof(
+async function synchronizeSavedRollGuildProof(
   env: SavedRollApiEnv,
   guildId: string,
   userId: string,
   now: number,
-): Promise<MembershipInspection | Response> {
-  let inspection: MembershipInspection;
-  try {
-    inspection = await env.DISCORD_REST.inspectMembership(guildId, userId);
-  } catch {
-    return json({ error: "Saved roll guild authorization failed" }, 502);
-  }
-  const permissions =
-    inspection.status === "found"
-      ? inspection
-      : { isAdmin: false, isDiceWitchAdmin: false };
-  const response = await postData(
-    env.DATA_SERVICE,
-    "/internal/memberships/permissions",
-    {
-      userId,
-      guildId,
-      isAdmin: permissions.isAdmin,
-      isDiceWitchAdmin: permissions.isDiceWitchAdmin,
-      mutationId: `saved-roll-proof:${crypto.randomUUID()}`,
-      occurredAt: now,
-    },
-  );
-  if (!response.ok) {
-    return json({ error: "Saved roll guild authorization failed" }, 502);
-  }
-  let result: unknown;
-  try {
-    result = await response.json();
-  } catch {
-    return json({ error: "Saved roll guild authorization failed" }, 502);
-  }
-  if (
-    !isRecord(result) ||
-    (result.status !== "applied" &&
-      result.status !== "existing" &&
-      result.status !== "superseded") ||
-    !isRecord(result.permissions) ||
-    typeof result.permissions.isAdmin !== "boolean" ||
-    typeof result.permissions.isDiceWitchAdmin !== "boolean"
-  ) {
-    return json({ error: "Saved roll guild authorization failed" }, 502);
-  }
-  return inspection.status === "missing"
-    ? inspection
-    : {
-        status: "found",
-        isAdmin: result.permissions.isAdmin,
-        isDiceWitchAdmin: result.permissions.isDiceWitchAdmin,
-      };
+): Promise<GuildMembershipProof | Response> {
+  const result = await synchronizeGuildProof(env, guildId, userId, now);
+  return result.status === "verified"
+    ? result.proof
+    : json({ error: "Saved roll guild authorization failed" }, 502);
 }
 
 function mutationKeys(operation: Route["operation"]): readonly string[] {
@@ -353,7 +308,7 @@ async function authorizedLibraries(
     const batch = candidates.slice(offset, offset + 5);
     const proofs = await Promise.all(
       batch.map((library) =>
-        synchronizeGuildProof(env, library.guildId, userId, now),
+        synchronizeSavedRollGuildProof(env, library.guildId, userId, now),
       ),
     );
     for (let index = 0; index < batch.length; index += 1) {
@@ -542,7 +497,7 @@ export async function handleSavedRollApiRequest(
 
   let authorizationUpdatedAt: number | null = null;
   if (route.owner.type === "guild") {
-    const proof = await synchronizeGuildProof(
+    const proof = await synchronizeSavedRollGuildProof(
       env,
       route.owner.guildId,
       userId,

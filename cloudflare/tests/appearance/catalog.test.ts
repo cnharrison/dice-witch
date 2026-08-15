@@ -154,6 +154,16 @@ describe("built-in appearance catalog", () => {
     }
   });
 
+  it("keeps Tonal Shift on one consistent gradient surface", () => {
+    expect(
+      APPEARANCE_CATALOG_V3.styles.find(({ id }) => id === "tonal-shift")
+        ?.recipe.material,
+    ).toMatchObject({
+      mode: "fixed",
+      value: { family: "classic", treatment: "gradient" },
+    });
+  });
+
   it("publishes target-complete V3 built-ins and approved collectors", () => {
     const v2Ids = APPEARANCE_CATALOG_V2.styles.map(({ id }) => id);
     const v3Ids = BUILTIN_APPEARANCE_STYLES_V3.map(({ id }) => id);

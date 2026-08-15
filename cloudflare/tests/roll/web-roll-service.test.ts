@@ -382,6 +382,10 @@ describe("appearance preview", () => {
       buildAppearancePreviewRenderRequestForPolicyV4(input, "r34")
         .rendererRevision,
     ).toBe("canvaskit-v4-r34");
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r35")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r35");
   });
 
   it("maps built-in Random solid previews across whole dice in r29", () => {

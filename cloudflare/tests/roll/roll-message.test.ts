@@ -133,7 +133,7 @@ describe("buildRollResultMessage", () => {
     });
   });
 
-  it("hides titled result text behind the upper-right action and moves Save below", () => {
+  it("places hidden-result and Save actions together below the image", () => {
     const roll = result(["1d20+5", "2d6"]);
     const message = buildRollResultMessage(roll, {
       source: "discord",
@@ -148,24 +148,26 @@ describe("buildRollResultMessage", () => {
     if (container?.type !== 17) throw new Error("Result container is missing");
 
     expect(container.components[0]).toEqual({
-      type: 9,
-      components: [{ type: 10, content: "## Enchanted sword" }],
-      accessory: {
-        type: 2,
-        style: 2,
-        label: "Text result",
-        custom_id: "text-result:v1:d:1400000000000000000",
-      },
+      type: 10,
+      content: "## Enchanted sword",
     });
     expect(container.components[1]).toMatchObject({ type: 12 });
     expect(container.components[2]).toEqual({
       type: 1,
-      components: [{
-        type: 2,
-        style: 2,
-        label: "Save",
-        custom_id: "save-roll:v1:d:1400000000000000000",
-      }],
+      components: [
+        {
+          type: 2,
+          style: 2,
+          label: "Text result",
+          custom_id: "text-result:v1:d:1400000000000000000",
+        },
+        {
+          type: 2,
+          style: 2,
+          label: "Save",
+          custom_id: "save-roll:v1:d:1400000000000000000",
+        },
+      ],
     });
     expect(componentText(message)).not.toContain(rollResultText(roll));
     expect(componentText(message)).toContain("sent to roller via discord");

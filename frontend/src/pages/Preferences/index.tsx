@@ -2,6 +2,7 @@ import { AppearanceEditorV3 } from "@/components/AppearanceEditorV3";
 import { SparkleLoadingIndicator } from "@/components/SparkleLoadingIndicator";
 import { SearchableGuildPicker } from "@/components/SearchableGuildPicker";
 import { ServerAppearanceModeV3 } from "@/components/ServerAppearanceModeV3";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useGuild } from "@/context/GuildContext";
@@ -28,6 +29,7 @@ import type {
   GuildAppearanceProfileV4,
 } from "@/types/appearance";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import * as React from "react";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
@@ -268,12 +270,6 @@ export default function Preferences() {
       setSelectedGuildId(soleAdminGuildId);
     }
   }, [selectedGuildId, setSelectedGuildId, soleAdminGuildId]);
-
-  React.useEffect(() => {
-    if (!guildsQuery.isLoading && adminGuilds.length === 0) {
-      setSection("personal");
-    }
-  }, [adminGuilds.length, guildsQuery.isLoading]);
 
   const guildAppearanceQuery = useQuery({
     queryKey: ["appearanceProfileV4", "guild", selectedGuildId],
@@ -565,9 +561,22 @@ export default function Preferences() {
     content = (
       <section aria-labelledby="server-appearance-heading" className="space-y-6">
         <div className="rounded-xl border bg-card p-5 shadow-sm">
-          <h2 id="server-appearance-heading" className="text-xl font-semibold">
-            Server appearance
-          </h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 id="server-appearance-heading" className="text-xl font-semibold">
+              Server appearance
+            </h2>
+            <Button asChild size="icon">
+              <a
+                href={`${appConfig.apiBase}/api/auth/refresh/discord`}
+                aria-label="Refresh"
+                onClick={(event) => {
+                  if (!discardAppearanceDraft()) event.preventDefault();
+                }}
+              >
+                <RefreshCw aria-hidden="true" />
+              </a>
+            </Button>
+          </div>
           <div className="mt-4">
             <SearchableGuildPicker
               guilds={adminGuilds}
@@ -583,7 +592,7 @@ export default function Preferences() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <nav className="mb-6 flex gap-2" aria-label="Appearance sections">
+      <nav className="mb-6 flex flex-wrap gap-2" aria-label="Appearance sections">
         <button
           type="button"
           onClick={() => selectSection("personal")}
@@ -596,7 +605,7 @@ export default function Preferences() {
         >
           Personal
         </button>
-        {adminGuilds.length > 0 && (
+        {!guildsQuery.isLoading && (
           <button
             type="button"
             onClick={() => selectSection("guild")}

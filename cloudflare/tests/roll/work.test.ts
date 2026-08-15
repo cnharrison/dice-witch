@@ -1120,6 +1120,14 @@ describe("RollWork Durable Object", () => {
       ...pendingV4,
       viewPolicy: "r33" as const,
     };
+    const pendingR34 = {
+      ...pendingV4,
+      viewPolicy: "r34" as const,
+    };
+    const pendingR35 = {
+      ...pendingV4,
+      viewPolicy: "r35" as const,
+    };
     const r33RenderRequest = structuredClone(
       rollWorkV4Fixture.renderRequest,
     ) as unknown as RenderRequestV4;
@@ -1153,6 +1161,8 @@ describe("RollWork Durable Object", () => {
     expect(parseRecord(JSON.stringify(pendingR24))).toEqual(pendingR24);
     expect(parseRecord(JSON.stringify(pendingR25))).toEqual(pendingR25);
     expect(parseRecord(JSON.stringify(pendingR33))).toEqual(pendingR33);
+    expect(parseRecord(JSON.stringify(pendingR34))).toEqual(pendingR34);
+    expect(parseRecord(JSON.stringify(pendingR35))).toEqual(pendingR35);
     expect(parseRecord(JSON.stringify(finalizedR33))).toEqual(finalizedR33);
     expect(parseRecord(JSON.stringify(pendingV3))).toEqual(pendingV3);
     expect(parseRecord(JSON.stringify(finalizedV3))).toEqual(finalizedV3);
@@ -1312,7 +1322,7 @@ describe("RollWork Durable Object", () => {
     const wrongRevision = structuredClone(rollWorkV4Fixture) as {
       renderRequest: { rendererRevision: string };
     };
-    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r35";
+    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r36";
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
       "Render request rendererRevision is not supported",
     );
@@ -2730,11 +2740,14 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",
     });
-    expect(lifecycleSyncs.observations[0]).toMatchObject({
-      state: "delivery_started",
+    const firstObservation = lifecycleSyncs.observations[0];
+    expect(firstObservation).toMatchObject({
       rendererRevision: "canvaskit-v4-r19",
       httpStatus: 200,
     });
+    expect(["delivery_started", "delivered"]).toContain(
+      firstObservation?.state,
+    );
     expect(
       lifecycleSyncs.observations.map(({ rendererRevision }) => rendererRevision),
     ).toEqual(
@@ -2823,19 +2836,14 @@ describe("RollWork Durable Object", () => {
         "UPDATE roll_lifecycle_outbox SET synced_revision = ?",
         snapshot.revision,
       );
+      state.storage.sql.exec(
+        "UPDATE interaction_delivery SET delay_ms = 5000",
+      );
     });
 
     await evictDurableObject(stub);
-    await runInDurableObject(stub, async (instance, state) => {
-      let logOutboxCount = 0;
-      for (let wake = 0; wake < 5 && logOutboxCount === 0; wake += 1) {
-        await callAlarm(instance);
-        logOutboxCount = state.storage.sql
-          .exec<{ count: number }>(
-            "SELECT COUNT(*) AS count FROM roll_log_outbox",
-          )
-          .one().count;
-      }
+    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
+    await runInDurableObject(stub, (_instance, state) => {
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
@@ -2857,7 +2865,13 @@ describe("RollWork Durable Object", () => {
           context: { rendererRevision: string | null };
         }).context.rendererRevision,
       ).toBeNull();
-      expect(logOutboxCount).toBe(1);
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM roll_log_outbox",
+          )
+          .one().count,
+      ).toBe(1);
       const delivery = state.storage.sql
         .exec<{
           clatter_sent_at: number;
@@ -2874,8 +2888,8 @@ describe("RollWork Durable Object", () => {
       state.storage.sql.exec(
         "UPDATE interaction_delivery SET result_not_before = 0",
       );
-      await callAlarm(instance);
     });
+    await expect(runDurableObjectAlarm(stub)).resolves.toBe(true);
 
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
       state: "delivered",

@@ -63,6 +63,52 @@ type PixelGeneratorV4<Material extends AppearanceMaterialV4> = (
   material: Material,
 ) => TextureColorV4;
 
+export type MaterialColorEffectV4 =
+  | "selected-colors"
+  | "one-selected-color"
+  | "lightens-selected-colors"
+  | "adds-own-colors";
+
+export function materialColorEffectV4(
+  material: AppearanceMaterialV4,
+): MaterialColorEffectV4 {
+  if (
+    material.family === "metal" ||
+    material.family === "hollow-metal" ||
+    material.family === "fantasy" ||
+    (material.family === "wood" && material.finish === "vine-carved") ||
+    (material.family === "sharp-resin" &&
+      ["botanical", "foil", "mica"].includes(material.inclusion))
+  ) {
+    return "adds-own-colors";
+  }
+  if (
+    (material.family === "classic" && material.opacity === "translucent") ||
+    (material.family === "sharp-resin" &&
+      (material.clarity > 0 || material.finish === "frosted")) ||
+    (material.family === "liquid-core" &&
+      (material.clarity > 0 || material.finish === "frosted")) ||
+    (material.family === "glass" &&
+      (material.clarity > 0 || material.finish === "frosted")) ||
+    (material.family === "gemstone" &&
+      (material.finish === "frosted" || material.finish === "raw-cut")) ||
+    (material.family === "stone" && material.finish === "weathered")
+  ) {
+    return "lightens-selected-colors";
+  }
+  if (material.family === "classic" && material.treatment === "solid") {
+    return "one-selected-color";
+  }
+  return "selected-colors";
+}
+
+export function materialPreservesColorsV4(
+  material: AppearanceMaterialV4,
+): boolean {
+  const effect = materialColorEffectV4(material);
+  return effect === "selected-colors" || effect === "one-selected-color";
+}
+
 function byte(value: number): number {
   return Math.max(0, Math.min(BYTE_MAX, Math.round(value)));
 }

@@ -71,6 +71,40 @@ describe("D1MembershipRepository", () => {
     ]);
   });
 
+  it("includes active guilds owned by the user without a stored membership", async () => {
+    const ownedGuildId = "100000000000000004";
+    const inactiveOwnedGuildId = "100000000000000005";
+    await dataEnv.DATA.batch([
+      dataEnv.DATA
+        .prepare(
+          `INSERT INTO guilds (
+             id, name, owner_id, created_at, updated_at, is_active
+           ) VALUES (?, 'Owned Guild', ?, ?, ?, 1),
+                    (?, 'Inactive Owned Guild', ?, ?, ?, 0)`,
+        )
+        .bind(
+          ownedGuildId,
+          userId,
+          occurredAt,
+          occurredAt,
+          inactiveOwnedGuildId,
+          userId,
+          occurredAt,
+          occurredAt,
+        ),
+    ]);
+
+    await expect(
+      new D1MembershipRepository(dataEnv.DATA).listMutualGuilds(userId),
+    ).resolves.toEqual([
+      {
+        guild: { id: ownedGuildId, name: "Owned Guild", icon: null },
+        isAdmin: false,
+        isDiceWitchAdmin: false,
+      },
+    ]);
+  });
+
   it("upserts permissions and records their receipt atomically", async () => {
     const repository = new D1MembershipRepository(dataEnv.DATA);
     const permissions = { isAdmin: true, isDiceWitchAdmin: false };

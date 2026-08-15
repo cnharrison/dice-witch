@@ -96,18 +96,6 @@ function storedSession(): Response {
   });
 }
 
-function membershipResponse(authorized = true): Response {
-  return Response.json({
-    memberships: authorized
-      ? [{
-          guild: { id: guildId, name: "Fixture Guild", icon: null },
-          isAdmin: true,
-          isDiceWitchAdmin: false,
-        }]
-      : [],
-  });
-}
-
 function authenticatedData(
   request: Request,
   appearanceResponse: () => Response,
@@ -232,6 +220,26 @@ describe("web appearance V4 API", () => {
   it("preserves Server authorization and write attribution", async () => {
     const profile = guildProfileV4();
     const requests: Array<{ path: string; body: unknown }> = [];
+    const env = bindings(async (request) => {
+      const path = new URL(request.url).pathname;
+      const body: unknown = await request.json();
+      requests.push({ path, body });
+      if (path === "/internal/sessions/current") return storedSession();
+      if (path === "/internal/memberships/permissions") {
+        return Response.json({
+          status: "applied",
+          permissions: { isAdmin: true, isDiceWitchAdmin: false },
+        });
+      }
+      return Response.json({ status: "applied", revision: 1, profile });
+    });
+    env.DISCORD_REST.inspectMembership = vi.fn(() =>
+      Promise.resolve({
+        status: "found" as const,
+        isAdmin: true,
+        isDiceWitchAdmin: false,
+      }),
+    );
     const response = await handleAuthRequest(
       browserRequest(`/api/guilds/${guildId}/appearance/v4`, {
         method: "PUT",
@@ -241,14 +249,7 @@ describe("web appearance V4 API", () => {
         },
         body: JSON.stringify({ expectedRevision: 0, profile }),
       }),
-      bindings(async (request) => {
-        const path = new URL(request.url).pathname;
-        const body: unknown = await request.json();
-        requests.push({ path, body });
-        if (path === "/internal/sessions/current") return storedSession();
-        if (path === "/internal/memberships/list") return membershipResponse();
-        return Response.json({ status: "applied", revision: 1, profile });
-      }),
+      env,
       vi.fn(),
       () => now,
     );
@@ -265,16 +266,29 @@ describe("web appearance V4 API", () => {
       },
     });
 
+    const deniedEnv = bindings((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/internal/sessions/current") {
+        return Promise.resolve(storedSession());
+      }
+      if (path === "/internal/memberships/permissions") {
+        return Promise.resolve(Response.json({
+          status: "superseded",
+          permissions: { isAdmin: true, isDiceWitchAdmin: false },
+        }));
+      }
+      throw new Error(`Unexpected Data route ${path}`);
+    });
+    deniedEnv.DISCORD_REST.inspectMembership = vi.fn(() =>
+      Promise.resolve({
+        status: "found" as const,
+        isAdmin: false,
+        isDiceWitchAdmin: false,
+      }),
+    );
     const denied = await handleAuthRequest(
       browserRequest(`/api/guilds/${guildId}/appearance/v4`),
-      bindings((request) => {
-        const path = new URL(request.url).pathname;
-        return Promise.resolve(
-          path === "/internal/sessions/current"
-            ? storedSession()
-            : membershipResponse(false),
-        );
-      }),
+      deniedEnv,
       vi.fn(),
       () => now,
     );

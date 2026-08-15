@@ -211,6 +211,16 @@ describe("appearance editor V3 draft operations", () => {
 
     const random = styleRecipe("chaotic");
     expect(random.randomization).toBe("full-spectrum-v2");
+    const customizedRandom = beginAppearanceRecipeEditV3(
+      random,
+      {
+        ...random,
+        font: { mode: "fixed", value: "new-rocker" },
+      },
+      true,
+    );
+    expect(customizedRandom.randomization).toBe("full-spectrum-v2");
+
     const editedRandom = beginAppearanceRecipeEditV3(
       random,
       {

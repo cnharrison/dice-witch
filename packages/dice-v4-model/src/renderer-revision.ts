@@ -207,6 +207,7 @@ const r33 = policy({
   textureGeneration: "r33-v2",
 });
 const r34 = policy({ ...r33 });
+const r35 = policy({ ...r34 });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -243,6 +244,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r32": r32,
   "canvaskit-v4-r33": r33,
   "canvaskit-v4-r34": r34,
+  "canvaskit-v4-r35": r35,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

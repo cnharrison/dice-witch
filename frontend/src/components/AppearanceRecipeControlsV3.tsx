@@ -13,6 +13,7 @@ import type {
   AppearanceCatalogV3,
   AppearanceRecipeV3,
 } from "@/types/appearance";
+import { materialPreservesColorsV4 } from "@dice-witch/dice-v4-model";
 
 function selectionSummary(
   mode: "fixed" | "allowlist" | "weighted",
@@ -23,6 +24,15 @@ function selectionSummary(
   if (mode === "fixed") return fixedName;
   if (mode === "weighted") return `Weighted mix · ${count} ${noun}`;
   return `${count} ${noun}`;
+}
+
+function materialColorStatus(materials: AppearanceRecipeV3["material"]): string {
+  const values = selectionValuesV3(materials);
+  const altersColors = values.some(
+    (material) => !materialPreservesColorsV4(material),
+  );
+  if (!altersColors) return "";
+  return values.length === 1 ? " · Alters colors" : " · Some alter colors";
 }
 
 function SummaryField({ label, value }: { label: string; value: string }) {
@@ -59,6 +69,13 @@ export function AppearanceRecipeControlsV3({
   if (material === undefined) {
     throw new Error("Appearance recipe catalog metadata is missing");
   }
+  const materialSummary = selectionSummary(
+    recipe.material.mode,
+    materials.length,
+    material.name,
+    "materials",
+  );
+  const colorStatus = materialColorStatus(recipe.material);
   const fontValue = recipe.font.mode === "fixed" ? recipe.font.value : null;
   const usesCuratedMaterialPalette =
     recipe.material.mode === "fixed" &&
@@ -74,14 +91,6 @@ export function AppearanceRecipeControlsV3({
 
   return (
     <div className="space-y-5">
-      {!usesCuratedMaterialPalette && (
-        <AppearanceColorControlsV3
-          recipe={recipe}
-          catalog={catalog}
-          onChange={changeColors}
-        />
-      )}
-
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
         <label className="block space-y-1.5 text-xs font-medium">
           <span className="block">Font</span>
@@ -99,12 +108,7 @@ export function AppearanceRecipeControlsV3({
         </label>
         <SummaryField
           label="Material"
-          value={selectionSummary(
-            recipe.material.mode,
-            materials.length,
-            material.name,
-            "materials",
-          )}
+          value={`${materialSummary}${colorStatus}`}
         />
       </div>
 
@@ -114,6 +118,13 @@ export function AppearanceRecipeControlsV3({
           catalog={catalog}
           onChange={changeMaterial}
         />
+        {!usesCuratedMaterialPalette && (
+          <AppearanceColorControlsV3
+            recipe={recipe}
+            catalog={catalog}
+            onChange={changeColors}
+          />
+        )}
         <AppearanceTreatmentControlsV3
           recipe={recipe}
           catalog={catalog}

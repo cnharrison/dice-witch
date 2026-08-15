@@ -1,5 +1,6 @@
 import { AppearanceMaterialOptionV3 } from "@/components/AppearanceMaterialOptionV3";
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -18,9 +19,12 @@ import {
 } from "@/lib/material-weight-percentages";
 import type { AppearanceCatalogV3 } from "@/types/appearance";
 import {
+  materialColorEffectV4,
+  materialPreservesColorsV4,
   parseAppearanceRecipeV3,
   type AppearanceMaterialV4,
   type AppearanceRecipeV3,
+  type MaterialColorEffectV4,
   type MaterialFamilyV4,
 } from "@dice-witch/dice-v4-model";
 import { Info, Plus, Trash2 } from "lucide-react";
@@ -94,6 +98,19 @@ function materialVariant(material: AppearanceMaterialV4): string {
     case "elemental":
     case "paint":
       return plainOptionName(material.style);
+  }
+}
+
+function colorEffectLabel(effect: MaterialColorEffectV4): string {
+  switch (effect) {
+    case "selected-colors":
+      return "Uses selected colors";
+    case "one-selected-color":
+      return "Uses one selected color";
+    case "lightens-selected-colors":
+      return "Lightens selected colors";
+    case "adds-own-colors":
+      return "Adds its own colors";
   }
 }
 
@@ -234,6 +251,24 @@ export function AppearanceMaterialControlsV3({
     setEntries(nextEntries);
   };
 
+  const preserveColors = () => {
+    let nextEntries = entries.filter(({ material }) =>
+      materialPreservesColorsV4(material),
+    );
+    if (nextEntries.length === 0 || nextEntries.length === entries.length) return;
+    if (weighted) {
+      const nextWeights = normalizeMaterialWeightsV3(
+        nextEntries.map(({ weight }) => weight),
+      );
+      nextEntries = nextEntries.map((entry, index) => ({
+        ...entry,
+        weight: nextWeights[index] as number,
+      }));
+    }
+    setSelectedIndex(0);
+    setEntries(nextEntries);
+  };
+
   const addEntry = () => {
     if (selectedAddFamily === undefined) return;
     const material = createDefaultAppearanceMaterialV3(
@@ -257,6 +292,11 @@ export function AppearanceMaterialControlsV3({
 
   const atMaterialLimit =
     multiple && entries.length >= catalog.bounds.maximumMaterialOptions;
+  const alteredColorCount = entries.filter(
+    ({ material }) => !materialPreservesColorsV4(material),
+  ).length;
+  const canPreserveColors =
+    alteredColorCount > 0 && alteredColorCount < entries.length;
   const activeFamilyName = materialNames.get(activeEntry.material.family) ??
     activeEntry.material.family;
   const activeName = `${activeFamilyName} · ${materialVariant(activeEntry.material)}`;
@@ -298,6 +338,9 @@ export function AppearanceMaterialControlsV3({
                     materialNames.get(entry.material.family) ??
                     entry.material.family;
                   const name = `${familyName} · ${materialVariant(entry.material)}`;
+                  const colorStatus = ` · ${colorEffectLabel(
+                    materialColorEffectV4(entry.material),
+                  )}`;
                   const percentage = weighted
                     ? ` — ${formatMaterialWeightPercentV3(
                         materialWeights[index] as number,
@@ -309,12 +352,28 @@ export function AppearanceMaterialControlsV3({
                       value={index}
                     >
                       {name}
+                      {colorStatus}
                       {percentage}
                     </option>
                   );
                 })}
               </AppearanceSelectV3>
             </label>
+            {alteredColorCount > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">Some materials alter colors</Badge>
+                {canPreserveColors && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={preserveColors}
+                  >
+                    Preserve colors
+                  </Button>
+                )}
+              </div>
+            )}
             {weighted && (
               <div className="block max-w-xl space-y-1.5 text-xs font-medium">
                 <div className="flex items-center justify-between gap-3">
@@ -374,9 +433,14 @@ export function AppearanceMaterialControlsV3({
           aria-labelledby="material-editor-heading"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 id="material-editor-heading" className="text-sm font-semibold">
-              Edit {activeName}
-            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 id="material-editor-heading" className="text-sm font-semibold">
+                Edit {activeName}
+              </h3>
+              <Badge variant="outline">
+                {colorEffectLabel(materialColorEffectV4(activeEntry.material))}
+              </Badge>
+            </div>
             {multiple && entries.length > 1 && (
               <Button
                 type="button"

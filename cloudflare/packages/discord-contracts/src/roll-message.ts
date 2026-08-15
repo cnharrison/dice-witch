@@ -236,6 +236,12 @@ function actionRow(label: string, customId: string): DiscordContainerChild {
 }
 
 function headingAction(options: RollResultMessageOptions) {
+  if (
+    options.textResultCustomId !== undefined &&
+    options.saveRollCustomId !== undefined
+  ) {
+    return null;
+  }
   if (options.textResultCustomId !== undefined) {
     return actionButton("Text result", options.textResultCustomId);
   }
@@ -278,18 +284,29 @@ function resultContent(
 function textResultAction(
   options: RollResultMessageOptions,
 ): DiscordContainerChild[] {
-  return options.title === null && options.textResultCustomId !== undefined
+  return options.title === null &&
+      options.textResultCustomId !== undefined &&
+      options.saveRollCustomId === undefined
     ? [actionRow("Text result", options.textResultCustomId)]
     : [];
 }
 
-function movedSaveAction(
+function combinedActions(
   options: RollResultMessageOptions,
 ): DiscordContainerChild[] {
-  return options.textResultCustomId !== undefined &&
-      options.saveRollCustomId !== undefined
-    ? [actionRow("Save", options.saveRollCustomId)]
-    : [];
+  if (
+    options.textResultCustomId === undefined ||
+    options.saveRollCustomId === undefined
+  ) {
+    return [];
+  }
+  return [{
+    type: 1,
+    components: [
+      actionButton("Text result", options.textResultCustomId),
+      actionButton("Save", options.saveRollCustomId),
+    ],
+  }];
 }
 
 export function buildRollResultMessage(
@@ -339,7 +356,7 @@ export function buildRollResultMessage(
         },
       ],
     },
-    ...movedSaveAction(options),
+    ...combinedActions(options),
     { type: 14, divider: true, spacing: 1 },
     {
       type: 10,

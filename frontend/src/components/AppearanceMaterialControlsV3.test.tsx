@@ -41,6 +41,21 @@ describe("AppearanceMaterialControlsV3", () => {
       name: "Material in mix",
     });
     expect(within(selector).getAllByRole("option")).toHaveLength(23);
+    expect(
+      within(selector).getByRole("option", {
+        name: /Classic · Solid.*Uses one selected color/,
+      }),
+    ).toBeDefined();
+    expect(
+      within(selector).getByRole("option", {
+        name: /Liquid core · Vortex.*Lightens selected colors/,
+      }),
+    ).toBeDefined();
+    expect(
+      within(selector).getByRole("option", {
+        name: /Metal · Brass.*Adds its own colors/,
+      }),
+    ).toBeDefined();
     expect(within(mix).getAllByRole("slider")).toHaveLength(1);
     expect(screen.getAllByLabelText("Material")).toHaveLength(1);
 
@@ -115,6 +130,35 @@ describe("AppearanceMaterialControlsV3", () => {
     });
     expect(value.form.policy).toBe("material-default-v1");
     expect(screen.queryByText(/Not authored/i)).toBeNull();
+  });
+
+  it("preserves selected colors and rebalances the remaining mix", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={recipe("chaotic")} />);
+
+    expect(screen.getByText("Some materials alter colors")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Preserve colors" }));
+
+    const value = JSON.parse(
+      screen.getByTestId("recipe").textContent ?? "null",
+    ) as AppearanceRecipeV3;
+    if (value.material.mode !== "weighted") {
+      throw new Error("Weighted fixture is missing");
+    }
+    expect(value.material.options).toHaveLength(18);
+    expect(
+      value.material.options.some(({ value: material }) =>
+        ["sharp-resin", "liquid-core", "glass", "metal"].includes(
+          material.family,
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      value.material.options.reduce((sum, option) => sum + option.weight, 0),
+    ).toBe(1000);
+    expect(
+      screen.queryByRole("button", { name: "Preserve colors" }),
+    ).toBeNull();
   });
 
   it("redistributes one active share slider while keeping an exact 100% total", () => {

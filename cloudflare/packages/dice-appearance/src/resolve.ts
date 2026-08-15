@@ -903,7 +903,8 @@ export type AppearanceResolutionSeedPolicyV3 =
   | "property-streams-r31"
   | "property-streams-r32"
   | "property-streams-r33"
-  | "property-streams-r34";
+  | "property-streams-r34"
+  | "property-streams-r35";
 
 function usesR27ColorBehaviorV3(
   policy: AppearanceResolutionSeedPolicyV3,
@@ -916,7 +917,8 @@ function usesR27ColorBehaviorV3(
     policy === "property-streams-r31" ||
     policy === "property-streams-r32" ||
     policy === "property-streams-r33" ||
-    policy === "property-streams-r34"
+    policy === "property-streams-r34" ||
+    policy === "property-streams-r35"
   );
 }
 
@@ -959,7 +961,8 @@ function propertySeedV3(
       policy === "property-streams-r31" ||
       policy === "property-streams-r32" ||
       policy === "property-streams-r33" ||
-      policy === "property-streams-r34") &&
+      policy === "property-streams-r34" ||
+      policy === "property-streams-r35") &&
     (usesFullSpectrumRandomizationV3(recipe) ||
       recipe.randomization === "one-palette-color-v1");
   const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
@@ -1029,7 +1032,7 @@ function resolveColorsV3(
       .reduce((total, channel) => total + channel, 0) / 3;
     const pair: [string, string] = [
       primary,
-      mixColor(primary, brightness < 128 ? 255 : 0, 0.5),
+      mixColor(primary, brightness < 128 ? 255 : 0, 0.25),
     ];
     return { ordered: [...pair], pair };
   }
@@ -1048,6 +1051,23 @@ function colorsFromPaletteV3(
     ...palette.slice(2),
   ];
   return { ordered, pair: [ordered[0], ordered[1]] };
+}
+
+function rotateColorsV3(colors: NativeColors, start: number): NativeColors {
+  const ordered = [
+    ...colors.ordered.slice(start),
+    ...colors.ordered.slice(0, start),
+  ] as [string, string, ...string[]];
+  return { ordered, pair: [ordered[0], ordered[1]] };
+}
+
+function distributesSharedPaletteV3(recipe: AppearanceRecipeV3): boolean {
+  return (
+    recipe.randomization === undefined &&
+    (recipe.colors.mode === "palette" ||
+      recipe.colors.mode === "random-pair" ||
+      recipe.colors.mode === "vivid-random-pair")
+  );
 }
 
 function fullSpectrumGradientColorsV3(seed: number): NativeColors {
@@ -1237,7 +1257,8 @@ export function resolveAppearanceRecipeV3(
   context: AppearanceResolutionContextV3,
   seedPolicy: AppearanceResolutionSeedPolicyV3 = "legacy",
 ): ResolvedAppearanceV3 {
-  const usesR34 = seedPolicy === "property-streams-r34";
+  const usesR35 = seedPolicy === "property-streams-r35";
+  const usesR34 = seedPolicy === "property-streams-r34" || usesR35;
   const usesR33 = seedPolicy === "property-streams-r33" || usesR34;
   const usesR32OrLater = seedPolicy === "property-streams-r32" || usesR33;
   const recipe = usesR34
@@ -1268,7 +1289,8 @@ export function resolveAppearanceRecipeV3(
   const usesR30 = seedPolicy === "property-streams-r30";
   const usesR31 = seedPolicy === "property-streams-r31";
   let specialFormRevision: RendererRevisionV4 | undefined;
-  if (usesR34) specialFormRevision = "canvaskit-v4-r34";
+  if (usesR35) specialFormRevision = "canvaskit-v4-r35";
+  else if (usesR34) specialFormRevision = "canvaskit-v4-r34";
   else if (usesR33) specialFormRevision = "canvaskit-v4-r33";
   else if (usesR32OrLater) specialFormRevision = "canvaskit-v4-r32";
   else if (usesR31) specialFormRevision = "canvaskit-v4-r31";
@@ -1324,6 +1346,19 @@ export function resolveAppearanceRecipeV3(
     seedPolicy,
     randomSpecial?.palette,
   );
+  if (usesR35 && distributesSharedPaletteV3(recipe)) {
+    colors = rotateColorsV3(
+      colors,
+      propertyRandomV3(
+        recipe,
+        context,
+        seed,
+        seedPolicy,
+        "color-order",
+        recipe.colors,
+      ).index(colors.ordered.length),
+    );
+  }
   if (usesR33 && material.family === "fantasy") {
     colors = colorsFromPaletteV3(
       FANTASY_ESSENCE_PALETTES_R33_V4[material.essence],

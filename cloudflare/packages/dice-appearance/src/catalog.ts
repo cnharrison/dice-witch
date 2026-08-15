@@ -204,12 +204,12 @@ const COLOR_MODES_V3 = catalogOptions(
     "vivid-random-pair",
   ] as const,
   {
-    solid: "One color",
-    tonal: "One color + shade",
-    random: "Chosen color + random",
-    palette: "Choose colors",
-    "random-pair": "Two random colors",
-    "vivid-random-pair": "Two bright random colors",
+    solid: "One base color",
+    tonal: "One base color + shade",
+    random: "Chosen + random color",
+    palette: "Custom palette",
+    "random-pair": "Random palette · 2 colors",
+    "vivid-random-pair": "Bright random palette · 2 colors",
   },
 );
 const SELECTION_MODES_V3 = catalogOptions(
@@ -897,7 +897,7 @@ const surfaceStyles = [
       variation: "curated",
       varyBy: "die",
       colors: { mode: "tonal", primary: "#6f42c1" },
-      fill: proceduralFill(),
+      fill: { mode: "fixed", value: { type: "gradient" } },
       font: proceduralFont(),
     },
   ),

@@ -167,6 +167,20 @@ export class D1RollAccountingRepository {
           ),
         this.db
           .prepare(
+            `INSERT INTO users_guilds (
+               user_id, guild_id, is_admin, is_dice_witch_admin,
+               created_at, updated_at
+             ) VALUES (?, ?, 0, 0, ?, ?)
+             ON CONFLICT(user_id, guild_id) DO NOTHING`,
+          )
+          .bind(
+            input.userId,
+            input.guildId,
+            input.accountedAt,
+            input.accountedAt,
+          ),
+        this.db
+          .prepare(
             `INSERT INTO interaction_receipts (
                interaction_id, command_name, guild_id, user_id,
                received_at, accounted_at, request_fingerprint
@@ -182,8 +196,11 @@ export class D1RollAccountingRepository {
           ),
       ]);
       if (
-        results.length !== 3 ||
-        results.some((result) => result.meta.changes !== 1)
+        results.length !== 4 ||
+        results[0]?.meta.changes !== 1 ||
+        results[1]?.meta.changes !== 1 ||
+        (results[2]?.meta.changes !== 0 && results[2]?.meta.changes !== 1) ||
+        results[3]?.meta.changes !== 1
       ) {
         throw new Error("Roll accounting mutation was not atomic");
       }

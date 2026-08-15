@@ -75,7 +75,12 @@ describe("D1RollAccountingRepository", () => {
       received_at: receivedAt,
       accounted_at: accountedAt,
     });
-
+    await expect(
+      dataEnv.DATA.prepare(
+        `SELECT is_admin, is_dice_witch_admin
+         FROM users_guilds WHERE user_id = ? AND guild_id = ?`,
+      ).bind(userId, guildId).first(),
+    ).resolves.toEqual({ is_admin: 0, is_dice_witch_admin: 0 });
   });
 
   it("increments existing non-null counters and refreshes the username", async () => {
@@ -113,6 +118,40 @@ describe("D1RollAccountingRepository", () => {
       username: "fixture-user",
       created_at: receivedAt - 1,
       updated_at: accountedAt,
+    });
+  });
+
+  it("preserves existing membership permissions while accounting a roll", async () => {
+    await dataEnv.DATA.batch([
+      dataEnv.DATA.prepare(
+        `INSERT INTO guilds (id, name, roll_count, created_at, updated_at)
+         VALUES (?, 'Existing Guild', 7, ?, ?)`,
+      ).bind(guildId, receivedAt - 1, receivedAt - 1),
+      dataEnv.DATA.prepare(
+        `INSERT INTO users (
+           id, username, roll_count, created_at, updated_at
+         ) VALUES (?, 'fixture-user', 11, ?, ?)`,
+      ).bind(userId, receivedAt - 1, receivedAt - 1),
+      dataEnv.DATA.prepare(
+        `INSERT INTO users_guilds (
+           user_id, guild_id, is_admin, is_dice_witch_admin,
+           created_at, updated_at
+         ) VALUES (?, ?, 1, 1, ?, ?)`,
+      ).bind(userId, guildId, receivedAt - 1, receivedAt - 1),
+    ]);
+
+    await new D1RollAccountingRepository(dataEnv.DATA).account(input);
+
+    await expect(
+      dataEnv.DATA.prepare(
+        `SELECT is_admin, is_dice_witch_admin, created_at, updated_at
+         FROM users_guilds WHERE user_id = ? AND guild_id = ?`,
+      ).bind(userId, guildId).first(),
+    ).resolves.toEqual({
+      is_admin: 1,
+      is_dice_witch_admin: 1,
+      created_at: receivedAt - 1,
+      updated_at: receivedAt - 1,
     });
   });
 

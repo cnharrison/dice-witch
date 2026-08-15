@@ -66,6 +66,7 @@ import {
   buildRollRenderRequestR32V4,
   buildRollRenderRequestR33V4,
   buildRollRenderRequestR34V4,
+  buildRollRenderRequestR35V4,
 } from "../../../packages/roll-render-model/src";
 import {
   loadEffectiveAppearanceV4,
@@ -95,6 +96,7 @@ const ROLL_VIEW_BUILDERS_V4 = {
   r32: buildRollRenderRequestR32V4,
   r33: buildRollRenderRequestR33V4,
   r34: buildRollRenderRequestR34V4,
+  r35: buildRollRenderRequestR35V4,
 } satisfies Record<
   Exclude<RollViewPolicy, "r19">,
   typeof buildRollRenderRequestR20V4
@@ -665,6 +667,15 @@ export function buildAppearancePreviewRenderRequestR34V4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR35V4(
+  value: unknown,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR35V4,
+  );
+}
+
 export function buildAppearancePreviewRenderRequestForPolicyV4(
   value: unknown,
   viewPolicy: RollViewPolicy,
@@ -702,6 +713,8 @@ export function buildAppearancePreviewRenderRequestForPolicyV4(
       return buildAppearancePreviewRenderRequestR33V4(value);
     case "r34":
       return buildAppearancePreviewRenderRequestR34V4(value);
+    case "r35":
+      return buildAppearancePreviewRenderRequestR35V4(value);
   }
 }
 

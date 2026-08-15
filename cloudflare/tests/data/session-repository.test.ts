@@ -147,6 +147,9 @@ describe("D1SessionRepository", () => {
         token: stateToken,
         createdAt,
         expiresAt: createdAt + 10 * 60 * 1_000,
+        purpose: "refresh",
+        expectedUserId: userId,
+        returnTo: "/app/preferences",
       }),
     ).resolves.toEqual({ status: "created" });
 
@@ -164,6 +167,14 @@ describe("D1SessionRepository", () => {
       "already_consumed",
       "consumed",
     ]);
+    expect(results.find((result) => result.status === "consumed")).toEqual({
+      status: "consumed",
+      context: {
+        purpose: "refresh",
+        expectedUserId: userId,
+        returnTo: "/app/preferences",
+      },
+    });
   });
 
   it("rejects expired OAuth state without consuming it", async () => {
@@ -172,6 +183,9 @@ describe("D1SessionRepository", () => {
       token: stateToken,
       createdAt,
       expiresAt: createdAt + 1,
+      purpose: "sign_in",
+      expectedUserId: null,
+      returnTo: "/app",
     });
 
     await expect(

@@ -47,9 +47,14 @@ describe("AppearanceRecipeControlsV3", () => {
 
     expect(
       screen.getByRole("group", {
-        name: "Material: Weighted mix · 23 materials",
+        name: "Material: Weighted mix · 23 materials · Some alter colors",
       }),
     ).toBeDefined();
+    const materials = screen.getByRole("heading", { name: "Materials" });
+    const colors = screen.getByRole("group", { name: "Colors" });
+    expect(
+      materials.compareDocumentPosition(colors) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       screen.getByRole("combobox", { name: "Primary font" }).textContent,
     ).toContain("Procedural mix");

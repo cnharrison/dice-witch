@@ -128,20 +128,30 @@ afterEach(() => {
 });
 
 describe("appearance preference authorization", () => {
-  it("keeps the personal appearance page concise", async () => {
+  it("shows server refresh inside the Server appearance box", async () => {
+    const user = userEvent.setup();
     mockFetch();
     renderPreferences();
 
     expect(screen.queryByRole("heading", { name: "Preferences" })).toBeNull();
     expect(await screen.findByRole("region", { name: "Preview" })).toBeDefined();
-    expect(
-      screen.getByRole("button", { name: "Personal" }),
-    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Personal" })).toBeDefined();
     expect(screen.queryByText("Dice Witch workbench")).toBeNull();
     expect(screen.queryByText(/Start with one design/)).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Server" }),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "Refresh" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Server" }));
+
+    const serverAppearanceBox = screen
+      .getByRole("heading", { name: "Server appearance" })
+      .closest("div");
+    const refreshLink = screen.getByRole("link", { name: "Refresh" });
+    expect(serverAppearanceBox?.contains(refreshLink)).toBe(true);
+    expect(refreshLink.textContent).toBe("");
+    expect(refreshLink.getAttribute("href")).toContain(
+      "/api/auth/refresh/discord",
+    );
+    expect(refreshLink.className).not.toContain("bg-brand");
   });
 
   it("confirms before leaving a section with an appearance draft", async () => {
@@ -165,6 +175,23 @@ describe("appearance preference authorization", () => {
     expect(
       await screen.findByRole("heading", { name: "Server appearance" }),
     ).toBeDefined();
+  });
+
+  it("keeps server refresh on the page when draft discard is declined", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockFetch({ isAdmin: true });
+    renderPreferences();
+
+    await user.click(await screen.findByRole("button", { name: "Server" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Preset" }),
+      "dice-witch",
+    );
+    await user.click(screen.getByRole("link", { name: "Refresh" }));
+
+    expect(confirm).toHaveBeenCalledWith("Discard unsaved appearance changes?");
+    expect(window.location.pathname).not.toBe("/api/auth/refresh/discord");
   });
 
   it("saves camera drafts through the profile Save & apply action", async () => {
@@ -310,7 +337,8 @@ describe("appearance preference authorization", () => {
     });
   });
 
-  it("reports guild lookup failures without hiding personal controls", async () => {
+  it("keeps server refresh available when guild lookup fails", async () => {
+    const user = userEvent.setup();
     mockFetch({ guildStatus: 502 });
     renderPreferences();
 
@@ -322,8 +350,10 @@ describe("appearance preference authorization", () => {
         { timeout: 5_000 },
       ),
     ).toBeDefined();
-    expect(
-      screen.queryByRole("button", { name: "Server" }),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "Refresh" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Server" }));
+
+    expect(screen.getByRole("link", { name: "Refresh" })).toBeDefined();
   });
 });
