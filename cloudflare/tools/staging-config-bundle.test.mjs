@@ -20,9 +20,7 @@ function bundle() {
   return Object.fromEntries(
     workers.map((worker) => {
       const config = { name: `dice-witch-${worker}-staging` };
-      if (worker === "data") {
-        config.vars = {};
-      } else if (worker === "web-api") {
+      if (worker === "web-api") {
         config.vars = { BUILD_SHA: "old", BUILD_TIME: "old" };
       } else if (worker === "interactions") {
         config.vars = {};
@@ -62,7 +60,7 @@ test("materializes only known configs and stamps exact build metadata", async ()
   const roll = JSON.parse(
     await readFile(path.join(directory, "wrangler.roll.jsonc"), "utf8"),
   );
-  assert.equal(data.vars.APPEARANCE_CATALOG_POLICY, "r37");
+  assert.deepEqual(data.vars, { APPEARANCE_CATALOG_POLICY: "r37" });
   assert.equal(web.vars.APPEARANCE_CATALOG_POLICY, "r37");
   assert.equal(web.vars.ENVIRONMENT, "staging");
   assert.equal(web.vars.BUILD_SHA, sha);
@@ -91,6 +89,8 @@ test("rejects missing, extra, oversized, or malformed bundles", async () => {
   const missing = bundle();
   delete missing.gateway;
   const extra = { ...bundle(), production: {} };
+  const malformedDataVars = bundle();
+  malformedDataVars.data.vars = [];
 
   await assert.rejects(
     materializeStagingConfigs({
@@ -111,6 +111,16 @@ test("rejects missing, extra, oversized, or malformed bundles", async () => {
       validate: () => ({}),
     }),
     /exactly the six staging Worker configs/,
+  );
+  await assert.rejects(
+    materializeStagingConfigs({
+      encodedBundle: encode(malformedDataVars),
+      buildSha: sha,
+      buildTime,
+      configDirectory: directory,
+      validate: () => ({}),
+    }),
+    /Data staging vars must be an object when present/,
   );
   await assert.rejects(
     materializeStagingConfigs({

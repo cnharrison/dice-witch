@@ -62,8 +62,9 @@ function applyReleaseConfiguration(configs) {
   if (!isRecord(configs.roll.vars)) {
     throw new Error("Roll staging vars are required");
   }
-  if (!isRecord(configs.data.vars)) {
-    throw new Error("Data staging vars are required");
+  const dataVars = configs.data.vars;
+  if (dataVars !== undefined && !isRecord(dataVars)) {
+    throw new Error("Data staging vars must be an object when present");
   }
   if (!isRecord(configs["web-api"].vars)) {
     throw new Error("Web API staging vars are required");
@@ -78,7 +79,10 @@ function applyReleaseConfiguration(configs) {
     enabled: true,
     logs: { invocation_logs: true, head_sampling_rate: 1 },
   };
-  configs.data.vars.APPEARANCE_CATALOG_POLICY = "r37";
+  configs.data.vars = {
+    ...dataVars,
+    APPEARANCE_CATALOG_POLICY: "r37",
+  };
   configs.roll.vars.ROLL_VIEW_POLICY = "r37";
   configs["web-api"].vars.APPEARANCE_CATALOG_POLICY = "r37";
 
