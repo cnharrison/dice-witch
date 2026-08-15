@@ -12,9 +12,13 @@ import {
   D4_STANDARD_GEOMETRY_V4,
   D6_STANDARD_GEOMETRY_V4,
   D8_STANDARD_GEOMETRY_V4,
+  DICE_VIEW_AZIMUTH_RANGE_V4,
+  DICE_VIEW_ELEVATION_RANGE_V4,
   FUDGE_STANDARD_GEOMETRY_V4,
   PERCENTILE_STANDARD_GEOMETRY_V4,
   buildPhysicalPolyhedralMeshV4,
+  getRenderGeometryDescriptorV4,
+  POSE_AZIMUTHS_R17_V4,
   projectGeometryVectorV4,
   projectPolyhedralGeometryV4,
   type Point2V4,
@@ -44,6 +48,17 @@ const PHYSICAL_POLYHEDRA = [
 function expectFinitePoint(point: ScreenPoint2V4): void {
   expect(Number.isFinite(point[0])).toBe(true);
   expect(Number.isFinite(point[1])).toBe(true);
+}
+
+function inclusiveRange(
+  minimum: number,
+  maximum: number,
+  step = 1,
+): number[] {
+  return Array.from(
+    { length: (maximum - minimum) / step + 1 },
+    (_, index) => minimum + index * step,
+  );
 }
 
 describe("canonical V4 orthographic projection", () => {
@@ -80,6 +95,53 @@ describe("canonical V4 orthographic projection", () => {
         });
       }
     }
+  });
+
+  it("keeps every r36 normal d6 camera angle inside the vertical frame", () => {
+    const elevations = inclusiveRange(
+      DICE_VIEW_ELEVATION_RANGE_V4.minimum,
+      DICE_VIEW_ELEVATION_RANGE_V4.maximum,
+    );
+    const azimuths = inclusiveRange(
+      DICE_VIEW_AZIMUTH_RANGE_V4.minimum,
+      DICE_VIEW_AZIMUTH_RANGE_V4.maximum,
+      DICE_VIEW_AZIMUTH_RANGE_V4.step,
+    );
+    let minimumTop = 1;
+    let maximumBottom = 0;
+
+    for (let result = 1; result <= 6; result += 1) {
+      for (const elevationDegrees of elevations) {
+        for (const azimuthOffsetDegrees of azimuths) {
+          for (const poseAzimuthDegrees of POSE_AZIMUTHS_R17_V4) {
+            const geometry = getRenderGeometryDescriptorV4(
+              "canvaskit-v4-r36",
+              {
+                target: "d6",
+                form: "standard",
+                result,
+                view: {
+                  kind: "camera",
+                  elevationDegrees,
+                  azimuthOffsetDegrees,
+                  poseAzimuthDegrees,
+                },
+              },
+            );
+            if (geometry.kind !== "polyhedral") {
+              throw new Error("D6 camera geometry is invalid");
+            }
+            const { bounds } = projectPolyhedralGeometryV4(geometry, result);
+            minimumTop = Math.min(minimumTop, bounds.min[1]);
+            maximumBottom = Math.max(maximumBottom, bounds.max[1]);
+          }
+        }
+      }
+    }
+
+    const onePixel = 1 / 150;
+    expect(minimumTop).toBeGreaterThanOrEqual(onePixel);
+    expect(maximumBottom).toBeLessThanOrEqual(1 - onePixel);
   });
 
   it("sorts visible faces from farthest to nearest for deterministic painting", () => {

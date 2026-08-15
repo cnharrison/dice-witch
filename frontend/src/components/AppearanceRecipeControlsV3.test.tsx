@@ -161,6 +161,24 @@ describe("AppearanceRecipeControlsV3", () => {
     });
   });
 
+  it("defaults fixed styles to Barlow and exposes only current fonts", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={recipe("solid")} />);
+
+    const font = screen.getByRole("combobox", { name: "Primary font" });
+    expect(font.textContent).toContain("Barlow Condensed");
+
+    font.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      screen.getByRole("option", { name: "Barlow Condensed" }),
+    ).toBeDefined();
+    expect(screen.getByRole("option", { name: "JetBrains Mono" })).toBeDefined();
+    expect(
+      screen.queryByRole("option", { name: "Liberation Sans" }),
+    ).toBeNull();
+  });
+
   it("shows each font choice in its own typeface", async () => {
     const user = userEvent.setup();
     render(<Harness initial={recipe("chaotic")} />);

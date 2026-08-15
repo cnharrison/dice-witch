@@ -115,6 +115,7 @@ function bindings(
         "https://api.example.com/api/auth/callback/discord",
       FRONTEND_ORIGIN: frontendOrigin,
       BUILD_SHA: "abcdef0123456789abcdef0123456789abcdef01",
+      APPEARANCE_CATALOG_POLICY: "r37",
     },
     deliverWebRoll,
   };

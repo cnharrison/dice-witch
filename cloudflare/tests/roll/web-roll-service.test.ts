@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_TARGETS,
   APPROVED_COLLECTOR_STYLE_IDS_V3,
-  BUILTIN_APPEARANCE_STYLES_V3,
+  BUILTIN_APPEARANCE_STYLES_R34_V3,
   FEATURED_APPEARANCE_STYLE_IDS,
 } from "../../packages/dice-appearance/src";
 import {
@@ -68,11 +68,11 @@ const recipeV2 = {
   },
 };
 
-const recipeV3 = BUILTIN_APPEARANCE_STYLES_V3[0]?.recipe;
-const transRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
+const recipeV3 = BUILTIN_APPEARANCE_STYLES_R34_V3[0]?.recipe;
+const transRecipeV3 = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
   ({ id }) => id === "trans",
 )?.recipe;
-const provenanceRecipeV3 = BUILTIN_APPEARANCE_STYLES_V3.find(
+const provenanceRecipeV3 = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
   ({ id }) => id === "hollow-victory",
 )?.recipe;
 if (
@@ -386,10 +386,18 @@ describe("appearance preview", () => {
       buildAppearancePreviewRenderRequestForPolicyV4(input, "r35")
         .rendererRevision,
     ).toBe("canvaskit-v4-r35");
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r36")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r36");
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r37")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r37");
   });
 
   it("maps built-in Random solid previews across whole dice in r29", () => {
-    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
       ({ id }) => id === "chaotic",
     )?.recipe;
     if (randomRecipe === undefined) {
@@ -421,7 +429,7 @@ describe("appearance preview", () => {
   });
 
   it("makes r30 Random solid previews one color", () => {
-    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
       ({ id }) => id === "chaotic",
     )?.recipe;
     if (randomRecipe === undefined) {
@@ -452,7 +460,7 @@ describe("appearance preview", () => {
   });
 
   it("removes custom multi-color Classic Solid fields in r31 previews", () => {
-    const solid = BUILTIN_APPEARANCE_STYLES_V3.find(
+    const solid = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
       ({ id }) => id === "solid",
     )?.recipe;
     if (solid === undefined) throw new Error("Solid recipe is missing");
@@ -601,7 +609,7 @@ describe("appearance preview", () => {
   it("renders one-color Profile V4 previews through the current renderer", async () => {
     const diceView = createDefaultDiceViewPreferencesV4();
     diceView.mode = "legacy";
-    const solid = BUILTIN_APPEARANCE_STYLES_V3.find(
+    const solid = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
       ({ id }) => id === "solid",
     )?.recipe;
     if (solid === undefined) throw new Error("Solid recipe is missing");
@@ -701,7 +709,7 @@ describe("appearance preview", () => {
     ...FEATURED_APPEARANCE_STYLE_IDS,
     ...APPROVED_COLLECTOR_STYLE_IDS_V3,
   ])("renders selectable preset %s across the all-dice r34 preview", async (styleId) => {
-    const style = BUILTIN_APPEARANCE_STYLES_V3.find(({ id }) => id === styleId);
+    const style = BUILTIN_APPEARANCE_STYLES_R34_V3.find(({ id }) => id === styleId);
     if (style === undefined) throw new Error(`${styleId} style is missing`);
     const input = {
       target: "all" as const,
@@ -1073,7 +1081,7 @@ describe("WebRollService", () => {
   ] as const)(
     "builds every polyhedral %s die with its r30 special form",
     async (styleId, form) => {
-      const style = BUILTIN_APPEARANCE_STYLES_V3.find(
+      const style = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
         ({ id }) => id === styleId,
       );
       if (style === undefined) throw new Error(`${styleId} style is missing`);
@@ -1343,7 +1351,7 @@ describe("WebRollService", () => {
   });
 
   it("rejects a roll when its prepared appearance changes", async () => {
-    const replacementRecipe = BUILTIN_APPEARANCE_STYLES_V3[1]?.recipe;
+    const replacementRecipe = BUILTIN_APPEARANCE_STYLES_R34_V3[1]?.recipe;
     if (replacementRecipe === undefined) {
       throw new Error("Replacement V3 recipe fixture is missing");
     }

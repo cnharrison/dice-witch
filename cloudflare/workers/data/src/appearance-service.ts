@@ -1,13 +1,16 @@
 import {
   parseAppearanceProfileV4,
   parseGuildAppearanceProfileV4,
+  validateAppearanceProfileFontsV4,
   type AppearanceProfileV4,
   type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_VALIDATION_CATALOG_V3,
-  BUILTIN_APPEARANCE_RECIPES_V3,
+  appearanceCatalogForPolicyV3,
+  builtinAppearanceRecipesForPolicyV3,
   resolveEffectiveAppearanceV4,
+  type AppearanceCatalogPolicyV3,
 } from "../../../packages/dice-appearance/src";
 import {
   D1AppearanceRepository,
@@ -173,6 +176,7 @@ async function getPersonalProfileV4(
 async function putPersonalProfileV4(
   request: Request,
   db: D1Database,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   let input: PutPersonalAppearanceV4Input & { profile: AppearanceProfileV4 };
   try {
@@ -190,13 +194,18 @@ async function putPersonalProfileV4(
     ) {
       throw new Error("Personal appearance update is invalid");
     }
+    const profile = parseAppearanceProfileV4(
+      value.profile,
+      APPEARANCE_VALIDATION_CATALOG_V3,
+    );
+    validateAppearanceProfileFontsV4(
+      profile,
+      appearanceCatalogForPolicyV3(policy).fonts.map(({ id }) => id),
+    );
     input = {
       userId: value.userId,
       expectedRevision: value.expectedRevision,
-      profile: parseAppearanceProfileV4(
-        value.profile,
-        APPEARANCE_VALIDATION_CATALOG_V3,
-      ),
+      profile,
       mutationId: value.mutationId,
       occurredAt: value.occurredAt,
     };
@@ -236,6 +245,7 @@ async function getGuildProfileV4(
 async function putGuildProfileV4(
   request: Request,
   db: D1Database,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   let input: PutGuildAppearanceV4Input & {
     profile: GuildAppearanceProfileV4;
@@ -258,14 +268,19 @@ async function putGuildProfileV4(
     ) {
       throw new Error("Guild appearance update is invalid");
     }
+    const profile = parseGuildAppearanceProfileV4(
+      value.profile,
+      APPEARANCE_VALIDATION_CATALOG_V3,
+    );
+    validateAppearanceProfileFontsV4(
+      profile,
+      appearanceCatalogForPolicyV3(policy).fonts.map(({ id }) => id),
+    );
     input = {
       guildId: value.guildId,
       updatedByUserId: value.updatedByUserId,
       expectedRevision: value.expectedRevision,
-      profile: parseGuildAppearanceProfileV4(
-        value.profile,
-        APPEARANCE_VALIDATION_CATALOG_V3,
-      ),
+      profile,
       mutationId: value.mutationId,
       occurredAt: value.occurredAt,
     };
@@ -303,6 +318,7 @@ async function parseEffectiveAppearanceLookup(
 async function getEffectiveAppearanceV4(
   request: Request,
   db: D1Database,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   let lookup: EffectiveAppearanceLookup;
   try {
@@ -323,7 +339,7 @@ async function getEffectiveAppearanceV4(
       personalProfile:
         personal.status === "found" ? personal.profile : null,
       guildProfile: guild?.status === "found" ? guild.profile : null,
-      builtins: BUILTIN_APPEARANCE_RECIPES_V3,
+      builtins: builtinAppearanceRecipesForPolicyV3(policy),
     });
     return Response.json(effective, { headers: responseHeaders });
   } catch {
@@ -334,19 +350,20 @@ async function getEffectiveAppearanceV4(
 export function handleAppearanceRequest(
   request: Request,
   db: D1Database,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> | null {
   if (request.method !== "POST") return null;
   switch (new URL(request.url).pathname) {
     case "/internal/appearance/v4/personal/get":
       return getPersonalProfileV4(request, db);
     case "/internal/appearance/v4/personal/put":
-      return putPersonalProfileV4(request, db);
+      return putPersonalProfileV4(request, db, policy);
     case "/internal/appearance/v4/guild/get":
       return getGuildProfileV4(request, db);
     case "/internal/appearance/v4/guild/put":
-      return putGuildProfileV4(request, db);
+      return putGuildProfileV4(request, db, policy);
     case "/internal/appearance/v4/effective":
-      return getEffectiveAppearanceV4(request, db);
+      return getEffectiveAppearanceV4(request, db, policy);
     default:
       return null;
   }

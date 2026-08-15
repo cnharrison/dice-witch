@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
   R32_FONT_IDS_V4,
+  R37_FONT_IDS_V4,
   TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4,
   getAuthoredRenderViewV4,
   validateRenderRequestV4,
@@ -511,7 +512,7 @@ describe("RenderRequestV4", () => {
     ).toEqual(["#abcdef", "#123456"]);
   });
 
-  it("gates the new fonts and materials to r32", () => {
+  it("gates additive fonts and materials to their renderer revisions", () => {
     for (const material of r32Materials) {
       const candidate = die(material);
       candidate.appearance.texture.scope = "die-wide";
@@ -558,6 +559,31 @@ describe("RenderRequestV4", () => {
           rendererRevision: "canvaskit-v4-r31",
         }),
       ).toThrow("appearance.engraving.fontId is not supported before r32");
+    }
+
+    for (const fontId of R37_FONT_IDS_V4) {
+      const candidate = die();
+      candidate.appearance.texture.scope = "die-wide";
+      candidate.appearance.palette = ["#0f172a", "#0f172a"];
+      candidate.appearance.engraving.fontId = fontId;
+      candidate.view = getAuthoredRenderViewV4("canvaskit-v4-r37", "legacy", {
+        target: candidate.target,
+        result: candidate.result,
+        form: candidate.form,
+      });
+      const request = {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r37",
+        groups: [[candidate]],
+      };
+      expect(validateRenderRequestV4(request).groups[0]?.[0]?.appearance.engraving.fontId)
+        .toBe(fontId);
+      expect(() =>
+        validateRenderRequestV4({
+          ...request,
+          rendererRevision: "canvaskit-v4-r36",
+        }),
+      ).toThrow("appearance.engraving.fontId is not supported before r37");
     }
   });
 

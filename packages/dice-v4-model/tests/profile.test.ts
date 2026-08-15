@@ -13,6 +13,7 @@ import {
   parseAppearanceProfileV3,
   parseAppearanceRecipeV3,
   parseGuildAppearanceProfileV3,
+  validateAppearanceProfileFontsV4,
   type AppearanceMaterialV4,
   type AppearanceProfileV3,
   type AppearanceRecipeV3,
@@ -117,6 +118,39 @@ describe("Appearance Profile V3", () => {
         catalog,
       ),
     ).toMatchObject({ version: 3, mode: "enforced" });
+  });
+
+  it("validates fixed, allowlist, and weighted fonts against the active catalog", () => {
+    const value = profile();
+    const fontSelections: AppearanceRecipeV3["font"][] = [
+      { mode: "fixed", value: "jetbrains-mono" },
+      {
+        mode: "allowlist",
+        values: ["barlow-condensed", "jetbrains-mono"],
+      },
+      {
+        mode: "weighted",
+        options: [
+          { value: "barlow-condensed", weight: 60 },
+          { value: "jetbrains-mono", weight: 40 },
+        ],
+      },
+    ];
+
+    for (const font of fontSelections) {
+      firstDesign(value).recipe.font = font;
+      expect(() => {
+        validateAppearanceProfileFontsV4(value, [
+          "barlow-condensed",
+          "jetbrains-mono",
+        ]);
+      }).not.toThrow();
+      expect(() => {
+        validateAppearanceProfileFontsV4(value, ["barlow-condensed"]);
+      }).toThrow(
+        "Appearance profile font is not supported by the active catalog",
+      );
+    }
   });
 
   it("accepts fixed, allowlist, and weighted selections with bounded weights", () => {

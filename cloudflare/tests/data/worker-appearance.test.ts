@@ -1,11 +1,14 @@
 import {
   createDefaultDiceViewPreferencesV4,
   type AppearanceProfileV4,
+  type FontIdV4,
   type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
+import { BUILTIN_APPEARANCE_STYLES_V3 } from "../../packages/dice-appearance/src";
 import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { handleAppearanceRequest } from "../../workers/data/src/appearance-service";
 
 const dataEnv = env as unknown as {
   DATA: D1Database;
@@ -27,6 +30,22 @@ function personalProfile(styleId = "solid"): AppearanceProfileV4 {
   };
 }
 
+function customFontProfile(fontId: FontIdV4): AppearanceProfileV4 {
+  const solid = BUILTIN_APPEARANCE_STYLES_V3.find(({ id }) => id === "solid");
+  if (solid === undefined) throw new Error("Solid style fixture is missing");
+  const designId = "00000000-0000-4000-8000-000000000001";
+  const recipe = structuredClone(solid.recipe);
+  recipe.font = { mode: "fixed", value: fontId };
+  return {
+    ...personalProfile(),
+    designs: [{ id: designId, name: "Font fixture", recipe }],
+    assignments: {
+      all: { source: "custom", id: designId },
+      overrides: {},
+    },
+  };
+}
+
 function guildProfile(): GuildAppearanceProfileV4 {
   return {
     version: 4,
@@ -45,14 +64,16 @@ function guildProfile(): GuildAppearanceProfileV4 {
   };
 }
 
+function postRequest(path: string, body: unknown): Request {
+  return new Request(`https://data.internal${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function post(path: string, body: unknown): Promise<Response> {
-  return exports.default.fetch(
-    new Request(`https://data.internal${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  );
+  return exports.default.fetch(postRequest(path, body));
 }
 
 beforeEach(async () => {
@@ -122,6 +143,46 @@ describe("Data Worker V4 appearance service", () => {
       profile: guild,
       updatedByUserId: userId,
     });
+  });
+
+  it("enforces the active catalog for new custom font selections", async () => {
+    const input = (fontId: FontIdV4, mutationId: string) => ({
+      userId,
+      expectedRevision: 0,
+      profile: customFontProfile(fontId),
+      mutationId,
+      occurredAt,
+    });
+
+    const production = await handleAppearanceRequest(
+      postRequest(
+        "/internal/appearance/v4/personal/put",
+        input("jetbrains-mono", "appearance-v4-r34-jetbrains"),
+      ),
+      dataEnv.DATA,
+      "r34",
+    );
+    expect(production?.status).toBe(400);
+
+    const hiddenCompatibilityFont = await handleAppearanceRequest(
+      postRequest(
+        "/internal/appearance/v4/personal/put",
+        input("liberation-sans", "appearance-v4-r37-liberation"),
+      ),
+      dataEnv.DATA,
+      "r37",
+    );
+    expect(hiddenCompatibilityFont?.status).toBe(400);
+
+    const staging = await handleAppearanceRequest(
+      postRequest(
+        "/internal/appearance/v4/personal/put",
+        input("jetbrains-mono", "appearance-v4-r37-jetbrains"),
+      ),
+      dataEnv.DATA,
+      "r37",
+    );
+    expect(staging?.status).toBe(200);
   });
 
   it("maps stale revisions and mutation reuse to HTTP 409", async () => {

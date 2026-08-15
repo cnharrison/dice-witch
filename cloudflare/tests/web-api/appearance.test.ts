@@ -5,6 +5,7 @@ import type {
 } from "@dice-witch/dice-v4-model";
 import { describe, expect, it, vi } from "vitest";
 import {
+  APPEARANCE_CATALOG_R34_V3,
   APPEARANCE_CATALOG_V3,
   BUILTIN_APPEARANCE_STYLES_V3,
   migrateAppearanceProfileV3ToV4,
@@ -73,6 +74,7 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
       "https://api.example.com/api/auth/callback/discord",
     FRONTEND_ORIGIN: frontendOrigin,
     BUILD_SHA: buildSha,
+    APPEARANCE_CATALOG_POLICY: "r37",
   };
 }
 
@@ -129,6 +131,17 @@ describe("web appearance V4 API", () => {
       () => now,
     );
     expect(mismatch.status).toBe(409);
+
+    const production = await handleAuthRequest(
+      browserRequest(`/api/appearance/v4/catalog?build=${buildSha}`),
+      { ...bindings(vi.fn()), APPEARANCE_CATALOG_POLICY: "r34" },
+      vi.fn(),
+      () => now,
+    );
+    expect(production.status).toBe(200);
+    await expect(production.json()).resolves.toEqual(
+      APPEARANCE_CATALOG_R34_V3,
+    );
   });
 
   it("reads and writes only the authenticated user's V4 profile", async () => {

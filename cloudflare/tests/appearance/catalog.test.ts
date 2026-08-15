@@ -42,6 +42,7 @@ import {
 } from "@dice-witch/dice-v4-model";
 import { APPEARANCE_FONT_IDS } from "../../packages/dice-svg/src/types";
 import {
+  APPEARANCE_CATALOG_R34_V3,
   APPEARANCE_CATALOG_V1,
   APPEARANCE_CATALOG_V2,
   APPEARANCE_CATALOG_V3,
@@ -49,17 +50,23 @@ import {
   APPEARANCE_VALIDATION_CATALOG_V3,
   APPROVED_COLLECTOR_STYLE_IDS_V3,
   BUILTIN_APPEARANCE_RECIPES,
+  BUILTIN_APPEARANCE_RECIPES_R34_V3,
   BUILTIN_APPEARANCE_RECIPES_V2,
   BUILTIN_APPEARANCE_RECIPES_V3,
   BUILTIN_APPEARANCE_STYLES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
   FEATURED_APPEARANCE_PATTERN_IDS,
   FEATURED_APPEARANCE_STYLE_IDS,
+  appearanceCatalogForPolicyV3,
+  builtinAppearanceRecipesForPolicyV3,
+  parseAppearanceCatalogPolicyV3,
   parseAppearanceProfile,
   parseAppearanceRecipeV2,
   RANDOM_SPECIAL_MATERIALS_V3,
   R32_RANDOM_FONT_OPTIONS_V3,
+  R37_RANDOM_FONT_OPTIONS_V3,
   randomRecipeForR34ResolutionV3,
+  randomRecipeForR37ResolutionV3,
   randomRecipeForResolutionV3,
   randomSpecialMaterialV3,
   resolveAppearanceRecipe,
@@ -213,7 +220,7 @@ describe("built-in appearance catalog", () => {
           finish: "satin",
         },
       },
-      font: { mode: "fixed", value: "liberation-sans" },
+      font: { mode: "fixed", value: "barlow-condensed" },
     });
 
     const rainbow = BUILTIN_APPEARANCE_RECIPES_V3.rainbow?.recipe;
@@ -236,7 +243,7 @@ describe("built-in appearance catalog", () => {
         mode: "fixed",
         value: { family: "classic", treatment: "solid", finish: "gloss" },
       },
-      font: { mode: "fixed", value: "liberation-sans" },
+      font: { mode: "fixed", value: "barlow-condensed" },
     });
 
     const diceWitch = BUILTIN_APPEARANCE_RECIPES_V3["dice-witch"]?.recipe;
@@ -361,6 +368,82 @@ describe("built-in appearance catalog", () => {
     });
   });
 
+  it("replaces the current font slots without changing the r34 catalog", () => {
+    expect(optionIds(APPEARANCE_CATALOG_R34_V3.fonts)).toEqual([
+      "liberation-sans",
+      "new-rocker",
+      "stencil-ops",
+      "creeping-horror",
+      "special-elite",
+      "luckiest-guy",
+      "fontdiner-swanky",
+      "syncopate",
+      "source-sans-3",
+      "cinzel",
+      "barlow-condensed",
+      "zilla-slab",
+      "space-grotesk",
+      "fraunces",
+      "bricolage-grotesque",
+      "alcarin-tengwar",
+    ]);
+    expect(optionIds(APPEARANCE_CATALOG_V3.fonts)).toEqual([
+      "barlow-condensed",
+      "new-rocker",
+      "stencil-ops",
+      "creeping-horror",
+      "special-elite",
+      "luckiest-guy",
+      "fontdiner-swanky",
+      "syncopate",
+      "source-sans-3",
+      "cinzel",
+      "jetbrains-mono",
+      "zilla-slab",
+      "space-grotesk",
+      "fraunces",
+      "bricolage-grotesque",
+      "alcarin-tengwar",
+    ]);
+    expect(R37_RANDOM_FONT_OPTIONS_V3).toEqual(
+      R32_RANDOM_FONT_OPTIONS_V3.map((option) => ({
+        ...option,
+        value:
+          option.value === "liberation-sans"
+            ? "barlow-condensed"
+            : option.value === "barlow-condensed"
+              ? "jetbrains-mono"
+              : option.value,
+      })),
+    );
+
+    const r34Solid = BUILTIN_APPEARANCE_RECIPES_R34_V3.solid?.recipe;
+    const r37Solid = BUILTIN_APPEARANCE_RECIPES_V3.solid?.recipe;
+    expect(r34Solid?.font).toEqual({
+      mode: "fixed",
+      value: "liberation-sans",
+    });
+    expect(r37Solid?.font).toEqual({
+      mode: "fixed",
+      value: "barlow-condensed",
+    });
+    expect(appearanceCatalogForPolicyV3("r34")).toBe(
+      APPEARANCE_CATALOG_R34_V3,
+    );
+    expect(appearanceCatalogForPolicyV3("r37")).toBe(APPEARANCE_CATALOG_V3);
+    expect(builtinAppearanceRecipesForPolicyV3("r34")).toBe(
+      BUILTIN_APPEARANCE_RECIPES_R34_V3,
+    );
+    expect(builtinAppearanceRecipesForPolicyV3("r37")).toBe(
+      BUILTIN_APPEARANCE_RECIPES_V3,
+    );
+    expect(parseAppearanceCatalogPolicyV3("r34")).toBe("r34");
+    expect(parseAppearanceCatalogPolicyV3("r37")).toBe("r37");
+    expect(() => parseAppearanceCatalogPolicyV3("r36")).toThrow(
+      "Appearance catalog policy must be r34 or r37",
+    );
+  });
+
   it("publishes a complete V3 editor catalog without inferred bounds", () => {
     expect(APPEARANCE_CATALOG_V3).toMatchObject({
       version: 3,
@@ -405,7 +488,16 @@ describe("built-in appearance catalog", () => {
       APPEARANCE_TARGETS_V4,
     );
     expect(optionIds(APPEARANCE_CATALOG_V3.patterns)).toEqual(PATTERN_IDS_V4);
-    expect(optionIds(APPEARANCE_CATALOG_V3.fonts)).toEqual(FONT_IDS_V4);
+    expect(optionIds(APPEARANCE_CATALOG_V3.fonts)).toEqual(
+      FONT_IDS_V4.filter((fontId) => fontId !== "jetbrains-mono").map(
+        (fontId) =>
+          fontId === "liberation-sans"
+            ? "barlow-condensed"
+            : fontId === "barlow-condensed"
+              ? "jetbrains-mono"
+              : fontId,
+      ),
+    );
     expect(optionIds(APPEARANCE_CATALOG_V3.engravingFinishes)).toEqual(
       ENGRAVING_FINISHES_V4,
     );
@@ -691,14 +783,14 @@ describe("built-in appearance catalog", () => {
       ),
     ).toEqual(new Set(PATTERN_IDS_V4));
 
-    expect(random.font.options).toEqual(R32_RANDOM_FONT_OPTIONS_V3);
+    expect(random.font.options).toEqual(R37_RANDOM_FONT_OPTIONS_V3);
     expect(random.font.options.some(({ value }) => value === "alcarin-tengwar"))
       .toBe(false);
     const neutralFonts = new Set([
-      "liberation-sans",
+      "barlow-condensed",
       "source-sans-3",
       "cinzel",
-      "barlow-condensed",
+      "jetbrains-mono",
       "zilla-slab",
       "space-grotesk",
     ]);
@@ -709,6 +801,21 @@ describe("built-in appearance catalog", () => {
     expect(
       random.font.options.reduce((total, { weight }) => total + weight, 0),
     ).toBe(1_000);
+  });
+
+  it("uses the approved r37 font slots without changing r34 Random", () => {
+    const published = BUILTIN_APPEARANCE_RECIPES_V3.chaotic?.recipe;
+    if (published === undefined) throw new Error("Random recipe is missing");
+    const r34 = randomRecipeForR34ResolutionV3(published);
+    const r37 = randomRecipeForR37ResolutionV3(published);
+    expect(r34.font).toEqual({
+      mode: "weighted",
+      options: R32_RANDOM_FONT_OPTIONS_V3,
+    });
+    expect(r37.font).toEqual({
+      mode: "weighted",
+      options: R37_RANDOM_FONT_OPTIONS_V3,
+    });
   });
 
   it("uses the approved r34 Random family allocation without changing the published recipe", () => {

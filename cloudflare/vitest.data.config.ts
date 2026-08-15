@@ -13,7 +13,10 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-07-10",
         d1Databases: ["DATA"],
-        bindings: { TEST_MIGRATIONS: migrations },
+        bindings: {
+          APPEARANCE_CATALOG_POLICY: "r37",
+          TEST_MIGRATIONS: migrations,
+        },
       },
     }),
   ],

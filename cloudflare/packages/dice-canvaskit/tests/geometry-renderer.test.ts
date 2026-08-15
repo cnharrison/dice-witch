@@ -107,6 +107,16 @@ function visibleVerticalCenter({
   return (top + bottom) / 2;
 }
 
+function rowHasVisibleAlpha(
+  { width, pixels }: Awaited<ReturnType<typeof decodePngRgba8>>,
+  y: number,
+): boolean {
+  for (let x = 0; x < width; x += 1) {
+    if ((pixels[(y * width + x) * 4 + 3] as number) !== 0) return true;
+  }
+  return false;
+}
+
 function pixelDifference(
   first: Uint8Array,
   second: Uint8Array,
@@ -240,6 +250,55 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       renderer.dispose();
     }
   }, 90_000);
+
+  it("keeps r36 normal d6 corners inside the grid without changing r35", async () => {
+    const canvasKit = await loadCanvasKitV4();
+    const renderer = createRenderer(canvasKit);
+    const die = {
+      target: "d6",
+      form: "standard",
+      result: 1,
+      view: {
+        kind: "camera",
+        elevationDegrees: 55,
+        azimuthOffsetDegrees: 40,
+        poseAzimuthDegrees: 0,
+      },
+    } as const;
+    try {
+      const render = async (
+        rendererRevision: "canvaskit-v4-r35" | "canvaskit-v4-r36",
+      ) => {
+        const geometry = getRenderGeometryDescriptorV4(rendererRevision, die);
+        if (geometry.kind !== "polyhedral") {
+          throw new Error("D6 grid geometry is invalid");
+        }
+        const rendered = await renderer.renderGeometryGrid({
+          rendererRevision,
+          groups: [
+            [
+              {
+                kind: "polyhedral",
+                geometry,
+                result: die.result,
+                fontId: "liberation-sans",
+              },
+            ],
+          ],
+        });
+        return decodePngRgba8(rendered.png);
+      };
+      const r35 = await render("canvaskit-v4-r35");
+      const r36 = await render("canvaskit-v4-r36");
+
+      expect(rowHasVisibleAlpha(r35, 0)).toBe(true);
+      expect(rowHasVisibleAlpha(r35, r35.height - 1)).toBe(true);
+      expect(rowHasVisibleAlpha(r36, 0)).toBe(false);
+      expect(rowHasVisibleAlpha(r36, r36.height - 1)).toBe(false);
+    } finally {
+      renderer.dispose();
+    }
+  });
 
   it("renders the r25 d6 and Fudge Legacy cameras differently from r24", async () => {
     const canvasKit = await loadCanvasKitV4();

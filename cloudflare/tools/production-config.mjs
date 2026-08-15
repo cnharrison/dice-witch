@@ -38,7 +38,12 @@ const REQUIRED_VALUE_KEYS = [
   "version",
 ];
 const REQUIRED_BINDINGS = {
-  data: { AI: "ai", DATA: "d1", DISCORD_REST: "service" },
+  data: {
+    AI: "ai",
+    APPEARANCE_CATALOG_POLICY: "plain_text",
+    DATA: "d1",
+    DISCORD_REST: "service",
+  },
   "discord-rest": {
     DISCORD_APPLICATION_ID: "plain_text",
     DISCORD_BOT_LIST_KEY: "secrets_store_secret",
@@ -91,6 +96,7 @@ const REQUIRED_BINDINGS = {
     WEB_DELIVERY_WORK: "durable_object_namespace",
   },
   "web-api": {
+    APPEARANCE_CATALOG_POLICY: "plain_text",
     ASSETS: "assets",
     BUILD_SHA: "plain_text",
     BUILD_TIME: "plain_text",
@@ -290,7 +296,12 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
   configs["web-api"].routes = [
     { pattern: new URL(values.frontendOrigin).hostname, custom_domain: true },
   ];
+  configs.data.vars = {
+    APPEARANCE_CATALOG_POLICY: "r34",
+  };
+
   configs["web-api"].vars = {
+    APPEARANCE_CATALOG_POLICY: "r34",
     DISCORD_CLIENT_ID: values.discordApplicationId,
     DISCORD_REDIRECT_URI: `${values.frontendOrigin}/api/auth/callback/discord`,
     FRONTEND_ORIGIN: values.frontendOrigin,
@@ -385,6 +396,12 @@ export function validateProductionConfigs(configs, expectedSha) {
   }
   if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r34") {
     errors.push("Production Roll view policy must be r34");
+  }
+  if (configs.data?.vars?.APPEARANCE_CATALOG_POLICY !== "r34") {
+    errors.push("Production Data appearance catalog policy must be r34");
+  }
+  if (configs["web-api"]?.vars?.APPEARANCE_CATALOG_POLICY !== "r34") {
+    errors.push("Production Web API appearance catalog policy must be r34");
   }
   if (
     configs.interactions?.durable_objects?.bindings?.length !== 2 ||

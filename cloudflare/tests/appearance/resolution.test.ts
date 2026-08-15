@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_CATALOG_V3,
   APPEARANCE_TARGETS,
+  BUILTIN_APPEARANCE_STYLES_R34_V3,
   BUILTIN_APPEARANCE_STYLES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
   MINIMUM_APPEARANCE_CONTRAST,
@@ -2188,6 +2189,8 @@ describe("resolveAppearanceRecipeV3", () => {
     ["canvaskit-v4-r33", "property-streams-r33"],
     ["canvaskit-v4-r34", "property-streams-r34"],
     ["canvaskit-v4-r35", "property-streams-r35"],
+    ["canvaskit-v4-r36", "property-streams-r35"],
+    ["canvaskit-v4-r37", "property-streams-r37"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -2203,7 +2206,11 @@ describe("resolveAppearanceRecipeV3", () => {
         other: 999,
       } as const;
 
-      for (const style of BUILTIN_APPEARANCE_STYLES_V3) {
+      const styles =
+        rendererRevision === "canvaskit-v4-r37"
+          ? BUILTIN_APPEARANCE_STYLES_V3
+          : BUILTIN_APPEARANCE_STYLES_R34_V3;
+      for (const style of styles) {
         const r32OnlyStyle =
           style.id.startsWith("elemental-") || style.id === "paint-splatter";
         if (
@@ -2211,6 +2218,8 @@ describe("resolveAppearanceRecipeV3", () => {
           rendererRevision !== "canvaskit-v4-r33" &&
           rendererRevision !== "canvaskit-v4-r34" &&
           rendererRevision !== "canvaskit-v4-r35" &&
+          rendererRevision !== "canvaskit-v4-r36" &&
+          rendererRevision !== "canvaskit-v4-r37" &&
           r32OnlyStyle
         ) {
           continue;

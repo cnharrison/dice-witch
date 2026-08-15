@@ -18,6 +18,7 @@ import {
   parseAccountRollInput,
   type AccountRollInput,
 } from "./roll-accounting-repository";
+import { parseAppearanceCatalogPolicyV3 } from "../../../packages/dice-appearance/src";
 import { handleAppearanceRequest } from "./appearance-service";
 import { handleAudienceSnapshotRequest } from "./audience-snapshot-service";
 import { handleMembershipRequest } from "./membership-service";
@@ -25,6 +26,7 @@ import { handleSavedRollRequest } from "./saved-roll-service";
 import { handleSessionRequest } from "./session-service";
 
 export type DataEnv = {
+  APPEARANCE_CATALOG_POLICY: string;
   DATA: D1Database;
   AI: Ai;
   DISCORD_REST: RollLifecycleAlertService &
@@ -37,7 +39,9 @@ function isConfigured(env: DataEnv): boolean {
     typeof data === "object" &&
     data !== null &&
     "prepare" in data &&
-    typeof data.prepare === "function"
+    typeof data.prepare === "function" &&
+    (env.APPEARANCE_CATALOG_POLICY === "r34" ||
+      env.APPEARANCE_CATALOG_POLICY === "r37")
   );
 }
 
@@ -150,7 +154,11 @@ const worker = {
     ) {
       return recordDiscordChannelDirectoryMutation(request, env);
     }
-    const appearanceResponse = handleAppearanceRequest(request, env.DATA);
+    const appearanceResponse = handleAppearanceRequest(
+      request,
+      env.DATA,
+      parseAppearanceCatalogPolicyV3(env.APPEARANCE_CATALOG_POLICY),
+    );
     if (appearanceResponse !== null) return appearanceResponse;
     const audienceResponse = handleAudienceSnapshotRequest(request, env.DATA);
     if (audienceResponse !== null) return audienceResponse;

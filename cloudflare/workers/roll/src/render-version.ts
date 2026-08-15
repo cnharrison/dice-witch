@@ -18,6 +18,8 @@ import {
   buildRollRenderRequestR33V4,
   buildRollRenderRequestR34V4,
   buildRollRenderRequestR35V4,
+  buildRollRenderRequestR36V4,
+  buildRollRenderRequestR37V4,
 } from "../../../packages/roll-render-model/src";
 import type { RenderRequestV3 } from "../../../packages/dice-svg/src";
 import {
@@ -43,7 +45,9 @@ export type RollViewPolicy =
   | "r32"
   | "r33"
   | "r34"
-  | "r35";
+  | "r35"
+  | "r36"
+  | "r37";
 export type EmittedRollRenderRequest = RenderRequestV3 | RenderRequestV4;
 
 const ROLL_VIEW_BUILDERS_V4 = {
@@ -63,6 +67,8 @@ const ROLL_VIEW_BUILDERS_V4 = {
   r33: buildRollRenderRequestR33V4,
   r34: buildRollRenderRequestR34V4,
   r35: buildRollRenderRequestR35V4,
+  r36: buildRollRenderRequestR36V4,
+  r37: buildRollRenderRequestR37V4,
 } satisfies Record<
   Exclude<RollViewPolicy, "r19">,
   typeof buildRollRenderRequestR20V4
@@ -91,12 +97,14 @@ export function parseRollViewPolicy(value: unknown): RollViewPolicy {
     value === "r32" ||
     value === "r33" ||
     value === "r34" ||
-    value === "r35"
+    value === "r35" ||
+    value === "r36" ||
+    value === "r37"
   ) {
     return value;
   }
   throw new Error(
-    "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, r32, r33, r34, or r35",
+    "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, r32, r33, r34, r35, r36, or r37",
   );
 }
 

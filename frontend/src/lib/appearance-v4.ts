@@ -103,6 +103,18 @@ const COLOR_MODES = [
   "vivid-random-pair",
 ] as const;
 const SELECTION_MODES = ["fixed", "allowlist", "weighted"] as const;
+const R34_PUBLIC_FONT_IDS_V4 = FONT_IDS_V4.filter(
+  (fontId) => fontId !== "jetbrains-mono",
+);
+const R37_PUBLIC_FONT_IDS_V4 = R34_PUBLIC_FONT_IDS_V4.map((fontId) => {
+  if (fontId === "liberation-sans") return "barlow-condensed";
+  if (fontId === "barlow-condensed") return "jetbrains-mono";
+  return fontId;
+});
+const PUBLIC_FONT_CATALOGS_V3 = [
+  R34_PUBLIC_FONT_IDS_V4,
+  R37_PUBLIC_FONT_IDS_V4,
+] as const;
 const MAX_LABEL_CHARACTERS = 80;
 const MAX_DESCRIPTION_CHARACTERS = 240;
 const MAX_PREVIEW_DIMENSION = 2_000;
@@ -295,6 +307,24 @@ function requireOptionCatalog(
       throw new Error(message);
     }
   }
+}
+
+function requireOptionCatalogVariant(
+  value: unknown,
+  expectedCatalogs: readonly (readonly string[])[],
+  message: string,
+): void {
+  const expectedIds = expectedCatalogs.find(
+    (candidate) =>
+      Array.isArray(value) &&
+      value.length === candidate.length &&
+      value.every(
+        (entry, index) =>
+          isRecord(entry) && entry.id === candidate[index],
+      ),
+  );
+  if (expectedIds === undefined) throw new Error(message);
+  requireOptionCatalog(value, expectedIds, message);
 }
 
 function requireRange(value: unknown, expected: Range, message: string): void {
@@ -553,7 +583,11 @@ export function parseAppearanceCatalogV3(value: unknown): AppearanceCatalogV3 {
   const styleIds = validateStyles(catalog);
   requireOptionCatalog(catalog.targets, APPEARANCE_TARGETS_V4, "Appearance target catalog is invalid");
   requireOptionCatalog(catalog.patterns, PATTERN_IDS_V4, "Appearance pattern catalog is invalid");
-  requireOptionCatalog(catalog.fonts, FONT_IDS_V4, "Appearance font catalog is invalid");
+  requireOptionCatalogVariant(
+    catalog.fonts,
+    PUBLIC_FONT_CATALOGS_V3,
+    "Appearance font catalog is invalid",
+  );
   requireOptionCatalog(
     catalog.engravingFinishes,
     ENGRAVING_FINISHES_V4,

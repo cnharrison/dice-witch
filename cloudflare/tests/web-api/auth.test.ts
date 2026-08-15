@@ -36,6 +36,7 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
     DISCORD_REDIRECT_URI: redirectUri,
     FRONTEND_ORIGIN: frontendOrigin,
     BUILD_SHA: "abcdef0123456789abcdef0123456789abcdef01",
+    APPEARANCE_CATALOG_POLICY: "r37",
   };
 }
 

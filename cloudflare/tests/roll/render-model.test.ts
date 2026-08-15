@@ -8,7 +8,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_TARGETS,
-  BUILTIN_APPEARANCE_STYLES_V3,
+  BUILTIN_APPEARANCE_STYLES_R34_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
   migrateAppearanceRecipeV1,
   randomRecipeForResolutionV3,
@@ -36,6 +36,7 @@ import {
   buildRollRenderRequestR28V4,
   buildRollRenderRequestR31V4,
   buildRollRenderRequestR32V4,
+  buildRollRenderRequestR37V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1246,7 +1247,7 @@ describe("Profile V4 roll rendering", () => {
   });
 
   it("varies built-in Random palettes by die in r28", () => {
-    const randomRecipe = BUILTIN_APPEARANCE_STYLES_V3.find(
+    const randomRecipe = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
       ({ id }) => id === CHAOTIC_APPEARANCE_STYLE_ID,
     )?.recipe;
     if (randomRecipe === undefined) {
@@ -1280,7 +1281,7 @@ describe("Profile V4 roll rendering", () => {
   });
 
   it("routes r32-only materials and manual Tengwar through immutable roll snapshots", () => {
-    const sand = BUILTIN_APPEARANCE_STYLES_V3.find(
+    const sand = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
       ({ id }) => id === "elemental-sand",
     )?.recipe;
     if (sand === undefined) throw new Error("Sand recipe is missing");
@@ -1397,6 +1398,22 @@ describe("Profile V4 roll rendering", () => {
       kind: "sphere-surface",
       labelLongitudeDegrees: 35,
     });
+  });
+
+  it("builds r37 requests with JetBrains Mono without changing older revision support", () => {
+    const recipe = appearanceRecipeV3({
+      font: { mode: "fixed", value: "jetbrains-mono" },
+    });
+    const request = buildRollRenderRequestR37V4(outcome(["d20"]), 7, {
+      ...effectiveAppearanceV4("normal"),
+      recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
+    });
+
+    expect(request.rendererRevision).toBe("canvaskit-v4-r37");
+    expect(request.groups[0]?.[0]?.appearance.engraving.fontId).toBe(
+      "jetbrains-mono",
+    );
+    expect(validateRenderRequestV4(request)).toEqual(request);
   });
 
   it("detaches the final view snapshot from mutable preferences", () => {

@@ -35,6 +35,7 @@ const WORKER_CONFIG_KEYS = {
     "ai",
     "d1_databases",
     "services",
+    "vars",
   ],
   "discord-rest": [
     ...COMMON_CONFIG_KEYS,
@@ -78,6 +79,7 @@ const WORKER_CONFIG_KEYS = {
   ],
 };
 const WORKER_VAR_NAMES = {
+  data: ["APPEARANCE_CATALOG_POLICY"],
   "discord-rest": [
     "DISCORD_APPLICATION_ID",
     "DISCORD_TEST_GUILD_ID",
@@ -106,6 +108,7 @@ const WORKER_VAR_NAMES = {
   ],
   roll: ["ROLL_RENDER_VERSION", "ROLL_VIEW_POLICY"],
   "web-api": [
+    "APPEARANCE_CATALOG_POLICY",
     "DISCORD_CLIENT_ID",
     "DISCORD_REDIRECT_URI",
     "FRONTEND_ORIGIN",
@@ -304,8 +307,14 @@ function validateStaticWorkerConfiguration(errors, configs) {
   if (configs.roll?.vars?.ROLL_RENDER_VERSION !== "4") {
     errors.push("Staging Roll ROLL_RENDER_VERSION must equal 4");
   }
-  if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r35") {
-    errors.push("Staging Roll ROLL_VIEW_POLICY must equal r35");
+  if (configs.roll?.vars?.ROLL_VIEW_POLICY !== "r37") {
+    errors.push("Staging Roll ROLL_VIEW_POLICY must equal r37");
+  }
+  if (configs.data?.vars?.APPEARANCE_CATALOG_POLICY !== "r37") {
+    errors.push("Staging Data appearance catalog policy must equal r37");
+  }
+  if (configs["web-api"]?.vars?.APPEARANCE_CATALOG_POLICY !== "r37") {
+    errors.push("Staging Web API appearance catalog policy must equal r37");
   }
 
   if (

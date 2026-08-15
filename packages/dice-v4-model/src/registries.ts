@@ -89,6 +89,7 @@ export const FONT_IDS_V4 = Object.freeze([
   "fraunces",
   "bricolage-grotesque",
   "alcarin-tengwar",
+  "jetbrains-mono",
 ] as const);
 
 export const R32_FONT_IDS_V4 = Object.freeze([
@@ -101,6 +102,8 @@ export const R32_FONT_IDS_V4 = Object.freeze([
   "bricolage-grotesque",
   "alcarin-tengwar",
 ] as const);
+
+export const R37_FONT_IDS_V4 = Object.freeze(["jetbrains-mono"] as const);
 
 export const NEUTRAL_RANDOM_FONT_IDS_V4 = Object.freeze([
   "liberation-sans",
@@ -430,4 +433,6 @@ export const RENDERER_REVISIONS_V4 = Object.freeze([
   "canvaskit-v4-r33",
   "canvaskit-v4-r34",
   "canvaskit-v4-r35",
+  "canvaskit-v4-r36",
+  "canvaskit-v4-r37",
 ] as const);

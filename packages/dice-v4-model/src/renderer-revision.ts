@@ -51,10 +51,12 @@ export type RendererRevisionPolicyV4 = {
   allowSingleColorPalette: boolean;
   singleColorClassicSolid: boolean;
   r32Fonts: boolean;
+  r37Fonts: boolean;
   r32Materials: boolean;
   polyhedralSurfaceMapping: "authored" | "view-octahedral-r33";
   textureGeneration: "v1" | "r33-v2";
   d6FiveOpticalOffsetX: number;
+  d6NormalCameraInset: boolean;
   faceWidePhysicalSeparation: boolean;
   gridLayout:
     | "legacy"
@@ -104,10 +106,12 @@ const r1 = policy({
   allowSingleColorPalette: false,
   singleColorClassicSolid: false,
   r32Fonts: false,
+  r37Fonts: false,
   r32Materials: false,
   polyhedralSurfaceMapping: "authored",
   textureGeneration: "v1",
   d6FiveOpticalOffsetX: 0,
+  d6NormalCameraInset: false,
   faceWidePhysicalSeparation: true,
   gridLayout: "legacy",
 });
@@ -208,6 +212,8 @@ const r33 = policy({
 });
 const r34 = policy({ ...r33 });
 const r35 = policy({ ...r34 });
+const r36 = policy({ ...r35, d6NormalCameraInset: true });
+const r37 = policy({ ...r36, r37Fonts: true });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -245,6 +251,8 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r33": r33,
   "canvaskit-v4-r34": r34,
   "canvaskit-v4-r35": r35,
+  "canvaskit-v4-r36": r36,
+  "canvaskit-v4-r37": r37,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

@@ -35,6 +35,8 @@ const EXPECTED_FONT_HASHES_V4 = {
     "0b754e08a41a46b4449d91e4a56e16451d02d65e802d2dc0af9ccbd74b9e17a9",
   "alcarin-tengwar":
     "5a001d1ebee020f50c3ddb584f02c372209d8384d49b58aef3c0e7ea6f4ac278",
+  "jetbrains-mono":
+    "e51aec534100554894c3f1f68cd188f7ea423416bbab58ec7d133670f2cf89ad",
 } as const satisfies Record<(typeof FONT_IDS_V4)[number], string>;
 
 async function sha256(bytes: ArrayBuffer): Promise<string> {

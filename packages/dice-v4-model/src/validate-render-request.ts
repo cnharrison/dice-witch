@@ -42,6 +42,7 @@ import {
   RESIN_FINISHES_V4,
   RESIN_INCLUSIONS_V4,
   R32_FONT_IDS_V4,
+  R37_FONT_IDS_V4,
   SHARP_RESIN_STYLES_V4,
   STONE_FINISHES_V4,
   STONE_STYLES_V4,
@@ -929,6 +930,12 @@ function parseAppearance(
     R32_FONT_IDS_V4.some((fontId) => fontId === parsed.engraving.fontId)
   ) {
     throw new Error(`${path}.engraving.fontId is not supported before r32`);
+  }
+  if (
+    !revisionPolicy.r37Fonts &&
+    R37_FONT_IDS_V4.some((fontId) => fontId === parsed.engraving.fontId)
+  ) {
+    throw new Error(`${path}.engraving.fontId is not supported before r37`);
   }
   if (
     revisionPolicy.singleColorClassicSolid &&

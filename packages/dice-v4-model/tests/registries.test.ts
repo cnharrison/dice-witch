@@ -10,6 +10,7 @@ import {
   MATERIAL_FAMILIES_V4,
   PATTERN_IDS_V4,
   POLYHEDRAL_FORMS_V4,
+  R37_FONT_IDS_V4,
   RENDERER_REVISIONS_V4,
   RENDER_FORMS_V4,
   TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4,
@@ -60,6 +61,29 @@ describe("V4 registries", () => {
     ]);
     expect(Object.isFrozen(APPEARANCE_TARGETS_V4)).toBe(true);
     expect(Object.isFrozen(RENDER_FORMS_V4)).toBe(true);
+  });
+
+  it("adds JetBrains Mono without removing the hidden Liberation Sans contract", () => {
+    expect(FONT_IDS_V4).toEqual([
+      "liberation-sans",
+      "new-rocker",
+      "stencil-ops",
+      "creeping-horror",
+      "special-elite",
+      "luckiest-guy",
+      "fontdiner-swanky",
+      "syncopate",
+      "source-sans-3",
+      "cinzel",
+      "barlow-condensed",
+      "zilla-slab",
+      "space-grotesk",
+      "fraunces",
+      "bricolage-grotesque",
+      "alcarin-tengwar",
+      "jetbrains-mono",
+    ]);
+    expect(R37_FONT_IDS_V4).toEqual(["jetbrains-mono"]);
   });
 
   it("keeps every public identifier unique and bounded", () => {
@@ -157,6 +181,8 @@ describe("V4 registries", () => {
       "canvaskit-v4-r33",
       "canvaskit-v4-r34",
       "canvaskit-v4-r35",
+      "canvaskit-v4-r36",
+      "canvaskit-v4-r37",
     ]);
   });
 });

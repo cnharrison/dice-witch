@@ -11,6 +11,8 @@ const UI_FONT_HASHES = {
     "110c6b882618c7b8ae2b5af07acb59a6fdcdc3c1e22020d240413d218a121451",
   "Fraunces-SemiBold-ui.ttf":
     "dad81f96bb8fbdb414e508ce01a787ac38562bd62dcded0a0e9f2512e76da096",
+  "JetBrainsMono-SemiBold-ui.ttf":
+    "2d629dfcd2e30d8cf9e0aaa37eaa02c8a2ea726118178fe073bef06de4a3eeb2",
   "SourceSans3-SemiBold-ui.ttf":
     "8942cae93f46091706aec8d4f738007e6fec1ae81ae5cfb79bc964907e98098c",
   "SpaceGrotesk-SemiBold-ui.ttf":

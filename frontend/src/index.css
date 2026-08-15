@@ -103,6 +103,14 @@
 }
 
 @font-face {
+  font-family: "DiceWitchV4-jetbrains-mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/appearance/JetBrainsMono-SemiBold-ui.ttf") format("truetype");
+}
+
+@font-face {
   font-family: "DiceWitchV4-zilla-slab";
   font-style: normal;
   font-weight: 600;

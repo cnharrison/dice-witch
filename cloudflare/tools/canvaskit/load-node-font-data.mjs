@@ -24,6 +24,7 @@ const FONT_ASSET_FILENAME_BY_ID = Object.freeze({
   fraunces: "Fraunces-SemiBold-subset.ttf",
   "bricolage-grotesque": "BricolageGrotesque-SemiBold-subset.ttf",
   "alcarin-tengwar": "AlcarinTengwar-Bold-subset.ttf",
+  "jetbrains-mono": "JetBrainsMono-SemiBold-subset.ttf",
 });
 
 export async function loadNodeCanvasKitFontDataV4() {

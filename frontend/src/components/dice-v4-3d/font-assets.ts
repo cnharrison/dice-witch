@@ -15,6 +15,7 @@ import spaceGroteskUrl from "../../../../cloudflare/packages/dice-svg/assets/Spa
 import frauncesUrl from "../../../../cloudflare/packages/dice-svg/assets/Fraunces-SemiBold-subset.ttf?url";
 import bricolageGrotesqueUrl from "../../../../cloudflare/packages/dice-svg/assets/BricolageGrotesque-SemiBold-subset.ttf?url";
 import alcarinTengwarUrl from "@/assets/fonts/appearance/AlcarinTengwar-Bold-ui.ttf?url";
+import jetbrainsMonoUrl from "../../../../cloudflare/packages/dice-svg/assets/JetBrainsMono-SemiBold-subset.ttf?url";
 
 const FONT_URLS_V4: Readonly<Record<FontIdV4, string>> = Object.freeze({
   "liberation-sans": liberationSansUrl,
@@ -33,6 +34,7 @@ const FONT_URLS_V4: Readonly<Record<FontIdV4, string>> = Object.freeze({
   fraunces: frauncesUrl,
   "bricolage-grotesque": bricolageGrotesqueUrl,
   "alcarin-tengwar": alcarinTengwarUrl,
+  "jetbrains-mono": jetbrainsMonoUrl,
 });
 
 const loadedFonts = new Map<FontIdV4, Promise<string>>();

@@ -62,6 +62,12 @@ function applyReleaseConfiguration(configs) {
   if (!isRecord(configs.roll.vars)) {
     throw new Error("Roll staging vars are required");
   }
+  if (!isRecord(configs.data.vars)) {
+    throw new Error("Data staging vars are required");
+  }
+  if (!isRecord(configs["web-api"].vars)) {
+    throw new Error("Web API staging vars are required");
+  }
   if (!Array.isArray(configs.roll.services)) {
     throw new Error("Roll staging services are required");
   }
@@ -72,7 +78,9 @@ function applyReleaseConfiguration(configs) {
     enabled: true,
     logs: { invocation_logs: true, head_sampling_rate: 1 },
   };
-  configs.roll.vars.ROLL_VIEW_POLICY = "r35";
+  configs.data.vars.APPEARANCE_CATALOG_POLICY = "r37";
+  configs.roll.vars.ROLL_VIEW_POLICY = "r37";
+  configs["web-api"].vars.APPEARANCE_CATALOG_POLICY = "r37";
 
   const messageProbe = configs.roll.services.find(
     ({ binding }) => binding === "DISCORD_MESSAGE_PROBE",
@@ -104,9 +112,6 @@ export async function materializeStagingConfigs({
   }
   const configs = decodeBundle(encodedBundle);
   applyReleaseConfiguration(configs);
-  if (!isRecord(configs["web-api"].vars)) {
-    throw new Error("Web API staging vars are required");
-  }
   configs["web-api"].vars.ENVIRONMENT = "staging";
   configs["web-api"].vars.BUILD_SHA = buildSha;
   configs["web-api"].vars.BUILD_TIME = buildTime;

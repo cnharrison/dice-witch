@@ -1,12 +1,15 @@
 import {
   parseAppearanceProfileV4,
   parseGuildAppearanceProfileV4,
+  validateAppearanceProfileFontsV4,
   type AppearanceProfileV4,
   type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_VALIDATION_CATALOG_V3,
+  appearanceCatalogForPolicyV3,
   parseAppearancePreviewRequestV4,
+  type AppearanceCatalogPolicyV3,
   type AppearancePreviewRequestV4,
 } from "../../../packages/dice-appearance/src";
 import { bytesToBase64, json } from "./responses";
@@ -63,10 +66,16 @@ function hasExactKeys(
 function parseProfile(
   value: unknown,
   kind: AppearanceProfileKind,
+  policy: AppearanceCatalogPolicyV3,
 ): AppearanceProfile {
-  return kind === "personal"
+  const profile = kind === "personal"
     ? parseAppearanceProfileV4(value, APPEARANCE_VALIDATION_CATALOG_V3)
     : parseGuildAppearanceProfileV4(value, APPEARANCE_VALIDATION_CATALOG_V3);
+  validateAppearanceProfileFontsV4(
+    profile,
+    appearanceCatalogForPolicyV3(policy).fonts.map(({ id }) => id),
+  );
+  return profile;
 }
 
 async function postData(
@@ -129,6 +138,7 @@ async function readJson(request: Request): Promise<unknown> {
 function parseLookup(
   value: unknown,
   kind: AppearanceProfileKind,
+  policy: AppearanceCatalogPolicyV3,
 ): { revision: number; profile: AppearanceProfile | null } {
   if (
     isRecord(value) &&
@@ -155,13 +165,14 @@ function parseLookup(
   }
   return {
     revision: Number(value.revision),
-    profile: parseProfile(value.profile, kind),
+    profile: parseProfile(value.profile, kind, policy),
   };
 }
 
 function parseWriteResult(
   value: unknown,
   kind: AppearanceProfileKind,
+  policy: AppearanceCatalogPolicyV3,
 ): AppearanceWriteResult {
   if (!isRecord(value) || typeof value.status !== "string") {
     throw new Error("Appearance update response is invalid");
@@ -191,13 +202,14 @@ function parseWriteResult(
   return {
     status: value.status,
     revision: Number(value.revision),
-    profile: parseProfile(value.profile, kind),
+    profile: parseProfile(value.profile, kind, policy),
   };
 }
 
 async function parseWrite(
   request: Request,
   kind: AppearanceProfileKind,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<AppearanceWriteInput> {
   const idempotencyKey = request.headers.get("idempotency-key");
   if (idempotencyKey === null || !UUID_V4.test(idempotencyKey)) {
@@ -215,7 +227,7 @@ async function parseWrite(
   }
   return {
     expectedRevision: Number(value.expectedRevision),
-    profile: parseProfile(value.profile, kind),
+    profile: parseProfile(value.profile, kind, policy),
     idempotencyKey: idempotencyKey.toLowerCase(),
   };
 }
@@ -227,12 +239,13 @@ function invalidProfileResponse(): Response {
 async function lookupResponse(
   response: Response,
   kind: AppearanceProfileKind,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   if (!response.ok) {
     return json({ error: "appearance_data_unavailable" }, 502);
   }
   try {
-    return json(parseLookup(await response.json(), kind));
+    return json(parseLookup(await response.json(), kind, policy));
   } catch {
     return invalidProfileResponse();
   }
@@ -241,6 +254,7 @@ async function lookupResponse(
 async function writeResponse(
   response: Response,
   kind: AppearanceProfileKind,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   if (response.status === 404) {
     return json({ error: "appearance_profile_owner_missing" }, 502);
@@ -249,7 +263,7 @@ async function writeResponse(
     return json({ error: "appearance_data_unavailable" }, 502);
   }
   try {
-    const result = parseWriteResult(await response.json(), kind);
+    const result = parseWriteResult(await response.json(), kind, policy);
     if (
       result.status === "revision_conflict" ||
       result.status === "mutation_conflict"
@@ -267,12 +281,14 @@ async function writeResponse(
 export async function getPersonalAppearanceV4(
   dataService: AppearanceApiDataService,
   userId: string,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   return lookupResponse(
     await postData(dataService, "/internal/appearance/v4/personal/get", {
       userId,
     }),
     "personal",
+    policy,
   );
 }
 
@@ -281,10 +297,11 @@ export async function putPersonalAppearanceV4(
   dataService: AppearanceApiDataService,
   userId: string,
   now: number,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   let input: AppearanceWriteInput;
   try {
-    input = await parseWrite(request, "personal");
+    input = await parseWrite(request, "personal", policy);
   } catch {
     return json({ error: "appearance_profile_invalid" }, 400);
   }
@@ -297,18 +314,21 @@ export async function putPersonalAppearanceV4(
       occurredAt: now,
     }),
     "personal",
+    policy,
   );
 }
 
 export async function getGuildAppearanceV4(
   dataService: AppearanceApiDataService,
   guildId: string,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   return lookupResponse(
     await postData(dataService, "/internal/appearance/v4/guild/get", {
       guildId,
     }),
     "guild",
+    policy,
   );
 }
 
@@ -318,10 +338,11 @@ export async function putGuildAppearanceV4(
   guildId: string,
   userId: string,
   now: number,
+  policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
   let input: AppearanceWriteInput;
   try {
-    input = await parseWrite(request, "guild");
+    input = await parseWrite(request, "guild", policy);
   } catch {
     return json({ error: "appearance_profile_invalid" }, 400);
   }
@@ -335,6 +356,7 @@ export async function putGuildAppearanceV4(
       occurredAt: now,
     }),
     "guild",
+    policy,
   );
 }
 

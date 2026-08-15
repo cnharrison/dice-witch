@@ -21,7 +21,9 @@ function supportsAllTargetSpecialFormsV4(
     rendererRevision === "canvaskit-v4-r32" ||
     rendererRevision === "canvaskit-v4-r33" ||
     rendererRevision === "canvaskit-v4-r34" ||
-    rendererRevision === "canvaskit-v4-r35"
+    rendererRevision === "canvaskit-v4-r35" ||
+    rendererRevision === "canvaskit-v4-r36" ||
+    rendererRevision === "canvaskit-v4-r37"
   );
 }
 

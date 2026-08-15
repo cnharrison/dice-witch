@@ -49,6 +49,7 @@ import type {
   CustomAppearanceDesignV3,
   DiceViewAzimuthV4,
   DiceViewPreferencesV4,
+  FontIdV4,
   GuildAppearanceProfileV3,
   GuildAppearanceProfileV4,
 } from "./types";
@@ -705,6 +706,18 @@ export function parseAppearanceProfileV3(
   };
   validateProfileSize(parsed);
   return parsed;
+}
+
+export function validateAppearanceProfileFontsV4(
+  profile: Pick<AppearanceProfileV4, "designs">,
+  supportedFontIds: readonly FontIdV4[],
+): void {
+  const supported = new Set<FontIdV4>(supportedFontIds);
+  for (const { recipe } of profile.designs) {
+    if (selectionValues(recipe.font).some((fontId) => !supported.has(fontId))) {
+      throw new Error("Appearance profile font is not supported by the active catalog");
+    }
+  }
 }
 
 export function parseAppearanceProfileV4(

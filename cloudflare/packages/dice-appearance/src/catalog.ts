@@ -37,6 +37,7 @@ import {
   EXPRESSIVE_RANDOM_FONT_IDS_V4,
   FANTASY_ESSENCES_V4,
   FANTASY_FINISHES_V4,
+  FONT_IDS_V4,
   GEMSTONE_FINISHES_V4,
   GEMSTONE_STYLES_V4,
   GLASS_FINISHES_V4,
@@ -131,35 +132,53 @@ const PATTERNS: AppearanceCatalogOptionV3<PatternIdV4>[] = [
   { id: "swirl", name: "Swirl" },
 ];
 
-const LEGACY_FONTS = [
-  { id: "liberation-sans", name: "Liberation Sans" },
-  { id: "new-rocker", name: "New Rocker" },
-  { id: "stencil-ops", name: "Stencil Ops" },
-  { id: "creeping-horror", name: "Creeping Horror" },
-  { id: "special-elite", name: "Special Elite" },
-  { id: "luckiest-guy", name: "Luckiest Guy" },
-  { id: "fontdiner-swanky", name: "Fontdiner Swanky" },
-  { id: "syncopate", name: "Syncopate" },
-] as const satisfies readonly AppearanceCatalogOptionV3<FontIdV4>[];
-
-const FONTS: readonly AppearanceCatalogOptionV3<FontIdV4>[] = [
-  ...LEGACY_FONTS,
-  { id: "source-sans-3", name: "Source Sans 3" },
-  { id: "cinzel", name: "Cinzel" },
-  { id: "barlow-condensed", name: "Barlow Condensed" },
-  { id: "zilla-slab", name: "Zilla Slab" },
-  { id: "space-grotesk", name: "Space Grotesk" },
-  { id: "fraunces", name: "Fraunces" },
-  { id: "bricolage-grotesque", name: "Bricolage Grotesque" },
-  { id: "alcarin-tengwar", name: "Alcarin Tengwar" },
-];
-
 function catalogOptions<Id extends string>(
   ids: readonly Id[],
   names: Readonly<Record<Id, string>>,
 ): AppearanceCatalogOptionV3<Id>[] {
   return ids.map((id) => ({ id, name: names[id] }));
 }
+
+const FONT_NAMES_V3 = {
+  "liberation-sans": "Liberation Sans",
+  "new-rocker": "New Rocker",
+  "stencil-ops": "Stencil Ops",
+  "creeping-horror": "Creeping Horror",
+  "special-elite": "Special Elite",
+  "luckiest-guy": "Luckiest Guy",
+  "fontdiner-swanky": "Fontdiner Swanky",
+  syncopate: "Syncopate",
+  "source-sans-3": "Source Sans 3",
+  cinzel: "Cinzel",
+  "barlow-condensed": "Barlow Condensed",
+  "zilla-slab": "Zilla Slab",
+  "space-grotesk": "Space Grotesk",
+  fraunces: "Fraunces",
+  "bricolage-grotesque": "Bricolage Grotesque",
+  "alcarin-tengwar": "Alcarin Tengwar",
+  "jetbrains-mono": "JetBrains Mono",
+} as const satisfies Readonly<Record<FontIdV4, string>>;
+
+function r37FixedFontIdV3(value: FontIdV4): FontIdV4 {
+  return value === "liberation-sans" ? "barlow-condensed" : value;
+}
+
+function r37MixedFontIdV3(value: FontIdV4): FontIdV4 {
+  if (value === "liberation-sans") return "barlow-condensed";
+  if (value === "barlow-condensed") return "jetbrains-mono";
+  return value;
+}
+
+const LEGACY_FONT_IDS_V3 = FONT_IDS_V4.slice(0, 8);
+const R34_FONT_IDS_V3 = FONT_IDS_V4.filter(
+  (fontId) => fontId !== "jetbrains-mono",
+);
+const R37_FONT_IDS_V3 = R34_FONT_IDS_V3.map(r37MixedFontIdV3);
+
+const LEGACY_FONTS = catalogOptions(LEGACY_FONT_IDS_V3, FONT_NAMES_V3);
+const FONTS = catalogOptions(FONT_IDS_V4, FONT_NAMES_V3);
+const R34_FONTS_V3 = catalogOptions(R34_FONT_IDS_V3, FONT_NAMES_V3);
+const R37_FONTS_V3 = catalogOptions(R37_FONT_IDS_V3, FONT_NAMES_V3);
 
 const TARGETS_V3 = catalogOptions(APPEARANCE_TARGETS_V4, {
   d4: "d4",
@@ -173,7 +192,6 @@ const TARGETS_V3 = catalogOptions(APPEARANCE_TARGETS_V4, {
   other: "Other",
 });
 const PATTERNS_V3 = PATTERNS;
-const FONTS_V3 = FONTS;
 const ENGRAVING_FINISHES_CATALOG_V3 = catalogOptions(
   ENGRAVING_FINISHES_V4,
   {
@@ -1717,11 +1735,23 @@ export const R32_RANDOM_FONT_OPTIONS_V3 = Object.freeze([
   })),
 ] satisfies readonly WeightedSelectionOption<FontIdV4>[]);
 
-const r32RandomFontIds = new Set<FontIdV4>(
-  R32_RANDOM_FONT_OPTIONS_V3.map(({ value }) => value),
+export const R37_RANDOM_FONT_OPTIONS_V3 = Object.freeze(
+  R32_RANDOM_FONT_OPTIONS_V3.map(({ value, weight }) => ({
+    value: r37MixedFontIdV3(value),
+    weight,
+  })) satisfies readonly WeightedSelectionOption<FontIdV4>[],
 );
-if (MANUAL_ONLY_FONT_IDS_V4.some((fontId) => r32RandomFontIds.has(fontId))) {
-  throw new Error("Manual-only appearance fonts cannot enter Random");
+
+for (const options of [
+  R32_RANDOM_FONT_OPTIONS_V3,
+  R37_RANDOM_FONT_OPTIONS_V3,
+]) {
+  const randomFontIds = new Set<FontIdV4>(
+    options.map(({ value }) => value),
+  );
+  if (MANUAL_ONLY_FONT_IDS_V4.some((fontId) => randomFontIds.has(fontId))) {
+    throw new Error("Manual-only appearance fonts cannot enter Random");
+  }
 }
 
 function createRandomRecipeV3(
@@ -1827,6 +1857,55 @@ const r34RandomRecipeV3 = createRandomRecipeV3(
   ],
   R32_RANDOM_FONT_OPTIONS_V3,
 );
+
+const r37RandomRecipeV3: AppearanceRecipeV3 = {
+  ...r34RandomRecipeV3,
+  font: { mode: "weighted", options: [...R37_RANDOM_FONT_OPTIONS_V3] },
+};
+
+function r37FontSelectionV3(
+  selection: AppearanceSelectionV3<FontIdV4>,
+): AppearanceSelectionV3<FontIdV4> {
+  if (selection.mode === "fixed") {
+    return {
+      mode: "fixed",
+      value: r37FixedFontIdV3(selection.value),
+    };
+  }
+  if (selection.mode === "allowlist") {
+    return {
+      mode: "allowlist",
+      values: selection.values.map(r37MixedFontIdV3),
+    };
+  }
+  return {
+    mode: "weighted",
+    options: selection.options.map(({ value, weight }) => ({
+      value: r37MixedFontIdV3(value),
+      weight,
+    })),
+  };
+}
+
+function r37RecipeV3(recipe: AppearanceRecipeV3): AppearanceRecipeV3 {
+  return { ...recipe, font: r37FontSelectionV3(recipe.font) };
+}
+
+function r37StyleV3(
+  style: AppearanceBuiltinStyleV3,
+): AppearanceBuiltinStyleV3 {
+  const transformed = { ...style, recipe: r37RecipeV3(style.recipe) };
+  if (style.overrides === undefined) return transformed;
+  return {
+    ...transformed,
+    overrides: Object.fromEntries(
+      Object.entries(style.overrides).map(([target, recipe]) => [
+        target,
+        r37RecipeV3(recipe),
+      ]),
+    ),
+  };
+}
 
 const simpleStylesV3: readonly AppearanceBuiltinStyleV3[] = [
   {
@@ -1935,13 +2014,19 @@ const LEGACY_RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(
 );
 const RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(randomRecipeV3);
 const R34_RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(r34RandomRecipeV3);
+const R37_PUBLISHED_RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(
+  r37RecipeV3(randomRecipeV3),
+);
+const R37_RANDOM_RECIPE_CANONICAL_V3 = canonicalJsonV4(r37RandomRecipeV3);
 
 export function isBuiltinRandomRecipeV3(recipe: AppearanceRecipeV3): boolean {
   const canonical = canonicalJsonV4(recipe);
   return (
     canonical === LEGACY_RANDOM_RECIPE_CANONICAL_V3 ||
     canonical === RANDOM_RECIPE_CANONICAL_V3 ||
-    canonical === R34_RANDOM_RECIPE_CANONICAL_V3
+    canonical === R34_RANDOM_RECIPE_CANONICAL_V3 ||
+    canonical === R37_PUBLISHED_RANDOM_RECIPE_CANONICAL_V3 ||
+    canonical === R37_RANDOM_RECIPE_CANONICAL_V3
   );
 }
 
@@ -1959,7 +2044,13 @@ export function randomRecipeForR34ResolutionV3(
   return isBuiltinRandomRecipeV3(recipe) ? r34RandomRecipeV3 : recipe;
 }
 
-export const BUILTIN_APPEARANCE_STYLES_V3: readonly AppearanceBuiltinStyleV3[] =
+export function randomRecipeForR37ResolutionV3(
+  recipe: AppearanceRecipeV3,
+): AppearanceRecipeV3 {
+  return isBuiltinRandomRecipeV3(recipe) ? r37RandomRecipeV3 : recipe;
+}
+
+export const BUILTIN_APPEARANCE_STYLES_R34_V3: readonly AppearanceBuiltinStyleV3[] =
   Object.freeze([
     ...stylesV2.map(({ id, name, description, recipe }) => ({
       id,
@@ -1976,15 +2067,29 @@ export const BUILTIN_APPEARANCE_STYLES_V3: readonly AppearanceBuiltinStyleV3[] =
     ...collectorStylesV3,
   ]);
 
-export const BUILTIN_APPEARANCE_RECIPES_V3: AppearanceBuiltinRecipesV3 =
-  Object.freeze(
+export const BUILTIN_APPEARANCE_STYLES_V3 = Object.freeze(
+  BUILTIN_APPEARANCE_STYLES_R34_V3.map(r37StyleV3),
+);
+
+function builtinRecipesV3(
+  styles: readonly AppearanceBuiltinStyleV3[],
+): AppearanceBuiltinRecipesV3 {
+  return Object.freeze(
     Object.fromEntries(
-      BUILTIN_APPEARANCE_STYLES_V3.map(({ id, recipe, overrides }) => [
+      styles.map(({ id, recipe, overrides }) => [
         id,
         overrides === undefined ? { recipe } : { recipe, overrides },
       ]),
     ),
   );
+}
+
+export const BUILTIN_APPEARANCE_RECIPES_R34_V3 = builtinRecipesV3(
+  BUILTIN_APPEARANCE_STYLES_R34_V3,
+);
+export const BUILTIN_APPEARANCE_RECIPES_V3 = builtinRecipesV3(
+  BUILTIN_APPEARANCE_STYLES_V3,
+);
 
 export const APPEARANCE_VALIDATION_CATALOG_V3 = {
   builtinStyleIds: BUILTIN_APPEARANCE_STYLES_V3.map(({ id }) => id),
@@ -2006,58 +2111,95 @@ export const APPEARANCE_CATALOG_V2: AppearancePublicCatalogV2 = {
   fonts: [...LEGACY_FONTS],
 };
 
-export const APPEARANCE_CATALOG_V3: AppearancePublicCatalogV3 = {
-  version: 3,
-  defaultStyleId: CHAOTIC_APPEARANCE_STYLE_ID,
-  editorDefaults: {
-    primaryColor: "#8a1f82",
-    palette: [
-      "#8a1f82",
-      "#04c9df",
-      "#f3d36a",
-      "#d7263d",
-      "#2e933c",
-      "#8a4fff",
-    ],
-    patternId: "checkerboard",
-  },
-  featuredStyleIds: FEATURED_APPEARANCE_STYLE_IDS,
-  collectorStyleIds: APPROVED_COLLECTOR_STYLE_IDS_V3,
-  featuredPatternIds: FEATURED_APPEARANCE_PATTERN_IDS,
-  styles: BUILTIN_APPEARANCE_STYLES_V3,
-  targets: TARGETS_V3,
-  patterns: PATTERNS_V3,
-  fonts: FONTS_V3,
-  engravingFinishes: ENGRAVING_FINISHES_CATALOG_V3,
-  variations: VARIATIONS_V3,
-  variationScopes: VARIATION_SCOPES_V3,
-  colorModes: COLOR_MODES_V3,
-  selectionModes: SELECTION_MODES_V3,
-  materials: MATERIALS_V3,
-  forms: FORMS_V3,
-  gradient: {
-    scopes: GRADIENT_SCOPES_CATALOG_V3,
-    directions: LINEAR_DIRECTIONS_CATALOG_V3,
-  },
-  lighting: {
-    modes: LIGHTING_MODES_CATALOG_V3,
-    strengths: LIGHTING_STRENGTHS_CATALOG_V3,
-    directions: LIGHTING_DIRECTIONS_CATALOG_V3,
-  },
-  bounds: {
-    paletteColors: APPEARANCE_PALETTE_COLOR_RANGE_V3,
-    percentage: APPEARANCE_PERCENTAGE_RANGE_V4,
-    textureScale: APPEARANCE_TEXTURE_SCALE_RANGE_V4,
-    selectionWeight: APPEARANCE_SELECTION_WEIGHT_RANGE_V3,
-    maximumTotalSelectionWeight:
-      MAX_TOTAL_APPEARANCE_SELECTION_WEIGHT_V3,
-    maximumMaterialOptions: MAX_MATERIAL_SELECTION_OPTIONS_V3,
-    maximumDesigns: MAX_APPEARANCE_DESIGNS_V3,
-    maximumDesignNameCharacters:
-      MAX_APPEARANCE_DESIGN_NAME_CHARACTERS_V3,
-    maximumProfileJsonCharacters: MAX_PROFILE_JSON_CHARACTERS_V3,
-  },
-};
+function appearanceCatalogV3(
+  styles: readonly AppearanceBuiltinStyleV3[],
+  fonts: readonly AppearanceCatalogOptionV3<FontIdV4>[],
+): AppearancePublicCatalogV3 {
+  return {
+    version: 3,
+    defaultStyleId: CHAOTIC_APPEARANCE_STYLE_ID,
+    editorDefaults: {
+      primaryColor: "#8a1f82",
+      palette: [
+        "#8a1f82",
+        "#04c9df",
+        "#f3d36a",
+        "#d7263d",
+        "#2e933c",
+        "#8a4fff",
+      ],
+      patternId: "checkerboard",
+    },
+    featuredStyleIds: FEATURED_APPEARANCE_STYLE_IDS,
+    collectorStyleIds: APPROVED_COLLECTOR_STYLE_IDS_V3,
+    featuredPatternIds: FEATURED_APPEARANCE_PATTERN_IDS,
+    styles,
+    targets: TARGETS_V3,
+    patterns: PATTERNS_V3,
+    fonts,
+    engravingFinishes: ENGRAVING_FINISHES_CATALOG_V3,
+    variations: VARIATIONS_V3,
+    variationScopes: VARIATION_SCOPES_V3,
+    colorModes: COLOR_MODES_V3,
+    selectionModes: SELECTION_MODES_V3,
+    materials: MATERIALS_V3,
+    forms: FORMS_V3,
+    gradient: {
+      scopes: GRADIENT_SCOPES_CATALOG_V3,
+      directions: LINEAR_DIRECTIONS_CATALOG_V3,
+    },
+    lighting: {
+      modes: LIGHTING_MODES_CATALOG_V3,
+      strengths: LIGHTING_STRENGTHS_CATALOG_V3,
+      directions: LIGHTING_DIRECTIONS_CATALOG_V3,
+    },
+    bounds: {
+      paletteColors: APPEARANCE_PALETTE_COLOR_RANGE_V3,
+      percentage: APPEARANCE_PERCENTAGE_RANGE_V4,
+      textureScale: APPEARANCE_TEXTURE_SCALE_RANGE_V4,
+      selectionWeight: APPEARANCE_SELECTION_WEIGHT_RANGE_V3,
+      maximumTotalSelectionWeight:
+        MAX_TOTAL_APPEARANCE_SELECTION_WEIGHT_V3,
+      maximumMaterialOptions: MAX_MATERIAL_SELECTION_OPTIONS_V3,
+      maximumDesigns: MAX_APPEARANCE_DESIGNS_V3,
+      maximumDesignNameCharacters:
+        MAX_APPEARANCE_DESIGN_NAME_CHARACTERS_V3,
+      maximumProfileJsonCharacters: MAX_PROFILE_JSON_CHARACTERS_V3,
+    },
+  };
+}
+
+export const APPEARANCE_CATALOG_R34_V3 = appearanceCatalogV3(
+  BUILTIN_APPEARANCE_STYLES_R34_V3,
+  R34_FONTS_V3,
+);
+export const APPEARANCE_CATALOG_V3 = appearanceCatalogV3(
+  BUILTIN_APPEARANCE_STYLES_V3,
+  R37_FONTS_V3,
+);
+
+export type AppearanceCatalogPolicyV3 = "r34" | "r37";
+
+export function parseAppearanceCatalogPolicyV3(
+  value: unknown,
+): AppearanceCatalogPolicyV3 {
+  if (value === "r34" || value === "r37") return value;
+  throw new Error("Appearance catalog policy must be r34 or r37");
+}
+
+export function appearanceCatalogForPolicyV3(
+  policy: AppearanceCatalogPolicyV3,
+): AppearancePublicCatalogV3 {
+  return policy === "r37" ? APPEARANCE_CATALOG_V3 : APPEARANCE_CATALOG_R34_V3;
+}
+
+export function builtinAppearanceRecipesForPolicyV3(
+  policy: AppearanceCatalogPolicyV3,
+): AppearanceBuiltinRecipesV3 {
+  return policy === "r37"
+    ? BUILTIN_APPEARANCE_RECIPES_V3
+    : BUILTIN_APPEARANCE_RECIPES_R34_V3;
+}
 
 export const APPEARANCE_VALIDATION_CATALOG: AppearanceCatalog = {
   builtinStyleIds: styles.map(({ id }) => id),

@@ -3,8 +3,10 @@ import {
   D4_STANDARD_GEOMETRY_V4,
   D20_STANDARD_GEOMETRY_R2_V4,
   D20_STANDARD_GEOMETRY_V4,
+  D6_STANDARD_GEOMETRY_V4,
   OTHER_SPHERE_GEOMETRY_V4,
   GEOMETRY_IDS_V4,
+  getAuthoredRenderViewV4,
   getGeometryIdV4,
   getRenderGeometryDescriptorV4,
   getRenderGeometryIdV4,
@@ -207,6 +209,80 @@ describe("V4 geometry contract", () => {
     expect(D20_STANDARD_GEOMETRY_R2_V4.camera.position).toEqual([
       3.8, 6.5, 7,
     ]);
+  });
+
+  it("applies the r36 inset only to normal d6 cameras", () => {
+    const normalView = {
+      kind: "camera" as const,
+      elevationDegrees: 55,
+      azimuthOffsetDegrees: 40,
+      poseAzimuthDegrees: 0,
+    };
+    const normalD6 = {
+      target: "d6",
+      form: "standard",
+      result: 1,
+      view: normalView,
+    } as const;
+    const d6R35 = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r35",
+      normalD6,
+    );
+    const d6R36 = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r36",
+      normalD6,
+    );
+    const normalD8 = {
+      target: "d8",
+      form: "standard",
+      result: 1,
+      view: normalView,
+    } as const;
+    const d8R35 = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r35",
+      normalD8,
+    );
+    const d8R36 = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r36",
+      normalD8,
+    );
+    const authoredD6 = {
+      target: "d6",
+      form: "standard",
+      result: 1,
+    } as const;
+    const authoredR35 = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r35",
+      {
+        ...authoredD6,
+        view: getAuthoredRenderViewV4(
+          "canvaskit-v4-r35",
+          "legacy",
+          authoredD6,
+        ),
+      },
+    );
+    const authoredR36 = getRenderGeometryDescriptorV4(
+      "canvaskit-v4-r36",
+      {
+        ...authoredD6,
+        view: getAuthoredRenderViewV4(
+          "canvaskit-v4-r36",
+          "legacy",
+          authoredD6,
+        ),
+      },
+    );
+
+    expect(d6R35.camera.orthographicHeight).toBe(
+      D6_STANDARD_GEOMETRY_V4.camera.orthographicHeight,
+    );
+    expect(d6R36.camera).toEqual({
+      ...d6R35.camera,
+      orthographicHeight: d6R35.camera.orthographicHeight * 1.14,
+    });
+    expect(d8R36.camera).toEqual(d8R35.camera);
+    expect(authoredR36.camera).toEqual(authoredR35.camera);
   });
 
   it("expresses polyhedral and spherical descriptors without runtime objects", () => {

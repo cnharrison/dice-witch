@@ -6,6 +6,7 @@
   "workers_dev": true,
   "preview_urls": false,
   "vars": {
+    "APPEARANCE_CATALOG_POLICY": "r37",
     "DISCORD_CLIENT_ID": "100000000000000001",
     "DISCORD_REDIRECT_URI": "https://REPLACE_WITH_STAGING_HOSTNAME/api/auth/callback/discord",
     "FRONTEND_ORIGIN": "https://REPLACE_WITH_STAGING_HOSTNAME",

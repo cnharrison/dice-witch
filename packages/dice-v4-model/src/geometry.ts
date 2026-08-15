@@ -357,12 +357,22 @@ export function getRenderGeometryDescriptorV4(
     radius * Math.sin(elevation),
     horizontal * Math.cos(azimuth),
   ];
+  let orthographicHeightScale = 1;
+  if (revisionPolicy.fudgeCameraInset && die.target === "fudge") {
+    orthographicHeightScale = 1.03;
+  }
+  if (
+    revisionPolicy.d6NormalCameraInset &&
+    die.target === "d6" &&
+    die.view.kind === "camera"
+  ) {
+    orthographicHeightScale = 1.14;
+  }
   const camera = {
     ...descriptor.camera,
     position,
-    ...(revisionPolicy.fudgeCameraInset && die.target === "fudge"
-      ? { orthographicHeight: descriptor.camera.orthographicHeight * 1.03 }
-      : {}),
+    orthographicHeight:
+      descriptor.camera.orthographicHeight * orthographicHeightScale,
   };
   if (die.view.kind === "oriented-camera") {
     const { resultRotation } = die.view;

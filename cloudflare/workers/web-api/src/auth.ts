@@ -3,7 +3,11 @@ import {
   serializeRenderRequestV4,
   type PublicRenderModelV4,
 } from "@dice-witch/dice-v4-model";
-import { APPEARANCE_CATALOG_V3 } from "../../../packages/dice-appearance/src";
+import {
+  appearanceCatalogForPolicyV3,
+  parseAppearanceCatalogPolicyV3,
+  type AppearanceCatalogPolicyV3,
+} from "../../../packages/dice-appearance/src";
 import { MAX_NOTATION_LENGTH } from "../../../packages/roll-domain/src/constants";
 import { parseSavedRollNameColorV2 } from "../../../packages/saved-rolls/src/color";
 import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
@@ -106,6 +110,7 @@ export type WebApiBindings = {
   DISCORD_REDIRECT_URI: string;
   FRONTEND_ORIGIN: string;
   BUILD_SHA: string;
+  APPEARANCE_CATALOG_POLICY: string;
 };
 
 type ValidatedConfiguration = Omit<
@@ -116,9 +121,11 @@ type ValidatedConfiguration = Omit<
     | "DISCORD_REDIRECT_URI"
     | "FRONTEND_ORIGIN"
     | "BUILD_SHA"
+    | "APPEARANCE_CATALOG_POLICY"
   >,
-  "DISCORD_CLIENT_SECRET"
+  "APPEARANCE_CATALOG_POLICY" | "DISCORD_CLIENT_SECRET"
 > & {
+  APPEARANCE_CATALOG_POLICY: AppearanceCatalogPolicyV3;
   DISCORD_CLIENT_SECRET: string;
   apiOrigin: string;
   frontendUrl: URL;
@@ -387,10 +394,14 @@ async function validateConfiguration(
     return null;
   }
   let clientSecret: string;
+  let appearanceCatalogPolicy: AppearanceCatalogPolicyV3;
   try {
     clientSecret = await readWorkerSecret(
       env.DISCORD_CLIENT_SECRET,
       "DISCORD_CLIENT_SECRET",
+    );
+    appearanceCatalogPolicy = parseAppearanceCatalogPolicyV3(
+      env.APPEARANCE_CATALOG_POLICY,
     );
   } catch {
     return null;
@@ -415,6 +426,7 @@ async function validateConfiguration(
     DISCORD_REDIRECT_URI: env.DISCORD_REDIRECT_URI,
     FRONTEND_ORIGIN: env.FRONTEND_ORIGIN,
     BUILD_SHA: env.BUILD_SHA,
+    APPEARANCE_CATALOG_POLICY: appearanceCatalogPolicy,
     apiOrigin: redirectUrl.origin,
     frontendUrl,
   };
@@ -1972,12 +1984,17 @@ export async function handleAuthRequest(
           ? withCors(response, configuration)
           : response;
       }
-      const response = Response.json(APPEARANCE_CATALOG_V3, {
-        headers: {
-          ...securityHeaders,
-          "cache-control": "public, max-age=31536000, immutable",
+      const response = Response.json(
+        appearanceCatalogForPolicyV3(
+          configuration.APPEARANCE_CATALOG_POLICY,
+        ),
+        {
+          headers: {
+            ...securityHeaders,
+            "cache-control": "public, max-age=31536000, immutable",
+          },
         },
-      });
+      );
       return request.headers.has("origin")
         ? withCors(response, configuration)
         : response;
@@ -2009,12 +2026,14 @@ export async function handleAuthRequest(
         ? await getPersonalAppearanceV4(
             env.DATA_SERVICE,
             authentication.session.user.id,
+            configuration.APPEARANCE_CATALOG_POLICY,
           )
         : await putPersonalAppearanceV4(
             request,
             env.DATA_SERVICE,
             authentication.session.user.id,
             now,
+            configuration.APPEARANCE_CATALOG_POLICY,
           );
       return exactOrigin ? withCors(response, configuration) : response;
     }
@@ -2171,13 +2190,18 @@ export async function handleAuthRequest(
         return exactOrigin ? withCors(response, configuration) : response;
       }
       const response = request.method === "GET"
-        ? await getGuildAppearanceV4(env.DATA_SERVICE, guildId)
+        ? await getGuildAppearanceV4(
+            env.DATA_SERVICE,
+            guildId,
+            configuration.APPEARANCE_CATALOG_POLICY,
+          )
         : await putGuildAppearanceV4(
             request,
             env.DATA_SERVICE,
             guildId,
             authorization.userId,
             now,
+            configuration.APPEARANCE_CATALOG_POLICY,
           );
       return exactOrigin ? withCors(response, configuration) : response;
     }

@@ -39,6 +39,7 @@ function validConfigs() {
       ...baseConfig(dataName, "workers/data/src/index.ts"),
       triggers: { crons: ["* * * * *", "0 3 * * *"] },
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
+      vars: { APPEARANCE_CATALOG_POLICY: "r37" },
       ai: { binding: "AI" },
       services: [service("DISCORD_REST", restName, "DiscordRestService")],
       d1_databases: [
@@ -65,7 +66,7 @@ function validConfigs() {
     roll: {
       ...baseConfig(rollName, "workers/roll/src/index.ts"),
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
-      vars: { ROLL_RENDER_VERSION: "4", ROLL_VIEW_POLICY: "r35" },
+      vars: { ROLL_RENDER_VERSION: "4", ROLL_VIEW_POLICY: "r37" },
       services: [
         service("DATA_SERVICE", dataName),
         service("DISCORD_REST", restName, "DiscordRestService"),
@@ -165,6 +166,7 @@ function validConfigs() {
       ),
       workers_dev: true,
       vars: {
+        APPEARANCE_CATALOG_POLICY: "r37",
         DISCORD_CLIENT_ID: applicationId,
         DISCORD_REDIRECT_URI: `${origin}/api/auth/callback/discord`,
         FRONTEND_ORIGIN: origin,

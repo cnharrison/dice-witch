@@ -14,6 +14,7 @@ import spaceGrotesk from "../../dice-svg/assets/SpaceGrotesk-SemiBold-subset.ttf
 import fraunces from "../../dice-svg/assets/Fraunces-SemiBold-subset.ttf";
 import bricolageGrotesque from "../../dice-svg/assets/BricolageGrotesque-SemiBold-subset.ttf";
 import alcarinTengwar from "../../dice-svg/assets/AlcarinTengwar-Bold-subset.ttf";
+import jetbrainsMono from "../../dice-svg/assets/JetBrainsMono-SemiBold-subset.ttf";
 import type { FontIdV4 } from "@dice-witch/dice-v4-model";
 
 export type CanvasKitFontDataV4 = Readonly<Record<FontIdV4, ArrayBuffer>>;
@@ -35,4 +36,5 @@ export const CANVASKIT_FONT_DATA_V4: CanvasKitFontDataV4 = Object.freeze({
   fraunces,
   "bricolage-grotesque": bricolageGrotesque,
   "alcarin-tengwar": alcarinTengwar,
+  "jetbrains-mono": jetbrainsMono,
 });

@@ -4,7 +4,7 @@ import {
 } from "@dice-witch/dice-v4-model";
 import { describe, expect, it, vi } from "vitest";
 import {
-  BUILTIN_APPEARANCE_RECIPES_V3,
+  BUILTIN_APPEARANCE_RECIPES_R34_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
 } from "../../packages/dice-appearance/src";
 import {
@@ -14,7 +14,7 @@ import {
 
 function effectiveAppearance() {
   const recipe =
-    BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID]?.recipe;
+    BUILTIN_APPEARANCE_RECIPES_R34_V3[CHAOTIC_APPEARANCE_STYLE_ID]?.recipe;
   if (recipe === undefined) throw new Error("Chaotic recipe is missing");
   return {
     version: 4 as const,

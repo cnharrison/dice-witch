@@ -3,7 +3,10 @@ import {
   createDefaultDiceViewPreferencesV4,
   type AppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
-import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
+import {
+  APPEARANCE_CATALOG_R34_V3,
+  APPEARANCE_CATALOG_V3,
+} from "../../../cloudflare/packages/dice-appearance/src/catalog";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppearanceApiError } from "./appearance-api-error";
 import {
@@ -56,6 +59,9 @@ describe("appearance V4 contracts", () => {
       "hollow-cage",
       "sphere",
     ]);
+    expect(parseAppearanceCatalogV3(APPEARANCE_CATALOG_R34_V3)).toEqual(
+      APPEARANCE_CATALOG_R34_V3,
+    );
   });
 
   it("rejects malformed, oversized, and incompatible catalog data", () => {
@@ -78,6 +84,15 @@ describe("appearance V4 contracts", () => {
     }
     expect(() => parseAppearanceCatalogV3(oversized)).toThrow(
       "Appearance style catalog is invalid",
+    );
+
+    const unsupportedFonts = structuredClone(APPEARANCE_CATALOG_V3);
+    unsupportedFonts.fonts.push({
+      id: "liberation-sans",
+      name: "Liberation Sans",
+    });
+    expect(() => parseAppearanceCatalogV3(unsupportedFonts)).toThrow(
+      "Appearance font catalog is invalid",
     );
 
     const incompatible = structuredClone(APPEARANCE_CATALOG_V3) as {

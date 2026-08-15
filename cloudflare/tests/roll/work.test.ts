@@ -11,7 +11,7 @@ import {
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_TARGETS,
-  BUILTIN_APPEARANCE_RECIPES_V3,
+  BUILTIN_APPEARANCE_RECIPES_R34_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
 } from "../../packages/dice-appearance/src";
 import {
@@ -180,7 +180,7 @@ function interactionExpiresAt(id: string): number {
 
 function v4Recipes() {
   const builtin =
-    BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID];
+    BUILTIN_APPEARANCE_RECIPES_R34_V3[CHAOTIC_APPEARANCE_STYLE_ID];
   if (builtin === undefined) throw new Error("Chaotic V3 recipe is missing");
   return Object.fromEntries(
     APPEARANCE_TARGETS.map((target) => [target, builtin.recipe]),
@@ -1128,6 +1128,14 @@ describe("RollWork Durable Object", () => {
       ...pendingV4,
       viewPolicy: "r35" as const,
     };
+    const pendingR36 = {
+      ...pendingV4,
+      viewPolicy: "r36" as const,
+    };
+    const pendingR37 = {
+      ...pendingV4,
+      viewPolicy: "r37" as const,
+    };
     const r33RenderRequest = structuredClone(
       rollWorkV4Fixture.renderRequest,
     ) as unknown as RenderRequestV4;
@@ -1163,6 +1171,8 @@ describe("RollWork Durable Object", () => {
     expect(parseRecord(JSON.stringify(pendingR33))).toEqual(pendingR33);
     expect(parseRecord(JSON.stringify(pendingR34))).toEqual(pendingR34);
     expect(parseRecord(JSON.stringify(pendingR35))).toEqual(pendingR35);
+    expect(parseRecord(JSON.stringify(pendingR36))).toEqual(pendingR36);
+    expect(parseRecord(JSON.stringify(pendingR37))).toEqual(pendingR37);
     expect(parseRecord(JSON.stringify(finalizedR33))).toEqual(finalizedR33);
     expect(parseRecord(JSON.stringify(pendingV3))).toEqual(pendingV3);
     expect(parseRecord(JSON.stringify(finalizedV3))).toEqual(finalizedV3);
@@ -1322,7 +1332,7 @@ describe("RollWork Durable Object", () => {
     const wrongRevision = structuredClone(rollWorkV4Fixture) as {
       renderRequest: { rendererRevision: string };
     };
-    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r36";
+    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r38";
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
       "Render request rendererRevision is not supported",
     );

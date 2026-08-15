@@ -2,7 +2,7 @@ import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 import {
   BUILTIN_APPEARANCE_RECIPES_V2,
-  BUILTIN_APPEARANCE_RECIPES_V3,
+  BUILTIN_APPEARANCE_RECIPES_R34_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
   randomRecipeForResolutionV3,
 } from "./packages/dice-appearance/src/catalog";
@@ -59,7 +59,7 @@ function effectiveRecipesV2(primary: string | null): Record<string, unknown> {
 }
 
 function effectiveRecipesV3(primary: string | null): Record<string, unknown> {
-  const builtin = BUILTIN_APPEARANCE_RECIPES_V3[CHAOTIC_APPEARANCE_STYLE_ID];
+  const builtin = BUILTIN_APPEARANCE_RECIPES_R34_V3[CHAOTIC_APPEARANCE_STYLE_ID];
   if (builtin === undefined) throw new Error("Chaotic V3 test recipe is missing");
   const recipe = structuredClone(
     randomRecipeForResolutionV3(builtin.recipe, false),

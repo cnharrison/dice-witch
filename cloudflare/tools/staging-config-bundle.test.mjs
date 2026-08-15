@@ -20,7 +20,9 @@ function bundle() {
   return Object.fromEntries(
     workers.map((worker) => {
       const config = { name: `dice-witch-${worker}-staging` };
-      if (worker === "web-api") {
+      if (worker === "data") {
+        config.vars = {};
+      } else if (worker === "web-api") {
         config.vars = { BUILD_SHA: "old", BUILD_TIME: "old" };
       } else if (worker === "interactions") {
         config.vars = {};
@@ -48,6 +50,9 @@ test("materializes only known configs and stamps exact build metadata", async ()
     validate: () => ({ status: "valid" }),
   });
 
+  const data = JSON.parse(
+    await readFile(path.join(directory, "wrangler.data.jsonc"), "utf8"),
+  );
   const web = JSON.parse(
     await readFile(path.join(directory, "wrangler.web-api.jsonc"), "utf8"),
   );
@@ -57,6 +62,8 @@ test("materializes only known configs and stamps exact build metadata", async ()
   const roll = JSON.parse(
     await readFile(path.join(directory, "wrangler.roll.jsonc"), "utf8"),
   );
+  assert.equal(data.vars.APPEARANCE_CATALOG_POLICY, "r37");
+  assert.equal(web.vars.APPEARANCE_CATALOG_POLICY, "r37");
   assert.equal(web.vars.ENVIRONMENT, "staging");
   assert.equal(web.vars.BUILD_SHA, sha);
   assert.equal(web.vars.BUILD_TIME, buildTime);
@@ -67,7 +74,7 @@ test("materializes only known configs and stamps exact build metadata", async ()
   });
   assert.deepEqual(roll.vars, {
     ROLL_RENDER_VERSION: "4",
-    ROLL_VIEW_POLICY: "r35",
+    ROLL_VIEW_POLICY: "r37",
   });
   assert.deepEqual(roll.services, [
     {
