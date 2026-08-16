@@ -37,6 +37,7 @@ import {
   buildRollRenderRequestR31V4,
   buildRollRenderRequestR32V4,
   buildRollRenderRequestR37V4,
+  buildRollRenderRequestR38V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1400,20 +1401,26 @@ describe("Profile V4 roll rendering", () => {
     });
   });
 
-  it("builds r37 requests with JetBrains Mono without changing older revision support", () => {
+  it("builds layout-only r38 requests with the r37 appearance stream", () => {
     const recipe = appearanceRecipeV3({
       font: { mode: "fixed", value: "jetbrains-mono" },
     });
-    const request = buildRollRenderRequestR37V4(outcome(["d20"]), 7, {
+    const effective = {
       ...effectiveAppearanceV4("normal"),
       recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
-    });
+    };
+    const result = outcome(["d20", "2d6"]);
+    const r37 = buildRollRenderRequestR37V4(result, 7, effective);
+    const r38 = buildRollRenderRequestR38V4(result, 7, effective);
 
-    expect(request.rendererRevision).toBe("canvaskit-v4-r37");
-    expect(request.groups[0]?.[0]?.appearance.engraving.fontId).toBe(
+    expect(r37.rendererRevision).toBe("canvaskit-v4-r37");
+    expect(r38.rendererRevision).toBe("canvaskit-v4-r38");
+    expect(r38.groups).toHaveLength(2);
+    expect(r38.groups[0]?.[0]?.appearance.engraving.fontId).toBe(
       "jetbrains-mono",
     );
-    expect(validateRenderRequestV4(request)).toEqual(request);
+    expect({ ...r38, rendererRevision: r37.rendererRevision }).toEqual(r37);
+    expect(validateRenderRequestV4(r38)).toEqual(r38);
   });
 
   it("detaches the final view snapshot from mutable preferences", () => {

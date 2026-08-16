@@ -464,7 +464,10 @@ function logicalPercentileIdentity(
 function appearanceSeedPolicyV3(
   rendererRevision: RendererRevisionV4,
 ): AppearanceResolutionSeedPolicyV3 {
-  if (rendererRevision === ROLL_RENDERER_REVISION_R37_V4) {
+  if (
+    rendererRevision === ROLL_RENDERER_REVISION_R37_V4 ||
+    rendererRevision === ROLL_RENDERER_REVISION_R38_V4
+  ) {
     return "property-streams-r37";
   }
   if (
@@ -613,6 +616,7 @@ export const ROLL_RENDERER_REVISION_R34_V4 = "canvaskit-v4-r34" as const;
 export const ROLL_RENDERER_REVISION_R35_V4 = "canvaskit-v4-r35" as const;
 export const ROLL_RENDERER_REVISION_R36_V4 = "canvaskit-v4-r36" as const;
 export const ROLL_RENDERER_REVISION_R37_V4 = "canvaskit-v4-r37" as const;
+export const ROLL_RENDERER_REVISION_R38_V4 = "canvaskit-v4-r38" as const;
 
 function buildRollRenderRequestForRevisionV4(
   result: RollExecutionResult,
@@ -638,7 +642,8 @@ function buildRollRenderRequestForRevisionV4(
     | typeof ROLL_RENDERER_REVISION_R34_V4
     | typeof ROLL_RENDERER_REVISION_R35_V4
     | typeof ROLL_RENDERER_REVISION_R36_V4
-    | typeof ROLL_RENDERER_REVISION_R37_V4,
+    | typeof ROLL_RENDERER_REVISION_R37_V4
+    | typeof ROLL_RENDERER_REVISION_R38_V4,
 ): RenderRequestV4 {
   validateRenderSeed(renderSeed);
   const groups = renderableRollOutcomes(result).map(
@@ -931,5 +936,19 @@ export function buildRollRenderRequestR37V4(
     effectiveAppearance.recipes,
     effectiveAppearance.diceView,
     ROLL_RENDERER_REVISION_R37_V4,
+  );
+}
+
+export function buildRollRenderRequestR38V4(
+  result: RollExecutionResult,
+  renderSeed: number,
+  effectiveAppearance: EffectiveAppearanceV4,
+): RenderRequestV4 {
+  return buildRollRenderRequestForRevisionV4(
+    result,
+    renderSeed,
+    effectiveAppearance.recipes,
+    effectiveAppearance.diceView,
+    ROLL_RENDERER_REVISION_R38_V4,
   );
 }

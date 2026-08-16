@@ -60,6 +60,7 @@ import {
 } from "./critical-effects";
 import type { CanvasKitFontDataV4 } from "./font-assets";
 import { measureFontInkBoundsV4 } from "./font-ink-bounds";
+import { createDynamicGridLayoutR38 } from "./grid-layout-r38";
 import {
   minimumConvexPolygonClearanceV4,
   type LabelContainmentPointV4,
@@ -668,7 +669,8 @@ function groupRowSpacingV4(
   if (
     layout === "group-rows-r12" ||
     layout === "group-rows-r13" ||
-    layout === "group-rows-r14"
+    layout === "group-rows-r14" ||
+    layout === "group-dynamic-r38"
   ) {
     return { mode: "fixed-stride", pixels: GROUP_ROW_DIE_STRIDE_R12_V4 };
   }
@@ -686,6 +688,9 @@ function geometryGridLayout<Die>(
 ): {
   rows: readonly (readonly Die[])[];
   rowOffsets: readonly number[];
+  rowVerticalOffsets: readonly number[];
+  groupIndices?: readonly (readonly number[])[];
+  dieIndices?: readonly (readonly number[])[];
   diceCount: number;
   width: number;
   height: number;
@@ -707,10 +712,32 @@ function geometryGridLayout<Die>(
     throw new Error(`CanvasKit V4 ${name} exceeds 50 dice`);
   }
   const rowHeight = GRID_DIE_SIZE_V4 + (hasIcons ? iconSize : 0);
+  if (layout === "group-dynamic-r38" && groups.length > 1) {
+    const dynamic = createDynamicGridLayoutR38({
+      groups,
+      rowHeight,
+      ...(keepTogether === undefined ? {} : { keepTogether }),
+    });
+    return {
+      rows: dynamic.rows.map(({ dice }) => dice),
+      rowOffsets: dynamic.rows.map(({ offsetX }) => offsetX),
+      rowVerticalOffsets: dynamic.rows.map(({ y }) => y),
+      groupIndices: dynamic.rows.map((row) => row.groupIndices),
+      dieIndices: dynamic.rows.map((row) => row.dieIndices),
+      diceCount,
+      width: dynamic.width,
+      height: dynamic.height,
+      rowHeight,
+      columnOffsets: dynamic.rows.map((row) => row.columnOffsets),
+    };
+  }
   let rows: readonly (readonly Die[])[];
   if (layout === "legacy" || layout === "group-rows-r13") {
     rows = wrappedGroupRows(groups);
-  } else if (layout === "group-rows-r14") {
+  } else if (
+    layout === "group-rows-r14" ||
+    layout === "group-dynamic-r38"
+  ) {
     rows = keepTogether === undefined
       ? balancedGroupRows(groups)
       : balancedGroupRowsKeepingPairs(groups, keepTogether);
@@ -813,6 +840,7 @@ function geometryGridLayout<Die>(
   return {
     rows,
     rowOffsets,
+    rowVerticalOffsets: rows.map((_, index) => index * rowHeight),
     diceCount,
     width,
     height: rows.length * rowHeight,
@@ -2362,6 +2390,22 @@ function renderWithGeometryRenderer(
   );
 }
 
+function sourcePairIsAdjacentV4(
+  groupIndices: readonly number[] | undefined,
+  dieIndices: readonly number[] | undefined,
+  index: number,
+): boolean {
+  if (groupIndices === undefined || dieIndices === undefined) return true;
+  const leftGroup = groupIndices[index];
+  const rightGroup = groupIndices[index + 1];
+  const leftDie = dieIndices[index];
+  const rightDie = dieIndices[index + 1];
+  return leftGroup !== undefined &&
+    leftGroup === rightGroup &&
+    leftDie !== undefined &&
+    rightDie === leftDie + 1;
+}
+
 async function renderGeometryGridSurface<Die>(
   canvasKit: CanvasKitRuntimeV4,
   groups: readonly (readonly Die[])[],
@@ -2380,17 +2424,25 @@ async function renderGeometryGridSurface<Die>(
     left: Die,
     right: Die,
   ) => readonly IconNameV4[] | undefined,
+  keepTogether?: (left: Die, right: Die) => boolean,
 ): Promise<RenderedGeometryGridV4> {
   const hasIcons =
     iconsForDie !== undefined &&
     groups.some((group) => group.some((die) => iconsForDie(die).length > 0));
+  const layoutKeepTogether = keepTogether ??
+    (sharedIconsForPair === undefined
+      ? undefined
+      : (left: Die, right: Die) =>
+          sharedIconsForPair(left, right) !== undefined);
   const {
     rows,
     rowOffsets,
+    rowVerticalOffsets,
+    groupIndices,
+    dieIndices,
     diceCount,
     width,
     height,
-    rowHeight,
     columnOffsets,
   } = geometryGridLayout(
     groups,
@@ -2399,9 +2451,7 @@ async function renderGeometryGridSurface<Die>(
     modifierIconSizeV4(rendererRevision),
     rendererRevisionPolicyV4(rendererRevision).gridLayout,
     visualBoundsForDie,
-    sharedIconsForPair === undefined
-      ? undefined
-      : (left, right) => sharedIconsForPair(left, right) !== undefined,
+    layoutKeepTogether,
   );
   const rendered = withCanvasKitResourcesSyncV4((scope) => {
     const surface = scope.own(
@@ -2424,21 +2474,35 @@ async function renderGeometryGridSurface<Die>(
           const left = row[index];
           const right = row[index + 1];
           if (left === undefined || right === undefined) continue;
+          if (
+            !sourcePairIsAdjacentV4(
+              groupIndices?.[rowIndex],
+              dieIndices?.[rowIndex],
+              index,
+            )
+          ) {
+            continue;
+          }
           const icons = sharedIconsForPair(left, right);
           if (icons !== undefined) sharedIconPairs.set(index, icons);
         }
       }
       row.forEach((die, columnIndex) => {
         const rowOffset = rowOffsets[rowIndex];
+        const rowVerticalOffset = rowVerticalOffsets[rowIndex];
         const columnOffset = columnOffsets[rowIndex]?.[columnIndex];
-        if (rowOffset === undefined || columnOffset === undefined) {
+        if (
+          rowOffset === undefined ||
+          rowVerticalOffset === undefined ||
+          columnOffset === undefined
+        ) {
           throw new Error(`CanvasKit V4 ${name} die offset is missing`);
         }
         canvas.save();
         try {
           canvas.translate(
             rowOffset + columnOffset,
-            rowIndex * rowHeight,
+            rowVerticalOffset,
           );
           visibleFaceCount += withCanvasKitResourcesSyncV4((dieScope) => {
             canvas.save();
@@ -2466,10 +2530,12 @@ async function renderGeometryGridSurface<Die>(
           const leftOffset = columnOffsets[rowIndex]?.[columnIndex];
           const rightOffset = columnOffsets[rowIndex]?.[columnIndex + 1];
           const rowOffset = rowOffsets[rowIndex];
+          const rowVerticalOffset = rowVerticalOffsets[rowIndex];
           if (
             leftOffset === undefined ||
             rightOffset === undefined ||
-            rowOffset === undefined
+            rowOffset === undefined ||
+            rowVerticalOffset === undefined
           ) {
             throw new Error(`CanvasKit V4 ${name} shared icon offset is missing`);
           }
@@ -2477,7 +2543,7 @@ async function renderGeometryGridSurface<Die>(
           try {
             canvas.translate(
               rowOffset + (leftOffset + rightOffset) / 2,
-              rowIndex * rowHeight,
+              rowVerticalOffset,
             );
             iconPainter.draw(canvas, icons, rendererRevision);
           } finally {
@@ -3986,19 +4052,22 @@ function visualCenterOffsetV4(
   return (GRID_DIE_SIZE_V4 - top - bottom) / 2;
 }
 
+function isPercentilePairV4(
+  left: RenderGeometryGridDieV4,
+  right: RenderGeometryGridDieV4,
+): boolean {
+  return left.kind === "polyhedral" &&
+    right.kind === "polyhedral" &&
+    left.geometry.target === "percentile" &&
+    right.geometry.target === "d10" &&
+    right.faceLabelSet === "percentile-ones";
+}
+
 function sharedPercentileIconsV4(
   left: RenderGeometryGridDieV4,
   right: RenderGeometryGridDieV4,
 ): readonly IconNameV4[] | undefined {
-  if (
-    left.kind !== "polyhedral" ||
-    right.kind !== "polyhedral" ||
-    left.geometry.target !== "percentile" ||
-    right.geometry.target !== "d10" ||
-    right.faceLabelSet !== "percentile-ones"
-  ) {
-    return undefined;
-  }
+  if (!isPercentilePairV4(left, right)) return undefined;
   const leftIcons = left.icons ?? [];
   const rightIcons = right.icons ?? [];
   return leftIcons.length > 0 &&
@@ -4051,6 +4120,9 @@ function renderGeometryGridWithGeometryRenderer(
           )
       : undefined,
     sharedIconsForPair,
+    policy.gridLayout === "group-dynamic-r38"
+      ? isPercentilePairV4
+      : undefined,
   );
 }
 

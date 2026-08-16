@@ -2191,6 +2191,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ["canvaskit-v4-r35", "property-streams-r35"],
     ["canvaskit-v4-r36", "property-streams-r35"],
     ["canvaskit-v4-r37", "property-streams-r37"],
+    ["canvaskit-v4-r38", "property-streams-r37"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -2206,10 +2207,12 @@ describe("resolveAppearanceRecipeV3", () => {
         other: 999,
       } as const;
 
-      const styles =
-        rendererRevision === "canvaskit-v4-r37"
-          ? BUILTIN_APPEARANCE_STYLES_V3
-          : BUILTIN_APPEARANCE_STYLES_R34_V3;
+      const usesR37Catalog =
+        rendererRevision === "canvaskit-v4-r37" ||
+        rendererRevision === "canvaskit-v4-r38";
+      const styles = usesR37Catalog
+        ? BUILTIN_APPEARANCE_STYLES_V3
+        : BUILTIN_APPEARANCE_STYLES_R34_V3;
       for (const style of styles) {
         const r32OnlyStyle =
           style.id.startsWith("elemental-") || style.id === "paint-splatter";
@@ -2220,6 +2223,7 @@ describe("resolveAppearanceRecipeV3", () => {
           rendererRevision !== "canvaskit-v4-r35" &&
           rendererRevision !== "canvaskit-v4-r36" &&
           rendererRevision !== "canvaskit-v4-r37" &&
+          rendererRevision !== "canvaskit-v4-r38" &&
           r32OnlyStyle
         ) {
           continue;

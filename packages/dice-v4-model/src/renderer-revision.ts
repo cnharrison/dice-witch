@@ -65,7 +65,8 @@ export type RendererRevisionPolicyV4 = {
     | "group-rows-r11"
     | "group-rows-r12"
     | "group-rows-r13"
-    | "group-rows-r14";
+    | "group-rows-r14"
+    | "group-dynamic-r38";
 };
 
 function policy(
@@ -214,6 +215,7 @@ const r34 = policy({ ...r33 });
 const r35 = policy({ ...r34 });
 const r36 = policy({ ...r35, d6NormalCameraInset: true });
 const r37 = policy({ ...r36, r37Fonts: true });
+const r38 = policy({ ...r37, gridLayout: "group-dynamic-r38" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -253,6 +255,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r35": r35,
   "canvaskit-v4-r36": r36,
   "canvaskit-v4-r37": r37,
+  "canvaskit-v4-r38": r38,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

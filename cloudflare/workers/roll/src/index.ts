@@ -71,6 +71,7 @@ import {
   ROLL_RENDERER_REVISION_R35_V4,
   ROLL_RENDERER_REVISION_R36_V4,
   ROLL_RENDERER_REVISION_R37_V4,
+  ROLL_RENDERER_REVISION_R38_V4,
   ROLL_RENDERER_REVISION_V4,
 } from "../../../packages/roll-render-model/src";
 import {
@@ -575,6 +576,7 @@ function rollRecordRendererRevision(record: RollWorkRecord): string | null {
       return record.renderRequest.rendererRevision;
     }
     const viewPolicy = rollRecordV5ViewPolicy(record);
+    if (viewPolicy === "r38") return ROLL_RENDERER_REVISION_R38_V4;
     if (viewPolicy === "r37") return ROLL_RENDERER_REVISION_R37_V4;
     if (viewPolicy === "r36") return ROLL_RENDERER_REVISION_R36_V4;
     if (viewPolicy === "r35") return ROLL_RENDERER_REVISION_R35_V4;

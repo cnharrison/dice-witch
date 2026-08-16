@@ -2266,6 +2266,239 @@ describe("CanvasKit Render Request V4", () => {
     }
   });
 
+  it("keeps every percentile pair together in r38", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const percentile = {
+      ...die("percentile", 90),
+      appearance: scopedAppearance,
+      view: getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+        target: "percentile",
+        result: 90,
+        form: "standard",
+      }),
+    };
+    const ones = {
+      ...die("d10", 9),
+      faceLabelSet: "percentile-ones" as const,
+      appearance: scopedAppearance,
+      view: getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+        target: "d10",
+        result: 9,
+        form: "standard",
+      }),
+    };
+    const groups = [[...Array.from({ length: 7 }, () => [
+      structuredClone(percentile),
+      structuredClone(ones),
+    ]).flat()]];
+    const rendered = await renderDiceRequestV4ToPng(
+      { version: 4, rendererRevision: "canvaskit-v4-r38", groups },
+      () => createRequestRenderer(canvasKit),
+    );
+    const decoded = await decodePngRgba8(rendered.png);
+    const rowRunCounts: number[] = [];
+
+    for (let rowIndex = 0; rowIndex < rendered.rowCount; rowIndex += 1) {
+      const row = cropRgba(
+        decoded.pixels,
+        rendered.width,
+        0,
+        rowIndex * 150,
+        rendered.width,
+        150,
+      );
+      const runs = alphaColumnRuns(row, rendered.width);
+      rowRunCounts.push(runs.length);
+      expect(runs.length % 2).toBe(0);
+    }
+
+    expect(rendered).toMatchObject({ width: 1_200, height: 300, rowCount: 2 });
+    expect(rowRunCounts.sort((left, right) => left - right)).toEqual([6, 8]);
+  });
+
+  it("uses the group-aware r38 layout at the 50-die repeated-pair limit", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const view = getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+      target: "d6",
+      result: 6,
+      form: "standard",
+    });
+    const groups = Array.from({ length: 25 }, () => [
+      { ...die("d6", 6), appearance: scopedAppearance, view },
+      { ...die("d6", 6), appearance: scopedAppearance, view },
+    ]);
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const stacked = await renderDiceRequestV4ToPng(
+      { version: 4, rendererRevision: "canvaskit-v4-r37", groups },
+      createRenderer,
+    );
+    const compact = await renderDiceRequestV4ToPng(
+      { version: 4, rendererRevision: "canvaskit-v4-r38", groups },
+      createRenderer,
+    );
+    const repeated = await renderDiceRequestV4ToPng(
+      { version: 4, rendererRevision: "canvaskit-v4-r38", groups },
+      createRenderer,
+    );
+
+    expect(stacked).toMatchObject({
+      width: 300,
+      height: 3_750,
+      diceCount: 50,
+      rowCount: 25,
+    });
+    expect(compact).toMatchObject({
+      width: 1_050,
+      height: 1_590,
+      diceCount: 50,
+      rowCount: 9,
+    });
+    expect(repeated.png).toEqual(compact.png);
+
+    const decoded = await decodePngRgba8(compact.png);
+    const firstRow = cropRgba(
+      decoded.pixels,
+      compact.width,
+      0,
+      0,
+      compact.width,
+      150,
+    );
+    const runs = alphaColumnRuns(firstRow, compact.width);
+    expect(runs).toHaveLength(6);
+    for (let index = 1; index < runs.length; index += 1) {
+      const previous = runs[index - 1];
+      const current = runs[index];
+      if (previous === undefined || current === undefined) {
+        throw new Error("Expected complete r38 repeated-pair row");
+      }
+      expect(current.left - previous.left).toBe(
+        index % 2 === 0 ? 225 : 150,
+      );
+    }
+    const firstGap = cropRgba(
+      decoded.pixels,
+      compact.width,
+      0,
+      150,
+      compact.width,
+      30,
+    );
+    expect(transparentPixelCount(firstGap)).toBe(firstGap.length / 4);
+    const lastRow = cropRgba(
+      decoded.pixels,
+      compact.width,
+      0,
+      1_440,
+      compact.width,
+      150,
+    );
+    const lastRuns = alphaColumnRuns(lastRow, compact.width);
+    expect(lastRuns).toHaveLength(2);
+    const first = lastRuns[0];
+    const last = lastRuns[1];
+    if (first === undefined || last === undefined) {
+      throw new Error("Expected centered final r38 pair");
+    }
+    expect(Math.abs(first.left - (compact.width - last.right - 1)))
+      .toBeLessThanOrEqual(1);
+  });
+
+  it("wraps wide r38 groups only when the projected dice become larger", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const view = getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+      target: "d6",
+      result: 6,
+      form: "standard",
+    });
+    const requestGroups = Array.from({ length: 5 }, () =>
+      Array.from({ length: 10 }, () => ({
+        ...die("d6", 6),
+        appearance: scopedAppearance,
+        view,
+      })),
+    );
+    const rendered = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r38",
+        groups: requestGroups,
+      },
+      () => createRequestRenderer(canvasKit),
+    );
+
+    expect(rendered).toMatchObject({
+      width: 750,
+      height: 1_620,
+      diceCount: 50,
+      rowCount: 10,
+    });
+  });
+
+  it("does not share percentile icons across r38 group boundaries", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const percentile = {
+      ...die("percentile", 90),
+      appearance: scopedAppearance,
+      icons: ["trashcan" as const],
+      view: getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+        target: "percentile",
+        result: 90,
+        form: "standard",
+      }),
+    };
+    const ones = {
+      ...die("d10", 9),
+      faceLabelSet: "percentile-ones" as const,
+      appearance: scopedAppearance,
+      icons: ["trashcan" as const],
+      view: getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+        target: "d10",
+        result: 9,
+        form: "standard",
+      }),
+    };
+    const rendered = await renderDiceRequestV4ToPng(
+      {
+        version: 4,
+        rendererRevision: "canvaskit-v4-r38",
+        groups: Array.from({ length: 14 }, (_, index) => [
+          structuredClone(index % 2 === 0 ? percentile : ones),
+        ]),
+      },
+      () => createRequestRenderer(canvasKit),
+    );
+    const decoded = await decodePngRgba8(rendered.png);
+    const firstIconRow = cropRgba(
+      decoded.pixels,
+      rendered.width,
+      0,
+      150,
+      rendered.width,
+      42,
+    );
+
+    expect(rendered).toMatchObject({
+      width: 600,
+      height: 1_080,
+      diceCount: 14,
+      rowCount: 5,
+    });
+    expect(alphaColumnRuns(firstIconRow, rendered.width)).toHaveLength(3);
+  });
+
   it("preserves the compact r9 maximum repeated modifier layout", async () => {
     const scopedAppearance = {
       ...appearance,
@@ -3158,7 +3391,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r38" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r39" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

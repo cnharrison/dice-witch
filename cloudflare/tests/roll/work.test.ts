@@ -1136,6 +1136,10 @@ describe("RollWork Durable Object", () => {
       ...pendingV4,
       viewPolicy: "r37" as const,
     };
+    const pendingR38 = {
+      ...pendingV4,
+      viewPolicy: "r38" as const,
+    };
     const r33RenderRequest = structuredClone(
       rollWorkV4Fixture.renderRequest,
     ) as unknown as RenderRequestV4;
@@ -1173,6 +1177,7 @@ describe("RollWork Durable Object", () => {
     expect(parseRecord(JSON.stringify(pendingR35))).toEqual(pendingR35);
     expect(parseRecord(JSON.stringify(pendingR36))).toEqual(pendingR36);
     expect(parseRecord(JSON.stringify(pendingR37))).toEqual(pendingR37);
+    expect(parseRecord(JSON.stringify(pendingR38))).toEqual(pendingR38);
     expect(parseRecord(JSON.stringify(finalizedR33))).toEqual(finalizedR33);
     expect(parseRecord(JSON.stringify(pendingV3))).toEqual(pendingV3);
     expect(parseRecord(JSON.stringify(finalizedV3))).toEqual(finalizedV3);
@@ -1332,7 +1337,7 @@ describe("RollWork Durable Object", () => {
     const wrongRevision = structuredClone(rollWorkV4Fixture) as {
       renderRequest: { rendererRevision: string };
     };
-    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r38";
+    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r39";
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
       "Render request rendererRevision is not supported",
     );

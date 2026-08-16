@@ -395,6 +395,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r35": renderCanvasKit,
   "canvaskit-v4-r36": renderCanvasKit,
   "canvaskit-v4-r37": renderCanvasKit,
+  "canvaskit-v4-r38": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {
