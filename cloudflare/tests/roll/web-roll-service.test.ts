@@ -749,6 +749,31 @@ describe("appearance preview", () => {
     );
   });
 
+  it.each(["r38", "r41"] as const)(
+    "keeps the %s all-dice preview in two rows of five",
+    async (viewPolicy) => {
+      const rendered = await renderAppearancePreviewV4(
+        {
+          target: "all",
+          recipe: recipeV3,
+          diceView: createDefaultDiceViewPreferencesV4(),
+          seed: 0x51ce_b00c,
+          state: "normal",
+        },
+        viewPolicy,
+      );
+
+      expect(rendered).toMatchObject({
+        version: 4,
+        contentType: "image/png",
+        diceCount: 10,
+        rowCount: 2,
+        height: 300,
+      });
+      expect(rendered.width).toBeGreaterThanOrEqual(750);
+    },
+  );
+
   it("renders deterministic Profile V3 previews through the real V4 renderer", async () => {
     const input = {
       target: "d20",

@@ -440,6 +440,7 @@ export type RenderGeometryGridDieV4 =
 export type RenderGeometryGridV4Options = {
   rendererRevision: RendererRevisionV4;
   groups: readonly (readonly RenderGeometryGridDieV4[])[];
+  preserveGroupRows?: boolean;
 };
 
 export type RenderedGeometryGridV4 = RenderedPolyhedralGridV4;
@@ -2444,6 +2445,7 @@ async function renderGeometryGridSurface<Die>(
     right: Die,
   ) => readonly IconNameV4[] | undefined,
   keepTogether?: (left: Die, right: Die) => boolean,
+  gridLayoutOverride?: RendererRevisionPolicyV4["gridLayout"],
 ): Promise<RenderedGeometryGridV4> {
   const hasIcons =
     iconsForDie !== undefined &&
@@ -2468,7 +2470,7 @@ async function renderGeometryGridSurface<Die>(
     name,
     hasIcons,
     modifierIconSizeV4(rendererRevision),
-    rendererRevisionPolicyV4(rendererRevision).gridLayout,
+    gridLayoutOverride ?? rendererRevisionPolicyV4(rendererRevision).gridLayout,
     visualBoundsForDie,
     layoutKeepTogether,
   );
@@ -4103,9 +4105,16 @@ function sharedPercentileIconsV4(
 function renderGeometryGridWithGeometryRenderer(
   canvasKit: CanvasKitRuntimeV4,
   resources: GeometryRendererResourcesV4,
-  { groups, rendererRevision }: RenderGeometryGridV4Options,
+  {
+    groups,
+    rendererRevision,
+    preserveGroupRows = false,
+  }: RenderGeometryGridV4Options,
 ): Promise<RenderedGeometryGridV4> {
   const policy = rendererRevisionPolicyV4(rendererRevision);
+  const gridLayout = preserveGroupRows
+    ? "group-rows-r14"
+    : policy.gridLayout;
   const sharedIconsForPair = policy.sharedPercentileModifierIcons
     ? sharedPercentileIconsV4
     : undefined;
@@ -4143,9 +4152,8 @@ function renderGeometryGridWithGeometryRenderer(
           )
       : undefined,
     sharedIconsForPair,
-    policy.gridLayout === "group-dynamic-r38"
-      ? isPercentilePairV4
-      : undefined,
+    gridLayout === "group-dynamic-r38" ? isPercentilePairV4 : undefined,
+    gridLayout,
   );
 }
 

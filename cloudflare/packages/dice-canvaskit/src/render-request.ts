@@ -44,6 +44,7 @@ export type RenderedDiceRequestV4 = RenderedGeometryGridV4 & {
 
 export type DiceRequestRenderOptionsV4 = {
   blankFaces?: boolean;
+  preserveGroupRows?: boolean;
 };
 
 export interface DiceRequestRendererV4 {
@@ -351,6 +352,9 @@ async function renderCanvasKit(
         ),
       ),
     ),
+    ...(options.preserveGroupRows === true
+      ? { preserveGroupRows: true }
+      : {}),
   });
   return {
     ...rendered,

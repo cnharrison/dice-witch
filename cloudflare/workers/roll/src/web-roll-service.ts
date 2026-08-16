@@ -825,6 +825,7 @@ async function renderAppearancePreviewRequestV4(
   const rendered = await renderV4WithSingleRetry(
     serializeRenderRequestV4(request),
     createRenderer,
+    { preserveGroupRows: true },
   );
   return {
     version: 4,

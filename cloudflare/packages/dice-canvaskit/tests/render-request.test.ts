@@ -2400,6 +2400,50 @@ describe("CanvasKit Render Request V4", () => {
     }
   });
 
+  it("preserves explicit preview rows without changing the default r38 layout", async () => {
+    const scopedAppearance = {
+      ...appearance,
+      texture: { ...appearance.texture, scope: "die-wide" as const },
+    };
+    const view = getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+      target: "d6",
+      result: 6,
+      form: "standard",
+    });
+    const groups = Array.from({ length: 2 }, () =>
+      Array.from({ length: 5 }, () => ({
+        ...die("d6", 6),
+        appearance: scopedAppearance,
+        view,
+      }))
+    );
+    const request = {
+      version: 4 as const,
+      rendererRevision: "canvaskit-v4-r38" as const,
+      groups,
+    };
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const dynamic = await renderDiceRequestV4ToPng(request, createRenderer);
+    const preserved = await renderDiceRequestV4ToPng(
+      request,
+      createRenderer,
+      { preserveGroupRows: true },
+    );
+
+    expect(dynamic).toMatchObject({
+      width: 450,
+      height: 630,
+      diceCount: 10,
+      rowCount: 4,
+    });
+    expect(preserved).toMatchObject({
+      width: 750,
+      height: 300,
+      diceCount: 10,
+      rowCount: 2,
+    });
+  });
+
   it("keeps every percentile pair together in r38", async () => {
     const scopedAppearance = {
       ...appearance,
