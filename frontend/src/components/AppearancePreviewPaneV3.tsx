@@ -100,6 +100,9 @@ export function AppearancePreviewPaneV3({
   };
   const previewFailure = imageError ??
     (previewQuery.isError ? previewQuery.error : null);
+  const displayedPreviewClassName = previewFailure === null
+    ? "grid h-full min-h-0 w-full place-items-center"
+    : "grid h-full min-h-0 w-full grid-rows-[minmax(0,1fr)_auto] place-items-center gap-3";
   const previewImage = (
     <PixelatedPreviewImage
       candidate={previewQuery.data}
@@ -107,6 +110,7 @@ export function AppearancePreviewPaneV3({
       onDisplay={() => setHasDisplayedPreview(true)}
       onError={setImageError}
       retryKey={imageRetryKey}
+      fitContainer
     />
   );
 
@@ -131,7 +135,7 @@ export function AppearancePreviewPaneV3({
     );
   } else {
     previewContent = (
-      <div className="grid place-items-center gap-3">
+      <div className={displayedPreviewClassName}>
         {previewImage}
         {previewFailure !== null && (
           <div className="space-y-2 text-center">

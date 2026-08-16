@@ -173,12 +173,14 @@ export function PixelatedImageTransition({
   onDisplay,
   onError,
   retryKey = 0,
+  fitContainer = false,
 }: {
   candidate?: PixelatedImageCandidate;
   alt: string;
   onDisplay(): void;
   onError(error: Error): void;
   retryKey?: number;
+  fitContainer?: boolean;
 }) {
   const reducedMotion = useBrowserMediaQueryV4(
     "(prefers-reduced-motion: reduce)",
@@ -293,14 +295,23 @@ export function PixelatedImageTransition({
   );
 
   if (displayed === null) return null;
+  const frameClassName = fitContainer
+    ? "relative grid h-full min-h-0 w-full min-w-0 place-items-center"
+    : "relative grid max-w-full place-items-center";
+  const imageClassName = fitContainer
+    ? "absolute inset-0 m-auto h-auto max-h-full w-auto max-w-full object-contain"
+    : "h-auto max-w-full object-contain";
+  const canvasClassName = fitContainer
+    ? "absolute inset-0 m-auto h-auto max-h-full w-auto max-w-full"
+    : "absolute inset-0 h-full w-full";
   return (
-    <span className="relative grid max-w-full place-items-center">
+    <span className={frameClassName}>
       <img
         src={displayed.image.source}
         width={displayed.image.width}
         height={displayed.image.height}
         alt={displayed.alt}
-        className="h-auto max-w-full object-contain"
+        className={imageClassName}
       />
       {transition !== null && (
         <canvas
@@ -308,7 +319,7 @@ export function PixelatedImageTransition({
           width={displayed.image.width}
           height={displayed.image.height}
           aria-hidden="true"
-          className="absolute inset-0 h-full w-full"
+          className={canvasClassName}
         />
       )}
     </span>
@@ -321,12 +332,14 @@ export function PixelatedPreviewImage({
   onDisplay,
   onError,
   retryKey = 0,
+  fitContainer = false,
 }: {
   candidate?: PreviewImage;
   alt: string;
   onDisplay(): void;
   onError(error: Error): void;
   retryKey?: number;
+  fitContainer?: boolean;
 }) {
   return (
     <PixelatedImageTransition
@@ -343,6 +356,7 @@ export function PixelatedPreviewImage({
       onDisplay={onDisplay}
       onError={onError}
       retryKey={retryKey}
+      fitContainer={fitContainer}
     />
   );
 }

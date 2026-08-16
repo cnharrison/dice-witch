@@ -81,6 +81,40 @@ afterEach(() => {
 });
 
 describe("PixelatedPreviewImage", () => {
+  it("contains tall previews within both parent dimensions", async () => {
+    const props = {
+      alt: "All dice appearance preview",
+      onDisplay: vi.fn(),
+      onError: vi.fn(),
+      fitContainer: true,
+    };
+    const view = render(
+      <div style={{ width: 450, height: 264 }}>
+        <PixelatedPreviewImage
+          candidate={{ ...preview("AAAA"), width: 450, height: 630 }}
+          {...props}
+        />
+      </div>,
+    );
+
+    const image = await screen.findByRole("img");
+    expect(image.classList).toContain("absolute");
+    expect(image.classList).toContain("max-h-full");
+    expect(image.parentElement?.classList).toContain("h-full");
+    expect(image.parentElement?.classList).toContain("w-full");
+
+    view.rerender(
+      <div style={{ width: 450, height: 264 }}>
+        <PixelatedPreviewImage
+          candidate={{ ...preview("BBBB"), width: 450, height: 630 }}
+          {...props}
+        />
+      </div>,
+    );
+    await waitFor(() => expect(document.querySelector("canvas")).not.toBeNull());
+    expect(document.querySelector("canvas")?.classList).toContain("max-h-full");
+  });
+
   it("reports an undecodable initial preview without hiding the loading state", async () => {
     const failure = new Error("decode failed");
     decodeImage = async () => Promise.reject(failure);

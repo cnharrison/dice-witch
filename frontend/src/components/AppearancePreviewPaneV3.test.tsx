@@ -90,6 +90,25 @@ describe("AppearancePreviewPaneV3", () => {
     );
   });
 
+  it("contains tall all-dice previews inside the fixed-height panel", async () => {
+    preview.mockResolvedValue({
+      version: 4,
+      contentType: "image/png",
+      width: 450,
+      height: 630,
+      base64: "iVBORw0KGgo=",
+    });
+    renderPreview();
+
+    const image = await screen.findByRole("img", {
+      name: "All dice appearance preview",
+    });
+    expect(image.classList).toContain("absolute");
+    expect(image.classList).toContain("max-h-full");
+    expect(image.parentElement?.classList).toContain("h-full");
+    expect(image.parentElement?.parentElement?.classList).toContain("h-full");
+  });
+
   it("keeps the previous preview visible while a replacement loads", async () => {
     preview
       .mockResolvedValueOnce({
