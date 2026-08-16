@@ -225,6 +225,9 @@ describe("RenderRequestV4", () => {
     Object.assign(adaptiveAppearance, { outlineColor: "#ffffff" });
 
     expect(validateRenderRequestV4(adaptive)).toEqual(adaptive);
+    const silhouette = structuredClone(adaptive);
+    silhouette.rendererRevision = "canvaskit-v4-r40";
+    expect(validateRenderRequestV4(silhouette)).toEqual(silhouette);
 
     const historical = structuredClone(adaptive);
     historical.rendererRevision = "canvaskit-v4-r38";

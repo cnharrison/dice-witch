@@ -5,10 +5,12 @@ import {
   APPEARANCE_GENTLE_LIGHTING_MULTIPLIER,
   APPEARANCE_STRONG_LIGHTING_MULTIPLIER,
   MINIMUM_APPEARANCE_OUTLINE_CONTRAST,
+  MINIMUM_APPEARANCE_SILHOUETTE_CONTRAST,
   getContrastRatio,
   resolveAppearanceInk,
   resolveAppearanceInkV2,
   resolveAppearanceOutlineV2,
+  resolveAppearanceSilhouetteOutlineV3,
 } from "../../packages/dice-appearance/src";
 
 describe("appearance ink contrast", () => {
@@ -301,6 +303,42 @@ describe("appearance ink contrast", () => {
     });
     expect(varied.outlineColor).toBe("#000000");
     expect(varied.minimumContrast).toBeLessThan(3);
+  });
+
+  it("uses a lower black-background threshold for silhouette visibility", () => {
+    const lighting = {
+      mode: "combined",
+      strength: "gentle",
+      direction: "upper-left",
+    } as const;
+    const saturatedBlue = resolveAppearanceSilhouetteOutlineV3(
+      { type: "solid", color: "#0040e0" },
+      lighting,
+      "d20",
+    );
+    const nearBlack = resolveAppearanceSilhouetteOutlineV3(
+      { type: "solid", color: "#173f35" },
+      lighting,
+      "d20",
+    );
+    const basalt = resolveAppearanceSilhouetteOutlineV3(
+      {
+        type: "gradient",
+        colors: ["#0c0909", "#3b2924"],
+        scope: "die-wide",
+        direction: "upper-left-to-lower-right",
+      },
+      lighting,
+      "d20",
+    );
+
+    expect(MINIMUM_APPEARANCE_SILHOUETTE_CONTRAST).toBe(2);
+    expect(saturatedBlue.outlineColor).toBe("#000000");
+    expect(saturatedBlue.minimumContrast).toBeGreaterThanOrEqual(2);
+    expect(nearBlack.outlineColor).toBe("#ffffff");
+    expect(nearBlack.minimumContrast).toBeGreaterThanOrEqual(2);
+    expect(basalt.outlineColor).toBe("#ffffff");
+    expect(basalt.minimumContrast).toBeGreaterThanOrEqual(2);
   });
 
   it("calculates WCAG contrast ratios", () => {

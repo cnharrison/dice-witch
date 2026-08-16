@@ -39,6 +39,7 @@ import {
   buildRollRenderRequestR37V4,
   buildRollRenderRequestR38V4,
   buildRollRenderRequestR39V4,
+  buildRollRenderRequestR40V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1454,6 +1455,53 @@ describe("Profile V4 roll rendering", () => {
       ),
     }).toEqual(r38);
     expect(validateRenderRequestV4(r39)).toEqual(r39);
+  });
+
+  it("uses silhouette visibility only in r40 snapshots", () => {
+    const solidRecipe = (primary: string) =>
+      appearanceRecipeV3({
+        colors: { mode: "solid", primary },
+        material: {
+          mode: "fixed",
+          value: {
+            family: "classic",
+            treatment: "solid",
+            opacity: "opaque",
+            finish: "satin",
+            textureScale: 100,
+          },
+        },
+      });
+    const effective = (primary: string) => ({
+      ...effectiveAppearanceV4("normal"),
+      recipes: effectiveRecipesV3(
+        solidRecipe(primary),
+      ) as EffectiveAppearanceV4["recipes"],
+    });
+    const result = outcome(["d20"]);
+    const r39Blue = buildRollRenderRequestR39V4(
+      result,
+      7,
+      effective("#0040e0"),
+    );
+    const r40Blue = buildRollRenderRequestR40V4(
+      result,
+      7,
+      effective("#0040e0"),
+    );
+    const r40NearBlack = buildRollRenderRequestR40V4(
+      result,
+      7,
+      effective("#173f35"),
+    );
+
+    expect(r39Blue.groups[0]?.[0]?.appearance.outlineColor).toBe("#ffffff");
+    expect(r40Blue.groups[0]?.[0]?.appearance.outlineColor).toBe("#000000");
+    expect(r40NearBlack.groups[0]?.[0]?.appearance.outlineColor).toBe(
+      "#ffffff",
+    );
+    expect(validateRenderRequestV4(r40Blue)).toEqual(r40Blue);
+    expect(validateRenderRequestV4(r40NearBlack)).toEqual(r40NearBlack);
   });
 
   it("detaches the final view snapshot from mutable preferences", () => {

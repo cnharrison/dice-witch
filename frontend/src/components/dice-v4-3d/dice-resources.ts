@@ -271,7 +271,8 @@ export function createThreeDiceResourcesV4(
     ? null
     : rendererRevisionPolicyV4(rendererRevision);
   const outlineColor =
-    revisionPolicy?.outlineContrast === "adaptive-r39" &&
+    revisionPolicy !== null &&
+      revisionPolicy.outlineContrast !== "black" &&
       prepared.kind === "polyhedral" &&
       prepared.physical.form !== "hollow-cage"
       ? die.appearance.outlineColor

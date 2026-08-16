@@ -83,7 +83,7 @@ function applyReleaseConfiguration(configs) {
     ...dataVars,
     APPEARANCE_CATALOG_POLICY: "r37",
   };
-  configs.roll.vars.ROLL_VIEW_POLICY = "r39";
+  configs.roll.vars.ROLL_VIEW_POLICY = "r40";
   configs["web-api"].vars.APPEARANCE_CATALOG_POLICY = "r37";
 
   const messageProbe = configs.roll.services.find(

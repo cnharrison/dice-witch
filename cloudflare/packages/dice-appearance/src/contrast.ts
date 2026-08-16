@@ -10,6 +10,7 @@ export const DARK_APPEARANCE_INK = "#111111" as const;
 export const LIGHT_APPEARANCE_INK = "#faf9f6" as const;
 export const MINIMUM_APPEARANCE_CONTRAST = 4.5;
 export const MINIMUM_APPEARANCE_OUTLINE_CONTRAST = 3;
+export const MINIMUM_APPEARANCE_SILHOUETTE_CONTRAST = 2;
 export const APPEARANCE_GENTLE_LIGHTING_MULTIPLIER = 0.2;
 export const APPEARANCE_STRONG_LIGHTING_MULTIPLIER = 5 / 3;
 
@@ -428,21 +429,44 @@ export function resolveAppearanceInkV2(
   return resolveInkPaths(treatedColorPaths(surface, lighting, target));
 }
 
-export function resolveAppearanceOutlineV2(
-  surface: ResolvedAppearanceSurfaceV2,
-  lighting: ResolvedAppearanceLightingV2,
-  target: AppearanceTarget,
+function resolveOutlinePaths(
+  paths: readonly ColorPath[],
+  minimumBlackContrast: number,
+  minimumWhiteContrast: number,
 ): AppearanceOutlineResolution {
-  const paths = treatedColorPaths(surface, lighting, target);
   const blackContrast = minimumPathContrast("#000000", paths);
   const whiteContrast = minimumPathContrast("#ffffff", paths);
   const useWhite =
-    blackContrast < MINIMUM_APPEARANCE_OUTLINE_CONTRAST &&
-    whiteContrast >= MINIMUM_APPEARANCE_OUTLINE_CONTRAST;
+    blackContrast < minimumBlackContrast &&
+    whiteContrast >= minimumWhiteContrast;
   return {
     outlineColor: useWhite ? "#ffffff" : "#000000",
     minimumContrast: Number(
       (useWhite ? whiteContrast : blackContrast).toFixed(4),
     ),
   };
+}
+
+export function resolveAppearanceOutlineV2(
+  surface: ResolvedAppearanceSurfaceV2,
+  lighting: ResolvedAppearanceLightingV2,
+  target: AppearanceTarget,
+): AppearanceOutlineResolution {
+  return resolveOutlinePaths(
+    treatedColorPaths(surface, lighting, target),
+    MINIMUM_APPEARANCE_OUTLINE_CONTRAST,
+    MINIMUM_APPEARANCE_OUTLINE_CONTRAST,
+  );
+}
+
+export function resolveAppearanceSilhouetteOutlineV3(
+  surface: ResolvedAppearanceSurfaceV2,
+  lighting: ResolvedAppearanceLightingV2,
+  target: AppearanceTarget,
+): AppearanceOutlineResolution {
+  return resolveOutlinePaths(
+    treatedColorPaths(surface, lighting, target),
+    MINIMUM_APPEARANCE_SILHOUETTE_CONTRAST,
+    MINIMUM_APPEARANCE_OUTLINE_CONTRAST,
+  );
 }

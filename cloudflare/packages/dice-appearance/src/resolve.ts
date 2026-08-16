@@ -10,6 +10,7 @@ import {
   resolveCompatiblePolyhedralFormV4,
   type AppearanceMaterialV4,
   type AppearanceRecipeV3,
+  type AppearanceTargetV4,
   type EngravingFinishV4,
   type LinearDirectionV4,
   type RenderLightingV4,
@@ -28,6 +29,7 @@ import {
   resolveAppearanceInk,
   resolveAppearanceInkV2,
   resolveAppearanceOutlineV2,
+  resolveAppearanceSilhouetteOutlineV3,
   type AppearanceInkResolution,
 } from "./contrast";
 import { legacyAppearanceRecipeV1 } from "./migrate";
@@ -1204,6 +1206,49 @@ function contrastSurfaceV3(
     scope,
     direction,
   };
+}
+
+function outlineSurfaceR40V3(
+  resolved: ResolvedAppearanceV3,
+): ResolvedAppearanceSurfaceV2 {
+  const { material, palette } = resolved.appearance;
+  const [first, second, ...remaining] = palette;
+  if (material.family === "classic" && material.treatment === "solid") {
+    return { type: "solid", color: first };
+  }
+  if (material.family === "classic" && material.treatment === "pattern") {
+    return {
+      type: "pattern",
+      patternId: material.patternId,
+      primaryColor: first,
+      secondaryColor: second,
+    };
+  }
+  // Lava's first two resolved stops form the crust; later stops light fissures.
+  const colors: [string, string, ...string[]] =
+    material.family === "elemental" && material.style === "lava"
+      ? [first, second]
+      : [first, second, ...remaining];
+  return {
+    type: "gradient",
+    colors,
+    scope: "die-wide",
+    direction: "upper-left-to-lower-right",
+  };
+}
+
+export function resolveAppearanceOutlineColorR40V3(
+  resolved: ResolvedAppearanceV3,
+  target: AppearanceTargetV4,
+): ResolvedAppearanceV3["appearance"]["outlineColor"] {
+  if (resolved.form === "sphere" || resolved.form === "hollow-cage") {
+    return "#000000";
+  }
+  return resolveAppearanceSilhouetteOutlineV3(
+    outlineSurfaceR40V3(resolved),
+    resolved.appearance.lighting,
+    target,
+  ).outlineColor;
 }
 
 function randomIntegerV3(

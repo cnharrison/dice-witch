@@ -685,7 +685,7 @@ describe("CanvasKit Render Request V4", () => {
     canvasKit = await loadCanvasKitV4();
   });
 
-  it("renders white r39 outlines only for standard dice", async () => {
+  it("renders stored white outlines only for supported standard dice", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
     const darkAppearance: RenderAppearanceV4 = {
       ...appearance,
@@ -761,6 +761,10 @@ describe("CanvasKit Render Request V4", () => {
         appearance: { ...standard.appearance, outlineColor: "#ffffff" },
       }]],
     };
+    const silhouetteStandard: RenderRequestV4 = {
+      ...whiteStandard,
+      rendererRevision: "canvaskit-v4-r40",
+    };
     const historicalPixels = await render(historicalStandard);
     const blackPixels = await render(blackStandard);
     const whitePixels = await render(whiteStandard);
@@ -772,14 +776,18 @@ describe("CanvasKit Render Request V4", () => {
     expect(
       brighterPixelCount(blackPixels.pixels, whitePixels.pixels),
     ).toBeGreaterThan(0);
+    expect(await render(silhouetteStandard)).toEqual(whitePixels);
 
     for (const subject of subjects.slice(1)) {
       const historical = historicalRequest(subject);
-      const current: RenderRequestV4 = {
-        ...historical,
-        rendererRevision: "canvaskit-v4-r39",
-      };
-      expect(await render(current)).toEqual(await render(historical));
+      for (const rendererRevision of [
+        "canvaskit-v4-r39",
+        "canvaskit-v4-r40",
+      ] as const) {
+        expect(await render({ ...historical, rendererRevision })).toEqual(
+          await render(historical),
+        );
+      }
     }
   });
 
@@ -3511,7 +3519,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r40" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r41" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

@@ -185,6 +185,7 @@ describe("V4 registries", () => {
       "canvaskit-v4-r37",
       "canvaskit-v4-r38",
       "canvaskit-v4-r39",
+      "canvaskit-v4-r40",
     ]);
   });
 });

@@ -163,7 +163,7 @@ describe("V4 Three.js dice resource ownership", () => {
     });
   });
 
-  it("uses adaptive outlines only for r39 Three.js resources", () => {
+  it("uses stored outlines only for adaptive Three.js revisions", () => {
     const pixels = new Uint8Array(
       SOURCE_TEXTURE_SIZE_V4 * SOURCE_TEXTURE_SIZE_V4 * 4,
     );
@@ -206,6 +206,12 @@ describe("V4 Three.js dice resource ownership", () => {
       raster,
       "canvaskit-v4-r39",
     );
+    const silhouette = createThreeDiceResourcesV4(
+      prepared,
+      die,
+      raster,
+      "canvaskit-v4-r40",
+    );
     const edgeColor = (resources: ThreeDiceResourcesV4): string => {
       const edge = resources.materials.find(
         (material): material is LineBasicMaterial =>
@@ -217,9 +223,11 @@ describe("V4 Three.js dice resource ownership", () => {
 
     expect(edgeColor(historical)).toBe("#000000");
     expect(edgeColor(adaptive)).toBe("#ffffff");
+    expect(edgeColor(silhouette)).toBe("#ffffff");
 
     disposeThreeDiceResourcesV4(historical);
     disposeThreeDiceResourcesV4(adaptive);
+    disposeThreeDiceResourcesV4(silhouette);
   });
 
   it("counts unique owned resources and their deterministic source bytes", () => {

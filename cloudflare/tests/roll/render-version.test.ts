@@ -40,6 +40,7 @@ describe("Roll render-version configuration", () => {
     "r37",
     "r38",
     "r39",
+    "r40",
   ] as const)(
     "accepts explicit view policy %s",
     (configured) => {
@@ -51,7 +52,7 @@ describe("Roll render-version configuration", () => {
     "fails closed for view policy %j",
     (configured) => {
       expect(() => parseRollViewPolicy(configured)).toThrow(
-        "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, r32, r33, r34, r35, r36, r37, r38, or r39",
+        "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, r32, r33, r34, r35, r36, r37, r38, r39, or r40",
       );
     },
   );

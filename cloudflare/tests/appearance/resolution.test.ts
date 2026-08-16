@@ -20,6 +20,7 @@ import {
   R32_RANDOM_FONT_OPTIONS_V3,
   migrateAppearanceRecipeV1,
   resolveAppearanceInkV2,
+  resolveAppearanceOutlineColorR40V3,
   resolveAppearanceRecipe,
   resolveAppearanceRecipeV2,
   resolveAppearanceRecipeV3,
@@ -1186,6 +1187,70 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toBe("#000000");
   });
 
+  it("corrects saturated-blue and lava silhouette outlines only in r40", () => {
+    const solidRecipe = (color: string) =>
+      appearanceRecipeV3({
+        colors: { mode: "solid", primary: color },
+        material: {
+          mode: "fixed",
+          value: {
+            family: "classic",
+            treatment: "solid",
+            opacity: "opaque",
+            finish: "satin",
+            textureScale: 100,
+          },
+        },
+      });
+    const blue = resolveAppearanceRecipeV3(
+      solidRecipe("#0040e0"),
+      contextV3({ target: "d20" }),
+      "property-streams-r37",
+    );
+    const nearBlack = resolveAppearanceRecipeV3(
+      solidRecipe("#173f35"),
+      contextV3({ target: "d20" }),
+      "property-streams-r37",
+    );
+    const lavaStyle = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "elemental-lava",
+    );
+    if (lavaStyle === undefined) throw new Error("Lava style is missing");
+    const lava = resolveAppearanceRecipeV3(
+      lavaStyle.recipe,
+      contextV3({ renderSeed: 2, target: "d20" }),
+      "property-streams-r37",
+    );
+    const sphere = resolveAppearanceRecipeV3(
+      solidRecipe("#173f35"),
+      contextV3({ target: "other" }),
+      "property-streams-r37",
+    );
+    const hollowStyle = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "hollow-victory",
+    );
+    if (hollowStyle === undefined) throw new Error("Hollow style is missing");
+    const hollow = resolveAppearanceRecipeV3(
+      hollowStyle.recipe,
+      contextV3({ target: "d20" }),
+      "property-streams-r37",
+    );
+
+    expect(blue.appearance.outlineColor).toBe("#ffffff");
+    expect(resolveAppearanceOutlineColorR40V3(blue, "d20")).toBe("#000000");
+    expect(resolveAppearanceOutlineColorR40V3(nearBlack, "d20")).toBe(
+      "#ffffff",
+    );
+    expect(lava.appearance.outlineColor).toBe("#000000");
+    expect(resolveAppearanceOutlineColorR40V3(lava, "d20")).toBe("#ffffff");
+    expect(resolveAppearanceOutlineColorR40V3(sphere, "other")).toBe(
+      "#000000",
+    );
+    expect(resolveAppearanceOutlineColorR40V3(hollow, "d20")).toBe(
+      "#000000",
+    );
+  });
+
   it("automatically pairs approved d20 materials with shapes and keeps other targets standard", () => {
     const materials = [
       {
@@ -2242,6 +2307,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ["canvaskit-v4-r37", "property-streams-r37"],
     ["canvaskit-v4-r38", "property-streams-r37"],
     ["canvaskit-v4-r39", "property-streams-r37"],
+    ["canvaskit-v4-r40", "property-streams-r37"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -2260,7 +2326,8 @@ describe("resolveAppearanceRecipeV3", () => {
       const usesR37Catalog =
         rendererRevision === "canvaskit-v4-r37" ||
         rendererRevision === "canvaskit-v4-r38" ||
-        rendererRevision === "canvaskit-v4-r39";
+        rendererRevision === "canvaskit-v4-r39" ||
+        rendererRevision === "canvaskit-v4-r40";
       const styles = usesR37Catalog
         ? BUILTIN_APPEARANCE_STYLES_V3
         : BUILTIN_APPEARANCE_STYLES_R34_V3;
@@ -2276,6 +2343,7 @@ describe("resolveAppearanceRecipeV3", () => {
           rendererRevision !== "canvaskit-v4-r37" &&
           rendererRevision !== "canvaskit-v4-r38" &&
           rendererRevision !== "canvaskit-v4-r39" &&
+          rendererRevision !== "canvaskit-v4-r40" &&
           r32OnlyStyle
         ) {
           continue;
@@ -2287,16 +2355,20 @@ describe("resolveAppearanceRecipeV3", () => {
             contextV3({ target }),
             seedPolicy,
           );
+          let outlineColor: RenderDieV4["appearance"]["outlineColor"] =
+            "#000000";
+          if (rendererRevision === "canvaskit-v4-r39") {
+            outlineColor = resolved.appearance.outlineColor;
+          } else if (rendererRevision === "canvaskit-v4-r40") {
+            outlineColor = resolveAppearanceOutlineColorR40V3(resolved, target);
+          }
           const common = {
             target,
             result: resultByTarget[target],
             form: resolved.form,
             appearance: {
               ...resolved.appearance,
-              outlineColor:
-                rendererRevision === "canvaskit-v4-r39"
-                  ? resolved.appearance.outlineColor
-                  : "#000000",
+              outlineColor,
               effect: null,
             },
             icons: [] as RenderDieV4["icons"],

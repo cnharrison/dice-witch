@@ -193,7 +193,7 @@ function geometryGridDie(
   const geometry = getRenderGeometryDescriptorV4(rendererRevision, die);
   const policy = rendererRevisionPolicyV4(rendererRevision);
   const outlineColor =
-    policy.outlineContrast === "adaptive-r39" &&
+    policy.outlineContrast !== "black" &&
       geometry.kind === "polyhedral" &&
       geometry.form !== "hollow-cage"
       ? die.appearance.outlineColor
@@ -404,6 +404,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r37": renderCanvasKit,
   "canvaskit-v4-r38": renderCanvasKit,
   "canvaskit-v4-r39": renderCanvasKit,
+  "canvaskit-v4-r40": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {
