@@ -224,9 +224,14 @@ describe("V4 renderer revision policies", () => {
       ...revision38,
       outlineContrast: "adaptive-r39",
     });
-    expect(rendererRevisionPolicyV4("canvaskit-v4-r40")).toEqual({
+    const revision40 = rendererRevisionPolicyV4("canvaskit-v4-r40");
+    expect(revision40).toEqual({
       ...revision39,
       outlineContrast: "silhouette-r40",
+    });
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r41")).toEqual({
+      ...revision40,
+      outlineContrast: "near-black-solid-r41",
     });
     expect(revision31.r32Fonts).toBe(false);
     expect(revision31.r32Materials).toBe(false);
@@ -236,7 +241,7 @@ describe("V4 renderer revision policies", () => {
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
-        "canvaskit-v4-r41" as RendererRevisionV4,
+        "canvaskit-v4-r42" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

@@ -1065,13 +1065,22 @@ function validateOutlineColorForForm(
   appearance: RenderAppearanceV4,
   form: RenderFormV4,
   path: string,
+  rendererRevision: RendererRevisionV4,
 ): void {
-  if (
-    appearance.outlineColor === "#ffffff" &&
-    (form === "sphere" || form === "hollow-cage")
-  ) {
+  if (appearance.outlineColor !== "#ffffff") return;
+  if (form === "sphere" || form === "hollow-cage") {
     throw new Error(
       `${path}.appearance.outlineColor must be #000000 for ${form}`,
+    );
+  }
+  const material = appearance.material;
+  if (
+    rendererRevisionPolicyV4(rendererRevision).outlineContrast ===
+      "near-black-solid-r41" &&
+    (material.family !== "classic" || material.treatment !== "solid")
+  ) {
+    throw new Error(
+      `${path}.appearance.outlineColor must be #000000 for r41 non-solid appearance`,
     );
   }
 }
@@ -1361,7 +1370,7 @@ function parseDie(
       rendererRevision,
     );
     const result = parseResult(value.result, target, sides, path);
-    validateOutlineColorForForm(appearance, form, path);
+    validateOutlineColorForForm(appearance, form, path, rendererRevision);
     validateTextureScopeForDie(appearance, target, form, rendererRevision);
     const view = parseView(
       value.view,
@@ -1399,7 +1408,7 @@ function parseDie(
   if (faceLabelSet !== undefined && target !== "d10") {
     throw new Error(`${path}.faceLabelSet is invalid for ${target}`);
   }
-  validateOutlineColorForForm(appearance, form, path);
+  validateOutlineColorForForm(appearance, form, path, rendererRevision);
   validateTextureScopeForDie(appearance, target, form, rendererRevision);
   const view = parseView(
     value.view,

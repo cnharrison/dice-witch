@@ -765,6 +765,10 @@ describe("CanvasKit Render Request V4", () => {
       ...whiteStandard,
       rendererRevision: "canvaskit-v4-r40",
     };
+    const nearBlackStandard: RenderRequestV4 = {
+      ...whiteStandard,
+      rendererRevision: "canvaskit-v4-r41",
+    };
     const historicalPixels = await render(historicalStandard);
     const blackPixels = await render(blackStandard);
     const whitePixels = await render(whiteStandard);
@@ -777,12 +781,14 @@ describe("CanvasKit Render Request V4", () => {
       brighterPixelCount(blackPixels.pixels, whitePixels.pixels),
     ).toBeGreaterThan(0);
     expect(await render(silhouetteStandard)).toEqual(whitePixels);
+    expect(await render(nearBlackStandard)).toEqual(whitePixels);
 
     for (const subject of subjects.slice(1)) {
       const historical = historicalRequest(subject);
       for (const rendererRevision of [
         "canvaskit-v4-r39",
         "canvaskit-v4-r40",
+        "canvaskit-v4-r41",
       ] as const) {
         expect(await render({ ...historical, rendererRevision })).toEqual(
           await render(historical),
@@ -3519,7 +3525,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r41" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r42" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

@@ -1251,6 +1251,26 @@ export function resolveAppearanceOutlineColorR40V3(
   ).outlineColor;
 }
 
+export function resolveAppearanceOutlineColorR41V3(
+  resolved: ResolvedAppearanceV3,
+  target: AppearanceTargetV4,
+): ResolvedAppearanceV3["appearance"]["outlineColor"] {
+  const { material, palette } = resolved.appearance;
+  if (
+    resolved.form === "sphere" ||
+    resolved.form === "hollow-cage" ||
+    material.family !== "classic" ||
+    material.treatment !== "solid"
+  ) {
+    return "#000000";
+  }
+  return resolveAppearanceSilhouetteOutlineV3(
+    { type: "solid", color: palette[0] },
+    resolved.appearance.lighting,
+    target,
+  ).outlineColor;
+}
+
 function randomIntegerV3(
   random: DeterministicRandom,
   minimum: number,

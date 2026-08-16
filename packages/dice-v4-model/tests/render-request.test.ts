@@ -206,11 +206,13 @@ function revision2Request(
 }
 
 describe("RenderRequestV4", () => {
-  it("accepts adaptive outlines only for non-hollow polyhedra from r39", () => {
-    const material = materials[5];
+  it("enforces revision-specific white outline boundaries", () => {
+    const material = materials[0];
     if (material === undefined) throw new Error("Outline test material is missing");
+    const adaptiveDie = die(material);
+    adaptiveDie.appearance.palette = ["#123456", "#123456"];
     const adaptive = revision2Request({
-      ...die(material),
+      ...adaptiveDie,
       view: getAuthoredRenderViewV4("canvaskit-v4-r39", "legacy", {
         target: "d20",
         result: 20,
@@ -228,6 +230,31 @@ describe("RenderRequestV4", () => {
     const silhouette = structuredClone(adaptive);
     silhouette.rendererRevision = "canvaskit-v4-r40";
     expect(validateRenderRequestV4(silhouette)).toEqual(silhouette);
+    const nearBlackSolid = structuredClone(adaptive);
+    nearBlackSolid.rendererRevision = "canvaskit-v4-r41";
+    expect(validateRenderRequestV4(nearBlackSolid)).toEqual(nearBlackSolid);
+
+    const nonSolidMaterial = materials[5];
+    if (nonSolidMaterial === undefined) {
+      throw new Error("Non-solid outline test material is missing");
+    }
+    const nonSolidDie = die(nonSolidMaterial);
+    const nonSolid = revision2Request({
+      ...nonSolidDie,
+      appearance: {
+        ...nonSolidDie.appearance,
+        outlineColor: "#ffffff",
+      },
+      view: getAuthoredRenderViewV4("canvaskit-v4-r41", "legacy", {
+        target: "d20",
+        result: 20,
+        form: "standard",
+      }),
+    });
+    nonSolid.rendererRevision = "canvaskit-v4-r41";
+    expect(() => validateRenderRequestV4(nonSolid)).toThrow(
+      "Render request groups[0][0].appearance.outlineColor must be #000000 for r41 non-solid appearance",
+    );
 
     const historical = structuredClone(adaptive);
     historical.rendererRevision = "canvaskit-v4-r38";

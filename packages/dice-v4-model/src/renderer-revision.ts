@@ -39,7 +39,11 @@ export type RendererRevisionPolicyV4 = {
   uniformD20Ink: boolean;
   sphereOutline: boolean;
   strongPhysicalEdges: boolean;
-  outlineContrast: "black" | "adaptive-r39" | "silhouette-r40";
+  outlineContrast:
+    | "black"
+    | "adaptive-r39"
+    | "silhouette-r40"
+    | "near-black-solid-r41";
   modifierIcons: ModifierIconDesignV4;
   gridVerticalAlignment: "fixed" | "visual-center-r24";
   d10CriticalHalo: boolean;
@@ -220,6 +224,7 @@ const r37 = policy({ ...r36, r37Fonts: true });
 const r38 = policy({ ...r37, gridLayout: "group-dynamic-r38" });
 const r39 = policy({ ...r38, outlineContrast: "adaptive-r39" });
 const r40 = policy({ ...r39, outlineContrast: "silhouette-r40" });
+const r41 = policy({ ...r40, outlineContrast: "near-black-solid-r41" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -262,6 +267,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r38": r38,
   "canvaskit-v4-r39": r39,
   "canvaskit-v4-r40": r40,
+  "canvaskit-v4-r41": r41,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

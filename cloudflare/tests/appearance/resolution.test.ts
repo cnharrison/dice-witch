@@ -21,6 +21,7 @@ import {
   migrateAppearanceRecipeV1,
   resolveAppearanceInkV2,
   resolveAppearanceOutlineColorR40V3,
+  resolveAppearanceOutlineColorR41V3,
   resolveAppearanceRecipe,
   resolveAppearanceRecipeV2,
   resolveAppearanceRecipeV3,
@@ -1187,7 +1188,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toBe("#000000");
   });
 
-  it("corrects saturated-blue and lava silhouette outlines only in r40", () => {
+  it("limits r41 white outlines to near-black plain solids", () => {
     const solidRecipe = (color: string) =>
       appearanceRecipeV3({
         colors: { mode: "solid", primary: color },
@@ -1209,6 +1210,26 @@ describe("resolveAppearanceRecipeV3", () => {
     );
     const nearBlack = resolveAppearanceRecipeV3(
       solidRecipe("#173f35"),
+      contextV3({ target: "d20" }),
+      "property-streams-r37",
+    );
+    const gradient = resolveAppearanceRecipeV3(
+      appearanceRecipeV3({
+        colors: {
+          mode: "palette",
+          colors: ["#173f35", "#58253e"],
+        },
+        material: {
+          mode: "fixed",
+          value: {
+            family: "classic",
+            treatment: "gradient",
+            opacity: "opaque",
+            finish: "satin",
+            textureScale: 100,
+          },
+        },
+      }),
       contextV3({ target: "d20" }),
       "property-streams-r37",
     );
@@ -1241,12 +1262,23 @@ describe("resolveAppearanceRecipeV3", () => {
     expect(resolveAppearanceOutlineColorR40V3(nearBlack, "d20")).toBe(
       "#ffffff",
     );
-    expect(lava.appearance.outlineColor).toBe("#000000");
-    expect(resolveAppearanceOutlineColorR40V3(lava, "d20")).toBe("#ffffff");
-    expect(resolveAppearanceOutlineColorR40V3(sphere, "other")).toBe(
+    expect(resolveAppearanceOutlineColorR41V3(nearBlack, "d20")).toBe(
+      "#ffffff",
+    );
+    expect(resolveAppearanceOutlineColorR41V3(blue, "d20")).toBe("#000000");
+    expect(resolveAppearanceOutlineColorR40V3(gradient, "d20")).toBe(
+      "#ffffff",
+    );
+    expect(resolveAppearanceOutlineColorR41V3(gradient, "d20")).toBe(
       "#000000",
     );
-    expect(resolveAppearanceOutlineColorR40V3(hollow, "d20")).toBe(
+    expect(lava.appearance.outlineColor).toBe("#000000");
+    expect(resolveAppearanceOutlineColorR40V3(lava, "d20")).toBe("#ffffff");
+    expect(resolveAppearanceOutlineColorR41V3(lava, "d20")).toBe("#000000");
+    expect(resolveAppearanceOutlineColorR41V3(sphere, "other")).toBe(
+      "#000000",
+    );
+    expect(resolveAppearanceOutlineColorR41V3(hollow, "d20")).toBe(
       "#000000",
     );
   });
@@ -2308,6 +2340,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ["canvaskit-v4-r38", "property-streams-r37"],
     ["canvaskit-v4-r39", "property-streams-r37"],
     ["canvaskit-v4-r40", "property-streams-r37"],
+    ["canvaskit-v4-r41", "property-streams-r37"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -2327,7 +2360,8 @@ describe("resolveAppearanceRecipeV3", () => {
         rendererRevision === "canvaskit-v4-r37" ||
         rendererRevision === "canvaskit-v4-r38" ||
         rendererRevision === "canvaskit-v4-r39" ||
-        rendererRevision === "canvaskit-v4-r40";
+        rendererRevision === "canvaskit-v4-r40" ||
+        rendererRevision === "canvaskit-v4-r41";
       const styles = usesR37Catalog
         ? BUILTIN_APPEARANCE_STYLES_V3
         : BUILTIN_APPEARANCE_STYLES_R34_V3;
@@ -2344,6 +2378,7 @@ describe("resolveAppearanceRecipeV3", () => {
           rendererRevision !== "canvaskit-v4-r38" &&
           rendererRevision !== "canvaskit-v4-r39" &&
           rendererRevision !== "canvaskit-v4-r40" &&
+          rendererRevision !== "canvaskit-v4-r41" &&
           r32OnlyStyle
         ) {
           continue;
@@ -2361,6 +2396,8 @@ describe("resolveAppearanceRecipeV3", () => {
             outlineColor = resolved.appearance.outlineColor;
           } else if (rendererRevision === "canvaskit-v4-r40") {
             outlineColor = resolveAppearanceOutlineColorR40V3(resolved, target);
+          } else if (rendererRevision === "canvaskit-v4-r41") {
+            outlineColor = resolveAppearanceOutlineColorR41V3(resolved, target);
           }
           const common = {
             target,

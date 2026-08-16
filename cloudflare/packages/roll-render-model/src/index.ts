@@ -15,6 +15,7 @@ import {
 } from "@dice-witch/dice-v4-model";
 import {
   resolveAppearanceOutlineColorR40V3,
+  resolveAppearanceOutlineColorR41V3,
   resolveAppearanceRecipe,
   resolveAppearanceRecipeV2,
   resolveAppearanceRecipeV3,
@@ -447,6 +448,9 @@ function outlineColorV4(
   if (policy === "silhouette-r40") {
     return resolveAppearanceOutlineColorR40V3(resolved, target);
   }
+  if (policy === "near-black-solid-r41") {
+    return resolveAppearanceOutlineColorR41V3(resolved, target);
+  }
   return resolved.appearance.outlineColor;
 }
 
@@ -486,7 +490,8 @@ function appearanceSeedPolicyV3(
     rendererRevision === ROLL_RENDERER_REVISION_R37_V4 ||
     rendererRevision === ROLL_RENDERER_REVISION_R38_V4 ||
     rendererRevision === ROLL_RENDERER_REVISION_R39_V4 ||
-    rendererRevision === ROLL_RENDERER_REVISION_R40_V4
+    rendererRevision === ROLL_RENDERER_REVISION_R40_V4 ||
+    rendererRevision === ROLL_RENDERER_REVISION_R41_V4
   ) {
     return "property-streams-r37";
   }
@@ -649,6 +654,7 @@ export const ROLL_RENDERER_REVISION_R37_V4 = "canvaskit-v4-r37" as const;
 export const ROLL_RENDERER_REVISION_R38_V4 = "canvaskit-v4-r38" as const;
 export const ROLL_RENDERER_REVISION_R39_V4 = "canvaskit-v4-r39" as const;
 export const ROLL_RENDERER_REVISION_R40_V4 = "canvaskit-v4-r40" as const;
+export const ROLL_RENDERER_REVISION_R41_V4 = "canvaskit-v4-r41" as const;
 
 function buildRollRenderRequestForRevisionV4(
   result: RollExecutionResult,
@@ -677,7 +683,8 @@ function buildRollRenderRequestForRevisionV4(
     | typeof ROLL_RENDERER_REVISION_R37_V4
     | typeof ROLL_RENDERER_REVISION_R38_V4
     | typeof ROLL_RENDERER_REVISION_R39_V4
-    | typeof ROLL_RENDERER_REVISION_R40_V4,
+    | typeof ROLL_RENDERER_REVISION_R40_V4
+    | typeof ROLL_RENDERER_REVISION_R41_V4,
 ): RenderRequestV4 {
   validateRenderSeed(renderSeed);
   const groups = renderableRollOutcomes(result).map(
@@ -1012,5 +1019,19 @@ export function buildRollRenderRequestR40V4(
     effectiveAppearance.recipes,
     effectiveAppearance.diceView,
     ROLL_RENDERER_REVISION_R40_V4,
+  );
+}
+
+export function buildRollRenderRequestR41V4(
+  result: RollExecutionResult,
+  renderSeed: number,
+  effectiveAppearance: EffectiveAppearanceV4,
+): RenderRequestV4 {
+  return buildRollRenderRequestForRevisionV4(
+    result,
+    renderSeed,
+    effectiveAppearance.recipes,
+    effectiveAppearance.diceView,
+    ROLL_RENDERER_REVISION_R41_V4,
   );
 }

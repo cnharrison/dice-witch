@@ -40,6 +40,7 @@ import {
   buildRollRenderRequestR38V4,
   buildRollRenderRequestR39V4,
   buildRollRenderRequestR40V4,
+  buildRollRenderRequestR41V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1457,7 +1458,7 @@ describe("Profile V4 roll rendering", () => {
     expect(validateRenderRequestV4(r39)).toEqual(r39);
   });
 
-  it("uses silhouette visibility only in r40 snapshots", () => {
+  it("stores white outlines only for near-black plain solids in r41", () => {
     const solidRecipe = (primary: string) =>
       appearanceRecipeV3({
         colors: { mode: "solid", primary },
@@ -1472,11 +1473,42 @@ describe("Profile V4 roll rendering", () => {
           },
         },
       });
-    const effective = (primary: string) => ({
+    const effectiveRecipe = (recipe: AppearanceRecipeV3) => ({
       ...effectiveAppearanceV4("normal"),
       recipes: effectiveRecipesV3(
-        solidRecipe(primary),
+        recipe,
       ) as EffectiveAppearanceV4["recipes"],
+    });
+    const effective = (primary: string) =>
+      effectiveRecipe(solidRecipe(primary));
+    const gradient = appearanceRecipeV3({
+      colors: { mode: "palette", colors: ["#173f35", "#58253e"] },
+      material: {
+        mode: "fixed",
+        value: {
+          family: "classic",
+          treatment: "gradient",
+          opacity: "opaque",
+          finish: "satin",
+          textureScale: 100,
+        },
+      },
+    });
+    const lava = appearanceRecipeV3({
+      colors: {
+        mode: "palette",
+        colors: ["#160b08", "#4a2218", "#ff5a1f"],
+      },
+      material: {
+        mode: "fixed",
+        value: {
+          family: "elemental",
+          style: "lava",
+          fissureDensity: 65,
+          glowIntensity: 78,
+          textureScale: 110,
+        },
+      },
     });
     const result = outcome(["d20"]);
     const r39Blue = buildRollRenderRequestR39V4(
@@ -1494,14 +1526,44 @@ describe("Profile V4 roll rendering", () => {
       7,
       effective("#173f35"),
     );
+    const r41Blue = buildRollRenderRequestR41V4(
+      result,
+      7,
+      effective("#0040e0"),
+    );
+    const r41NearBlack = buildRollRenderRequestR41V4(
+      result,
+      7,
+      effective("#173f35"),
+    );
+    const r41Gradient = buildRollRenderRequestR41V4(
+      result,
+      7,
+      effectiveRecipe(gradient),
+    );
+    const r41Lava = buildRollRenderRequestR41V4(
+      result,
+      7,
+      effectiveRecipe(lava),
+    );
 
     expect(r39Blue.groups[0]?.[0]?.appearance.outlineColor).toBe("#ffffff");
     expect(r40Blue.groups[0]?.[0]?.appearance.outlineColor).toBe("#000000");
     expect(r40NearBlack.groups[0]?.[0]?.appearance.outlineColor).toBe(
       "#ffffff",
     );
-    expect(validateRenderRequestV4(r40Blue)).toEqual(r40Blue);
-    expect(validateRenderRequestV4(r40NearBlack)).toEqual(r40NearBlack);
+    expect(r41Blue.groups[0]?.[0]?.appearance.outlineColor).toBe("#000000");
+    expect(r41NearBlack.groups[0]?.[0]?.appearance.outlineColor).toBe(
+      "#ffffff",
+    );
+    expect(r41Gradient.groups[0]?.[0]?.appearance.outlineColor).toBe(
+      "#000000",
+    );
+    expect(r41Lava.groups[0]?.[0]?.appearance.outlineColor).toBe("#000000");
+    expect(validateRenderRequestV4(r41Blue)).toEqual(r41Blue);
+    expect(validateRenderRequestV4(r41NearBlack)).toEqual(r41NearBlack);
+    expect(validateRenderRequestV4(r41Gradient)).toEqual(r41Gradient);
+    expect(validateRenderRequestV4(r41Lava)).toEqual(r41Lava);
   });
 
   it("detaches the final view snapshot from mutable preferences", () => {

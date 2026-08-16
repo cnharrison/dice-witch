@@ -212,6 +212,12 @@ describe("V4 Three.js dice resource ownership", () => {
       raster,
       "canvaskit-v4-r40",
     );
+    const nearBlackSolid = createThreeDiceResourcesV4(
+      prepared,
+      die,
+      raster,
+      "canvaskit-v4-r41",
+    );
     const edgeColor = (resources: ThreeDiceResourcesV4): string => {
       const edge = resources.materials.find(
         (material): material is LineBasicMaterial =>
@@ -224,6 +230,7 @@ describe("V4 Three.js dice resource ownership", () => {
     expect(edgeColor(historical)).toBe("#000000");
     expect(edgeColor(adaptive)).toBe("#ffffff");
     expect(edgeColor(silhouette)).toBe("#ffffff");
+    expect(edgeColor(nearBlackSolid)).toBe("#ffffff");
 
     disposeThreeDiceResourcesV4(historical);
     disposeThreeDiceResourcesV4(adaptive);
