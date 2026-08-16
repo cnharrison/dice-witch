@@ -355,7 +355,7 @@ export type RenderAppearanceV4 = {
   texture: RenderTextureV4;
   lighting: RenderLightingV4;
   engraving: RenderEngravingV4;
-  outlineColor: "#000000";
+  outlineColor: "#000000" | "#ffffff";
   requiresLocalSeparation: boolean;
   effect: RenderCriticalEffectV4 | null;
 };

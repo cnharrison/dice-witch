@@ -206,6 +206,77 @@ function revision2Request(
 }
 
 describe("RenderRequestV4", () => {
+  it("accepts adaptive outlines only for non-hollow polyhedra from r39", () => {
+    const material = materials[5];
+    if (material === undefined) throw new Error("Outline test material is missing");
+    const adaptive = revision2Request({
+      ...die(material),
+      view: getAuthoredRenderViewV4("canvaskit-v4-r39", "legacy", {
+        target: "d20",
+        result: 20,
+        form: "standard",
+      }),
+    });
+    adaptive.rendererRevision = "canvaskit-v4-r39";
+    const adaptiveAppearance = adaptive.groups[0]?.[0]?.appearance;
+    if (adaptiveAppearance === undefined) {
+      throw new Error("Adaptive outline test appearance is missing");
+    }
+    Object.assign(adaptiveAppearance, { outlineColor: "#ffffff" });
+
+    expect(validateRenderRequestV4(adaptive)).toEqual(adaptive);
+
+    const historical = structuredClone(adaptive);
+    historical.rendererRevision = "canvaskit-v4-r38";
+    expect(() => validateRenderRequestV4(historical)).toThrow(
+      "Render request groups[0][0].appearance.outlineColor must be #000000 before r39",
+    );
+
+    const sphere = structuredClone(adaptive);
+    const sphereDie = sphere.groups[0]?.[0];
+    if (sphereDie === undefined) throw new Error("Sphere test die is missing");
+    Object.assign(sphereDie, {
+      target: "other",
+      sides: 20,
+      form: "sphere",
+      view: getAuthoredRenderViewV4("canvaskit-v4-r39", "legacy", {
+        target: "other",
+        result: 20,
+        form: "sphere",
+      }),
+    });
+    expect(() => validateRenderRequestV4(sphere)).toThrow(
+      "Render request groups[0][0].appearance.outlineColor must be #000000 for sphere",
+    );
+
+    const hollowMaterial = materials[7];
+    if (hollowMaterial === undefined) {
+      throw new Error("Hollow outline test material is missing");
+    }
+    const hollowDie = die(hollowMaterial);
+    const hollow = revision2Request({
+      ...hollowDie,
+      appearance: {
+        ...hollowDie.appearance,
+        outlineColor: "#ffffff",
+      },
+      view: getAuthoredRenderViewV4("canvaskit-v4-r39", "legacy", {
+        target: "d20",
+        result: 20,
+        form: "hollow-cage",
+      }),
+    });
+    hollow.rendererRevision = "canvaskit-v4-r39";
+    expect(() => validateRenderRequestV4(hollow)).toThrow(
+      "Render request groups[0][0].appearance.outlineColor must be #000000 for hollow-cage",
+    );
+
+    Object.assign(adaptiveAppearance, { outlineColor: "#ff0000" });
+    expect(() => validateRenderRequestV4(adaptive)).toThrow(
+      "Render request groups[0][0].appearance.outlineColor must be #000000 or #ffffff",
+    );
+  });
+
   it("accepts percentile-ones labels only on d10 dice and preserves omitted labels", () => {
     const d10 = {
       ...die(),

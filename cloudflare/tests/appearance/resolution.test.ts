@@ -1137,6 +1137,55 @@ describe("resolveAppearanceRecipeV3", () => {
     expect(resolved).toEqual(snapshot);
   });
 
+  it("resolves adaptive outlines only for non-hollow polyhedral forms", () => {
+    const recipe = (colors: [string, string]) =>
+      appearanceRecipeV3({
+        colors: { mode: "palette", colors },
+        lighting: {
+          mode: { mode: "fixed", value: "none" },
+          strength: { mode: "fixed", value: "gentle" },
+          direction: { mode: "fixed", value: "upper-left" },
+        },
+      });
+    const resolveD6 = (colors: [string, string]) =>
+      resolveAppearanceRecipeV3(
+        recipe(colors),
+        contextV3({ target: "d6" }),
+      ).appearance;
+
+    expect(resolveD6(["#f2d95c", "#fff2a8"]).outlineColor).toBe("#000000");
+    expect(resolveD6(["#173f35", "#24584a"]).outlineColor).toBe("#ffffff");
+    expect(resolveD6(["#000000", "#ffffff"]).outlineColor).toBe("#000000");
+    expect(
+      resolveAppearanceRecipeV3(
+        recipe(["#173f35", "#24584a"]),
+        contextV3({ target: "other" }),
+      ).appearance.outlineColor,
+    ).toBe("#000000");
+
+    const hollowMaterial = {
+      family: "hollow-metal",
+      construction: "filigree",
+      metal: "brass",
+      finish: "polished",
+      openness: 60,
+      textureScale: 100,
+    } as const;
+    expect(
+      resolveAppearanceRecipeV3(
+        {
+          ...recipe(["#173f35", "#24584a"]),
+          material: { mode: "fixed", value: hollowMaterial },
+          form: {
+            polyhedral: { mode: "fixed", value: "hollow-cage" },
+            other: "sphere",
+          },
+        },
+        contextV3({ target: "d20" }),
+      ).appearance.outlineColor,
+    ).toBe("#000000");
+  });
+
   it("automatically pairs approved d20 materials with shapes and keeps other targets standard", () => {
     const materials = [
       {
@@ -2192,6 +2241,7 @@ describe("resolveAppearanceRecipeV3", () => {
     ["canvaskit-v4-r36", "property-streams-r35"],
     ["canvaskit-v4-r37", "property-streams-r37"],
     ["canvaskit-v4-r38", "property-streams-r37"],
+    ["canvaskit-v4-r39", "property-streams-r37"],
   ] as const)(
     "builds a valid %s snapshot for every built-in and target",
     (rendererRevision, seedPolicy) => {
@@ -2209,7 +2259,8 @@ describe("resolveAppearanceRecipeV3", () => {
 
       const usesR37Catalog =
         rendererRevision === "canvaskit-v4-r37" ||
-        rendererRevision === "canvaskit-v4-r38";
+        rendererRevision === "canvaskit-v4-r38" ||
+        rendererRevision === "canvaskit-v4-r39";
       const styles = usesR37Catalog
         ? BUILTIN_APPEARANCE_STYLES_V3
         : BUILTIN_APPEARANCE_STYLES_R34_V3;
@@ -2224,6 +2275,7 @@ describe("resolveAppearanceRecipeV3", () => {
           rendererRevision !== "canvaskit-v4-r36" &&
           rendererRevision !== "canvaskit-v4-r37" &&
           rendererRevision !== "canvaskit-v4-r38" &&
+          rendererRevision !== "canvaskit-v4-r39" &&
           r32OnlyStyle
         ) {
           continue;
@@ -2239,7 +2291,14 @@ describe("resolveAppearanceRecipeV3", () => {
             target,
             result: resultByTarget[target],
             form: resolved.form,
-            appearance: { ...resolved.appearance, effect: null },
+            appearance: {
+              ...resolved.appearance,
+              outlineColor:
+                rendererRevision === "canvaskit-v4-r39"
+                  ? resolved.appearance.outlineColor
+                  : "#000000",
+              effect: null,
+            },
             icons: [] as RenderDieV4["icons"],
             view: getAuthoredRenderViewV4(
               rendererRevision,

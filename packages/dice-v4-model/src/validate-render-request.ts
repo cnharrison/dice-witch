@@ -844,11 +844,22 @@ function parseEffect(
   };
 }
 
-function parseOutlineColor(value: unknown, path: string): "#000000" {
-  if (hexColor(value, path) !== "#000000") {
-    throw new Error(`${path} must be #000000`);
+function parseOutlineColor(
+  value: unknown,
+  path: string,
+  rendererRevision: RendererRevisionV4,
+): RenderAppearanceV4["outlineColor"] {
+  const color = hexColor(value, path);
+  if (color !== "#000000" && color !== "#ffffff") {
+    throw new Error(`${path} must be #000000 or #ffffff`);
   }
-  return "#000000";
+  if (
+    color === "#ffffff" &&
+    rendererRevisionPolicyV4(rendererRevision).outlineContrast === "black"
+  ) {
+    throw new Error(`${path} must be #000000 before r39`);
+  }
+  return color;
 }
 
 function validateMaterialAssets(
@@ -913,6 +924,7 @@ function parseAppearance(
     outlineColor: parseOutlineColor(
       appearance.outlineColor,
       `${path}.outlineColor`,
+      rendererRevision,
     ),
     requiresLocalSeparation: appearance.requiresLocalSeparation,
     effect: parseEffect(appearance.effect, `${path}.effect`),
@@ -1047,6 +1059,21 @@ function parseForm(
     throw new Error(`${path}.form is incompatible with ${family} material`);
   }
   return form;
+}
+
+function validateOutlineColorForForm(
+  appearance: RenderAppearanceV4,
+  form: RenderFormV4,
+  path: string,
+): void {
+  if (
+    appearance.outlineColor === "#ffffff" &&
+    (form === "sphere" || form === "hollow-cage")
+  ) {
+    throw new Error(
+      `${path}.appearance.outlineColor must be #000000 for ${form}`,
+    );
+  }
 }
 
 function validateTextureScopeForDie(
@@ -1334,6 +1361,7 @@ function parseDie(
       rendererRevision,
     );
     const result = parseResult(value.result, target, sides, path);
+    validateOutlineColorForForm(appearance, form, path);
     validateTextureScopeForDie(appearance, target, form, rendererRevision);
     const view = parseView(
       value.view,
@@ -1371,6 +1399,7 @@ function parseDie(
   if (faceLabelSet !== undefined && target !== "d10") {
     throw new Error(`${path}.faceLabelSet is invalid for ${target}`);
   }
+  validateOutlineColorForForm(appearance, form, path);
   validateTextureScopeForDie(appearance, target, form, rendererRevision);
   const view = parseView(
     value.view,

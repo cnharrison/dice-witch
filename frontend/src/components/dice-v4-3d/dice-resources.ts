@@ -270,6 +270,12 @@ export function createThreeDiceResourcesV4(
   const revisionPolicy = rendererRevision === undefined
     ? null
     : rendererRevisionPolicyV4(rendererRevision);
+  const outlineColor =
+    revisionPolicy?.outlineContrast === "adaptive-r39" &&
+      prepared.kind === "polyhedral" &&
+      prepared.physical.form !== "hollow-cage"
+      ? die.appearance.outlineColor
+      : "#000000";
   try {
     const { descriptor } = prepared;
     const materialTexture = createRasterDataTextureV4(
@@ -333,7 +339,7 @@ export function createThreeDiceResourcesV4(
       revisionPolicy?.sphereOutline === true
     ) {
       const outlineMaterial = new MeshBasicMaterial({
-        color: die.appearance.outlineColor,
+        color: outlineColor,
         side: BackSide,
       });
       materials.push(outlineMaterial);
@@ -368,7 +374,7 @@ export function createThreeDiceResourcesV4(
       geometries.push(edgeGeometry);
       edgeSegments = edgeGeometry.getAttribute("position").count / 2;
       edgeMaterial = new LineBasicMaterial({
-        color: vertexColors ? 0xff_ff_ff : die.appearance.outlineColor,
+        color: vertexColors ? 0xff_ff_ff : outlineColor,
         transparent: true,
         opacity: revisionPolicy?.strongPhysicalEdges === true ? 0.82 : 0.64,
         vertexColors,

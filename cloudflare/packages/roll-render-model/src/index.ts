@@ -1,5 +1,6 @@
 import {
   CRITICAL_TREATMENT_BY_MATERIAL_FAMILY_V4,
+  rendererRevisionPolicyV4,
   resolveRenderViewV4,
   validateRenderRequestV4,
   type AppearanceRecipeV3,
@@ -438,9 +439,15 @@ function criticalEffectV4(
 function renderAppearanceV4(
   resolved: ResolvedAppearanceV3,
   modifiers: readonly string[],
+  rendererRevision: RendererRevisionV4,
 ): RenderAppearanceV4 {
   return {
     ...resolved.appearance,
+    outlineColor:
+      rendererRevisionPolicyV4(rendererRevision).outlineContrast ===
+      "adaptive-r39"
+        ? resolved.appearance.outlineColor
+        : "#000000",
     effect: criticalEffectV4(modifiers, resolved.appearance.material),
   };
 }
@@ -466,7 +473,8 @@ function appearanceSeedPolicyV3(
 ): AppearanceResolutionSeedPolicyV3 {
   if (
     rendererRevision === ROLL_RENDERER_REVISION_R37_V4 ||
-    rendererRevision === ROLL_RENDERER_REVISION_R38_V4
+    rendererRevision === ROLL_RENDERER_REVISION_R38_V4 ||
+    rendererRevision === ROLL_RENDERER_REVISION_R39_V4
   ) {
     return "property-streams-r37";
   }
@@ -578,7 +586,11 @@ function renderDieV4(
       sides: die.sides,
       result,
       form: resolved.form,
-      appearance: renderAppearanceV4(resolved, die.modifiers),
+      appearance: renderAppearanceV4(
+        resolved,
+        die.modifiers,
+        rendererRevision,
+      ),
       icons: iconsFor(die.modifiers),
       view,
     };
@@ -591,7 +603,11 @@ function renderDieV4(
       ? {}
       : { faceLabelSet: "percentile-ones" as const }),
     form: resolved.form,
-    appearance: renderAppearanceV4(resolved, die.modifiers),
+    appearance: renderAppearanceV4(
+      resolved,
+      die.modifiers,
+      rendererRevision,
+    ),
     icons: iconsFor(die.modifiers),
     view,
   };
@@ -617,6 +633,7 @@ export const ROLL_RENDERER_REVISION_R35_V4 = "canvaskit-v4-r35" as const;
 export const ROLL_RENDERER_REVISION_R36_V4 = "canvaskit-v4-r36" as const;
 export const ROLL_RENDERER_REVISION_R37_V4 = "canvaskit-v4-r37" as const;
 export const ROLL_RENDERER_REVISION_R38_V4 = "canvaskit-v4-r38" as const;
+export const ROLL_RENDERER_REVISION_R39_V4 = "canvaskit-v4-r39" as const;
 
 function buildRollRenderRequestForRevisionV4(
   result: RollExecutionResult,
@@ -643,7 +660,8 @@ function buildRollRenderRequestForRevisionV4(
     | typeof ROLL_RENDERER_REVISION_R35_V4
     | typeof ROLL_RENDERER_REVISION_R36_V4
     | typeof ROLL_RENDERER_REVISION_R37_V4
-    | typeof ROLL_RENDERER_REVISION_R38_V4,
+    | typeof ROLL_RENDERER_REVISION_R38_V4
+    | typeof ROLL_RENDERER_REVISION_R39_V4,
 ): RenderRequestV4 {
   validateRenderSeed(renderSeed);
   const groups = renderableRollOutcomes(result).map(
@@ -950,5 +968,19 @@ export function buildRollRenderRequestR38V4(
     effectiveAppearance.recipes,
     effectiveAppearance.diceView,
     ROLL_RENDERER_REVISION_R38_V4,
+  );
+}
+
+export function buildRollRenderRequestR39V4(
+  result: RollExecutionResult,
+  renderSeed: number,
+  effectiveAppearance: EffectiveAppearanceV4,
+): RenderRequestV4 {
+  return buildRollRenderRequestForRevisionV4(
+    result,
+    renderSeed,
+    effectiveAppearance.recipes,
+    effectiveAppearance.diceView,
+    ROLL_RENDERER_REVISION_R39_V4,
   );
 }

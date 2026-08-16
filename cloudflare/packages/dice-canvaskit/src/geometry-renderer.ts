@@ -29,6 +29,7 @@ import {
   type ProjectedGeometryFaceV4,
   type ProjectedGeometryLabelV4,
   type ProjectedPolyhedralGeometryV4,
+  type RenderAppearanceV4,
   type RenderCriticalEffectV4,
   type RenderLightingV4,
   type RendererRevisionPolicyV4,
@@ -359,6 +360,7 @@ export type RenderCanonicalGeometryV4Options = {
   d6FiveOpticalOffsetX?: number;
   lighting?: RenderLightingV4;
   materialFamily?: MaterialFamilyV4;
+  outlineColor?: RenderAppearanceV4["outlineColor"];
   requiresLocalSeparation?: boolean;
   criticalEffect?: RenderCriticalEffectV4 | null;
   criticalOuterGlow?: boolean;
@@ -907,6 +909,18 @@ function createPaint(
   const paint = scope.own(new canvasKit.Paint(), "paint");
   paint.setAntiAlias(true);
   return paint;
+}
+
+function setOutlinePaintColor(
+  canvasKit: CanvasKitRuntimeV4,
+  paint: Paint,
+  color: RenderAppearanceV4["outlineColor"],
+): void {
+  paint.setColor(
+    color === "#ffffff"
+      ? canvasKit.Color4f(1, 1, 1, 1)
+      : canvasKit.Color4f(0.01, 0.005, 0.02, 1),
+  );
 }
 
 function createCageCutEdgePaint(
@@ -2108,6 +2122,7 @@ function drawPolyhedralGeometry(
     d6FiveOpticalOffsetX = 0,
     lighting,
     materialFamily,
+    outlineColor = "#000000",
     requiresLocalSeparation = false,
     criticalEffect,
     criticalOuterGlow = false,
@@ -2166,7 +2181,11 @@ function drawPolyhedralGeometry(
   materialPaint.setShader(createShader(scope, size));
   const shadePaint = createPaint(canvasKit, scope);
   const borderPaint = createPaint(canvasKit, scope);
-  borderPaint.setColor(canvasKit.Color4f(0.01, 0.005, 0.02, 1));
+  setOutlinePaintColor(
+    canvasKit,
+    borderPaint,
+    geometry.form === "hollow-cage" ? "#000000" : outlineColor,
+  );
   borderPaint.setStyle(canvasKit.PaintStyle.Stroke);
   const standardThinBorder =
     renderPolicy === "d20-r3" ||
@@ -3433,6 +3452,7 @@ type RenderGridAppearanceOptionsV4 = Pick<
   | "faceLabelSet"
   | "lighting"
   | "materialFamily"
+  | "outlineColor"
   | "renderPolicy"
   | "requiresLocalSeparation"
 >;
@@ -3469,6 +3489,9 @@ function gridAppearanceOptions(
   if (die.lighting !== undefined) options.lighting = die.lighting;
   if (die.materialFamily !== undefined) {
     options.materialFamily = die.materialFamily;
+  }
+  if (die.kind === "polyhedral" && die.outlineColor !== undefined) {
+    options.outlineColor = die.outlineColor;
   }
   if (die.renderPolicy !== undefined) {
     options.renderPolicy = die.renderPolicy;

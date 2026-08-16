@@ -38,6 +38,7 @@ import {
   buildRollRenderRequestR32V4,
   buildRollRenderRequestR37V4,
   buildRollRenderRequestR38V4,
+  buildRollRenderRequestR39V4,
   type EffectiveAppearanceRecipes,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
@@ -1421,6 +1422,38 @@ describe("Profile V4 roll rendering", () => {
     );
     expect({ ...r38, rendererRevision: r37.rendererRevision }).toEqual(r37);
     expect(validateRenderRequestV4(r38)).toEqual(r38);
+  });
+
+  it("stores adaptive white outlines only in r39 dark-die snapshots", () => {
+    const recipe = appearanceRecipeV3({
+      colors: { mode: "palette", colors: ["#173f35", "#24584a"] },
+      lighting: {
+        mode: { mode: "fixed", value: "none" },
+        strength: { mode: "fixed", value: "gentle" },
+        direction: { mode: "fixed", value: "upper-left" },
+      },
+    });
+    const effective = {
+      ...effectiveAppearanceV4("normal"),
+      recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
+    };
+    const result = outcome(["d6"]);
+    const r38 = buildRollRenderRequestR38V4(result, 7, effective);
+    const r39 = buildRollRenderRequestR39V4(result, 7, effective);
+
+    expect(r38.groups[0]?.[0]?.appearance.outlineColor).toBe("#000000");
+    expect(r39.groups[0]?.[0]?.appearance.outlineColor).toBe("#ffffff");
+    expect({
+      ...r39,
+      rendererRevision: r38.rendererRevision,
+      groups: r39.groups.map((group) =>
+        group.map((die) => ({
+          ...die,
+          appearance: { ...die.appearance, outlineColor: "#000000" as const },
+        })),
+      ),
+    }).toEqual(r38);
+    expect(validateRenderRequestV4(r39)).toEqual(r39);
   });
 
   it("detaches the final view snapshot from mutable preferences", () => {

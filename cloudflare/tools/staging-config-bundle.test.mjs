@@ -72,7 +72,7 @@ test("materializes only known configs and stamps exact build metadata", async ()
   });
   assert.deepEqual(roll.vars, {
     ROLL_RENDER_VERSION: "4",
-    ROLL_VIEW_POLICY: "r38",
+    ROLL_VIEW_POLICY: "r39",
   });
   assert.deepEqual(roll.services, [
     {

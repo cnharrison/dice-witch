@@ -4,9 +4,11 @@ import {
   APPEARANCE_FACET_LIGHTING_OPACITIES,
   APPEARANCE_GENTLE_LIGHTING_MULTIPLIER,
   APPEARANCE_STRONG_LIGHTING_MULTIPLIER,
+  MINIMUM_APPEARANCE_OUTLINE_CONTRAST,
   getContrastRatio,
   resolveAppearanceInk,
   resolveAppearanceInkV2,
+  resolveAppearanceOutlineV2,
 } from "../../packages/dice-appearance/src";
 
 describe("appearance ink contrast", () => {
@@ -249,6 +251,56 @@ describe("appearance ink contrast", () => {
     expect(combined.minimumContrast).toBeLessThanOrEqual(
       facet.minimumContrast,
     );
+  });
+
+  it("keeps outlines black unless the complete surface needs white", () => {
+    const lighting = { mode: "none" } as const;
+    const bright = resolveAppearanceOutlineV2(
+      { type: "solid", color: "#f2d95c" },
+      lighting,
+      "d6",
+    );
+    const dark = resolveAppearanceOutlineV2(
+      { type: "solid", color: "#173f35" },
+      lighting,
+      "d6",
+    );
+    const mixed = resolveAppearanceOutlineV2(
+      {
+        type: "pattern",
+        patternId: "checkerboard",
+        primaryColor: "#000000",
+        secondaryColor: "#ffffff",
+      },
+      lighting,
+      "d6",
+    );
+    const varied = resolveAppearanceOutlineV2(
+      {
+        type: "gradient",
+        colors: ["#170022", "#04c9df", "#f3d36a"],
+        scope: "repeated",
+        direction: "upper-left-to-lower-right",
+      },
+      {
+        mode: "combined",
+        strength: "gentle",
+        direction: "upper-left",
+      },
+      "d20",
+    );
+
+    expect(MINIMUM_APPEARANCE_OUTLINE_CONTRAST).toBe(3);
+    expect(bright.outlineColor).toBe("#000000");
+    expect(bright.minimumContrast).toBeGreaterThanOrEqual(3);
+    expect(dark.outlineColor).toBe("#ffffff");
+    expect(dark.minimumContrast).toBeGreaterThanOrEqual(3);
+    expect(mixed).toEqual({
+      outlineColor: "#000000",
+      minimumContrast: 1,
+    });
+    expect(varied.outlineColor).toBe("#000000");
+    expect(varied.minimumContrast).toBeLessThan(3);
   });
 
   it("calculates WCAG contrast ratios", () => {

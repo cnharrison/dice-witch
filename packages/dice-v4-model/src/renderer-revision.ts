@@ -39,6 +39,7 @@ export type RendererRevisionPolicyV4 = {
   uniformD20Ink: boolean;
   sphereOutline: boolean;
   strongPhysicalEdges: boolean;
+  outlineContrast: "black" | "adaptive-r39";
   modifierIcons: ModifierIconDesignV4;
   gridVerticalAlignment: "fixed" | "visual-center-r24";
   d10CriticalHalo: boolean;
@@ -95,6 +96,7 @@ const r1 = policy({
   uniformD20Ink: false,
   sphereOutline: false,
   strongPhysicalEdges: false,
+  outlineContrast: "black",
   modifierIcons: "legacy-r1",
   gridVerticalAlignment: "fixed",
   d10CriticalHalo: false,
@@ -216,6 +218,7 @@ const r35 = policy({ ...r34 });
 const r36 = policy({ ...r35, d6NormalCameraInset: true });
 const r37 = policy({ ...r36, r37Fonts: true });
 const r38 = policy({ ...r37, gridLayout: "group-dynamic-r38" });
+const r39 = policy({ ...r38, outlineContrast: "adaptive-r39" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -256,6 +259,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r36": r36,
   "canvaskit-v4-r37": r37,
   "canvaskit-v4-r38": r38,
+  "canvaskit-v4-r39": r39,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

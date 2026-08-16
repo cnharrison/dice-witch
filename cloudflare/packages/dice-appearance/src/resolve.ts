@@ -27,6 +27,7 @@ import {
   LIGHT_APPEARANCE_INK,
   resolveAppearanceInk,
   resolveAppearanceInkV2,
+  resolveAppearanceOutlineV2,
   type AppearanceInkResolution,
 } from "./contrast";
 import { legacyAppearanceRecipeV1 } from "./migrate";
@@ -1518,6 +1519,11 @@ export function resolveAppearanceRecipeV3(
     gradientDirection,
   );
   const ink = resolveAppearanceInkV2(surface, lighting, context.target);
+  const outlineColor =
+    form === "sphere" || form === "hollow-cage"
+      ? "#000000"
+      : resolveAppearanceOutlineV2(surface, lighting, context.target)
+          .outlineColor;
   return {
     version: 3,
     form,
@@ -1550,7 +1556,7 @@ export function resolveAppearanceRecipeV3(
         finish: engravingFinish,
         color: ink.textColor,
       },
-      outlineColor: "#000000",
+      outlineColor,
       requiresLocalSeparation: requiresPhysicalSeparationV3(
         ink,
         engravingFinish,

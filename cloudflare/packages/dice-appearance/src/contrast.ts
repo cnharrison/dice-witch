@@ -9,6 +9,7 @@ import type {
 export const DARK_APPEARANCE_INK = "#111111" as const;
 export const LIGHT_APPEARANCE_INK = "#faf9f6" as const;
 export const MINIMUM_APPEARANCE_CONTRAST = 4.5;
+export const MINIMUM_APPEARANCE_OUTLINE_CONTRAST = 3;
 export const APPEARANCE_GENTLE_LIGHTING_MULTIPLIER = 0.2;
 export const APPEARANCE_STRONG_LIGHTING_MULTIPLIER = 5 / 3;
 
@@ -47,6 +48,13 @@ export type AppearanceInkResolution = {
   textColor: AppearanceInkColor;
   minimumContrast: number;
   requiresLocalSeparation: boolean;
+};
+
+export type AppearanceOutlineColor = "#000000" | "#ffffff";
+
+export type AppearanceOutlineResolution = {
+  outlineColor: AppearanceOutlineColor;
+  minimumContrast: number;
 };
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -331,24 +339,33 @@ function scoreInk(
   };
 }
 
+function minimumPathContrast(
+  foreground: string,
+  paths: readonly ColorPath[],
+): number {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const ranges = paths.map(pathLuminanceRange);
+  const surfaceMinimum = Math.min(...ranges.map(([minimum]) => minimum));
+  const surfaceMaximum = Math.max(...ranges.map(([, maximum]) => maximum));
+  if (
+    foregroundLuminance >= surfaceMinimum &&
+    foregroundLuminance <= surfaceMaximum
+  ) {
+    return 1;
+  }
+  return Math.min(
+    ...ranges.flatMap(([pathMinimum, pathMaximum]) => [
+      luminanceContrast(foregroundLuminance, pathMinimum),
+      luminanceContrast(foregroundLuminance, pathMaximum),
+    ]),
+  );
+}
+
 function scoreInkPaths(
   textColor: AppearanceInkColor,
   paths: readonly ColorPath[],
 ): InkScore {
   const inkLuminance = relativeLuminance(textColor);
-  const ranges = paths.map(pathLuminanceRange);
-  // Bound intermediate overlay opacities as well as the explicit extrema.
-  const surfaceMinimum = Math.min(...ranges.map(([minimum]) => minimum));
-  const surfaceMaximum = Math.max(...ranges.map(([, maximum]) => maximum));
-  const minimum =
-    inkLuminance >= surfaceMinimum && inkLuminance <= surfaceMaximum
-      ? 1
-      : Math.min(
-          ...ranges.flatMap(([pathMinimum, pathMaximum]) => [
-            luminanceContrast(inkLuminance, pathMinimum),
-            luminanceContrast(inkLuminance, pathMaximum),
-          ]),
-        );
   const samples = paths.flatMap((path) =>
     [0, 0.5, 1].map((amount) =>
       luminanceContrast(inkLuminance, pathLuminance(path, amount)),
@@ -356,7 +373,7 @@ function scoreInkPaths(
   );
   return {
     textColor,
-    minimum,
+    minimum: minimumPathContrast(textColor, paths),
     average:
       samples.reduce((total, contrast) => total + contrast, 0) /
       samples.length,
@@ -409,4 +426,23 @@ export function resolveAppearanceInkV2(
   target: AppearanceTarget,
 ): AppearanceInkResolution {
   return resolveInkPaths(treatedColorPaths(surface, lighting, target));
+}
+
+export function resolveAppearanceOutlineV2(
+  surface: ResolvedAppearanceSurfaceV2,
+  lighting: ResolvedAppearanceLightingV2,
+  target: AppearanceTarget,
+): AppearanceOutlineResolution {
+  const paths = treatedColorPaths(surface, lighting, target);
+  const blackContrast = minimumPathContrast("#000000", paths);
+  const whiteContrast = minimumPathContrast("#ffffff", paths);
+  const useWhite =
+    blackContrast < MINIMUM_APPEARANCE_OUTLINE_CONTRAST &&
+    whiteContrast >= MINIMUM_APPEARANCE_OUTLINE_CONTRAST;
+  return {
+    outlineColor: useWhite ? "#ffffff" : "#000000",
+    minimumContrast: Number(
+      (useWhite ? whiteContrast : blackContrast).toFixed(4),
+    ),
+  };
 }

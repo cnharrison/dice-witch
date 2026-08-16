@@ -1,5 +1,6 @@
 import {
   D10_STANDARD_GEOMETRY_V4,
+  D20_STANDARD_GEOMETRY_R2_V4,
   SOURCE_TEXTURE_SIZE_V4,
   parsePublicRenderModelV4,
   type RenderDieV4,
@@ -10,6 +11,7 @@ import {
   DataTexture,
   Float32BufferAttribute,
   Group,
+  LineBasicMaterial,
   MeshBasicMaterial,
   Uint16BufferAttribute,
 } from "three";
@@ -39,8 +41,10 @@ vi.mock("./face-atlas", async (importOriginal) => ({
   createPhysicalLabelAtlasSourceV4,
 }));
 
+import { createFaceAtlasLayoutV4 } from "./face-atlas";
 import {
   cloneThreeDiceGroupV4,
+  createThreeDiceResourcesV4,
   disposeThreeDiceResourcesV4,
   measureThreeDiceResourceOwnershipV4,
   prepareThreeDiceV4,
@@ -157,6 +161,65 @@ describe("V4 Three.js dice resource ownership", () => {
       opacity: 0.92,
       widthRatio: 0.05,
     });
+  });
+
+  it("uses adaptive outlines only for r39 Three.js resources", () => {
+    const pixels = new Uint8Array(
+      SOURCE_TEXTURE_SIZE_V4 * SOURCE_TEXTURE_SIZE_V4 * 4,
+    );
+    pixels.fill(255);
+    const raster: TextureRasterV4 = {
+      version: 1,
+      width: SOURCE_TEXTURE_SIZE_V4,
+      height: SOURCE_TEXTURE_SIZE_V4,
+      colorSpace: "srgb",
+      alphaMode: "opaque",
+      pixels,
+    };
+    const die: RenderDieV4 = {
+      ...sourceDie,
+      appearance: { ...sourceDie.appearance, outlineColor: "#ffffff" },
+    };
+    const prepared = prepareThreeDiceV4(
+      D20_STANDARD_GEOMETRY_R2_V4,
+      die,
+      "Liberation Sans",
+      "full-atlas",
+      "canvaskit-v4-r39",
+      raster,
+    );
+    if (prepared.kind !== "polyhedral") {
+      throw new Error("Three.js outline test die is not polyhedral");
+    }
+    const atlasLayout = createFaceAtlasLayoutV4(prepared.physical.faces.length);
+    prepared.labelAtlasSource.canvas.width = atlasLayout.width;
+    prepared.labelAtlasSource.canvas.height = atlasLayout.height;
+    const historical = createThreeDiceResourcesV4(
+      prepared,
+      die,
+      raster,
+      "canvaskit-v4-r38",
+    );
+    const adaptive = createThreeDiceResourcesV4(
+      prepared,
+      die,
+      raster,
+      "canvaskit-v4-r39",
+    );
+    const edgeColor = (resources: ThreeDiceResourcesV4): string => {
+      const edge = resources.materials.find(
+        (material): material is LineBasicMaterial =>
+          material instanceof LineBasicMaterial,
+      );
+      if (edge === undefined) throw new Error("Three.js edge material is missing");
+      return `#${edge.color.getHexString()}`;
+    };
+
+    expect(edgeColor(historical)).toBe("#000000");
+    expect(edgeColor(adaptive)).toBe("#ffffff");
+
+    disposeThreeDiceResourcesV4(historical);
+    disposeThreeDiceResourcesV4(adaptive);
   });
 
   it("counts unique owned resources and their deterministic source bytes", () => {

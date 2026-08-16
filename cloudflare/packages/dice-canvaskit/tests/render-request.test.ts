@@ -414,6 +414,28 @@ function maximumChannelDifference(
   return maximum;
 }
 
+function brighterPixelCount(
+  baseline: Uint8Array,
+  candidate: Uint8Array,
+): number {
+  if (baseline.length !== candidate.length) {
+    throw new Error("CanvasKit V4 test pixel lengths differ");
+  }
+  let count = 0;
+  for (let offset = 0; offset < baseline.length; offset += 4) {
+    const baselineTotal =
+      (baseline[offset] as number) +
+      (baseline[offset + 1] as number) +
+      (baseline[offset + 2] as number);
+    const candidateTotal =
+      (candidate[offset] as number) +
+      (candidate[offset + 1] as number) +
+      (candidate[offset + 2] as number);
+    if (candidateTotal - baselineTotal >= 180) count += 1;
+  }
+  return count;
+}
+
 function alphaChannels(pixels: Uint8Array): Uint8Array {
   const alpha = new Uint8Array(pixels.length / 4);
   for (let index = 3; index < pixels.length; index += 4) {
@@ -661,6 +683,104 @@ describe("CanvasKit Render Request V4", () => {
 
   beforeAll(async () => {
     canvasKit = await loadCanvasKitV4();
+  });
+
+  it("renders white r39 outlines only for standard dice", async () => {
+    const createRenderer = () => createRequestRenderer(canvasKit);
+    const darkAppearance: RenderAppearanceV4 = {
+      ...appearance,
+      material: {
+        family: "classic",
+        treatment: "solid",
+        opacity: "opaque",
+        finish: "satin",
+        textureScale: 100,
+      },
+      palette: ["#101418", "#101418"],
+      texture: { ...appearance.texture, scope: "die-wide" },
+      lighting: { mode: "none" },
+      outlineColor: "#000000",
+    };
+    const subjects: RenderDieV4[] = [
+      {
+        ...die("d6", 6),
+        appearance: darkAppearance,
+        view: getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+          target: "d6",
+          result: 6,
+          form: "standard",
+        }),
+      },
+      {
+        ...die("other", 999),
+        appearance: darkAppearance,
+        view: getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+          target: "other",
+          result: 999,
+          form: "sphere",
+        }),
+      },
+      {
+        ...die("d20", 20),
+        form: "hollow-cage",
+        appearance: {
+          ...hollowAppearance,
+          texture: { ...hollowAppearance.texture, scope: "die-wide" },
+          outlineColor: "#000000",
+        },
+        view: getAuthoredRenderViewV4("canvaskit-v4-r38", "legacy", {
+          target: "d20",
+          result: 20,
+          form: "hollow-cage",
+        }),
+      },
+    ];
+    const render = async (value: RenderRequestV4) =>
+      decodePngRgba8((await renderDiceRequestV4ToPng(
+        value,
+        createRenderer,
+        { blankFaces: true },
+      )).png);
+    const historicalRequest = (subject: RenderDieV4): RenderRequestV4 => ({
+      version: 4,
+      rendererRevision: "canvaskit-v4-r38",
+      groups: [[subject]],
+    });
+
+    const standard = subjects[0];
+    if (standard === undefined) throw new Error("Standard outline die is missing");
+    const historicalStandard = historicalRequest(standard);
+    const blackStandard: RenderRequestV4 = {
+      ...historicalStandard,
+      rendererRevision: "canvaskit-v4-r39",
+    };
+    const whiteStandard: RenderRequestV4 = {
+      ...blackStandard,
+      groups: [[{
+        ...standard,
+        appearance: { ...standard.appearance, outlineColor: "#ffffff" },
+      }]],
+    };
+    const historicalPixels = await render(historicalStandard);
+    const blackPixels = await render(blackStandard);
+    const whitePixels = await render(whiteStandard);
+
+    expect(blackPixels).toEqual(historicalPixels);
+    expect(alphaChannels(whitePixels.pixels)).toEqual(
+      alphaChannels(blackPixels.pixels),
+    );
+    expect(
+      brighterPixelCount(blackPixels.pixels, whitePixels.pixels),
+    ).toBeGreaterThan(0);
+
+    for (const subject of subjects.slice(1)) {
+      const historical = historicalRequest(subject);
+      const current: RenderRequestV4 = {
+        ...historical,
+        rendererRevision: "canvaskit-v4-r39",
+      };
+      expect(await render(current)).toEqual(await render(historical));
+    }
   });
 
   it("skips labels on exactly edge-on faces without failing the roll", async () => {
@@ -3391,7 +3511,7 @@ describe("CanvasKit Render Request V4", () => {
         {
           ...request(),
           rendererRevision:
-            "canvaskit-v4-r39" as RenderRequestV4["rendererRevision"],
+            "canvaskit-v4-r40" as RenderRequestV4["rendererRevision"],
         },
         factory,
       ),

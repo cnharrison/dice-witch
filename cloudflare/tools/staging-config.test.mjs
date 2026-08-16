@@ -66,7 +66,7 @@ function validConfigs() {
     roll: {
       ...baseConfig(rollName, "workers/roll/src/index.ts"),
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
-      vars: { ROLL_RENDER_VERSION: "4", ROLL_VIEW_POLICY: "r38" },
+      vars: { ROLL_RENDER_VERSION: "4", ROLL_VIEW_POLICY: "r39" },
       services: [
         service("DATA_SERVICE", dataName),
         service("DISCORD_REST", restName, "DiscordRestService"),
