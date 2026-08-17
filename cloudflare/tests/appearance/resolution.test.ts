@@ -1213,6 +1213,18 @@ describe("resolveAppearanceRecipeV3", () => {
       contextV3({ target: "d20" }),
       "property-streams-r37",
     );
+    const subtleRed = resolveAppearanceRecipeV3(
+      {
+        ...solidRecipe("#d2042d"),
+        lighting: {
+          mode: { mode: "fixed", value: "combined" },
+          strength: { mode: "fixed", value: "subtle" },
+          direction: { mode: "fixed", value: "upper-left" },
+        },
+      },
+      contextV3({ target: "d6" }),
+      "property-streams-r37",
+    );
     const gradient = resolveAppearanceRecipeV3(
       appearanceRecipeV3({
         colors: {
@@ -1264,6 +1276,9 @@ describe("resolveAppearanceRecipeV3", () => {
     );
     expect(resolveAppearanceOutlineColorR41V3(nearBlack, "d20")).toBe(
       "#ffffff",
+    );
+    expect(resolveAppearanceOutlineColorR41V3(subtleRed, "d6")).toBe(
+      "#000000",
     );
     expect(resolveAppearanceOutlineColorR41V3(blue, "d20")).toBe("#000000");
     expect(resolveAppearanceOutlineColorR40V3(gradient, "d20")).toBe(

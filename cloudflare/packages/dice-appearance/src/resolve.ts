@@ -1264,8 +1264,15 @@ export function resolveAppearanceOutlineColorR41V3(
   ) {
     return "#000000";
   }
+  const surface = { type: "solid", color: palette[0] } as const;
+  const baseOutline = resolveAppearanceSilhouetteOutlineV3(
+    surface,
+    { mode: "none" },
+    target,
+  ).outlineColor;
+  if (baseOutline === "#000000") return baseOutline;
   return resolveAppearanceSilhouetteOutlineV3(
-    { type: "solid", color: palette[0] },
+    surface,
     resolved.appearance.lighting,
     target,
   ).outlineColor;
