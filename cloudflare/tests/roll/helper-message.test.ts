@@ -42,6 +42,10 @@ describe("invalid-roll helper contract", () => {
       headline: "Invalid total",
     },
     {
+      error: { code: "TOTAL_TOO_LARGE", notation: "1d10^1d10" },
+      headline: "Total too large",
+    },
+    {
       error: {
         code: "UNSAFE_EXPLOSION",
         message: "Expected explosion work exceeds the safety limit",

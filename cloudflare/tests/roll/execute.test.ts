@@ -7,6 +7,18 @@ import {
 const seed = 0x1234_abcd;
 
 describe("executeRoll", () => {
+  it("rejects expression totals beyond the magnitude ceiling", () => {
+    const result = executeRoll({
+      notation: ["1d1*999999999999", "1d6"],
+      seed,
+    });
+
+    expect(result.errors).toEqual([
+      { code: "TOTAL_TOO_LARGE", notation: "1d1*999999999999" },
+    ]);
+    expect(result.outcomes.map(({ notation }) => notation)).toEqual(["1d6"]);
+  });
+
   it("reproduces the complete outcome from the same persisted seed", () => {
     const request = {
       notation: ["4d6k3", "d%", "4dF"],

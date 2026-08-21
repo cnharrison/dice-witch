@@ -887,7 +887,11 @@ function validateStoredOutcomeV4(
     if (!isRecord(error) || typeof error.code !== "string") {
       throw new Error("Stored roll work is invalid");
     }
-    if (error.code === "INVALID_NOTATION" || error.code === "NON_FINITE_TOTAL") {
+    if (
+      error.code === "INVALID_NOTATION" ||
+      error.code === "NON_FINITE_TOTAL" ||
+      error.code === "TOTAL_TOO_LARGE"
+    ) {
       if (
         !hasExactKeys(error, ["code", "notation"]) ||
         typeof error.notation !== "string"

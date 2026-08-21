@@ -7,6 +7,7 @@ import {
   RollGroup,
 } from "@dice-roller/rpg-dice-roller";
 import {
+  MAX_EXPRESSION_TOTAL_ABSOLUTE,
   MAX_NOTATION_EXPRESSIONS,
   MAX_NOTATION_LENGTH,
   MAX_REPETITIONS,
@@ -36,7 +37,7 @@ export type RollExecutionError =
       message: string;
     }
   | {
-      code: "INVALID_NOTATION" | "NON_FINITE_TOTAL";
+      code: "INVALID_NOTATION" | "NON_FINITE_TOTAL" | "TOTAL_TOO_LARGE";
       notation: string;
     };
 
@@ -535,6 +536,10 @@ export function executeRoll(request: RollExecutionRequest): RollExecutionResult 
       }
       if (!Number.isFinite(roll.total)) {
         errors.push({ code: "NON_FINITE_TOTAL", notation: value });
+        continue;
+      }
+      if (Math.abs(roll.total) > MAX_EXPRESSION_TOTAL_ABSOLUTE) {
+        errors.push({ code: "TOTAL_TOO_LARGE", notation: value });
         continue;
       }
       outcomes.push({

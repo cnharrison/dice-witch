@@ -84,6 +84,7 @@ const ERROR_HEADLINES = {
   TOO_MANY_DICE: "Too many dice",
   TOO_MANY_SIDES: "Too many sides",
   NON_FINITE_TOTAL: "Invalid total",
+  TOTAL_TOO_LARGE: "Total too large",
   UNSAFE_EXPLOSION: "🚫 Potentially infinite modifier",
 } as const;
 
