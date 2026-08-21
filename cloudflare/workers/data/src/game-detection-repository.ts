@@ -24,6 +24,7 @@ const MAX_FEATURE_ROLLS = 256;
 
 export type GameDetectionIngestionResult = Readonly<{
   ingested: number;
+  skipped: number;
   backlog: boolean;
   closedSessions: number;
 }>;
@@ -290,18 +291,42 @@ export class D1GameDetectionRepository {
            SELECT 1 FROM game_detection_rolls AS observed
            WHERE observed.interaction_id = r.interaction_id
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM game_detection_skipped_receipts AS skipped
+           WHERE skipped.interaction_id = r.interaction_id
+         )
        ORDER BY r.received_at, r.interaction_id
        LIMIT ?`,
     ).bind(limit).all<LifecycleRow>();
 
     let ingested = 0;
+    let skipped = 0;
     for (const row of rows.results) {
-      if (await this.ingestRow(row, now)) ingested += 1;
+      try {
+        if (await this.ingestRow(row, now)) ingested += 1;
+      } catch (error) {
+        await this.recordSkippedReceipt(row, error, now);
+        skipped += 1;
+      }
     }
 
     const backlog = await this.hasBacklog();
     const closedSessions = backlog ? 0 : await this.closeExpiredSessions(now);
-    return { ingested, backlog, closedSessions };
+    return { ingested, skipped, backlog, closedSessions };
+  }
+
+  private async recordSkippedReceipt(
+    row: LifecycleRow,
+    error: unknown,
+    now: number,
+  ): Promise<void> {
+    const detail = error instanceof Error ? error.message : String(error);
+    const reason = (detail || "unknown").slice(0, 100);
+    await this.db.prepare(
+      `INSERT OR IGNORE INTO game_detection_skipped_receipts (
+         interaction_id, reason, created_at
+       ) VALUES (?, ?, ?)`,
+    ).bind(row.interaction_id, reason, now).run();
   }
 
   private async hasBacklog(): Promise<boolean> {
@@ -316,6 +341,10 @@ export class D1GameDetectionRepository {
            AND NOT EXISTS (
              SELECT 1 FROM game_detection_rolls AS observed
              WHERE observed.interaction_id = r.interaction_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM game_detection_skipped_receipts AS skipped
+             WHERE skipped.interaction_id = r.interaction_id
            )
        ) AS pending`,
     ).first<{ pending: number }>();

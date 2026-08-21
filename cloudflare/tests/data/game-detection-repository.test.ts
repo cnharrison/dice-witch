@@ -147,6 +147,7 @@ beforeEach(async () => {
     dataEnv.DATA.prepare("DELETE FROM game_detection_rolls"),
     dataEnv.DATA.prepare("DELETE FROM game_detection_sessions"),
     dataEnv.DATA.prepare("DELETE FROM game_detection_daily_aggregates"),
+    dataEnv.DATA.prepare("DELETE FROM game_detection_skipped_receipts"),
     dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts"),
     dataEnv.DATA.prepare("DELETE FROM guilds"),
     dataEnv.DATA.prepare(
@@ -175,10 +176,47 @@ describe("D1GameDetectionRepository", () => {
 
     await expect(repository.ingestDeliveredRolls(baseTime + 26)).resolves.toEqual({
       ingested: 25,
+      skipped: 0,
       backlog: true,
       closedSessions: 0,
     });
   }, 15_000);
+
+  it("skips an uningestable receipt instead of freezing on it", async () => {
+    await record(
+      snapshot({
+        interactionId: "100000000000000301",
+        receivedAt: baseTime,
+        notation: ["1d10^1d10+418"],
+        outcomeTotal: 1_000_000_418,
+      }),
+      snapshot({
+        interactionId: "100000000000000302",
+        receivedAt: baseTime + 1,
+      }),
+    );
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+
+    await expect(repository.ingestDeliveredRolls(baseTime + 2)).resolves.toEqual({
+      ingested: 1,
+      skipped: 1,
+      backlog: false,
+      closedSessions: 0,
+    });
+
+    const skippedRow = await dataEnv.DATA.prepare(
+      "SELECT reason FROM game_detection_skipped_receipts WHERE interaction_id = ?",
+    ).bind("100000000000000301").first<{ reason: string }>();
+    expect(skippedRow?.reason).toContain("total is invalid");
+
+    // The poison row must not reappear in later batches.
+    await expect(repository.ingestDeliveredRolls(baseTime + 3)).resolves.toEqual({
+      ingested: 0,
+      skipped: 0,
+      backlog: false,
+      closedSessions: 0,
+    });
+  });
 
   it("ingests fractional outcome totals through rank-job preparation", async () => {
     await record(
@@ -209,6 +247,7 @@ describe("D1GameDetectionRepository", () => {
       repository.ingestDeliveredRolls(baseTime + 180_000),
     ).resolves.toEqual({
       ingested: 4,
+      skipped: 0,
       backlog: false,
       closedSessions: 0,
     });
@@ -377,11 +416,13 @@ describe("D1GameDetectionRepository", () => {
 
     await expect(repository.ingestDeliveredRolls(baseTime + hour)).resolves.toEqual({
       ingested: 3,
+      skipped: 0,
       backlog: false,
       closedSessions: 0,
     });
     await expect(repository.ingestDeliveredRolls(baseTime + hour)).resolves.toEqual({
       ingested: 0,
+      skipped: 0,
       backlog: false,
       closedSessions: 0,
     });

@@ -303,6 +303,7 @@ describe("D1 business schema migration", () => {
       { name: "0016_enforce_appearance_profiles_v4.sql" },
       { name: "0017_oauth_state_context.sql" },
       { name: "0018_appearance_profile_fonts_r37.sql" },
+      { name: "0019_game_detection_ingest_skips.sql" },
     ]);
   });
 

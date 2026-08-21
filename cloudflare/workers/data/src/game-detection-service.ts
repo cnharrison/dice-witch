@@ -38,6 +38,7 @@ export type GameDetectionServiceEnv = Readonly<{
 
 export type GameDetectionMinuteResult = Readonly<{
   ingested: number;
+  skipped: number;
   backlog: boolean;
   closedSessions: number;
   interruptedJobs: number;
