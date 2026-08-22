@@ -93,7 +93,7 @@ export function MixPickerMaterialsRow({
         </h3>
         <p className="text-xs text-muted-foreground">Tap several to mix</p>
       </header>
-      <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2">
+      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] sm:overflow-visible">
         {catalog.materials.map(({ family, name }) => {
           const selected = rows.families.includes(family);
           const lastSelected = selected && rows.families.length === 1;
@@ -104,7 +104,7 @@ export function MixPickerMaterialsRow({
               disabled={disabled || lastSelected}
               aria-pressed={selected}
               onClick={() => toggleFamily(family)}
-              className={`group relative flex flex-col items-center gap-1 rounded-lg border p-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${
+              className={`group relative flex w-24 shrink-0 snap-start flex-col items-center gap-1 rounded-lg border p-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${
                 selected
                   ? "border-brand bg-brand/10"
                   : "border-border hover:border-brand/50 hover:bg-muted/40"
@@ -291,7 +291,7 @@ export function MixBar({
             }}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
-            className="h-8 w-4 touch-none rounded border border-dashed border-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="h-11 w-5 touch-none rounded border border-dashed border-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           />
         ))}
       </div>

@@ -80,7 +80,11 @@ export function MixPickerNumbersRow({
         </h3>
         <p className="text-xs text-muted-foreground">Previews on neutral resin</p>
       </header>
-      <div role="group" aria-label="Font" className="mt-2 flex flex-wrap gap-2">
+      <div
+        role="group"
+        aria-label="Font"
+        className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1"
+      >
         {fontLegacy && (
           <span className="inline-flex items-center rounded-md border border-dashed border-muted-foreground/60 px-2 py-1 text-xs text-muted-foreground">
             Procedural mix · pick to replace
@@ -95,7 +99,7 @@ export function MixPickerNumbersRow({
               aria-pressed={selected}
               disabled={disabled}
               onClick={() => toggleFont(id)}
-              className={`flex flex-col items-center gap-0.5 rounded-lg border p-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`flex w-16 shrink-0 snap-start flex-col items-center gap-0.5 rounded-lg border p-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 selected
                   ? "border-brand bg-brand/10"
                   : "border-border hover:border-brand/50 hover:bg-muted/40"
@@ -120,7 +124,7 @@ export function MixPickerNumbersRow({
       <div
         role="group"
         aria-label="Engraving finish"
-        className="mt-2 flex flex-wrap gap-2"
+        className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1"
       >
         {inkLegacy && (
           <span className="inline-flex items-center rounded-md border border-dashed border-muted-foreground/60 px-2 py-1 text-xs text-muted-foreground">
@@ -136,7 +140,7 @@ export function MixPickerNumbersRow({
               aria-pressed={selected}
               disabled={disabled}
               onClick={() => toggleInk(id)}
-              className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`shrink-0 snap-start rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 selected
                   ? "border-brand bg-brand/10"
                   : "border-border hover:border-brand/50 hover:bg-muted/40"

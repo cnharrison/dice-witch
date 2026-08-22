@@ -209,7 +209,9 @@ export function MixPickerFineTune({
             onClick={onClose}
             className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Close ✕
+            <span aria-hidden="true" className="sm:hidden">Done</span>
+            <span className="sr-only sm:hidden">Close fine-tune</span>
+            <span className="hidden sm:inline">Close ✕</span>
           </button>
         </header>
 

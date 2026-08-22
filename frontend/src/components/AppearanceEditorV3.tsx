@@ -189,6 +189,7 @@ export function AppearanceEditorV3({
   const [activeTab, setActiveTab] = React.useState<AppearanceEditorTab>("design");
   const [previewExpanded, setPreviewExpanded] = React.useState(true);
   const [fineTuneOpen, setFineTuneOpen] = React.useState(false);
+  const [savedOpen, setSavedOpen] = React.useState(false);
   const tabRefs = React.useRef<
     Partial<Record<AppearanceEditorTab, HTMLButtonElement | null>>
   >({});
@@ -882,16 +883,34 @@ export function AppearanceEditorV3({
           />
         </div>
         {displayedDesigns.length > 0 && (
-          <SavedAppearanceDesigns
-            designs={displayedDesigns}
-            isSaving={isSaving}
-            canDuplicate={!atDesignCap}
-            onApply={applySavedDesign}
-            onEdit={editDesign}
-            onDuplicate={duplicateDesign}
-            onDelete={deleteDesign}
-            onRestore={restoreDesign}
-          />
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full xl:hidden"
+              aria-controls={`${kind}-saved-designs`}
+              aria-expanded={savedOpen}
+              onClick={() => setSavedOpen((open) => !open)}
+            >
+              {savedOpen ? "Hide saved designs" : "Saved designs"}
+              <span className="sr-only">, {displayedDesigns.length} total</span>
+            </Button>
+            <div
+              id={`${kind}-saved-designs`}
+              className={savedOpen ? "" : "hidden xl:block"}
+            >
+              <SavedAppearanceDesigns
+                designs={displayedDesigns}
+                isSaving={isSaving}
+                canDuplicate={!atDesignCap}
+                onApply={applySavedDesign}
+                onEdit={editDesign}
+                onDuplicate={duplicateDesign}
+                onDelete={deleteDesign}
+                onRestore={restoreDesign}
+              />
+            </div>
+          </>
         )}
       </aside>
 
