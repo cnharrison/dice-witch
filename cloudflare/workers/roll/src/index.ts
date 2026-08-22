@@ -4048,8 +4048,11 @@ export class RollWork extends DurableObject<RollEnv> {
   private async probeOriginalResponse(
     discordFailure: DiscordFailureDetails,
   ): Promise<RollLifecycleDiagnosticsV2["originalResponseProbe"]> {
+    // Probe both known failure modes so diagnostics can separate "the
+    // original message is gone" (10008) from "the token/webhook went bad
+    // while the message still exists" (10015).
     if (
-      discordFailure.code !== 10_008 ||
+      (discordFailure.code !== 10_008 && discordFailure.code !== 10_015) ||
       discordFailure.operation !== "edit-original-result"
     ) {
       return null;
