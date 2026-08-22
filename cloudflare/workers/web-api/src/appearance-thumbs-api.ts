@@ -177,6 +177,27 @@ export async function bakeAppearanceThumbs(
   });
 }
 
+export async function appearanceThumbsVersion(
+  env: Pick<
+    AppearanceThumbsEnv,
+    "ROLL_WEB" | "APPEARANCE_CATALOG_POLICY"
+  >,
+): Promise<Response> {
+  const catalog = appearanceCatalogForPolicyV3(
+    parseAppearanceCatalogPolicyV3(env.APPEARANCE_CATALOG_POLICY),
+  );
+  const reportedRevision = await env.ROLL_WEB.previewRendererRevisionV4();
+  if (!RENDERER_REVISIONS_V4.includes(reportedRevision as never)) {
+    return json({ error: "appearance_thumbs_revision_unknown" }, 502);
+  }
+  // Thumb object keys embed both parts; consumers must never guess them.
+  return json({
+    version: 1,
+    catalogVersion: catalog.version,
+    rendererRevision: reportedRevision,
+  });
+}
+
 export async function serveAppearanceThumb(
   pathname: string,
   env: Pick<AppearanceThumbsEnv, "THUMBS">,

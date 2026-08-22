@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  appearanceThumbsVersion,
   bakeAppearanceThumbs,
   serveAppearanceThumb,
 } from "../../workers/web-api/src/appearance-thumbs-api";
@@ -152,5 +153,29 @@ describe("serveAppearanceThumb", () => {
         .status,
     ).toBe(404);
     expect((await serveAppearanceThumb("/thumbs/nope", env)).status).toBe(404);
+  });
+});
+
+describe("appearanceThumbsVersion", () => {
+  it("reports the catalog version and renderer revision thumbs are keyed by", async () => {
+    const env = thumbEnv();
+    const response = await appearanceThumbsVersion(env);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      version: 1,
+      catalogVersion: 3,
+      rendererRevision: "canvaskit-v4-r41",
+    });
+  });
+
+  it("fails when the renderer reports an unknown revision", async () => {
+    const env = thumbEnv({
+      ROLL_WEB: {
+        previewRendererRevisionV4: vi.fn(() =>
+          Promise.resolve("canvaskit-v4-r999"),
+        ),
+      },
+    });
+    expect((await appearanceThumbsVersion(env)).status).toBe(502);
   });
 });

@@ -29,6 +29,7 @@ import {
 } from "./appearance-api";
 import { synchronizeGuildProof } from "./guild-authorization";
 import {
+  appearanceThumbsVersion,
   bakeAppearanceThumbs,
   serveAppearanceThumb,
 } from "./appearance-thumbs-api";
@@ -2073,6 +2074,12 @@ export async function handleAuthRequest(
       pathname === "/api/internal/appearance/thumbs"
     ) {
       return await bakeAppearanceThumbs(request, env);
+    }
+    if (
+      request.method === "GET" &&
+      pathname === "/api/appearance/thumbs/version"
+    ) {
+      return await appearanceThumbsVersion(env);
     }
     if (request.method === "GET" && pathname.startsWith("/thumbs/")) {
       return await serveAppearanceThumb(pathname, env);
