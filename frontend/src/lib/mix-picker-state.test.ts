@@ -4,13 +4,19 @@ import type {
   AppearanceRecipeV3,
   AppearanceSelection,
 } from "@dice-witch/dice-v4-model";
+import { FANTASY_ESSENCE_PALETTES_R33_V4 } from "@dice-witch/dice-v4-model";
 import {
+  CHAOS_ASSIGNMENT_V3,
+  applyColorsRow,
   applyMaterialRows,
   applyStringRows,
   applyVariety,
+  colorsRowFromRecipe,
+  curatedPalettePool,
   hasProceduralFontSelection,
   materialRowsFromRecipe,
   stringRowsFromSelection,
+  surpriseColors,
   varietyFromRecipe,
 } from "@/lib/mix-picker-state";
 import { MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
@@ -202,6 +208,84 @@ describe("variety", () => {
 function base(): AppearanceRecipeV3 {
   return recipeWithMaterial({ mode: "fixed", value: materialValue("classic") });
 }
+
+describe("colors row", () => {
+  it("round-trips palette, solid, tonal, and random modes one-to-one", () => {
+    const modes: AppearanceRecipeV3["colors"][] = [
+      { mode: "palette", colors: ["#111111", "#222222", "#333333"] },
+      { mode: "solid", primary: "#444444" },
+      { mode: "tonal", primary: "#555555" },
+      { mode: "random", primary: "#666666" },
+    ];
+    for (const colors of modes) {
+      const recipe = { ...base(), colors };
+      expect(applyColorsRow(recipe, colorsRowFromRecipe(recipe))).toEqual(
+        recipe,
+      );
+    }
+  });
+
+  it("maps single chips to solid or tonal by the tonal flag", () => {
+    const recipe = base();
+    expect(applyColorsRow(recipe, { mode: "single", primary: "#101010", tonal: false }).colors)
+      .toEqual({ mode: "solid", primary: "#101010" });
+    expect(applyColorsRow(recipe, { mode: "single", primary: "#101010", tonal: true }).colors)
+      .toEqual({ mode: "tonal", primary: "#101010" });
+  });
+
+  it("rejects palettes the validator would reject", () => {
+    const recipe = base();
+    expect(() =>
+      applyColorsRow(recipe, { mode: "palette", colors: ["#111111"] }),
+    ).toThrow();
+    expect(() =>
+      applyColorsRow(recipe, {
+        mode: "palette",
+        colors: ["#111111", "#111111"],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("surprise me", () => {
+  it("picks deterministically from the pool and writes COLORS only", () => {
+    const palettes = [
+      ["#070707", "#171717", "#272727", "#373737"],
+      ["#ff0000", "#00ff00"],
+    ];
+    const picked = surpriseColors(palettes, () => 0.99);
+    expect(picked).toEqual({
+      mode: "palette",
+      colors: ["#ff0000", "#00ff00"],
+    });
+    const recipe = applyColorsRow(base(), picked);
+    expect(recipe.colors).toEqual(picked);
+    // Everything except colors is untouched.
+    expect(recipe.material).toEqual(base().material);
+  });
+
+  it("fails fast on an empty pool", () => {
+    expect(() => surpriseColors([], Math.random)).toThrow();
+  });
+
+  it("curated pool draws from catalog styles and all fantasy essences", () => {
+    const catalog = {
+      styles: [
+        { id: "rainbow", recipe: { colors: { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] } } },
+        { id: "solid", recipe: { colors: { mode: "solid", primary: "#101010" } } },
+      ],
+    } as never;
+    const pool = curatedPalettePool(catalog);
+    expect(pool).toHaveLength(1 + Object.keys(FANTASY_ESSENCE_PALETTES_R33_V4).length);
+    expect(pool[0]).toEqual(["#aa0000", "#00aa00", "#0000aa"]);
+  });
+});
+
+describe("chaos assignment op", () => {
+  it("targets the builtin chaotic style at assignment level", () => {
+    expect(CHAOS_ASSIGNMENT_V3).toEqual({ source: "builtin", id: "chaotic" });
+  });
+});
 
 describe("hasProceduralFontSelection", () => {
   it("flags non-fixed font selections as legacy procedural", () => {

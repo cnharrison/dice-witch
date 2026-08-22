@@ -1,9 +1,17 @@
 import { selectionValuesV3 } from "@/lib/appearance-editor-v3";
 import { normalizeMaterialWeightsV3, MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
+import type { AppearanceCatalogV3 } from "../types/appearance";
+import {
+  APPEARANCE_PALETTE_COLOR_RANGE_V3,
+  FANTASY_ESSENCE_PALETTES_R33_V4,
+} from "@dice-witch/dice-v4-model";
 import type {
+  AppearanceColorsV3,
+  AppearanceDesignReferenceV3,
   AppearanceMaterialV4,
   AppearanceRecipeV3,
   AppearanceSelection,
+  HexColor,
 } from "@dice-witch/dice-v4-model";
 
 export type MixPickerVariety = "matched" | "mixed" | "chaos";
@@ -114,6 +122,99 @@ export function materialRowsFromRecipe(
     return { mode: "allowlist", families };
   }
   return { mode: "fixed", families };
+}
+
+// Chaos swaps the target's assignment to the builtin "Random" style instead
+// of editing its recipe. Frontend has no import path to dice-appearance's
+// CHAOTIC_APPEARANCE_STYLE_ID, so the contract id is pinned here; consumers
+// resolve it against catalog.styles and fail fast if it disappears.
+export const CHAOS_ASSIGNMENT_V3 = {
+  source: "builtin",
+  id: "chaotic",
+} as const satisfies AppearanceDesignReferenceV3;
+
+export type ColorsRowState =
+  | { mode: "palette"; colors: readonly HexColor[] }
+  | { mode: "single"; primary: HexColor; tonal: boolean }
+  // colors.mode "random" re-rolls the color every render; carried through
+  // untouched so read→apply round-trips preserve its semantics.
+  | { mode: "randomized"; primary: HexColor };
+
+function validatedPalette(colors: readonly HexColor[]): HexColor[] {
+  const { minimum, maximum } = APPEARANCE_PALETTE_COLOR_RANGE_V3;
+  if (colors.length < minimum || colors.length > maximum) {
+    throw new Error(`Palette needs ${minimum}–${maximum} colors`);
+  }
+  if (new Set(colors).size < 2) {
+    throw new Error("Palette needs two distinct colors");
+  }
+  return [...colors];
+}
+
+export function colorsRowFromRecipe(
+  recipe: AppearanceRecipeV3,
+): ColorsRowState {
+  const { colors } = recipe;
+  if (colors.mode === "palette") {
+    return { mode: "palette", colors: [...colors.colors] };
+  }
+  if (colors.mode === "random") {
+    return { mode: "randomized", primary: colors.primary };
+  }
+  return {
+    mode: "single",
+    primary: colors.primary,
+    tonal: colors.mode === "tonal",
+  };
+}
+
+export function applyColorsRow(
+  recipe: AppearanceRecipeV3,
+  row: ColorsRowState,
+): AppearanceRecipeV3 {
+  switch (row.mode) {
+    case "palette":
+      return {
+        ...recipe,
+        colors: { mode: "palette", colors: validatedPalette(row.colors) },
+      };
+    case "single":
+      return {
+        ...recipe,
+        colors: {
+          mode: row.tonal ? "tonal" : "solid",
+          primary: row.primary,
+        },
+      };
+    case "randomized":
+      return { ...recipe, colors: { mode: "random", primary: row.primary } };
+  }
+}
+
+export function curatedPalettePool(
+  catalog: AppearanceCatalogV3,
+): HexColor[][] {
+  const pool: HexColor[][] = [];
+  for (const style of catalog.styles) {
+    const { colors } = style.recipe;
+    if (colors.mode === "palette") pool.push([...colors.colors]);
+  }
+  pool.push(
+    ...Object.values(FANTASY_ESSENCE_PALETTES_R33_V4).map((p) => [...p]),
+  );
+  return pool;
+}
+
+// Surprise me replaces COLORS only; everything else in the recipe stays.
+export function surpriseColors(
+  palettes: readonly (readonly HexColor[])[],
+  random: () => number,
+): Extract<AppearanceColorsV3, { mode: "palette" }> {
+  if (palettes.length === 0) {
+    throw new Error("No curated palettes available");
+  }
+  const picked = palettes[Math.floor(random() * palettes.length)];
+  return { mode: "palette", colors: validatedPalette(picked) };
 }
 
 // resolveMaterial supplies a value for families the current selection does
