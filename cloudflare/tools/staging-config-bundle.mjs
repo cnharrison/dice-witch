@@ -55,6 +55,41 @@ function decodeBundle(encodedBundle) {
   return bundle;
 }
 
+// Structural web-api bindings are repo-owned so a stale secret bundle can
+// never deploy without the thumbnail pipeline wiring.
+function applyAppearanceThumbsConfiguration(config) {
+  const runWorkerFirst = new Set(config.assets?.run_worker_first ?? []);
+  runWorkerFirst.add("/api/*");
+  runWorkerFirst.add("/interactions");
+  runWorkerFirst.add("/thumbs/*");
+  config.assets = { ...config.assets, run_worker_first: [...runWorkerFirst] };
+  const buckets = config.r2_buckets ?? [];
+  if (!buckets.some(({ binding }) => binding === "THUMBS")) {
+    buckets.push({
+      binding: "THUMBS",
+      bucket_name: "dice-witch-appearance-thumbs-staging",
+    });
+  }
+  config.r2_buckets = buckets;
+  const secrets = config.secrets_store_secrets ?? [];
+  const storeId = secrets.find(
+    ({ binding }) => binding === "DISCORD_CLIENT_SECRET",
+  )?.store_id;
+  if (storeId === undefined) {
+    throw new Error("Web API staging Secrets Store id is required");
+  }
+  if (
+    !secrets.some(({ binding }) => binding === "APPEARANCE_THUMBS_BAKE_SECRET")
+  ) {
+    secrets.push({
+      binding: "APPEARANCE_THUMBS_BAKE_SECRET",
+      store_id: storeId,
+      secret_name: "DICE_WITCH_STAGING_APPEARANCE_THUMBS_BAKE_SECRET",
+    });
+  }
+  config.secrets_store_secrets = secrets;
+}
+
 function applyReleaseConfiguration(configs) {
   if (!isRecord(configs.interactions.vars)) {
     throw new Error("Interactions staging vars are required");
@@ -119,6 +154,7 @@ export async function materializeStagingConfigs({
   configs["web-api"].vars.ENVIRONMENT = "staging";
   configs["web-api"].vars.BUILD_SHA = buildSha;
   configs["web-api"].vars.BUILD_TIME = buildTime;
+  applyAppearanceThumbsConfiguration(configs["web-api"]);
   validate(configs);
 
   await mkdir(configDirectory, { recursive: true });

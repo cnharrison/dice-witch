@@ -76,6 +76,7 @@ const WORKER_CONFIG_KEYS = {
     "assets",
     "services",
     "secrets_store_secrets",
+    "r2_buckets",
   ],
 };
 const WORKER_VAR_NAMES = {
@@ -132,6 +133,8 @@ const STAGING_SECRET_NAMES = {
   },
   "web-api": {
     DISCORD_CLIENT_SECRET: "DICE_WITCH_STAGING_DISCORD_CLIENT_SECRET",
+    APPEARANCE_THUMBS_BAKE_SECRET:
+      "DICE_WITCH_STAGING_APPEARANCE_THUMBS_BAKE_SECRET",
   },
 };
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;

@@ -22,6 +22,13 @@ function bundle() {
       const config = { name: `dice-witch-${worker}-staging` };
       if (worker === "web-api") {
         config.vars = { BUILD_SHA: "old", BUILD_TIME: "old" };
+        config.secrets_store_secrets = [
+          {
+            binding: "DISCORD_CLIENT_SECRET",
+            store_id: "store-1",
+            secret_name: "DICE_WITCH_STAGING_DISCORD_CLIENT_SECRET",
+          },
+        ];
       } else if (worker === "interactions") {
         config.vars = {};
       }
@@ -65,6 +72,21 @@ test("materializes only known configs and stamps exact build metadata", async ()
   assert.equal(web.vars.ENVIRONMENT, "staging");
   assert.equal(web.vars.BUILD_SHA, sha);
   assert.equal(web.vars.BUILD_TIME, buildTime);
+  assert.deepEqual(web.assets.run_worker_first, [
+    "/api/*",
+    "/interactions",
+    "/thumbs/*",
+  ]);
+  assert.deepEqual(web.r2_buckets, [
+    {
+      binding: "THUMBS",
+      bucket_name: "dice-witch-appearance-thumbs-staging",
+    },
+  ]);
+  assert.deepEqual(
+    web.secrets_store_secrets.map(({ binding }) => binding).sort(),
+    ["APPEARANCE_THUMBS_BAKE_SECRET", "DISCORD_CLIENT_SECRET"],
+  );
   assert.equal(interactions.vars.ROLL_LIFECYCLE_TELEMETRY_VERSION, "2");
   assert.deepEqual(interactions.observability, {
     enabled: true,
