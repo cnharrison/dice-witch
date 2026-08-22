@@ -13,6 +13,20 @@ import type {
 } from "@/types/appearance";
 
 const catalog = {
+  materials: [
+    {
+      family: "classic",
+      name: "Classic",
+      treatments: [
+        { id: "solid", name: "Solid" },
+        { id: "gradient", name: "Gradient" },
+      ],
+      opacities: [{ id: "opaque", name: "Opaque" }],
+      finishes: [{ id: "matte", name: "Matte" }],
+      textureScale: { minimum: 1, maximum: 4, step: 1 },
+    },
+    { family: "glass", name: "Glass" },
+  ],
   variationScopes: [
     { id: "die", name: "Die" },
     { id: "group", name: "Group" },
@@ -220,5 +234,47 @@ describe("MixPickerFineTune panel", () => {
     expect(next.font).toEqual({ mode: "allowlist", values: ["cinzel", "fraunces"] });
     // Fixed single-id rows pass through untouched.
     expect(next.engraving).toEqual({ mode: "fixed", value: "matte-ink" });
+  });
+});
+
+describe("MixPickerFineTune material accordions", () => {
+  const weightedRecipe = recipeWith({
+    material: {
+      mode: "weighted",
+      options: [
+        { value: { family: "classic", treatment: "solid" } as never, weight: 600 },
+        { value: { family: "glass", clarity: 1 } as never, weight: 400 },
+      ],
+    },
+  });
+
+  it("renders one collapsed accordion per material in the bar", () => {
+    renderFineTune(weightedRecipe);
+    const classic = screen.getByRole("button", { name: /Classic/ });
+    const glass = screen.getByRole("button", { name: /Glass/ });
+    expect(classic.getAttribute("aria-expanded")).toBe("false");
+    expect(glass.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("60%")).not.toBeNull();
+    expect(screen.getByText("40%")).not.toBeNull();
+    // Collapsed by default: no parameter fields are mounted.
+    expect(screen.queryByLabelText(/Classic treatment/)).toBeNull();
+  });
+
+  it("expands to the family parameter editor and swaps one value in place", () => {
+    const onChange = vi.fn();
+    renderFineTune(weightedRecipe, onChange);
+    fireEvent.click(screen.getByRole("button", { name: /Classic/ }));
+    const editor = screen.getByLabelText("Classic treatment");
+    fireEvent.change(editor, { target: { value: "gradient" } });
+    const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
+    if (next.material.mode !== "weighted") throw new Error("expected weighted");
+    expect(next.material.options).toHaveLength(2);
+    expect(next.material.options[0]?.value).toMatchObject({
+      family: "classic",
+      treatment: "gradient",
+    });
+    // Sibling keeps its tuned parameters and weight untouched.
+    expect(next.material.options[1]?.value).toMatchObject({ family: "glass" });
+    expect(next.material.options[1]?.weight).toBe(400);
   });
 });

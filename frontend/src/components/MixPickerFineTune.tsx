@@ -1,3 +1,4 @@
+import { AppearanceMaterialOptionV3 } from "@/components/AppearanceMaterialOptionV3";
 import { MixBar } from "@/components/MixPickerMaterialsRow";
 import { selectionValuesV3 } from "@/lib/appearance-editor-v3";
 import {
@@ -6,7 +7,11 @@ import {
   type ColorChance,
 } from "@/lib/mix-picker-state";
 import { MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
-import type { AppearanceCatalogV3, AppearanceRecipeV3 } from "@/types/appearance";
+import type {
+  AppearanceCatalogV3,
+  AppearanceMaterialV4,
+  AppearanceRecipeV3,
+} from "@/types/appearance";
 import * as React from "react";
 
 type MixPickerFineTuneProps = {
@@ -108,6 +113,69 @@ function ChipGroup<Value extends string>({
   );
 }
 
+type MaterialEntry = Readonly<{
+  material: AppearanceMaterialV4;
+  weight: number;
+}>;
+
+function materialEntries(
+  selection: AppearanceRecipeV3["material"],
+): readonly MaterialEntry[] {
+  switch (selection.mode) {
+    case "fixed":
+      return [{ material: selection.value, weight: 1 }];
+    case "allowlist":
+      return selection.values.map((material) => ({ material, weight: 1 }));
+    case "weighted":
+      return selection.options.map(({ value: material, weight }) => ({
+        material,
+        weight,
+      }));
+  }
+}
+
+// Parameter edits swap one family's value in place; siblings and weights
+// stay untouched so tuned parameters survive.
+function withReplacedMaterial(
+  selection: AppearanceRecipeV3["material"],
+  family: string,
+  next: AppearanceMaterialV4,
+): AppearanceRecipeV3["material"] {
+  switch (selection.mode) {
+    case "fixed":
+      return { mode: "fixed", value: next };
+    case "allowlist":
+      return {
+        mode: "allowlist",
+        values: selection.values.map((value) =>
+          value.family === family ? next : value,
+        ),
+      };
+    case "weighted":
+      return {
+        mode: "weighted",
+        options: selection.options.map(({ value, weight }) => ({
+          value: value.family === family ? next : value,
+          weight,
+        })),
+      };
+  }
+}
+
+// Repeated gradient spreads only when every die is a standard-cut classic
+// gradient; otherwise per-side/whole-die carry the look alone.
+function supportsRepeatedGradient(recipe: AppearanceRecipeV3): boolean {
+  return (
+    selectionValuesV3(recipe.material).every(
+      (material) =>
+        material.family === "classic" && material.treatment === "gradient",
+    ) &&
+    selectionValuesV3(recipe.form.polyhedral).every(
+      (form) => form === "standard",
+    )
+  );
+}
+
 export function MixPickerFineTune({
   recipe,
   catalog,
@@ -116,15 +184,17 @@ export function MixPickerFineTune({
   onClose,
   onChange,
 }: MixPickerFineTuneProps) {
+  const [openMaterialFamily, setOpenMaterialFamily] =
+    React.useState<string | null>(null);
   if (!open) return null;
-
   const gradientActive =
     recipe.colors.mode !== "solid" && usesClassicGradient(recipe);
   const fontWeighted = recipe.font.mode === "weighted";
   const inkWeighted = recipe.engraving.mode === "weighted";
   const weighAnyRow = fontWeighted || inkWeighted;
   const chance = colorChanceOf(recipe);
-
+  const materialRows = materialEntries(recipe.material);
+  const repeatedGradient = supportsRepeatedGradient(recipe);
   return (
     <div
       role="dialog"
@@ -185,77 +255,70 @@ export function MixPickerFineTune({
           </fieldset>
         </section>
 
-        <section aria-label="Weigh any row" className="space-y-2">
+        <section aria-label="Material parameters" className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide">
-            Weigh any row
+            Material parameters
           </h3>
           <p className="text-xs text-muted-foreground">
-            Multi-selected rows get a share bar, like materials.
+            One accordion per material in your bar.
           </p>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={weighAnyRow}
-              disabled={disabled}
-              onChange={(event) => {
-                const convert = event.target.checked
-                  ? upgradeToWeighted
-                  : downgradeToAllowlist;
-                onChange({
-                  ...recipe,
-                  font: convert(recipe.font),
-                  engraving: convert(recipe.engraving),
-                });
-              }}
-            />
-            Share bars on font and ink rows
-          </label>
-          {fontWeighted && recipe.font.mode === "weighted" && (
-            <MixBar
-              names={recipe.font.options.map(({ value }) =>
-                catalog.fonts.find(({ id }) => id === value)?.name ?? value,
-              )}
-              weights={recipe.font.options.map(({ weight }) => weight)}
-              disabled={disabled}
-              onCommit={(weights) =>
-                onChange({
-                  ...recipe,
-                  font: {
-                    mode: "weighted",
-                    options: recipe.font.options.map((option, index) => ({
-                      ...option,
-                      weight: weights[index] as number,
-                    })),
-                  },
-                })
-              }
-            />
-          )}
-          {inkWeighted && recipe.engraving.mode === "weighted" && (
-            <MixBar
-              names={recipe.engraving.options.map(({ value }) =>
-                catalog.engravingFinishes.find(({ id }) => id === value)?.name ??
-                  value,
-              )}
-              weights={recipe.engraving.options.map(({ weight }) => weight)}
-              disabled={disabled}
-              onCommit={(weights) =>
-                onChange({
-                  ...recipe,
-                  engraving: {
-                    mode: "weighted",
-                    options: recipe.engraving.options.map((option, index) => ({
-                      ...option,
-                      weight: weights[index] as number,
-                    })),
-                  },
-                })
-              }
-            />
-          )}
+          {materialRows.map(({ material, weight }) => {
+            const name =
+              catalog.materials.find(
+                ({ family }) => family === material.family,
+              )?.name ?? material.family;
+            const expanded = openMaterialFamily === material.family;
+            return (
+              <div
+                key={material.family}
+                className="rounded-lg border"
+              >
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  disabled={disabled}
+                  onClick={() =>
+                    setOpenMaterialFamily(expanded ? null : material.family)
+                  }
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                >
+                  <span>
+                    <span aria-hidden="true" className="mr-1">
+                      {expanded ? "▾" : "▸"}
+                    </span>
+                    {name}
+                  </span>
+                  {recipe.material.mode === "weighted" && (
+                    <span className="text-xs text-muted-foreground">
+                      {Math.round((weight / MATERIAL_WEIGHT_TOTAL_V3) * 100)}%
+                    </span>
+                  )}
+                </button>
+                {expanded && (
+                  <div className="border-t p-3">
+                    <AppearanceMaterialOptionV3
+                      material={material}
+                      catalog={catalog}
+                      repeatedGradient={repeatedGradient}
+                      onChange={(nextMaterial) =>
+                        onChange({
+                          ...recipe,
+                          material: withReplacedMaterial(
+                            recipe.material,
+                            material.family,
+                            nextMaterial,
+                          ),
+                        })
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </section>
 
-        <section aria-label="Gradient" className="space-y-2">
+                <section aria-label="Gradient" className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide">
             Gradient
           </h3>
@@ -356,7 +419,76 @@ export function MixPickerFineTune({
             />
           )}
         </section>
-      </div>
+
+<section aria-label="Weigh any row" className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide">
+            Weigh any row
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Multi-selected rows get a share bar, like materials.
+          </p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={weighAnyRow}
+              disabled={disabled}
+              onChange={(event) => {
+                const convert = event.target.checked
+                  ? upgradeToWeighted
+                  : downgradeToAllowlist;
+                onChange({
+                  ...recipe,
+                  font: convert(recipe.font),
+                  engraving: convert(recipe.engraving),
+                });
+              }}
+            />
+            Share bars on font and ink rows
+          </label>
+          {fontWeighted && recipe.font.mode === "weighted" && (
+            <MixBar
+              names={recipe.font.options.map(({ value }) =>
+                catalog.fonts.find(({ id }) => id === value)?.name ?? value,
+              )}
+              weights={recipe.font.options.map(({ weight }) => weight)}
+              disabled={disabled}
+              onCommit={(weights) =>
+                onChange({
+                  ...recipe,
+                  font: {
+                    mode: "weighted",
+                    options: recipe.font.options.map((option, index) => ({
+                      ...option,
+                      weight: weights[index] as number,
+                    })),
+                  },
+                })
+              }
+            />
+          )}
+          {inkWeighted && recipe.engraving.mode === "weighted" && (
+            <MixBar
+              names={recipe.engraving.options.map(({ value }) =>
+                catalog.engravingFinishes.find(({ id }) => id === value)?.name ??
+                  value,
+              )}
+              weights={recipe.engraving.options.map(({ weight }) => weight)}
+              disabled={disabled}
+              onCommit={(weights) =>
+                onChange({
+                  ...recipe,
+                  engraving: {
+                    mode: "weighted",
+                    options: recipe.engraving.options.map((option, index) => ({
+                      ...option,
+                      weight: weights[index] as number,
+                    })),
+                  },
+                })
+              }
+            />
+          )}
+        </section>      </div>
     </div>
   );
 }
