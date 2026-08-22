@@ -70,8 +70,6 @@ describe("MixPickerMaterialsRow", () => {
       .toBe("true");
     expect(screen.getByRole("button", { name: /Glass/ }).getAttribute("aria-pressed"))
       .toBe("false");
-    const images = screen.getAllByRole("presentation").length;
-    void images;
     // Thumb imgs are decorative (alt="") inside named buttons.
     expect(document.querySelectorAll("img")).toHaveLength(3);
   });
