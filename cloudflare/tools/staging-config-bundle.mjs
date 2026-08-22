@@ -72,18 +72,12 @@ function applyAppearanceThumbsConfiguration(config) {
   }
   config.r2_buckets = buckets;
   const secrets = config.secrets_store_secrets ?? [];
-  const storeId = secrets.find(
-    ({ binding }) => binding === "DISCORD_CLIENT_SECRET",
-  )?.store_id;
-  if (storeId === undefined) {
-    throw new Error("Web API staging Secrets Store id is required");
-  }
   if (
     !secrets.some(({ binding }) => binding === "APPEARANCE_THUMBS_BAKE_SECRET")
   ) {
     secrets.push({
       binding: "APPEARANCE_THUMBS_BAKE_SECRET",
-      store_id: storeId,
+      store_id: "68e7aff3814e40d0afbcf2a9f4357d8f",
       secret_name: "DICE_WITCH_STAGING_APPEARANCE_THUMBS_BAKE_SECRET",
     });
   }
