@@ -394,7 +394,8 @@ function validateStaticWorkerConfiguration(errors, configs) {
     assets.binding !== "ASSETS" ||
     assets.not_found_handling !== "single-page-application" ||
     !Array.isArray(assets.run_worker_first) ||
-    assets.run_worker_first.join(",") !== "/api/*,/interactions"
+    assets.run_worker_first.join(",") !==
+      "/api/*,/interactions,/thumbs/*"
   ) {
     errors.push("Web API static asset configuration is invalid");
   }

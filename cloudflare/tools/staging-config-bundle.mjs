@@ -72,14 +72,20 @@ function applyAppearanceThumbsConfiguration(config) {
   }
   config.r2_buckets = buckets;
   const secrets = config.secrets_store_secrets ?? [];
-  if (
-    !secrets.some(({ binding }) => binding === "APPEARANCE_THUMBS_BAKE_SECRET")
-  ) {
-    secrets.push({
-      binding: "APPEARANCE_THUMBS_BAKE_SECRET",
-      store_id: "68e7aff3814e40d0afbcf2a9f4357d8f",
-      secret_name: "DICE_WITCH_STAGING_APPEARANCE_THUMBS_BAKE_SECRET",
-    });
+  const requiredSecrets = {
+    DISCORD_CLIENT_SECRET: "DICE_WITCH_STAGING_DISCORD_CLIENT_SECRET",
+    APPEARANCE_THUMBS_BAKE_SECRET:
+      "DICE_WITCH_STAGING_APPEARANCE_THUMBS_BAKE_SECRET",
+  };
+  const storeId = "68e7aff3814e40d0afbcf2a9f4357d8f";
+  for (const [binding, secretName] of Object.entries(requiredSecrets)) {
+    if (!secrets.some(({ binding: name }) => name === binding)) {
+      secrets.push({
+        binding,
+        store_id: storeId,
+        secret_name: secretName,
+      });
+    }
   }
   config.secrets_store_secrets = secrets;
 }
