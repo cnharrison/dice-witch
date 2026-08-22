@@ -28,6 +28,10 @@ import {
   putPersonalAppearanceV4,
 } from "./appearance-api";
 import { synchronizeGuildProof } from "./guild-authorization";
+import {
+  bakeAppearanceThumbs,
+  serveAppearanceThumb,
+} from "./appearance-thumbs-api";
 import { bytesToBase64, json, securityHeaders } from "./responses";
 import { handleSavedRollApiRequest } from "./saved-roll-api";
 
@@ -104,6 +108,7 @@ export type WebApiBindings = {
     prepare(value: unknown): Promise<unknown>;
     execute(value: unknown): Promise<unknown>;
     previewV4(value: unknown): Promise<unknown>;
+    previewRendererRevisionV4(): Promise<string>;
   };
   DISCORD_CLIENT_ID: string;
   DISCORD_CLIENT_SECRET: WorkerSecretSource;
@@ -111,6 +116,8 @@ export type WebApiBindings = {
   FRONTEND_ORIGIN: string;
   BUILD_SHA: string;
   APPEARANCE_CATALOG_POLICY: string;
+  THUMBS: R2Bucket;
+  APPEARANCE_THUMBS_BAKE_SECRET: WorkerSecretSource;
 };
 
 type ValidatedConfiguration = Omit<
@@ -2060,6 +2067,15 @@ export async function handleAuthRequest(
         await previewAppearanceV4(request, env.ROLL_WEB),
         configuration,
       );
+    }
+    if (
+      request.method === "POST" &&
+      pathname === "/api/internal/appearance/thumbs"
+    ) {
+      return await bakeAppearanceThumbs(request, env);
+    }
+    if (request.method === "GET" && pathname.startsWith("/thumbs/")) {
+      return await serveAppearanceThumb(pathname, env);
     }
     if (request.method === "GET" && pathname === "/api/stats/public") {
       const response = await env.DATA_SERVICE.fetch(

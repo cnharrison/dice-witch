@@ -67,6 +67,7 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
       prepare: vi.fn(),
       execute: vi.fn(),
       previewV4: vi.fn(),
+      previewRendererRevisionV4: vi.fn(() => Promise.resolve("canvaskit-v4-r41")),
     },
     DISCORD_CLIENT_ID: "100000000000000001",
     DISCORD_CLIENT_SECRET: "test-client-secret",
@@ -75,6 +76,16 @@ function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBin
     FRONTEND_ORIGIN: frontendOrigin,
     BUILD_SHA: buildSha,
     APPEARANCE_CATALOG_POLICY: "r37",
+    THUMBS: {
+      get: vi.fn(),
+      put: vi.fn(),
+      head: vi.fn(),
+      createMultipartUpload: vi.fn(),
+      resumeMultipartUpload: vi.fn(),
+      delete: vi.fn(),
+      list: vi.fn(),
+    },
+    APPEARANCE_THUMBS_BAKE_SECRET: "test-bake-secret",
   };
 }
 

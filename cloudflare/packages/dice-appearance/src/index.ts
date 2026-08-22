@@ -5,5 +5,6 @@ export * from "./migrate";
 export * from "./precedence";
 export * from "./preview";
 export * from "./resolve";
+export * from "./thumbs";
 export * from "./types";
 export * from "./validate";

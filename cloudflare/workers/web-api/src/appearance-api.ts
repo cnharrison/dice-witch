@@ -360,7 +360,7 @@ export async function putGuildAppearanceV4(
   );
 }
 
-function isPng(value: Uint8Array): boolean {
+export function isPng(value: Uint8Array): boolean {
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
   return signature.every((byte, index) => value[index] === byte);
 }

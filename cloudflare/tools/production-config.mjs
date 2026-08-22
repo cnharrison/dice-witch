@@ -99,6 +99,7 @@ const REQUIRED_BINDINGS = {
   },
   "web-api": {
     APPEARANCE_CATALOG_POLICY: "plain_text",
+    APPEARANCE_THUMBS_BAKE_SECRET: "secrets_store_secret",
     ASSETS: "assets",
     BUILD_SHA: "plain_text",
     BUILD_TIME: "plain_text",
@@ -111,6 +112,7 @@ const REQUIRED_BINDINGS = {
     FRONTEND_ORIGIN: "plain_text",
     INTERACTIONS_SERVICE: "service",
     ROLL_WEB: "service",
+    THUMBS: "r2_bucket",
   },
 };
 const SECRET_NAMES = {
@@ -128,6 +130,8 @@ const SECRET_NAMES = {
   },
   "web-api": {
     DISCORD_CLIENT_SECRET: "DICE_WITCH_PRODUCTION_DISCORD_CLIENT_SECRET",
+    APPEARANCE_THUMBS_BAKE_SECRET:
+      "DICE_WITCH_PRODUCTION_APPEARANCE_THUMBS_BAKE_SECRET",
   },
 };
 
@@ -217,7 +221,17 @@ function baseConfig(template, worker) {
     ...(template.services === undefined
       ? {}
       : { services: productionServices(template.services) }),
+    ...(template.r2_buckets === undefined
+      ? {}
+      : { r2_buckets: productionBuckets(template.r2_buckets) }),
   };
+}
+
+function productionBuckets(buckets = []) {
+  return buckets.map((bucket) => ({
+    ...bucket,
+    bucket_name: bucket.bucket_name.replace(/-staging$/, "-production"),
+  }));
 }
 
 async function loadTemplates(templateDirectory) {
@@ -336,6 +350,7 @@ function configuredBindingTypes(config) {
       "durable_object_namespace",
     ]),
     ...(config.d1_databases ?? []).map(({ binding }) => [binding, "d1"]),
+    ...(config.r2_buckets ?? []).map(({ binding }) => [binding, "r2_bucket"]),
     ...(config.ai?.binding === undefined
       ? []
       : [[config.ai.binding, "ai"]]),

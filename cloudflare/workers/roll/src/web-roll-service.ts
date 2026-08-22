@@ -1,9 +1,11 @@
 import {
   canonicalJsonV4,
+  RENDERER_REVISIONS_V4,
   serializeRenderRequestV4,
   type PublicRenderModelV4,
   type RenderDieV4,
   type RenderRequestV4,
+  type RendererRevisionV4,
 } from "@dice-witch/dice-v4-model";
 import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model/dice-view-preferences";
 import { WorkerEntrypoint } from "cloudflare:workers";
@@ -1247,4 +1249,22 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
       parseRollViewPolicy(this.env.ROLL_VIEW_POLICY),
     );
   }
+
+  previewRendererRevisionV4(): RendererRevisionV4 {
+    return rendererRevisionForViewPolicyV4(
+      parseRollViewPolicy(this.env.ROLL_VIEW_POLICY),
+    );
+  }
+}
+
+// View policies and renderer revisions pair by number (rN ↔ canvaskit-v4-rN);
+// registry membership fails fast if they ever drift apart.
+function rendererRevisionForViewPolicyV4(
+  policy: RollViewPolicy,
+): RendererRevisionV4 {
+  const revision = `canvaskit-v4-${policy}` as RendererRevisionV4;
+  if (!RENDERER_REVISIONS_V4.includes(revision)) {
+    throw new Error(`Roll view policy ${policy} has no renderer revision`);
+  }
+  return revision;
 }
