@@ -10,7 +10,7 @@ import {
 import { AppearanceApiError } from "@/lib/appearance-api-error";
 import { getAppearancePreviewV4 } from "@/lib/appearance-v4";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -62,6 +62,43 @@ async function selectAppearanceTarget(
   name: string,
 ): Promise<void> {
   await user.click(screen.getByRole("radio", { name }));
+}
+
+
+function startFromRegion(): HTMLElement {
+  return screen.getByRole("region", { name: "Start from" });
+}
+
+function catalogStyleName(styleId: string): string {
+  const style = APPEARANCE_CATALOG_V3.styles.find(({ id }) => id === styleId);
+  if (style === undefined) throw new Error(`Style ${styleId} is missing`);
+  return style.name;
+}
+
+function startFromCard(styleId: string): HTMLElement {
+  return within(startFromRegion()).getByRole("button", {
+    name: new RegExp(catalogStyleName(styleId)),
+  });
+}
+
+async function selectStartFromStyle(
+  user: ReturnType<typeof userEvent.setup>,
+  styleId: string,
+): Promise<void> {
+  const card = new RegExp(catalogStyleName(styleId));
+  if (within(startFromRegion()).queryByRole("button", { name: card }) === null) {
+    await user.click(
+      within(startFromRegion()).getByRole("button", { name: /^\d+ more$/ }),
+    );
+  }
+  await user.click(within(startFromRegion()).getByRole("button", { name: card }));
+}
+
+function materialTile(name: string): HTMLElement {
+  return within(screen.getByRole("region", { name: "Material" })).getByRole(
+    "button",
+    { name },
+  );
 }
 
 function renderEditor(
@@ -195,13 +232,13 @@ describe("AppearanceEditorV3", () => {
     const designTab = screen.getByRole("tab", { name: "Design" });
     const cameraTab = screen.getByRole("tab", { name: "Camera" });
     expect(designTab.getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("combobox", { name: "Preset" })).toBeDefined();
+    expect(screen.getByRole("region", { name: "Start from" })).toBeDefined();
     expect(screen.queryByRole("region", { name: "Dice view" })).toBeNull();
 
     await user.click(cameraTab);
     expect(cameraTab.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("region", { name: "Dice view" })).toBeDefined();
-    expect(screen.queryByRole("combobox", { name: "Preset" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Start from" })).toBeNull();
     expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
 
     cameraTab.focus();
@@ -295,25 +332,26 @@ describe("AppearanceEditorV3", () => {
 
     expect(screen.queryByRole("button", { name: "Customize" })).toBeNull();
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
-    expect(screen.getByRole("group", { name: "Colors" })).toBeDefined();
+    expect(screen.getByRole("region", { name: "Colors" })).toBeDefined();
     expect(screen.queryByRole("tab", { name: /Design, unsaved/ })).toBeNull();
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
+    await selectStartFromStyle(user, "pride");
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
-    const hex = screen.getByRole("textbox", { name: "Hex color" });
-    await user.clear(hex);
-    await user.type(hex, "#123456");
-    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(materialTile("Glass"));
 
     expect(screen.getByText("Based on Pride")).toBeDefined();
     expect(screen.getByLabelText("Custom design name")).toHaveProperty("value", "Edit 1");
     expect(screen.getByRole("tab", { name: "Design, unsaved changes" })).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Preset" })).toHaveProperty("value", "chaotic");
+    // The Random card sits behind the expander; opening it is stateless for
+    // the draft.
+    await user.click(
+      within(startFromRegion()).getByRole("button", { name: /^\d+ more$/ }),
+    );
+    expect(startFromCard("chaotic").getAttribute("aria-pressed")).toBe("true");
   });
 
   it("keeps preset and Camera changes in one Save & apply transaction", async () => {
@@ -331,7 +369,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("tab", { name: "Camera" }));
     await user.click(screen.getByLabelText("Keep rolled results clear"));
     await user.click(screen.getByRole("tab", { name: "Design" }));
-    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "dice-witch");
+    await selectStartFromStyle(user, "dice-witch");
 
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByText("Unsaved changes: Design and Camera.")).toBeDefined();
@@ -360,12 +398,8 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
-    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
-    const hex = screen.getByRole("textbox", { name: "Hex color" });
-    await user.clear(hex);
-    await user.type(hex, "#123456");
-    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await selectStartFromStyle(user, "pride");
+    await user.click(materialTile("Glass"));
     await user.clear(screen.getByLabelText("Custom design name"));
     await user.type(screen.getByLabelText("Custom design name"), "Combined draft");
 
@@ -394,10 +428,9 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    const preset = screen.getByRole("combobox", { name: "Preset" });
-    await user.selectOptions(preset, "dice-witch");
+    await selectStartFromStyle(user, "dice-witch");
     expect(onSave).not.toHaveBeenCalled();
-    await user.selectOptions(preset, "chaotic");
+    await selectStartFromStyle(user, "chaotic");
     expect(screen.queryByRole("button", { name: "Save & apply" })).toBeNull();
     expect(onSave).not.toHaveBeenCalled();
   });
@@ -415,14 +448,9 @@ describe("AppearanceEditorV3", () => {
       onSave: vi.fn(async () => undefined),
     });
 
-    const preset = screen.getByRole("combobox", { name: "Preset" });
-    await user.selectOptions(preset, "pride");
-    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
-    const hex = screen.getByRole("textbox", { name: "Hex color" });
-    await user.clear(hex);
-    await user.type(hex, "#123456");
-    await user.click(screen.getByRole("button", { name: "Apply" }));
-    await user.selectOptions(preset, "dice-witch");
+    await selectStartFromStyle(user, "pride");
+    await user.click(materialTile("Glass"));
+    await selectStartFromStyle(user, "dice-witch");
 
     expect(confirm).toHaveBeenCalledWith(
       "Discard the unsaved custom design Edit 1?",
@@ -433,9 +461,11 @@ describe("AppearanceEditorV3", () => {
     );
 
     confirm.mockReturnValue(true);
-    await user.selectOptions(preset, "dice-witch");
+    await user.click(startFromCard("dice-witch"));
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
-    expect(preset).toHaveProperty("value", "dice-witch");
+    expect(startFromCard("dice-witch").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
   });
 
   it("preserves staged Design changes across die targets", async () => {
@@ -451,11 +481,11 @@ describe("AppearanceEditorV3", () => {
     });
 
     await selectAppearanceTarget(user, "d20");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
+    await selectStartFromStyle(user, "pride");
     await selectAppearanceTarget(user, "All dice");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "dice-witch");
+    await selectStartFromStyle(user, "dice-witch");
     await selectAppearanceTarget(user, "d20");
-    expect(screen.getByRole("combobox", { name: "Preset" })).toHaveProperty("value", "pride");
+    expect(startFromCard("pride").getAttribute("aria-pressed")).toBe("true");
     expect(onSave).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
@@ -479,7 +509,7 @@ describe("AppearanceEditorV3", () => {
     });
 
     await selectAppearanceTarget(user, "d20");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
+    await selectStartFromStyle(user, "pride");
     expect(onSave).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
@@ -597,12 +627,8 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "pride");
-    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
-    const hex = screen.getByRole("textbox", { name: "Hex color" });
-    await user.clear(hex);
-    await user.type(hex, "#123456");
-    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await selectStartFromStyle(user, "pride");
+    await user.click(materialTile("Glass"));
     expect(screen.getByText("Based on Pride")).toBeDefined();
     await user.clear(screen.getByLabelText("Custom design name"));
     await user.type(screen.getByLabelText("Custom design name"), "Night garden");
@@ -634,11 +660,7 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.click(screen.getByRole("button", { name: "Choose color 1" }));
-    const hex = screen.getByRole("textbox", { name: "Hex color" });
-    await user.clear(hex);
-    await user.type(hex, "#123456");
-    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(materialTile("Glass"));
 
     expect(screen.getByText("Changes to Shared garden affect: All dice.")).toBeDefined();
     expect(onSave).not.toHaveBeenCalled();
@@ -661,7 +683,7 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Preset" }), "dice-witch");
+    await selectStartFromStyle(user, "dice-witch");
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
     expect(await screen.findByText(
       "This appearance changed elsewhere. Reloaded settings are required before saving again.",
@@ -688,10 +710,7 @@ describe("AppearanceEditorV3", () => {
       </QueryClientProvider>,
     );
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "dice-witch",
-    );
+    await selectStartFromStyle(user, "dice-witch");
     const remoteProfile = personalProfile();
     remoteProfile.assignments.all = { source: "builtin", id: "pride" };
     view.rerender(
@@ -753,9 +772,8 @@ describe("AppearanceEditorV3", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByRole("combobox", { name: "Preset" })).toHaveProperty(
-      "value",
-      "dice-witch",
+    expect(startFromCard("dice-witch").getAttribute("aria-pressed")).toBe(
+      "true",
     );
     expect(
       screen.queryByText(/This appearance changed elsewhere/),
@@ -788,10 +806,7 @@ describe("AppearanceEditorV3", () => {
       </QueryClientProvider>,
     );
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "dice-witch",
-    );
+    await selectStartFromStyle(user, "dice-witch");
     view.rerender(
       <QueryClientProvider client={client}>
         <AppearanceEditorV3
@@ -945,10 +960,7 @@ describe("AppearanceEditorV3", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "New design" }));
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Preset" }),
-      "dice-witch",
-    );
+    await selectStartFromStyle(user, "dice-witch");
 
     expect(confirm).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Edit Random" })).toBeDefined();

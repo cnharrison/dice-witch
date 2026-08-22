@@ -3,7 +3,7 @@
 import { APPEARANCE_CATALOG_V3 } from "../../../../cloudflare/packages/dice-appearance/src/catalog";
 import { GuildProvider } from "@/context/GuildContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -160,9 +160,11 @@ describe("appearance preference authorization", () => {
     mockFetch({ isAdmin: true });
     renderPreferences();
 
-    await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Preset" }),
-      "dice-witch",
+    const startFrom = await screen.findByRole("region", {
+      name: "Start from",
+    });
+    await user.click(
+      within(startFrom).getByRole("button", { name: /Dice Witch/ }),
     );
     await user.click(screen.getByRole("button", { name: "Server" }));
     expect(confirm).toHaveBeenCalledWith("Discard unsaved appearance changes?");
@@ -184,9 +186,11 @@ describe("appearance preference authorization", () => {
     renderPreferences();
 
     await user.click(await screen.findByRole("button", { name: "Server" }));
-    await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Preset" }),
-      "dice-witch",
+    const startFrom = await screen.findByRole("region", {
+      name: "Start from",
+    });
+    await user.click(
+      within(startFrom).getByRole("button", { name: /Dice Witch/ }),
     );
     await user.click(screen.getByRole("link", { name: "Refresh" }));
 

@@ -1,7 +1,10 @@
-import { AppearancePresetGalleryV3 } from "@/components/AppearancePresetGalleryV3";
 import { DiceViewPreferencesV4 } from "@/components/DiceViewPreferencesV4";
 import { AppearancePreviewPaneV3 } from "@/components/AppearancePreviewPaneV3";
-import { AppearanceRecipeControlsV3 } from "@/components/AppearanceRecipeControlsV3";
+import { MixPickerColorsRow } from "@/components/MixPickerColorsRow";
+import { MixPickerMaterialsRow } from "@/components/MixPickerMaterialsRow";
+import { MixPickerNumbersRow } from "@/components/MixPickerNumbersRow";
+import { MixPickerStartFromRow } from "@/components/MixPickerStartFromRow";
+import { MixPickerVarietyControl } from "@/components/MixPickerVarietyControl";
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { AppearanceTargetPickerV3 } from "@/components/AppearanceTargetPickerV3";
 import { SavedAppearanceDesigns } from "@/components/SavedAppearanceDesigns";
@@ -18,6 +21,8 @@ import {
   deleteAppearanceDesignV3,
   duplicateAppearanceDesignV3,
   nextAppearanceDesignNameV3,
+  reconcileAppearanceColorEditV3,
+  reconcileAppearanceMaterialEditV3,
   restoreAppearanceDesignV3,
   nextPresetEditNameV3,
   renameAppearanceDesignV3,
@@ -28,6 +33,12 @@ import {
   type AppearanceEditorTargetV3,
   type EditableAppearanceProfileV4,
 } from "@/lib/appearance-editor-v3";
+import {
+  applyVariety,
+  CHAOS_ASSIGNMENT_V3,
+  type MixPickerVariety,
+} from "@/lib/mix-picker-state";
+import { useAppearanceThumbVersion } from "@/lib/use-appearance-thumbs-version";
 import {
   APPEARANCE_TARGET_LABELS,
   type AppearanceCatalogV3,
@@ -295,6 +306,7 @@ export function AppearanceEditorV3({
   const hasTargetOverride =
     target !== "all" && draftProfile.assignments.overrides[target] !== undefined;
   const atDesignCap = draftProfile.designs.length >= MAX_APPEARANCE_DESIGNS_V3;
+  const thumbVersion = useAppearanceThumbVersion();
 
   React.useEffect(() => {
     onDirtyChange?.(hasUnsavedChanges);
@@ -350,6 +362,17 @@ export function AppearanceEditorV3({
     setEditingDesignId(null);
     setStatus(null);
   };
+
+  // Mix picker edits flow through the same copy-on-write machinery as before;
+  // material/color reconcilers keep curated-palette and randomization rules.
+  const changeMixMaterials = (nextRecipe: AppearanceRecipeV3) =>
+    setCustomRecipe(reconcileAppearanceMaterialEditV3(nextRecipe, catalog));
+  const changeMixColors = (nextRecipe: AppearanceRecipeV3) =>
+    setCustomRecipe(reconcileAppearanceColorEditV3(nextRecipe));
+  const changeMixVariety = (
+    variety: Exclude<MixPickerVariety, "chaos">,
+  ) => setCustomRecipe(applyVariety(activeSelection.recipe, variety));
+  const applyChaos = () => selectStyle(CHAOS_ASSIGNMENT_V3.id);
 
   const removeDraftMetadata = (designId: string) => {
     setExplicitDesignIds((ids) => ids.filter((id) => id !== designId));
@@ -833,9 +856,10 @@ export function AppearanceEditorV3({
             </div>
           )}
 
-          <AppearancePresetGalleryV3
+          <MixPickerStartFromRow
             catalog={catalog}
             selectedStyleId={activeSelection.styleId}
+            thumbVersion={thumbVersion}
             disabled={isSaving}
             onSelect={selectStyle}
           />
@@ -897,12 +921,34 @@ export function AppearanceEditorV3({
             </div>
           )}
 
-          <AppearanceRecipeControlsV3
-            recipe={activeSelection.recipe}
-            catalog={catalog}
-            target={target}
-            onChange={setCustomRecipe}
-          />
+          <div className="space-y-6">
+            <MixPickerMaterialsRow
+              recipe={activeSelection.recipe}
+              catalog={catalog}
+              thumbVersion={thumbVersion}
+              disabled={isSaving}
+              onChange={changeMixMaterials}
+            />
+            <MixPickerColorsRow
+              recipe={activeSelection.recipe}
+              catalog={catalog}
+              disabled={isSaving}
+              onChange={changeMixColors}
+            />
+            <MixPickerNumbersRow
+              recipe={activeSelection.recipe}
+              catalog={catalog}
+              thumbVersion={thumbVersion}
+              disabled={isSaving}
+              onChange={setCustomRecipe}
+            />
+            <MixPickerVarietyControl
+              recipe={activeSelection.recipe}
+              disabled={isSaving}
+              onSelect={changeMixVariety}
+              onChaos={applyChaos}
+            />
+          </div>
 
           {(changedSharedDesigns.length > 0 || deletionNotices.length > 0) && (
             <div
