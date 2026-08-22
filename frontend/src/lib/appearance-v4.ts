@@ -749,6 +749,48 @@ export async function getAppearanceCatalogV4(): Promise<AppearanceCatalogV3> {
   );
 }
 
+export type AppearanceThumbsVersionV4 = Readonly<{
+  version: 1;
+  catalogVersion: number;
+  rendererRevision: string;
+}>;
+
+function parseAppearanceThumbsVersionV4(
+  value: unknown,
+): AppearanceThumbsVersionV4 {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("version" in value) ||
+    value.version !== 1 ||
+    !("catalogVersion" in value) ||
+    typeof value.catalogVersion !== "number" ||
+    !Number.isInteger(value.catalogVersion) ||
+    !("rendererRevision" in value) ||
+    typeof value.rendererRevision !== "string"
+  ) {
+    throw new Error("Appearance thumbs version is invalid");
+  }
+  return {
+    version: 1,
+    catalogVersion: value.catalogVersion,
+    rendererRevision: value.rendererRevision,
+  };
+}
+
+export async function getAppearanceThumbsVersionV4(): Promise<AppearanceThumbsVersionV4> {
+  const response = await requireOk(
+    await apiFetch(apiUrl("/api/appearance/thumbs/version"), {
+      credentials: "include",
+    }),
+  );
+  return parseResponse(
+    response,
+    "appearance_thumbs_version_invalid",
+    parseAppearanceThumbsVersionV4,
+  );
+}
+
 async function getGuildProfileV4(
   path: string,
   catalog: AppearanceCatalogV3,
