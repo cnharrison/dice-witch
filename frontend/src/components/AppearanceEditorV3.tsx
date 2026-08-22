@@ -2,6 +2,7 @@ import { DiceViewPreferencesV4 } from "@/components/DiceViewPreferencesV4";
 import { AppearancePreviewPaneV3 } from "@/components/AppearancePreviewPaneV3";
 import { AppearanceScopeBanner } from "@/components/AppearanceScopeBanner";
 import { MixPickerColorsRow } from "@/components/MixPickerColorsRow";
+import { MixPickerFineTune } from "@/components/MixPickerFineTune";
 import { MixPickerMaterialsRow } from "@/components/MixPickerMaterialsRow";
 import { MixPickerNumbersRow } from "@/components/MixPickerNumbersRow";
 import { MixPickerStartFromRow } from "@/components/MixPickerStartFromRow";
@@ -187,6 +188,7 @@ export function AppearanceEditorV3({
   const [status, setStatus] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<AppearanceEditorTab>("design");
   const [previewExpanded, setPreviewExpanded] = React.useState(true);
+  const [fineTuneOpen, setFineTuneOpen] = React.useState(false);
   const tabRefs = React.useRef<
     Partial<Record<AppearanceEditorTab, HTMLButtonElement | null>>
   >({});
@@ -1069,6 +1071,17 @@ export function AppearanceEditorV3({
               onSelect={changeMixVariety}
               onChaos={applyChaos}
             />
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isSaving}
+                onClick={() => setFineTuneOpen(true)}
+              >
+                Fine-tune →
+              </Button>
+            </div>
           </div>
 
           {deletionNotices.length > 0 && (
@@ -1152,6 +1165,15 @@ export function AppearanceEditorV3({
             {status}
           </p>
         )}
+
+        <MixPickerFineTune
+          recipe={activeSelection.recipe}
+          catalog={catalog}
+          open={fineTuneOpen && activeTab === "design"}
+          disabled={isSaving}
+          onClose={() => setFineTuneOpen(false)}
+          onChange={setCustomRecipe}
+        />
       </div>
     </section>
   );

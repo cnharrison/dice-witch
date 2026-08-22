@@ -173,7 +173,7 @@ function clampWeight(value: number): number {
 
 // Segment handles rebalance the two adjacent shares live; the pair total is
 // conserved so other segments never move during a drag.
-function MixBar({
+export function MixBar({
   names,
   weights,
   disabled,

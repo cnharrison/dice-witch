@@ -217,6 +217,76 @@ export function surpriseColors(
   return { mode: "palette", colors: validatedPalette(picked) };
 }
 
+// Fine-tune's color-chance radios map onto randomization policies; side
+// effects (palette conversion) are stated inline in the panel captions.
+export type ColorChance = "mine" | "accent" | "bright";
+
+export function colorChanceOf(recipe: AppearanceRecipeV3): ColorChance {
+  const policy = recipe.randomization;
+  if (policy === "one-palette-color-v1") return "accent";
+  if (
+    policy === "full-spectrum-v1" ||
+    policy === "full-spectrum-v2" ||
+    recipe.colors.mode === "vivid-random-pair" ||
+    recipe.colors.mode === "random-pair"
+  ) {
+    return "bright";
+  }
+  return "mine";
+}
+
+function primaryOf(recipe: AppearanceRecipeV3): HexColor | null {
+  const colors = recipe.colors;
+  if (colors.mode === "palette") return colors.colors[0] ?? null;
+  if (
+    colors.mode === "random" ||
+    colors.mode === "solid" ||
+    colors.mode === "tonal"
+  ) {
+    return colors.primary;
+  }
+  return null;
+}
+
+function paletteForAccent(
+  recipe: AppearanceRecipeV3,
+  catalog: AppearanceCatalogV3,
+): AppearanceColorsV3 {
+  if (recipe.colors.mode === "palette") return recipe.colors;
+  const primary = primaryOf(recipe) ?? catalog.editorDefaults.primaryColor;
+  const accent =
+    catalog.editorDefaults.palette.find((color) => color !== primary) ??
+    "#888888";
+  return { mode: "palette", colors: [primary, accent] };
+}
+
+export function applyColorChance(
+  recipe: AppearanceRecipeV3,
+  chance: ColorChance,
+  catalog: AppearanceCatalogV3,
+): AppearanceRecipeV3 {
+  switch (chance) {
+    case "mine": {
+      const next = { ...recipe };
+      delete next.randomization;
+      return next;
+    }
+    case "accent":
+      return {
+        ...recipe,
+        colors: paletteForAccent(recipe, catalog),
+        randomization: "one-palette-color-v1",
+      };
+    case "bright":
+      return {
+        ...recipe,
+        varyBy: "die",
+        randomization: "full-spectrum-v2",
+        colors: { mode: "vivid-random-pair" },
+      };
+  }
+}
+
 // resolveMaterial supplies a value for families the current selection does
 // not already carry (catalog defaults), so user-tuned parameters survive
 // edits of the families they belong to.
