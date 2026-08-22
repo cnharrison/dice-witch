@@ -476,6 +476,20 @@ export function clearAppearanceTargetOverrideV3<
   );
 }
 
+// "Back to default": resolution falls back to the builtin Random recipe.
+export function clearAppearanceAllAssignmentV3<
+  Profile extends EditableAppearanceProfileV4,
+>(profile: Profile, catalog: AppearanceCatalogV3): Profile {
+  const validated = validateProfile(profile, catalog);
+  return validateProfile(
+    {
+      ...validated,
+      assignments: { ...validated.assignments, all: null },
+    } as Profile,
+    catalog,
+  );
+}
+
 export function upsertAppearanceDesignV3<
   Profile extends EditableAppearanceProfileV4,
 >(

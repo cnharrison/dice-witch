@@ -10,7 +10,14 @@ import {
 import { AppearanceApiError } from "@/lib/appearance-api-error";
 import { getAppearancePreviewV4 } from "@/lib/appearance-v4";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -993,5 +1000,115 @@ describe("AppearanceEditorV3", () => {
     expect(
       screen.getByRole("button", { name: "Duplicate Design 1" }),
     ).toHaveProperty("disabled", true);
+  });
+});
+
+describe("AppearanceEditorV3 chip actions", () => {
+  it("discards a saved die design via the chip menu while keeping it listed", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onSave = vi.fn(async () => undefined);
+    const profile = personalProfile();
+    profile.designs = [
+      { id: designId, name: "Night garden", recipe: styleRecipe("pride") },
+    ];
+    profile.assignments = {
+      all: null,
+      overrides: { d20: { source: "custom", id: designId } },
+    };
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    fireEvent.contextMenu(screen.getByRole("radio", { name: "d20" }));
+    await user.click(
+      screen.getByRole("menuitem", { name: /Discard d20's design/ }),
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("Discard d20's own design?"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
+      all: null,
+      overrides: {},
+    });
+    // The saved design stays in the rail.
+    expect(screen.getByText("Night garden")).toBeDefined();
+  });
+
+  it("stages deletion of an unassigned unsaved draft when its only override is discarded", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    await selectAppearanceTarget(user, "d20");
+    await selectStartFromStyle(user, "pride");
+    await user.click(materialTile("Glass"));
+    fireEvent.contextMenu(screen.getByRole("radio", { name: "d20" }));
+    await user.click(
+      screen.getByRole("menuitem", { name: /Discard d20's design/ }),
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("Its unsaved design will also be deleted."),
+    );
+    expect(screen.getByText(/Deleting Edit 1 is staged/)).toBeDefined();
+    // d20 falls back to following ALL.
+    expect(screen.getByText("d20 follows ALL right now")).toBeDefined();
+  });
+
+  it("backs ALL off to the builtin random look and offers to clear per-die designs", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm")
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(true);
+    const onSave = vi.fn(async () => undefined);
+    const profile = personalProfile();
+    profile.assignments = {
+      all: { source: "builtin", id: "pride" },
+      overrides: { d6: { source: "builtin", id: "solid" } },
+    };
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Back to default" }));
+    expect(window.confirm).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining(
+        "Back to default clears ALL dice",
+      ),
+    );
+    expect(window.confirm).toHaveBeenNthCalledWith(
+      2,
+      "Also clear per-die designs?",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
+      all: null,
+      overrides: {},
+    });
   });
 });

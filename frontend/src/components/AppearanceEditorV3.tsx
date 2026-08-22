@@ -1,5 +1,6 @@
 import { DiceViewPreferencesV4 } from "@/components/DiceViewPreferencesV4";
 import { AppearancePreviewPaneV3 } from "@/components/AppearancePreviewPaneV3";
+import { AppearanceScopeBanner } from "@/components/AppearanceScopeBanner";
 import { MixPickerColorsRow } from "@/components/MixPickerColorsRow";
 import { MixPickerMaterialsRow } from "@/components/MixPickerMaterialsRow";
 import { MixPickerNumbersRow } from "@/components/MixPickerNumbersRow";
@@ -17,6 +18,7 @@ import {
   assertAppearanceRecipeSupportsTargetV3,
   beginAppearanceRecipeEditV3,
   clearAppearanceTargetOverrideV3,
+  clearAppearanceAllAssignmentV3,
   createEmptyAppearanceProfileV4,
   deleteAppearanceDesignV3,
   duplicateAppearanceDesignV3,
@@ -50,7 +52,7 @@ import {
   type AppearanceTargetV4,
   type CustomAppearanceDesignV3,
 } from "@dice-witch/dice-v4-model";
-import { Save } from "lucide-react";
+import { Save, Undo2 } from "lucide-react";
 import * as React from "react";
 
 type AppearanceEditorV3Props = {
@@ -305,6 +307,9 @@ export function AppearanceEditorV3({
   const hasUnsavedChanges = unsavedDrafts.length > 0;
   const hasTargetOverride =
     target !== "all" && draftProfile.assignments.overrides[target] !== undefined;
+  const overrideTargets = Object.entries(draftProfile.assignments.overrides)
+    .filter(([, reference]) => reference !== undefined)
+    .map(([overrideTarget]) => overrideTarget as AppearanceTargetV4);
   const atDesignCap = draftProfile.designs.length >= MAX_APPEARANCE_DESIGNS_V3;
   const thumbVersion = useAppearanceThumbVersion();
 
@@ -650,6 +655,108 @@ export function AppearanceEditorV3({
     }
   };
 
+  const handleEditOverride = (editTarget: AppearanceTargetV4) => {
+    selectTarget(editTarget);
+    const reference = draftProfile.assignments.overrides[editTarget];
+    if (reference?.source === "custom") {
+      setEditingDesignId(reference.id);
+    }
+  };
+
+  // Discard removes only the assignment; a saved design stays listed, while
+  // an unassigned unsaved draft is staged for deletion so the restore
+  // notice covers oops-clicks.
+  const handleDiscardOverride = (discardTarget: AppearanceTargetV4) => {
+    const reference = draftProfile.assignments.overrides[discardTarget];
+    if (reference === undefined) return;
+    let deletesDraft = false;
+    if (reference.source === "custom") {
+      const assignedElsewhere = designTargets(
+        draftProfile,
+        reference.id,
+      ).some((assignedTarget) => assignedTarget !== discardTarget);
+      const wasSaved = baselineProfile.designs.some(
+        ({ id }) => id === reference.id,
+      );
+      deletesDraft = !assignedElsewhere && !wasSaved;
+    }
+    const message = `Discard ${
+      APPEARANCE_TARGET_LABELS[discardTarget]
+    }'s own design? It goes back to following ALL. The design itself stays in your saved list — only the assignment is removed.${
+      deletesDraft ? " Its unsaved design will also be deleted." : ""
+    }`;
+    if (!window.confirm(message)) return;
+    try {
+      let next = clearAppearanceTargetOverrideV3(
+        draftProfile,
+        discardTarget,
+        catalog,
+      );
+      if (deletesDraft && reference.source === "custom") {
+        const design = draftProfile.designs.find(
+          ({ id }) => id === reference.id,
+        );
+        if (design !== undefined) {
+          next = deleteAppearanceDesignV3(next, design.id, catalog);
+          setDeletionNotices((notices) => [
+            ...notices.filter(({ design: staged }) => staged.id !== design.id),
+            { design, targets: [] },
+          ]);
+          removeDraftMetadata(design.id);
+          if (editingDesignId === design.id) setEditingDesignId(null);
+        }
+      }
+      setDraftProfile(next);
+      setStatus(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const backToDefault = () => {
+    if (target !== "all") {
+      if (hasTargetOverride) handleDiscardOverride(target);
+      return;
+    }
+    if (
+      !window.confirm(
+        "Back to default clears ALL dice so they fall back to the built-in Random look?",
+      )
+    ) {
+      return;
+    }
+    const overrideCount = Object.values(draftProfile.assignments.overrides)
+      .filter((reference) => reference !== undefined).length;
+    if (
+      overrideCount === 0 ||
+      !window.confirm("Also clear per-die designs?")
+    ) {
+      try {
+        setDraftProfile(
+          clearAppearanceAllAssignmentV3(draftProfile, catalog),
+        );
+        setStatus(null);
+      } catch (error) {
+        setStatus(errorMessage(error));
+      }
+      return;
+    }
+    try {
+      let next = clearAppearanceAllAssignmentV3(draftProfile, catalog);
+      for (const key of Object.keys(draftProfile.assignments.overrides)) {
+        next = clearAppearanceTargetOverrideV3(
+          next,
+          key as AppearanceTargetV4,
+          catalog,
+        );
+      }
+      setDraftProfile(next);
+      setStatus(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
   const materializeNames = (): EditableAppearanceProfileV4 => {
     let profile = draftProfile;
     for (const [id, name] of Object.entries(nameDrafts)) {
@@ -720,21 +827,35 @@ export function AppearanceEditorV3({
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
       <div className="order-1 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-1">
+        <div className="mb-2 flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isSaving || (target !== "all" && !hasTargetOverride)}
+            onClick={backToDefault}
+          >
+            <Undo2 className="mr-2 h-4 w-4" aria-hidden="true" />
+            Back to default
+          </Button>
+        </div>
         <AppearanceTargetPickerV3
           value={target}
           disabled={isSaving}
           onChange={selectTarget}
+          overrideTargets={overrideTargets}
+          onEditOverride={handleEditOverride}
+          onDiscardOverride={handleDiscardOverride}
         />
-        {hasTargetOverride && (
-          <button
-            type="button"
+        <div className="mt-3">
+          <AppearanceScopeBanner
+            target={target}
+            hasOverride={hasTargetOverride}
             disabled={isSaving}
-            onClick={clearTargetOverride}
-            className="mt-2 text-xs font-semibold text-brand underline-offset-2 hover:underline disabled:opacity-50"
-          >
-            Use ALL design
-          </button>
-        )}
+            sharedNotices={changedSharedDesigns}
+            onReset={target === "all" ? undefined : clearTargetOverride}
+          />
+        </div>
       </div>
 
       <aside className="order-2 space-y-4 xl:sticky xl:top-6 xl:z-10 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start">
@@ -950,15 +1071,12 @@ export function AppearanceEditorV3({
             />
           </div>
 
-          {(changedSharedDesigns.length > 0 || deletionNotices.length > 0) && (
+          {deletionNotices.length > 0 && (
             <div
               role="status"
               aria-live="polite"
               className="space-y-1 rounded-lg border border-brand/35 bg-muted/20 p-4 text-sm"
             >
-              {changedSharedDesigns.map((message) => (
-                <p key={message}>{message}</p>
-              ))}
               {deletionNotices.map((notice) => (
                 <p key={notice.design.id}>
                   {notice.targets.length === 0
