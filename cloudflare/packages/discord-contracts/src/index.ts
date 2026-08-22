@@ -35,6 +35,7 @@ export {
   buildFollowupResponse,
   buildFollowupResponseWithFile,
   buildPublicFollowupResponse,
+  buildReadOriginalResponse,
   isComponentsV2Message,
   validateDiscordMessage,
   DISCORD_COMPONENTS_V2_FLAG,

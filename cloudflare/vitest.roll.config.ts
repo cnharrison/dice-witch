@@ -359,6 +359,19 @@ async function discordTestResponse(request: Request): Promise<Response> {
           { status: 404 },
         );
   }
+  if (token === "delivery-result-webhook-probe-read") {
+    if (request.method === "GET") {
+      return Response.json({ id: "100000000000000087" });
+    }
+    const attempts = (resultDeliveryAttempts.get(token) ?? 0) + 1;
+    resultDeliveryAttempts.set(token, attempts);
+    return attempts === 1
+      ? Response.json({})
+      : Response.json(
+          { code: 10_015, message: "unknown webhook" },
+          { status: 404 },
+        );
+  }
   if (token === "delivery-terminal-failure") {
     return Response.json(
       { code: 10_015, message: "invalid interaction" },

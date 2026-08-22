@@ -29,6 +29,7 @@ import {
   buildFollowupResponseWithFile,
   buildPublicFollowupResponse,
   buildInvalidRollHelpMessage,
+  buildReadOriginalResponse,
   buildRollClatterMessage,
   buildRollResultMessage,
   rollResultText,
@@ -4063,12 +4064,7 @@ export class RollWork extends DurableObject<RollEnv> {
     const snapshot = parseRollLifecycleSnapshot(
       JSON.parse(lifecycle.snapshot_json),
     );
-    if (
-      snapshot.version === 1 ||
-      snapshot.diagnostics.originalResponseMessageId === null
-    ) {
-      return null;
-    }
+    if (snapshot.version === 1) return null;
     let metadata: DeliveryMetadata;
     try {
       metadata = parseDeliveryMetadata(delivery.metadata_json);
@@ -4076,29 +4072,54 @@ export class RollWork extends DurableObject<RollEnv> {
       return null;
     }
     if (metadata.logging?.source !== "discord") return null;
+
+    const probe =
+      snapshot.diagnostics.originalResponseMessageId !== null
+        ? this.probeStoredMessage(
+            metadata,
+            snapshot.diagnostics.originalResponseMessageId,
+          )
+        : delivery.token === null
+          ? null
+          : this.probeInteractionWebhook(
+              snapshot.interactionId,
+              metadata.applicationId,
+              delivery.token,
+            );
+    if (probe === null) return null;
+
+    try {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const timeoutResult = new Promise<"probe-failed">((resolve) => {
+        timeout = setTimeout(() => {
+          resolve("probe-failed");
+        }, MESSAGE_PROBE_TIMEOUT_MS);
+      });
+      let outcome: RollLifecycleDiagnosticsV2["originalResponseProbe"];
+      try {
+        outcome = await Promise.race([probe, timeoutResult]);
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout);
+      }
+      return outcome;
+    } catch {
+      // The diagnostic probe must never change delivery behavior.
+      return "probe-failed";
+    }
+  }
+
+  private async probeStoredMessage(
+    metadata: DeliveryMetadata,
+    messageId: string,
+  ): Promise<RollLifecycleDiagnosticsV2["originalResponseProbe"]> {
     try {
       const service = this.env.DISCORD_MESSAGE_PROBE as unknown as {
         inspectDiscordMessageExistence(value: unknown): Promise<unknown>;
       };
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      const timeoutResult = new Promise<unknown>((resolve) => {
-        timeout = setTimeout(
-          () => {
-            resolve({ outcome: "probe-failed" });
-          },
-          MESSAGE_PROBE_TIMEOUT_MS,
-        );
-      });
-      const probe = service.inspectDiscordMessageExistence({
+      const result = await service.inspectDiscordMessageExistence({
         channelId: metadata.logging.channelId,
-        messageId: snapshot.diagnostics.originalResponseMessageId,
+        messageId,
       });
-      let result: unknown;
-      try {
-        result = await Promise.race([probe, timeoutResult]);
-      } finally {
-        if (timeout !== undefined) clearTimeout(timeout);
-      }
       if (
         isRecord(result) &&
         (result.outcome === "exists" ||
@@ -4108,6 +4129,29 @@ export class RollWork extends DurableObject<RollEnv> {
       ) {
         return result.outcome;
       }
+    } catch {
+      // The diagnostic probe must never change delivery behavior.
+    }
+    return "probe-failed";
+  }
+
+  private async probeInteractionWebhook(
+    interactionId: string,
+    applicationId: string,
+    token: string,
+  ): Promise<RollLifecycleDiagnosticsV2["originalResponseProbe"]> {
+    // Without a stored original message id, ask Discord whether the
+    // interaction webhook still resolves @original: success means the
+    // delivery rejection was transient, 10008 means the message is gone,
+    // and 10015 means the webhook/token itself stopped resolving.
+    try {
+      const response = await fetch(
+        buildReadOriginalResponse({ id: interactionId, applicationId, token }),
+      );
+      if (response.ok) return "exists";
+      const code = await readDiscordErrorCode(response);
+      if (code === 10_008) return "missing";
+      if (code === 10_015) return "inaccessible";
     } catch {
       // The diagnostic probe must never change delivery behavior.
     }

@@ -388,9 +388,7 @@ function parseRollLifecycleDiagnostics(
           value.originalResponseProbe as RollLifecycleMessageProbeOutcome,
         ))) ||
     (value.originalResponseMessageId !== null &&
-      value.clatterSucceededAt === null) ||
-    (value.originalResponseProbe !== null &&
-      value.originalResponseMessageId === null)
+      value.clatterSucceededAt === null)
   ) {
     throw new Error("Roll lifecycle diagnostics are invalid");
   }

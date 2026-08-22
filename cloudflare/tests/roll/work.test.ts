@@ -3869,6 +3869,45 @@ describe("RollWork Durable Object", () => {
     });
   });
 
+  it("reads the interaction webhook directly when no original message id is known", async () => {
+    const id = snowflakeAt(Date.now(), 92);
+    const stub = work(id);
+    const input = telemetryDeliveryRequest(
+      id,
+      "delivery-result-webhook-probe-read",
+    );
+    input.accounting.guildId = "100000000000000002";
+    if (input.logging.context?.kind === "guild") {
+      input.logging.context.guildId = "100000000000000002";
+    }
+
+    await expect(stub.deliver(input)).resolves.toMatchObject({
+      status: "pending",
+    });
+    await runInDurableObject(stub, async (instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE interaction_delivery SET result_not_before = 0",
+      );
+      await callAlarm(instance);
+      const row = state.storage.sql
+        .exec<{ snapshot_json: string }>(
+          "SELECT snapshot_json FROM roll_lifecycle_outbox",
+        )
+        .one();
+      expect(JSON.parse(row.snapshot_json)).toMatchObject({
+        version: 2,
+        state: "failed",
+        httpStatus: 404,
+        diagnostics: {
+          discordErrorCode: 10_015,
+          discordOperation: "edit-original-result",
+          originalResponseMessageId: null,
+          originalResponseProbe: "exists",
+        },
+      });
+    });
+  });
+
   it("keeps a maximum-dice diagnostic event below the Workers Logs limit", async () => {
     const id = snowflakeAt(Date.now(), 63);
     const input = deliveryRequest(id, "delivery-success");

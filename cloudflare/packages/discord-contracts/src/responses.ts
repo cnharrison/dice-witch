@@ -630,6 +630,15 @@ export function buildDeferredResponse(
   );
 }
 
+export function buildReadOriginalResponse(
+  target: InteractionResponseTarget,
+): Request {
+  validateTarget(target);
+  return new Request(`${interactionWebhookUrl(target)}/messages/@original`, {
+    method: "GET",
+  });
+}
+
 export function buildDeleteOriginalResponse(
   target: InteractionResponseTarget,
 ): Request {
