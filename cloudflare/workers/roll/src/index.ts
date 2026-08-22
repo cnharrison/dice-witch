@@ -4076,7 +4076,7 @@ export class RollWork extends DurableObject<RollEnv> {
     const probe =
       snapshot.diagnostics.originalResponseMessageId !== null
         ? this.probeStoredMessage(
-            metadata,
+            metadata.logging.channelId,
             snapshot.diagnostics.originalResponseMessageId,
           )
         : delivery.token === null
@@ -4109,7 +4109,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private async probeStoredMessage(
-    metadata: DeliveryMetadata,
+    channelId: string,
     messageId: string,
   ): Promise<RollLifecycleDiagnosticsV2["originalResponseProbe"]> {
     try {
@@ -4117,7 +4117,7 @@ export class RollWork extends DurableObject<RollEnv> {
         inspectDiscordMessageExistence(value: unknown): Promise<unknown>;
       };
       const result = await service.inspectDiscordMessageExistence({
-        channelId: metadata.logging.channelId,
+        channelId,
         messageId,
       });
       if (
