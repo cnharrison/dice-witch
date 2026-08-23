@@ -2262,6 +2262,54 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toEqual(generatedColors);
   });
 
+  it("keeps Splatter's authored background first in r35", () => {
+    const splatter = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
+      ({ id }) => id === "paint-splatter",
+    );
+    if (splatter === undefined) throw new Error("Splatter fixture is missing");
+
+    const palettes = Array.from({ length: 512 }, (_, dieIndex) =>
+      resolveAppearanceRecipeV3(
+        splatter.recipe,
+        contextV3({ target: "d6", dieIdentity: `custom:${String(dieIndex)}` }),
+        "property-streams-r35",
+      ).appearance.palette,
+    );
+    const authored = R32_MATERIAL_PALETTES_V3["paint-splatter"];
+
+    expect(new Set(palettes.map(([background]) => background))).toEqual(
+      new Set([authored[0]]),
+    );
+    const accentOrderCounts = new Map<string, number>();
+    for (const palette of palettes) {
+      const order = palette.slice(1).join(",");
+      accentOrderCounts.set(order, (accentOrderCounts.get(order) ?? 0) + 1);
+    }
+    const authoredAccentList = authored.slice(1);
+    const expectedAccentOrders = new Set(
+      authoredAccentList.map((_, start) =>
+        [
+          ...authoredAccentList.slice(start),
+          ...authoredAccentList.slice(0, start),
+        ].join(","),
+      ),
+    );
+    expect(new Set(accentOrderCounts.keys())).toEqual(expectedAccentOrders);
+    const orderCounts = [...accentOrderCounts.values()];
+    expect(Math.max(...orderCounts) / Math.min(...orderCounts)).toBeLessThan(1.5);
+
+    const authoredAccents = new Set<string>(authoredAccentList);
+    expect(
+      palettes.every((palette) => {
+        const accents = palette.slice(1);
+        return (
+          accents.length === authoredAccents.size &&
+          accents.every((color) => authoredAccents.has(color))
+        );
+      }),
+    ).toBe(true);
+  });
+
   it("keeps every r27 chosen random partner visibly distinct", () => {
     const recipe = appearanceRecipeV3({
       variation: "fixed",

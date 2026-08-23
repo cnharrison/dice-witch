@@ -48,6 +48,7 @@ import {
   type AppearanceProfileResource,
 } from "@/types/appearance";
 import {
+  APPEARANCE_TARGETS_V4,
   MAX_APPEARANCE_DESIGNS_V3,
   type AppearanceRecipeV3,
   type AppearanceTargetV4,
@@ -317,6 +318,10 @@ export function AppearanceEditorV3({
   const overrideTargets = Object.entries(draftProfile.assignments.overrides)
     .filter(([, reference]) => reference !== undefined)
     .map(([overrideTarget]) => overrideTarget as AppearanceTargetV4);
+  const overriddenTargetSet = new Set(overrideTargets);
+  const allAffectedTargets = APPEARANCE_TARGETS_V4.filter(
+    (candidate) => !overriddenTargetSet.has(candidate),
+  );
   const atDesignCap = draftProfile.designs.length >= MAX_APPEARANCE_DESIGNS_V3;
   // The ALL composite preview shows each die with its own design where one
   // exists; only the remaining dice take the ALL recipe.
@@ -859,6 +864,7 @@ export function AppearanceEditorV3({
           <AppearanceScopeBanner
             target={target}
             hasOverride={hasTargetOverride}
+            affectedTargets={allAffectedTargets}
             disabled={isSaving}
             sharedNotices={changedSharedDesigns}
             onReset={target === "all" ? undefined : clearTargetOverride}

@@ -1068,6 +1068,17 @@ function rotateColorsV3(colors: NativeColors, start: number): NativeColors {
   return { ordered, pair: [ordered[0], ordered[1]] };
 }
 
+function rotateAccentColorsV3(colors: NativeColors, start: number): NativeColors {
+  const [background, ...accents] = colors.ordered;
+  const offset = start % accents.length;
+  const ordered = [
+    background,
+    ...accents.slice(offset),
+    ...accents.slice(0, offset),
+  ] as [string, string, ...string[]];
+  return { ordered, pair: [ordered[0], ordered[1]] };
+}
+
 function distributesSharedPaletteV3(recipe: AppearanceRecipeV3): boolean {
   return (
     recipe.randomization === undefined &&
@@ -1431,17 +1442,20 @@ export function resolveAppearanceRecipeV3(
     randomSpecial?.palette,
   );
   if (usesR35 && distributesSharedPaletteV3(recipe)) {
-    colors = rotateColorsV3(
-      colors,
-      propertyRandomV3(
-        recipe,
-        context,
-        seed,
-        seedPolicy,
-        "color-order",
-        recipe.colors,
-      ).index(colors.ordered.length),
-    );
+    const colorOrderChoices = material.family === "paint"
+      ? colors.ordered.length - 1
+      : colors.ordered.length;
+    const colorOrder = propertyRandomV3(
+      recipe,
+      context,
+      seed,
+      seedPolicy,
+      "color-order",
+      recipe.colors,
+    ).index(colorOrderChoices);
+    colors = material.family === "paint"
+      ? rotateAccentColorsV3(colors, colorOrder)
+      : rotateColorsV3(colors, colorOrder);
   }
   if (usesR33 && material.family === "fantasy") {
     colors = colorsFromPaletteV3(

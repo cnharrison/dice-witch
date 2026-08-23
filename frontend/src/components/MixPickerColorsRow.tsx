@@ -100,6 +100,18 @@ export function MixPickerColorsRow({
         } its own`;
 
   const colors = recipe.colors;
+  const addPaletteColor = (
+    primary: Extract<AppearanceColorsV3, { mode: "solid" | "tonal" }>["primary"],
+  ) => {
+    const additionalColor = catalog.editorDefaults.palette.find(
+      (color) => color !== primary,
+    );
+    if (additionalColor === undefined) {
+      throw new Error("Appearance catalog needs a second palette color");
+    }
+    setEditingColor({ kind: "palette", index: 1 });
+    emit({ mode: "palette", colors: [primary, additionalColor] });
+  };
 
   let editor: React.ReactNode;
   if (colors.mode === "random") {
@@ -169,6 +181,15 @@ export function MixPickerColorsRow({
           className="block h-9 w-9 rounded-full border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           style={{ backgroundColor: colors.primary }}
         />
+        <button
+          type="button"
+          aria-label="Add palette color"
+          disabled={disabled}
+          onClick={() => addPaletteColor(colors.primary)}
+          className="grid h-9 w-9 place-items-center rounded-full border border-dashed border-muted-foreground/60 text-muted-foreground hover:border-brand hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+        </button>
         <div role="group" aria-label="Color treatment" className="flex gap-1">
           {(["solid", "tonal"] as const).map((mode) => (
             <button

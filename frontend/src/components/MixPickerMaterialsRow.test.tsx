@@ -77,13 +77,13 @@ describe("MixPickerMaterialsRow", () => {
     expect(document.querySelectorAll("img")).toHaveLength(3);
   });
 
-  it("adds a tapped material to a fixed selection as an allowlist pair", () => {
+  it("adds a tapped material as an equal weighted mix", () => {
     const recipe = recipeWithMaterial({
       mode: "fixed",
       value: materialValue("classic"),
     });
     const onChange = vi.fn();
-    render(
+    const { rerender } = render(
       <MixPickerMaterialsRow
         recipe={recipe}
         catalog={catalog}
@@ -95,9 +95,24 @@ describe("MixPickerMaterialsRow", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     expect(next.material).toEqual({
-      mode: "allowlist",
-      values: [materialValue("classic"), materialValue("glass-default")],
+      mode: "weighted",
+      options: [
+        { value: materialValue("classic"), weight: 500 },
+        { value: materialValue("glass-default"), weight: 500 },
+      ],
     });
+
+    rerender(
+      <MixPickerMaterialsRow
+        recipe={next}
+        catalog={catalog}
+        thumbVersion={null}
+        onChange={onChange}
+      />,
+    );
+    expect(
+      screen.getByRole("group", { name: "Material mix balance" }),
+    ).not.toBeNull();
   });
 
   it("keeps tuned parameters when a selected family stays in the mix", () => {

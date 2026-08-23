@@ -188,6 +188,40 @@ describe("MixPickerColorsRow", () => {
     });
   });
 
+  it("adds a second color to a solid design", () => {
+    const recipe = recipeWith(
+      { mode: "fixed", value: materialValue("classic") },
+      { mode: "solid", primary: "#444444" },
+    );
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <MixPickerColorsRow
+        recipe={recipe}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add palette color" }));
+    const next = {
+      ...recipe,
+      colors: {
+        mode: "palette" as const,
+        colors: ["#444444", "#201040"],
+      },
+    };
+    expect(onChange).toHaveBeenLastCalledWith(next);
+
+    rerender(
+      <MixPickerColorsRow
+        recipe={next}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Choose hue and saturation" }))
+      .not.toBeNull();
+  });
+
   it("toggles single-color treatment between solid and tonal", () => {
     const recipe = recipeWith(
       { mode: "fixed", value: materialValue("classic") },

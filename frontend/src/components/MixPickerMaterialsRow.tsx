@@ -25,6 +25,10 @@ function percentOf(weight: number, total: number): number {
   return Math.round((weight / total) * 100);
 }
 
+function equalWeights(families: readonly string[]): number[] {
+  return families.map(() => 1);
+}
+
 function applyMaterialWeights(
   recipe: AppearanceRecipeV3,
   weights: readonly number[],
@@ -77,33 +81,34 @@ export function MixPickerMaterialsRow({
       const families = rows.families.filter(
         (_, position) => position !== index,
       );
-      const next: MaterialRowState =
-        families.length === 1
-          ? { mode: "fixed", families }
-          : rows.mode === "weighted"
-            ? {
-                mode: "weighted",
-                families,
-                weights: rows.weights.filter(
-                  (_, position) => position !== index,
-                ),
-              }
-            : { mode: "allowlist", families };
+      let next: MaterialRowState;
+      if (families.length === 1) {
+        next = { mode: "fixed", families };
+      } else if (rows.mode === "weighted") {
+        next = {
+          mode: "weighted",
+          families,
+          weights: rows.weights.filter((_, position) => position !== index),
+        };
+      } else {
+        next = { mode: "weighted", families, weights: equalWeights(families) };
+      }
       onChange(applyMaterialRows(recipe, next, resolveMaterial));
       return;
     }
     const families = [...rows.families, family];
     // Joining a weighted mix takes the smallest current share so existing
     // ratios survive the rebalance to the shared total.
-    const next: MaterialRowState =
-      rows.mode === "weighted"
-        ? {
-            mode: "weighted",
-            families,
-            weights: [...rows.weights, Math.min(...rows.weights)],
-          }
-        : { mode: "allowlist", families };
-    onChange(applyMaterialRows(recipe, next, resolveMaterial));
+    const weights = rows.mode === "weighted"
+      ? [...rows.weights, Math.min(...rows.weights)]
+      : equalWeights(families);
+    onChange(
+      applyMaterialRows(
+        recipe,
+        { mode: "weighted", families, weights },
+        resolveMaterial,
+      ),
+    );
   };
 
   return (

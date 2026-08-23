@@ -1,10 +1,23 @@
 import type { AppearanceEditorTargetV3 } from "@/lib/appearance-editor-v3";
 import { APPEARANCE_TARGET_LABELS } from "@/types/appearance";
+import type { AppearanceTargetV4 } from "@dice-witch/dice-v4-model";
 import * as React from "react";
+
+const targetListFormatter = new Intl.ListFormat("en", {
+  style: "long",
+  type: "conjunction",
+});
+
+function allTargetsCaption(targets: readonly AppearanceTargetV4[]): string {
+  if (targets.length === 0) return "No dice currently follow ALL.";
+  const labels = targets.map((target) => APPEARANCE_TARGET_LABELS[target]);
+  return `Applies to ${targetListFormatter.format(labels)}.`;
+}
 
 type AppearanceScopeBannerProps = {
   target: AppearanceEditorTargetV3;
   hasOverride: boolean;
+  affectedTargets: readonly AppearanceTargetV4[];
   disabled?: boolean;
   sharedNotices?: readonly string[];
   onReset?(): void;
@@ -16,6 +29,7 @@ type AppearanceScopeBannerProps = {
 export function AppearanceScopeBanner({
   target,
   hasOverride,
+  affectedTargets,
   disabled = false,
   sharedNotices = [],
   onReset,
@@ -28,7 +42,7 @@ export function AppearanceScopeBanner({
   let caption: string;
   if (target === "all") {
     title = "Editing ALL";
-    caption = "Applies to every die without its own design.";
+    caption = allTargetsCaption(affectedTargets);
   } else if (hasOverride) {
     title = `Editing ${label} only`;
     caption = "Reset to ALL removes the override.";

@@ -9,18 +9,26 @@ afterEach(cleanup);
 describe("AppearanceScopeBanner", () => {
   it("states that ALL edits apply to every die without its own design", () => {
     render(
-      <AppearanceScopeBanner target="all" hasOverride={false} />,
+      <AppearanceScopeBanner
+        target="all"
+        hasOverride={false}
+        affectedTargets={["d4", "d6", "d20", "fudge"]}
+      />,
     );
     expect(screen.getByText("Editing ALL")).not.toBeNull();
     expect(
-      screen.getByText("Applies to every die without its own design."),
+      screen.getByText("Applies to d4, d6, d20, and Fudge."),
     ).not.toBeNull();
     expect(screen.queryByRole("button", { name: /Reset to ALL/ })).toBeNull();
   });
 
   it("warns a following target that its first change forks a copy", () => {
     render(
-      <AppearanceScopeBanner target="d10" hasOverride={false} />,
+      <AppearanceScopeBanner
+        target="d10"
+        hasOverride={false}
+        affectedTargets={[]}
+      />,
     );
     expect(screen.getByText("d10 follows ALL right now")).not.toBeNull();
     expect(
@@ -34,6 +42,7 @@ describe("AppearanceScopeBanner", () => {
       <AppearanceScopeBanner
         target="d20"
         hasOverride
+        affectedTargets={[]}
         sharedNotices={[
           "Changes to Night garden affect: All dice.",
         ]}
