@@ -95,6 +95,21 @@ export function MixPickerMaterialsRow({
       Math.random,
     ),
   );
+  const initialActiveFamily = rows.families[0];
+  if (initialActiveFamily === undefined) {
+    throw new Error("Material mix needs a selected family");
+  }
+  const [lastActiveFamily, setLastActiveFamily] =
+    React.useState(initialActiveFamily);
+  const [hoveredFamily, setHoveredFamily] = React.useState<string | null>(null);
+  const [focusedFamily, setFocusedFamily] = React.useState<string | null>(null);
+  const activeFamily = hoveredFamily ?? focusedFamily ?? lastActiveFamily;
+  const activeMaterial = catalog.materials.find(
+    ({ family }) => family === activeFamily,
+  );
+  if (activeMaterial === undefined) {
+    throw new Error(`Appearance material catalog is missing: ${activeFamily}`);
+  }
 
   const accentFor = (family: string): string => {
     const color = materialAccents.get(family);
@@ -161,51 +176,62 @@ export function MixPickerMaterialsRow({
         <h3 className="text-xs font-semibold uppercase tracking-wide">
           Material
         </h3>
-        <p className="text-xs text-muted-foreground">Tap several to mix</p>
+        <p className="text-xs font-medium text-muted-foreground">
+          {activeMaterial.name}
+        </p>
       </header>
-      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] sm:overflow-visible">
+      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,5rem)] sm:overflow-visible">
         {catalog.materials.map(({ family, name }) => {
           const selected = rows.families.includes(family);
           const lastSelected = selected && rows.families.length === 1;
+          const accent = selected ? accentFor(family) : null;
           return (
             <button
               key={family}
               type="button"
-              disabled={disabled || lastSelected}
+              disabled={disabled}
+              aria-disabled={lastSelected || undefined}
+              aria-label={name}
               aria-pressed={selected}
-              onClick={() => toggleFamily(family)}
-              style={selected ? materialAccentStyle(accentFor(family), true) : undefined}
-              className={`group relative flex w-24 shrink-0 snap-start flex-col items-center gap-1 rounded-lg border p-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${
+              onClick={() => {
+                setLastActiveFamily(family);
+                toggleFamily(family);
+              }}
+              onMouseEnter={() => setHoveredFamily(family)}
+              onMouseLeave={() => setHoveredFamily(null)}
+              onFocus={() => setFocusedFamily(family)}
+              onBlur={() => setFocusedFamily(null)}
+              style={
+                accent === null
+                  ? undefined
+                  : materialAccentStyle(accent, true)
+              }
+              className={`group relative grid h-20 w-20 shrink-0 snap-start place-items-center rounded-lg border p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${
                 selected
                   ? "border-brand bg-brand/10"
                   : "border-border hover:border-brand/50 hover:bg-muted/40"
               }`}
             >
-              <span className="grid h-16 w-full place-items-center">
-                {thumbVersion !== null && (
-                  <AppearanceThumb
-                    className="h-16 w-16"
-                    kind="material"
-                    id={family}
-                    catalogVersion={thumbVersion.catalogVersion}
-                    rendererRevision={thumbVersion.rendererRevision}
-                    alt=""
-                  />
-                )}
-              </span>
-              <span className="flex items-center gap-1">
-                {selected && (
-                  <span aria-hidden="true" className="text-brand">✓</span>
-                )}
-                {name}
-              </span>
-              <span className="sr-only">
-                {selected
-                  ? lastSelected
-                    ? "(last material in mix)"
-                    : ", selected"
-                  : ""}
-              </span>
+              {thumbVersion !== null && (
+                <AppearanceThumb
+                  className="h-[4.5rem] w-[4.5rem]"
+                  imageClassName="scale-[1.3]"
+                  kind="material"
+                  id={family}
+                  catalogVersion={thumbVersion.catalogVersion}
+                  rendererRevision={thumbVersion.rendererRevision}
+                  alt=""
+                />
+              )}
+              {accent !== null && (
+                <span
+                  aria-hidden="true"
+                  className="absolute right-1 top-1 z-10 grid h-5 w-5 place-items-center rounded-full border bg-background/90 text-xs font-bold text-foreground"
+                  style={{ borderColor: accent }}
+                >
+                  ✓
+                </span>
+              )}
             </button>
           );
         })}

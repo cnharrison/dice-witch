@@ -78,66 +78,72 @@ export function MixPickerNumbersRow({
         </h3>
         <p className="text-xs text-muted-foreground">Previews on neutral resin</p>
       </header>
-      <div
-        role="group"
-        aria-label="Font"
-        className="mt-2 flex flex-wrap gap-2"
-      >
-        {fontLegacy && (
-          <span className="inline-flex items-center rounded-md border border-dashed border-muted-foreground/60 px-2 py-1 text-xs text-muted-foreground">
-            Procedural mix · pick to replace
-          </span>
-        )}
-        {catalog.fonts.map(({ id, name }) => {
-          const selected = !fontLegacy && fontSelectedIds.includes(id);
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={selected}
-              disabled={disabled}
-              onClick={() => toggleFont(id)}
-              style={{ fontFamily: `DiceWitchV4-${id}` }}
-              className={`min-h-11 shrink-0 rounded-md border px-3 py-2 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                selected
-                  ? "border-brand bg-brand/10"
-                  : "border-border hover:border-brand/50 hover:bg-muted/40"
-              }`}
-            >
-              {name}
-            </button>
-          );
-        })}
+      <div role="group" aria-label="Font" className="mt-3">
+        <h4 className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+          Typeface
+        </h4>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {fontLegacy && (
+            <span className="inline-flex items-center rounded-md border border-dashed border-muted-foreground/60 px-2 py-1 text-xs text-muted-foreground">
+              Procedural mix · pick to replace
+            </span>
+          )}
+          {catalog.fonts.map(({ id, name }) => {
+            const selected = !fontLegacy && fontSelectedIds.includes(id);
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={selected}
+                disabled={disabled}
+                onClick={() => toggleFont(id)}
+                style={{ fontFamily: `DiceWitchV4-${id}` }}
+                className={`min-h-11 shrink-0 rounded-md border px-3 py-2 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  selected
+                    ? "border-brand bg-brand/10"
+                    : "border-border hover:border-brand/50 hover:bg-muted/40"
+                }`}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div
         role="group"
         aria-label="Engraving finish"
-        className="mt-2 flex flex-wrap gap-2"
+        className="mt-4 border-t pt-4"
       >
-        {inkLegacy && (
-          <span className="inline-flex items-center rounded-md border border-dashed border-muted-foreground/60 px-2 py-1 text-xs text-muted-foreground">
-            Weighted mix · pick to replace
-          </span>
-        )}
-        {catalog.engravingFinishes.map(({ id, name }) => {
-          const selected = !inkLegacy && inkSelectedIds.includes(id);
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={selected}
-              disabled={disabled}
-              onClick={() => toggleInk(id)}
-              className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                selected
-                  ? "border-brand bg-brand/10"
-                  : "border-border hover:border-brand/50 hover:bg-muted/40"
-              }`}
-            >
-              {name}
-            </button>
-          );
-        })}
+        <h4 className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+          Ink
+        </h4>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {inkLegacy && (
+            <span className="inline-flex items-center rounded-md border border-dashed border-muted-foreground/60 px-2 py-1 text-xs text-muted-foreground">
+              Weighted mix · pick to replace
+            </span>
+          )}
+          {catalog.engravingFinishes.map(({ id, name }) => {
+            const selected = !inkLegacy && inkSelectedIds.includes(id);
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={selected}
+                disabled={disabled}
+                onClick={() => toggleInk(id)}
+                className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  selected
+                    ? "border-brand bg-brand/10"
+                    : "border-border hover:border-brand/50 hover:bg-muted/40"
+                }`}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

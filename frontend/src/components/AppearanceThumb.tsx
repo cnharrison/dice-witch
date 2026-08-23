@@ -10,6 +10,7 @@ type AppearanceThumbProps = {
   rendererRevision: string;
   alt: string;
   className?: string;
+  imageClassName?: string;
 };
 
 // Baked catalog tiles load lazily; picking never waits on them — the slot
@@ -21,6 +22,7 @@ export function AppearanceThumb({
   rendererRevision,
   alt,
   className,
+  imageClassName,
 }: AppearanceThumbProps) {
   const [loaded, setLoaded] = React.useState(false);
   const url = appearanceThumbUrl(appConfig.apiBase, { catalogVersion, rendererRevision }, kind, id);
@@ -43,7 +45,11 @@ export function AppearanceThumb({
         loading="lazy"
         onLoad={() => setLoaded(true)}
         onError={() => setLoaded(false)}
-        className={loaded ? "h-full w-full object-contain" : "invisible"}
+        className={cn(
+          "h-full w-full object-contain",
+          imageClassName,
+          !loaded && "invisible",
+        )}
       />
     </span>
   );

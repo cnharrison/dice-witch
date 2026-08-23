@@ -182,8 +182,10 @@ describe("MixPickerMaterialsRow", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Classic/ }));
-    expect(screen.getByRole("button", { name: /Classic/ }).disabled).toBe(true);
+    const classic = screen.getByRole("button", { name: /Classic/ });
+    expect(classic.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(classic);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("inserts a joining weighted tile at the smallest share and rebalances", () => {
@@ -252,7 +254,8 @@ describe("MixPickerMaterialsRow", () => {
       segment.style.getPropertyValue("--material-accent"),
     )).toEqual(accents);
     expect(classic.querySelector("img")?.parentElement?.className)
-      .toContain("h-16");
+      .toContain("h-[4.5rem]");
+    expect(classic.querySelector("img")?.className).toContain("scale-[1.3]");
 
     rerender(
       <MixPickerMaterialsRow
@@ -280,6 +283,41 @@ describe("MixPickerMaterialsRow", () => {
     ).map((segment) =>
       (segment as HTMLElement).style.getPropertyValue("--material-accent"),
     )).toEqual(survivingAccents);
+  });
+
+  it("shows material names centrally on hover, focus, and tap", () => {
+    const recipe = recipeWithMaterial({
+      mode: "fixed",
+      value: materialValue("classic"),
+    });
+    render(
+      <MixPickerMaterialsRow
+        recipe={recipe}
+        catalog={catalog}
+        thumbVersion={thumbVersion}
+        onChange={vi.fn()}
+      />,
+    );
+    const classic = screen.getByRole("button", { name: "Classic" });
+    const glass = screen.getByRole("button", { name: "Glass" });
+    const metal = screen.getByRole("button", { name: "Metal" });
+    const material = screen.getByRole("region", { name: "Material" });
+
+    expect(material.querySelector("header")?.textContent).toContain("Classic");
+    expect(classic.textContent).not.toContain("Classic");
+    fireEvent.mouseEnter(glass);
+    expect(material.querySelector("header")?.textContent).toContain("Glass");
+    fireEvent.mouseLeave(glass);
+    expect(material.querySelector("header")?.textContent).toContain("Classic");
+    fireEvent.focus(glass);
+    expect(material.querySelector("header")?.textContent).toContain("Glass");
+    fireEvent.mouseEnter(metal);
+    expect(material.querySelector("header")?.textContent).toContain("Metal");
+    fireEvent.mouseLeave(metal);
+    expect(material.querySelector("header")?.textContent).toContain("Glass");
+    fireEvent.blur(glass);
+    fireEvent.click(glass);
+    expect(material.querySelector("header")?.textContent).toContain("Glass");
   });
 
   it("shows the mix bar only for weighted rows with several materials", () => {
