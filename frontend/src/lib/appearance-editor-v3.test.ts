@@ -96,14 +96,12 @@ describe("appearance editor V3 draft operations", () => {
       personalProfile(),
       "all",
       { id: designId, name: "Night garden", recipe: styleRecipe("pride") },
-      APPEARANCE_CATALOG_V3,
     );
 
     const duplicated = duplicateAppearanceDesignV3(
       assigned,
       designId,
       copyId,
-      APPEARANCE_CATALOG_V3,
     );
 
     expect(duplicated.designs).toHaveLength(2);
@@ -119,7 +117,6 @@ describe("appearance editor V3 draft operations", () => {
         assigned,
         copyId,
         "8ccc98d5-c3f9-40e4-8df8-92cb2871466d",
-        APPEARANCE_CATALOG_V3,
       ),
     ).toThrow(`Appearance custom design is missing: ${copyId}`);
     expect(() =>
@@ -127,7 +124,6 @@ describe("appearance editor V3 draft operations", () => {
         assigned,
         designId,
         designId,
-        APPEARANCE_CATALOG_V3,
       ),
     ).toThrow(`Appearance custom design already exists: ${designId}`);
   });
@@ -267,7 +263,6 @@ describe("appearance editor V3 draft operations", () => {
       profile,
       "d20",
       { source: "builtin", id: "pride" },
-      APPEARANCE_CATALOG_V3,
     );
     expect(d20.assignments).toEqual({
       all: { source: "builtin", id: "chaotic" },
@@ -278,7 +273,6 @@ describe("appearance editor V3 draft operations", () => {
     const inherited = clearAppearanceTargetOverrideV3(
       d20,
       "d20",
-      APPEARANCE_CATALOG_V3,
     );
     expect(inherited.assignments.overrides).toEqual({});
 
@@ -286,7 +280,6 @@ describe("appearance editor V3 draft operations", () => {
       profile,
       "all",
       { source: "builtin", id: "dice-witch" },
-      APPEARANCE_CATALOG_V3,
     );
     expect(all.assignments).toEqual({
       all: { source: "builtin", id: "dice-witch" },
@@ -300,7 +293,6 @@ describe("appearance editor V3 draft operations", () => {
       createEmptyAppearanceProfileV4("personal"),
       "all",
       { id: designId, name: "Wild garden", recipe },
-      APPEARANCE_CATALOG_V3,
     );
     expect(profile.designs).toEqual([{ id: designId, name: "Wild garden", recipe }]);
     expect(profile.designs[0]?.recipe).not.toBe(recipe);
@@ -314,7 +306,6 @@ describe("appearance editor V3 draft operations", () => {
       profile,
       "d20",
       { id: designId, name: "Wild garden II", recipe },
-      APPEARANCE_CATALOG_V3,
     );
     expect(renamed.designs).toHaveLength(1);
     expect(renamed.designs[0]?.name).toBe("Wild garden II");
@@ -330,7 +321,6 @@ describe("appearance editor V3 draft operations", () => {
       personalProfile(),
       "all",
       { id: designId, name: "Shared", recipe },
-      APPEARANCE_CATALOG_V3,
     );
     const nextRecipe = structuredClone(recipe);
     nextRecipe.colors = { mode: "tonal", primary: "#123456" };
@@ -338,7 +328,6 @@ describe("appearance editor V3 draft operations", () => {
     const updated = updateAppearanceDesignV3(
       assigned,
       { id: designId, name: "Shared", recipe: nextRecipe },
-      APPEARANCE_CATALOG_V3,
     );
 
     expect(updated.assignments).toEqual(assigned.assignments);
@@ -368,7 +357,6 @@ describe("appearance editor V3 draft operations", () => {
         full,
         "all",
         { id: designId, name: "Eleventh", recipe },
-        APPEARANCE_CATALOG_V3,
       ),
     ).toThrow("Appearance profile must contain at most ten designs");
     expect(full.designs).toHaveLength(10);
@@ -388,7 +376,6 @@ describe("appearance editor V3 draft operations", () => {
         createEmptyAppearanceProfileV4("personal"),
         "all",
         { id: designId, name: "Too many materials", recipe: excessiveMaterials },
-        APPEARANCE_CATALOG_V3,
       ),
     ).toThrow("Appearance recipe material selection is invalid");
   });
@@ -402,20 +389,11 @@ describe("appearance editor V3 draft operations", () => {
         name: "Server glass",
         recipe: styleRecipe("glass-cannon"),
       },
-      APPEARANCE_CATALOG_V3,
     ) as GuildAppearanceProfileV4;
-    const enforced = setGuildAppearanceModeV3(
-      guild,
-      "enforced",
-      APPEARANCE_CATALOG_V3,
-    );
+    const enforced = setGuildAppearanceModeV3(guild, "enforced");
     expect(enforced.mode).toBe("enforced");
 
-    const deleted = deleteAppearanceDesignV3(
-      enforced,
-      designId,
-      APPEARANCE_CATALOG_V3,
-    );
+    const deleted = deleteAppearanceDesignV3(enforced, designId);
     expect(deleted.designs).toEqual([]);
     expect(deleted.assignments).toEqual({ all: null, overrides: {} });
     expect((deleted as GuildAppearanceProfileV4).mode).toBe("enforced");

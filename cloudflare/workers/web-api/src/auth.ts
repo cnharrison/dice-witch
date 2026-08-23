@@ -1,6 +1,5 @@
 import {
   parsePublicRenderModelV4,
-  serializeRenderRequestV4,
   type PublicRenderModelV4,
 } from "@dice-witch/dice-v4-model";
 import {
@@ -179,9 +178,7 @@ function parseOptionalRenderModel(
   roll: Record<string, unknown>,
 ): PublicRenderModelV4 | undefined {
   if (!Object.hasOwn(roll, "renderModel")) return undefined;
-  const renderModel = parsePublicRenderModelV4(roll.renderModel);
-  serializeRenderRequestV4(renderModel);
-  return renderModel;
+  return parsePublicRenderModelV4(roll.renderModel);
 }
 
 function parseAppearanceIdentities(

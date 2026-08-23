@@ -50,7 +50,7 @@ export type AppearanceProfileWriteResult<Profile> =
 export type PutPersonalAppearanceV4Input = {
   userId: string;
   expectedRevision: number;
-  profile: unknown;
+  profile: AppearanceProfileV4;
   mutationId: string;
   occurredAt: number;
 };
@@ -59,7 +59,7 @@ export type PutGuildAppearanceV4Input = {
   guildId: string;
   updatedByUserId: string;
   expectedRevision: number;
-  profile: unknown;
+  profile: GuildAppearanceProfileV4;
   mutationId: string;
   occurredAt: number;
 };
@@ -246,7 +246,7 @@ export class D1AppearanceRepository {
     const userId = validateSnowflake(input.userId, "User id");
     const expectedRevision = validateExpectedRevision(input.expectedRevision);
     validateMutationMetadata(input.mutationId, input.occurredAt);
-    const profile = parseAppearanceProfileV4(input.profile, this.catalog);
+    const profile = input.profile;
     const profileJson = serializeProfile(profile);
     const payloadJson = JSON.stringify({ expectedRevision, profile });
     const receipt: MutationReceipt = {
@@ -289,7 +289,7 @@ export class D1AppearanceRepository {
     );
     const expectedRevision = validateExpectedRevision(input.expectedRevision);
     validateMutationMetadata(input.mutationId, input.occurredAt);
-    const profile = parseGuildAppearanceProfileV4(input.profile, this.catalog);
+    const profile = input.profile;
     const profileJson = serializeProfile(profile);
     const payloadJson = JSON.stringify({
       expectedRevision,

@@ -8,6 +8,31 @@ import {
 export const MAX_RENDERED_DICE = 50;
 export const MAX_DIE_SIDES = 999;
 
+declare const ROLL_ANALYSIS: unique symbol;
+const validRollAnalyses = new WeakSet();
+
+export type RollDieDefinition = Readonly<{
+  kind: "fudge" | "percentile" | "standard";
+  qty: number;
+  sides: number | null;
+  limitSides: number;
+  explosionProbability: number | null;
+}>;
+
+type RollExpressionAnalysis =
+  | {
+      sourceNotation: string;
+      notation: string;
+      valid: true;
+      definitions: readonly RollDieDefinition[];
+    }
+  | { sourceNotation: string; notation: string; valid: false };
+
+export type RollAnalysis = Readonly<{
+  readonly [ROLL_ANALYSIS]: true;
+  expressions: readonly RollExpressionAnalysis[];
+}>;
+
 export type RollLimitResult =
   | { allowed: true; containsDice: boolean }
   | {
@@ -37,12 +62,6 @@ function collectDice(
   if (Array.isArray(value)) {
     for (const item of value) collectDice(item, dice);
   }
-}
-
-function sidesForLimit(die: Dice.StandardDice): number {
-  if (die instanceof Dice.PercentileDice) return 100;
-  if (die instanceof Dice.FudgeDice) return 6;
-  return typeof die.sides === "number" ? die.sides : die.max;
 }
 
 function compare(value: number, operator: string, expected: number): boolean {
@@ -80,61 +99,120 @@ function comparisonProbability(
   return matchingOutcomes / (die.max - die.min + 1);
 }
 
+function dieDefinition(die: Dice.StandardDice): RollDieDefinition {
+  const explode = die.modifiers?.get("explode");
+  const kind = die instanceof Dice.PercentileDice || die.sides === 100
+    ? "percentile"
+    : die instanceof Dice.FudgeDice
+      ? "fudge"
+      : "standard";
+  return Object.freeze({
+    kind,
+    qty: die.qty,
+    sides: typeof die.sides === "number" ? die.sides : null,
+    limitSides:
+      kind === "percentile" ? 100 : kind === "fudge" ? 6 : die.max,
+    explosionProbability:
+      explode instanceof Modifiers.ExplodeModifier
+        ? comparisonProbability(die, explode)
+        : null,
+  });
+}
+
 function unsafeExplosion(
-  dice: Dice.StandardDice[],
+  definitions: readonly RollDieDefinition[],
   repetitions: number,
 ): boolean {
   let hasExplosions = false;
   let expectedRolls = 0;
-  for (const die of dice) {
-    const explode = die.modifiers?.get("explode");
-    if (!(explode instanceof Modifiers.ExplodeModifier)) {
-      expectedRolls += die.qty;
+  for (const definition of definitions) {
+    const probability = definition.explosionProbability;
+    if (probability === null) {
+      expectedRolls += definition.qty;
       continue;
     }
     hasExplosions = true;
-    const probability = comparisonProbability(die, explode);
     if (probability >= 1 - Number.EPSILON) return true;
-    expectedRolls += die.qty / (1 - probability);
+    expectedRolls += definition.qty / (1 - probability);
   }
   return hasExplosions && expectedRolls * repetitions > MAX_RENDERED_DICE;
 }
 
-export function parseNotationArgs(rawNotation: string): string[] {
-  const notation = rawNotation.trim();
-  if (notation.length === 0) return [];
-  try {
-    Parser.parse(notation);
-    return [notation];
-  } catch {
-    return notation.split(/ +/).filter(Boolean);
+function createRollAnalysis(notation: readonly string[]): RollAnalysis {
+  const expressions = notation.map((sourceNotation): RollExpressionAnalysis => {
+    const normalized = sourceNotation.toLowerCase().replace(/df/g, "dF");
+    try {
+      const dice: Dice.StandardDice[] = [];
+      collectDice(Parser.parse(normalized), dice);
+      return Object.freeze({
+        sourceNotation,
+        notation: normalized,
+        valid: true,
+        definitions: Object.freeze(dice.map(dieDefinition)),
+      });
+    } catch {
+      return Object.freeze({
+        sourceNotation,
+        notation: normalized,
+        valid: false,
+      });
+    }
+  });
+  const analysis = Object.freeze({ expressions: Object.freeze(expressions) });
+  validRollAnalyses.add(analysis);
+  return analysis as RollAnalysis;
+}
+
+function requireRollAnalysis(analysis: RollAnalysis): void {
+  if (!validRollAnalyses.has(analysis)) {
+    throw new Error("Roll analysis is invalid");
   }
 }
 
-export function checkRollLimits(
+export function analyzeNotationArgs(rawNotation: string): RollAnalysis {
+  const notation = rawNotation.trim();
+  if (notation.length === 0) return createRollAnalysis([]);
+  const combined = createRollAnalysis([notation]);
+  return combined.expressions[0]?.valid === true
+    ? combined
+    : createRollAnalysis(notation.split(/ +/).filter(Boolean));
+}
+
+export function parseNotationArgs(rawNotation: string): string[] {
+  return analyzeNotationArgs(rawNotation).expressions.map(
+    ({ sourceNotation }) => sourceNotation,
+  );
+}
+
+export function analyzeRollExpressions(
   notation: readonly string[],
+): RollAnalysis {
+  return createRollAnalysis(notation);
+}
+
+export function checkRollAnalysis(
+  analysis: RollAnalysis,
   repetitions = 1,
 ): RollLimitResult {
-  const containsDice = notation.some((value) =>
-    /(\d*)d(\d+|%|F(?:\.\d+)?)/i.test(value),
+  requireRollAnalysis(analysis);
+  const containsDice = analysis.expressions.some(({ notation }) =>
+    /(\d*)d(\d+|%|F(?:\.\d+)?)/i.test(notation),
   );
   if (!containsDice) return { allowed: true, containsDice: false };
 
-  const dice: Dice.StandardDice[] = [];
-  for (const value of notation) {
-    if (value.trim().length === 0) continue;
-    try {
-      collectDice(Parser.parse(value.trim()) as unknown, dice);
-    } catch {
-      return { allowed: true, containsDice: true };
-    }
+  const definitions: RollDieDefinition[] = [];
+  for (const expression of analysis.expressions) {
+    if (expression.notation.length === 0) continue;
+    if (!expression.valid) return { allowed: true, containsDice: true };
+    definitions.push(...expression.definitions);
   }
 
   const repeats = repetitionCount(repetitions);
   const diceCount =
-    dice.reduce(
-      (total, die) =>
-        total + die.qty * (sidesForLimit(die) === 100 ? 2 : 1),
+    definitions.reduce(
+      (total, definition) =>
+        total +
+        definition.qty * (definition.kind === "percentile" ? 2 : 1),
       0,
     ) * repeats;
   if (diceCount > MAX_RENDERED_DICE) {
@@ -145,7 +223,7 @@ export function checkRollLimits(
       message: `Dice notation exceeds the ${MAX_RENDERED_DICE} dice limit`,
     };
   }
-  if (dice.some((die) => sidesForLimit(die) > MAX_DIE_SIDES)) {
+  if (definitions.some(({ limitSides }) => limitSides > MAX_DIE_SIDES)) {
     return {
       allowed: false,
       containsDice: true,
@@ -153,7 +231,7 @@ export function checkRollLimits(
       message: `Dice notation exceeds the ${MAX_DIE_SIDES} sides limit`,
     };
   }
-  if (unsafeExplosion(dice, repeats)) {
+  if (unsafeExplosion(definitions, repeats)) {
     return {
       allowed: false,
       containsDice: true,
@@ -162,4 +240,14 @@ export function checkRollLimits(
     };
   }
   return { allowed: true, containsDice: true };
+}
+
+export function checkRollLimits(
+  notation: readonly string[],
+  repetitions = 1,
+): RollLimitResult {
+  return checkRollAnalysis(
+    analyzeRollExpressions(notation.map((value) => value.trim())),
+    repetitions,
+  );
 }

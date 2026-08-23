@@ -134,6 +134,27 @@ describe("game-detection prompt contract", () => {
     );
   });
 
+  it("accepts large finite totals and rejects non-finite totals", () => {
+    expect(
+      prepareGameDetectionV1({
+        ranking,
+        context: {
+          ...context,
+          rolls: [{ ...context.rolls[0], total: 999_999_999_999 }],
+        },
+      }).state,
+    ).toBe("prompt-ready");
+    expect(() =>
+      prepareGameDetectionV1({
+        ranking,
+        context: {
+          ...context,
+          rolls: [{ ...context.rolls[0], total: Number.POSITIVE_INFINITY }],
+        },
+      }),
+    ).toThrow("Game-detection total is invalid");
+  });
+
   it("keeps model calls bounded to prompt-ready mechanics candidates", () => {
     expect(
       prepareGameDetectionV1({

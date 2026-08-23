@@ -265,16 +265,7 @@ describe("D1AppearanceRepository V4", () => {
     ]);
   });
 
-  it("fails closed for invalid profiles, stored corruption, and missing parents", async () => {
-    await expect(
-      repository().putPersonalV4({
-        userId,
-        expectedRevision: 0,
-        profile: { version: 3 },
-        mutationId: "appearance-invalid",
-        occurredAt,
-      }),
-    ).rejects.toThrow();
+  it("fails closed for stored corruption and missing parents", async () => {
     await expect(
       repository().putPersonalV4({
         userId: "100000000000000009",

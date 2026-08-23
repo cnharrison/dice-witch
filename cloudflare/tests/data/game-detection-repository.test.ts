@@ -182,13 +182,13 @@ describe("D1GameDetectionRepository", () => {
     });
   }, 15_000);
 
-  it("skips an uningestable receipt instead of freezing on it", async () => {
+  it("ingests large finite roll totals", async () => {
     await record(
       snapshot({
         interactionId: "100000000000000301",
         receivedAt: baseTime,
         notation: ["1d10^1d10+418"],
-        outcomeTotal: 1_000_000_418,
+        outcomeTotal: 1e100,
       }),
       snapshot({
         interactionId: "100000000000000302",
@@ -198,24 +198,16 @@ describe("D1GameDetectionRepository", () => {
     const repository = new D1GameDetectionRepository(dataEnv.DATA);
 
     await expect(repository.ingestDeliveredRolls(baseTime + 2)).resolves.toEqual({
-      ingested: 1,
-      skipped: 1,
-      backlog: false,
-      closedSessions: 0,
-    });
-
-    const skippedRow = await dataEnv.DATA.prepare(
-      "SELECT reason FROM game_detection_skipped_receipts WHERE interaction_id = ?",
-    ).bind("100000000000000301").first<{ reason: string }>();
-    expect(skippedRow?.reason).toContain("total is invalid");
-
-    // The poison row must not reappear in later batches.
-    await expect(repository.ingestDeliveredRolls(baseTime + 3)).resolves.toEqual({
-      ingested: 0,
+      ingested: 2,
       skipped: 0,
       backlog: false,
       closedSessions: 0,
     });
+    await expect(
+      dataEnv.DATA.prepare(
+        "SELECT COUNT(*) AS count FROM game_detection_skipped_receipts",
+      ).first<{ count: number }>(),
+    ).resolves.toEqual({ count: 0 });
   });
 
   it("ingests fractional outcome totals through rank-job preparation", async () => {

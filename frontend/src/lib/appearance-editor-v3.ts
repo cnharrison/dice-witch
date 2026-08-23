@@ -2,12 +2,10 @@ import {
   APPEARANCE_TARGETS_V4,
   FANTASY_ESSENCE_PALETTES_R33_V4,
   MAX_APPEARANCE_DESIGN_NAME_CHARACTERS_V3,
+  MAX_APPEARANCE_DESIGNS_V3,
+  MAX_MATERIAL_SELECTION_OPTIONS_V3,
   createDefaultDiceViewPreferencesV4,
   isPolyhedralFormImplementedForTargetV4,
-  parseAppearanceMaterialV4,
-  parseAppearanceProfileV4,
-  parseAppearanceRecipeV3,
-  parseGuildAppearanceProfileV4,
   type AppearanceDesignReferenceV3,
   type AppearanceMaterialV4,
   type AppearanceProfileV4,
@@ -134,25 +132,12 @@ export function createVividAppearancePaletteV3(
   });
 }
 
-function validationCatalog(catalog: AppearanceCatalogV3): {
-  builtinStyleIds: string[];
-} {
-  return { builtinStyleIds: catalog.styles.map(({ id }) => id) };
-}
-
-function validateProfile<T extends EditableAppearanceProfileV4>(
-  profile: T,
-  catalog: AppearanceCatalogV3,
-): T {
-  const validation = validationCatalog(catalog);
-  const parsed = "mode" in profile
-    ? parseGuildAppearanceProfileV4(profile, validation)
-    : parseAppearanceProfileV4(profile, validation);
-  return parsed as T;
+function cloneProfile<T extends EditableAppearanceProfileV4>(profile: T): T {
+  return structuredClone(profile);
 }
 
 function cloneRecipe(recipe: AppearanceRecipeV3): AppearanceRecipeV3 {
-  return parseAppearanceRecipeV3(structuredClone(recipe));
+  return structuredClone(recipe);
 }
 
 export function createDefaultAppearanceMaterialV3(
@@ -165,9 +150,7 @@ export function createDefaultAppearanceMaterialV3(
   if (metadata === undefined) {
     throw new Error(`Appearance material catalog is missing: ${family}`);
   }
-  const material = parseAppearanceMaterialV4(
-    structuredClone(metadata.defaultValue),
-  );
+  const material = structuredClone(metadata.defaultValue);
   if (material.family !== family) {
     throw new Error(`Appearance material default is invalid: ${family}`);
   }
@@ -222,25 +205,25 @@ function usesFixedClassicSolidV3(recipe: AppearanceRecipeV3): boolean {
 export function reconcileAppearanceColorEditV3(
   recipe: AppearanceRecipeV3,
 ): AppearanceRecipeV3 {
-  const parsed = parseAppearanceRecipeV3(recipe);
+  const edited = cloneRecipe(recipe);
   if (
-    parsed.colors.mode === "solid" ||
-    parsed.randomization === "one-palette-color-v1" ||
-    !usesFixedClassicSolidV3(parsed)
+    edited.colors.mode === "solid" ||
+    edited.randomization === "one-palette-color-v1" ||
+    !usesFixedClassicSolidV3(edited)
   ) {
-    return parsed;
+    return edited;
   }
-  const material = parsed.material;
+  const material = edited.material;
   if (material.mode !== "fixed" || material.value.family !== "classic") {
     throw new Error("Fixed Classic Solid appearance is invalid");
   }
-  return parseAppearanceRecipeV3({
-    ...parsed,
+  return {
+    ...edited,
     material: {
       mode: "fixed",
       value: { ...material.value, treatment: "gradient" },
     },
-  });
+  };
 }
 
 function curatedMaterialColorsV3(
@@ -270,28 +253,26 @@ export function reconcileAppearanceMaterialEditV3(
   recipe: AppearanceRecipeV3,
   catalog: AppearanceCatalogV3,
 ): AppearanceRecipeV3 {
-  const parsed = parseAppearanceRecipeV3(recipe);
-  const curatedColors = curatedMaterialColorsV3(parsed, catalog);
-  if (curatedColors !== null) {
-    return parseAppearanceRecipeV3({ ...parsed, colors: curatedColors });
-  }
+  const edited = cloneRecipe(recipe);
+  const curatedColors = curatedMaterialColorsV3(edited, catalog);
+  if (curatedColors !== null) return { ...edited, colors: curatedColors };
   if (
-    !usesFixedClassicSolidV3(parsed) ||
-    parsed.colors.mode === "solid" ||
-    parsed.randomization === "one-palette-color-v1"
+    !usesFixedClassicSolidV3(edited) ||
+    edited.colors.mode === "solid" ||
+    edited.randomization === "one-palette-color-v1"
   ) {
-    return parsed;
+    return edited;
   }
-  return parseAppearanceRecipeV3({
-    ...parsed,
+  return {
+    ...edited,
     colors: {
       mode: "solid",
       primary: appearancePrimaryColorV3(
-        parsed,
+        edited,
         catalog.editorDefaults.primaryColor,
       ),
     },
-  });
+  };
 }
 
 export function createEmptyAppearanceProfileV4(
@@ -337,8 +318,7 @@ export function resolveAppearanceEditorSelectionV3(
   target: AppearanceEditorTargetV3,
   catalog: AppearanceCatalogV3,
 ): AppearanceEditorSelectionV3 {
-  const validated = validateProfile(profile, catalog);
-  const reference = appearanceAssignmentForV3(validated, target);
+  const reference = appearanceAssignmentForV3(profile, target);
   if (reference === null || reference.source === "builtin") {
     const style = builtinStyle(catalog, reference?.id ?? catalog.defaultStyleId);
     const recipe =
@@ -352,7 +332,7 @@ export function resolveAppearanceEditorSelectionV3(
       name: style.name,
     };
   }
-  const design = validated.designs.find(({ id }) => id === reference.id);
+  const design = profile.designs.find(({ id }) => id === reference.id);
   if (design === undefined) {
     throw new Error(`Appearance custom design is missing: ${reference.id}`);
   }
@@ -367,11 +347,11 @@ export function resolveAppearanceEditorSelectionV3(
 export function withAutomaticMaterialFormsV3(
   recipe: AppearanceRecipeV3,
 ): AppearanceRecipeV3 {
-  const parsed = parseAppearanceRecipeV3(recipe);
-  return parseAppearanceRecipeV3({
-    ...parsed,
-    form: { ...parsed.form, policy: "material-default-v1" },
-  });
+  const edited = cloneRecipe(recipe);
+  return {
+    ...edited,
+    form: { ...edited.form, policy: "material-default-v1" },
+  };
 }
 
 export function beginAppearanceRecipeEditV3(
@@ -379,38 +359,43 @@ export function beginAppearanceRecipeEditV3(
   next: AppearanceRecipeV3,
   editingBuiltin: boolean,
 ): AppearanceRecipeV3 {
-  const parsedCurrent = parseAppearanceRecipeV3(current);
-  const parsedNext = withAutomaticMaterialFormsV3(next);
-  if (!editingBuiltin) return parsedNext;
+  const edited = withAutomaticMaterialFormsV3(next);
+  if (!editingBuiltin) return edited;
   const strength = sameSelection(
-    parsedCurrent.lighting.strength,
-    parsedNext.lighting.strength,
+    current.lighting.strength,
+    edited.lighting.strength,
   )
     ? { mode: "fixed" as const, value: "gentle" as const }
-    : parsedNext.lighting.strength;
-  const editable = structuredClone(parsedNext);
+    : edited.lighting.strength;
+  const editable = structuredClone(edited);
   const preservesFullSpectrum =
     (editable.randomization === "full-spectrum-v1" ||
       editable.randomization === "full-spectrum-v2") &&
-    sameSelection(parsedCurrent.colors, parsedNext.colors);
+    sameSelection(current.colors, edited.colors);
   if (
     editable.randomization !== "one-palette-color-v1" &&
     !preservesFullSpectrum
   ) {
     delete editable.randomization;
   }
-  return parseAppearanceRecipeV3({
+  return {
     ...editable,
     variation: "fixed",
     lighting: { ...editable.lighting, strength },
-  });
+  };
 }
 
 export function assertAppearanceRecipeSupportsTargetV3(
   recipe: AppearanceRecipeV3,
   target: AppearanceEditorTargetV3,
 ): AppearanceRecipeV3 {
-  const parsed = parseAppearanceRecipeV3(recipe);
+  const parsed = cloneRecipe(recipe);
+  if (
+    selectionValuesV3(parsed.material).length >
+    MAX_MATERIAL_SELECTION_OPTIONS_V3
+  ) {
+    throw new Error("Appearance recipe material selection is invalid");
+  }
   if (target === "other" || parsed.form.policy !== undefined) return parsed;
   const targets = target === "all"
     ? APPEARANCE_TARGETS_V4.filter(
@@ -442,52 +427,47 @@ export function applyAppearanceReferenceV3<
   profile: Profile,
   target: AppearanceEditorTargetV3,
   reference: AppearanceDesignReferenceV3,
-  catalog: AppearanceCatalogV3,
 ): Profile {
-  const validated = validateProfile(profile, catalog);
+  const edited = cloneProfile(profile);
   const assignments = target === "all"
-    ? { all: reference, overrides: validated.assignments.overrides }
+    ? { all: reference, overrides: edited.assignments.overrides }
     : {
-        all: validated.assignments.all,
+        all: edited.assignments.all,
         overrides: {
-          ...validated.assignments.overrides,
+          ...edited.assignments.overrides,
           [target]: reference,
         },
       };
-  return validateProfile({ ...validated, assignments } as Profile, catalog);
+  return { ...edited, assignments } as Profile;
 }
 
 export function clearAppearanceTargetOverrideV3<
   Profile extends EditableAppearanceProfileV4,
->(
-  profile: Profile,
-  target: AppearanceTargetV4,
-  catalog: AppearanceCatalogV3,
-): Profile {
-  const validated = validateProfile(profile, catalog);
-  const overrides = { ...validated.assignments.overrides };
+>(profile: Profile, target: AppearanceTargetV4): Profile {
+  const edited = cloneProfile(profile);
+  const overrides = { ...edited.assignments.overrides };
   delete overrides[target];
-  return validateProfile(
-    {
-      ...validated,
-      assignments: { ...validated.assignments, overrides },
-    } as Profile,
-    catalog,
-  );
+  return {
+    ...edited,
+    assignments: { ...edited.assignments, overrides },
+  } as Profile;
 }
 
 // "Back to default": resolution falls back to the builtin Random recipe.
 export function clearAppearanceAllAssignmentV3<
   Profile extends EditableAppearanceProfileV4,
->(profile: Profile, catalog: AppearanceCatalogV3): Profile {
-  const validated = validateProfile(profile, catalog);
-  return validateProfile(
-    {
-      ...validated,
-      assignments: { ...validated.assignments, all: null },
-    } as Profile,
-    catalog,
-  );
+>(profile: Profile): Profile {
+  const edited = cloneProfile(profile);
+  return {
+    ...edited,
+    assignments: { ...edited.assignments, all: null },
+  } as Profile;
+}
+
+function assertDesignCanBeAdded(profile: EditableAppearanceProfileV4): void {
+  if (profile.designs.length >= MAX_APPEARANCE_DESIGNS_V3) {
+    throw new Error("Appearance profile must contain at most ten designs");
+  }
 }
 
 export function upsertAppearanceDesignV3<
@@ -496,115 +476,91 @@ export function upsertAppearanceDesignV3<
   profile: Profile,
   target: AppearanceEditorTargetV3,
   draft: AppearanceDesignDraftV3,
-  catalog: AppearanceCatalogV3,
 ): Profile {
-  const validated = validateProfile(profile, catalog);
+  const edited = cloneProfile(profile);
   const recipe = assertAppearanceRecipeSupportsTargetV3(draft.recipe, target);
-  const index = validated.designs.findIndex(({ id }) => id === draft.id);
+  const index = edited.designs.findIndex(({ id }) => id === draft.id);
+  if (index === -1) assertDesignCanBeAdded(edited);
   const design = { id: draft.id, name: draft.name, recipe };
-  const designs = [...validated.designs];
+  const designs = [...edited.designs];
   if (index === -1) designs.push(design);
   else designs[index] = design;
   return applyAppearanceReferenceV3(
-    validateProfile({ ...validated, designs } as Profile, catalog),
+    { ...edited, designs } as Profile,
     target,
     { source: "custom", id: draft.id },
-    catalog,
   );
 }
 
 export function updateAppearanceDesignV3<
   Profile extends EditableAppearanceProfileV4,
->(
-  profile: Profile,
-  draft: AppearanceDesignDraftV3,
-  catalog: AppearanceCatalogV3,
-): Profile {
-  const validated = validateProfile(profile, catalog);
-  if (!validated.designs.some(({ id }) => id === draft.id)) {
+>(profile: Profile, draft: AppearanceDesignDraftV3): Profile {
+  const edited = cloneProfile(profile);
+  if (!edited.designs.some(({ id }) => id === draft.id)) {
     throw new Error(`Appearance custom design is missing: ${draft.id}`);
   }
   const assignedTargets: AppearanceEditorTargetV3[] = [];
   if (
-    validated.assignments.all?.source === "custom" &&
-    validated.assignments.all.id === draft.id
+    edited.assignments.all?.source === "custom" &&
+    edited.assignments.all.id === draft.id
   ) {
     assignedTargets.push("all");
   } else {
     for (const [target, reference] of Object.entries(
-      validated.assignments.overrides,
+      edited.assignments.overrides,
     )) {
       if (reference?.source === "custom" && reference.id === draft.id) {
         assignedTargets.push(target as AppearanceTargetV4);
       }
     }
   }
-  let recipe = parseAppearanceRecipeV3(draft.recipe);
+  let recipe = cloneRecipe(draft.recipe);
   for (const assignedTarget of assignedTargets) {
     recipe = assertAppearanceRecipeSupportsTargetV3(recipe, assignedTarget);
   }
-  return validateProfile(
-    {
-      ...validated,
-      designs: validated.designs.map((design) =>
-        design.id === draft.id
-          ? { id: draft.id, name: draft.name, recipe }
-          : design,
-      ),
-    } as Profile,
-    catalog,
-  );
+  return {
+    ...edited,
+    designs: edited.designs.map((design) =>
+      design.id === draft.id
+        ? { id: draft.id, name: draft.name, recipe }
+        : design,
+    ),
+  } as Profile;
 }
 
 export function renameAppearanceDesignV3<
   Profile extends EditableAppearanceProfileV4,
->(
-  profile: Profile,
-  designId: string,
-  name: string,
-  catalog: AppearanceCatalogV3,
-): Profile {
-  const validated = validateProfile(profile, catalog);
-  const design = validated.designs.find(({ id }) => id === designId);
-  if (design === undefined) {
+>(profile: Profile, designId: string, name: string): Profile {
+  const edited = cloneProfile(profile);
+  if (!edited.designs.some(({ id }) => id === designId)) {
     throw new Error(`Appearance custom design is missing: ${designId}`);
   }
-  return validateProfile(
-    {
-      ...validated,
-      designs: validated.designs.map((candidate) =>
-        candidate.id === designId ? { ...candidate, name } : candidate,
-      ),
-    } as Profile,
-    catalog,
-  );
+  return {
+    ...edited,
+    designs: edited.designs.map((design) =>
+      design.id === designId ? { ...design, name } : design,
+    ),
+  } as Profile;
 }
 
 export function duplicateAppearanceDesignV3<
   Profile extends EditableAppearanceProfileV4,
->(
-  profile: Profile,
-  designId: string,
-  duplicateId: string,
-  catalog: AppearanceCatalogV3,
-): Profile {
-  const validated = validateProfile(profile, catalog);
-  const design = validated.designs.find(({ id }) => id === designId);
+>(profile: Profile, designId: string, duplicateId: string): Profile {
+  const edited = cloneProfile(profile);
+  const design = edited.designs.find(({ id }) => id === designId);
   if (design === undefined) {
     throw new Error(`Appearance custom design is missing: ${designId}`);
   }
-  if (validated.designs.some(({ id }) => id === duplicateId)) {
+  if (edited.designs.some(({ id }) => id === duplicateId)) {
     throw new Error(`Appearance custom design already exists: ${duplicateId}`);
   }
+  assertDesignCanBeAdded(edited);
   const duplicate = {
     id: duplicateId,
-    name: nextAppearanceDesignNameV3(validated.designs, design.name),
+    name: nextAppearanceDesignNameV3(edited.designs, design.name),
     recipe: cloneRecipe(design.recipe),
   };
-  return validateProfile(
-    { ...validated, designs: [...validated.designs, duplicate] } as Profile,
-    catalog,
-  );
+  return { ...edited, designs: [...edited.designs, duplicate] } as Profile;
 }
 
 export function restoreAppearanceDesignV3<
@@ -613,32 +569,28 @@ export function restoreAppearanceDesignV3<
   profile: Profile,
   design: CustomAppearanceDesignV3,
   targets: readonly AppearanceEditorTargetV3[],
-  catalog: AppearanceCatalogV3,
 ): Profile {
-  const validated = validateProfile(profile, catalog);
-  if (validated.designs.some(({ id }) => id === design.id)) {
+  const edited = cloneProfile(profile);
+  if (edited.designs.some(({ id }) => id === design.id)) {
     throw new Error(`Appearance custom design already exists: ${design.id}`);
   }
-  let restored = validateProfile(
-    {
-      ...validated,
-      designs: [
-        ...validated.designs,
-        {
-          id: design.id,
-          name: design.name,
-          recipe: cloneRecipe(design.recipe),
-        },
-      ],
-    } as Profile,
-    catalog,
-  );
+  assertDesignCanBeAdded(edited);
+  let restored = {
+    ...edited,
+    designs: [
+      ...edited.designs,
+      {
+        id: design.id,
+        name: design.name,
+        recipe: cloneRecipe(design.recipe),
+      },
+    ],
+  } as Profile;
   for (const target of targets) {
     restored = applyAppearanceReferenceV3(
       restored,
       target,
       { source: "custom", id: design.id },
-      catalog,
     );
   }
   return restored;
@@ -646,43 +598,32 @@ export function restoreAppearanceDesignV3<
 
 export function deleteAppearanceDesignV3<
   Profile extends EditableAppearanceProfileV4,
->(
-  profile: Profile,
-  designId: string,
-  catalog: AppearanceCatalogV3,
-): Profile {
-  const validated = validateProfile(profile, catalog);
-  if (!validated.designs.some(({ id }) => id === designId)) {
+>(profile: Profile, designId: string): Profile {
+  const edited = cloneProfile(profile);
+  if (!edited.designs.some(({ id }) => id === designId)) {
     throw new Error(`Appearance custom design is missing: ${designId}`);
   }
   const overrides = Object.fromEntries(
-    Object.entries(validated.assignments.overrides).filter(
+    Object.entries(edited.assignments.overrides).filter(
       ([, reference]) =>
         reference.source !== "custom" || reference.id !== designId,
     ),
   ) as AppearanceProfileV4["assignments"]["overrides"];
-  const all = validated.assignments.all;
-  return validateProfile(
-    {
-      ...validated,
-      designs: validated.designs.filter(({ id }) => id !== designId),
-      assignments: {
-        all: all?.source === "custom" && all.id === designId ? null : all,
-        overrides,
-      },
-    } as Profile,
-    catalog,
-  );
+  const all = edited.assignments.all;
+  return {
+    ...edited,
+    designs: edited.designs.filter(({ id }) => id !== designId),
+    assignments: {
+      all: all?.source === "custom" && all.id === designId ? null : all,
+      overrides,
+    },
+  } as Profile;
 }
 
 export function setGuildAppearanceModeV3<
   Profile extends GuildAppearanceProfileV4,
->(
-  profile: Profile,
-  mode: Profile["mode"],
-  catalog: AppearanceCatalogV3,
-): Profile {
-  return validateProfile({ ...profile, mode } as Profile, catalog);
+>(profile: Profile, mode: Profile["mode"]): Profile {
+  return { ...cloneProfile(profile), mode } as Profile;
 }
 
 function selectedMaterialFamilies(
@@ -720,9 +661,8 @@ export function compatibleRenderFormsV3(
   target: AppearanceEditorTargetV3,
   catalog: AppearanceCatalogV3,
 ): AppearanceCatalogV3["forms"] {
-  const parsed = parseAppearanceRecipeV3(recipe);
-  const families = selectedMaterialFamilies(parsed);
-  const requiresStandardForm = usesRepeatedGradient(parsed);
+  const families = selectedMaterialFamilies(recipe);
+  const requiresStandardForm = usesRepeatedGradient(recipe);
   return catalog.forms.filter(
     (form) =>
       (!requiresStandardForm || form.id === "standard") &&
@@ -736,9 +676,8 @@ export function compatibleMaterialFamiliesV3(
   target: AppearanceEditorTargetV3,
   catalog: AppearanceCatalogV3,
 ): AppearanceCatalogV3["materials"] {
-  const parsed = parseAppearanceRecipeV3(recipe);
   if (target === "other") return catalog.materials;
-  const forms = new Set(selectedForms(parsed));
+  const forms = new Set(selectedForms(recipe));
   const compatibleFamilies = new Set(
     catalog.forms
       .filter(
@@ -749,7 +688,7 @@ export function compatibleMaterialFamiliesV3(
       )
       .flatMap(({ materialFamilies }) => materialFamilies),
   );
-  const requiresClassicMaterial = usesRepeatedGradient(parsed);
+  const requiresClassicMaterial = usesRepeatedGradient(recipe);
   return catalog.materials.filter(
     ({ family }) =>
       compatibleFamilies.has(family) &&

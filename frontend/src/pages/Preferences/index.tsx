@@ -24,6 +24,10 @@ import {
 } from "@/lib/appearance-editor-v3";
 import { appConfig } from "@/lib/config";
 import { customFetch } from "@/lib/api";
+import {
+  listMutualGuilds,
+  MUTUAL_GUILDS_QUERY_KEY,
+} from "@/lib/guilds";
 import type {
   AppearanceProfileV4,
   GuildAppearanceProfileV4,
@@ -31,18 +35,6 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import * as React from "react";
-
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
-
-interface GuildMembership {
-  guilds: {
-    id: string;
-    name: string;
-    icon: string | null;
-  };
-  isAdmin: boolean;
-  isDiceWitchAdmin: boolean;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -69,57 +61,6 @@ async function readJsonResponse(
   } catch {
     throw new Error(errorMessage);
   }
-}
-
-function parseGuildMemberships(value: unknown): GuildMembership[] {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["guilds"]) ||
-    !Array.isArray(value.guilds) ||
-    value.guilds.length > 250
-  ) {
-    throw new Error("Guild response is invalid");
-  }
-  return value.guilds.map((membership) => {
-    if (
-      !isRecord(membership) ||
-      !hasExactKeys(membership, [
-        "guilds",
-        "isAdmin",
-        "isDiceWitchAdmin",
-      ]) ||
-      !isRecord(membership.guilds) ||
-      !hasExactKeys(membership.guilds, ["icon", "id", "name"]) ||
-      typeof membership.guilds.id !== "string" ||
-      !SNOWFLAKE.test(membership.guilds.id) ||
-      typeof membership.guilds.name !== "string" ||
-      membership.guilds.name.length < 1 ||
-      membership.guilds.name.length > 255 ||
-      (membership.guilds.icon !== null &&
-        typeof membership.guilds.icon !== "string") ||
-      typeof membership.isAdmin !== "boolean" ||
-      typeof membership.isDiceWitchAdmin !== "boolean"
-    ) {
-      throw new Error("Guild response is invalid");
-    }
-    return {
-      guilds: {
-        id: membership.guilds.id,
-        name: membership.guilds.name,
-        icon: membership.guilds.icon,
-      },
-      isAdmin: membership.isAdmin,
-      isDiceWitchAdmin: membership.isDiceWitchAdmin,
-    };
-  });
-}
-
-async function getGuildMemberships(): Promise<GuildMembership[]> {
-  const response = await customFetch("/api/guilds/mutual");
-  if (!response.ok) throw new Error("Guilds are unavailable");
-  return parseGuildMemberships(
-    await readJsonResponse(response, "Guild response is invalid"),
-  );
 }
 
 type GuildPreferences = {
@@ -245,8 +186,8 @@ export default function Preferences() {
   });
 
   const guildsQuery = useQuery({
-    queryKey: ["guilds"],
-    queryFn: getGuildMemberships,
+    queryKey: MUTUAL_GUILDS_QUERY_KEY,
+    queryFn: listMutualGuilds,
     staleTime: 5 * 60 * 1_000,
     retry: 2,
   });
@@ -524,7 +465,6 @@ export default function Preferences() {
                     guildProfile ??
                       createEmptyAppearanceProfileV4("guild"),
                     mode,
-                    catalog,
                   );
                   await guildAppearanceMutation.mutateAsync({
                     profile,

@@ -1,8 +1,8 @@
 import {
   MAX_NOTATION_LENGTH,
   MAX_REPETITIONS,
-  parseNotationArgs,
-  prepareRollAppearance,
+  analyzeNotationArgs,
+  prepareAnalyzedRollAppearance,
 } from "../../roll-domain/src";
 import { parseSavedRollNameColorV2 } from "./color";
 import { parseSavedRollNameV1 } from "./name";
@@ -51,8 +51,8 @@ function parseNotation(value: unknown, repetitions: number): string {
       `Saved roll notation must contain 1 through ${MAX_NOTATION_LENGTH} characters`,
     );
   }
-  const prepared = prepareRollAppearance({
-    notation: parseNotationArgs(notation),
+  const prepared = prepareAnalyzedRollAppearance({
+    analysis: analyzeNotationArgs(notation),
     repetitions,
     seed: 0,
   });

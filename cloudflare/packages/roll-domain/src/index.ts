@@ -44,9 +44,12 @@ export {
   type GameDetectionActivityFamilyV1,
 } from "./game-detection-active-play";
 export {
+  executeAnalyzedRoll,
   executeRoll,
+  prepareAnalyzedRollAppearance,
   prepareRollAppearance,
   renderableRollOutcomes,
+  type AnalyzedRollExecutionRequest,
   type RollDie,
   type RollExecutionError,
   type RollExecutionRequest,
@@ -126,8 +129,11 @@ export {
 export {
   MAX_DIE_SIDES,
   MAX_RENDERED_DICE,
+  analyzeNotationArgs,
   checkRollLimits,
   parseNotationArgs,
+  type RollAnalysis,
+  type RollDieDefinition,
   type RollLimitResult,
 } from "./limits";
 export { selectRollDelayMs } from "./random";

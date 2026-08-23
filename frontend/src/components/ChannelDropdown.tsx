@@ -5,12 +5,9 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import type { Channel } from "@/types/guild";
 
-export interface Channel {
-  id: string;
-  name: string;
-  type: number;
-}
+export type { Channel } from "@/types/guild";
 
 interface ChannelDropdownProps {
   channels?: Channel[];

@@ -191,11 +191,7 @@ function validateContextRoll(value: unknown): GameDetectionContextRollV1 {
   ) {
     throw new Error("Game-detection repetitions are invalid");
   }
-  if (
-    typeof value.total !== "number" ||
-    !Number.isFinite(value.total) ||
-    Math.abs(value.total) > 1_000_000_000
-  ) {
+  if (typeof value.total !== "number" || !Number.isFinite(value.total)) {
     throw new Error("Game-detection total is invalid");
   }
 

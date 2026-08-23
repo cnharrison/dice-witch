@@ -1,6 +1,5 @@
 import {
   parseSavedRollDraftV1,
-  parseSavedRollDraftV2,
   parseSavedRollNameColorV2,
   type SavedRollDraftV1,
   type SavedRollDraftV2,
@@ -24,7 +23,7 @@ export type SavedRollOwner =
   | { type: "user"; userId: string }
   | { type: "guild"; guildId: string };
 
-type SavedRollDraft = SavedRollDraftV1 | SavedRollDraftV2;
+export type SavedRollDraft = SavedRollDraftV1 | SavedRollDraftV2;
 
 export type SavedRollV1 = Omit<SavedRollDraftV1, "version"> & {
   version: 1;
@@ -47,7 +46,7 @@ export type CreateSavedRollInputV1 = {
   operation: "create" | "copy";
   id: string;
   expectedListRevision: number;
-  draft: unknown;
+  draft: SavedRollDraft;
   pinned: boolean;
   mutationId: string;
   occurredAt: number;
@@ -71,7 +70,7 @@ export type UpdateSavedRollInputV1 = {
   id: string;
   expectedListRevision: number;
   expectedRecordRevision: number;
-  draft: unknown;
+  draft: SavedRollDraft;
   pinned: boolean;
   mutationId: string;
   occurredAt: number;
@@ -286,13 +285,6 @@ function mutationAuthorization(
     bindings: [actorUserId, sql.ownerId, updatedAt],
     updatedAt,
   };
-}
-
-function parseDraft(value: unknown): SavedRollDraft {
-  if (typeof value === "object" && value !== null && "version" in value) {
-    if (value.version === 2) return parseSavedRollDraftV2(value);
-  }
-  return parseSavedRollDraftV1(value);
 }
 
 function draftNameColor(draft: SavedRollDraft): string | null {
@@ -578,7 +570,7 @@ export class D1SavedRollRepository {
     );
     if (typeof input.pinned !== "boolean") throw new Error("Saved roll pinned state is invalid");
     validateMutationMetadata(input.mutationId, input.occurredAt);
-    const draft = parseDraft(input.draft);
+    const draft = input.draft;
     const existing = await readMutationReceipt(this.db, input.mutationId);
     if (existing !== null) {
       let manualOrder: number;
@@ -802,7 +794,7 @@ export class D1SavedRollRepository {
       throw new Error("Saved roll pinned state is invalid");
     }
     validateMutationMetadata(input.mutationId, input.occurredAt);
-    const draft = parseDraft(input.draft);
+    const draft = input.draft;
     const payloadJson = JSON.stringify({
       actorUserId,
       draft,

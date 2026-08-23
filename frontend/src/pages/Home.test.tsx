@@ -68,11 +68,9 @@ vi.mock("@tanstack/react-query", () => ({
           isFetching: false,
         }
       : {
-          data: {
-            channels: [
-              { id: "100000000000000010", name: "general", type: 0 },
-            ],
-          },
+          data: [
+            { id: "100000000000000010", name: "general", type: 0 },
+          ],
           isLoading: false,
           isFetching: false,
         },

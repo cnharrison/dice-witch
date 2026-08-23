@@ -21,7 +21,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { customFetch } from "@/lib/api";
+import {
+  listMutualGuilds,
+  MUTUAL_GUILDS_QUERY_KEY,
+} from "@/lib/guilds";
 import {
   copySavedRoll,
   createSavedRoll,
@@ -347,20 +350,10 @@ export default function SavedRolls() {
   } | null>(null);
 
   const mutualGuildQuery = useQuery<Guild[]>({
-    queryKey: ["guilds"],
+    queryKey: MUTUAL_GUILDS_QUERY_KEY,
+    queryFn: listMutualGuilds,
     enabled: user?.id !== undefined,
     staleTime: 5 * 60 * 1_000,
-    queryFn: async () => {
-      const response = await customFetch("/api/guilds/mutual");
-      if (!response.ok) throw new Error("Guild lookup failed");
-      const value: unknown = await response.json();
-      return typeof value === "object" &&
-        value !== null &&
-        "guilds" in value &&
-        Array.isArray(value.guilds)
-        ? (value.guilds as Guild[])
-        : [];
-    },
   });
   const adminGuilds = (mutualGuildQuery.data ?? []).filter(
     (guild) => guild.isAdmin || guild.isDiceWitchAdmin,

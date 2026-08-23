@@ -43,9 +43,9 @@ import {
   rollResultText,
 } from "../../../packages/discord-contracts/src";
 import {
-  executeRoll,
-  parseNotationArgs,
-  prepareRollAppearance,
+  analyzeNotationArgs,
+  executeAnalyzedRoll,
+  prepareAnalyzedRollAppearance,
   type RollDie,
   type RollExecutionResult,
 } from "../../../packages/roll-domain/src";
@@ -1054,8 +1054,8 @@ export async function prepareWebRoll(
     request.userId,
     request.guildId,
   );
-  const outcome = prepareRollAppearance({
-    notation: parseNotationArgs(request.notation),
+  const outcome = prepareAnalyzedRollAppearance({
+    analysis: analyzeNotationArgs(request.notation),
     repetitions: request.repetitions,
     seed: renderSeed,
     stableAppearanceIdentities: true,
@@ -1105,26 +1105,8 @@ export async function executeWebRoll(
   const renderSeed = request.renderSeed ?? createRenderSeed();
   parseRollRenderVersion(configuredRenderVersion);
   const viewPolicy = parseRollViewPolicy(configuredViewPolicy);
-  const validation = prepareRollAppearance({
-    notation: parseNotationArgs(request.notation),
-    repetitions: request.repetitions,
-    seed: renderSeed,
-    stableAppearanceIdentities: true,
-  });
-  if (validation.outcomes.length === 0) {
-    return {
-      status: "invalid",
-      message: rollErrorText(validation),
-    };
-  }
-  const appearance = await loadWebAppearance(
-    dataService,
-    viewPolicy,
-    request.userId,
-    request.guildId,
-  );
-  const outcome = executeRoll({
-    notation: parseNotationArgs(request.notation),
+  const outcome = executeAnalyzedRoll({
+    analysis: analyzeNotationArgs(request.notation),
     repetitions: request.repetitions,
     seed: createRollSeed(),
     stableAppearanceIdentities: true,
@@ -1136,6 +1118,12 @@ export async function executeWebRoll(
       message: rollErrorText(outcome),
     };
   }
+  const appearance = await loadWebAppearance(
+    dataService,
+    viewPolicy,
+    request.userId,
+    request.guildId,
+  );
 
   const renderRequest = buildWebRenderRequest(
     outcome,

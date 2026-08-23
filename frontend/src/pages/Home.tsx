@@ -1,6 +1,6 @@
 import { DiceInput } from '@/components/DiceInput';
 import { GuildDropdown } from '@/components/GuildDropdown';
-import { ChannelDropdown, type Channel } from '@/components/ChannelDropdown';
+import { ChannelDropdown } from '@/components/ChannelDropdown';
 import { Roller } from '@/components/Roller';
 import { LoadingMedia } from '@/components/LoadingMedia';
 import diceWitchPortrait from "@/assets/dice-witch-banner.webp";
@@ -11,7 +11,7 @@ import {
 import { SaveLibraryRollDialog } from '@/components/SaveLibraryRollDialog';
 import { SparkleLoadingIndicator } from '@/components/SparkleLoadingIndicator';
 import { useDiceValidation } from '@/hooks/useDiceValidation';
-import type { Guild } from "@/types/guild";
+import type { Channel, RollerGuild } from "@/types/guild";
 import type { RollPreparation, RollResponse } from '@/types/dice';
 import type { SavedRollScope } from '@/lib/saved-rolls';
 import { useUser } from '@/lib/AuthProvider';
@@ -40,6 +40,12 @@ import { useToast } from '@/hooks/use-toast';
 import { customFetch } from '../lib/api';
 import { appConfig } from '@/lib/config';
 import {
+  guildChannelsQueryKey,
+  listGuildChannels,
+  listRollerGuilds,
+  ROLLER_GUILDS_QUERY_KEY,
+} from '@/lib/guilds';
+import {
   addRecentRoll,
   clearRecentRolls,
   readRecentRolls,
@@ -56,7 +62,6 @@ type RollPreparationState =
   | { status: "ready"; value: RollPreparation };
 
 type MobileRollTab = "roll" | "saved" | "result";
-type RollerGuild = Guild & { isRollable: boolean };
 type LibraryRollSelection = NonNullable<QuickRollComposition["libraryRoll"]>;
 type ActiveLibraryRoll = Readonly<{
   selection: LibraryRollSelection;
@@ -216,15 +221,8 @@ export const Home = () => {
   }, [user?.id]);
 
   const { data: mutualGuilds, isLoading, isFetching } = useQuery<RollerGuild[]>({
-    queryKey: ['guilds', 'roller'],
-    queryFn: async () => {
-      const response = await customFetch('/api/guilds/mutual?view=roller');
-      if (!response.ok) {
-        throw new Error('Failed to fetch guilds');
-      }
-      const data = await response.json();
-      return data.guilds || [];
-    },
+    queryKey: ROLLER_GUILDS_QUERY_KEY,
+    queryFn: listRollerGuilds,
     enabled: !!user?.id,
     staleTime: 1000 * 60 * 5,
   });
@@ -241,24 +239,20 @@ export const Home = () => {
     }
   };
 
-  const { data: channelsResponse } = useQuery({
-    queryKey: ['channels', selectedGuild],
-    queryFn: async () => {
-      const response = await customFetch(`/api/guilds/${selectedGuild}/channels`);
-      const data = await response.json();
-      return data;
+  const { data: channels = [] } = useQuery<Channel[]>({
+    queryKey: guildChannelsQueryKey(selectedGuild ?? ""),
+    queryFn: () => {
+      if (selectedGuild === undefined) {
+        throw new Error("A guild is required to load channels");
+      }
+      return listGuildChannels(selectedGuild);
     },
-    enabled: !!selectedGuild,
+    enabled: selectedGuild !== undefined,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
   });
-
-
-  const channels: Channel[] = Array.isArray(channelsResponse?.channels)
-    ? channelsResponse.channels
-    : [];
 
   const { toast } = useToast();
 
@@ -519,7 +513,7 @@ export const Home = () => {
     setPreparation({ status: "idle" });
   };
 
-  const allGuilds = Array.isArray(mutualGuilds) ? mutualGuilds : [];
+  const allGuilds = mutualGuilds ?? [];
   const availableGuilds = allGuilds.filter(({ isRollable }) => isRollable);
   const manageableGuilds = allGuilds.filter(
     ({ isAdmin, isDiceWitchAdmin }) => isAdmin || isDiceWitchAdmin,

@@ -1,22 +1,61 @@
 import { describe, expect, it } from "vitest";
 import {
+  analyzeNotationArgs,
+  executeAnalyzedRoll,
   executeRoll,
   prepareRollAppearance,
+  type RollAnalysis,
 } from "../../packages/roll-domain/src";
 
 const seed = 0x1234_abcd;
 
 describe("executeRoll", () => {
-  it("rejects expression totals beyond the magnitude ceiling", () => {
-    const result = executeRoll({
-      notation: ["1d1*999999999999", "1d6"],
+  it("accepts large finite expression totals", () => {
+    const request = {
+      notation: ["1d1*999999999999999999999999999999", "1d6"],
       seed,
-    });
+    };
+    const result = executeRoll(request);
 
-    expect(result.errors).toEqual([
-      { code: "TOTAL_TOO_LARGE", notation: "1d1*999999999999" },
+    expect(result.errors).toEqual([]);
+    expect(result.outcomes[0]?.total).toBeGreaterThan(Number.MAX_SAFE_INTEGER);
+    expect(result.outcomes).toMatchObject([
+      { notation: "1d1*999999999999999999999999999999" },
+      { notation: "1d6" },
     ]);
-    expect(result.outcomes.map(({ notation }) => notation)).toEqual(["1d6"]);
+    expect(executeRoll(request)).toEqual(result);
+  });
+
+  it("rejects a copied analysis whose notation no longer matches its parse", () => {
+    const analysis = analyzeNotationArgs("1d6");
+    const expression = analysis.expressions[0];
+    if (expression === undefined) throw new Error("Roll analysis is empty");
+    const forged: RollAnalysis = {
+      ...analysis,
+      expressions: [{ ...expression, notation: "51d6" }],
+    };
+
+    expect(() => executeAnalyzedRoll({ analysis: forged, seed })).toThrow(
+      "Roll analysis is invalid",
+    );
+  });
+
+  it("rejects an analysis forged with all reflected properties", () => {
+    const analysis = analyzeNotationArgs("1d6");
+    const expression = analysis.expressions[0];
+    if (expression === undefined) throw new Error("Roll analysis is empty");
+    const forged = {
+      expressions: [{ ...expression, notation: "51d6" }],
+    };
+    for (const key of Reflect.ownKeys(analysis)) {
+      if (key === "expressions") continue;
+      const descriptor = Object.getOwnPropertyDescriptor(analysis, key);
+      if (descriptor !== undefined) Object.defineProperty(forged, key, descriptor);
+    }
+
+    expect(() =>
+      executeAnalyzedRoll({ analysis: forged as unknown as RollAnalysis, seed }),
+    ).toThrow("Roll analysis is invalid");
   });
 
   it("reproduces the complete outcome from the same persisted seed", () => {

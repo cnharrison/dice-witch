@@ -1,6 +1,12 @@
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import {
+  parseSavedRollDraftV1,
+  parseSavedRollDraftV2,
+  type SavedRollDraftV1,
+  type SavedRollDraftV2,
+} from "../../packages/saved-rolls/src";
 import { D1SavedRollRepository } from "../../workers/data/src/saved-roll-repository";
 
 const dataEnv = env as unknown as { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
@@ -9,6 +15,13 @@ const guildId = "100000000000000002";
 const timestamp = 1_767_225_600_123;
 const draft = { version: 1, name: "Fireball", notation: "8d6", title: null, repetitions: 1 } as const;
 const id = (value: number) => `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
+
+function parsedDraft(value: unknown): SavedRollDraftV1 | SavedRollDraftV2 {
+  return typeof value === "object" && value !== null &&
+      "version" in value && value.version === 2
+    ? parseSavedRollDraftV2(value)
+    : parseSavedRollDraftV1(value);
+}
 
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
@@ -41,6 +54,7 @@ function repository() {
 }
 
 function createInput(overrides: Record<string, unknown> = {}) {
+  const { draft: draftOverride = draft, ...rest } = overrides;
   return {
     owner: { type: "user" as const, userId },
     actorUserId: userId,
@@ -48,11 +62,11 @@ function createInput(overrides: Record<string, unknown> = {}) {
     operation: "create" as const,
     id: id(1),
     expectedListRevision: 0,
-    draft,
+    draft: parsedDraft(draftOverride),
     pinned: false,
     mutationId: "create-1",
     occurredAt: timestamp,
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -355,7 +369,7 @@ describe("D1SavedRollRepository mutations", () => {
       id: id(1),
       expectedListRevision: 2,
       expectedRecordRevision: 1,
-      draft: { ...draft, name: "Greater Fireball", notation: "10d6" },
+      draft: parsedDraft({ ...draft, name: "Greater Fireball", notation: "10d6" }),
       pinned: true,
       mutationId: "update-1",
       occurredAt: timestamp + 1,
@@ -391,7 +405,7 @@ describe("D1SavedRollRepository mutations", () => {
       id: id(1),
       expectedListRevision: 2,
       expectedRecordRevision: 1,
-      draft,
+      draft: parsedDraft(draft),
       pinned: false,
       mutationId: "update-1",
       occurredAt: timestamp + 1,
@@ -402,7 +416,7 @@ describe("D1SavedRollRepository mutations", () => {
     });
     await expect(repository().update({
       ...base,
-      draft: { ...draft, name: "ICE" },
+      draft: parsedDraft({ ...draft, name: "ICE" }),
     })).resolves.toEqual({ status: "name_conflict", listRevision: 2 });
   });
 

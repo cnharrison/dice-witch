@@ -211,18 +211,16 @@ describe("D1RollAccountingRepository", () => {
     await expect(counts()).resolves.toEqual({ guild: 1, user: 1 });
   });
 
-  it("rejects malformed accounting input before writing", async () => {
+  it("fails closed when a stored accounting receipt is corrupted", async () => {
     const repository = new D1RollAccountingRepository(dataEnv.DATA);
+    await repository.account(input);
+    await dataEnv.DATA.prepare(
+      "UPDATE interaction_receipts SET accounted_at = received_at - 1 WHERE interaction_id = ?",
+    ).bind(interactionId).run();
 
-    await expect(
-      repository.account({ ...input, interactionId: "invalid" }),
-    ).rejects.toThrow("Interaction id is invalid");
-    await expect(
-      repository.account({ ...input, accountedAt: receivedAt - 1 }),
-    ).rejects.toThrow("Roll accounting timestamps are invalid");
-    const receiptCount = await dataEnv.DATA.prepare(
-      "SELECT COUNT(*) AS count FROM interaction_receipts",
-    ).first<{ count: number }>();
-    expect(receiptCount?.count).toBe(0);
+    await expect(repository.account(input)).rejects.toThrow(
+      "Stored roll accounting receipt is invalid",
+    );
+    await expect(counts()).resolves.toEqual({ guild: 1, user: 1 });
   });
 });

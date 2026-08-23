@@ -1,6 +1,8 @@
 import {
   parseSavedRollDraftV1,
   parseSavedRollDraftV2,
+  type SavedRollDraftV1,
+  type SavedRollDraftV2,
 } from "../../../packages/saved-rolls/src";
 import {
   D1SavedRollRepository,
@@ -147,13 +149,14 @@ function parseId(value: unknown): string {
 
 type SavedRollContractVersion = 1 | 2;
 
-function validateDraft(
+function parseDraft(
   value: unknown,
   contractVersion: SavedRollContractVersion,
-): void {
+): SavedRollDraftV1 | SavedRollDraftV2 {
   try {
-    if (contractVersion === 1) parseSavedRollDraftV1(value);
-    else parseSavedRollDraftV2(value);
+    return contractVersion === 1
+      ? parseSavedRollDraftV1(value)
+      : parseSavedRollDraftV2(value);
   } catch {
     invalidRequest("Library roll draft is invalid");
   }
@@ -361,10 +364,10 @@ async function createWithOperation(
   if (typeof value.pinned !== "boolean") {
     invalidRequest("Saved roll create request is invalid");
   }
-  validateDraft(value.draft, contractVersion);
+  const draft = parseDraft(value.draft, contractVersion);
   const input: CreateSavedRollInputV1 = {
     ...parseMutationFields(value),
-    draft: value.draft,
+    draft,
     id: parseId(value.id),
     operation,
     pinned: value.pinned,
@@ -426,7 +429,7 @@ async function update(
   if (typeof value.pinned !== "boolean") {
     invalidRequest("Saved roll update request is invalid");
   }
-  validateDraft(value.draft, contractVersion);
+  const draft = parseDraft(value.draft, contractVersion);
   const expectedRecordRevision = parseNonNegativeInteger(
     value.expectedRecordRevision,
     "Expected saved roll record revision",
@@ -436,7 +439,7 @@ async function update(
   }
   const input: UpdateSavedRollInputV1 = {
     ...parseMutationFields(value),
-    draft: value.draft,
+    draft,
     expectedRecordRevision,
     id: parseId(value.id),
     pinned: value.pinned,

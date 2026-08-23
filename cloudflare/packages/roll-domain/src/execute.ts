@@ -1,18 +1,21 @@
 import {
-  Dice,
   DiceRoll,
   NumberGenerator,
-  Parser,
   Results,
-  RollGroup,
 } from "@dice-roller/rpg-dice-roller";
 import {
-  MAX_EXPRESSION_TOTAL_ABSOLUTE,
   MAX_NOTATION_EXPRESSIONS,
   MAX_NOTATION_LENGTH,
   MAX_REPETITIONS,
 } from "./constants";
-import { MAX_RENDERED_DICE, checkRollLimits } from "./limits";
+import {
+  MAX_RENDERED_DICE,
+  analyzeRollExpressions,
+  checkRollAnalysis,
+  type RollAnalysis,
+  type RollDieDefinition,
+  type RollLimitResult,
+} from "./limits";
 import { createDeterministicRandom } from "./random";
 
 export type RollDie = {
@@ -49,6 +52,13 @@ export type RollExecutionRequest = {
   preserveOutOfRangePhysicalFaces?: boolean;
 };
 
+export type AnalyzedRollExecutionRequest = Omit<
+  RollExecutionRequest,
+  "notation"
+> & {
+  analysis: RollAnalysis;
+};
+
 export type RollExecutionResult = {
   version: 1;
   seed: number;
@@ -83,24 +93,20 @@ function seededEngine(seed: number): RandomEngine {
   return { next: random.nextInt32 };
 }
 
-function normalizeNotation(notation: string): string {
-  return notation.toLowerCase().replace(/df/g, "dF");
-}
-
-function collectDiceDefinitions(
-  value: unknown,
-  definitions: Dice.StandardDice[],
-): void {
-  if (value instanceof Dice.StandardDice) {
-    definitions.push(value);
-    return;
+function validateAnalysis(analysis: RollAnalysis): void {
+  if (analysis.expressions.length > MAX_NOTATION_EXPRESSIONS) {
+    throw new Error(
+      `Roll request cannot contain more than ${MAX_NOTATION_EXPRESSIONS} notation expressions`,
+    );
   }
-  if (value instanceof RollGroup) {
-    collectDiceDefinitions(value.expressions, definitions);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) collectDiceDefinitions(item, definitions);
+  const notationLength = analysis.expressions.reduce(
+    (length, { notation }) => length + notation.length,
+    Math.max(0, analysis.expressions.length - 1),
+  );
+  if (notationLength > MAX_NOTATION_LENGTH) {
+    throw new Error(
+      `Roll notation must not exceed ${MAX_NOTATION_LENGTH} characters`,
+    );
   }
 }
 
@@ -174,13 +180,13 @@ function percentileDice(
 }
 
 function physicalDice(
-  definition: Dice.StandardDice,
+  definition: RollDieDefinition,
   result: Results.RollResult,
   identity?: AppearanceIdentityV4,
   preserveOutOfRangePhysicalFaces = false,
 ): RollDie[] {
   const modifiers = [...result.modifiers];
-  if (definition instanceof Dice.FudgeDice) {
+  if (definition.kind === "fudge") {
     const physicalFace =
       preserveOutOfRangePhysicalFaces &&
         (result.value < -1 || result.value > 1)
@@ -196,7 +202,7 @@ function physicalDice(
       },
     ];
   }
-  if (definition instanceof Dice.PercentileDice || definition.sides === 100) {
+  if (definition.kind === "percentile") {
     const physicalValue =
       preserveOutOfRangePhysicalFaces &&
         (result.value < 1 || result.value > 100)
@@ -231,16 +237,14 @@ function physicalDice(
   ];
 }
 
-function definitionKind(definition: Dice.StandardDice): string {
-  return definition instanceof Dice.FudgeDice
-    ? "fudge"
-    : definition instanceof Dice.PercentileDice || definition.sides === 100
-      ? "percentile"
-      : String(definition.sides);
+function definitionKind(definition: RollDieDefinition): string {
+  return definition.kind === "standard"
+    ? String(definition.sides)
+    : definition.kind;
 }
 
 function definitionIdentity(
-  definitions: readonly Dice.StandardDice[],
+  definitions: readonly RollDieDefinition[],
   definitionIndex: number,
 ): string {
   const definition = definitions[definitionIndex];
@@ -251,7 +255,7 @@ function definitionIdentity(
 }
 
 function definitionDieOffset(
-  definitions: readonly Dice.StandardDice[],
+  definitions: readonly RollDieDefinition[],
   definitionIndex: number,
 ): number {
   const definition = definitions[definitionIndex];
@@ -266,7 +270,7 @@ function definitionDieOffset(
 }
 
 function resultAppearanceIdentities(
-  definition: Dice.StandardDice,
+  definition: RollDieDefinition,
   group: Results.RollResults,
   appearanceGroupIdentity: string,
   definitionId: string,
@@ -307,14 +311,12 @@ function resultAppearanceIdentities(
 
 function diceForRoll(
   notation: string,
-  parsed: unknown,
+  definitions: readonly RollDieDefinition[],
   roll: DiceRoll,
   appearanceGroupIdentity?: string,
   preserveOutOfRangePhysicalFaces = false,
 ): RollDie[] {
-  const definitions: Dice.StandardDice[] = [];
   const resultGroups: Results.RollResults[] = [];
-  collectDiceDefinitions(parsed, definitions);
   collectRollResults(roll.rolls, resultGroups);
   if (definitions.length !== resultGroups.length) {
     throw new Error(`Roll result shape does not match notation: ${notation}`);
@@ -354,7 +356,7 @@ function diceForRoll(
 
 function limitError(
   seed: number,
-  result: Exclude<ReturnType<typeof checkRollLimits>, { allowed: true }>,
+  result: Exclude<RollLimitResult, { allowed: true }>,
 ): RollExecutionResult {
   return {
     version: 1,
@@ -365,8 +367,8 @@ function limitError(
 }
 
 function previewDiceForDefinition(
-  definition: Dice.StandardDice,
-  definitions: readonly Dice.StandardDice[],
+  definition: RollDieDefinition,
+  definitions: readonly RollDieDefinition[],
   definitionIndex: number,
   appearanceGroupIdentity: string,
 ): RollDie[] {
@@ -377,7 +379,7 @@ function previewDiceForDefinition(
       group: appearanceGroupIdentity,
       die: `${appearanceGroupIdentity}:definition:${definitionId}:die:${String(dieOffset + dieIndex)}`,
     };
-    if (definition instanceof Dice.FudgeDice) {
+    if (definition.kind === "fudge") {
       return [
         {
           sides: "F" as const,
@@ -387,7 +389,7 @@ function previewDiceForDefinition(
         },
       ];
     }
-    if (definition instanceof Dice.PercentileDice || definition.sides === 100) {
+    if (definition.kind === "percentile") {
       return percentileDice(100, [], identity);
     }
     if (typeof definition.sides !== "number") {
@@ -407,24 +409,21 @@ function previewDiceForDefinition(
 export function prepareRollAppearance(
   request: RollExecutionRequest,
 ): RollExecutionResult {
+  const { notation, ...options } = request;
+  return prepareAnalyzedRollAppearance({
+    ...options,
+    analysis: analyzeRollExpressions(notation),
+  });
+}
+
+export function prepareAnalyzedRollAppearance(
+  request: AnalyzedRollExecutionRequest,
+): RollExecutionResult {
   validateSeed(request.seed);
-  if (request.notation.length > MAX_NOTATION_EXPRESSIONS) {
-    throw new Error(
-      `Roll request cannot contain more than ${MAX_NOTATION_EXPRESSIONS} notation expressions`,
-    );
-  }
-  const notationLength = request.notation.reduce(
-    (length, value) => length + value.length,
-    Math.max(0, request.notation.length - 1),
-  );
-  if (notationLength > MAX_NOTATION_LENGTH) {
-    throw new Error(
-      `Roll notation must not exceed ${MAX_NOTATION_LENGTH} characters`,
-    );
-  }
+  const { analysis } = request;
+  validateAnalysis(analysis);
   const repetitions = normalizeRepetitions(request.repetitions);
-  const notation = request.notation.map(normalizeNotation);
-  const limits = checkRollLimits(notation, repetitions);
+  const limits = checkRollAnalysis(analysis, repetitions);
   if (!limits.allowed) return limitError(request.seed, limits);
   if (!limits.containsDice) {
     return {
@@ -438,19 +437,18 @@ export function prepareRollAppearance(
   const outcomes: RollOutcome[] = [];
   const errors: RollExecutionError[] = [];
   for (let repetitionIndex = 0; repetitionIndex < repetitions; repetitionIndex += 1) {
-    for (const [expressionIndex, value] of notation.entries()) {
-      let parsed: unknown;
-      try {
-        parsed = Parser.parse(value) as unknown;
-      } catch {
-        errors.push({ code: "INVALID_NOTATION", notation: value });
+    for (const [expressionIndex, expression] of analysis.expressions.entries()) {
+      if (!expression.valid) {
+        errors.push({
+          code: "INVALID_NOTATION",
+          notation: expression.notation,
+        });
         continue;
       }
-      const definitions: Dice.StandardDice[] = [];
-      collectDiceDefinitions(parsed, definitions);
+      const { definitions } = expression;
       const appearanceGroupIdentity = `expression:${String(expressionIndex)}:repeat:${String(repetitionIndex)}`;
       outcomes.push({
-        notation: value,
+        notation: expression.notation,
         output: "",
         total: 0,
         dice: definitions.flatMap((definition, definitionIndex) =>
@@ -480,24 +478,21 @@ export function prepareRollAppearance(
 }
 
 export function executeRoll(request: RollExecutionRequest): RollExecutionResult {
+  const { notation, ...options } = request;
+  return executeAnalyzedRoll({
+    ...options,
+    analysis: analyzeRollExpressions(notation),
+  });
+}
+
+export function executeAnalyzedRoll(
+  request: AnalyzedRollExecutionRequest,
+): RollExecutionResult {
   validateSeed(request.seed);
-  if (request.notation.length > MAX_NOTATION_EXPRESSIONS) {
-    throw new Error(
-      `Roll request cannot contain more than ${MAX_NOTATION_EXPRESSIONS} notation expressions`,
-    );
-  }
-  const notationLength = request.notation.reduce(
-    (length, value) => length + value.length,
-    Math.max(0, request.notation.length - 1),
-  );
-  if (notationLength > MAX_NOTATION_LENGTH) {
-    throw new Error(
-      `Roll notation must not exceed ${MAX_NOTATION_LENGTH} characters`,
-    );
-  }
+  const { analysis } = request;
+  validateAnalysis(analysis);
   const repetitions = normalizeRepetitions(request.repetitions);
-  const notation = request.notation.map(normalizeNotation);
-  const limits = checkRollLimits(notation, repetitions);
+  const limits = checkRollAnalysis(analysis, repetitions);
   if (!limits.allowed) return limitError(request.seed, limits);
   if (!limits.containsDice) {
     return {
@@ -508,11 +503,11 @@ export function executeRoll(request: RollExecutionRequest): RollExecutionResult 
     };
   }
 
-  const repeatedNotation = Array.from(
+  const repeatedExpressions = Array.from(
     { length: repetitions },
     (_, repetitionIndex) =>
-      notation.map((value, expressionIndex) => ({
-        value,
+      analysis.expressions.map((expression, expressionIndex) => ({
+        expression,
         appearanceGroupIdentity: request.stableAppearanceIdentities
           ? `expression:${String(expressionIndex)}:repeat:${String(repetitionIndex)}`
           : undefined,
@@ -524,31 +519,38 @@ export function executeRoll(request: RollExecutionRequest): RollExecutionResult 
   const previousEngine = generator.engine as RandomEngine;
   generator.engine = seededEngine(request.seed);
   try {
-    for (const { value, appearanceGroupIdentity } of repeatedNotation) {
-      let parsed: unknown;
+    for (const { expression, appearanceGroupIdentity } of repeatedExpressions) {
+      if (!expression.valid) {
+        errors.push({
+          code: "INVALID_NOTATION",
+          notation: expression.notation,
+        });
+        continue;
+      }
       let roll: DiceRoll;
       try {
-        parsed = Parser.parse(value) as unknown;
-        roll = new DiceRoll(value);
+        roll = new DiceRoll(expression.notation);
       } catch {
-        errors.push({ code: "INVALID_NOTATION", notation: value });
+        errors.push({
+          code: "INVALID_NOTATION",
+          notation: expression.notation,
+        });
         continue;
       }
       if (!Number.isFinite(roll.total)) {
-        errors.push({ code: "NON_FINITE_TOTAL", notation: value });
-        continue;
-      }
-      if (Math.abs(roll.total) > MAX_EXPRESSION_TOTAL_ABSOLUTE) {
-        errors.push({ code: "TOTAL_TOO_LARGE", notation: value });
+        errors.push({
+          code: "NON_FINITE_TOTAL",
+          notation: expression.notation,
+        });
         continue;
       }
       outcomes.push({
-        notation: value,
+        notation: expression.notation,
         output: roll.output,
         total: roll.total,
         dice: diceForRoll(
-          value,
-          parsed,
+          expression.notation,
+          expression.definitions,
           roll,
           appearanceGroupIdentity,
           request.preserveOutOfRangePhysicalFaces,

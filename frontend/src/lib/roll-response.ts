@@ -1,6 +1,5 @@
 import {
   parsePublicRenderModelV4,
-  serializeRenderRequestV4,
   type PublicRenderModelV4,
   type RenderDieV4,
 } from "@dice-witch/dice-v4-model";
@@ -174,9 +173,7 @@ function parseRerolledAppearanceIdentities(
 
 function parseRenderModel(value: unknown): PublicRenderModelV4 {
   try {
-    const renderModel = parsePublicRenderModelV4(value);
-    serializeRenderRequestV4(renderModel);
-    return renderModel;
+    return parsePublicRenderModelV4(value);
   } catch {
     throw new Error("Web roll response is invalid");
   }

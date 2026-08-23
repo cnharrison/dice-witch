@@ -81,8 +81,12 @@ describe("Data Worker roll accounting service", () => {
     expect(guild?.roll_count).toBe(1);
   });
 
-  it("rejects malformed JSON shapes before writing", async () => {
-    const response = await account({ ...input, unexpected: true });
+  it.each([
+    { ...input, unexpected: true },
+    { ...input, interactionId: "invalid" },
+    { ...input, accountedAt: input.receivedAt - 1 },
+  ])("rejects invalid requests before writing", async (value) => {
+    const response = await account(value);
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({

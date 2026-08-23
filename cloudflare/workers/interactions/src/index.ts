@@ -26,8 +26,8 @@ import {
   type StatusGatewaySnapshot,
 } from "../../../packages/discord-contracts/src";
 import {
-  executeRoll,
-  parseNotationArgs,
+  analyzeNotationArgs,
+  executeAnalyzedRoll,
 } from "../../../packages/roll-domain/src";
 import { handleSavedRollInteraction } from "./saved-roll-handler";
 import {
@@ -597,8 +597,8 @@ export async function handleInteractionRequest(
   let acknowledgementTelemetry: RollDeliveryTelemetryV2;
   try {
     const rollSeed = randomSeed();
-    const outcome = executeRoll({
-      notation: parseNotationArgs(roll.notation),
+    const outcome = executeAnalyzedRoll({
+      analysis: analyzeNotationArgs(roll.notation),
       repetitions: roll.repetitions,
       seed: rollSeed,
       stableAppearanceIdentities: true,

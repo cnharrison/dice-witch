@@ -6,6 +6,7 @@ import {
   generateMaterialTextureV4,
   getRenderGeometryDescriptorV4,
   getRenderTexturePlacementV4,
+  parsePublicRenderModelV4,
   parseRenderRequestV4Json,
   rendererRevisionPolicyV4,
   resolveEngravingContrastEdgeV4,
@@ -513,7 +514,7 @@ async function renderAttempt(
 }
 
 function validatedRequest(value: unknown): RenderRequestV4 {
-  const request = parseRenderRequestV4Json(serializeRenderRequestV4(value));
+  const request = parsePublicRenderModelV4(value);
   assertCanvasKitGeometrySupport(request);
   return request;
 }

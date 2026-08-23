@@ -10,8 +10,8 @@ function requireBoundedJson(value: string): void {
   }
 }
 
-export function serializeRenderRequestV4(value: unknown): string {
-  const serialized = canonicalJsonV4(validateRenderRequestV4(value));
+export function serializeRenderRequestV4(value: RenderRequestV4): string {
+  const serialized = canonicalJsonV4(value);
   requireBoundedJson(serialized);
   return serialized;
 }
@@ -30,5 +30,7 @@ export function parseRenderRequestV4Json(value: string): RenderRequestV4 {
 export function parsePublicRenderModelV4(
   value: unknown,
 ): PublicRenderModelV4 {
-  return validateRenderRequestV4(value);
+  const model = validateRenderRequestV4(value);
+  requireBoundedJson(canonicalJsonV4(model));
+  return model;
 }

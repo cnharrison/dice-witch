@@ -443,7 +443,7 @@ export function AppearanceEditorV3({
       return null;
     }
     removeDraftMetadata(previousDesignId);
-    return deleteAppearanceDesignV3(profile, previousDesignId, catalog);
+    return deleteAppearanceDesignV3(profile, previousDesignId);
   };
 
   const selectStyle = (styleId: string) => {
@@ -453,7 +453,6 @@ export function AppearanceEditorV3({
           draftProfile,
           target,
           { source: "builtin", id: styleId },
-          catalog,
         ),
         activeSelection.designId,
       );
@@ -482,7 +481,6 @@ export function AppearanceEditorV3({
             draftProfile,
             target,
             { id, name, recipe },
-            catalog,
           ),
         );
         setEditingDesignId(id);
@@ -503,7 +501,6 @@ export function AppearanceEditorV3({
                 false,
               ),
             },
-            catalog,
           ),
         );
       }
@@ -531,7 +528,6 @@ export function AppearanceEditorV3({
           draftProfile,
           target,
           { id, name, recipe },
-          catalog,
         ),
       );
       setEditingDesignId(id);
@@ -556,7 +552,6 @@ export function AppearanceEditorV3({
           draftProfile,
           designId,
           duplicateId,
-          catalog,
         ),
       );
       if (activeTab !== "design") activateTab("design", true);
@@ -584,7 +579,6 @@ export function AppearanceEditorV3({
           draftProfile,
           target,
           { id, name: design.name, recipe },
-          catalog,
         ),
         activeSelection.designId,
       );
@@ -609,7 +603,6 @@ export function AppearanceEditorV3({
           draftProfile,
           target,
           { source: "custom", id: design.id },
-          catalog,
         ),
         activeSelection.designId,
       );
@@ -634,7 +627,7 @@ export function AppearanceEditorV3({
     if (design === undefined) return;
     const targets = designTargets(draftProfile, designId);
     try {
-      setDraftProfile(deleteAppearanceDesignV3(draftProfile, designId, catalog));
+      setDraftProfile(deleteAppearanceDesignV3(draftProfile, designId));
       setDeletionNotices((notices) => [
         ...notices.filter(({ design: staged }) => staged.id !== designId),
         { design, targets },
@@ -658,7 +651,6 @@ export function AppearanceEditorV3({
           draftProfile,
           notice.design,
           notice.targets,
-          catalog,
         ),
       );
       setDeletionNotices((notices) =>
@@ -674,7 +666,7 @@ export function AppearanceEditorV3({
     if (target === "all") return;
     try {
       setDraftProfile(
-        clearAppearanceTargetOverrideV3(draftProfile, target, catalog),
+        clearAppearanceTargetOverrideV3(draftProfile, target),
       );
       setStatus(null);
     } catch (error) {
@@ -705,14 +697,13 @@ export function AppearanceEditorV3({
       let next = clearAppearanceTargetOverrideV3(
         draftProfile,
         discardTarget,
-        catalog,
       );
       if (deletesDraft && reference.source === "custom") {
         const design = draftProfile.designs.find(
           ({ id }) => id === reference.id,
         );
         if (design !== undefined) {
-          next = deleteAppearanceDesignV3(next, design.id, catalog);
+          next = deleteAppearanceDesignV3(next, design.id);
           setDeletionNotices((notices) => [
             ...notices.filter(({ design: staged }) => staged.id !== design.id),
             { design, targets: [] },
@@ -747,7 +738,7 @@ export function AppearanceEditorV3({
       return;
     }
     try {
-      let next = clearAppearanceAllAssignmentV3(draftProfile, catalog);
+      let next = clearAppearanceAllAssignmentV3(draftProfile);
       const reference = draftProfile.assignments.all;
       if (
         reference?.source === "custom" &&
@@ -758,7 +749,7 @@ export function AppearanceEditorV3({
       ) {
         const design = draftProfile.designs.find(({ id }) => id === reference.id);
         if (design !== undefined) {
-          next = deleteAppearanceDesignV3(next, design.id, catalog);
+          next = deleteAppearanceDesignV3(next, design.id);
           removeDraftMetadata(design.id);
         }
       }
@@ -778,7 +769,7 @@ export function AppearanceEditorV3({
           (design) => design.id === id && design.name !== name,
         )
       ) {
-        profile = renameAppearanceDesignV3(profile, id, name.trim(), catalog);
+        profile = renameAppearanceDesignV3(profile, id, name.trim());
       }
     }
     return profile;

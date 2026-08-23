@@ -63,11 +63,11 @@ function die(): RenderDieV4 {
 }
 
 function request(groups: RenderDieV4[][] = [[die()]]): RenderRequestV4 {
-  return {
+  return parsePublicRenderModelV4({
     version: 4,
     rendererRevision: "canvaskit-v4-r1",
     groups,
-  };
+  });
 }
 
 describe("V4 snapshot serialization", () => {
