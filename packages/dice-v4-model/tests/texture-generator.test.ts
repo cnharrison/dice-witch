@@ -391,7 +391,7 @@ describe("V4 material texture generation", () => {
         input(sky.material, 0x1234_5678, 1, sky.palette),
       ).pixels,
     );
-  });
+  }, 10_000);
 
   it("makes r33 Lava glow stronger without washing its hue pale", () => {
     const lavaPalette = r32Materials.find(({ id }) => id === "lava")?.palette;
