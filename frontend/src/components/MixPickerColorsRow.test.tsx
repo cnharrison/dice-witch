@@ -82,14 +82,15 @@ describe("MixPickerColorsRow", () => {
     expect(screen.queryByRole("button", { name: "Random" })).toBeNull();
   });
 
-  it("explains which selected materials the row applies to", () => {
+  it("explains which selected materials the row applies to without duplicate families", () => {
     render(
       <MixPickerColorsRow
         recipe={recipeWith(
           {
             mode: "weighted",
             options: [
-              { value: materialValue("classic"), weight: 600 },
+              { value: materialValue("classic"), weight: 300 },
+              { value: materialValue("classic"), weight: 300 },
               { value: materialValue("fantasy"), weight: 400 },
             ],
           },

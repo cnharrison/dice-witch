@@ -108,14 +108,28 @@ export function applyVariety(
 export function materialRowsFromRecipe(
   recipe: AppearanceRecipeV3,
 ): MaterialRowState {
-  const families = selectionValuesV3(recipe.material).map(
-    ({ family }) => family,
-  );
+  const values = selectionValuesV3(recipe.material);
+  const families = [...new Set(values.map(({ family }) => family))];
   if (recipe.material.mode === "weighted") {
+    const weightByFamily = new Map<string, number>();
+    for (const { value, weight } of recipe.material.options) {
+      weightByFamily.set(
+        value.family,
+        (weightByFamily.get(value.family) ?? 0) + weight,
+      );
+    }
     return {
       mode: "weighted",
       families,
-      weights: recipe.material.options.map(({ weight }) => weight),
+      weights: normalizeMaterialWeightsV3(
+        families.map((family) => {
+          const weight = weightByFamily.get(family);
+          if (weight === undefined) {
+            throw new Error(`Material family weight is missing: ${family}`);
+          }
+          return weight;
+        }),
+      ),
     };
   }
   if (recipe.material.mode === "allowlist") {
@@ -287,44 +301,61 @@ export function applyColorChance(
   }
 }
 
-// resolveMaterial supplies a value for families the current selection does
-// not already carry (catalog defaults), so user-tuned parameters survive
-// edits of the families they belong to.
+// A family with one selected value keeps its tuned parameters. Rich Random
+// families have several hidden variants, so an explicit family edit chooses
+// the catalog default instead of arbitrarily keeping one hidden variant.
 export function applyMaterialRows(
   recipe: AppearanceRecipeV3,
   rows: MaterialRowState,
   resolveMaterial: (family: string) => AppearanceMaterialV4,
 ): AppearanceRecipeV3 {
-  const existing = new Map(
-    selectionValuesV3(recipe.material).map((value) => [value.family, value]),
-  );
-  const values = rows.families.map((family) =>
-    existing.get(family as never) ?? resolveMaterial(family),
-  );
+  if (
+    rows.families.length === 0 ||
+    new Set(rows.families).size !== rows.families.length
+  ) {
+    throw new Error("Material rows require distinct families");
+  }
+  const existing = new Map<string, AppearanceMaterialV4[]>();
+  for (const value of selectionValuesV3(recipe.material)) {
+    const familyValues = existing.get(value.family) ?? [];
+    familyValues.push(value);
+    existing.set(value.family, familyValues);
+  }
+  const values = rows.families.map((family) => {
+    const familyValues = existing.get(family);
+    if (familyValues?.length !== 1) return resolveMaterial(family);
+    const value = familyValues[0];
+    if (value === undefined) {
+      throw new Error(`Material family value is missing: ${family}`);
+    }
+    return value;
+  });
   switch (rows.mode) {
-    case "fixed":
-      return {
-        ...recipe,
-        material: { mode: "fixed", value: values[0] as AppearanceMaterialV4 },
-      };
+    case "fixed": {
+      const value = values[0];
+      if (values.length !== 1 || value === undefined) {
+        throw new Error("Fixed material rows require one family");
+      }
+      return { ...recipe, material: { mode: "fixed", value } };
+    }
     case "allowlist":
       return { ...recipe, material: { mode: "allowlist", values } };
     case "weighted": {
-      // Legacy profiles store exact integer weights; only renormalize when
-      // the incoming set does not already fill the shared total.
-      const totalWeight = rows.weights.reduce((sum, weight) => sum + weight, 0);
-      const normalized =
-        totalWeight === MATERIAL_WEIGHT_TOTAL_V3
-          ? [...rows.weights]
-          : normalizeMaterialWeightsV3([...rows.weights]);
+      if (rows.weights.length !== values.length) {
+        throw new Error("Material row weights do not match their families");
+      }
+      const normalized = normalizeMaterialWeightsV3(rows.weights);
       return {
         ...recipe,
         material: {
           mode: "weighted",
-          options: values.map((value, index) => ({
-            value,
-            weight: normalized[index],
-          })),
+          options: values.map((value, index) => {
+            const weight = normalized[index];
+            if (weight === undefined) {
+              throw new Error(`Material family weight is missing: ${value.family}`);
+            }
+            return { value, weight };
+          }),
         },
       };
     }

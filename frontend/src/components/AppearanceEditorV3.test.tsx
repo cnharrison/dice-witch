@@ -361,6 +361,37 @@ describe("AppearanceEditorV3", () => {
     expect(startFromCard("chaotic").getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("edits Random as one weighted segment per material family", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    const bar = screen.getByRole("group", { name: "Material mix balance" });
+    const titles = Array.from(bar.children, (segment) =>
+      segment.getAttribute("title"),
+    );
+    expect(new Set(titles).size).toBe(titles.length);
+
+    fireEvent.keyDown(screen.getAllByRole("slider")[0] as HTMLElement, {
+      key: "ArrowLeft",
+    });
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    const saved = onSave.mock.calls[0]?.[0];
+    const material = saved?.designs[0]?.recipe.material;
+    if (material?.mode !== "weighted") throw new Error("expected weighted");
+    const families = material.options.map(({ value }) => value.family);
+    expect(new Set(families).size).toBe(families.length);
+  });
+
   it("keeps preset and Camera changes in one Save & apply transaction", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn(async () => undefined);

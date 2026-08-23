@@ -18,11 +18,20 @@ function requireWeightsV3(weights: readonly number[]): void {
   }
 }
 
+function requireRelativeWeightsV3(weights: readonly number[]): void {
+  if (
+    weights.length < 1 ||
+    weights.some((weight) => !Number.isSafeInteger(weight) || weight < 1)
+  ) {
+    throw new Error("Relative material weights are invalid");
+  }
+}
+
 function allocateWeightsV3(
   weights: readonly number[],
   total: number,
 ): number[] {
-  requireWeightsV3(weights);
+  requireRelativeWeightsV3(weights);
   if (!Number.isInteger(total) || total < weights.length * MINIMUM_WEIGHT_V3) {
     throw new Error("Material weight total is invalid");
   }

@@ -244,6 +244,41 @@ describe("MixPickerMaterialsRow", () => {
     ).not.toBeNull();
   });
 
+  it("combines hidden material variants into one family segment", () => {
+    const solid = {
+      family: "classic",
+      treatment: "solid",
+    } as AppearanceMaterialV4;
+    const gradient = {
+      family: "classic",
+      treatment: "gradient",
+    } as AppearanceMaterialV4;
+    render(
+      <MixPickerMaterialsRow
+        recipe={recipeWithMaterial({
+          mode: "weighted",
+          options: [
+            { value: solid, weight: 400 },
+            { value: gradient, weight: 200 },
+            { value: materialValue("glass"), weight: 400 },
+          ],
+        })}
+        catalog={catalog}
+        thumbVersion={null}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const segments = Array.from(
+      screen.getByRole("group", { name: "Material mix balance" }).children,
+    );
+    expect(segments.map((segment) => segment.getAttribute("title"))).toEqual([
+      "Classic: 60%",
+      "Glass: 40%",
+    ]);
+    expect(screen.getAllByRole("slider")).toHaveLength(1);
+  });
+
   it("labels segments against the actual weight sum, hiding unreadable shares", () => {
     render(
       <MixPickerMaterialsRow
@@ -278,7 +313,7 @@ describe("MixPickerMaterialsRow", () => {
     expect(segments[1]?.querySelector(".sr-only")).toBeNull();
     expect(
       screen.getAllByRole("slider").map(({ style }) => style.left),
-    ).toEqual(["83.33333333333334%", "97.22222222222221%"]);
+    ).toEqual(["83.3%", "97.2%"]);
   });
 
   it("keeps tiny adjacent shares valid when nudged", () => {
@@ -304,27 +339,31 @@ describe("MixPickerMaterialsRow", () => {
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
     expect(next.material.options.map(({ weight }) => weight)).toEqual([
-      900, 3, 1,
+      996, 3, 1,
     ]);
   });
 
-  it("preserves distinct material variants when changing only their weights", () => {
-    const solid = {
-      family: "classic",
-      treatment: "solid",
-    } as AppearanceMaterialV4;
-    const gradient = {
-      family: "classic",
-      treatment: "gradient",
-    } as AppearanceMaterialV4;
+  it("uses catalog defaults when an edit collapses hidden family variants", () => {
     const onChange = vi.fn();
     render(
       <MixPickerMaterialsRow
         recipe={recipeWithMaterial({
           mode: "weighted",
           options: [
-            { value: solid, weight: 900 },
-            { value: gradient, weight: 150 },
+            {
+              value: {
+                family: "classic",
+                treatment: "solid",
+              } as AppearanceMaterialV4,
+              weight: 900,
+            },
+            {
+              value: {
+                family: "classic",
+                treatment: "gradient",
+              } as AppearanceMaterialV4,
+              weight: 150,
+            },
           ],
         })}
         catalog={catalog}
@@ -332,12 +371,13 @@ describe("MixPickerMaterialsRow", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.keyDown(screen.getByRole("slider"), { key: "ArrowLeft" });
+    expect(screen.queryByRole("slider")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Glass/ }));
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
-    expect(next.material.options.map(({ value }) => value)).toEqual([
-      solid,
-      gradient,
+    expect(next.material.options).toEqual([
+      { value: materialValue("classic-default"), weight: 500 },
+      { value: materialValue("glass-default"), weight: 500 },
     ]);
   });
 

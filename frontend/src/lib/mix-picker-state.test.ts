@@ -4,7 +4,11 @@ import type {
   AppearanceRecipeV3,
   AppearanceSelection,
 } from "@dice-witch/dice-v4-model";
-import { FANTASY_ESSENCE_PALETTES_R33_V4 } from "@dice-witch/dice-v4-model";
+import {
+  FANTASY_ESSENCE_PALETTES_R33_V4,
+  parseAppearanceRecipeV3,
+} from "@dice-witch/dice-v4-model";
+import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 import {
   CHAOS_ASSIGNMENT_V3,
   applyColorsRow,
@@ -133,6 +137,25 @@ describe("materialRowsFromRecipe", () => {
     const rows = materialRowsFromRecipe(recipe);
     expect(applyMaterialRows(recipe, rows, materialValue)).toEqual(recipe);
   });
+
+  it("aggregates Random's hidden variants into normalized family rows", () => {
+    const random = APPEARANCE_CATALOG_V3.styles.find(
+      ({ id }) => id === "chaotic",
+    );
+    if (random === undefined) throw new Error("Random fixture is missing");
+    const rows = materialRowsFromRecipe(random.recipe);
+    if (rows.mode !== "weighted") throw new Error("expected weighted");
+
+    expect(new Set(rows.families).size).toBe(rows.families.length);
+    expect(rows.families.length).toBeLessThan(
+      random.recipe.material.mode === "weighted"
+        ? random.recipe.material.options.length
+        : 0,
+    );
+    expect(rows.weights.reduce((sum, weight) => sum + weight, 0)).toBe(
+      MATERIAL_WEIGHT_TOTAL_V3,
+    );
+  });
 });
 
 describe("applyMaterialRows", () => {
@@ -151,6 +174,30 @@ describe("applyMaterialRows", () => {
       mode: "allowlist",
       values: [tunedGlass, materialValue("default-metal")],
     });
+  });
+
+  it("materializes Random family rows as one valid value per family", () => {
+    const random = APPEARANCE_CATALOG_V3.styles.find(
+      ({ id }) => id === "chaotic",
+    );
+    if (random === undefined) throw new Error("Random fixture is missing");
+    const rows = materialRowsFromRecipe(random.recipe);
+    const next = applyMaterialRows(random.recipe, rows, (family) => {
+      const entry = APPEARANCE_CATALOG_V3.materials.find(
+        ({ family: candidate }) => candidate === family,
+      );
+      if (entry === undefined) throw new Error(`Missing material: ${family}`);
+      return structuredClone(entry.defaultValue);
+    });
+    const parsed = parseAppearanceRecipeV3(next);
+    if (parsed.material.mode !== "weighted") throw new Error("expected weighted");
+
+    expect(
+      parsed.material.options.map(({ value }) => value.family),
+    ).toEqual(rows.families);
+    expect(
+      new Set(parsed.material.options.map(({ value }) => JSON.stringify(value))).size,
+    ).toBe(parsed.material.options.length);
   });
 
   it("normalizes weighted rows onto the shared total", () => {

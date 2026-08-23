@@ -14,6 +14,7 @@ describe("linked material weights", () => {
 
     expect(normalizeMaterialWeightsV3(randomMix)).toEqual(randomMix);
     expect(normalizeMaterialWeightsV3([1, 1])).toEqual([500, 500]);
+    expect(normalizeMaterialWeightsV3([1_200, 300])).toEqual([800, 200]);
     expect(normalizeMaterialWeightsV3([9, 3, 1]).reduce((sum, value) => sum + value, 0)).toBe(
       MATERIAL_WEIGHT_TOTAL_V3,
     );

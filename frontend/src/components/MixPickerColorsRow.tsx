@@ -59,12 +59,12 @@ export function MixPickerColorsRow({
   const responds = values.filter(
     (material) => materialColorEffectV4(material) !== "adds-own-colors",
   );
-  const ownNames = bringsOwn.map((material) =>
-    materialName(catalog, material.family),
-  );
-  const respondNames = responds.map((material) =>
-    materialName(catalog, material.family),
-  );
+  const ownNames = [...new Set(
+    bringsOwn.map((material) => materialName(catalog, material.family)),
+  )];
+  const respondNames = [...new Set(
+    responds.map((material) => materialName(catalog, material.family)),
+  )];
 
   const emit = (nextColors: AppearanceColorsV3) => {
     const updated: AppearanceRecipeV3 = { ...recipe, colors: nextColors };

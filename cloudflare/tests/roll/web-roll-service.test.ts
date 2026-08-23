@@ -13,6 +13,7 @@ import {
   APPEARANCE_TARGETS,
   APPROVED_COLLECTOR_STYLE_IDS_V3,
   BUILTIN_APPEARANCE_STYLES_R34_V3,
+  BUILTIN_APPEARANCE_STYLES_V3,
   FEATURED_APPEARANCE_STYLE_IDS,
 } from "../../packages/dice-appearance/src";
 import {
@@ -291,6 +292,33 @@ describe("appearance preview", () => {
         preview.groups.flat().map(({ appearance }) => appearance.texture.scope),
       ),
     ).toEqual(new Set(["die-wide"]));
+  });
+
+  it("builds a current preview after an explicit color edit of Random", () => {
+    const random = BUILTIN_APPEARANCE_STYLES_V3.find(
+      ({ id }) => id === "chaotic",
+    );
+    if (random === undefined) throw new Error("Random fixture is missing");
+    const edited: AppearanceRecipeV3 = {
+      ...random.recipe,
+      variation: "fixed",
+      colors: { mode: "palette", colors: ["#eee7d7", "#15942c"] },
+      form: { ...random.recipe.form, policy: "material-default-v1" },
+    };
+    delete edited.randomization;
+
+    expect(() =>
+      buildAppearancePreviewRenderRequestForPolicyV4(
+        {
+          target: "all",
+          recipe: edited,
+          diceView: createDefaultDiceViewPreferencesV4(),
+          seed: 0x51ce_b00c,
+          state: "normal",
+        },
+        "r41",
+      ),
+    ).not.toThrow();
   });
 
   it("uses one matching appearance for both percentile preview dice", () => {
