@@ -57,6 +57,17 @@ async function settleDelivery(
   throw new Error("Roll delivery did not settle");
 }
 
+async function settleReadyDelivery(
+  stub: ReturnType<typeof work>,
+): Promise<void> {
+  await runInDurableObject(stub, (_instance, state) => {
+    state.storage.sql.exec(
+      "UPDATE interaction_delivery SET result_not_before = 0",
+    );
+  });
+  await settleDelivery(stub);
+}
+
 async function callAlarm(instance: {
   alarm?: () => void | Promise<void>;
 }): Promise<void> {
@@ -3806,11 +3817,8 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliver(input)).resolves.toMatchObject({
       status: "pending",
     });
-    await runInDurableObject(stub, async (instance, state) => {
-      state.storage.sql.exec(
-        "UPDATE interaction_delivery SET result_not_before = 0",
-      );
-      await callAlarm(instance);
+    await settleReadyDelivery(stub);
+    await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql
         .exec<{ snapshot_json: string }>(
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
@@ -3861,11 +3869,8 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliver(input)).resolves.toMatchObject({
       status: "pending",
     });
-    await runInDurableObject(stub, async (instance, state) => {
-      state.storage.sql.exec(
-        "UPDATE interaction_delivery SET result_not_before = 0",
-      );
-      await callAlarm(instance);
+    await settleReadyDelivery(stub);
+    await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql
         .exec<{ snapshot_json: string }>(
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
@@ -3900,11 +3905,8 @@ describe("RollWork Durable Object", () => {
     await expect(stub.deliver(input)).resolves.toMatchObject({
       status: "pending",
     });
-    await runInDurableObject(stub, async (instance, state) => {
-      state.storage.sql.exec(
-        "UPDATE interaction_delivery SET result_not_before = 0",
-      );
-      await callAlarm(instance);
+    await settleReadyDelivery(stub);
+    await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql
         .exec<{ snapshot_json: string }>(
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
