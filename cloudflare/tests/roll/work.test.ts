@@ -248,11 +248,15 @@ async function seedPendingV5Delivery(
     notation: [input.request.notation],
     repetitions: input.request.repetitions,
   });
-  await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
-    status: "created",
-    delivery: "pending",
-  });
-  await runInDurableObject(stub, (_instance, state) => {
+  await runInDurableObject(stub, async (instance, state) => {
+    const roll = instance as unknown as {
+      acceptDelivery(value: RollDeliveryRequest): Promise<unknown>;
+    };
+    await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+      status: "created",
+      delivery: "pending",
+    });
+    await state.storage.setAlarm(Date.now() + 60_000);
     const workRow = state.storage.sql
       .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
       .one();
@@ -3517,14 +3521,16 @@ describe("RollWork Durable Object", () => {
     const id = snowflakeAt(Date.now(), 66);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");
-    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
-      status: "created",
-      delivery: "pending",
-    });
-    // Delivery no longer waits on bookkeeping, so the alarm can reach the
-    // corrupted record before the assertions run.
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await runInDurableObject(stub, (_instance, state) => {
+    await runInDurableObject(stub, async (instance, state) => {
+      const roll = instance as unknown as {
+        acceptDelivery(value: RollDeliveryRequest): Promise<unknown>;
+      };
+      await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+        status: "created",
+        delivery: "pending",
+      });
+      await state.storage.setAlarm(Date.now() + 60_000);
       const row = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
