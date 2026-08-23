@@ -2853,7 +2853,7 @@ describe("RollWork Durable Object", () => {
     }
 
     await seedPendingV5Delivery(stub, input);
-    await runInDurableObject(stub, (_instance, state) => {
+    await runInDurableObject(stub, async (_instance, state) => {
       const lifecycle = state.storage.sql
         .exec<{ snapshot_json: string }>(
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
@@ -2870,6 +2870,7 @@ describe("RollWork Durable Object", () => {
         `UPDATE interaction_delivery
          SET delay_ms = 5000, result_not_before = NULL`,
       );
+      await state.storage.setAlarm(Date.now() + 60_000);
     });
 
     await evictDurableObject(stub);
@@ -3787,6 +3788,15 @@ describe("RollWork Durable Object", () => {
       input.logging.context.guildId = "100000000000000002";
     }
 
+    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
+      status: "created",
+      delivery: "pending",
+    });
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE interaction_delivery SET delay_ms = 5000",
+      );
+    });
     await expect(stub.deliver(input)).resolves.toMatchObject({
       status: "pending",
     });
