@@ -18,12 +18,17 @@ import { MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
 // Material values are opaque to this component; fixtures carry only the
 // family discriminator.
 const materialValue = (family: string) => ({ family }) as AppearanceMaterialV4;
+const defaultMaterial = (family: string) =>
+  ({ family, testVariant: "default" }) as AppearanceMaterialV4;
 
 const catalog = {
+  editorDefaults: {
+    palette: ["#8a1f82", "#8A1F82", "#04c9df"],
+  },
   materials: [
-    { family: "classic", name: "Classic", defaultValue: materialValue("classic-default") },
-    { family: "glass", name: "Glass", defaultValue: materialValue("glass-default") },
-    { family: "metal", name: "Metal", defaultValue: materialValue("metal-default") },
+    { family: "classic", name: "Classic", defaultValue: defaultMaterial("classic") },
+    { family: "glass", name: "Glass", defaultValue: defaultMaterial("glass") },
+    { family: "metal", name: "Metal", defaultValue: defaultMaterial("metal") },
   ],
 } as never as AppearanceCatalogV3;
 
@@ -53,7 +58,10 @@ function recipeWithMaterial(
 
 const thumbVersion = { catalogVersion: 3, rendererRevision: "canvaskit-v4-r41" };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("MixPickerMaterialsRow", () => {
   it("renders one tile per catalog material with pressed state and thumbs", () => {
@@ -98,7 +106,7 @@ describe("MixPickerMaterialsRow", () => {
       mode: "weighted",
       options: [
         { value: materialValue("classic"), weight: 500 },
-        { value: materialValue("glass-default"), weight: 500 },
+        { value: defaultMaterial("glass"), weight: 500 },
       ],
     });
 
@@ -206,6 +214,72 @@ describe("MixPickerMaterialsRow", () => {
     expect(next.material.options.map(({ weight }) => weight)).toEqual([
       666, 167, 167,
     ]);
+  });
+
+  it("matches stable, distinct material accents to balance segments", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const { rerender } = render(
+      <MixPickerMaterialsRow
+        recipe={recipeWithMaterial({
+          mode: "weighted",
+          options: [
+            { value: materialValue("classic"), weight: 500 },
+            { value: materialValue("glass"), weight: 300 },
+            { value: materialValue("metal"), weight: 200 },
+          ],
+        })}
+        catalog={catalog}
+        thumbVersion={thumbVersion}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const classic = screen.getByRole("button", { name: /Classic/ });
+    const glass = screen.getByRole("button", { name: /Glass/ });
+    const metal = screen.getByRole("button", { name: /Metal/ });
+    const segments = Array.from(
+      screen.getByRole("group", { name: "Material mix balance" }).children,
+    ) as HTMLElement[];
+    const classicAccent = classic.style.getPropertyValue("--material-accent");
+    const glassAccent = glass.style.getPropertyValue("--material-accent");
+    const metalAccent = metal.style.getPropertyValue("--material-accent");
+    const accents = [classicAccent, glassAccent, metalAccent];
+
+    expect(accents.every((accent) => /^#[0-9a-f]{6}$/iu.test(accent)))
+      .toBe(true);
+    expect(new Set(accents).size).toBe(3);
+    expect(segments.map((segment) =>
+      segment.style.getPropertyValue("--material-accent"),
+    )).toEqual(accents);
+    expect(classic.querySelector("img")?.parentElement?.className)
+      .toContain("h-16");
+
+    rerender(
+      <MixPickerMaterialsRow
+        recipe={recipeWithMaterial({
+          mode: "weighted",
+          options: [
+            { value: materialValue("glass"), weight: 600 },
+            { value: materialValue("metal"), weight: 400 },
+          ],
+        })}
+        catalog={catalog}
+        thumbVersion={thumbVersion}
+        onChange={vi.fn()}
+      />,
+    );
+    const survivingAccents = [
+      screen.getByRole("button", { name: /Glass/ }).style
+        .getPropertyValue("--material-accent"),
+      screen.getByRole("button", { name: /Metal/ }).style
+        .getPropertyValue("--material-accent"),
+    ];
+    expect(survivingAccents).toEqual([glassAccent, metalAccent]);
+    expect(Array.from(
+      screen.getByRole("group", { name: "Material mix balance" }).children,
+    ).map((segment) =>
+      (segment as HTMLElement).style.getPropertyValue("--material-accent"),
+    )).toEqual(survivingAccents);
   });
 
   it("shows the mix bar only for weighted rows with several materials", () => {
@@ -376,8 +450,8 @@ describe("MixPickerMaterialsRow", () => {
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
     expect(next.material.options).toEqual([
-      { value: materialValue("classic-default"), weight: 500 },
-      { value: materialValue("glass-default"), weight: 500 },
+      { value: defaultMaterial("classic"), weight: 500 },
+      { value: defaultMaterial("glass"), weight: 500 },
     ]);
   });
 

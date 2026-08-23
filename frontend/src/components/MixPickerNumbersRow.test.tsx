@@ -71,6 +71,11 @@ describe("MixPickerNumbersRow", () => {
       .toBe("DiceWitchV4-cinzel");
     expect(screen.getByRole("button", { name: "Fraunces" }).style.fontFamily)
       .toBe("DiceWitchV4-fraunces");
+    for (const groupName of ["Font", "Engraving finish"]) {
+      const classes = screen.getByRole("group", { name: groupName }).className;
+      expect(classes).toContain("flex-wrap");
+      expect(classes).not.toContain("overflow-x-auto");
+    }
   });
 
   it("builds a font allowlist from taps and collapses back to fixed", () => {

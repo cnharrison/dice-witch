@@ -1,5 +1,6 @@
 import { appearanceThumbUrl, type AppearanceThumbKind } from "@/lib/appearance-thumbs";
 import { appConfig } from "@/lib/config";
+import { cn } from "@/lib/utils";
 import * as React from "react";
 
 type AppearanceThumbProps = {
@@ -8,6 +9,7 @@ type AppearanceThumbProps = {
   catalogVersion: number;
   rendererRevision: string;
   alt: string;
+  className?: string;
 };
 
 // Baked catalog tiles load lazily; picking never waits on them — the slot
@@ -18,11 +20,17 @@ export function AppearanceThumb({
   catalogVersion,
   rendererRevision,
   alt,
+  className,
 }: AppearanceThumbProps) {
   const [loaded, setLoaded] = React.useState(false);
   const url = appearanceThumbUrl(appConfig.apiBase, { catalogVersion, rendererRevision }, kind, id);
   return (
-    <span className="relative inline-grid place-items-center overflow-hidden rounded-md">
+    <span
+      className={cn(
+        "relative inline-grid place-items-center overflow-hidden rounded-md",
+        className,
+      )}
+    >
       {!loaded && (
         <span
           aria-hidden="true"

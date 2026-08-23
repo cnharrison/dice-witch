@@ -81,7 +81,7 @@ export function MixPickerNumbersRow({
       <div
         role="group"
         aria-label="Font"
-        className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1"
+        className="mt-2 flex flex-wrap gap-2"
       >
         {fontLegacy && (
           <span className="inline-flex items-center rounded-md border border-dashed border-muted-foreground/60 px-2 py-1 text-xs text-muted-foreground">
@@ -98,7 +98,7 @@ export function MixPickerNumbersRow({
               disabled={disabled}
               onClick={() => toggleFont(id)}
               style={{ fontFamily: `DiceWitchV4-${id}` }}
-              className={`min-h-11 shrink-0 snap-start rounded-md border px-3 py-2 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`min-h-11 shrink-0 rounded-md border px-3 py-2 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 selected
                   ? "border-brand bg-brand/10"
                   : "border-border hover:border-brand/50 hover:bg-muted/40"
@@ -112,7 +112,7 @@ export function MixPickerNumbersRow({
       <div
         role="group"
         aria-label="Engraving finish"
-        className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1"
+        className="mt-2 flex flex-wrap gap-2"
       >
         {inkLegacy && (
           <span className="inline-flex items-center rounded-md border border-dashed border-muted-foreground/60 px-2 py-1 text-xs text-muted-foreground">
@@ -128,7 +128,7 @@ export function MixPickerNumbersRow({
               aria-pressed={selected}
               disabled={disabled}
               onClick={() => toggleInk(id)}
-              className={`shrink-0 snap-start rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 selected
                   ? "border-brand bg-brand/10"
                   : "border-border hover:border-brand/50 hover:bg-muted/40"

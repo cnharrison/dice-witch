@@ -5,6 +5,7 @@ import {
   materialRowsFromRecipe,
   type MaterialRowState,
 } from "@/lib/mix-picker-state";
+import { generateLibraryRollColorSuggestions } from "@/lib/library-roll-color";
 import type { AppearanceCatalogV3 } from "@/types/appearance";
 import {
   APPEARANCE_SELECTION_WEIGHT_RANGE_V3,
@@ -29,6 +30,55 @@ function equalWeights(families: readonly string[]): number[] {
   return families.map(() => 1);
 }
 
+type MaterialAccentStyle = React.CSSProperties & {
+  "--material-accent": string;
+};
+
+function materialAccentStyle(
+  color: string,
+  includeBorder = false,
+): MaterialAccentStyle {
+  return {
+    "--material-accent": color,
+    backgroundColor:
+      "color-mix(in srgb, var(--material-accent) 24%, hsl(var(--background)))",
+    ...(includeBorder ? { borderColor: color } : {}),
+  };
+}
+
+function assignMaterialAccents(
+  families: readonly string[],
+  palette: readonly string[],
+  random: () => number,
+): ReadonlyMap<string, string> {
+  const colors = [...new Set(palette.map((color) => color.toUpperCase()))];
+  colors.push(
+    ...generateLibraryRollColorSuggestions(
+      colors,
+      Math.max(0, families.length - colors.length),
+    ),
+  );
+  if (colors.length < families.length) {
+    throw new Error("Appearance catalog needs enough material accent colors");
+  }
+  for (let index = colors.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [colors[index], colors[swapIndex]] = [
+      colors[swapIndex],
+      colors[index],
+    ];
+  }
+  return new Map(
+    families.map((family, index) => {
+      const color = colors[index];
+      if (color === undefined) {
+        throw new Error(`Material accent color is missing: ${family}`);
+      }
+      return [family, color];
+    }),
+  );
+}
+
 export function MixPickerMaterialsRow({
   recipe,
   catalog,
@@ -37,6 +87,22 @@ export function MixPickerMaterialsRow({
   onChange,
 }: MixPickerMaterialsRowProps) {
   const rows = materialRowsFromRecipe(recipe);
+  // Assign once so a material keeps its color while the mix changes.
+  const [materialAccents] = React.useState(() =>
+    assignMaterialAccents(
+      catalog.materials.map(({ family }) => family),
+      catalog.editorDefaults.palette,
+      Math.random,
+    ),
+  );
+
+  const accentFor = (family: string): string => {
+    const color = materialAccents.get(family);
+    if (color === undefined) {
+      throw new Error(`Material accent is missing: ${family}`);
+    }
+    return color;
+  };
 
   const resolveMaterial = React.useCallback(
     (family: string): AppearanceMaterialV4 => {
@@ -108,15 +174,17 @@ export function MixPickerMaterialsRow({
               disabled={disabled || lastSelected}
               aria-pressed={selected}
               onClick={() => toggleFamily(family)}
+              style={selected ? materialAccentStyle(accentFor(family), true) : undefined}
               className={`group relative flex w-24 shrink-0 snap-start flex-col items-center gap-1 rounded-lg border p-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${
                 selected
                   ? "border-brand bg-brand/10"
                   : "border-border hover:border-brand/50 hover:bg-muted/40"
               }`}
             >
-              <span className="grid h-12 w-full place-items-center">
+              <span className="grid h-16 w-full place-items-center">
                 {thumbVersion !== null && (
                   <AppearanceThumb
+                    className="h-16 w-16"
                     kind="material"
                     id={family}
                     catalogVersion={thumbVersion.catalogVersion}
@@ -149,6 +217,7 @@ export function MixPickerMaterialsRow({
               ?.name ?? family,
           )}
           weights={rows.weights}
+          segmentColors={rows.families.map(accentFor)}
           disabled={disabled}
           onCommit={(weights) =>
             onChange(
@@ -167,6 +236,7 @@ export function MixPickerMaterialsRow({
 
 // Tiny segments keep accessible labels without forcing a minimum visual width.
 const MIN_LABELED_PERCENT = 5;
+const MIN_NAMED_PERCENT = 25;
 
 function boundaryPercentages(
   weights: readonly number[],
@@ -184,17 +254,25 @@ function boundaryPercentages(
 export function MixBar({
   names,
   weights,
+  segmentColors,
   disabled,
   onCommit,
 }: {
   names: readonly string[];
   weights: readonly number[];
+  segmentColors?: readonly string[];
   disabled: boolean;
   onCommit(weights: readonly number[]): void;
 }) {
   const [dragWeights, setDragWeights] =
     React.useState<readonly number[] | null>(null);
   const displayed = dragWeights ?? weights;
+  if (names.length !== displayed.length) {
+    throw new Error("Mix bar names do not match its segments");
+  }
+  if (segmentColors !== undefined && segmentColors.length !== displayed.length) {
+    throw new Error("Mix bar colors do not match its segments");
+  }
   // Recipe weights are ratios, not shares of a fixed total: presets ship
   // weights summing to anything, so percentages derive from the actual sum.
   const total = displayed.reduce((sum, weight) => sum + weight, 0);
@@ -268,20 +346,36 @@ export function MixBar({
       >
         {displayed.map((weight, index) => {
           const percent = percentOf(weight, total);
+          const segmentColor = segmentColors?.[index];
+          if (segmentColors !== undefined && segmentColor === undefined) {
+            throw new Error(`Mix bar color is missing: ${names[index]}`);
+          }
+          let backgroundClass = "";
+          if (segmentColors === undefined) {
+            backgroundClass = index % 2 === 0 ? "bg-brand/25" : "bg-muted";
+          }
+          let label: React.ReactNode = (
+            <span className="sr-only">{percent}%</span>
+          );
+          if (percent >= MIN_NAMED_PERCENT) {
+            label = `${names[index]} ${percent}%`;
+          } else if (percent >= MIN_LABELED_PERCENT) {
+            label = `${percent}%`;
+          }
           return (
             <div
               key={`${names[index]}-${index}`}
-              style={{ flexBasis: 0, flexGrow: weight }}
+              style={{
+                flexBasis: 0,
+                flexGrow: weight,
+                ...(segmentColor === undefined
+                  ? {}
+                  : materialAccentStyle(segmentColor)),
+              }}
               title={`${names[index]}: ${percent}%`}
-              className={`grid min-w-0 place-items-center overflow-hidden whitespace-nowrap text-[0.65rem] font-semibold ${
-                index % 2 === 0 ? "bg-brand/25" : "bg-muted"
-              }`}
+              className={`grid min-w-0 place-items-center overflow-hidden whitespace-nowrap text-[0.65rem] font-semibold ${backgroundClass}`}
             >
-              {percent >= MIN_LABELED_PERCENT ? (
-                `${percent}%`
-              ) : (
-                <span className="sr-only">{percent}%</span>
-              )}
+              {label}
             </div>
           );
         })}
