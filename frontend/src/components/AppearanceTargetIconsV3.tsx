@@ -83,7 +83,7 @@ export function AppearanceTargetIconV3({
       return (
         <span
           aria-hidden="true"
-          className="block h-[72%] w-[72%] rounded-full bg-[radial-gradient(circle_at_32%_27%,#fff_0_8%,#d9cee1_20%,#8d7b99_57%,#392d46_100%)] shadow-[inset_-7px_-8px_11px_rgba(27,20,37,0.67),0_3px_8px_rgba(0,0,0,0.53)]"
+          className="block aspect-square w-[72%] rounded-full bg-[radial-gradient(circle_at_32%_27%,#fff_0_8%,#d9cee1_20%,#8d7b99_57%,#392d46_100%)] shadow-[inset_-7px_-8px_11px_rgba(27,20,37,0.67),0_3px_8px_rgba(0,0,0,0.53)]"
         />
       );
   }

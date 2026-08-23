@@ -10,7 +10,10 @@ import {
   type AppearanceRecipeV3,
 } from "@/types/appearance";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { DiceViewPreferencesV4 } from "@dice-witch/dice-v4-model";
+import type {
+  AppearanceTargetV4,
+  DiceViewPreferencesV4,
+} from "@dice-witch/dice-v4-model";
 import { RefreshCw } from "lucide-react";
 import * as React from "react";
 
@@ -50,19 +53,26 @@ export function AppearancePreviewPaneV3({
   target,
   recipe,
   diceView,
+  overrides,
 }: {
   target: AppearanceEditorTargetV3;
   recipe: AppearanceRecipeV3;
   diceView: DiceViewPreferencesV4;
+  // Per-die designs shown as-is inside the ALL composite preview.
+  overrides?: Readonly<Partial<Record<AppearanceTargetV4, AppearanceRecipeV3>>>;
 }) {
   const [seed, setSeed] = React.useState(0x51ce_b00c);
   const [state, setState] = React.useState<PreviewState>("normal");
   const [hasDisplayedPreview, setHasDisplayedPreview] = React.useState(false);
   const [imageError, setImageError] = React.useState<Error | null>(null);
   const [imageRetryKey, setImageRetryKey] = React.useState(0);
+  const activeOverrides =
+    target === "all" && Object.keys(overrides ?? {}).length > 0
+      ? overrides
+      : undefined;
   const previewDraft = React.useMemo(
-    () => ({ recipe, diceView }),
-    [diceView, recipe],
+    () => ({ recipe, diceView, overrides: activeOverrides }),
+    [activeOverrides, diceView, recipe],
   );
   const debouncedDraft = useDebouncedValue(previewDraft, 300);
   const previewQuery = useQuery({
@@ -79,11 +89,12 @@ export function AppearancePreviewPaneV3({
         recipe: debouncedDraft.recipe,
         seed,
         state,
+        diceView: debouncedDraft.diceView,
+        ...(target === "all" && debouncedDraft.overrides !== undefined
+          ? { overrides: debouncedDraft.overrides }
+          : {}),
       };
-      return getAppearancePreviewV4(
-        { ...input, diceView: debouncedDraft.diceView },
-        signal,
-      );
+      return getAppearancePreviewV4(input, signal);
     },
     placeholderData: keepPreviousData,
     staleTime: Infinity,

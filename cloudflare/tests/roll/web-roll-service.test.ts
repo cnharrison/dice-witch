@@ -412,6 +412,64 @@ describe("appearance preview", () => {
     ).toBe("canvaskit-v4-r41");
   });
 
+  it("renders per-die override designs inside the ALL composite preview", () => {
+    const input = {
+      target: "all" as const,
+      recipe: recipeV3,
+      diceView: createDefaultDiceViewPreferencesV4(),
+      seed: 7,
+      state: "normal" as const,
+    };
+    const base = buildAppearancePreviewRenderRequestForPolicyV4(input, "r41");
+    const withOverride = buildAppearancePreviewRenderRequestForPolicyV4(
+      { ...input, overrides: { d20: transRecipeV3 } },
+      "r41",
+    );
+    const baseDice = base.groups.flat();
+    const overrideDice = withOverride.groups.flat();
+
+    expect(overrideDice.map(({ target }) => target)).toEqual(
+      baseDice.map(({ target }) => target),
+    );
+    baseDice.forEach((die, index) => {
+      const overrideDie = overrideDice[index];
+      if (die.target === "d20") {
+        expect(overrideDie).not.toEqual(die);
+      } else {
+        expect(overrideDie).toEqual(die);
+      }
+    });
+  });
+
+  it("rejects preview overrides outside the ALL composite", () => {
+    expect(() =>
+      buildAppearancePreviewRenderRequestForPolicyV4(
+        {
+          target: "d6",
+          recipe: recipeV3,
+          diceView: createDefaultDiceViewPreferencesV4(),
+          seed: 7,
+          state: "normal",
+          overrides: { d20: transRecipeV3 },
+        },
+        "r41",
+      ),
+    ).toThrow("Appearance preview request is invalid");
+    expect(() =>
+      buildAppearancePreviewRenderRequestForPolicyV4(
+        {
+          target: "all",
+          recipe: recipeV3,
+          diceView: createDefaultDiceViewPreferencesV4(),
+          seed: 7,
+          state: "normal",
+          overrides: {},
+        },
+        "r41",
+      ),
+    ).toThrow("Appearance preview request is invalid");
+  });
+
   it("maps built-in Random solid previews across whole dice in r29", () => {
     const randomRecipe = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
       ({ id }) => id === "chaotic",

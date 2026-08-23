@@ -131,7 +131,12 @@ export function AppearanceTargetPickerV3({
       >
         {TARGETS.map((target) => {
           const checked = target === value;
-          const highlighted = value === "all" || checked;
+          // Editing ALL only covers dice without their own design, so chips
+          // carrying an override stay unhighlighted.
+          const highlighted =
+            checked ||
+            (value === "all" &&
+              (target === "all" || !overrides.has(target)));
           const name = targetName(target);
           const hasOverride =
             target !== "all" &&
@@ -204,7 +209,7 @@ export function AppearanceTargetPickerV3({
                             }
                           }
                     }
-                    className={`relative grid aspect-square min-w-0 place-items-center rounded-md border bg-background p-2 text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:p-2.5 ${
+                    className={`relative grid aspect-square w-full min-w-0 place-items-center rounded-md border bg-background p-2 text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:p-2.5 ${
                       highlighted
                         ? "border-2 border-brand bg-brand/10 p-[7px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--brand)_35%,transparent)] sm:p-[9px]"
                         : "border-border hover:border-brand/60 hover:bg-muted/30"

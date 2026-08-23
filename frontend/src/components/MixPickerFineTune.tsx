@@ -194,6 +194,12 @@ export function MixPickerFineTune({
   const weighAnyRow = fontWeighted || inkWeighted;
   const chance = colorChanceOf(recipe);
   const materialRows = materialEntries(recipe.material);
+  // Recipe weights are ratios, not shares of a fixed total, so shares
+  // derive from the actual sum.
+  const materialWeightTotal = materialRows.reduce(
+    (sum, { weight }) => sum + weight,
+    0,
+  );
   const repeatedGradient = supportsRepeatedGradient(recipe);
   return (
     <div
@@ -292,7 +298,7 @@ export function MixPickerFineTune({
                   </span>
                   {recipe.material.mode === "weighted" && (
                     <span className="text-xs text-muted-foreground">
-                      {Math.round((weight / MATERIAL_WEIGHT_TOTAL_V3) * 100)}%
+                      {Math.round((weight / materialWeightTotal) * 100)}%
                     </span>
                   )}
                 </button>

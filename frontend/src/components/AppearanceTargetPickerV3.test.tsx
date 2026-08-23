@@ -119,6 +119,22 @@ describe("AppearanceTargetPickerV3 overrides", () => {
     expect(baseProps.onDiscardOverride).toHaveBeenLastCalledWith("d20");
   });
 
+  it("keeps own-design chips unhighlighted while editing ALL", () => {
+    render(<AppearanceTargetPickerV3 {...baseProps} value="all" />);
+    expect(
+      screen.getByRole("radio", { name: "d20" }).getAttribute("data-highlighted"),
+    ).toBe("false");
+    expect(
+      screen.getByRole("radio", { name: "d6" }).getAttribute("data-highlighted"),
+    ).toBe("false");
+    expect(
+      screen.getByRole("radio", { name: "d10" }).getAttribute("data-highlighted"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("radio", { name: "All dice" }).getAttribute("data-highlighted"),
+    ).toBe("true");
+  });
+
   it("never opens design actions for the ALL chip or non-override targets", () => {
     render(<AppearanceTargetPickerV3 {...baseProps} value="all" />);
     fireEvent.contextMenu(screen.getByRole("radio", { name: "All dice" }));

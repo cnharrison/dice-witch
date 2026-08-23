@@ -90,6 +90,54 @@ describe("AppearancePreviewPaneV3", () => {
     );
   });
 
+  it("sends per-die overrides only with the ALL composite", async () => {
+    preview.mockResolvedValue({
+      version: 4,
+      contentType: "image/png",
+      width: 750,
+      height: 300,
+      base64: "iVBORw0KGgo=",
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const overrides = { d20: recipe };
+    const { rerender } = render(
+      <QueryClientProvider client={client}>
+        <AppearancePreviewPaneV3
+          target="all"
+          recipe={recipe}
+          diceView={diceView}
+          overrides={overrides}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(preview).toHaveBeenLastCalledWith(
+        expect.objectContaining({ target: "all", overrides }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <AppearancePreviewPaneV3
+          target="d20"
+          recipe={recipe}
+          diceView={diceView}
+          overrides={overrides}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(preview).toHaveBeenLastCalledWith(
+        expect.objectContaining({ target: "d20" }),
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(preview.mock.calls.at(-1)?.[0]).not.toHaveProperty("overrides");
+  });
+
   it("contains tall all-dice previews inside the fixed-height panel", async () => {
     preview.mockResolvedValue({
       version: 4,

@@ -314,6 +314,21 @@ export function AppearanceEditorV3({
     .filter(([, reference]) => reference !== undefined)
     .map(([overrideTarget]) => overrideTarget as AppearanceTargetV4);
   const atDesignCap = draftProfile.designs.length >= MAX_APPEARANCE_DESIGNS_V3;
+  // The ALL composite preview shows each die with its own design where one
+  // exists; only the remaining dice take the ALL recipe.
+  const previewOverrides =
+    previewTarget === "all" && overrideTargets.length > 0
+      ? Object.fromEntries(
+          overrideTargets.map((overrideTarget) => [
+            overrideTarget,
+            resolveAppearanceEditorSelectionV3(
+              draftProfile,
+              overrideTarget,
+              catalog,
+            ).recipe,
+          ]),
+        )
+      : undefined;
   const thumbVersion = useAppearanceThumbVersion();
 
   React.useEffect(() => {
@@ -880,6 +895,7 @@ export function AppearanceEditorV3({
             target={previewTarget}
             recipe={previewRecipe}
             diceView={draftProfile.diceView}
+            overrides={previewOverrides}
           />
         </div>
         {displayedDesigns.length > 0 && (

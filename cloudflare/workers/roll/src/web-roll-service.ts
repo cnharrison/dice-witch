@@ -518,7 +518,10 @@ export function buildAppearancePreviewRenderRequestR19V4(
 ): RenderRequestV4 {
   const request = parseAppearancePreviewRequestV4(value);
   const recipes = Object.fromEntries(
-    APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
+    APPEARANCE_TARGETS.map((target) => [
+      target,
+      request.overrides?.[target] ?? request.recipe,
+    ]),
   ) as EffectiveAppearanceRecipesV3;
   return buildRollRenderRequestV4(
     previewOutcome(request.target, request.state, request.seed),
@@ -535,7 +538,10 @@ function buildResolvedAppearancePreviewRenderRequestV4(
   const effectiveAppearance: EffectiveAppearanceV4 = {
     version: 4,
     recipes: Object.fromEntries(
-      APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
+      APPEARANCE_TARGETS.map((target) => [
+        target,
+        request.overrides?.[target] ?? request.recipe,
+      ]),
     ) as EffectiveAppearanceV4["recipes"],
     diceView: request.diceView,
   };

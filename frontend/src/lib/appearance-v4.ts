@@ -965,14 +965,44 @@ function parsePreviewInput(value: unknown): {
   };
 }
 
+type PreviewOverridesV4 = Partial<Record<AppearanceTargetV4, AppearanceRecipeV3>>;
+
+// Per-die designs refine the ALL composite; absent for single-target
+// previews, which already carry the exact recipe.
+function parsePreviewOverridesV4(
+  value: unknown,
+  target: AppearanceTargetV4 | "all",
+): PreviewOverridesV4 {
+  if (target !== "all" || !isRecord(value)) {
+    throw new Error("Appearance preview V4 request is invalid");
+  }
+  const entries = Object.entries(value);
+  if (
+    entries.length === 0 ||
+    !entries.every(([key]) =>
+      APPEARANCE_TARGETS_V4.includes(key as AppearanceTargetV4),
+    )
+  ) {
+    throw new Error("Appearance preview V4 request is invalid");
+  }
+  return Object.fromEntries(
+    entries.map(([key, recipe]) => [key, parseAppearanceRecipeV3(recipe)]),
+  );
+}
+
 function parsePreviewInputV4(value: unknown):
-  ReturnType<typeof parsePreviewInput> & { diceView: DiceViewPreferencesV4 } {
+  ReturnType<typeof parsePreviewInput> & {
+    diceView: DiceViewPreferencesV4;
+    overrides?: PreviewOverridesV4;
+  } {
+  const baseKeys = ["diceView", "recipe", "seed", "state", "target"];
+  const withOverrides = isRecord(value) && "overrides" in value;
   const input = requireRecord(
     value,
-    ["diceView", "recipe", "seed", "state", "target"],
+    withOverrides ? [...baseKeys, "overrides"] : baseKeys,
     "Appearance preview V4 request is invalid",
   );
-  return {
+  const base = {
     ...parsePreviewInput({
       recipe: input.recipe,
       seed: input.seed,
@@ -980,6 +1010,11 @@ function parsePreviewInputV4(value: unknown):
       target: input.target,
     }),
     diceView: parseDiceViewPreferencesV4(input.diceView),
+  };
+  if (!withOverrides) return base;
+  return {
+    ...base,
+    overrides: parsePreviewOverridesV4(input.overrides, base.target),
   };
 }
 

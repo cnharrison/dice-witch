@@ -43,6 +43,9 @@ export type AppearancePreviewRequestV3 = AppearancePreviewRequestBase<
 
 export type AppearancePreviewRequestV4 = AppearancePreviewRequestV3 & {
   diceView: DiceViewPreferencesV4;
+  // Per-die designs refine the ALL composite; absent for single-target
+  // previews, which already carry the exact recipe.
+  overrides?: Partial<Record<AppearanceTarget, AppearanceRecipeV3>>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,16 +134,43 @@ export function parseAppearancePreviewRequestV3(
   };
 }
 
+const PREVIEW_REQUEST_V4_KEYS = [
+  "diceView",
+  "recipe",
+  "seed",
+  "state",
+  "target",
+] as const;
+
+function parsePreviewOverrides(
+  value: unknown,
+  target: AppearancePreviewTarget,
+): Partial<Record<AppearanceTarget, AppearanceRecipeV3>> {
+  if (target !== "all" || !isRecord(value)) {
+    throw new Error("Appearance preview request is invalid");
+  }
+  const entries = Object.entries(value);
+  if (
+    entries.length === 0 ||
+    !entries.every(([key]) =>
+      APPEARANCE_TARGETS.some((candidate) => candidate === key),
+    )
+  ) {
+    throw new Error("Appearance preview request is invalid");
+  }
+  return Object.fromEntries(
+    entries.map(([key, recipe]) => [key, parseAppearanceRecipeV3(recipe)]),
+  );
+}
+
 export function parseAppearancePreviewRequestV4(
   value: unknown,
 ): AppearancePreviewRequestV4 {
-  if (!isRecord(value) || !hasExactKeys(value, [
-    "diceView",
-    "recipe",
-    "seed",
-    "state",
-    "target",
-  ])) {
+  if (
+    !isRecord(value) ||
+    (!hasExactKeys(value, PREVIEW_REQUEST_V4_KEYS) &&
+      !hasExactKeys(value, [...PREVIEW_REQUEST_V4_KEYS, "overrides"]))
+  ) {
     throw new Error("Appearance preview request is invalid");
   }
   const request = parseAppearancePreviewEnvelope({
@@ -149,9 +179,14 @@ export function parseAppearancePreviewRequestV4(
     state: value.state,
     target: value.target,
   });
-  return {
+  const parsed: AppearancePreviewRequestV4 = {
     ...request,
     recipe: parseAppearanceRecipeV3(request.recipe),
     diceView: parseDiceViewPreferencesV4(value.diceView),
+  };
+  if (!("overrides" in value)) return parsed;
+  return {
+    ...parsed,
+    overrides: parsePreviewOverrides(value.overrides, request.target),
   };
 }

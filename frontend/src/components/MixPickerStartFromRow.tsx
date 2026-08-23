@@ -80,7 +80,7 @@ export function MixPickerStartFromRow({
       <h3 className="text-xs font-semibold uppercase tracking-wide">
         Start from
       </h3>
-      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1">
+      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
         {visibleIds.map((styleId) =>
           card(
             styleId,
@@ -100,7 +100,7 @@ export function MixPickerStartFromRow({
         )}
       </div>
       {expanded && catalog.collectorStyleIds.length > 0 && (
-        <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1">
+        <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
           {catalog.collectorStyleIds.map((styleId) => card(styleId))}
         </div>
       )}

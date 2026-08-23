@@ -5,7 +5,6 @@ import {
   materialRowsFromRecipe,
   type MaterialRowState,
 } from "@/lib/mix-picker-state";
-import { MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
 import type { AppearanceCatalogV3 } from "@/types/appearance";
 import {
   APPEARANCE_SELECTION_WEIGHT_RANGE_V3,
@@ -22,8 +21,8 @@ type MixPickerMaterialsRowProps = {
   onChange(recipe: AppearanceRecipeV3): void;
 };
 
-function percentLabel(weight: number): string {
-  return `${Math.round((weight / MATERIAL_WEIGHT_TOTAL_V3) * 100)}%`;
+function percentOf(weight: number, total: number): number {
+  return Math.round((weight / total) * 100);
 }
 
 export function MixPickerMaterialsRow({
@@ -161,14 +160,18 @@ export function MixPickerMaterialsRow({
   );
 }
 
-const HANDLE_STEP_UNITS = Math.max(
-  APPEARANCE_SELECTION_WEIGHT_RANGE_V3.step,
-  Math.round(MATERIAL_WEIGHT_TOTAL_V3 / 100),
-);
+// Tiny segments keep accessible labels without forcing a minimum visual width.
+const MIN_LABELED_PERCENT = 5;
 
-function clampWeight(value: number): number {
-  const { minimum } = APPEARANCE_SELECTION_WEIGHT_RANGE_V3;
-  return Math.max(minimum, Math.min(MATERIAL_WEIGHT_TOTAL_V3, value));
+function boundaryPercentages(
+  weights: readonly number[],
+  total: number,
+): number[] {
+  let cumulative = 0;
+  return weights.slice(0, -1).map((weight) => {
+    cumulative += weight;
+    return (cumulative / total) * 100;
+  });
 }
 
 // Segment handles rebalance the two adjacent shares live; the pair total is
@@ -187,6 +190,14 @@ export function MixBar({
   const [dragWeights, setDragWeights] =
     React.useState<readonly number[] | null>(null);
   const displayed = dragWeights ?? weights;
+  // Recipe weights are ratios, not shares of a fixed total: presets ship
+  // weights summing to anything, so percentages derive from the actual sum.
+  const total = displayed.reduce((sum, weight) => sum + weight, 0);
+  const stepUnits = Math.max(
+    APPEARANCE_SELECTION_WEIGHT_RANGE_V3.step,
+    Math.round(total / 100),
+  );
+  const boundaryPositions = boundaryPercentages(displayed, total);
   const barRef = React.useRef<HTMLDivElement | null>(null);
   const dragRef = React.useRef<{
     boundary: number;
@@ -199,14 +210,17 @@ export function MixBar({
     const bar = barRef.current;
     if (drag === null || bar === null || bar.clientWidth <= 0) return;
     const delta = Math.round(
-      ((clientX - drag.startX) / bar.clientWidth) * MATERIAL_WEIGHT_TOTAL_V3,
+      ((clientX - drag.startX) / bar.clientWidth) * total,
     );
     const boundary = drag.boundary;
     const pairTotal =
       drag.startWeights[boundary] + drag.startWeights[boundary + 1];
+    const { minimum, maximum } = APPEARANCE_SELECTION_WEIGHT_RANGE_V3;
+    const minimumLeft = Math.max(minimum, pairTotal - maximum);
+    const maximumLeft = Math.min(maximum, pairTotal - minimum);
     const left = Math.min(
-      Math.max(drag.startWeights[boundary] + delta, HANDLE_STEP_UNITS),
-      pairTotal - HANDLE_STEP_UNITS,
+      Math.max(drag.startWeights[boundary] + delta, minimumLeft),
+      maximumLeft,
     );
     const next = [...drag.startWeights];
     next[boundary] = left;
@@ -224,77 +238,86 @@ export function MixBar({
   };
 
   const nudge = (boundary: number, direction: -1 | 1) => {
-    const left = clampWeight(displayed[boundary] + direction * HANDLE_STEP_UNITS);
-    const right = clampWeight(
-      displayed[boundary + 1] - direction * HANDLE_STEP_UNITS,
-    );
-    if (left + right !== displayed[boundary] + displayed[boundary + 1]) return;
+    const { minimum, maximum } = APPEARANCE_SELECTION_WEIGHT_RANGE_V3;
+    const left = displayed[boundary];
+    const right = displayed[boundary + 1];
+    const available =
+      direction === 1
+        ? Math.min(maximum - left, right - minimum)
+        : Math.min(left - minimum, maximum - right);
+    const change = Math.min(stepUnits, available);
+    if (change <= 0) return;
     const next = [...displayed];
-    next[boundary] = left;
-    next[boundary + 1] = right;
+    next[boundary] += direction * change;
+    next[boundary + 1] -= direction * change;
     onCommit(next);
   };
 
   return (
-    <div className="mt-3">
+    <div className="relative mt-3 h-11">
       <div
         ref={barRef}
         role="group"
         aria-label="Material mix balance"
-        className="flex h-6 w-full overflow-hidden rounded-md border border-border"
+        className="absolute inset-x-0 top-1/2 flex h-6 -translate-y-1/2 overflow-hidden rounded-md border border-border"
       >
-        {displayed.map((weight, index) => (
-          <div
-            key={`${names[index]}-${index}`}
-            style={{ flexGrow: weight }}
-            className={`grid place-items-center text-[0.65rem] font-semibold ${
-              index % 2 === 0 ? "bg-brand/25" : "bg-muted"
-            }`}
-          >
-            {percentLabel(weight)}
-          </div>
-        ))}
+        {displayed.map((weight, index) => {
+          const percent = percentOf(weight, total);
+          return (
+            <div
+              key={`${names[index]}-${index}`}
+              style={{ flexBasis: 0, flexGrow: weight }}
+              title={`${names[index]}: ${percent}%`}
+              className={`grid min-w-0 place-items-center overflow-hidden whitespace-nowrap text-[0.65rem] font-semibold ${
+                index % 2 === 0 ? "bg-brand/25" : "bg-muted"
+              }`}
+            >
+              {percent >= MIN_LABELED_PERCENT ? (
+                `${percent}%`
+              ) : (
+                <span className="sr-only">{percent}%</span>
+              )}
+            </div>
+          );
+        })}
       </div>
-      <div className="mt-1 flex justify-end gap-2">
-        {weights.slice(0, -1).map((_, boundary) => (
-          <button
-            key={boundary}
-            type="button"
-            role="slider"
-            aria-label={`Balance ${names[boundary]} and ${names[boundary + 1]}`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(
-              (displayed[boundary] / MATERIAL_WEIGHT_TOTAL_V3) * 100,
-            )}
-            disabled={disabled}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowLeft") {
-                event.preventDefault();
-                nudge(boundary, -1);
-              } else if (event.key === "ArrowRight") {
-                event.preventDefault();
-                nudge(boundary, 1);
-              }
-            }}
-            onPointerDown={(event) => {
-              if (disabled) return;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              dragRef.current = {
-                boundary,
-                startX: event.clientX,
-                startWeights: [...displayed],
-              };
-            }}
-            onPointerMove={(event) => {
-              if (dragRef.current !== null) moveDrag(event.clientX);
-            }}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            className="h-11 w-5 touch-none rounded border border-dashed border-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          />
-        ))}
-      </div>
+      {displayed.slice(0, -1).map((_, boundary) => (
+        <button
+          key={boundary}
+          type="button"
+          role="slider"
+          aria-label={`Balance ${names[boundary]} and ${names[boundary + 1]}`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percentOf(displayed[boundary], total)}
+          disabled={disabled}
+          style={{ left: `${boundaryPositions[boundary]}%` }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              nudge(boundary, -1);
+            } else if (event.key === "ArrowRight") {
+              event.preventDefault();
+              nudge(boundary, 1);
+            }
+          }}
+          onPointerDown={(event) => {
+            if (disabled) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            dragRef.current = {
+              boundary,
+              startX: event.clientX,
+              startWeights: [...displayed],
+            };
+          }}
+          onPointerMove={(event) => {
+            if (dragRef.current !== null) moveDrag(event.clientX);
+          }}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          className="absolute top-0 h-11 w-5 -translate-x-1/2 touch-none rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:left-1/2 after:top-1/2 after:h-6 after:w-px after:-translate-x-1/2 after:-translate-y-1/2 after:bg-muted-foreground/60 disabled:opacity-50"
+        />
+      ))}
     </div>
   );
 }
