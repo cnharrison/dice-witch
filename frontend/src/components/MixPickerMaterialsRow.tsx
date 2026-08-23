@@ -215,7 +215,7 @@ export function MixPickerMaterialsRow({
               {thumbVersion !== null && (
                 <AppearanceThumb
                   className="h-[4.5rem] w-[4.5rem]"
-                  imageClassName="scale-[1.3]"
+                  imageClassName="absolute left-1/2 top-1/2 !w-auto max-w-none -translate-x-1/2 -translate-y-1/2 scale-[1.3]"
                   kind="material"
                   id={family}
                   catalogVersion={thumbVersion.catalogVersion}
