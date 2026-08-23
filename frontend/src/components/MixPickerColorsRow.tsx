@@ -171,21 +171,31 @@ export function MixPickerColorsRow({
       </div>
     );
   } else {
+    const primary =
+      colors.mode === "solid" || colors.mode === "tonal"
+        ? colors.primary
+        : catalog.editorDefaults.primaryColor;
+    const editPrimary = () => {
+      setEditingColor({ kind: "primary" });
+      if (colors.mode !== "solid" && colors.mode !== "tonal") {
+        emit({ mode: "solid", primary });
+      }
+    };
     editor = (
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           aria-label="Dice color"
           disabled={disabled}
-          onClick={() => setEditingColor({ kind: "primary" })}
+          onClick={editPrimary}
           className="block h-9 w-9 rounded-full border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          style={{ backgroundColor: colors.primary }}
+          style={{ backgroundColor: primary }}
         />
         <button
           type="button"
           aria-label="Add palette color"
           disabled={disabled}
-          onClick={() => addPaletteColor(colors.primary)}
+          onClick={() => addPaletteColor(primary)}
           className="grid h-9 w-9 place-items-center rounded-full border border-dashed border-muted-foreground/60 text-muted-foreground hover:border-brand hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -197,7 +207,7 @@ export function MixPickerColorsRow({
               type="button"
               aria-pressed={colors.mode === mode}
               disabled={disabled}
-              onClick={() => emit({ mode, primary: colors.primary })}
+              onClick={() => emit({ mode, primary })}
               className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
                 colors.mode === mode
                   ? "border-brand bg-brand/10 text-brand"

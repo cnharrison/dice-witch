@@ -223,6 +223,42 @@ describe("MixPickerColorsRow", () => {
       .not.toBeNull();
   });
 
+  it("converts procedural pairs before explicit color edits", () => {
+    const recipe = {
+      ...recipeWith(
+        { mode: "fixed", value: materialValue("classic") },
+        { mode: "vivid-random-pair" },
+      ),
+      randomization: "full-spectrum-v2" as const,
+    };
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <MixPickerColorsRow
+        recipe={recipe}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Dice color" }));
+    const solid = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
+    expect(solid.colors).toEqual({
+      mode: "solid",
+      primary: catalog.editorDefaults.primaryColor,
+    });
+    expect(solid.randomization).toBeUndefined();
+
+    rerender(
+      <MixPickerColorsRow
+        recipe={solid}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Choose hue and saturation" }))
+      .not.toBeNull();
+  });
+
   it("toggles single-color treatment between solid and tonal", () => {
     const recipe = recipeWith(
       { mode: "fixed", value: materialValue("classic") },

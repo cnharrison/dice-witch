@@ -361,6 +361,49 @@ describe("AppearanceEditorV3", () => {
     expect(startFromCard("chaotic").getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("opens the second-color picker for a saved full-spectrum design", async () => {
+    const user = userEvent.setup();
+    const profile = personalProfileV4();
+    const recipe = styleRecipe("chaotic");
+    recipe.variation = "fixed";
+    const primary = APPEARANCE_CATALOG_V3.editorDefaults.primaryColor;
+    const secondary = APPEARANCE_CATALOG_V3.editorDefaults.palette.find(
+      (color) => color !== primary,
+    );
+    if (secondary === undefined) throw new Error("editor palette needs two colors");
+    profile.designs = [
+      {
+        id: designId,
+        name: "Codex check this out",
+        recipe,
+      },
+    ];
+    profile.assignments.all = { source: "custom", id: designId };
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Add palette color" }));
+
+    expect(screen.getByRole("dialog", { name: "Palette color 2" }))
+      .toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0].designs[0]?.recipe.colors).toEqual({
+      mode: "palette",
+      colors: [primary, secondary],
+    });
+    expect(onSave.mock.calls[0]?.[0].designs[0]?.recipe.randomization)
+      .toBeUndefined();
+  });
+
   it("edits Random as one weighted segment per material family", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
