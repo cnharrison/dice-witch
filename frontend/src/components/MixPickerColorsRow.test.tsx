@@ -79,7 +79,7 @@ describe("MixPickerColorsRow", () => {
     expect(screen.getByText("These materials bring their own colors."))
       .not.toBeNull();
     expect(screen.queryByLabelText(/Palette color/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /Surprise me/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Random" })).toBeNull();
   });
 
   it("explains which selected materials the row applies to", () => {
@@ -161,6 +161,33 @@ describe("MixPickerColorsRow", () => {
     expect(screen.queryByLabelText(/Remove palette color/)).toBeNull();
   });
 
+  it("edits dice colors through the custom picker instead of a native input", () => {
+    const recipe = recipeWith(
+      { mode: "fixed", value: materialValue("classic") },
+      { mode: "solid", primary: "#444444" },
+    );
+    const onChange = vi.fn();
+    render(
+      <MixPickerColorsRow
+        recipe={recipe}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+    expect(document.querySelector('input[type="color"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Dice color" }));
+    expect(screen.getByRole("button", { name: "Choose hue and saturation" }))
+      .not.toBeNull();
+    fireEvent.change(screen.getByLabelText("Hex color"), {
+      target: { value: "#ABCDEF" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...recipe,
+      colors: { mode: "solid", primary: "#abcdef" },
+    });
+  });
+
   it("toggles single-color treatment between solid and tonal", () => {
     const recipe = recipeWith(
       { mode: "fixed", value: materialValue("classic") },
@@ -198,7 +225,7 @@ describe("MixPickerColorsRow", () => {
     expect(screen.queryByLabelText("Dice color")).toBeNull();
   });
 
-  it("surprise me writes a curated palette without touching other rows", () => {
+  it("Random writes a curated palette without touching other rows", () => {
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
     const recipe = {
       ...recipeWith(
@@ -215,7 +242,7 @@ describe("MixPickerColorsRow", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Surprise me/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Random" }));
     randomSpy.mockRestore();
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     expect(next.colors).toEqual({

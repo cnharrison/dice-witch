@@ -25,6 +25,28 @@ function percentOf(weight: number, total: number): number {
   return Math.round((weight / total) * 100);
 }
 
+function applyMaterialWeights(
+  recipe: AppearanceRecipeV3,
+  weights: readonly number[],
+): AppearanceRecipeV3 {
+  if (
+    recipe.material.mode !== "weighted" ||
+    recipe.material.options.length !== weights.length
+  ) {
+    throw new Error("Material mix weights do not match the recipe");
+  }
+  return {
+    ...recipe,
+    material: {
+      mode: "weighted",
+      options: recipe.material.options.map((option, index) => ({
+        ...option,
+        weight: weights[index] as number,
+      })),
+    },
+  };
+}
+
 export function MixPickerMaterialsRow({
   recipe,
   catalog,
@@ -145,15 +167,7 @@ export function MixPickerMaterialsRow({
           )}
           weights={rows.weights}
           disabled={disabled}
-          onCommit={(weights) =>
-            onChange(
-              applyMaterialRows(
-                recipe,
-                { mode: "weighted", families: rows.families, weights },
-                resolveMaterial,
-              ),
-            )
-          }
+          onCommit={(weights) => onChange(applyMaterialWeights(recipe, weights))}
         />
       )}
     </section>

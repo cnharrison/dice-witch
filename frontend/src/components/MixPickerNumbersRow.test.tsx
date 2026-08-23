@@ -50,7 +50,7 @@ const thumbVersion = { catalogVersion: 3, rendererRevision: "canvaskit-v4-r41" }
 afterEach(cleanup);
 
 describe("MixPickerNumbersRow", () => {
-  it("renders font and ink chips with baked thumbs", () => {
+  it("renders font names in their own typefaces without thumbnails", () => {
     render(
       <MixPickerNumbersRow
         recipe={recipeWith(
@@ -66,8 +66,11 @@ describe("MixPickerNumbersRow", () => {
       .toBe("true");
     expect(screen.getByRole("button", { name: /Fraunces/ }).getAttribute("aria-pressed"))
       .toBe("false");
-    // Two font thumbs + no ink thumbs (ink chips are text-only).
-    expect(document.querySelectorAll("img")).toHaveLength(2);
+    expect(document.querySelectorAll("img")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Cinzel" }).style.fontFamily)
+      .toBe("DiceWitchV4-cinzel");
+    expect(screen.getByRole("button", { name: "Fraunces" }).style.fontFamily)
+      .toBe("DiceWitchV4-fraunces");
   });
 
   it("builds a font allowlist from taps and collapses back to fixed", () => {

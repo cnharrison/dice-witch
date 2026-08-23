@@ -121,17 +121,21 @@ function designTargets(
   profile: EditableAppearanceProfileV4,
   designId: string,
 ): AppearanceEditorTargetV3[] {
+  const targets: AppearanceEditorTargetV3[] = [];
   if (
     profile.assignments.all?.source === "custom" &&
     profile.assignments.all.id === designId
   ) {
-    return ["all"];
+    targets.push("all");
   }
-  return Object.entries(profile.assignments.overrides)
-    .filter(([, reference]) =>
-      reference?.source === "custom" && reference.id === designId,
-    )
-    .map(([target]) => target as AppearanceTargetV4);
+  for (const [target, reference] of Object.entries(
+    profile.assignments.overrides,
+  )) {
+    if (reference?.source === "custom" && reference.id === designId) {
+      targets.push(target as AppearanceTargetV4);
+    }
+  }
+  return targets;
 }
 
 function targetLabels(
@@ -682,28 +686,16 @@ export function AppearanceEditorV3({
   };
 
   // Discard removes only the assignment; a saved design stays listed, while
-  // an unassigned unsaved draft is staged for deletion so the restore
-  // notice covers oops-clicks.
-  const handleDiscardOverride = (discardTarget: AppearanceTargetV4) => {
+  // an unassigned unsaved draft is staged for deletion.
+  const discardOverride = (discardTarget: AppearanceTargetV4) => {
     const reference = draftProfile.assignments.overrides[discardTarget];
     if (reference === undefined) return;
-    let deletesDraft = false;
-    if (reference.source === "custom") {
-      const assignedElsewhere = designTargets(
-        draftProfile,
-        reference.id,
-      ).some((assignedTarget) => assignedTarget !== discardTarget);
-      const wasSaved = baselineProfile.designs.some(
-        ({ id }) => id === reference.id,
-      );
-      deletesDraft = !assignedElsewhere && !wasSaved;
-    }
-    const message = `Discard ${
-      APPEARANCE_TARGET_LABELS[discardTarget]
-    }'s own design? It goes back to following ALL. The design itself stays in your saved list — only the assignment is removed.${
-      deletesDraft ? " Its unsaved design will also be deleted." : ""
-    }`;
-    if (!window.confirm(message)) return;
+    const deletesDraft =
+      reference.source === "custom" &&
+      !designTargets(draftProfile, reference.id).some(
+        (assignedTarget) => assignedTarget !== discardTarget,
+      ) &&
+      !baselineProfile.designs.some(({ id }) => id === reference.id);
     try {
       let next = clearAppearanceTargetOverrideV3(
         draftProfile,
@@ -721,54 +713,52 @@ export function AppearanceEditorV3({
             { design, targets: [] },
           ]);
           removeDraftMetadata(design.id);
-          if (editingDesignId === design.id) setEditingDesignId(null);
         }
       }
       setDraftProfile(next);
+      if (reference.source === "custom" && editingDesignId === reference.id) {
+        setEditingDesignId(null);
+      }
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
     }
   };
 
-  const backToDefault = () => {
-    if (target !== "all") {
-      if (hasTargetOverride) handleDiscardOverride(target);
-      return;
-    }
+  const handleDiscardOverride = (discardTarget: AppearanceTargetV4) => {
     if (
-      !window.confirm(
-        "Back to default clears ALL dice so they fall back to the built-in Random look?",
+      window.confirm(
+        `Discard ${APPEARANCE_TARGET_LABELS[discardTarget]}'s design?`,
       )
     ) {
-      return;
+      discardOverride(discardTarget);
     }
-    const overrideCount = Object.values(draftProfile.assignments.overrides)
-      .filter((reference) => reference !== undefined).length;
-    if (
-      overrideCount === 0 ||
-      !window.confirm("Also clear per-die designs?")
-    ) {
-      try {
-        setDraftProfile(
-          clearAppearanceAllAssignmentV3(draftProfile, catalog),
-        );
-        setStatus(null);
-      } catch (error) {
-        setStatus(errorMessage(error));
-      }
+  };
+
+  const backToDefault = () => {
+    if (!window.confirm("Reset to default dice mix?")) return;
+    if (target !== "all") {
+      discardOverride(target);
       return;
     }
     try {
       let next = clearAppearanceAllAssignmentV3(draftProfile, catalog);
-      for (const key of Object.keys(draftProfile.assignments.overrides)) {
-        next = clearAppearanceTargetOverrideV3(
-          next,
-          key as AppearanceTargetV4,
-          catalog,
-        );
+      const reference = draftProfile.assignments.all;
+      if (
+        reference?.source === "custom" &&
+        !designTargets(draftProfile, reference.id).some(
+          (assignedTarget) => assignedTarget !== "all",
+        ) &&
+        !baselineProfile.designs.some(({ id }) => id === reference.id)
+      ) {
+        const design = draftProfile.designs.find(({ id }) => id === reference.id);
+        if (design !== undefined) {
+          next = deleteAppearanceDesignV3(next, design.id, catalog);
+          removeDraftMetadata(design.id);
+        }
       }
       setDraftProfile(next);
+      setEditingDesignId(null);
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));

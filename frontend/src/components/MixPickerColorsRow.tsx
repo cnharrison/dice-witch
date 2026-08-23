@@ -1,3 +1,4 @@
+import { CustomColorPickerDialog } from "@/components/CustomColorPickerDialog";
 import { selectionValuesV3 } from "@/lib/appearance-editor-v3";
 import {
   curatedPalettePool,
@@ -13,6 +14,10 @@ import {
 } from "@dice-witch/dice-v4-model";
 import { Dices, Plus, X } from "lucide-react";
 import * as React from "react";
+
+type EditingColor =
+  | { kind: "palette"; index: number }
+  | { kind: "primary" };
 
 type MixPickerColorsRowProps = {
   recipe: AppearanceRecipeV3;
@@ -44,6 +49,9 @@ export function MixPickerColorsRow({
   disabled = false,
   onChange,
 }: MixPickerColorsRowProps) {
+  const [editingColor, setEditingColor] = React.useState<EditingColor | null>(
+    null,
+  );
   const values = selectionValuesV3(recipe.material);
   const bringsOwn = values.filter(
     (material) => materialColorEffectV4(material) === "adds-own-colors",
@@ -105,23 +113,14 @@ export function MixPickerColorsRow({
       <div className="flex flex-wrap items-center gap-2">
         {colors.colors.map((color, index) => (
           <span key={`${color}-${index}`} className="relative">
-            <label
+            <button
+              type="button"
               aria-label={`Palette color ${index + 1}`}
-              className="block h-9 w-9 cursor-pointer overflow-hidden rounded-full border border-border"
+              disabled={disabled}
+              onClick={() => setEditingColor({ kind: "palette", index })}
+              className="block h-9 w-9 rounded-full border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               style={{ backgroundColor: color }}
-            >
-              <input
-                type="color"
-                value={color}
-                disabled={disabled}
-                onChange={(event) => {
-                  const next = [...colors.colors];
-                  next[index] = event.target.value.toLowerCase();
-                  emit({ mode: "palette", colors: next });
-                }}
-                className="sr-only"
-              />
-            </label>
+            />
             {colors.colors.length > 2 && !disabled && (
               <button
                 type="button"
@@ -162,21 +161,14 @@ export function MixPickerColorsRow({
   } else {
     editor = (
       <div className="flex flex-wrap items-center gap-2">
-        <label
+        <button
+          type="button"
           aria-label="Dice color"
-          className="block h-9 w-9 cursor-pointer overflow-hidden rounded-full border border-border"
+          disabled={disabled}
+          onClick={() => setEditingColor({ kind: "primary" })}
+          className="block h-9 w-9 rounded-full border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           style={{ backgroundColor: colors.primary }}
-        >
-          <input
-            type="color"
-            value={colors.primary}
-            disabled={disabled}
-            onChange={(event) =>
-              emit({ ...colors, primary: event.target.value.toLowerCase() })
-            }
-            className="sr-only"
-          />
-        </label>
+        />
         <div role="group" aria-label="Color treatment" className="flex gap-1">
           {(["solid", "tonal"] as const).map((mode) => (
             <button
@@ -199,28 +191,72 @@ export function MixPickerColorsRow({
     );
   }
 
+  let pickerColor: string | undefined;
+  if (editingColor?.kind === "palette" && colors.mode === "palette") {
+    pickerColor = colors.colors[editingColor.index];
+  } else if (
+    editingColor?.kind === "primary" &&
+    (colors.mode === "solid" || colors.mode === "tonal")
+  ) {
+    pickerColor = colors.primary;
+  }
+
+  const applyPickerColor = (color: string) => {
+    const normalized = color.toLowerCase();
+    if (editingColor?.kind === "palette" && colors.mode === "palette") {
+      const next = [...colors.colors];
+      next[editingColor.index] = normalized;
+      emit({ mode: "palette", colors: next });
+    } else if (
+      editingColor?.kind === "primary" &&
+      (colors.mode === "solid" || colors.mode === "tonal")
+    ) {
+      emit({ ...colors, primary: normalized });
+    }
+  };
+
   return (
-    <section aria-label="Colors">
-      <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide">
-          Colors
-        </h3>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() =>
-            emit(surpriseColors(curatedPalettePool(catalog), Math.random))
+    <>
+      <section aria-label="Colors">
+        <header className="flex items-baseline justify-between gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide">
+            Colors
+          </h3>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() =>
+              emit(surpriseColors(curatedPalettePool(catalog), Math.random))
+            }
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            <Dices className="h-3.5 w-3.5" aria-hidden="true" />
+            Random
+          </button>
+        </header>
+        {caption !== null && (
+          <p className="mt-1 text-xs text-muted-foreground">{caption}</p>
+        )}
+        <div className="mt-2">{editor}</div>
+      </section>
+      {pickerColor !== undefined && (
+        <CustomColorPickerDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditingColor(null);
+          }}
+          value={pickerColor}
+          onChange={applyPickerColor}
+          title={
+            editingColor?.kind === "palette"
+              ? `Palette color ${editingColor.index + 1}`
+              : "Dice color"
           }
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-        >
-          <Dices className="h-3.5 w-3.5" aria-hidden="true" />
-          Surprise me
-        </button>
-      </header>
-      {caption !== null && (
-        <p className="mt-1 text-xs text-muted-foreground">{caption}</p>
+          description="Choose a dice color."
+          visuallyHideHeader
+          suggestedColors={catalog.editorDefaults.palette}
+        />
       )}
-      <div className="mt-2">{editor}</div>
-    </section>
+    </>
   );
 }

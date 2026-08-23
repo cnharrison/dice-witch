@@ -1029,9 +1029,7 @@ describe("AppearanceEditorV3 chip actions", () => {
     await user.click(
       screen.getByRole("menuitem", { name: /Discard d20's design/ }),
     );
-    expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("Discard d20's own design?"),
-    );
+    expect(window.confirm).toHaveBeenCalledWith("Discard d20's design?");
 
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
@@ -1064,24 +1062,23 @@ describe("AppearanceEditorV3 chip actions", () => {
     await user.click(
       screen.getByRole("menuitem", { name: /Discard d20's design/ }),
     );
-    expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("Its unsaved design will also be deleted."),
-    );
+    expect(window.confirm).toHaveBeenCalledWith("Discard d20's design?");
     expect(screen.getByText(/Deleting Edit 1 is staged/)).toBeDefined();
     // d20 falls back to following ALL.
     expect(screen.getByText("d20 follows ALL right now")).toBeDefined();
   });
 
-  it("backs ALL off to the builtin random look and offers to clear per-die designs", async () => {
+  it("resets ALL with one terse confirmation and keeps per-die designs", async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, "confirm")
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     const onSave = vi.fn(async () => undefined);
     const profile = personalProfile();
+    profile.designs = [
+      { id: designId, name: "Shared design", recipe: styleRecipe("pride") },
+    ];
     profile.assignments = {
-      all: { source: "builtin", id: "pride" },
-      overrides: { d6: { source: "builtin", id: "solid" } },
+      all: { source: "custom", id: designId },
+      overrides: { d6: { source: "custom", id: designId } },
     };
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
@@ -1093,22 +1090,39 @@ describe("AppearanceEditorV3 chip actions", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Back to default" }));
-    expect(window.confirm).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining(
-        "Back to default clears ALL dice",
-      ),
-    );
-    expect(window.confirm).toHaveBeenNthCalledWith(
-      2,
-      "Also clear per-die designs?",
-    );
+    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(window.confirm).toHaveBeenCalledWith("Reset to default dice mix?");
 
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
       all: null,
-      overrides: {},
+      overrides: { d6: { source: "custom", id: designId } },
     });
+  });
+
+  it("returns to the default mix while a custom design is active", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    await selectStartFromStyle(user, "pride");
+    await user.click(materialTile("Glass"));
+    expect(screen.getByLabelText("Custom design name")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Back to default" }));
+    await user.click(
+      within(startFromRegion()).getByRole("button", { name: /^\d+ more$/ }),
+    );
+
+    expect(startFromCard("chaotic").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
   });
 });

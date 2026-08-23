@@ -289,7 +289,40 @@ describe("MixPickerMaterialsRow", () => {
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
     expect(next.material.options.map(({ weight }) => weight)).toEqual([
-      996, 3, 1,
+      900, 3, 1,
+    ]);
+  });
+
+  it("preserves distinct material variants when changing only their weights", () => {
+    const solid = {
+      family: "classic",
+      treatment: "solid",
+    } as AppearanceMaterialV4;
+    const gradient = {
+      family: "classic",
+      treatment: "gradient",
+    } as AppearanceMaterialV4;
+    const onChange = vi.fn();
+    render(
+      <MixPickerMaterialsRow
+        recipe={recipeWithMaterial({
+          mode: "weighted",
+          options: [
+            { value: solid, weight: 900 },
+            { value: gradient, weight: 150 },
+          ],
+        })}
+        catalog={catalog}
+        thumbVersion={null}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("slider"), { key: "ArrowLeft" });
+    const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
+    if (next.material.mode !== "weighted") throw new Error("expected weighted");
+    expect(next.material.options.map(({ value }) => value)).toEqual([
+      solid,
+      gradient,
     ]);
   });
 

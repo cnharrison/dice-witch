@@ -1,4 +1,3 @@
-import { AppearanceThumb } from "@/components/AppearanceThumb";
 import type { AppearanceThumbVersionParts } from "@/lib/appearance-thumbs";
 import {
   applyStringRows,
@@ -16,7 +15,7 @@ import * as React from "react";
 type MixPickerNumbersRowProps = {
   recipe: AppearanceRecipeV3;
   catalog: AppearanceCatalogV3;
-  thumbVersion: AppearanceThumbVersionParts | null;
+  thumbVersion?: AppearanceThumbVersionParts | null;
   disabled?: boolean;
   onChange(recipe: AppearanceRecipeV3): void;
 };
@@ -49,7 +48,6 @@ function toggleStringId<V extends string>(
 export function MixPickerNumbersRow({
   recipe,
   catalog,
-  thumbVersion,
   disabled = false,
   onChange,
 }: MixPickerNumbersRowProps) {
@@ -99,23 +97,13 @@ export function MixPickerNumbersRow({
               aria-pressed={selected}
               disabled={disabled}
               onClick={() => toggleFont(id)}
-              className={`flex w-16 shrink-0 snap-start flex-col items-center gap-0.5 rounded-lg border p-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              style={{ fontFamily: `DiceWitchV4-${id}` }}
+              className={`min-h-11 shrink-0 snap-start rounded-md border px-3 py-2 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 selected
                   ? "border-brand bg-brand/10"
                   : "border-border hover:border-brand/50 hover:bg-muted/40"
               }`}
             >
-              <span className="grid h-10 w-12 place-items-center">
-                {thumbVersion !== null && (
-                  <AppearanceThumb
-                    kind="font"
-                    id={id}
-                    catalogVersion={thumbVersion.catalogVersion}
-                    rendererRevision={thumbVersion.rendererRevision}
-                    alt=""
-                  />
-                )}
-              </span>
               {name}
             </button>
           );
