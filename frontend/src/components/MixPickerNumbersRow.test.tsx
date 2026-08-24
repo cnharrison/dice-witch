@@ -83,9 +83,12 @@ describe("MixPickerNumbersRow", () => {
       .toBe("DiceWitchV4-cinzel");
     expect(screen.getByRole("button", { name: "Fraunces" }).style.fontFamily)
       .toBe("DiceWitchV4-fraunces");
-    expect(
-      screen.getByRole("button", { name: "Alcarin Tengwar" }).style.fontFamily,
-    ).toBe("DiceWitchV4-alcarin-tengwar");
+    const alcarin = screen.getByRole("button", { name: "Alcarin Tengwar" });
+    expect(alcarin.style.fontFamily).toBe("DiceWitchV4-alcarin-tengwar");
+    expect(alcarin.textContent).toBe(
+      "\ue02e\ue040\ue022\ue002\ue040\ue020\ue044\ue010 \ue000\ue046\ue007\ue040\ue014",
+    );
+    expect(alcarin.textContent).not.toContain("Alcarin Tengwar");
     expect(appearanceCss).toContain(
       'font-family: "DiceWitchV4-alcarin-tengwar"',
     );

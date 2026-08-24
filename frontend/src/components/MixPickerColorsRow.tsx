@@ -1,9 +1,8 @@
 import { CustomColorPickerDialog } from "@/components/CustomColorPickerDialog";
-import { selectionValuesV3 } from "@/lib/appearance-editor-v3";
 import {
-  curatedPalettePool,
-  surpriseColors,
-} from "@/lib/mix-picker-state";
+  createVividAppearancePaletteV3,
+  selectionValuesV3,
+} from "@/lib/appearance-editor-v3";
 import type {
   AppearanceCatalogV3,
   AppearanceRecipeV3,
@@ -11,6 +10,7 @@ import type {
 import {
   materialColorEffectV4,
   type AppearanceColorsV3,
+  type AppearanceMaterialV4,
 } from "@dice-witch/dice-v4-model";
 import { Dices, Plus, X } from "lucide-react";
 import * as React from "react";
@@ -30,6 +30,13 @@ function usesFullSpectrumRandomization(recipe: AppearanceRecipeV3): boolean {
   return (
     recipe.randomization === "full-spectrum-v1" ||
     recipe.randomization === "full-spectrum-v2"
+  );
+}
+
+function usesSelectedColors(material: AppearanceMaterialV4): boolean {
+  return (
+    material.family === "hollow-metal" ||
+    materialColorEffectV4(material) !== "adds-own-colors"
   );
 }
 
@@ -53,12 +60,8 @@ export function MixPickerColorsRow({
     null,
   );
   const values = selectionValuesV3(recipe.material);
-  const bringsOwn = values.filter(
-    (material) => materialColorEffectV4(material) === "adds-own-colors",
-  );
-  const responds = values.filter(
-    (material) => materialColorEffectV4(material) !== "adds-own-colors",
-  );
+  const bringsOwn = values.filter((material) => !usesSelectedColors(material));
+  const responds = values.filter(usesSelectedColors);
   const ownNames = [...new Set(
     bringsOwn.map((material) => materialName(catalog, material.family)),
   )];
@@ -257,13 +260,14 @@ export function MixPickerColorsRow({
             type="button"
             disabled={disabled}
             onClick={() =>
-              emit(
-                surpriseColors(
-                  curatedPalettePool(catalog),
-                  colors.mode === "palette" ? colors.colors : null,
-                  Math.random,
+              emit({
+                mode: "palette",
+                colors: createVividAppearancePaletteV3(
+                  colors.mode === "palette"
+                    ? colors.colors.length
+                    : catalog.editorDefaults.palette.length,
                 ),
-              )
+              })
             }
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >

@@ -1,10 +1,7 @@
 import { selectionValuesV3 } from "@/lib/appearance-editor-v3";
 import { normalizeMaterialWeightsV3, MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
 import type { AppearanceCatalogV3 } from "../types/appearance";
-import {
-  APPEARANCE_PALETTE_COLOR_RANGE_V3,
-  FANTASY_ESSENCE_PALETTES_R33_V4,
-} from "@dice-witch/dice-v4-model";
+import { APPEARANCE_PALETTE_COLOR_RANGE_V3 } from "@dice-witch/dice-v4-model";
 import type {
   AppearanceColorsV3,
   AppearanceDesignReferenceV3,
@@ -201,49 +198,6 @@ export function applyColorsRow(
     case "randomized":
       return { ...recipe, colors: { mode: "random", primary: row.primary } };
   }
-}
-
-function paletteKey(colors: readonly HexColor[]): string {
-  return colors.map((color) => color.toLowerCase()).join(",");
-}
-
-function uniquePalettes(
-  palettes: readonly (readonly HexColor[])[],
-): HexColor[][] {
-  return [...new Map(
-    palettes.map((colors) => [paletteKey(colors), [...colors]]),
-  ).values()];
-}
-
-export function curatedPalettePool(
-  catalog: AppearanceCatalogV3,
-): HexColor[][] {
-  const pool: HexColor[][] = [];
-  for (const style of catalog.styles) {
-    const { colors } = style.recipe;
-    if (colors.mode === "palette") pool.push([...colors.colors]);
-  }
-  pool.push(
-    ...Object.values(FANTASY_ESSENCE_PALETTES_R33_V4).map((p) => [...p]),
-  );
-  return uniquePalettes(pool);
-}
-
-// Random replaces COLORS only; everything else in the recipe stays.
-export function surpriseColors(
-  palettes: readonly (readonly HexColor[])[],
-  current: readonly HexColor[] | null,
-  random: () => number,
-): Extract<AppearanceColorsV3, { mode: "palette" }> {
-  const currentKey = current === null ? null : paletteKey(current);
-  const choices = uniquePalettes(palettes).filter(
-    (colors) => paletteKey(colors) !== currentKey,
-  );
-  if (choices.length === 0) {
-    throw new Error("No alternative curated palette available");
-  }
-  const picked = choices[Math.floor(random() * choices.length)];
-  return { mode: "palette", colors: validatedPalette(picked) };
 }
 
 // Fine-tune's color-chance radios map onto randomization policies; side

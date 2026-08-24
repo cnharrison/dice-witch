@@ -26,6 +26,7 @@ const catalog = {
     { family: "classic", name: "Classic", defaultValue: materialValue("classic-default") },
     { family: "glass", name: "Glass", defaultValue: materialValue("glass-default") },
     { family: "fantasy", name: "Fantasy", defaultValue: materialValue("fantasy-default") },
+    { family: "hollow-metal", name: "Hollow Metal", defaultValue: materialValue("hollow-metal") },
   ],
   editorDefaults: {
     primaryColor: "#101010",
@@ -61,7 +62,26 @@ function recipeWith(
 
 const palette = { mode: "palette" as const, colors: ["#111111", "#222222"] };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+function mockRandomValues(...batches: number[][]) {
+  let batchIndex = 0;
+  return vi
+    .spyOn(globalThis.crypto, "getRandomValues")
+    .mockImplementation(<T extends ArrayBufferView | null>(array: T): T => {
+      if (!(array instanceof Uint32Array)) {
+        throw new Error("Expected a Uint32Array random buffer");
+      }
+      const batch = batches[batchIndex];
+      if (batch === undefined) throw new Error("Missing random value batch");
+      array.set(batch);
+      batchIndex += 1;
+      return array;
+    });
+}
 
 describe("MixPickerColorsRow", () => {
   it("collapses to a caption when every selected material brings its own colors", () => {
@@ -80,6 +100,40 @@ describe("MixPickerColorsRow", () => {
       .not.toBeNull();
     expect(screen.queryByLabelText(/Palette color/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Random" })).toBeNull();
+  });
+
+  it("lets Hollow Metal use a chosen tint without changing the material", () => {
+    const hollowMetal = {
+      family: "hollow-metal",
+      construction: "filigree",
+      metal: "steel",
+      finish: "polished",
+      openness: 58,
+      textureScale: 100,
+    } as const satisfies AppearanceMaterialV4;
+    const recipe = recipeWith(
+      { mode: "fixed", value: hollowMetal },
+      { mode: "solid", primary: "#444444" },
+    );
+    const onChange = vi.fn();
+    render(
+      <MixPickerColorsRow
+        recipe={recipe}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Dice color" }));
+    fireEvent.change(screen.getByLabelText("Hex color"), {
+      target: { value: "#3366CC" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...recipe,
+      colors: { mode: "solid", primary: "#3366cc" },
+    });
   });
 
   it("explains which selected materials the row applies to without duplicate families", () => {
@@ -296,8 +350,8 @@ describe("MixPickerColorsRow", () => {
     expect(screen.queryByLabelText("Dice color")).toBeNull();
   });
 
-  it("Random always changes the current palette", () => {
-    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+  it("Random generates new colors on every click", () => {
+    mockRandomValues([0, 1, 2, 3], [45, 4, 5, 6]);
     const recipe = recipeWith(
       { mode: "fixed", value: materialValue("classic") },
       { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] },
@@ -325,11 +379,10 @@ describe("MixPickerColorsRow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Random" }));
     const second = onChange.mock.calls[1]?.[0] as AppearanceRecipeV3;
     expect(second.colors).not.toEqual(first.colors);
-    randomSpy.mockRestore();
   });
 
-  it("Random writes a curated palette without touching other rows", () => {
-    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+  it("Random writes a generated palette without touching other rows", () => {
+    mockRandomValues([0, 1, 2, 3]);
     const recipe = {
       ...recipeWith(
         { mode: "fixed", value: materialValue("classic") },
@@ -346,15 +399,17 @@ describe("MixPickerColorsRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Random" }));
-    randomSpy.mockRestore();
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
-    expect(next.colors).toEqual({
-      mode: "palette",
-      colors: ["#aa0000", "#00aa00", "#0000aa"],
-    });
+    expect(next.colors.mode).toBe("palette");
+    if (next.colors.mode !== "palette") throw new Error("Expected a palette");
+    expect(next.colors.colors).toHaveLength(catalog.editorDefaults.palette.length);
+    expect(next.colors.colors).not.toEqual(
+      catalog.styles[0]?.recipe.colors.mode === "palette"
+        ? catalog.styles[0].recipe.colors.colors
+        : [],
+    );
     expect(next.material).toEqual(recipe.material);
     expect(next.font).toEqual(recipe.font);
-    // Stale full-spectrum policies never survive an explicit color pick.
     expect(next.randomization).toBeUndefined();
   });
 });

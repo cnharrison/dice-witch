@@ -56,7 +56,7 @@ const thumbVersion = {
 afterEach(cleanup);
 
 describe("MixPickerStartFromRow", () => {
-  it("renders an initial card set with thumbs and a more-expander", () => {
+  it("renders every style immediately", () => {
     render(
       <MixPickerStartFromRow
         catalog={catalog}
@@ -65,13 +65,11 @@ describe("MixPickerStartFromRow", () => {
         onSelect={vi.fn()}
       />,
     );
-    // 4 initial cards + the expander; collector styles stay hidden.
-    expect(document.querySelectorAll("img")).toHaveLength(4);
-    // 11 featured + 2 collector − 4 visible.
-    expect(screen.getByRole("button", { name: /9 more/ })).not.toBeNull();
+    expect(document.querySelectorAll("img")).toHaveLength(13);
+    expect(screen.queryByRole("button", { name: /more/ })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: /classic-material/ }),
-    ).toBeNull();
+      screen.getByRole("button", { name: /classic-material/ }),
+    ).not.toBeNull();
     const thumbnail = screen
       .getByRole("button", { name: "dice-witch-name" })
       .querySelector("img");
@@ -142,7 +140,7 @@ describe("MixPickerStartFromRow", () => {
     expect(activeName?.textContent).toBe("");
   });
 
-  it("expands remaining styles and reports selections", () => {
+  it("reports selections from the complete style list", () => {
     const onSelect = vi.fn();
     render(
       <MixPickerStartFromRow
@@ -152,11 +150,9 @@ describe("MixPickerStartFromRow", () => {
         onSelect={onSelect}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /9 more/ }));
     expect(
       screen.getByRole("button", { name: /monochrome-palette-name/ }),
     ).not.toBeNull();
-    // Expanded view also exposes collector styles in their own strip.
     expect(
       screen.getByRole("button", { name: /classic-material-name/ }),
     ).not.toBeNull();

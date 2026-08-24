@@ -5,7 +5,6 @@ import type {
   AppearanceSelection,
 } from "@dice-witch/dice-v4-model";
 import {
-  FANTASY_ESSENCE_PALETTES_R33_V4,
   deriveAppearanceSeedV4,
   parseAppearanceRecipeV3,
 } from "@dice-witch/dice-v4-model";
@@ -17,11 +16,9 @@ import {
   applyStringRows,
   applyVariety,
   colorsRowFromRecipe,
-  curatedPalettePool,
   hasProceduralFontSelection,
   materialRowsFromRecipe,
   stringRowsFromSelection,
-  surpriseColors,
   varietyFromRecipe,
 } from "@/lib/mix-picker-state";
 import { MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
@@ -311,51 +308,6 @@ describe("colors row", () => {
         colors: ["#111111", "#111111"],
       }),
     ).toThrow();
-  });
-});
-
-describe("surprise me", () => {
-  it("picks deterministically from the pool and writes COLORS only", () => {
-    const palettes = [
-      ["#070707", "#171717", "#272727", "#373737"],
-      ["#ff0000", "#00ff00"],
-    ];
-    const picked = surpriseColors(palettes, null, () => 0.99);
-    expect(picked).toEqual({
-      mode: "palette",
-      colors: ["#ff0000", "#00ff00"],
-    });
-    const recipe = applyColorsRow(base(), picked);
-    expect(recipe.colors).toEqual(picked);
-    // Everything except colors is untouched.
-    expect(recipe.material).toEqual(base().material);
-  });
-
-  it("deduplicates choices and excludes the current palette", () => {
-    const current = ["#070707", "#171717"] as const;
-    const alternative = ["#ff0000", "#00ff00"] as const;
-    expect(
-      surpriseColors([current, current, alternative], current, () => 0),
-    ).toEqual({ mode: "palette", colors: alternative });
-  });
-
-  it("fails fast without an alternative palette", () => {
-    const only = ["#070707", "#171717"] as const;
-    expect(() => surpriseColors([], null, Math.random)).toThrow();
-    expect(() => surpriseColors([only], only, Math.random)).toThrow();
-  });
-
-  it("curated pool draws from catalog styles and all fantasy essences", () => {
-    const catalog = {
-      styles: [
-        { id: "rainbow", recipe: { colors: { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] } } },
-        { id: "rainbow-copy", recipe: { colors: { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] } } },
-        { id: "solid", recipe: { colors: { mode: "solid", primary: "#101010" } } },
-      ],
-    } as never;
-    const pool = curatedPalettePool(catalog);
-    expect(pool).toHaveLength(1 + Object.keys(FANTASY_ESSENCE_PALETTES_R33_V4).length);
-    expect(pool[0]).toEqual(["#aa0000", "#00aa00", "#0000aa"]);
   });
 });
 

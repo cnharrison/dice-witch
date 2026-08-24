@@ -12,6 +12,9 @@ import type {
 } from "@dice-witch/dice-v4-model";
 import * as React from "react";
 
+const ALCARIN_TENGWAR_NAME =
+  "\ue02e\ue040\ue022\ue002\ue040\ue020\ue044\ue010 \ue000\ue046\ue007\ue040\ue014";
+
 type MixPickerNumbersRowProps = {
   recipe: AppearanceRecipeV3;
   catalog: AppearanceCatalogV3;
@@ -94,6 +97,7 @@ export function MixPickerNumbersRow({
               <button
                 key={id}
                 type="button"
+                aria-label={name}
                 aria-pressed={selected}
                 disabled={disabled}
                 onClick={() => toggleFont(id)}
@@ -104,7 +108,7 @@ export function MixPickerNumbersRow({
                     : "border-border hover:border-brand/50 hover:bg-muted/40"
                 }`}
               >
-                {name}
+                {id === "alcarin-tengwar" ? ALCARIN_TENGWAR_NAME : name}
               </button>
             );
           })}

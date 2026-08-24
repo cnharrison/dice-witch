@@ -93,11 +93,6 @@ async function selectStartFromStyle(
   styleId: string,
 ): Promise<void> {
   const card = new RegExp(catalogStyleName(styleId));
-  if (within(startFromRegion()).queryByRole("button", { name: card }) === null) {
-    await user.click(
-      within(startFromRegion()).getByRole("button", { name: /^\d+ more$/ }),
-    );
-  }
   await user.click(within(startFromRegion()).getByRole("button", { name: card }));
 }
 
@@ -363,11 +358,6 @@ describe("AppearanceEditorV3", () => {
     expect(screen.getByRole("tab", { name: "Design, unsaved changes" })).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
-    // The Random card sits behind the expander; opening it is stateless for
-    // the draft.
-    await user.click(
-      within(startFromRegion()).getByRole("button", { name: /^\d+ more$/ }),
-    );
     expect(startFromCard("chaotic").getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -1241,9 +1231,6 @@ describe("AppearanceEditorV3 chip actions", () => {
     await user.click(materialTile("Glass"));
     expect(screen.getByLabelText("Custom design name")).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Back to default" }));
-    await user.click(
-      within(startFromRegion()).getByRole("button", { name: /^\d+ more$/ }),
-    );
 
     expect(startFromCard("chaotic").getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByLabelText("Custom design name")).toBeNull();

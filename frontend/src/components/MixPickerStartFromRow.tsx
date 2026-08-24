@@ -1,7 +1,6 @@
 import { AppearanceThumb } from "@/components/AppearanceThumb";
 import type { AppearanceThumbVersionParts } from "@/lib/appearance-thumbs";
 import type { AppearanceCatalogV3 } from "@/types/appearance";
-import { ChevronRight } from "lucide-react";
 import * as React from "react";
 
 type MixPickerStartFromRowProps = {
@@ -12,7 +11,6 @@ type MixPickerStartFromRowProps = {
   onSelect(styleId: string): void;
 };
 
-const INITIAL_CARD_COUNT = 4;
 const RANDOM_STYLE_ID_V3 = "chaotic";
 
 export function MixPickerStartFromRow({
@@ -22,7 +20,6 @@ export function MixPickerStartFromRow({
   disabled = false,
   onSelect,
 }: MixPickerStartFromRowProps) {
-  const [expanded, setExpanded] = React.useState(false);
   const styleFor = (styleId: string) => {
     const style = catalog.styles.find(({ id }) => id === styleId);
     if (style === undefined) {
@@ -38,13 +35,6 @@ export function MixPickerStartFromRow({
   );
   const activeStyleId = hoveredStyleId ?? focusedStyleId;
   const activeStyle = activeStyleId === null ? null : styleFor(activeStyleId);
-  const visibleIds = expanded
-    ? [...catalog.featuredStyleIds]
-    : catalog.featuredStyleIds.slice(0, INITIAL_CARD_COUNT);
-  const hiddenCount =
-    catalog.featuredStyleIds.length +
-    catalog.collectorStyleIds.length -
-    visibleIds.length;
 
   const card = (styleId: string, badge?: string) => {
     const style = styleFor(styleId);
@@ -102,25 +92,14 @@ export function MixPickerStartFromRow({
         </p>
       </header>
       <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible sm:snap-none">
-        {visibleIds.map((styleId) =>
+        {catalog.featuredStyleIds.map((styleId) =>
           card(
             styleId,
             styleId === RANDOM_STYLE_ID_V3 ? "The default" : undefined,
           ),
         )}
-        {!expanded && hiddenCount > 0 && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setExpanded(true)}
-            className="inline-flex h-20 w-20 shrink-0 items-center justify-center gap-1 rounded-lg text-sm font-medium text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          >
-            {hiddenCount} more
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
       </div>
-      {expanded && catalog.collectorStyleIds.length > 0 && (
+      {catalog.collectorStyleIds.length > 0 && (
         <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible sm:snap-none">
           {catalog.collectorStyleIds.map((styleId) => card(styleId))}
         </div>
