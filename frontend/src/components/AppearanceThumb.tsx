@@ -8,6 +8,7 @@ type AppearanceThumbProps = {
   id: string;
   catalogVersion: number;
   rendererRevision: string;
+  cacheRevision: number;
   alt: string;
   className?: string;
   imageClassName?: string;
@@ -20,12 +21,18 @@ export function AppearanceThumb({
   id,
   catalogVersion,
   rendererRevision,
+  cacheRevision,
   alt,
   className,
   imageClassName,
 }: AppearanceThumbProps) {
   const [loaded, setLoaded] = React.useState(false);
-  const url = appearanceThumbUrl(appConfig.apiBase, { catalogVersion, rendererRevision }, kind, id);
+  const url = appearanceThumbUrl(
+    appConfig.apiBase,
+    { catalogVersion, rendererRevision, cacheRevision },
+    kind,
+    id,
+  );
   return (
     <span
       className={cn(

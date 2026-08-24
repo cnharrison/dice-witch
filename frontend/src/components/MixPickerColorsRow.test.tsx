@@ -296,6 +296,38 @@ describe("MixPickerColorsRow", () => {
     expect(screen.queryByLabelText("Dice color")).toBeNull();
   });
 
+  it("Random always changes the current palette", () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+    const recipe = recipeWith(
+      { mode: "fixed", value: materialValue("classic") },
+      { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] },
+    );
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <MixPickerColorsRow
+        recipe={recipe}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    const first = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
+    expect(first.colors).not.toEqual(recipe.colors);
+
+    rerender(
+      <MixPickerColorsRow
+        recipe={first}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    const second = onChange.mock.calls[1]?.[0] as AppearanceRecipeV3;
+    expect(second.colors).not.toEqual(first.colors);
+    randomSpy.mockRestore();
+  });
+
   it("Random writes a curated palette without touching other rows", () => {
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
     const recipe = {

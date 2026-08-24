@@ -750,9 +750,10 @@ export async function getAppearanceCatalogV4(): Promise<AppearanceCatalogV3> {
 }
 
 export type AppearanceThumbsVersionV4 = Readonly<{
-  version: 1;
+  version: 2;
   catalogVersion: number;
   rendererRevision: string;
+  cacheRevision: number;
 }>;
 
 function parseAppearanceThumbsVersionV4(
@@ -762,19 +763,24 @@ function parseAppearanceThumbsVersionV4(
     typeof value !== "object" ||
     value === null ||
     !("version" in value) ||
-    value.version !== 1 ||
+    value.version !== 2 ||
     !("catalogVersion" in value) ||
     typeof value.catalogVersion !== "number" ||
     !Number.isInteger(value.catalogVersion) ||
     !("rendererRevision" in value) ||
-    typeof value.rendererRevision !== "string"
+    typeof value.rendererRevision !== "string" ||
+    !("cacheRevision" in value) ||
+    typeof value.cacheRevision !== "number" ||
+    !Number.isInteger(value.cacheRevision) ||
+    value.cacheRevision < 1
   ) {
     throw new Error("Appearance thumbs version is invalid");
   }
   return {
-    version: 1,
+    version: 2,
     catalogVersion: value.catalogVersion,
     rendererRevision: value.rendererRevision,
+    cacheRevision: value.cacheRevision,
   };
 }
 

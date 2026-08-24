@@ -220,6 +220,7 @@ export function MixPickerMaterialsRow({
                   id={family}
                   catalogVersion={thumbVersion.catalogVersion}
                   rendererRevision={thumbVersion.rendererRevision}
+                  cacheRevision={thumbVersion.cacheRevision}
                   alt=""
                 />
               )}

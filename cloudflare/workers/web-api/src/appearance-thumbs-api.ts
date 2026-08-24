@@ -3,6 +3,7 @@ import {
   type RendererRevisionV4,
 } from "@dice-witch/dice-v4-model";
 import {
+  APPEARANCE_THUMB_CACHE_REVISION_V3,
   appearanceCatalogForPolicyV3,
   appearanceThumbObjectKeyV3,
   appearanceThumbPreviewRequestV3,
@@ -168,9 +169,10 @@ export async function bakeAppearanceThumbs(
   }
 
   return json({
-    version: 1,
+    version: 2,
     catalogVersion: catalog.version,
     rendererRevision,
+    cacheRevision: APPEARANCE_THUMB_CACHE_REVISION_V3,
     baked,
     skipped,
     total: manifest.length,
@@ -190,11 +192,12 @@ export async function appearanceThumbsVersion(
   if (!RENDERER_REVISIONS_V4.includes(reportedRevision as never)) {
     return json({ error: "appearance_thumbs_revision_unknown" }, 502);
   }
-  // Thumb object keys embed both parts; consumers must never guess them.
+  // Consumers must use this complete cache identity instead of guessing it.
   return json({
-    version: 1,
+    version: 2,
     catalogVersion: catalog.version,
     rendererRevision: reportedRevision,
+    cacheRevision: APPEARANCE_THUMB_CACHE_REVISION_V3,
   });
 }
 

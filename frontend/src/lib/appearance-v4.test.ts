@@ -12,6 +12,7 @@ import type { AppearanceApiError } from "./appearance-api-error";
 import {
   getAppearanceCatalogV4,
   getAppearancePreviewV4,
+  getAppearanceThumbsVersionV4,
   getGuildAppearanceProfileV4,
   getPersonalAppearanceBootstrapV4,
   parseAppearanceCatalogV3,
@@ -165,6 +166,53 @@ describe("appearance V4 contracts", () => {
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 1, profile },
     });
+  });
+
+  it("loads the thumbnail cache revision contract", async () => {
+    const version = {
+      version: 2,
+      catalogVersion: 3,
+      rendererRevision: "canvaskit-v4-r41",
+      cacheRevision: 2,
+    } as const;
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json(version));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getAppearanceThumbsVersionV4()).resolves.toEqual(version);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/api/appearance/thumbs/version",
+      { credentials: "include" },
+    );
+  });
+
+  it("rejects stale or malformed thumbnail cache contracts", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          version: 1,
+          catalogVersion: 3,
+          rendererRevision: "canvaskit-v4-r41",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          version: 2,
+          catalogVersion: 3,
+          rendererRevision: "canvaskit-v4-r41",
+          cacheRevision: 0,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    for (let request = 0; request < 2; request += 1) {
+      await expect(getAppearanceThumbsVersionV4()).rejects.toEqual(
+        expect.objectContaining<Partial<AppearanceApiError>>({
+          status: 502,
+          code: "appearance_thumbs_version_invalid",
+        }),
+      );
+    }
   });
 
   it("uses only V4 personal and guild routes", async () => {

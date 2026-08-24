@@ -300,7 +300,7 @@ describe("surprise me", () => {
       ["#070707", "#171717", "#272727", "#373737"],
       ["#ff0000", "#00ff00"],
     ];
-    const picked = surpriseColors(palettes, () => 0.99);
+    const picked = surpriseColors(palettes, null, () => 0.99);
     expect(picked).toEqual({
       mode: "palette",
       colors: ["#ff0000", "#00ff00"],
@@ -311,14 +311,25 @@ describe("surprise me", () => {
     expect(recipe.material).toEqual(base().material);
   });
 
-  it("fails fast on an empty pool", () => {
-    expect(() => surpriseColors([], Math.random)).toThrow();
+  it("deduplicates choices and excludes the current palette", () => {
+    const current = ["#070707", "#171717"] as const;
+    const alternative = ["#ff0000", "#00ff00"] as const;
+    expect(
+      surpriseColors([current, current, alternative], current, () => 0),
+    ).toEqual({ mode: "palette", colors: alternative });
+  });
+
+  it("fails fast without an alternative palette", () => {
+    const only = ["#070707", "#171717"] as const;
+    expect(() => surpriseColors([], null, Math.random)).toThrow();
+    expect(() => surpriseColors([only], only, Math.random)).toThrow();
   });
 
   it("curated pool draws from catalog styles and all fantasy essences", () => {
     const catalog = {
       styles: [
         { id: "rainbow", recipe: { colors: { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] } } },
+        { id: "rainbow-copy", recipe: { colors: { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] } } },
         { id: "solid", recipe: { colors: { mode: "solid", primary: "#101010" } } },
       ],
     } as never;

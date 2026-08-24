@@ -56,7 +56,11 @@ function recipeWithMaterial(
   };
 }
 
-const thumbVersion = { catalogVersion: 3, rendererRevision: "canvaskit-v4-r41" };
+const thumbVersion = {
+  catalogVersion: 3,
+  rendererRevision: "canvaskit-v4-r41",
+  cacheRevision: 2,
+};
 
 afterEach(() => {
   cleanup();

@@ -257,7 +257,13 @@ export function MixPickerColorsRow({
             type="button"
             disabled={disabled}
             onClick={() =>
-              emit(surpriseColors(curatedPalettePool(catalog), Math.random))
+              emit(
+                surpriseColors(
+                  curatedPalettePool(catalog),
+                  colors.mode === "palette" ? colors.colors : null,
+                  Math.random,
+                ),
+              )
             }
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >

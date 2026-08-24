@@ -86,7 +86,13 @@ describe("bakeAppearanceThumbs", () => {
     );
     expect(response.status).toBe(200);
     const result = await response.json();
-    expect(result).toMatchObject({ baked: 1, skipped: 0, total: 1 });
+    expect(result).toMatchObject({
+      version: 2,
+      cacheRevision: 2,
+      baked: 1,
+      skipped: 0,
+      total: 1,
+    });
     expect(env.THUMBS.put).toHaveBeenCalledWith(
       "thumbs/3-canvaskit-v4-r41/material/glass.png",
       expect.any(Uint8Array),
@@ -162,9 +168,10 @@ describe("appearanceThumbsVersion", () => {
     const response = await appearanceThumbsVersion(env);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      version: 1,
+      version: 2,
       catalogVersion: 3,
       rendererRevision: "canvaskit-v4-r41",
+      cacheRevision: 2,
     });
   });
 

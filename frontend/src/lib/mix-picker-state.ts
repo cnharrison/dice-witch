@@ -205,6 +205,18 @@ export function applyColorsRow(
   }
 }
 
+function paletteKey(colors: readonly HexColor[]): string {
+  return colors.map((color) => color.toLowerCase()).join(",");
+}
+
+function uniquePalettes(
+  palettes: readonly (readonly HexColor[])[],
+): HexColor[][] {
+  return [...new Map(
+    palettes.map((colors) => [paletteKey(colors), [...colors]]),
+  ).values()];
+}
+
 export function curatedPalettePool(
   catalog: AppearanceCatalogV3,
 ): HexColor[][] {
@@ -216,18 +228,23 @@ export function curatedPalettePool(
   pool.push(
     ...Object.values(FANTASY_ESSENCE_PALETTES_R33_V4).map((p) => [...p]),
   );
-  return pool;
+  return uniquePalettes(pool);
 }
 
-// Surprise me replaces COLORS only; everything else in the recipe stays.
+// Random replaces COLORS only; everything else in the recipe stays.
 export function surpriseColors(
   palettes: readonly (readonly HexColor[])[],
+  current: readonly HexColor[] | null,
   random: () => number,
 ): Extract<AppearanceColorsV3, { mode: "palette" }> {
-  if (palettes.length === 0) {
-    throw new Error("No curated palettes available");
+  const currentKey = current === null ? null : paletteKey(current);
+  const choices = uniquePalettes(palettes).filter(
+    (colors) => paletteKey(colors) !== currentKey,
+  );
+  if (choices.length === 0) {
+    throw new Error("No alternative curated palette available");
   }
-  const picked = palettes[Math.floor(random() * palettes.length)];
+  const picked = choices[Math.floor(random() * choices.length)];
   return { mode: "palette", colors: validatedPalette(picked) };
 }
 

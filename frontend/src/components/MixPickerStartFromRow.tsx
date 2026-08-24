@@ -89,6 +89,7 @@ export function MixPickerStartFromRow({
             id={styleId}
             catalogVersion={thumbVersion.catalogVersion}
             rendererRevision={thumbVersion.rendererRevision}
+            cacheRevision={thumbVersion.cacheRevision}
             alt=""
           />
         )}
