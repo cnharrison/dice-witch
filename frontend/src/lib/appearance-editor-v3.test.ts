@@ -182,6 +182,16 @@ describe("appearance editor V3 draft operations", () => {
     expect(edited.form.policy).toBe("material-default-v1");
     expect(selection.recipe.colors).not.toEqual(edited.colors);
 
+    const matched = beginAppearanceRecipeEditV3(
+      selection.recipe,
+      { ...selection.recipe, variation: "curated", varyBy: "roll" },
+      true,
+    );
+    expect(matched).toMatchObject({
+      variation: "curated",
+      varyBy: "roll",
+    });
+
     const explicitLighting = {
       ...selection.recipe,
       lighting: {

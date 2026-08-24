@@ -389,6 +389,9 @@ export function beginAppearanceRecipeEditV3(
     ? { mode: "fixed" as const, value: "gentle" as const }
     : parsedNext.lighting.strength;
   const editable = structuredClone(parsedNext);
+  const changesVariety =
+    parsedCurrent.variation !== editable.variation ||
+    parsedCurrent.varyBy !== editable.varyBy;
   const preservesFullSpectrum =
     (editable.randomization === "full-spectrum-v1" ||
       editable.randomization === "full-spectrum-v2") &&
@@ -401,7 +404,7 @@ export function beginAppearanceRecipeEditV3(
   }
   return parseAppearanceRecipeV3({
     ...editable,
-    variation: "fixed",
+    variation: changesVariety ? editable.variation : "fixed",
     lighting: { ...editable.lighting, strength },
   });
 }

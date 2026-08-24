@@ -251,6 +251,7 @@ describe("MixPickerMaterialsRow", () => {
     const metalAccent = metal.style.getPropertyValue("--material-accent");
     const accents = [classicAccent, glassAccent, metalAccent];
 
+    expect(classic.parentElement?.className).toContain("sm:justify-center");
     expect(accents.every((accent) => /^#[0-9a-f]{6}$/iu.test(accent)))
       .toBe(true);
     expect(new Set(accents).size).toBe(3);

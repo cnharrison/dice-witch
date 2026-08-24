@@ -423,7 +423,7 @@ export function AppearanceEditorV3({
   const removeReplacedDraftDesign = (
     profile: EditableAppearanceProfileV4,
     previousDesignId: string | null,
-  ): EditableAppearanceProfileV4 | null => {
+  ): EditableAppearanceProfileV4 => {
     if (
       previousDesignId === null ||
       baselineProfile.designs.some(({ id }) => id === previousDesignId) ||
@@ -431,16 +431,6 @@ export function AppearanceEditorV3({
       designTargets(profile, previousDesignId).length > 0
     ) {
       return profile;
-    }
-    const design = draftProfile.designs.find(({ id }) => id === previousDesignId);
-    const designName = design === undefined
-      ? null
-      : nameDrafts[design.id] ?? design.name;
-    if (
-      designName !== null &&
-      !window.confirm(`Discard the unsaved custom design ${designName}?`)
-    ) {
-      return null;
     }
     removeDraftMetadata(previousDesignId);
     return deleteAppearanceDesignV3(profile, previousDesignId, catalog);
@@ -457,7 +447,6 @@ export function AppearanceEditorV3({
         ),
         activeSelection.designId,
       );
-      if (next === null) return;
       setDraftProfile(next);
       setEditingDesignId(null);
       setStatus(null);
@@ -588,9 +577,9 @@ export function AppearanceEditorV3({
         ),
         activeSelection.designId,
       );
-      if (next === null) return;
       setDraftProfile(next);
       setEditingDesignId(id);
+      setExplicitDesignIds((ids) => [...ids, id]);
       setStatus(
         `${design.name} was copied into this server draft. Save & apply to keep the detached copy.`,
       );
@@ -613,7 +602,6 @@ export function AppearanceEditorV3({
         ),
         activeSelection.designId,
       );
-      if (next === null) return;
       setDraftProfile(next);
       setEditingDesignId(null);
       setStatus(null);
@@ -872,7 +860,7 @@ export function AppearanceEditorV3({
         </div>
       </div>
 
-      <aside className="order-2 space-y-4 xl:sticky xl:top-6 xl:z-10 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start">
+      <aside className="order-2 flex flex-col gap-4 xl:sticky xl:top-6 xl:z-10 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start">
         <Button
           type="button"
           variant="outline"
@@ -892,6 +880,14 @@ export function AppearanceEditorV3({
             recipe={previewRecipe}
             diceView={draftProfile.diceView}
             overrides={previewOverrides}
+          />
+        </div>
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <MixPickerVarietyControl
+            recipe={activeSelection.recipe}
+            disabled={isSaving}
+            onSelect={changeMixVariety}
+            onChaos={applyChaos}
           />
         </div>
         {displayedDesigns.length > 0 && (
@@ -1095,12 +1091,6 @@ export function AppearanceEditorV3({
               thumbVersion={thumbVersion}
               disabled={isSaving}
               onChange={setCustomRecipe}
-            />
-            <MixPickerVarietyControl
-              recipe={activeSelection.recipe}
-              disabled={isSaving}
-              onSelect={changeMixVariety}
-              onChaos={applyChaos}
             />
             <div className="flex justify-end">
               <Button

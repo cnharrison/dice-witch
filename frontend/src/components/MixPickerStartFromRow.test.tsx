@@ -83,6 +83,9 @@ describe("MixPickerStartFromRow", () => {
     expect(thumbnail?.className).toContain("-translate-x-1/2");
     expect(thumbnail?.className).toContain("-translate-y-1/2");
     expect(thumbnail?.className).toContain("scale-[1.3]");
+    expect(thumbnail?.closest("div")?.className).toContain(
+      "sm:justify-center",
+    );
   });
 
   it("badges the Random builtin card as the default", () => {
@@ -102,7 +105,7 @@ describe("MixPickerStartFromRow", () => {
     expect(randomCard.textContent?.toLowerCase()).toContain("the default");
   });
 
-  it("shows one style name centrally on hover, focus, and tap", () => {
+  it("shows one style name only on hover or focus", () => {
     render(
       <MixPickerStartFromRow
         catalog={catalog}
@@ -120,30 +123,23 @@ describe("MixPickerStartFromRow", () => {
     });
     const startFrom = screen.getByRole("region", { name: "Start from" });
 
-    expect(startFrom.querySelector("header")?.textContent).toContain(
-      "dice-witch-name",
-    );
+    const activeName = startFrom.querySelector("header p");
+    expect(activeName?.textContent).toBe("");
     expect(diceWitch.textContent).not.toContain("dice-witch-name");
     fireEvent.mouseEnter(solid);
-    expect(startFrom.querySelector("header")?.textContent).toContain(
-      "solid-name",
-    );
+    expect(activeName?.textContent).toBe("solid-name");
     fireEvent.mouseLeave(solid);
-    expect(startFrom.querySelector("header")?.textContent).toContain(
-      "dice-witch-name",
-    );
+    expect(activeName?.textContent).toBe("");
     fireEvent.focus(solid);
+    expect(activeName?.textContent).toBe("solid-name");
     fireEvent.mouseEnter(random);
-    expect(startFrom.querySelector("header")?.textContent).toContain("Random");
+    expect(activeName?.textContent).toBe("Random");
     fireEvent.mouseLeave(random);
-    expect(startFrom.querySelector("header")?.textContent).toContain(
-      "solid-name",
-    );
+    expect(activeName?.textContent).toBe("solid-name");
     fireEvent.blur(solid);
+    expect(activeName?.textContent).toBe("");
     fireEvent.click(solid);
-    expect(startFrom.querySelector("header")?.textContent).toContain(
-      "solid-name",
-    );
+    expect(activeName?.textContent).toBe("");
   });
 
   it("expands remaining styles and reports selections", () => {

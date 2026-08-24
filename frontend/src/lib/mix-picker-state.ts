@@ -88,9 +88,7 @@ export function varietyFromRecipe(
   recipe: AppearanceRecipeV3,
 ): MixPickerVariety {
   if (recipe.variation === "wild") return "chaos";
-  return recipe.variation === "fixed" && recipe.varyBy === "roll"
-    ? "matched"
-    : "mixed";
+  return recipe.varyBy === "roll" ? "matched" : "mixed";
 }
 
 // Returns null for "chaos": applying it swaps the target's assignment to the
@@ -100,7 +98,7 @@ export function applyVariety(
   variety: Exclude<MixPickerVariety, "chaos">,
 ): AppearanceRecipeV3 {
   if (variety === "matched") {
-    return { ...recipe, variation: "fixed", varyBy: "roll" };
+    return { ...recipe, variation: "curated", varyBy: "roll" };
   }
   return { ...recipe, variation: "curated", varyBy: "die" };
 }

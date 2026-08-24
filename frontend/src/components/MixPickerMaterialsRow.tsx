@@ -180,7 +180,7 @@ export function MixPickerMaterialsRow({
           {activeMaterial.name}
         </p>
       </header>
-      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,5rem)] sm:overflow-visible">
+      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible sm:snap-none">
         {catalog.materials.map(({ family, name }) => {
           const selected = rows.families.includes(family);
           const lastSelected = selected && rows.families.length === 1;

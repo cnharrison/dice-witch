@@ -30,25 +30,14 @@ export function MixPickerStartFromRow({
     }
     return style;
   };
-  const initialActiveStyleId = catalog.styles.some(
-    ({ id }) => id === selectedStyleId,
-  )
-    ? selectedStyleId
-    : catalog.featuredStyleIds[0];
-  if (initialActiveStyleId === undefined) {
-    throw new Error("Appearance start-from catalog needs a featured style");
-  }
-  const [lastActiveStyleId, setLastActiveStyleId] =
-    React.useState(initialActiveStyleId);
   const [hoveredStyleId, setHoveredStyleId] = React.useState<string | null>(
     null,
   );
   const [focusedStyleId, setFocusedStyleId] = React.useState<string | null>(
     null,
   );
-  const activeStyle = styleFor(
-    hoveredStyleId ?? focusedStyleId ?? lastActiveStyleId,
-  );
+  const activeStyleId = hoveredStyleId ?? focusedStyleId;
+  const activeStyle = activeStyleId === null ? null : styleFor(activeStyleId);
   const visibleIds = expanded
     ? [...catalog.featuredStyleIds]
     : catalog.featuredStyleIds.slice(0, INITIAL_CARD_COUNT);
@@ -67,10 +56,7 @@ export function MixPickerStartFromRow({
         aria-label={badge === undefined ? style.name : `${style.name}, ${badge}`}
         aria-pressed={selected}
         disabled={disabled}
-        onClick={() => {
-          setLastActiveStyleId(styleId);
-          onSelect(styleId);
-        }}
+        onClick={() => onSelect(styleId)}
         onMouseEnter={() => setHoveredStyleId(styleId)}
         onMouseLeave={() => setHoveredStyleId(null)}
         onFocus={() => setFocusedStyleId(styleId)}
@@ -112,10 +98,10 @@ export function MixPickerStartFromRow({
           Start from
         </h3>
         <p className="text-xs font-medium text-muted-foreground">
-          {activeStyle.name}
+          {activeStyle?.name ?? ""}
         </p>
       </header>
-      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,5rem)] sm:overflow-visible">
+      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible sm:snap-none">
         {visibleIds.map((styleId) =>
           card(
             styleId,
@@ -135,7 +121,7 @@ export function MixPickerStartFromRow({
         )}
       </div>
       {expanded && catalog.collectorStyleIds.length > 0 && (
-        <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,5rem)] sm:overflow-visible">
+        <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible sm:snap-none">
           {catalog.collectorStyleIds.map((styleId) => card(styleId))}
         </div>
       )}

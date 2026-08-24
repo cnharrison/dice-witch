@@ -4,15 +4,23 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MixPickerNumbersRow } from "@/components/MixPickerNumbersRow";
 import { MixPickerVarietyControl } from "@/components/MixPickerVarietyControl";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type {
   AppearanceCatalogV3,
   AppearanceRecipeV3,
 } from "@/types/appearance";
 
+const appearanceCss = readFileSync(
+  resolve(process.cwd(), "src/index.css"),
+  "utf8",
+);
+
 const catalog = {
   fonts: [
     { id: "cinzel", name: "Cinzel" },
     { id: "fraunces", name: "Fraunces" },
+    { id: "alcarin-tengwar", name: "Alcarin Tengwar" },
   ],
   engravingFinishes: [
     { id: "matte-ink", name: "Matte ink" },
@@ -75,6 +83,13 @@ describe("MixPickerNumbersRow", () => {
       .toBe("DiceWitchV4-cinzel");
     expect(screen.getByRole("button", { name: "Fraunces" }).style.fontFamily)
       .toBe("DiceWitchV4-fraunces");
+    expect(
+      screen.getByRole("button", { name: "Alcarin Tengwar" }).style.fontFamily,
+    ).toBe("DiceWitchV4-alcarin-tengwar");
+    expect(appearanceCss).toContain(
+      'font-family: "DiceWitchV4-alcarin-tengwar"',
+    );
+    expect(appearanceCss).toContain("AlcarinTengwar-Bold-ui.ttf");
     expect(screen.getByText("Typeface")).not.toBeNull();
     expect(screen.getByText("Ink")).not.toBeNull();
     for (const groupName of ["Font", "Engraving finish"]) {
@@ -210,7 +225,7 @@ describe("MixPickerVarietyControl", () => {
     );
     const { rerender } = render(
       <MixPickerVarietyControl
-        recipe={{ ...base, variation: "fixed", varyBy: "roll" }}
+        recipe={{ ...base, variation: "curated", varyBy: "roll" }}
         onSelect={vi.fn()}
         onChaos={vi.fn()}
       />,

@@ -142,13 +142,23 @@ describe("AppearanceEditorV3", () => {
     });
 
     const preview = screen.getByRole("region", { name: "Preview" });
+    const variety = screen.getByRole("region", { name: "Variety" });
     const editor = preview.closest("section.grid");
-    const stickyStack = preview.parentElement?.parentElement;
+    const stickyStack = preview.closest("aside");
+    const designPanel = screen.getByRole("tabpanel", { name: "Design" });
     expect(editor?.className).toContain("xl:grid-cols");
     expect(stickyStack?.className).toContain("xl:sticky");
     expect(stickyStack?.className).toContain("xl:self-start");
-    expect(stickyStack?.classList.contains("sticky")).toBe(false);
-    expect(preview.parentElement?.className).not.toContain("xl:sticky");
+    expect(stickyStack?.className).toContain("flex");
+    expect(stickyStack?.className).toContain("gap-4");
+    expect(stickyStack?.className).not.toContain("space-y-4");
+    expect(stickyStack?.contains(variety)).toBe(true);
+    expect(variety.parentElement?.className).toContain("rounded-xl");
+    expect(variety.parentElement?.className).toContain("bg-card");
+    expect(designPanel.contains(variety)).toBe(false);
+    expect(preview.compareDocumentPosition(variety)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(screen.queryByRole("heading", { name: "Saved designs" })).toBeNull();
 
     await selectAppearanceTarget(user, "d20");
@@ -516,7 +526,7 @@ describe("AppearanceEditorV3", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("confirms before replacing an unsaved custom design draft", async () => {
+  it("replaces an automatic draft and changes variety without confirmation", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -529,24 +539,22 @@ describe("AppearanceEditorV3", () => {
       onSave: vi.fn(async () => undefined),
     });
 
-    await selectStartFromStyle(user, "pride");
-    await user.click(materialTile("Glass"));
-    await selectStartFromStyle(user, "dice-witch");
-
-    expect(confirm).toHaveBeenCalledWith(
-      "Discard the unsaved custom design Edit 1?",
-    );
+    await user.click(screen.getByRole("button", { name: "Mixed bag" }));
     expect(screen.getByLabelText("Custom design name")).toHaveProperty(
       "value",
       "Edit 1",
     );
-
-    confirm.mockReturnValue(true);
-    await user.click(startFromCard("dice-witch"));
+    await selectStartFromStyle(user, "grain-expectations");
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
-    expect(startFromCard("dice-witch").getAttribute("aria-pressed")).toBe(
-      "true",
+    expect(startFromCard("grain-expectations").getAttribute("aria-pressed"))
+      .toBe("true");
+
+    await user.click(screen.getByRole("button", { name: "Matched set" }));
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Edit 1",
     );
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it("preserves staged Design changes across die targets", async () => {
@@ -909,6 +917,7 @@ describe("AppearanceEditorV3", () => {
   it("copies a personal design into an independent guild draft", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const personalDesign: CustomAppearanceDesignV3 = {
       id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       name: "Personal glass",
@@ -935,11 +944,18 @@ describe("AppearanceEditorV3", () => {
       personalDesign.id,
     );
     await user.click(screen.getByRole("button", { name: "Copy to draft" }));
+    await selectStartFromStyle(user, "dice-witch");
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     const copied = onSave.mock.calls[0]?.[0] as GuildAppearanceProfileV4;
     expect(copied.mode).toBe("default");
+    expect(copied.assignments.all).toEqual({
+      source: "builtin",
+      id: "dice-witch",
+    });
     expect(copied.designs[0]?.recipe).toEqual({
       ...personalDesign.recipe,
       form: {
@@ -1140,6 +1156,39 @@ describe("AppearanceEditorV3 chip actions", () => {
     expect(screen.getByText(/Deleting Edit 1 is staged/)).toBeDefined();
     // d20 falls back to following ALL.
     expect(screen.getByText("d20 follows ALL right now")).toBeDefined();
+  });
+
+  it("saves Matched Set as a fresh roll-scoped draw", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Matched set" }));
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+
+    const saved = onSave.mock.calls[0]?.[0];
+    expect(saved.assignments.all).toEqual({
+      source: "custom",
+      id: designId,
+    });
+    expect(saved.designs).toEqual([
+      expect.objectContaining({
+        id: designId,
+        recipe: expect.objectContaining({
+          variation: "curated",
+          varyBy: "roll",
+        }),
+      }),
+    ]);
   });
 
   it("resets ALL with one terse confirmation and keeps per-die designs", async () => {

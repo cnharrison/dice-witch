@@ -6,6 +6,7 @@ import type {
 } from "@dice-witch/dice-v4-model";
 import {
   FANTASY_ESSENCE_PALETTES_R33_V4,
+  deriveAppearanceSeedV4,
   parseAppearanceRecipeV3,
 } from "@dice-witch/dice-v4-model";
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
@@ -226,9 +227,11 @@ describe("applyMaterialRows", () => {
 describe("variety", () => {
   it("maps variation x varyBy onto the three-state control", () => {
     expect(varietyFromRecipe({ ...base(), variation: "wild" })).toBe("chaos");
-    expect(
-      varietyFromRecipe({ ...base(), variation: "fixed", varyBy: "roll" }),
-    ).toBe("matched");
+    for (const variation of ["fixed", "curated"] as const) {
+      expect(
+        varietyFromRecipe({ ...base(), variation, varyBy: "roll" }),
+      ).toBe("matched");
+    }
     expect(
       varietyFromRecipe({ ...base(), variation: "curated", varyBy: "die" }),
     ).toBe("mixed");
@@ -241,7 +244,7 @@ describe("variety", () => {
   it("applies matched and mixed, and defers chaos to assignment level", () => {
     const recipe = base();
     expect(applyVariety(recipe, "matched")).toMatchObject({
-      variation: "fixed",
+      variation: "curated",
       varyBy: "roll",
     });
     expect(applyVariety(recipe, "mixed")).toMatchObject({
@@ -249,6 +252,23 @@ describe("variety", () => {
       varyBy: "die",
     });
     expect(applyVariety(recipe, "chaos" as never)).toBeDefined();
+  });
+
+  it("gives a matched roll one shared draw and rerolls the next roll", () => {
+    const recipe = applyVariety(base(), "matched");
+    const seed = (renderSeed: number, dieIndex: number) =>
+      deriveAppearanceSeedV4({
+        renderSeed,
+        target: "d6",
+        groupIndex: 0,
+        dieIndex,
+        variation: recipe.variation,
+        varyBy: recipe.varyBy,
+        recipe,
+      });
+
+    expect(seed(100, 0)).toBe(seed(100, 1));
+    expect(seed(101, 0)).not.toBe(seed(100, 0));
   });
 });
 
