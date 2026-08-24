@@ -56,7 +56,7 @@ describe("MixPickerStartFromRow", () => {
     render(
       <MixPickerStartFromRow
         catalog={catalog}
-        selectedStyleId=""
+        selectedStyleId="dice-witch"
         thumbVersion={thumbVersion}
         onSelect={vi.fn()}
       />,
@@ -68,6 +68,17 @@ describe("MixPickerStartFromRow", () => {
     expect(
       screen.queryByRole("button", { name: /classic-material/ }),
     ).toBeNull();
+    const thumbnail = screen
+      .getByRole("button", { name: "dice-witch-name" })
+      .querySelector("img");
+    expect(thumbnail?.parentElement?.className).toContain("h-[4.5rem]");
+    expect(thumbnail?.className).toContain("!w-auto");
+    expect(thumbnail?.className).toContain("max-w-none");
+    expect(thumbnail?.className).toContain("left-1/2");
+    expect(thumbnail?.className).toContain("top-1/2");
+    expect(thumbnail?.className).toContain("-translate-x-1/2");
+    expect(thumbnail?.className).toContain("-translate-y-1/2");
+    expect(thumbnail?.className).toContain("scale-[1.3]");
   });
 
   it("badges the Random builtin card as the default", () => {
@@ -79,10 +90,56 @@ describe("MixPickerStartFromRow", () => {
         onSelect={vi.fn()}
       />,
     );
-    const randomCard = screen.getByRole("button", { name: /Random/ });
+    const randomCard = screen.getByRole("button", {
+      name: "Random, The default",
+    });
     expect(randomCard.getAttribute("aria-pressed")).toBe("true");
     // Uppercase presentation comes from CSS; the copy is "The default".
     expect(randomCard.textContent?.toLowerCase()).toContain("the default");
+  });
+
+  it("shows one style name centrally on hover, focus, and tap", () => {
+    render(
+      <MixPickerStartFromRow
+        catalog={catalog}
+        selectedStyleId="dice-witch"
+        thumbVersion={thumbVersion}
+        onSelect={vi.fn()}
+      />,
+    );
+    const diceWitch = screen.getByRole("button", {
+      name: "dice-witch-name",
+    });
+    const solid = screen.getByRole("button", { name: "solid-name" });
+    const random = screen.getByRole("button", {
+      name: "Random, The default",
+    });
+    const startFrom = screen.getByRole("region", { name: "Start from" });
+
+    expect(startFrom.querySelector("header")?.textContent).toContain(
+      "dice-witch-name",
+    );
+    expect(diceWitch.textContent).not.toContain("dice-witch-name");
+    fireEvent.mouseEnter(solid);
+    expect(startFrom.querySelector("header")?.textContent).toContain(
+      "solid-name",
+    );
+    fireEvent.mouseLeave(solid);
+    expect(startFrom.querySelector("header")?.textContent).toContain(
+      "dice-witch-name",
+    );
+    fireEvent.focus(solid);
+    fireEvent.mouseEnter(random);
+    expect(startFrom.querySelector("header")?.textContent).toContain("Random");
+    fireEvent.mouseLeave(random);
+    expect(startFrom.querySelector("header")?.textContent).toContain(
+      "solid-name",
+    );
+    fireEvent.blur(solid);
+    fireEvent.click(solid);
+    expect(startFrom.querySelector("header")?.textContent).toContain(
+      "solid-name",
+    );
   });
 
   it("expands remaining styles and reports selections", () => {
