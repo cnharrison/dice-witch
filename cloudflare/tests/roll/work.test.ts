@@ -239,6 +239,29 @@ function telemetryDeliveryRequest(
   };
 }
 
+async function beginDelayedDelivery(
+  stub: ReturnType<typeof work>,
+  input: RollDeliveryRequest,
+): Promise<void> {
+  await runInDurableObject(stub, async (instance, state) => {
+    const roll = instance as unknown as {
+      acceptDelivery(value: RollDeliveryRequest): Promise<unknown>;
+      deliver(value: RollDeliveryRequest): Promise<unknown>;
+    };
+    await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+      status: "created",
+      delivery: "pending",
+    });
+    state.storage.sql.exec(
+      "UPDATE interaction_delivery SET delay_ms = 5000",
+    );
+    await expect(roll.deliver(input)).resolves.toMatchObject({
+      status: "pending",
+    });
+    await state.storage.setAlarm(Date.now() + 60_000);
+  });
+}
+
 async function seedPendingV5Delivery(
   stub: ReturnType<typeof work>,
   input: RollDeliveryRequest,
@@ -3795,18 +3818,7 @@ describe("RollWork Durable Object", () => {
       input.logging.context.guildId = "100000000000000002";
     }
 
-    await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
-      status: "created",
-      delivery: "pending",
-    });
-    await runInDurableObject(stub, (_instance, state) => {
-      state.storage.sql.exec(
-        "UPDATE interaction_delivery SET delay_ms = 5000",
-      );
-    });
-    await expect(stub.deliver(input)).resolves.toMatchObject({
-      status: "pending",
-    });
+    await beginDelayedDelivery(stub, input);
     await runInDurableObject(stub, async (instance, state) => {
       state.storage.sql.exec(
         "UPDATE interaction_delivery SET result_not_before = 0",
@@ -3859,9 +3871,7 @@ describe("RollWork Durable Object", () => {
       input.logging.context.guildId = "100000000000000002";
     }
 
-    await expect(stub.deliver(input)).resolves.toMatchObject({
-      status: "pending",
-    });
+    await beginDelayedDelivery(stub, input);
     await runInDurableObject(stub, async (instance, state) => {
       state.storage.sql.exec(
         "UPDATE interaction_delivery SET result_not_before = 0",
@@ -3898,9 +3908,7 @@ describe("RollWork Durable Object", () => {
       input.logging.context.guildId = "100000000000000002";
     }
 
-    await expect(stub.deliver(input)).resolves.toMatchObject({
-      status: "pending",
-    });
+    await beginDelayedDelivery(stub, input);
     await runInDurableObject(stub, async (instance, state) => {
       state.storage.sql.exec(
         "UPDATE interaction_delivery SET result_not_before = 0",
