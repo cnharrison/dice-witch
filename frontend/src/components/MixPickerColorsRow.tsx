@@ -1,6 +1,6 @@
 import { CustomColorPickerDialog } from "@/components/CustomColorPickerDialog";
 import {
-  createVividAppearancePaletteV3,
+  createRandomAppearanceColorsV3,
   selectionValuesV3,
 } from "@/lib/appearance-editor-v3";
 import type {
@@ -259,16 +259,7 @@ export function MixPickerColorsRow({
           <button
             type="button"
             disabled={disabled}
-            onClick={() =>
-              emit({
-                mode: "palette",
-                colors: createVividAppearancePaletteV3(
-                  colors.mode === "palette"
-                    ? colors.colors.length
-                    : catalog.editorDefaults.palette.length,
-                ),
-              })
-            }
+            onClick={() => emit(createRandomAppearanceColorsV3())}
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             <Dices className="h-3.5 w-3.5" aria-hidden="true" />

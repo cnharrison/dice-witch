@@ -8,6 +8,7 @@ import {
   parseAppearanceProfileV4,
   parseAppearanceRecipeV3,
   parseGuildAppearanceProfileV4,
+  type AppearanceColorsV3,
   type AppearanceDesignReferenceV3,
   type AppearanceMaterialV4,
   type AppearanceProfileV4,
@@ -103,12 +104,12 @@ function vividHexColorV3(
     .join("")}`;
 }
 
-export function createVividAppearancePaletteV3(
+function createVividAppearanceColorsV3(
   colorCount: number,
   providedRandomValues?: Uint32Array,
 ): string[] {
-  if (!Number.isSafeInteger(colorCount) || colorCount < 2 || colorCount > 6) {
-    throw new Error("Vivid palette must contain from two through six colors");
+  if (!Number.isSafeInteger(colorCount) || colorCount < 1 || colorCount > 6) {
+    throw new Error("Vivid colors must contain from one through six colors");
   }
   const randomValues =
     providedRandomValues ??
@@ -132,6 +133,42 @@ export function createVividAppearancePaletteV3(
     const lightness = (44 + ((value >>> 16) % 17)) / 100;
     return vividHexColorV3(hue, saturation, lightness);
   });
+}
+
+export function createVividAppearancePaletteV3(
+  colorCount: number,
+  providedRandomValues?: Uint32Array,
+): string[] {
+  if (!Number.isSafeInteger(colorCount) || colorCount < 2 || colorCount > 6) {
+    throw new Error("Vivid palette must contain from two through six colors");
+  }
+  return createVividAppearanceColorsV3(colorCount, providedRandomValues);
+}
+
+function randomColorCountV3(): number {
+  const maximum = 6;
+  const unbiasedLimit = Math.floor(0x1_0000_0000 / maximum) * maximum;
+  const values = new Uint32Array(1);
+  while (true) {
+    crypto.getRandomValues(values);
+    const value = values[0];
+    if (value === undefined) {
+      throw new Error("Random color count is missing");
+    }
+    if (value < unbiasedLimit) return (value % maximum) + 1;
+  }
+}
+
+export function createRandomAppearanceColorsV3(): AppearanceColorsV3 {
+  const colorCount = randomColorCountV3();
+  const colors = createVividAppearanceColorsV3(colorCount);
+  const first = colors[0];
+  if (first === undefined) {
+    throw new Error("Random appearance color is missing");
+  }
+  return colorCount === 1
+    ? { mode: "solid", primary: first }
+    : { mode: "palette", colors };
 }
 
 function validationCatalog(catalog: AppearanceCatalogV3): {

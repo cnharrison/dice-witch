@@ -351,7 +351,12 @@ describe("MixPickerColorsRow", () => {
   });
 
   it("Random generates new colors on every click", () => {
-    mockRandomValues([0, 1, 2, 3], [45, 4, 5, 6]);
+    mockRandomValues(
+      [2],
+      [0, 1, 2, 3],
+      [3],
+      [45, 4, 5, 6, 7],
+    );
     const recipe = recipeWith(
       { mode: "fixed", value: materialValue("classic") },
       { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] },
@@ -381,8 +386,14 @@ describe("MixPickerColorsRow", () => {
     expect(second.colors).not.toEqual(first.colors);
   });
 
-  it("Random writes a generated palette without touching other rows", () => {
-    mockRandomValues([0, 1, 2, 3]);
+  it("Random chooses between one and six colors without touching other rows", () => {
+    mockRandomValues(
+      [0xffff_fffc],
+      [0],
+      [0, 1],
+      [5],
+      [0, 1, 2, 3, 4, 5, 6],
+    );
     const recipe = {
       ...recipeWith(
         { mode: "fixed", value: materialValue("classic") },
@@ -391,25 +402,36 @@ describe("MixPickerColorsRow", () => {
       randomization: "full-spectrum-v2" as const,
     };
     const onChange = vi.fn();
-    render(
+    const { rerender } = render(
       <MixPickerColorsRow
         recipe={recipe}
         catalog={catalog}
         onChange={onChange}
       />,
     );
+
     fireEvent.click(screen.getByRole("button", { name: "Random" }));
-    const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
-    expect(next.colors.mode).toBe("palette");
-    if (next.colors.mode !== "palette") throw new Error("Expected a palette");
-    expect(next.colors.colors).toHaveLength(catalog.editorDefaults.palette.length);
-    expect(next.colors.colors).not.toEqual(
-      catalog.styles[0]?.recipe.colors.mode === "palette"
-        ? catalog.styles[0].recipe.colors.colors
-        : [],
+    const oneColor = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
+    expect(oneColor.colors.mode).toBe("solid");
+    expect(oneColor.material).toEqual(recipe.material);
+    expect(oneColor.font).toEqual(recipe.font);
+    expect(oneColor.randomization).toBeUndefined();
+
+    rerender(
+      <MixPickerColorsRow
+        recipe={oneColor}
+        catalog={catalog}
+        onChange={onChange}
+      />,
     );
-    expect(next.material).toEqual(recipe.material);
-    expect(next.font).toEqual(recipe.font);
-    expect(next.randomization).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    const sixColors = onChange.mock.calls[1]?.[0] as AppearanceRecipeV3;
+    expect(sixColors.colors.mode).toBe("palette");
+    if (sixColors.colors.mode !== "palette") {
+      throw new Error("Expected a palette");
+    }
+    expect(sixColors.colors.colors).toHaveLength(6);
+    expect(sixColors.material).toEqual(recipe.material);
+    expect(sixColors.font).toEqual(recipe.font);
   });
 });
