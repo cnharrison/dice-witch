@@ -2310,6 +2310,35 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toBe(true);
   });
 
+  it("keeps Lava's crust and glow colors in their authored order", () => {
+    const lava = APPEARANCE_CATALOG_V3.styles.find(
+      ({ id }) => id === "elemental-lava-r33",
+    );
+    if (lava === undefined) throw new Error("Lava fixture is missing");
+
+    const authored = R32_MATERIAL_PALETTES_V3["elemental-lava"];
+    for (const policy of [
+      "property-streams-r35",
+      "property-streams-r37",
+    ] as const) {
+      const palettes = Array.from({ length: 64 }, (_, dieIndex) =>
+        resolveAppearanceRecipeV3(
+          lava.recipe,
+          contextV3({
+            target: "d6",
+            dieIndex,
+            dieIdentity: `custom:${String(dieIndex)}`,
+          }),
+          policy,
+        ).appearance.palette,
+      );
+
+      for (const palette of palettes) {
+        expect(palette).toEqual(authored);
+      }
+    }
+  });
+
   it("keeps every r27 chosen random partner visibly distinct", () => {
     const recipe = appearanceRecipeV3({
       variation: "fixed",

@@ -1441,7 +1441,13 @@ export function resolveAppearanceRecipeV3(
     seedPolicy,
     randomSpecial?.palette,
   );
-  if (usesR35 && distributesSharedPaletteV3(recipe)) {
+  const preservesAuthoredColorOrder =
+    material.family === "elemental" && material.style === "lava";
+  if (
+    usesR35 &&
+    distributesSharedPaletteV3(recipe) &&
+    !preservesAuthoredColorOrder
+  ) {
     const colorOrderChoices = material.family === "paint"
       ? colors.ordered.length - 1
       : colors.ordered.length;

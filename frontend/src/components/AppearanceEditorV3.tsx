@@ -11,8 +11,6 @@ import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { AppearanceTargetPickerV3 } from "@/components/AppearanceTargetPickerV3";
 import { SavedAppearanceDesigns } from "@/components/SavedAppearanceDesigns";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { AppearanceApiError } from "@/lib/appearance-api-error";
 import {
   applyAppearanceReferenceV3,
@@ -179,6 +177,8 @@ export function AppearanceEditorV3({
     React.useState<AppearanceEditorTargetV3>("all");
   const [editingDesignId, setEditingDesignId] =
     React.useState<string | null>(null);
+  const [savedDesignEditorId, setSavedDesignEditorId] =
+    React.useState<string | null>(null);
   const [nameDrafts, setNameDrafts] = React.useState<Record<string, string>>({});
   const [basedOnStyles, setBasedOnStyles] = React.useState<
     Record<string, string>
@@ -241,6 +241,10 @@ export function AppearanceEditorV3({
     setDraftProfile(next);
     setBaselineProfile(structuredClone(resourceProfile));
     setBaselineRevision(resource.revision);
+    if (!localDesignChanged && remoteDesignChanged) {
+      setEditingDesignId(null);
+      setSavedDesignEditorId(null);
+    }
   }, [resource.revision, resourceProfile]);
 
   React.useEffect(() => {
@@ -280,14 +284,12 @@ export function AppearanceEditorV3({
   const activeDesign = activeSelection.designId === null
     ? undefined
     : draftProfile.designs.find(({ id }) => id === activeSelection.designId);
-  const activeDesignName = activeDesign === undefined
-    ? ""
-    : nameDrafts[activeDesign.id] ?? activeDesign.name;
   const displayedDesigns = [
     ...draftProfile.designs.map((design) => ({
       ...design,
       name: nameDrafts[design.id] ?? design.name,
       pendingDeletion: false,
+      basedOnStyle: basedOnStyles[design.id],
     })),
     ...deletionNotices.map(({ design }) => ({
       ...design,
@@ -367,6 +369,17 @@ export function AppearanceEditorV3({
     if (focus) tabRefs.current[tab]?.focus();
   };
 
+  const openSavedDesignEditor = (designId: string) => {
+    setEditingDesignId(designId);
+    setSavedDesignEditorId(designId);
+    setSavedOpen(true);
+  };
+
+  const closeActiveDesign = () => {
+    setEditingDesignId(null);
+    setSavedDesignEditorId(null);
+  };
+
   const handleTabKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
     tab: AppearanceEditorTab,
@@ -391,7 +404,7 @@ export function AppearanceEditorV3({
   const selectTarget = (nextTarget: AppearanceEditorTargetV3) => {
     setTarget(nextTarget);
     setPreviewTarget(nextTarget);
-    setEditingDesignId(null);
+    closeActiveDesign();
     setStatus(null);
   };
 
@@ -448,7 +461,7 @@ export function AppearanceEditorV3({
         activeSelection.designId,
       );
       setDraftProfile(next);
-      setEditingDesignId(null);
+      closeActiveDesign();
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
@@ -474,7 +487,7 @@ export function AppearanceEditorV3({
             catalog,
           ),
         );
-        setEditingDesignId(id);
+        openSavedDesignEditor(id);
         setBasedOnStyles((styles) => ({
           ...styles,
           [id]: activeSelection.name,
@@ -523,7 +536,7 @@ export function AppearanceEditorV3({
           catalog,
         ),
       );
-      setEditingDesignId(id);
+      openSavedDesignEditor(id);
       setExplicitDesignIds((ids) => [...ids, id]);
       if (basedOnStyle) {
         setBasedOnStyles((styles) => ({
@@ -549,7 +562,7 @@ export function AppearanceEditorV3({
         ),
       );
       if (activeTab !== "design") activateTab("design", true);
-      setEditingDesignId(duplicateId);
+      openSavedDesignEditor(duplicateId);
       setExplicitDesignIds((ids) => [...ids, duplicateId]);
       setStatus(null);
     } catch (error) {
@@ -578,7 +591,7 @@ export function AppearanceEditorV3({
         activeSelection.designId,
       );
       setDraftProfile(next);
-      setEditingDesignId(id);
+      openSavedDesignEditor(id);
       setExplicitDesignIds((ids) => [...ids, id]);
       setStatus(
         `${design.name} was copied into this server draft. Save & apply to keep the detached copy.`,
@@ -603,7 +616,7 @@ export function AppearanceEditorV3({
         activeSelection.designId,
       );
       setDraftProfile(next);
-      setEditingDesignId(null);
+      closeActiveDesign();
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
@@ -613,7 +626,7 @@ export function AppearanceEditorV3({
   const editDesign = (designId: string) => {
     if (!draftProfile.designs.some(({ id }) => id === designId)) return;
     activateTab("design", true);
-    setEditingDesignId(designId);
+    openSavedDesignEditor(designId);
     setStatus(null);
   };
 
@@ -628,7 +641,7 @@ export function AppearanceEditorV3({
         { design, targets },
       ]);
       removeDraftMetadata(designId);
-      if (editingDesignId === designId) setEditingDesignId(null);
+      if (editingDesignId === designId) closeActiveDesign();
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
@@ -674,7 +687,7 @@ export function AppearanceEditorV3({
     selectTarget(editTarget);
     const reference = draftProfile.assignments.overrides[editTarget];
     if (reference?.source === "custom") {
-      setEditingDesignId(reference.id);
+      openSavedDesignEditor(reference.id);
     }
   };
 
@@ -710,7 +723,7 @@ export function AppearanceEditorV3({
       }
       setDraftProfile(next);
       if (reference.source === "custom" && editingDesignId === reference.id) {
-        setEditingDesignId(null);
+        closeActiveDesign();
       }
       setStatus(null);
     } catch (error) {
@@ -751,7 +764,7 @@ export function AppearanceEditorV3({
         }
       }
       setDraftProfile(next);
-      setEditingDesignId(null);
+      closeActiveDesign();
       setStatus(null);
     } catch (error) {
       setStatus(errorMessage(error));
@@ -785,7 +798,7 @@ export function AppearanceEditorV3({
       await onSave(profile, baselineRevision);
       setBaselineProfile(structuredClone(profile));
       setDraftProfile(structuredClone(profile));
-      setEditingDesignId(null);
+      closeActiveDesign();
       setNameDrafts({});
       setBasedOnStyles({});
       setExplicitDesignIds([]);
@@ -802,7 +815,7 @@ export function AppearanceEditorV3({
     setBaselineProfile(structuredClone(latestProfile));
     setBaselineRevision(resource.revision);
     setDraftProfile(structuredClone(latestProfile));
-    setEditingDesignId(null);
+    closeActiveDesign();
     setNameDrafts({});
     setBasedOnStyles({});
     setExplicitDesignIds([]);
@@ -894,13 +907,20 @@ export function AppearanceEditorV3({
           id={`${kind}-saved-designs`}
           designs={displayedDesigns}
           expanded={savedOpen}
+          editingDesignId={savedDesignEditorId}
           isSaving={isSaving}
           canCreate={!atDesignCap}
           canDuplicate={!atDesignCap}
+          maximumNameLength={catalog.bounds.maximumDesignNameCharacters}
           onCreate={createDesign}
           onToggle={() => setSavedOpen((open) => !open)}
           onApply={applySavedDesign}
           onEdit={editDesign}
+          onNameChange={(designId, name) => {
+            setNameDrafts((drafts) => ({ ...drafts, [designId]: name }));
+            setStatus(null);
+          }}
+          onDoneEditing={() => setSavedDesignEditorId(null)}
           onDuplicate={duplicateDesign}
           onDelete={deleteDesign}
           onRestore={restoreDesign}
@@ -998,52 +1018,6 @@ export function AppearanceEditorV3({
             disabled={isSaving}
             onSelect={selectStyle}
           />
-
-          {activeDesign !== undefined && (
-            <div className="space-y-1.5 rounded-lg border bg-muted/20 p-4">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {basedOnStyles[activeDesign.id] !== undefined && (
-                  <>
-                    <span className="text-xs font-medium text-muted-foreground">
-                      Based on {basedOnStyles[activeDesign.id]}
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className="text-muted-foreground"
-                    >
-                      ·
-                    </span>
-                  </>
-                )}
-                <Label htmlFor={`${kind}-design-name-v3`}>
-                  Custom design name
-                </Label>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-                <Input
-                  id={`${kind}-design-name-v3`}
-                  aria-label="Custom design name"
-                  value={activeDesignName}
-                  maxLength={catalog.bounds.maximumDesignNameCharacters}
-                  onChange={(event) => {
-                    setNameDrafts((drafts) => ({
-                      ...drafts,
-                      [activeDesign.id]: event.target.value,
-                    }));
-                    setStatus(null);
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isSaving || atDesignCap}
-                  onClick={() => duplicateDesign(activeDesign.id)}
-                >
-                  Duplicate
-                </Button>
-              </div>
-            </div>
-          )}
 
           <div className="space-y-6">
             <MixPickerMaterialsRow

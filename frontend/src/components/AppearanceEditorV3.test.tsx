@@ -203,7 +203,8 @@ describe("AppearanceEditorV3", () => {
     expect(stickyStack?.className).toContain("xl:sticky");
   });
 
-  it("keeps New design visible with an empty saved-design list", () => {
+  it("opens a new design for editing inside Saved designs", async () => {
+    const user = userEvent.setup();
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 4, profile: personalProfile() },
@@ -223,6 +224,14 @@ describe("AppearanceEditorV3", () => {
     expect(preview.compareDocumentPosition(heading)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+
+    await user.click(newDesign);
+    const nameInput = screen.getByLabelText("Custom design name");
+    const savedCard = heading.closest(".appearance-editor-saved-card");
+    const designPanel = screen.getByRole("tabpanel", { name: /^Design/ });
+    expect(savedCard?.contains(nameInput)).toBe(true);
+    expect(designPanel.contains(nameInput)).toBe(false);
+    expect(screen.getByRole("button", { name: "Done" })).toBeDefined();
   });
 
   it("opens Design when editing a saved design from another tab", async () => {
@@ -256,11 +265,20 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Edit Night garden" }));
 
     expect(designTab.getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(designTab);
-    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
-      "value",
-      "Night garden",
-    );
+    const nameInput = screen.getByLabelText("Custom design name");
+    const savedHeading = screen.getByRole("heading", { name: "Saved designs" });
+    const savedCard = savedHeading.closest(".appearance-editor-saved-card");
+    const designPanel = screen.getByRole("tabpanel", { name: "Design" });
+    expect(nameInput).toHaveProperty("value", "Night garden");
+    expect(savedCard?.contains(nameInput)).toBe(true);
+    expect(designPanel.contains(nameInput)).toBe(false);
+    expect(document.activeElement).toBe(nameInput);
+
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByLabelText("Custom design name")).toBeNull();
+    const editButton = screen.getByRole("button", { name: "Edit Night garden" });
+    expect(editButton).toBeDefined();
+    expect(document.activeElement).toBe(editButton);
   });
 
   it("keeps one preview mounted while switching between Design and Camera tabs", async () => {
@@ -648,7 +666,6 @@ describe("AppearanceEditorV3", () => {
 
     await user.click(screen.getByRole("button", { name: "Use Night garden" }));
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Custom design name")).toHaveProperty("value", "Night garden");
     await user.click(screen.getByRole("button", { name: "Delete Night garden" }));
     expect(screen.getByText("Night garden").className).toContain("line-through");
     expect(
@@ -869,6 +886,7 @@ describe("AppearanceEditorV3", () => {
       </QueryClientProvider>,
     );
 
+    await user.click(screen.getByRole("button", { name: "Edit Night garden" }));
     const name = screen.getByLabelText("Custom design name");
     await user.clear(name);
     await user.type(name, "Temporary name");
@@ -1012,6 +1030,7 @@ describe("AppearanceEditorV3", () => {
       onSave,
     });
 
+    await user.click(screen.getByRole("button", { name: "Edit Night garden" }));
     expect(screen.getByLabelText("Custom design name")).toHaveProperty(
       "value",
       "Night garden",
@@ -1087,7 +1106,8 @@ describe("AppearanceEditorV3", () => {
     expect(screen.getByRole("button", { name: "Edit Random" })).toBeDefined();
   });
 
-  it("stops creating designs at the ten-design cap", () => {
+  it("stops creating designs at the ten-design cap", async () => {
+    const user = userEvent.setup();
     const profile = personalProfile();
     profile.designs = Array.from({ length: 10 }, (_, index) => ({
       id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
@@ -1107,13 +1127,14 @@ describe("AppearanceEditorV3", () => {
       onSave: vi.fn(async () => undefined),
     });
 
+    expect(
+      screen.getByRole("button", { name: "Duplicate Design 1" }),
+    ).toHaveProperty("disabled", true);
+    await user.click(screen.getByRole("button", { name: "Edit Design 1" }));
     expect(screen.getByRole("button", { name: "Duplicate" })).toHaveProperty(
       "disabled",
       true,
     );
-    expect(
-      screen.getByRole("button", { name: "Duplicate Design 1" }),
-    ).toHaveProperty("disabled", true);
   });
 });
 

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_CATALOG_V3,
+  APPEARANCE_THUMB_CACHE_REVISION_V3,
   appearanceThumbObjectKeyV3,
   appearanceThumbPreviewRequestV3,
   APPEARANCE_THUMB_SEED_V3,
   appearanceThumbnailManifestV3,
+  R32_MATERIAL_PALETTES_V3,
   parseAppearancePreviewRequestV4,
 } from "../../packages/dice-appearance/src";
 
@@ -74,6 +76,23 @@ describe("appearanceThumbnailManifestV3", () => {
         parseAppearancePreviewRequestV4(appearanceThumbPreviewRequestV3(spec)),
       ).not.toThrow();
     }
+  });
+
+  it("bakes Lava with its canonical crust-first palette", () => {
+    const lava = manifest.find(
+      ({ kind, id }) => kind === "preset" && id === "elemental-lava-r33",
+    );
+    if (lava === undefined) throw new Error("Lava thumbnail spec is missing");
+
+    expect(lava.recipe.colors).toEqual({
+      mode: "palette",
+      colors: [...R32_MATERIAL_PALETTES_V3["elemental-lava"]],
+    });
+    expect(lava.recipe.material).toMatchObject({
+      mode: "fixed",
+      value: { family: "elemental", style: "lava" },
+    });
+    expect(APPEARANCE_THUMB_CACHE_REVISION_V3).toBe(3);
   });
 });
 

@@ -30,7 +30,7 @@ export type AppearanceThumbVersionParts = Readonly<{
 // Distinct from the editor preview default seed so baked tiles are visually
 // stable across deploys regardless of editor state.
 export const APPEARANCE_THUMB_SEED_V3 = 0x51ce_b00d;
-export const APPEARANCE_THUMB_CACHE_REVISION_V3 = 2;
+export const APPEARANCE_THUMB_CACHE_REVISION_V3 = 3;
 
 const APPEARANCE_THUMB_TARGET_V3 = "d20" as const;
 const APPEARANCE_THUMB_NEUTRAL_STYLE_ID_V3 = "solid";

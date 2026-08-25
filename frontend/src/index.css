@@ -298,6 +298,11 @@ select {
     margin-top: 0.5rem;
     padding: 0.5rem;
   }
+
+  .appearance-editor-rail:has(.appearance-saved-design-editor)
+    .appearance-preview-canvas {
+    height: 3.5rem;
+  }
 }
 
 @keyframes dice-witch-sparkle-twinkle {
