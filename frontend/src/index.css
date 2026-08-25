@@ -278,6 +278,28 @@ select {
   }
 }
 
+@media (min-width: 1280px) and (max-height: 900px) {
+  .appearance-editor-rail {
+    gap: 0.5rem;
+  }
+
+  .appearance-editor-rail > .appearance-editor-target-card,
+  .appearance-editor-variety-card,
+  .appearance-editor-saved-card {
+    padding: 0.75rem;
+  }
+
+  .appearance-preview-card {
+    padding: 0.5rem;
+  }
+
+  .appearance-preview-canvas {
+    height: clamp(6.5rem, 17dvh, 18rem);
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+  }
+}
+
 @keyframes dice-witch-sparkle-twinkle {
   0%, 100% {
     opacity: 0.3;

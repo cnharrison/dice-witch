@@ -166,7 +166,7 @@ export function AppearancePreviewPaneV3({
     <section
       aria-label="Preview"
       data-target={target}
-      className="overflow-hidden rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg dark:border-brand/40 dark:bg-select dark:text-card-foreground"
+      className="appearance-preview-card overflow-hidden rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg dark:border-brand/40 dark:bg-select dark:text-card-foreground"
     >
       <div className="flex flex-wrap justify-end gap-2">
         <div className="flex gap-2">
@@ -193,7 +193,7 @@ export function AppearancePreviewPaneV3({
         </div>
       </div>
       <div
-        className="mt-4 flex h-72 items-center justify-center overflow-hidden rounded-lg border border-border bg-background p-3 dark:border-white/10 dark:bg-black/25"
+        className="appearance-preview-canvas mt-4 flex h-72 items-center justify-center overflow-hidden rounded-lg border border-border bg-background p-3 dark:border-white/10 dark:bg-black/25"
         aria-busy={previewQuery.isFetching}
         aria-live="polite"
       >

@@ -43,7 +43,7 @@ export function SavedAppearanceDesigns({
     ({ pendingDeletion }) => !pendingDeletion,
   ).length;
   return (
-    <div className="rounded-xl border bg-card p-4 shadow-sm">
+    <div className="appearance-editor-saved-card rounded-xl border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold">Saved designs</h2>
