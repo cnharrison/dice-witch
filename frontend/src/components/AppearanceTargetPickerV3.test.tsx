@@ -33,7 +33,7 @@ describe("AppearanceTargetPickerV3", () => {
     expect(group.querySelectorAll("svg")).toHaveLength(8);
     const all = screen.getByRole("radio", { name: "All dice" });
     expect(all.textContent).toBe("ALL");
-    expect(all.firstElementChild?.className).toContain("text-xs");
+    expect(all.firstElementChild?.className).toContain("text-[10px]");
     for (const target of targets.slice(1)) {
       expect(target.textContent).toBe("");
       expect(target.getAttribute("data-highlighted")).toBe("true");

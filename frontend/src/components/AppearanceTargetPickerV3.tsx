@@ -216,7 +216,7 @@ export function AppearanceTargetPickerV3({
                     }`}
                   >
                     {target === "all" ? (
-                      <span className="text-xs font-black tracking-[0.12em]">
+                      <span className="text-[10px] font-black tracking-[0.04em]">
                         ALL
                       </span>
                     ) : (
