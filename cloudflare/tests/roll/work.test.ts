@@ -2387,6 +2387,7 @@ describe("RollWork Durable Object", () => {
              WHERE singleton = 1`,
             delivery.clatter_sent_at + 5_000,
           );
+          await state.storage.setAlarm(Date.now() + 60_000);
           const pendingWork = state.storage.sql
             .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
             .one();
