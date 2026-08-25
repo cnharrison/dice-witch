@@ -33,7 +33,12 @@ describe("AppearanceTargetPickerV3", () => {
     expect(group.querySelectorAll("svg")).toHaveLength(8);
     const all = screen.getByRole("radio", { name: "All dice" });
     expect(all.textContent).toBe("ALL");
-    expect(all.firstElementChild?.className).toContain("text-[10px]");
+    const allLabelClasses = all.firstElementChild?.className ?? "";
+    expect(allLabelClasses).toContain("absolute");
+    expect(allLabelClasses).toContain("inset-0");
+    expect(allLabelClasses).toContain("place-items-center");
+    expect(allLabelClasses).toContain("text-[10px]");
+    expect(allLabelClasses).toContain("tracking-normal");
     for (const target of targets.slice(1)) {
       expect(target.textContent).toBe("");
       expect(target.getAttribute("data-highlighted")).toBe("true");

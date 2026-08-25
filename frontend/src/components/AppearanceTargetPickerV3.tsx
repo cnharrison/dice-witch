@@ -216,7 +216,7 @@ export function AppearanceTargetPickerV3({
                     }`}
                   >
                     {target === "all" ? (
-                      <span className="text-[10px] font-black tracking-[0.04em]">
+                      <span className="pointer-events-none absolute inset-0 grid place-items-center text-[10px] font-black leading-none tracking-normal">
                         ALL
                       </span>
                     ) : (

@@ -9,9 +9,14 @@ type SavedAppearanceDesign = Readonly<{
 }>;
 
 type SavedAppearanceDesignsProps = {
+  id: string;
   designs: readonly SavedAppearanceDesign[];
+  expanded: boolean;
   isSaving: boolean;
+  canCreate: boolean;
   canDuplicate: boolean;
+  onCreate(): void;
+  onToggle(): void;
   onApply?: (designId: string) => void;
   onEdit(designId: string): void;
   onDuplicate(designId: string): void;
@@ -20,9 +25,14 @@ type SavedAppearanceDesignsProps = {
 };
 
 export function SavedAppearanceDesigns({
+  id,
   designs,
+  expanded,
   isSaving,
+  canCreate,
   canDuplicate,
+  onCreate,
+  onToggle,
   onApply,
   onEdit,
   onDuplicate,
@@ -34,21 +44,51 @@ export function SavedAppearanceDesigns({
   ).length;
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm">
-      <h2 className="font-semibold">Saved designs</h2>
-      <p className="text-xs text-muted-foreground">
-        {storedCount} of 10 used
-      </p>
-      {designs.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">
-          No saved designs.
-        </p>
-      ) : (
-        <ul className="mt-3 space-y-2">
-          {designs.map((design) => (
-            <li
-              key={design.id}
-              className="flex items-center gap-2 rounded-md border bg-background p-2"
-            >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Saved designs</h2>
+          <p className="text-xs text-muted-foreground">
+            {storedCount} of 10 used
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isSaving || !canCreate}
+          onClick={onCreate}
+        >
+          New design
+        </Button>
+      </div>
+      {designs.length > 0 && (
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-3 w-full xl:hidden"
+          aria-controls={id}
+          aria-expanded={expanded}
+          onClick={onToggle}
+        >
+          {expanded ? "Hide saved designs" : "Saved designs"}
+          <span className="sr-only">, {designs.length} total</span>
+        </Button>
+      )}
+      <div
+        id={id}
+        className={designs.length === 0 || expanded ? "" : "hidden xl:block"}
+      >
+        {designs.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            No saved designs.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {designs.map((design) => (
+              <li
+                key={design.id}
+                className="flex items-center gap-2 rounded-md border bg-background p-2"
+              >
               <button
                 type="button"
                 aria-label={`Edit ${design.name}`}
@@ -118,10 +158,11 @@ export function SavedAppearanceDesigns({
                   </Button>
                 </>
               )}
-            </li>
-          ))}
-        </ul>
-      )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

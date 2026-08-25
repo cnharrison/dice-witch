@@ -890,36 +890,21 @@ export function AppearanceEditorV3({
             onChaos={applyChaos}
           />
         </div>
-        {displayedDesigns.length > 0 && (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full xl:hidden"
-              aria-controls={`${kind}-saved-designs`}
-              aria-expanded={savedOpen}
-              onClick={() => setSavedOpen((open) => !open)}
-            >
-              {savedOpen ? "Hide saved designs" : "Saved designs"}
-              <span className="sr-only">, {displayedDesigns.length} total</span>
-            </Button>
-            <div
-              id={`${kind}-saved-designs`}
-              className={savedOpen ? "" : "hidden xl:block"}
-            >
-              <SavedAppearanceDesigns
-                designs={displayedDesigns}
-                isSaving={isSaving}
-                canDuplicate={!atDesignCap}
-                onApply={applySavedDesign}
-                onEdit={editDesign}
-                onDuplicate={duplicateDesign}
-                onDelete={deleteDesign}
-                onRestore={restoreDesign}
-              />
-            </div>
-          </>
-        )}
+        <SavedAppearanceDesigns
+          id={`${kind}-saved-designs`}
+          designs={displayedDesigns}
+          expanded={savedOpen}
+          isSaving={isSaving}
+          canCreate={!atDesignCap}
+          canDuplicate={!atDesignCap}
+          onCreate={createDesign}
+          onToggle={() => setSavedOpen((open) => !open)}
+          onApply={applySavedDesign}
+          onEdit={editDesign}
+          onDuplicate={duplicateDesign}
+          onDelete={deleteDesign}
+          onRestore={restoreDesign}
+        />
       </aside>
 
       <div className="order-2 space-y-6 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-1">
@@ -1014,18 +999,7 @@ export function AppearanceEditorV3({
             onSelect={selectStyle}
           />
 
-          {activeDesign === undefined ? (
-            <div className="rounded-lg border bg-muted/20 p-4">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isSaving || atDesignCap}
-                onClick={createDesign}
-              >
-                New design
-              </Button>
-            </div>
-          ) : (
+          {activeDesign !== undefined && (
             <div className="space-y-1.5 rounded-lg border bg-muted/20 p-4">
               <div className="flex flex-wrap items-center gap-1.5">
                 {basedOnStyles[activeDesign.id] !== undefined && (

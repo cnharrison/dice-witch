@@ -192,37 +192,21 @@ describe("AppearanceEditorV3", () => {
     expect(preview.compareDocumentPosition(variety)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.queryByRole("heading", { name: "Saved designs" })).toBeNull();
+    const savedHeading = screen.getByRole("heading", { name: "Saved designs" });
+    const newDesign = screen.getByRole("button", { name: "New design" });
+    expect(stickyStack?.contains(savedHeading)).toBe(true);
+    expect(savedHeading.parentElement?.parentElement?.contains(newDesign)).toBe(true);
+    expect(designPanel.contains(newDesign)).toBe(false);
 
     await selectAppearanceTarget(user, "d20");
     expect(editor?.className).toContain("xl:grid-cols");
     expect(stickyStack?.className).toContain("xl:sticky");
   });
 
-  it("places saved designs below the preview and omits the empty dialog", () => {
-    const empty = personalProfile();
-    const { unmount } = render(
-      <QueryClientProvider client={new QueryClient()}>
-        <AppearanceEditorV3
-          catalog={APPEARANCE_CATALOG_V3}
-          resource={{ revision: 4, profile: empty }}
-          kind="personal"
-          personalDesigns={[]}
-          isSaving={false}
-          onSave={vi.fn(async () => undefined)}
-        />
-      </QueryClientProvider>,
-    );
-    expect(screen.queryByRole("heading", { name: "Saved designs" })).toBeNull();
-    unmount();
-
-    const profile = personalProfile();
-    profile.designs = [
-      { id: designId, name: "Night garden", recipe: styleRecipe("solid") },
-    ];
+  it("keeps New design visible with an empty saved-design list", () => {
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
-      resource: { revision: 5, profile },
+      resource: { revision: 4, profile: personalProfile() },
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
@@ -231,9 +215,11 @@ describe("AppearanceEditorV3", () => {
 
     const preview = screen.getByRole("region", { name: "Preview" });
     const heading = screen.getByRole("heading", { name: "Saved designs" });
-    const stickyStack = preview.parentElement?.parentElement;
-    expect(stickyStack?.className).toContain("xl:sticky");
+    const newDesign = screen.getByRole("button", { name: "New design" });
+    const stickyStack = preview.closest("aside");
     expect(stickyStack?.contains(heading)).toBe(true);
+    expect(heading.parentElement?.parentElement?.contains(newDesign)).toBe(true);
+    expect(screen.getByText("No saved designs.")).toBeDefined();
     expect(preview.compareDocumentPosition(heading)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
@@ -255,6 +241,16 @@ describe("AppearanceEditorV3", () => {
     });
 
     const designTab = screen.getByRole("tab", { name: "Design" });
+    const savedToggle = screen.getByRole("button", {
+      name: "Saved designs, 1 total",
+    });
+    expect(savedToggle.getAttribute("aria-expanded")).toBe("false");
+    await user.click(savedToggle);
+    expect(
+      screen
+        .getByRole("button", { name: "Hide saved designs, 1 total" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
     await user.click(screen.getByRole("tab", { name: "Camera" }));
     expect(designTab.getAttribute("aria-selected")).toBe("false");
     await user.click(screen.getByRole("button", { name: "Edit Night garden" }));
