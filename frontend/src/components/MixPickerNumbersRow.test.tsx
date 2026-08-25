@@ -229,6 +229,7 @@ describe("MixPickerVarietyControl", () => {
     const { rerender } = render(
       <MixPickerVarietyControl
         recipe={{ ...base, variation: "curated", varyBy: "roll" }}
+        isChaosAssignment={false}
         onSelect={vi.fn()}
         onChaos={vi.fn()}
       />,
@@ -238,6 +239,7 @@ describe("MixPickerVarietyControl", () => {
     rerender(
       <MixPickerVarietyControl
         recipe={{ ...base, variation: "curated", varyBy: "die" }}
+        isChaosAssignment={false}
         onSelect={vi.fn()}
         onChaos={vi.fn()}
       />,
@@ -245,6 +247,16 @@ describe("MixPickerVarietyControl", () => {
     expect(
       screen.getByText("Every die draws its own combo from your mix."),
     ).not.toBeNull();
+
+    rerender(
+      <MixPickerVarietyControl
+        recipe={{ ...base, variation: "wild", varyBy: "die" }}
+        isChaosAssignment
+        onSelect={vi.fn()}
+        onChaos={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("The built-in Random look takes over.")).not.toBeNull();
   });
 
   it("routes matched/mixed edits to onSelect and chaos to onChaos", () => {
@@ -257,6 +269,7 @@ describe("MixPickerVarietyControl", () => {
     render(
       <MixPickerVarietyControl
         recipe={{ ...base, variation: "curated", varyBy: "die" }}
+        isChaosAssignment={false}
         onSelect={onSelect}
         onChaos={onChaos}
       />,

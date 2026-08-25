@@ -7,6 +7,7 @@ import * as React from "react";
 
 type MixPickerVarietyControlProps = {
   recipe: AppearanceRecipeV3;
+  isChaosAssignment: boolean;
   disabled?: boolean;
   onSelect(variety: Exclude<MixPickerVariety, "chaos">): void;
   // Chaos swaps the target's assignment to the builtin Random style at the
@@ -30,11 +31,12 @@ const OPTIONS: Readonly<
 
 export function MixPickerVarietyControl({
   recipe,
+  isChaosAssignment,
   disabled = false,
   onSelect,
   onChaos,
 }: MixPickerVarietyControlProps) {
-  const selected = varietyFromRecipe(recipe);
+  const selected = varietyFromRecipe(recipe, isChaosAssignment);
   return (
     <section aria-label="Variety">
       <h3 className="text-xs font-semibold uppercase tracking-wide">Variety</h3>

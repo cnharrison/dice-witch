@@ -222,20 +222,50 @@ describe("applyMaterialRows", () => {
 });
 
 describe("variety", () => {
-  it("maps variation x varyBy onto the three-state control", () => {
-    expect(varietyFromRecipe({ ...base(), variation: "wild" })).toBe("chaos");
-    for (const variation of ["fixed", "curated"] as const) {
-      expect(
-        varietyFromRecipe({ ...base(), variation, varyBy: "roll" }),
-      ).toBe("matched");
+  it("maps fixed recipes and shared draws to Matched Set", () => {
+    expect(
+      varietyFromRecipe({ ...base(), variation: "fixed", varyBy: "die" }, false),
+    ).toBe("matched");
+    expect(
+      varietyFromRecipe(
+        { ...base(), variation: "curated", varyBy: "roll" },
+        false,
+      ),
+    ).toBe("matched");
+  });
+
+  it("maps independent recipes to Mixed Bag and only the Random assignment to Chaos", () => {
+    expect(
+      varietyFromRecipe({ ...base(), variation: "wild", varyBy: "die" }, false),
+    ).toBe("mixed");
+    expect(
+      varietyFromRecipe({ ...base(), variation: "wild", varyBy: "die" }, true),
+    ).toBe("chaos");
+    expect(
+      varietyFromRecipe(
+        { ...base(), variation: "curated", varyBy: "group" },
+        false,
+      ),
+    ).toBe("mixed");
+  });
+
+  it("classifies every Start From preset by its actual roll behavior", () => {
+    const styleIds = [
+      ...APPEARANCE_CATALOG_V3.featuredStyleIds,
+      ...APPEARANCE_CATALOG_V3.collectorStyleIds,
+    ];
+    for (const styleId of styleIds) {
+      const style = APPEARANCE_CATALOG_V3.styles.find(({ id }) => id === styleId);
+      if (style === undefined) throw new Error(`Missing style: ${styleId}`);
+      const expected = styleId === "chaotic"
+        ? "chaos"
+        : styleId === "rainbow"
+          ? "mixed"
+          : "matched";
+      expect(varietyFromRecipe(style.recipe, styleId === "chaotic")).toBe(
+        expected,
+      );
     }
-    expect(
-      varietyFromRecipe({ ...base(), variation: "curated", varyBy: "die" }),
-    ).toBe("mixed");
-    // Legacy group scoping reads as Mixed; Fine-tune exposes vary per group.
-    expect(
-      varietyFromRecipe({ ...base(), variation: "curated", varyBy: "group" }),
-    ).toBe("mixed");
   });
 
   it("applies matched and mixed, and defers chaos to assignment level", () => {

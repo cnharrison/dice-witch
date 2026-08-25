@@ -79,13 +79,15 @@ export function hasProceduralFontSelection(recipe: AppearanceRecipeV3): boolean 
   return recipe.font.mode !== "fixed";
 }
 
-// Variety reads the two randomness axes; wild marks the builtin Random look
-// ("Chaos"), which ignores every row and is applied at the assignment level.
 export function varietyFromRecipe(
   recipe: AppearanceRecipeV3,
+  isChaosAssignment: boolean,
 ): MixPickerVariety {
-  if (recipe.variation === "wild") return "chaos";
-  return recipe.varyBy === "roll" ? "matched" : "mixed";
+  if (isChaosAssignment) return "chaos";
+  if (recipe.variation === "fixed" || recipe.varyBy === "roll") {
+    return "matched";
+  }
+  return "mixed";
 }
 
 // Returns null for "chaos": applying it swaps the target's assignment to the

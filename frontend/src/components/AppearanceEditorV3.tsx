@@ -827,40 +827,39 @@ export function AppearanceEditorV3({
 
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
-      <div className="order-1 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-1">
-        <div className="mb-2 flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isSaving || (target !== "all" && !hasTargetOverride)}
-            onClick={backToDefault}
-          >
-            <Undo2 className="mr-2 h-4 w-4" aria-hidden="true" />
-            Back to default
-          </Button>
-        </div>
-        <AppearanceTargetPickerV3
-          value={target}
-          disabled={isSaving}
-          onChange={selectTarget}
-          overrideTargets={overrideTargets}
-          onEditOverride={handleEditOverride}
-          onDiscardOverride={handleDiscardOverride}
-        />
-        <div className="mt-3">
-          <AppearanceScopeBanner
-            target={target}
-            hasOverride={hasTargetOverride}
-            affectedTargets={allAffectedTargets}
+      <aside className="order-1 flex flex-col gap-4 xl:sticky xl:top-6 xl:z-10 xl:col-start-2 xl:row-start-1 xl:self-start">
+        <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
+          <div className="mb-2 flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isSaving || (target !== "all" && !hasTargetOverride)}
+              onClick={backToDefault}
+            >
+              <Undo2 className="mr-2 h-4 w-4" aria-hidden="true" />
+              Back to default
+            </Button>
+          </div>
+          <AppearanceTargetPickerV3
+            value={target}
             disabled={isSaving}
-            sharedNotices={changedSharedDesigns}
-            onReset={target === "all" ? undefined : clearTargetOverride}
+            onChange={selectTarget}
+            overrideTargets={overrideTargets}
+            onEditOverride={handleEditOverride}
+            onDiscardOverride={handleDiscardOverride}
           />
+          <div className="mt-3">
+            <AppearanceScopeBanner
+              target={target}
+              hasOverride={hasTargetOverride}
+              affectedTargets={allAffectedTargets}
+              disabled={isSaving}
+              sharedNotices={changedSharedDesigns}
+              onReset={target === "all" ? undefined : clearTargetOverride}
+            />
+          </div>
         </div>
-      </div>
-
-      <aside className="order-2 flex flex-col gap-4 xl:sticky xl:top-6 xl:z-10 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start">
         <Button
           type="button"
           variant="outline"
@@ -885,6 +884,7 @@ export function AppearanceEditorV3({
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <MixPickerVarietyControl
             recipe={activeSelection.recipe}
+            isChaosAssignment={activeSelection.styleId === CHAOS_ASSIGNMENT_V3.id}
             disabled={isSaving}
             onSelect={changeMixVariety}
             onChaos={applyChaos}
@@ -922,7 +922,7 @@ export function AppearanceEditorV3({
         )}
       </aside>
 
-      <div className="order-3 space-y-6 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-2">
+      <div className="order-2 space-y-6 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-1">
         <div
           role="tablist"
           aria-label="Appearance editor"

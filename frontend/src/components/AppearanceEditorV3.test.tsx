@@ -125,6 +125,36 @@ afterEach(() => {
 });
 
 describe("AppearanceEditorV3", () => {
+  it("shows named presets as matched, Rainbow as mixed, and Random as chaos", async () => {
+    const user = userEvent.setup();
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Chaos" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    await selectStartFromStyle(user, "hollow-victory");
+    expect(
+      screen
+        .getByRole("button", { name: "Matched set" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    await selectStartFromStyle(user, "rainbow");
+    expect(
+      screen
+        .getByRole("button", { name: "Mixed bag" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
   it("keeps the preview rail visible beside every desktop target", async () => {
     const user = userEvent.setup();
     renderEditor({
@@ -136,6 +166,9 @@ describe("AppearanceEditorV3", () => {
       onSave: vi.fn(async () => undefined),
     });
 
+    const targetPicker = screen.getByRole("radiogroup", {
+      name: "Appearance target",
+    });
     const preview = screen.getByRole("region", { name: "Preview" });
     const variety = screen.getByRole("region", { name: "Variety" });
     const editor = preview.closest("section.grid");
@@ -147,9 +180,14 @@ describe("AppearanceEditorV3", () => {
     expect(stickyStack?.className).toContain("flex");
     expect(stickyStack?.className).toContain("gap-4");
     expect(stickyStack?.className).not.toContain("space-y-4");
+    expect(stickyStack?.contains(targetPicker)).toBe(true);
     expect(stickyStack?.contains(variety)).toBe(true);
+    expect(targetPicker.compareDocumentPosition(preview)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(variety.parentElement?.className).toContain("rounded-xl");
     expect(variety.parentElement?.className).toContain("bg-card");
+    expect(designPanel.contains(targetPicker)).toBe(false);
     expect(designPanel.contains(variety)).toBe(false);
     expect(preview.compareDocumentPosition(variety)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
