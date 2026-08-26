@@ -1096,13 +1096,6 @@ export function AppearanceEditorV3({
               disabled={isSaving}
               onChange={changeMixMaterials}
             />
-            <MixPickerStartFromRow
-              catalog={catalog}
-              selectedStyleId={activeSelection.styleId}
-              thumbVersion={thumbVersion}
-              disabled={isSaving}
-              onSelect={selectStyle}
-            />
             <MixPickerNumbersRow
               recipe={activeSelection.recipe}
               catalog={catalog}
@@ -1121,6 +1114,13 @@ export function AppearanceEditorV3({
                 Fine-tune →
               </Button>
             </div>
+            <MixPickerStartFromRow
+              catalog={catalog}
+              selectedStyleId={activeSelection.styleId}
+              thumbVersion={thumbVersion}
+              disabled={isSaving}
+              onSelect={selectStyle}
+            />
           </div>
 
           {deletionNotices.length > 0 && (

@@ -343,7 +343,12 @@ describe("AppearanceEditorV3", () => {
     const designTab = screen.getByRole("tab", { name: "Design" });
     const cameraTab = screen.getByRole("tab", { name: "Camera" });
     expect(designTab.getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("region", { name: "Complete looks" })).toBeDefined();
+    const completeLooks = screen.getByRole("region", { name: "Complete looks" });
+    const fineTune = screen.getByRole("button", { name: "Fine-tune →" });
+    expect(
+      fineTune.compareDocumentPosition(completeLooks) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
     expect(screen.queryByRole("region", { name: "Dice view" })).toBeNull();
 
     await user.click(cameraTab);
