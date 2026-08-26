@@ -33,6 +33,13 @@ export function MixPickerStartFromRow({
   const [focusedStyleId, setFocusedStyleId] = React.useState<string | null>(
     null,
   );
+  const pendingSelectedCard = React.useRef<HTMLButtonElement | null>(null);
+  React.useLayoutEffect(() => {
+    const card = pendingSelectedCard.current;
+    if (card === null || card.getAttribute("aria-pressed") !== "true") return;
+    card.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    pendingSelectedCard.current = null;
+  }, [selectedStyleId]);
   const activeStyleId = hoveredStyleId ?? focusedStyleId;
   const activeStyle = activeStyleId === null ? null : styleFor(activeStyleId);
 
@@ -46,7 +53,10 @@ export function MixPickerStartFromRow({
         aria-label={badge === undefined ? style.name : `${style.name}, ${badge}`}
         aria-pressed={selected}
         disabled={disabled}
-        onClick={() => onSelect(styleId)}
+        onClick={(event) => {
+          pendingSelectedCard.current = event.currentTarget;
+          onSelect(styleId);
+        }}
         onMouseEnter={() => setHoveredStyleId(styleId)}
         onMouseLeave={() => setHoveredStyleId(null)}
         onFocus={() => setFocusedStyleId(styleId)}

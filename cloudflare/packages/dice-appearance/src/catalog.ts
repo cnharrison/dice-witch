@@ -1267,6 +1267,7 @@ function fixedCollectorRecipeV3(
     version: 3,
     variation: "fixed",
     varyBy: "die",
+    colorDistribution: "coordinated",
     colors: { mode: "palette", colors: [...colors] },
     material: { mode: "fixed", value: material },
     form: {
@@ -1423,19 +1424,16 @@ const glassCannonRecipeV3 = fixedCollectorRecipeV3(
   },
   ["#071932", "#00bde3", "#e94fbe", "#ffe17a"],
 );
-const heavyMetalRecipeV3: AppearanceRecipeV3 = {
-  ...fixedCollectorRecipeV3(
-    {
-      family: "metal",
-      metal: "steel",
-      finish: "brushed",
-      patinaStrength: 8,
-      textureScale: 100,
-    },
-    ["#141820", "#596573", "#c9d1d8"],
-  ),
-  colorDistribution: "coordinated",
-};
+const heavyMetalRecipeV3 = fixedCollectorRecipeV3(
+  {
+    family: "metal",
+    metal: "steel",
+    finish: "brushed",
+    patinaStrength: 8,
+    textureScale: 100,
+  },
+  ["#141820", "#596573", "#c9d1d8"],
+);
 const hollowVictoryPaletteV3 = [
   "#d49a20",
   "#e7b640",

@@ -159,6 +159,40 @@ describe("MixPickerStartFromRow", () => {
     expect(activeName?.textContent).toBe("");
   });
 
+  it("keeps a newly selected Complete look visible after upstream layout changes", () => {
+    const scrollIntoView = vi.fn();
+    const onSelect = vi.fn();
+    const view = render(
+      <MixPickerStartFromRow
+        catalog={catalog}
+        selectedStyleId="dice-witch"
+        thumbVersion={null}
+        onSelect={onSelect}
+      />,
+    );
+    const random = screen.getByRole("button", {
+      name: "Random, The default",
+    });
+    Object.defineProperty(random, "scrollIntoView", {
+      value: scrollIntoView,
+    });
+
+    fireEvent.click(random);
+    view.rerender(
+      <MixPickerStartFromRow
+        catalog={catalog}
+        selectedStyleId="chaotic"
+        thumbVersion={null}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "nearest",
+    });
+  });
+
   it("reports selections from the complete style list", () => {
     const onSelect = vi.fn();
     render(

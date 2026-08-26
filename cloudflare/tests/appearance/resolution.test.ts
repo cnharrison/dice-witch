@@ -2328,61 +2328,46 @@ describe("resolveAppearanceRecipeV3", () => {
     );
     const authored = R32_MATERIAL_PALETTES_V3["paint-splatter"];
 
-    expect(new Set(palettes.map(([background]) => background))).toEqual(
-      new Set([authored[0]]),
-    );
-    const accentOrderCounts = new Map<string, number>();
     for (const palette of palettes) {
-      const order = palette.slice(1).join(",");
-      accentOrderCounts.set(order, (accentOrderCounts.get(order) ?? 0) + 1);
+      expect(palette).toEqual(authored);
     }
-    const authoredAccentList = authored.slice(1);
-    const expectedAccentOrders = new Set(
-      authoredAccentList.map((_, start) =>
-        [
-          ...authoredAccentList.slice(start),
-          ...authoredAccentList.slice(0, start),
-        ].join(","),
-      ),
-    );
-    expect(new Set(accentOrderCounts.keys())).toEqual(expectedAccentOrders);
-    const orderCounts = [...accentOrderCounts.values()];
-    expect(Math.max(...orderCounts) / Math.min(...orderCounts)).toBeLessThan(1.5);
-
-    const authoredAccents = new Set<string>(authoredAccentList);
-    expect(
-      palettes.every((palette) => {
-        const accents = palette.slice(1);
-        return (
-          accents.length === authoredAccents.size &&
-          accents.every((color) => authoredAccents.has(color))
-        );
-      }),
-    ).toBe(true);
   });
 
-  it("keeps Striated Steel's authored tone order across a matched set", () => {
-    const metal = APPEARANCE_CATALOG_V3.styles.find(
-      ({ id }) => id === "heavy-metal",
-    );
-    if (metal === undefined || metal.recipe.colors.mode !== "palette") {
-      throw new Error("Striated Steel fixture is missing");
-    }
+  it("keeps authored Complete look palettes coordinated across a matched set", () => {
+    const styleIds = [
+      "hex-appeal",
+      "critical-mass",
+      "glass-cannon",
+      "heavy-metal",
+      "hollow-victory",
+      "grain-expectations",
+      "elemental-lava-r33",
+      "elemental-sand",
+      "elemental-blue-sky-r33",
+      "elemental-sunset-r33",
+      "paint-splatter",
+    ];
 
-    const palettes = Array.from({ length: 32 }, (_, dieIndex) =>
-      resolveAppearanceRecipeV3(
-        metal.recipe,
-        contextV3({
-          target: "d6",
-          dieIndex,
-          dieIdentity: `custom:${String(dieIndex)}`,
-        }),
-        "property-streams-r37",
-      ).appearance.palette,
-    );
+    for (const styleId of styleIds) {
+      const style = APPEARANCE_CATALOG_V3.styles.find(
+        ({ id }) => id === styleId,
+      );
+      if (style === undefined || style.recipe.colors.mode !== "palette") {
+        throw new Error(`Complete look fixture is missing: ${styleId}`);
+      }
 
-    for (const palette of palettes) {
-      expect(palette).toEqual(metal.recipe.colors.colors);
+      for (let dieIndex = 0; dieIndex < 32; dieIndex += 1) {
+        const resolved = resolveAppearanceRecipeV3(
+          style.recipe,
+          contextV3({
+            target: "d6",
+            dieIndex,
+            dieIdentity: `custom:${String(dieIndex)}`,
+          }),
+          "property-streams-r37",
+        );
+        expect(resolved.appearance.palette).toEqual(style.recipe.colors.colors);
+      }
     }
   });
 
