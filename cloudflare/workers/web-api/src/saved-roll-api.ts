@@ -8,10 +8,6 @@ import {
   type SchemaInput,
 } from "../../../packages/discord-contracts/src/schema-primitives";
 import {
-  parseSavedRollDraftV1,
-  parseSavedRollDraftV2,
-} from "../../../packages/saved-rolls/src";
-import {
   synchronizeGuildProof,
   type GuildMembershipProof,
 } from "./guild-authorization";
@@ -436,32 +432,21 @@ async function synchronizeSavedRollGuildProof(
     : json({ error: "Saved roll guild authorization failed" }, 502);
 }
 
-function validateDraft(
-  draft: z.output<typeof DraftV1Schema> | z.output<typeof DraftV2Schema>,
-): void {
-  if (draft.version === 1) parseSavedRollDraftV1(draft);
-  else parseSavedRollDraftV2(draft);
-}
-
 async function mutationBody(
   request: Request,
   route: Exclude<Route, { operation: "list" | "get" }>,
 ): Promise<SavedRollMutationBody> {
   if (route.operation === "create" || route.operation === "copy") {
-    const body = await readBoundedJson(
+    return readBoundedJson(
       request,
       route.contractVersion === 1 ? CreateV1Schema : CreateV2Schema,
     );
-    validateDraft(body.draft);
-    return body;
   }
   if (route.operation === "update") {
-    const body = await readBoundedJson(
+    return readBoundedJson(
       request,
       route.contractVersion === 1 ? UpdateV1Schema : UpdateV2Schema,
     );
-    validateDraft(body.draft);
-    return body;
   }
   if (route.operation === "delete") {
     return readBoundedJson(request, DeleteSchema);
