@@ -222,6 +222,55 @@ describe("web appearance V4 API", () => {
     expect(invalid.status).toBe(400);
   });
 
+  it("routes immediate reset and restore mutations", async () => {
+    const profile = personalProfileV4();
+    const requests: Array<{ path: string; body: unknown }> = [];
+    const env = bindings(async (request) => {
+      const path = new URL(request.url).pathname;
+      const body: unknown = await request.json();
+      requests.push({ path, body });
+      if (path === "/internal/sessions/current") return storedSession();
+      return Response.json({
+        status: "applied",
+        revision: 4,
+        profile,
+        canRestorePreviousMix: true,
+      });
+    });
+
+    for (const action of ["reset", "restore"] as const) {
+      const response = await handleAuthRequest(
+        browserRequest(`/api/appearance/v4/me/state/${action}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "idempotency-key": idempotencyKey,
+          },
+          body: JSON.stringify({ expectedRevision: 3, profile }),
+        }),
+        env,
+        vi.fn(),
+        () => now,
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        revision: 4,
+        profile,
+        canRestorePreviousMix: true,
+      });
+      expect(requests.at(-1)).toEqual({
+        path: `/internal/appearance/v4/personal/state/${action}`,
+        body: {
+          userId,
+          expectedRevision: 3,
+          profile,
+          mutationId: `web-appearance-personal-state-${action}:${idempotencyKey}`,
+          occurredAt: now,
+        },
+      });
+    }
+  });
+
   it("fails closed when Data returns a non-V4 profile", async () => {
     const response = await handleAuthRequest(
       browserRequest("/api/appearance/v4/me"),
@@ -255,7 +304,14 @@ describe("web appearance V4 API", () => {
           permissions: { isAdmin: true, isDiceWitchAdmin: false },
         });
       }
-      return Response.json({ status: "applied", revision: 1, profile });
+      return path.includes("/state/")
+        ? Response.json({
+            status: "applied",
+            revision: 1,
+            profile,
+            canRestorePreviousMix: true,
+          })
+        : Response.json({ status: "applied", revision: 1, profile });
     });
     env.DISCORD_REST.inspectMembership = vi.fn(() =>
       Promise.resolve({
@@ -287,6 +343,30 @@ describe("web appearance V4 API", () => {
         profile,
         mutationId: `web-appearance-guild:${idempotencyKey}`,
         occurredAt: now,
+      },
+    });
+
+    const reset = await handleAuthRequest(
+      browserRequest(`/api/guilds/${guildId}/appearance/v4/state/reset`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        body: JSON.stringify({ expectedRevision: 1, profile }),
+      }),
+      env,
+      vi.fn(),
+      () => now,
+    );
+    expect(reset.status).toBe(200);
+    expect(requests.at(-1)).toMatchObject({
+      path: "/internal/appearance/v4/guild/state/reset",
+      body: {
+        guildId,
+        updatedByUserId: userId,
+        expectedRevision: 1,
+        mutationId: `web-appearance-guild-state-reset:${idempotencyKey}`,
       },
     });
 
@@ -364,7 +444,7 @@ describe("web appearance V4 API", () => {
 
   it("preserves V4 authentication, origin, and CORS behavior", async () => {
     const unauthenticated = await handleAuthRequest(
-      browserRequest("/api/appearance/v4/me"),
+      browserRequest("/api/appearance/v4/me/state"),
       bindings(() =>
         Promise.resolve(Response.json({ error: "Unauthorized" }, { status: 401 }))),
       vi.fn(),
@@ -379,11 +459,12 @@ describe("web appearance V4 API", () => {
     );
 
     const wrongOrigin = await handleAuthRequest(
-      new Request(`${apiOrigin}/api/appearance/v4/preview`, {
+      new Request(`${apiOrigin}/api/appearance/v4/me/state/reset`, {
         method: "POST",
         headers: {
           origin: "https://evil.example",
           "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
         },
         body: "{}",
       }),
@@ -397,7 +478,9 @@ describe("web appearance V4 API", () => {
   it("advertises only V4 appearance preflight contracts", async () => {
     for (const path of [
       "/api/appearance/v4/me",
+      "/api/appearance/v4/me/state",
       `/api/guilds/${guildId}/appearance/v4`,
+      `/api/guilds/${guildId}/appearance/v4/state`,
     ]) {
       const response = await handleAuthRequest(
         new Request(`${apiOrigin}${path}`, {
@@ -411,6 +494,26 @@ describe("web appearance V4 API", () => {
       expect(response.status).toBe(204);
       expect(response.headers.get("access-control-allow-methods")).toBe(
         "GET, PUT",
+      );
+    }
+    for (const path of [
+      "/api/appearance/v4/me/state/reset",
+      "/api/appearance/v4/me/state/restore",
+      `/api/guilds/${guildId}/appearance/v4/state/reset`,
+      `/api/guilds/${guildId}/appearance/v4/state/restore`,
+    ]) {
+      const response = await handleAuthRequest(
+        new Request(`${apiOrigin}${path}`, {
+          method: "OPTIONS",
+          headers: { origin: frontendOrigin },
+        }),
+        bindings(vi.fn()),
+        vi.fn(),
+        () => now,
+      );
+      expect(response.status).toBe(204);
+      expect(response.headers.get("access-control-allow-methods")).toBe(
+        "POST",
       );
     }
     const preview = await handleAuthRequest(

@@ -28,6 +28,7 @@ export type AppearancePreviewService = {
 };
 
 type AppearanceProfileKind = "personal" | "guild";
+type AppearanceMutationAction = "put" | "reset" | "restore";
 type AppearanceProfile =
   | AppearanceProfileV4
   | GuildAppearanceProfileV4;
@@ -39,12 +40,13 @@ type AppearanceWriteInput = {
 };
 
 type AppearanceWriteResult =
-  | { status: "mutation_conflict" }
+  | { status: "mutation_conflict" | "restore_missing" }
   | { status: "revision_conflict"; revision: number }
   | {
       status: "applied" | "existing";
       revision: number;
       profile: AppearanceProfile;
+      canRestorePreviousMix?: boolean;
     };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -139,18 +141,28 @@ function parseLookup(
   value: unknown,
   kind: AppearanceProfileKind,
   policy: AppearanceCatalogPolicyV3,
-): { revision: number; profile: AppearanceProfile | null } {
+  includeRestoreState: boolean,
+): {
+  revision: number;
+  profile: AppearanceProfile | null;
+  canRestorePreviousMix?: boolean;
+} {
   if (
     isRecord(value) &&
     hasExactKeys(value, ["status"]) &&
     value.status === "missing"
   ) {
-    return { revision: 0, profile: null };
+    return includeRestoreState
+      ? { revision: 0, profile: null, canRestorePreviousMix: false }
+      : { revision: 0, profile: null };
   }
-  const expectedKeys =
-    kind === "personal"
-      ? ["profile", "revision", "status"]
-      : ["profile", "revision", "status", "updatedByUserId"];
+  const expectedKeys = [
+    ...(includeRestoreState ? ["canRestorePreviousMix"] : []),
+    "profile",
+    "revision",
+    "status",
+    ...(kind === "guild" ? ["updatedByUserId"] : []),
+  ];
   if (
     !isRecord(value) ||
     !hasExactKeys(value, expectedKeys) ||
@@ -163,25 +175,32 @@ function parseLookup(
   ) {
     throw new Error("Appearance lookup response is invalid");
   }
-  return {
+  const result = {
     revision: Number(value.revision),
     profile: parseProfile(value.profile, kind, policy),
   };
+  if (!includeRestoreState) return result;
+  if (typeof value.canRestorePreviousMix !== "boolean") {
+    throw new Error("Appearance lookup response is invalid");
+  }
+  return { ...result, canRestorePreviousMix: value.canRestorePreviousMix };
 }
 
 function parseWriteResult(
   value: unknown,
   kind: AppearanceProfileKind,
   policy: AppearanceCatalogPolicyV3,
+  includeRestoreState: boolean,
 ): AppearanceWriteResult {
   if (!isRecord(value) || typeof value.status !== "string") {
     throw new Error("Appearance update response is invalid");
   }
   if (
-    value.status === "mutation_conflict" &&
+    (value.status === "mutation_conflict" ||
+      value.status === "restore_missing") &&
     hasExactKeys(value, ["status"])
   ) {
-    return { status: "mutation_conflict" };
+    return { status: value.status };
   }
   if (
     value.status === "revision_conflict" &&
@@ -193,17 +212,28 @@ function parseWriteResult(
   }
   if (
     (value.status !== "applied" && value.status !== "existing") ||
-    !hasExactKeys(value, ["profile", "revision", "status"]) ||
+    !hasExactKeys(value, [
+      ...(includeRestoreState ? ["canRestorePreviousMix"] : []),
+      "profile",
+      "revision",
+      "status",
+    ]) ||
     !Number.isSafeInteger(value.revision) ||
     Number(value.revision) < 1
   ) {
     throw new Error("Appearance update response is invalid");
   }
-  return {
-    status: value.status,
+  const status: "applied" | "existing" = value.status;
+  const result = {
+    status,
     revision: Number(value.revision),
     profile: parseProfile(value.profile, kind, policy),
   };
+  if (!includeRestoreState) return result;
+  if (typeof value.canRestorePreviousMix !== "boolean") {
+    throw new Error("Appearance update response is invalid");
+  }
+  return { ...result, canRestorePreviousMix: value.canRestorePreviousMix };
 }
 
 async function parseWrite(
@@ -240,12 +270,15 @@ async function lookupResponse(
   response: Response,
   kind: AppearanceProfileKind,
   policy: AppearanceCatalogPolicyV3,
+  includeRestoreState: boolean,
 ): Promise<Response> {
   if (!response.ok) {
     return json({ error: "appearance_data_unavailable" }, 502);
   }
   try {
-    return json(parseLookup(await response.json(), kind, policy));
+    return json(
+      parseLookup(await response.json(), kind, policy, includeRestoreState),
+    );
   } catch {
     return invalidProfileResponse();
   }
@@ -255,15 +288,38 @@ async function writeResponse(
   response: Response,
   kind: AppearanceProfileKind,
   policy: AppearanceCatalogPolicyV3,
+  includeRestoreState: boolean,
 ): Promise<Response> {
+  let value: unknown;
+  try {
+    value = await response.json();
+  } catch {
+    return invalidProfileResponse();
+  }
   if (response.status === 404) {
-    return json({ error: "appearance_profile_owner_missing" }, 502);
+    if (
+      isRecord(value) &&
+      hasExactKeys(value, ["status"]) &&
+      value.status === "missing"
+    ) {
+      return json({ error: "appearance_profile_owner_missing" }, 502);
+    }
+    return isRecord(value) &&
+      hasExactKeys(value, ["status"]) &&
+      value.status === "restore_missing"
+      ? json({ error: "appearance_restore_missing" }, 409)
+      : invalidProfileResponse();
   }
   if (!response.ok && response.status !== 409) {
     return json({ error: "appearance_data_unavailable" }, 502);
   }
   try {
-    const result = parseWriteResult(await response.json(), kind, policy);
+    const result = parseWriteResult(
+      value,
+      kind,
+      policy,
+      includeRestoreState,
+    );
     if (
       result.status === "revision_conflict" ||
       result.status === "mutation_conflict"
@@ -272,32 +328,56 @@ async function writeResponse(
         ? json(result, 409)
         : invalidProfileResponse();
     }
+    if (result.status === "restore_missing") return invalidProfileResponse();
     return response.ok ? json(result) : invalidProfileResponse();
   } catch {
     return invalidProfileResponse();
   }
 }
 
-export async function getPersonalAppearanceV4(
+async function getPersonalAppearanceResponseV4(
+  dataService: AppearanceApiDataService,
+  userId: string,
+  policy: AppearanceCatalogPolicyV3,
+  includeRestoreState: boolean,
+): Promise<Response> {
+  const statePath = includeRestoreState ? "/state" : "";
+  return lookupResponse(
+    await postData(
+      dataService,
+      `/internal/appearance/v4/personal${statePath}/get`,
+      { userId },
+    ),
+    "personal",
+    policy,
+    includeRestoreState,
+  );
+}
+
+export function getPersonalAppearanceV4(
   dataService: AppearanceApiDataService,
   userId: string,
   policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
-  return lookupResponse(
-    await postData(dataService, "/internal/appearance/v4/personal/get", {
-      userId,
-    }),
-    "personal",
-    policy,
-  );
+  return getPersonalAppearanceResponseV4(dataService, userId, policy, false);
 }
 
-export async function putPersonalAppearanceV4(
+export function getPersonalAppearanceStateV4(
+  dataService: AppearanceApiDataService,
+  userId: string,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return getPersonalAppearanceResponseV4(dataService, userId, policy, true);
+}
+
+async function mutatePersonalAppearanceV4(
   request: Request,
   dataService: AppearanceApiDataService,
   userId: string,
   now: number,
   policy: AppearanceCatalogPolicyV3,
+  action: AppearanceMutationAction,
+  includeRestoreState: boolean,
 ): Promise<Response> {
   let input: AppearanceWriteInput;
   try {
@@ -305,40 +385,144 @@ export async function putPersonalAppearanceV4(
   } catch {
     return json({ error: "appearance_profile_invalid" }, 400);
   }
+  const statePath = includeRestoreState ? "/state" : "";
+  const mutationName = includeRestoreState
+    ? `web-appearance-personal-state-${action}`
+    : "web-appearance-personal";
   return writeResponse(
-    await postData(dataService, "/internal/appearance/v4/personal/put", {
-      userId,
-      expectedRevision: input.expectedRevision,
-      profile: input.profile,
-      mutationId: `web-appearance-personal:${input.idempotencyKey}`,
-      occurredAt: now,
-    }),
+    await postData(
+      dataService,
+      `/internal/appearance/v4/personal${statePath}/${action}`,
+      {
+        userId,
+        expectedRevision: input.expectedRevision,
+        profile: input.profile,
+        mutationId: `${mutationName}:${input.idempotencyKey}`,
+        occurredAt: now,
+      },
+    ),
     "personal",
     policy,
+    includeRestoreState,
   );
 }
 
-export async function getGuildAppearanceV4(
+export function putPersonalAppearanceV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  userId: string,
+  now: number,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return mutatePersonalAppearanceV4(
+    request,
+    dataService,
+    userId,
+    now,
+    policy,
+    "put",
+    false,
+  );
+}
+
+export function putPersonalAppearanceStateV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  userId: string,
+  now: number,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return mutatePersonalAppearanceV4(
+    request,
+    dataService,
+    userId,
+    now,
+    policy,
+    "put",
+    true,
+  );
+}
+
+export function resetPersonalAppearanceV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  userId: string,
+  now: number,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return mutatePersonalAppearanceV4(
+    request,
+    dataService,
+    userId,
+    now,
+    policy,
+    "reset",
+    true,
+  );
+}
+
+export function restorePersonalAppearanceV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  userId: string,
+  now: number,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return mutatePersonalAppearanceV4(
+    request,
+    dataService,
+    userId,
+    now,
+    policy,
+    "restore",
+    true,
+  );
+}
+
+async function getGuildAppearanceResponseV4(
+  dataService: AppearanceApiDataService,
+  guildId: string,
+  policy: AppearanceCatalogPolicyV3,
+  includeRestoreState: boolean,
+): Promise<Response> {
+  const statePath = includeRestoreState ? "/state" : "";
+  return lookupResponse(
+    await postData(
+      dataService,
+      `/internal/appearance/v4/guild${statePath}/get`,
+      { guildId },
+    ),
+    "guild",
+    policy,
+    includeRestoreState,
+  );
+}
+
+export function getGuildAppearanceV4(
   dataService: AppearanceApiDataService,
   guildId: string,
   policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
-  return lookupResponse(
-    await postData(dataService, "/internal/appearance/v4/guild/get", {
-      guildId,
-    }),
-    "guild",
-    policy,
-  );
+  return getGuildAppearanceResponseV4(dataService, guildId, policy, false);
 }
 
-export async function putGuildAppearanceV4(
+export function getGuildAppearanceStateV4(
+  dataService: AppearanceApiDataService,
+  guildId: string,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return getGuildAppearanceResponseV4(dataService, guildId, policy, true);
+}
+
+async function mutateGuildAppearanceV4(
   request: Request,
   dataService: AppearanceApiDataService,
   guildId: string,
   userId: string,
   now: number,
   policy: AppearanceCatalogPolicyV3,
+  action: AppearanceMutationAction,
+  includeRestoreState: boolean,
 ): Promise<Response> {
   let input: AppearanceWriteInput;
   try {
@@ -346,17 +530,106 @@ export async function putGuildAppearanceV4(
   } catch {
     return json({ error: "appearance_profile_invalid" }, 400);
   }
+  const statePath = includeRestoreState ? "/state" : "";
+  const mutationName = includeRestoreState
+    ? `web-appearance-guild-state-${action}`
+    : "web-appearance-guild";
   return writeResponse(
-    await postData(dataService, "/internal/appearance/v4/guild/put", {
-      guildId,
-      updatedByUserId: userId,
-      expectedRevision: input.expectedRevision,
-      profile: input.profile,
-      mutationId: `web-appearance-guild:${input.idempotencyKey}`,
-      occurredAt: now,
-    }),
+    await postData(
+      dataService,
+      `/internal/appearance/v4/guild${statePath}/${action}`,
+      {
+        guildId,
+        updatedByUserId: userId,
+        expectedRevision: input.expectedRevision,
+        profile: input.profile,
+        mutationId: `${mutationName}:${input.idempotencyKey}`,
+        occurredAt: now,
+      },
+    ),
     "guild",
     policy,
+    includeRestoreState,
+  );
+}
+
+export function putGuildAppearanceV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  guildId: string,
+  userId: string,
+  now: number,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return mutateGuildAppearanceV4(
+    request,
+    dataService,
+    guildId,
+    userId,
+    now,
+    policy,
+    "put",
+    false,
+  );
+}
+
+export function putGuildAppearanceStateV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  guildId: string,
+  userId: string,
+  now: number,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return mutateGuildAppearanceV4(
+    request,
+    dataService,
+    guildId,
+    userId,
+    now,
+    policy,
+    "put",
+    true,
+  );
+}
+
+export function resetGuildAppearanceV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  guildId: string,
+  userId: string,
+  now: number,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return mutateGuildAppearanceV4(
+    request,
+    dataService,
+    guildId,
+    userId,
+    now,
+    policy,
+    "reset",
+    true,
+  );
+}
+
+export function restoreGuildAppearanceV4(
+  request: Request,
+  dataService: AppearanceApiDataService,
+  guildId: string,
+  userId: string,
+  now: number,
+  policy: AppearanceCatalogPolicyV3,
+): Promise<Response> {
+  return mutateGuildAppearanceV4(
+    request,
+    dataService,
+    guildId,
+    userId,
+    now,
+    policy,
+    "restore",
+    true,
   );
 }
 

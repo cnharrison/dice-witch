@@ -1,7 +1,10 @@
 import { selectionValuesV3 } from "@/lib/appearance-editor-v3";
 import { normalizeMaterialWeightsV3, MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
 import type { AppearanceCatalogV3 } from "../types/appearance";
-import { APPEARANCE_PALETTE_COLOR_RANGE_V3 } from "@dice-witch/dice-v4-model";
+import {
+  APPEARANCE_PALETTE_COLOR_RANGE_V3,
+  APPEARANCE_SELECTION_WEIGHT_RANGE_V3,
+} from "@dice-witch/dice-v4-model";
 import type {
   AppearanceColorsV3,
   AppearanceDesignReferenceV3,
@@ -12,6 +15,7 @@ import type {
 } from "@dice-witch/dice-v4-model";
 
 export type MixPickerVariety = "matched" | "mixed" | "chaos";
+export type ColorSchemeDistribution = "coordinated" | "one-per-die";
 
 export type MaterialRowState =
   | { mode: "fixed"; families: readonly string[] }
@@ -84,6 +88,7 @@ export function varietyFromRecipe(
   isChaosAssignment: boolean,
 ): MixPickerVariety {
   if (isChaosAssignment) return "chaos";
+  if (recipe.colorDistribution === "one-per-die") return "mixed";
   if (recipe.variation === "fixed" || recipe.varyBy === "roll") {
     return "matched";
   }
@@ -149,7 +154,11 @@ export type ColorsRowState =
   | { mode: "single"; primary: HexColor; tonal: boolean }
   // colors.mode "random" re-rolls the color every render; carried through
   // untouched so read→apply round-trips preserve its semantics.
-  | { mode: "randomized"; primary: HexColor };
+  | { mode: "randomized"; primary: HexColor }
+  | {
+      mode: "generated";
+      colors: { mode: "random-pair" | "vivid-random-pair" };
+    };
 
 function validatedPalette(colors: readonly HexColor[]): HexColor[] {
   const { minimum, maximum } = APPEARANCE_PALETTE_COLOR_RANGE_V3;
@@ -172,11 +181,116 @@ export function colorsRowFromRecipe(
   if (colors.mode === "random") {
     return { mode: "randomized", primary: colors.primary };
   }
+  if (colors.mode === "random-pair" || colors.mode === "vivid-random-pair") {
+    return { mode: "generated", colors };
+  }
   return {
     mode: "single",
     primary: colors.primary,
     tonal: colors.mode === "tonal",
   };
+}
+
+function mapMaterialSelection(
+  selection: AppearanceRecipeV3["material"],
+  map: (material: AppearanceMaterialV4) => AppearanceMaterialV4,
+): AppearanceRecipeV3["material"] {
+  switch (selection.mode) {
+    case "fixed":
+      return { mode: "fixed", value: map(selection.value) };
+    case "allowlist":
+      return { mode: "allowlist", values: selection.values.map(map) };
+    case "weighted":
+      return {
+        mode: "weighted",
+        options: selection.options.map(({ value, weight }) => ({
+          value: map(value),
+          weight,
+        })),
+      };
+  }
+}
+
+export function replaceMaterialFamily(
+  selection: AppearanceRecipeV3["material"],
+  family: string,
+  next: AppearanceMaterialV4,
+): AppearanceRecipeV3["material"] {
+  if (selection.mode === "fixed") return { mode: "fixed", value: next };
+  if (selection.mode === "allowlist") {
+    const index = selection.values.findIndex((value) => value.family === family);
+    if (index < 0) throw new Error(`Material family is not selected: ${family}`);
+    return {
+      mode: "allowlist",
+      values: selection.values.filter(
+        (value, position) => value.family !== family || position === index,
+      ).map((value, position) => position === index ? next : value),
+    };
+  }
+
+  const familyOptions = selection.options.filter(
+    ({ value }) => value.family === family,
+  );
+  if (familyOptions.length === 0) {
+    throw new Error(`Material family is not selected: ${family}`);
+  }
+  const familyWeight = familyOptions.reduce(
+    (sum, { weight }) => sum + weight,
+    0,
+  );
+  const firstIndex = selection.options.findIndex(
+    ({ value }) => value.family === family,
+  );
+  const collapsed = selection.options.flatMap((option, index) => {
+    if (option.value.family !== family) return [option];
+    return index === firstIndex ? [{ value: next, weight: familyWeight }] : [];
+  });
+  const weights = collapsed.map(({ weight }) => weight);
+  const normalized = weights.some(
+    (weight) => weight > APPEARANCE_SELECTION_WEIGHT_RANGE_V3.maximum,
+  )
+    ? normalizeMaterialWeightsV3(weights)
+    : weights;
+  return {
+    mode: "weighted",
+    options: collapsed.map(({ value }, index) => ({
+      value,
+      weight: normalized[index] as number,
+    })),
+  };
+}
+
+export function applyColorScheme(
+  recipe: AppearanceRecipeV3,
+  colors: AppearanceColorsV3,
+  distribution: ColorSchemeDistribution,
+): AppearanceRecipeV3 {
+  const materials = selectionValuesV3(recipe.material);
+  const canChangeClassicPresentation =
+    materials.filter(({ family }) => family === "classic").length <= 1;
+  const next: AppearanceRecipeV3 = {
+    ...recipe,
+    colors: structuredClone(colors),
+    colorDistribution: distribution,
+    material: mapMaterialSelection(recipe.material, (material) => {
+      if (
+        !canChangeClassicPresentation ||
+        material.family !== "classic" ||
+        material.treatment === "pattern"
+      ) {
+        return material;
+      }
+      const treatment =
+        distribution === "one-per-die" || colors.mode !== "palette"
+          ? "solid"
+          : "gradient";
+      return { ...material, treatment };
+    }),
+  };
+  if (next.randomization === "one-palette-color-v1") {
+    delete next.randomization;
+  }
+  return next;
 }
 
 export function applyColorsRow(
@@ -199,6 +313,8 @@ export function applyColorsRow(
       };
     case "randomized":
       return { ...recipe, colors: { mode: "random", primary: row.primary } };
+    case "generated":
+      return { ...recipe, colors: row.colors };
   }
 }
 
@@ -254,21 +370,32 @@ export function applyColorChance(
     case "mine": {
       const next = { ...recipe };
       delete next.randomization;
+      if (next.colors.mode === "palette") {
+        next.colorDistribution = "coordinated";
+      } else {
+        delete next.colorDistribution;
+      }
       return next;
     }
-    case "accent":
-      return {
+    case "accent": {
+      const next = {
         ...recipe,
         colors: paletteForAccent(recipe, catalog),
-        randomization: "one-palette-color-v1",
+        randomization: "one-palette-color-v1" as const,
       };
-    case "bright":
-      return {
+      delete next.colorDistribution;
+      return next;
+    }
+    case "bright": {
+      const next = {
         ...recipe,
-        varyBy: "die",
-        randomization: "full-spectrum-v2",
-        colors: { mode: "vivid-random-pair" },
+        varyBy: "die" as const,
+        randomization: "full-spectrum-v2" as const,
+        colors: { mode: "vivid-random-pair" as const },
       };
+      delete next.colorDistribution;
+      return next;
+    }
   }
 }
 

@@ -3,6 +3,7 @@ import {
   createRandomAppearanceColorsV3,
   selectionValuesV3,
 } from "@/lib/appearance-editor-v3";
+import { applyColorScheme } from "@/lib/mix-picker-state";
 import type {
   AppearanceCatalogV3,
   AppearanceRecipeV3,
@@ -11,6 +12,7 @@ import {
   materialColorEffectV4,
   type AppearanceColorsV3,
   type AppearanceMaterialV4,
+  type HexColor,
 } from "@dice-witch/dice-v4-model";
 import { Dices, Plus, X } from "lucide-react";
 import * as React from "react";
@@ -23,7 +25,7 @@ type MixPickerColorsRowProps = {
   recipe: AppearanceRecipeV3;
   catalog: AppearanceCatalogV3;
   disabled?: boolean;
-  onChange(recipe: AppearanceRecipeV3): void;
+  onChange(recipe: AppearanceRecipeV3, sourceName?: string): void;
 };
 
 function usesFullSpectrumRandomization(recipe: AppearanceRecipeV3): boolean {
@@ -38,6 +40,22 @@ function usesSelectedColors(material: AppearanceMaterialV4): boolean {
     material.family === "hollow-metal" ||
     materialColorEffectV4(material) !== "adds-own-colors"
   );
+}
+
+function colorSchemeBackground(colors: AppearanceColorsV3): string {
+  if (colors.mode === "solid" || colors.mode === "tonal" || colors.mode === "random") {
+    return colors.primary;
+  }
+  if (colors.mode === "palette") {
+    const step = 100 / colors.colors.length;
+    return `linear-gradient(90deg, ${colors.colors
+      .map(
+        (color, index) =>
+          `${color} ${String(index * step)}% ${String((index + 1) * step)}%`,
+      )
+      .join(", ")})`;
+  }
+  return "linear-gradient(90deg, #ff3b30, #ffd60a, #34c759, #0a84ff, #af52de)";
 }
 
 function materialName(
@@ -59,6 +77,13 @@ export function MixPickerColorsRow({
   const [editingColor, setEditingColor] = React.useState<EditingColor | null>(
     null,
   );
+  const colorSchemes = catalog.colorSchemeStyleIds.map((styleId) => {
+    const style = catalog.styles.find(({ id }) => id === styleId);
+    if (style === undefined) {
+      throw new Error(`Appearance color scheme is missing: ${styleId}`);
+    }
+    return style;
+  });
   const values = selectionValuesV3(recipe.material);
   const bringsOwn = values.filter((material) => !usesSelectedColors(material));
   const responds = values.filter(usesSelectedColors);
@@ -79,33 +104,28 @@ export function MixPickerColorsRow({
     ) {
       delete updated.randomization;
     }
+    if (
+      updated.colorDistribution === "one-per-die" &&
+      nextColors.mode !== "palette"
+    ) {
+      delete updated.colorDistribution;
+    }
     onChange(updated);
   };
 
-  if (responds.length === 0) {
-    return (
-      <section aria-label="Colors">
-        <h3 className="text-xs font-semibold uppercase tracking-wide">
-          Colors
-        </h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          These materials bring their own colors.
-        </p>
-      </section>
-    );
+  let caption: string | null = null;
+  if (bringsOwn.length > 0 && responds.length === 0) {
+    caption = `${ownNames.join(" + ")} ${
+      ownNames.length === 1 ? "adds" : "add"
+    } its own accents`;
+  } else if (bringsOwn.length > 0) {
+    caption = `Applies to ${respondNames.join(" + ")} — ${ownNames.join(" + ")} ${
+      ownNames.length === 1 ? "adds" : "add"
+    } its own accents`;
   }
 
-  const caption =
-    bringsOwn.length === 0
-      ? null
-      : `Applies to ${respondNames.join(" + ")} — ${ownNames.join(" + ")} ${
-          ownNames.length === 1 ? "brings" : "bring"
-        } its own`;
-
   const colors = recipe.colors;
-  const addPaletteColor = (
-    primary: Extract<AppearanceColorsV3, { mode: "solid" | "tonal" }>["primary"],
-  ) => {
+  const addPaletteColor = (primary: HexColor) => {
     const additionalColor = catalog.editorDefaults.palette.find(
       (color) => color !== primary,
     );
@@ -266,8 +286,61 @@ export function MixPickerColorsRow({
             Random
           </button>
         </header>
+        <div
+          role="group"
+          aria-label="Color schemes"
+          className="mt-2 flex flex-wrap gap-2"
+        >
+          {colorSchemes.map((style) => {
+            const distribution =
+              style.recipe.colorDistribution === "one-per-die" ||
+              style.recipe.randomization === "one-palette-color-v1"
+                ? "one-per-die"
+                : "coordinated";
+            const selected =
+              JSON.stringify(recipe.colors) === JSON.stringify(style.recipe.colors) &&
+              (recipe.colorDistribution === distribution ||
+                (recipe.colorDistribution === undefined &&
+                  ((distribution === "one-per-die" &&
+                    recipe.randomization === "one-palette-color-v1") ||
+                    distribution === "coordinated")));
+            return (
+              <button
+                key={style.id}
+                type="button"
+                aria-pressed={selected}
+                disabled={disabled}
+                onClick={() => {
+                  if (selected) return;
+                  onChange(
+                    applyColorScheme(
+                      recipe,
+                      style.recipe.colors,
+                      distribution,
+                    ),
+                    style.name,
+                  );
+                }}
+                className={`inline-flex min-h-9 items-center gap-2 rounded-md border px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                  selected
+                    ? "border-brand bg-brand/10 text-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-5 w-5 rounded-full border border-black/15"
+                  style={{
+                    background: colorSchemeBackground(style.recipe.colors),
+                  }}
+                />
+                {style.name}
+              </button>
+            );
+          })}
+        </div>
         {caption !== null && (
-          <p className="mt-1 text-xs text-muted-foreground">{caption}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{caption}</p>
         )}
         <div className="mt-2">{editor}</div>
       </section>

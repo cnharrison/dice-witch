@@ -254,6 +254,27 @@ describe("Appearance Profile V3", () => {
       }),
     ).toThrow("Appearance randomization policy is not supported");
 
+    for (const colorDistribution of [
+      "coordinated",
+      "one-per-die",
+    ] as const) {
+      const distributed = { ...recipe(), colorDistribution };
+      expect(parseAppearanceRecipeV3(distributed)).toEqual(distributed);
+    }
+    expect(() =>
+      parseAppearanceRecipeV3({
+        ...recipe(),
+        colorDistribution: "one-per-die",
+        colors: { mode: "solid", primary: "#123456" },
+      }),
+    ).toThrow("One-per-die color distribution requires a palette");
+    expect(() =>
+      parseAppearanceRecipeV3({
+        ...recipe(),
+        colorDistribution: "unversioned-distribution",
+      }),
+    ).toThrow("Appearance color distribution is not supported");
+
     const automaticForms = recipe();
     Object.assign(automaticForms.form, { policy: "material-default-v1" });
     expect(parseAppearanceRecipeV3(automaticForms)).toEqual(automaticForms);

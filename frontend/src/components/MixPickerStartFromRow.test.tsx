@@ -45,6 +45,23 @@ const catalog = {
     "monochrome-palette",
   ],
   collectorStyleIds: ["classic-material", "glass-material"],
+  colorSchemeStyleIds: [
+    "solid",
+    "rainbow",
+    "pride",
+    "trans",
+    "crimson-palette",
+    "amber-palette",
+    "verdant-palette",
+    "azure-palette",
+    "monochrome-palette",
+  ],
+  completeLookStyleIds: [
+    "dice-witch",
+    "chaotic",
+    "classic-material",
+    "glass-material",
+  ],
 } as never as AppearanceCatalogV3;
 
 const thumbVersion = {
@@ -65,7 +82,7 @@ describe("MixPickerStartFromRow", () => {
         onSelect={vi.fn()}
       />,
     );
-    expect(document.querySelectorAll("img")).toHaveLength(13);
+    expect(document.querySelectorAll("img")).toHaveLength(4);
     expect(screen.queryByRole("button", { name: /more/ })).toBeNull();
     expect(
       screen.getByRole("button", { name: /classic-material/ }),
@@ -115,28 +132,30 @@ describe("MixPickerStartFromRow", () => {
     const diceWitch = screen.getByRole("button", {
       name: "dice-witch-name",
     });
-    const solid = screen.getByRole("button", { name: "solid-name" });
+    const glass = screen.getByRole("button", { name: "glass-material-name" });
     const random = screen.getByRole("button", {
       name: "Random, The default",
     });
-    const startFrom = screen.getByRole("region", { name: "Start from" });
+    const completeLooks = screen.getByRole("region", {
+      name: "Complete looks",
+    });
 
-    const activeName = startFrom.querySelector("header p");
+    const activeName = completeLooks.querySelector("header p");
     expect(activeName?.textContent).toBe("");
     expect(diceWitch.textContent).not.toContain("dice-witch-name");
-    fireEvent.mouseEnter(solid);
-    expect(activeName?.textContent).toBe("solid-name");
-    fireEvent.mouseLeave(solid);
+    fireEvent.mouseEnter(glass);
+    expect(activeName?.textContent).toBe("glass-material-name");
+    fireEvent.mouseLeave(glass);
     expect(activeName?.textContent).toBe("");
-    fireEvent.focus(solid);
-    expect(activeName?.textContent).toBe("solid-name");
+    fireEvent.focus(glass);
+    expect(activeName?.textContent).toBe("glass-material-name");
     fireEvent.mouseEnter(random);
     expect(activeName?.textContent).toBe("Random");
     fireEvent.mouseLeave(random);
-    expect(activeName?.textContent).toBe("solid-name");
-    fireEvent.blur(solid);
+    expect(activeName?.textContent).toBe("glass-material-name");
+    fireEvent.blur(glass);
     expect(activeName?.textContent).toBe("");
-    fireEvent.click(solid);
+    fireEvent.click(glass);
     expect(activeName?.textContent).toBe("");
   });
 
@@ -150,16 +169,15 @@ describe("MixPickerStartFromRow", () => {
         onSelect={onSelect}
       />,
     );
-    expect(
-      screen.getByRole("button", { name: /monochrome-palette-name/ }),
-    ).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /monochrome-palette-name/ }))
+      .toBeNull();
     expect(
       screen.getByRole("button", { name: /classic-material-name/ }),
     ).not.toBeNull();
     fireEvent.click(
-      screen.getByRole("button", { name: /crimson-palette-name/ }),
+      screen.getByRole("button", { name: /classic-material-name/ }),
     );
-    expect(onSelect).toHaveBeenCalledWith("crimson-palette");
+    expect(onSelect).toHaveBeenCalledWith("classic-material");
   });
 
   it("fails fast when the catalog is missing a listed style", () => {
@@ -176,6 +194,6 @@ describe("MixPickerStartFromRow", () => {
           onSelect={vi.fn()}
         />,
       ),
-    ).toThrow(/start-from style is missing/);
+    ).toThrow(/complete look is missing/);
   });
 });

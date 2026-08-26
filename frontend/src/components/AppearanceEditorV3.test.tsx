@@ -72,8 +72,8 @@ async function selectAppearanceTarget(
 }
 
 
-function startFromRegion(): HTMLElement {
-  return screen.getByRole("region", { name: "Start from" });
+function completeLooksRegion(): HTMLElement {
+  return screen.getByRole("region", { name: "Complete looks" });
 }
 
 function catalogStyleName(styleId: string): string {
@@ -83,7 +83,10 @@ function catalogStyleName(styleId: string): string {
 }
 
 function startFromCard(styleId: string): HTMLElement {
-  return within(startFromRegion()).getByRole("button", {
+  const region = APPEARANCE_CATALOG_V3.colorSchemeStyleIds.includes(styleId)
+    ? screen.getByRole("group", { name: "Color schemes" })
+    : completeLooksRegion();
+  return within(region).getByRole("button", {
     name: new RegExp(catalogStyleName(styleId)),
   });
 }
@@ -93,7 +96,10 @@ async function selectStartFromStyle(
   styleId: string,
 ): Promise<void> {
   const card = new RegExp(catalogStyleName(styleId));
-  await user.click(within(startFromRegion()).getByRole("button", { name: card }));
+  const region = APPEARANCE_CATALOG_V3.colorSchemeStyleIds.includes(styleId)
+    ? screen.getByRole("group", { name: "Color schemes" })
+    : completeLooksRegion();
+  await user.click(within(region).getByRole("button", { name: card }));
 }
 
 function materialTile(name: string): HTMLElement {
@@ -103,18 +109,55 @@ function materialTile(name: string): HTMLElement {
   );
 }
 
-function renderEditor(
-  props: React.ComponentProps<typeof AppearanceEditorV3>,
-): void {
+type EditorProps = React.ComponentProps<typeof AppearanceEditorV3>;
+type EditorTestProps = Omit<
+  EditorProps,
+  "onReset" | "onRestore" | "resource"
+> & {
+  resource: Omit<EditorProps["resource"], "canRestorePreviousMix"> &
+    Partial<Pick<EditorProps["resource"], "canRestorePreviousMix">>;
+  onReset?: EditorProps["onReset"];
+  onRestore?: EditorProps["onRestore"];
+};
+
+const resetTestProfile: EditorProps["onReset"] = async (
+  profile,
+  revision,
+) => ({
+  revision: revision + 1,
+  profile: {
+    ...profile,
+    assignments: { all: null, overrides: {} },
+  },
+  canRestorePreviousMix: true,
+});
+
+const restoreTestProfile: EditorProps["onRestore"] = async (
+  profile,
+  revision,
+) => ({
+  revision: revision + 1,
+  profile,
+  canRestorePreviousMix: true,
+});
+
+function renderEditor(props: EditorTestProps): void {
   const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
     },
   });
+  const onReset = props.onReset ?? resetTestProfile;
+  const onRestore = props.onRestore ?? restoreTestProfile;
   render(
     <QueryClientProvider client={client}>
-      <AppearanceEditorV3 {...props} />
+      <AppearanceEditorV3
+        {...props}
+        resource={{ canRestorePreviousMix: false, ...props.resource }}
+        onReset={onReset}
+        onRestore={onRestore}
+      />
     </QueryClientProvider>,
   );
 }
@@ -153,6 +196,10 @@ describe("AppearanceEditorV3", () => {
         .getByRole("button", { name: "Mixed bag" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
+    expect(screen.getByRole("button", { name: "Matched set" })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 
   it("keeps the preview rail visible beside every desktop target", async () => {
@@ -296,13 +343,13 @@ describe("AppearanceEditorV3", () => {
     const designTab = screen.getByRole("tab", { name: "Design" });
     const cameraTab = screen.getByRole("tab", { name: "Camera" });
     expect(designTab.getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("region", { name: "Start from" })).toBeDefined();
+    expect(screen.getByRole("region", { name: "Complete looks" })).toBeDefined();
     expect(screen.queryByRole("region", { name: "Dice view" })).toBeNull();
 
     await user.click(cameraTab);
     expect(cameraTab.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("region", { name: "Dice view" })).toBeDefined();
-    expect(screen.queryByRole("region", { name: "Start from" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Complete looks" })).toBeNull();
     expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
 
     cameraTab.focus();
@@ -381,7 +428,7 @@ describe("AppearanceEditorV3", () => {
     expect(screen.getByRole("region", { name: "Preview" })).toBe(preview);
   });
 
-  it("keeps controls open and detaches a preset only after a meaningful edit", async () => {
+  it("creates a source-named custom design for a color-scheme edit", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
     const onSave = vi.fn(async () => undefined);
@@ -401,16 +448,51 @@ describe("AppearanceEditorV3", () => {
 
     await selectStartFromStyle(user, "pride");
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText("Custom design name")).toBeNull();
+    expect(screen.getByText("Based on Pride")).toBeDefined();
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Pride edit",
+    );
 
     await user.click(materialTile("Glass"));
 
-    expect(screen.getByText("Based on Pride")).toBeDefined();
-    expect(screen.getByLabelText("Custom design name")).toHaveProperty("value", "Edit 1");
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Pride edit",
+    );
     expect(screen.getByRole("tab", { name: "Design, unsaved changes" })).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
     expect(startFromCard("chaotic").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("applies Pride colors without replacing a complete look's material", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile: personalProfile() },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    await selectStartFromStyle(user, "heavy-metal");
+    const heavyMetal = styleRecipe("heavy-metal");
+    await selectStartFromStyle(user, "pride");
+    expect(screen.getByLabelText("Custom design name")).toHaveProperty(
+      "value",
+      "Pride edit",
+    );
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+
+    const saved = onSave.mock.calls[0]?.[0].designs[0]?.recipe;
+    expect(saved?.colors).toEqual(styleRecipe("pride").colors);
+    expect(saved?.colorDistribution).toBe("coordinated");
+    expect(saved?.material).toEqual(heavyMetal.material);
   });
 
   it("opens the second-color picker for a saved full-spectrum design", async () => {
@@ -584,7 +666,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Mixed bag" }));
     expect(screen.getByLabelText("Custom design name")).toHaveProperty(
       "value",
-      "Edit 1",
+      "Random edit",
     );
     await selectStartFromStyle(user, "grain-expectations");
     expect(screen.queryByLabelText("Custom design name")).toBeNull();
@@ -594,7 +676,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Matched set" }));
     expect(screen.getByLabelText("Custom design name")).toHaveProperty(
       "value",
-      "Edit 1",
+      "Figured Walnut edit",
     );
     expect(confirm).not.toHaveBeenCalled();
   });
@@ -621,10 +703,15 @@ describe("AppearanceEditorV3", () => {
 
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
+    const saved = onSave.mock.calls[0]?.[0];
+    expect(saved.assignments).toMatchObject({
       all: { source: "builtin", id: "dice-witch" },
-      overrides: { d20: { source: "builtin", id: "pride" } },
+      overrides: { d20: { source: "custom" } },
     });
+    const d20 = saved.assignments.overrides.d20;
+    expect(
+      saved.designs.find(({ id }) => id === d20?.id)?.recipe.colors,
+    ).toEqual(styleRecipe("pride").colors);
   });
 
   it("stages a target preset without changing the All dice assignment", async () => {
@@ -644,10 +731,15 @@ describe("AppearanceEditorV3", () => {
     expect(onSave).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
+    const saved = onSave.mock.calls[0]?.[0];
+    expect(saved.assignments).toMatchObject({
       all: { source: "builtin", id: "chaotic" },
-      overrides: { d20: { source: "builtin", id: "pride" } },
+      overrides: { d20: { source: "custom" } },
     });
+    const d20 = saved.assignments.overrides.d20;
+    expect(
+      saved.designs.find(({ id }) => id === d20?.id)?.recipe.colors,
+    ).toEqual(styleRecipe("pride").colors);
   });
 
   it("stages saved-design assignment and deletion until Save & apply", async () => {
@@ -828,11 +920,17 @@ describe("AppearanceEditorV3", () => {
     });
     const props: React.ComponentProps<typeof AppearanceEditorV3> = {
       catalog: APPEARANCE_CATALOG_V3,
-      resource: { revision: 4, profile: personalProfile() },
+      resource: {
+        revision: 4,
+        profile: personalProfile(),
+        canRestorePreviousMix: false,
+      },
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
       onSave,
+      onReset: resetTestProfile,
+      onRestore: restoreTestProfile,
     };
     const view = render(
       <QueryClientProvider client={client}>
@@ -847,7 +945,11 @@ describe("AppearanceEditorV3", () => {
       <QueryClientProvider client={client}>
         <AppearanceEditorV3
           {...props}
-          resource={{ revision: 5, profile: remoteProfile }}
+          resource={{
+            revision: 5,
+            profile: remoteProfile,
+            canRestorePreviousMix: false,
+          }}
         />
       </QueryClientProvider>,
     );
@@ -874,11 +976,17 @@ describe("AppearanceEditorV3", () => {
     profile.assignments.all = { source: "custom", id: designId };
     const props: React.ComponentProps<typeof AppearanceEditorV3> = {
       catalog: APPEARANCE_CATALOG_V3,
-      resource: { revision: 4, profile },
+      resource: {
+        revision: 4,
+        profile,
+        canRestorePreviousMix: false,
+      },
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
       onSave: vi.fn(async () => undefined),
+      onReset: resetTestProfile,
+      onRestore: restoreTestProfile,
     };
     const view = render(
       <QueryClientProvider client={client}>
@@ -898,7 +1006,11 @@ describe("AppearanceEditorV3", () => {
       <QueryClientProvider client={client}>
         <AppearanceEditorV3
           {...props}
-          resource={{ revision: 5, profile: remoteProfile }}
+          resource={{
+            revision: 5,
+            profile: remoteProfile,
+            canRestorePreviousMix: false,
+          }}
         />
       </QueryClientProvider>,
     );
@@ -925,11 +1037,17 @@ describe("AppearanceEditorV3", () => {
     };
     const props: React.ComponentProps<typeof AppearanceEditorV3> = {
       catalog: APPEARANCE_CATALOG_V3,
-      resource: { revision: 4, profile },
+      resource: {
+        revision: 4,
+        profile,
+        canRestorePreviousMix: false,
+      },
       kind: "guild",
       personalDesigns: [],
       isSaving: false,
       onSave,
+      onReset: resetTestProfile,
+      onRestore: restoreTestProfile,
     };
     const view = render(
       <QueryClientProvider client={client}>
@@ -942,7 +1060,11 @@ describe("AppearanceEditorV3", () => {
       <QueryClientProvider client={client}>
         <AppearanceEditorV3
           {...props}
-          resource={{ revision: 5, profile: { ...profile, mode: "enforced" } }}
+          resource={{
+            revision: 5,
+            profile: { ...profile, mode: "enforced" },
+            canRestorePreviousMix: false,
+          }}
         />
       </QueryClientProvider>,
     );
@@ -1074,7 +1196,7 @@ describe("AppearanceEditorV3", () => {
 
     expect(screen.getByLabelText("Custom design name")).toHaveProperty(
       "value",
-      "Random",
+      "Random edit",
     );
     expect(screen.getByText("Based on Random")).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
@@ -1082,7 +1204,10 @@ describe("AppearanceEditorV3", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV4;
     expect(saved.designs).toHaveLength(1);
-    expect(saved.designs[0]).toMatchObject({ id: designId, name: "Random" });
+    expect(saved.designs[0]).toMatchObject({
+      id: designId,
+      name: "Random edit",
+    });
     expect(saved.assignments.all).toEqual({ source: "custom", id: designId });
   });
 
@@ -1103,7 +1228,9 @@ describe("AppearanceEditorV3", () => {
     await selectStartFromStyle(user, "dice-witch");
 
     expect(confirm).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Edit Random" })).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Edit Random edit" }),
+    ).toBeDefined();
   });
 
   it("stops creating designs at the ten-design cap", async () => {
@@ -1198,7 +1325,9 @@ describe("AppearanceEditorV3 chip actions", () => {
       screen.getByRole("menuitem", { name: /Discard d20's design/ }),
     );
     expect(window.confirm).toHaveBeenCalledWith("Discard d20's design?");
-    expect(screen.getByText(/Deleting Edit 1 is staged/)).toBeDefined();
+    expect(
+      screen.getByText(/Deleting Pride edit is staged/),
+    ).toBeDefined();
     // d20 falls back to following ALL.
     expect(screen.getByText("d20 follows ALL right now")).toBeDefined();
   });
@@ -1236,10 +1365,9 @@ describe("AppearanceEditorV3 chip actions", () => {
     ]);
   });
 
-  it("resets ALL with one terse confirmation and keeps per-die designs", async () => {
+  it("immediately resets ALL and every per-die override without confirmation", async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    const onSave = vi.fn(async () => undefined);
+    const confirm = vi.spyOn(window, "confirm");
     const profile = personalProfile();
     profile.designs = [
       { id: designId, name: "Shared design", recipe: styleRecipe("pride") },
@@ -1248,25 +1376,67 @@ describe("AppearanceEditorV3 chip actions", () => {
       all: { source: "custom", id: designId },
       overrides: { d6: { source: "custom", id: designId } },
     };
+    const onReset = vi.fn(async (current: AppearanceProfileV4, revision: number) => ({
+      revision: revision + 1,
+      profile: {
+        ...current,
+        assignments: { all: null, overrides: {} },
+      },
+      canRestorePreviousMix: true,
+    }));
     renderEditor({
       catalog: APPEARANCE_CATALOG_V3,
       resource: { revision: 4, profile },
       kind: "personal",
       personalDesigns: [],
       isSaving: false,
-      onSave,
+      onSave: vi.fn(async () => undefined),
+      onReset,
     });
 
-    await user.click(screen.getByRole("button", { name: "Back to default" }));
-    expect(window.confirm).toHaveBeenCalledOnce();
-    expect(window.confirm).toHaveBeenCalledWith("Reset to default dice mix?");
+    await user.click(screen.getByRole("button", { name: "Reset to default" }));
+    await waitFor(() => expect(onReset).toHaveBeenCalledWith(profile, 4));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Save & apply" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Reset to default" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(screen.getByText("Dice mix reset to default.")).toBeDefined();
+  });
 
-    await user.click(screen.getByRole("button", { name: "Save & apply" }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    expect(onSave.mock.calls[0]?.[0].assignments).toEqual({
-      all: null,
-      overrides: { d6: { source: "custom", id: designId } },
+  it("restores the durable previous mix without confirmation", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm");
+    const current = personalProfile();
+    current.assignments = { all: null, overrides: {} };
+    const previous = personalProfile();
+    const onRestore = vi.fn(async () => ({
+      revision: 5,
+      profile: previous,
+      canRestorePreviousMix: true,
+    }));
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: {
+        revision: 4,
+        profile: current,
+        canRestorePreviousMix: true,
+      },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave: vi.fn(async () => undefined),
+      onRestore,
     });
+
+    await user.click(
+      screen.getByRole("button", { name: "Restore previous mix" }),
+    );
+    await waitFor(() => expect(onRestore).toHaveBeenCalledWith(current, 4));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByText("Previous dice mix restored.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Save & apply" })).toBeNull();
   });
 
   it("returns to the default mix while a custom design is active", async () => {
@@ -1285,7 +1455,7 @@ describe("AppearanceEditorV3 chip actions", () => {
     await selectStartFromStyle(user, "pride");
     await user.click(materialTile("Glass"));
     expect(screen.getByLabelText("Custom design name")).toBeDefined();
-    await user.click(screen.getByRole("button", { name: "Back to default" }));
+    await user.click(screen.getByRole("button", { name: "Reset to default" }));
 
     expect(startFromCard("chaotic").getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByLabelText("Custom design name")).toBeNull();

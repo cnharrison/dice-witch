@@ -2262,6 +2262,68 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toEqual(generatedColors);
   });
 
+  it("honors explicit coordinated and one-per-die color schemes", () => {
+    const colors = ["#f05a24", "#04c9df", "#8a4fff"] as const;
+    const base = appearanceRecipeV3({
+      variation: "curated",
+      varyBy: "die",
+      colors: { mode: "palette", colors: [...colors] },
+      material: {
+        mode: "fixed",
+        value: {
+          family: "classic",
+          treatment: "gradient",
+          opacity: "opaque",
+          finish: "satin",
+          textureScale: 100,
+        },
+      },
+    });
+    const palettes = (recipe: AppearanceRecipeV3) =>
+      Array.from({ length: 256 }, (_, dieIndex) =>
+        resolveAppearanceRecipeV3(
+          recipe,
+          contextV3({
+            target: "d6",
+            dieIndex,
+            dieIdentity: `custom:${String(dieIndex)}`,
+          }),
+          "property-streams-r37",
+        ).appearance.palette,
+      );
+
+    const coordinated = palettes({
+      ...base,
+      colorDistribution: "coordinated",
+    });
+    expect(coordinated.every((palette) => palette.join() === colors.join())).toBe(
+      true,
+    );
+
+    const onePerDie = palettes({
+      ...base,
+      colorDistribution: "one-per-die",
+    });
+    expect(onePerDie.every((palette) => new Set(palette).size === 1)).toBe(true);
+    expect(new Set(onePerDie.flat())).toEqual(new Set(colors));
+
+    const rollScoped = palettes({
+      ...base,
+      varyBy: "roll",
+      colorDistribution: "one-per-die",
+    });
+    expect(rollScoped.every((palette) => new Set(palette).size === 1)).toBe(true);
+    expect(new Set(rollScoped.flat())).toEqual(new Set(colors));
+
+    const groupScoped = palettes({
+      ...base,
+      varyBy: "group",
+      colorDistribution: "one-per-die",
+    });
+    expect(groupScoped.every((palette) => new Set(palette).size === 1)).toBe(true);
+    expect(new Set(groupScoped.flat())).toEqual(new Set(colors));
+  });
+
   it("keeps Splatter's authored background first in r35", () => {
     const splatter = BUILTIN_APPEARANCE_STYLES_R34_V3.find(
       ({ id }) => id === "paint-splatter",

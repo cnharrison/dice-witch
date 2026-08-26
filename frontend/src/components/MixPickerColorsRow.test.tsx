@@ -17,11 +17,24 @@ const catalog = {
   styles: [
     {
       id: "rainbow",
+      name: "Rainbow",
       recipe: {
+        randomization: "one-palette-color-v1",
         colors: { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] },
       },
     },
+    {
+      id: "pride",
+      name: "Pride",
+      recipe: {
+        colors: {
+          mode: "palette",
+          colors: ["#e40303", "#ff8c00", "#ffed00", "#008026", "#004dff", "#750787"],
+        },
+      },
+    },
   ],
+  colorSchemeStyleIds: ["rainbow", "pride"],
   materials: [
     { family: "classic", name: "Classic", defaultValue: materialValue("classic-default") },
     { family: "glass", name: "Glass", defaultValue: materialValue("glass-default") },
@@ -84,7 +97,45 @@ function mockRandomValues(...batches: number[][]) {
 }
 
 describe("MixPickerColorsRow", () => {
-  it("collapses to a caption when every selected material brings its own colors", () => {
+  it("applies reusable color schemes without replacing material or texture", () => {
+    const material = {
+      family: "metal",
+      metal: "steel",
+      finish: "brushed",
+      patinaStrength: 42,
+      textureScale: 137,
+    } as const satisfies AppearanceMaterialV4;
+    const recipe = {
+      ...recipeWith(
+        { mode: "fixed", value: material },
+        { mode: "solid", primary: "#444444" },
+      ),
+      randomization: "full-spectrum-v2" as const,
+    };
+    const onChange = vi.fn();
+    render(
+      <MixPickerColorsRow
+        recipe={recipe}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Pride" }));
+    const pride = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
+    expect(pride.colors).toEqual(catalog.styles[1]?.recipe.colors);
+    expect(pride.colorDistribution).toBe("coordinated");
+    expect(pride.material).toEqual(recipe.material);
+    expect(pride.randomization).toBe("full-spectrum-v2");
+    expect(pride.font).toEqual(recipe.font);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rainbow" }));
+    const rainbow = onChange.mock.calls[1]?.[0] as AppearanceRecipeV3;
+    expect(rainbow.colorDistribution).toBe("one-per-die");
+    expect(rainbow.material).toEqual(recipe.material);
+  });
+
+  it("keeps color schemes available when a material adds its own accents", () => {
     const onChange = vi.fn();
     render(
       <MixPickerColorsRow
@@ -96,10 +147,10 @@ describe("MixPickerColorsRow", () => {
         onChange={onChange}
       />,
     );
-    expect(screen.getByText("These materials bring their own colors."))
-      .not.toBeNull();
-    expect(screen.queryByLabelText(/Palette color/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Random" })).toBeNull();
+    expect(screen.getByText("Fantasy adds its own accents")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Pride" })).toBeDefined();
+    expect(screen.getAllByLabelText(/Palette color/)).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Random" })).toBeDefined();
   });
 
   it("lets Hollow Metal use a chosen tint without changing the material", () => {
@@ -155,7 +206,9 @@ describe("MixPickerColorsRow", () => {
       />,
     );
     expect(
-      screen.getByText("Applies to Classic — Fantasy brings its own"),
+      screen.getByText(
+        "Applies to Classic — Fantasy adds its own accents",
+      ),
     ).not.toBeNull();
   });
 
@@ -348,6 +401,30 @@ describe("MixPickerColorsRow", () => {
       screen.getByText("A new color is drawn every roll."),
     ).not.toBeNull();
     expect(screen.queryByLabelText("Dice color")).toBeNull();
+  });
+
+  it("clears one-per-die distribution when Random produces one color", () => {
+    mockRandomValues([0], [0, 1]);
+    const recipe = {
+      ...recipeWith(
+        { mode: "fixed", value: materialValue("classic") },
+        { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] },
+      ),
+      colorDistribution: "one-per-die" as const,
+    };
+    const onChange = vi.fn();
+    render(
+      <MixPickerColorsRow
+        recipe={recipe}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    const next = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
+    expect(next.colors.mode).toBe("solid");
+    expect(next.colorDistribution).toBeUndefined();
   });
 
   it("Random generates new colors on every click", () => {

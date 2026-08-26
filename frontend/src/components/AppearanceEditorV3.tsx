@@ -6,6 +6,7 @@ import { MixPickerFineTune } from "@/components/MixPickerFineTune";
 import { MixPickerMaterialsRow } from "@/components/MixPickerMaterialsRow";
 import { MixPickerNumbersRow } from "@/components/MixPickerNumbersRow";
 import { MixPickerStartFromRow } from "@/components/MixPickerStartFromRow";
+import { MixPickerTexturesRow } from "@/components/MixPickerTexturesRow";
 import { MixPickerVarietyControl } from "@/components/MixPickerVarietyControl";
 import { AppearanceSelectV3 } from "@/components/AppearanceSelectV3";
 import { AppearanceTargetPickerV3 } from "@/components/AppearanceTargetPickerV3";
@@ -17,7 +18,6 @@ import {
   assertAppearanceRecipeSupportsTargetV3,
   beginAppearanceRecipeEditV3,
   clearAppearanceTargetOverrideV3,
-  clearAppearanceAllAssignmentV3,
   createEmptyAppearanceProfileV4,
   deleteAppearanceDesignV3,
   duplicateAppearanceDesignV3,
@@ -64,6 +64,14 @@ type AppearanceEditorV3Props = {
   settingsPanel?: React.ReactNode;
   onDirtyChange?(dirty: boolean): void;
   onSave(profile: EditableAppearanceProfileV4, revision: number): Promise<void>;
+  onReset(
+    profile: EditableAppearanceProfileV4,
+    revision: number,
+  ): Promise<AppearanceProfileResource<EditableAppearanceProfileV4>>;
+  onRestore(
+    profile: EditableAppearanceProfileV4,
+    revision: number,
+  ): Promise<AppearanceProfileResource<EditableAppearanceProfileV4>>;
 };
 
 type AppearanceEditorTab = "design" | "camera" | "server";
@@ -94,6 +102,8 @@ function errorMessage(error: unknown): string {
       return "Your session expired. Sign in again before saving appearance settings.";
     case "appearance_profile_invalid":
       return "This draft contains an unsupported appearance combination.";
+    case "appearance_restore_missing":
+      return "The previous dice mix is no longer available.";
     default:
       return "Appearance settings are temporarily unavailable.";
   }
@@ -158,6 +168,8 @@ export function AppearanceEditorV3({
   settingsPanel,
   onDirtyChange,
   onSave,
+  onReset,
+  onRestore,
 }: AppearanceEditorV3Props) {
   const resourceProfile = React.useMemo(
     () => resource.profile ?? createEmptyAppearanceProfileV4(kind),
@@ -320,6 +332,8 @@ export function AppearanceEditorV3({
   const overrideTargets = Object.entries(draftProfile.assignments.overrides)
     .filter(([, reference]) => reference !== undefined)
     .map(([overrideTarget]) => overrideTarget as AppearanceTargetV4);
+  const isDefaultMix =
+    draftProfile.assignments.all === null && overrideTargets.length === 0;
   const overriddenTargetSet = new Set(overrideTargets);
   const allAffectedTargets = APPEARANCE_TARGETS_V4.filter(
     (candidate) => !overriddenTargetSet.has(candidate),
@@ -410,10 +424,23 @@ export function AppearanceEditorV3({
 
   // Mix picker edits flow through the same copy-on-write machinery as before;
   // material/color reconcilers keep curated-palette and randomization rules.
-  const changeMixMaterials = (nextRecipe: AppearanceRecipeV3) =>
-    setCustomRecipe(reconcileAppearanceMaterialEditV3(nextRecipe, catalog));
-  const changeMixColors = (nextRecipe: AppearanceRecipeV3) =>
-    setCustomRecipe(reconcileAppearanceColorEditV3(nextRecipe));
+  const changeMixMaterials = (nextRecipe: AppearanceRecipeV3) => {
+    try {
+      setCustomRecipe(reconcileAppearanceMaterialEditV3(nextRecipe, catalog));
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+  const changeMixColors = (
+    nextRecipe: AppearanceRecipeV3,
+    sourceName?: string,
+  ) => {
+    try {
+      setCustomRecipe(reconcileAppearanceColorEditV3(nextRecipe), sourceName);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
   const changeMixVariety = (
     variety: Exclude<MixPickerVariety, "chaos">,
   ) => setCustomRecipe(applyVariety(activeSelection.recipe, variety));
@@ -468,12 +495,16 @@ export function AppearanceEditorV3({
     }
   };
 
-  const setCustomRecipe = (nextRecipe: AppearanceRecipeV3) => {
+  const setCustomRecipe = (
+    nextRecipe: AppearanceRecipeV3,
+    sourceName?: string,
+  ) => {
     if (sameValue(activeSelection.recipe, nextRecipe)) return;
     try {
       if (activeDesign === undefined) {
         const id = crypto.randomUUID();
-        const name = nextPresetEditNameV3(draftProfile.designs);
+        const source = sourceName ?? activeSelection.name;
+        const name = nextPresetEditNameV3(draftProfile.designs, source);
         const recipe = beginAppearanceRecipeEditV3(
           activeSelection.recipe,
           nextRecipe,
@@ -490,7 +521,7 @@ export function AppearanceEditorV3({
         openSavedDesignEditor(id);
         setBasedOnStyles((styles) => ({
           ...styles,
-          [id]: activeSelection.name,
+          [id]: source,
         }));
       } else {
         setDraftProfile(
@@ -519,10 +550,12 @@ export function AppearanceEditorV3({
     try {
       const id = crypto.randomUUID();
       const basedOnStyle = activeSelection.designId === null;
-      const name = nextAppearanceDesignNameV3(
-        draftProfile.designs,
-        activeSelection.name,
-      );
+      const name = basedOnStyle
+        ? nextPresetEditNameV3(draftProfile.designs, activeSelection.name)
+        : nextAppearanceDesignNameV3(
+            draftProfile.designs,
+            activeSelection.name,
+          );
       const recipe = beginAppearanceRecipeEditV3(
         activeSelection.recipe,
         activeSelection.recipe,
@@ -741,36 +774,6 @@ export function AppearanceEditorV3({
     }
   };
 
-  const backToDefault = () => {
-    if (!window.confirm("Reset to default dice mix?")) return;
-    if (target !== "all") {
-      discardOverride(target);
-      return;
-    }
-    try {
-      let next = clearAppearanceAllAssignmentV3(draftProfile, catalog);
-      const reference = draftProfile.assignments.all;
-      if (
-        reference?.source === "custom" &&
-        !designTargets(draftProfile, reference.id).some(
-          (assignedTarget) => assignedTarget !== "all",
-        ) &&
-        !baselineProfile.designs.some(({ id }) => id === reference.id)
-      ) {
-        const design = draftProfile.designs.find(({ id }) => id === reference.id);
-        if (design !== undefined) {
-          next = deleteAppearanceDesignV3(next, design.id, catalog);
-          removeDraftMetadata(design.id);
-        }
-      }
-      setDraftProfile(next);
-      closeActiveDesign();
-      setStatus(null);
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
-  };
-
   const materializeNames = (): EditableAppearanceProfileV4 => {
     let profile = draftProfile;
     for (const [id, name] of Object.entries(nameDrafts)) {
@@ -783,6 +786,54 @@ export function AppearanceEditorV3({
       }
     }
     return profile;
+  };
+
+  const acceptSavedResource = (
+    saved: AppearanceProfileResource<EditableAppearanceProfileV4>,
+    message: string,
+  ) => {
+    if (saved.profile === null) {
+      throw new Error("Saved appearance profile is missing");
+    }
+    setBaselineProfile(structuredClone(saved.profile));
+    setBaselineRevision(saved.revision);
+    setDraftProfile(structuredClone(saved.profile));
+    closeActiveDesign();
+    setNameDrafts({});
+    setBasedOnStyles({});
+    setExplicitDesignIds([]);
+    setDeletionNotices([]);
+    setStatus(message);
+  };
+
+  const backToDefault = async () => {
+    if (target !== "all") {
+      if (
+        window.confirm(
+          `Discard ${APPEARANCE_TARGET_LABELS[target]}'s design?`,
+        )
+      ) {
+        discardOverride(target);
+      }
+      return;
+    }
+    setStatus(null);
+    try {
+      const saved = await onReset(materializeNames(), baselineRevision);
+      acceptSavedResource(saved, "Dice mix reset to default.");
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const restorePreviousMix = async () => {
+    setStatus(null);
+    try {
+      const saved = await onRestore(materializeNames(), baselineRevision);
+      acceptSavedResource(saved, "Previous dice mix restored.");
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
   };
 
   const saveDraft = async () => {
@@ -842,16 +893,30 @@ export function AppearanceEditorV3({
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
       <aside className="appearance-editor-rail order-1 flex flex-col gap-4 xl:sticky xl:top-6 xl:z-10 xl:col-start-2 xl:row-start-1 xl:self-start">
         <div className="appearance-editor-target-card rounded-xl border bg-card p-4 shadow-sm sm:p-6">
-          <div className="mb-2 flex justify-end">
+          <div className="mb-2 flex flex-wrap justify-end gap-2">
+            {resource.canRestorePreviousMix && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={isSaving}
+                onClick={() => void restorePreviousMix()}
+              >
+                Restore previous mix
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={isSaving || (target !== "all" && !hasTargetOverride)}
-              onClick={backToDefault}
+              disabled={
+                isSaving ||
+                (target === "all" ? isDefaultMix : !hasTargetOverride)
+              }
+              onClick={() => void backToDefault()}
             >
               <Undo2 className="mr-2 h-4 w-4" aria-hidden="true" />
-              Back to default
+              Reset to default
             </Button>
           </div>
           <AppearanceTargetPickerV3
@@ -1011,15 +1076,13 @@ export function AppearanceEditorV3({
             </div>
           )}
 
-          <MixPickerStartFromRow
-            catalog={catalog}
-            selectedStyleId={activeSelection.styleId}
-            thumbVersion={thumbVersion}
-            disabled={isSaving}
-            onSelect={selectStyle}
-          />
-
           <div className="space-y-6">
+            <MixPickerColorsRow
+              recipe={activeSelection.recipe}
+              catalog={catalog}
+              disabled={isSaving}
+              onChange={changeMixColors}
+            />
             <MixPickerMaterialsRow
               recipe={activeSelection.recipe}
               catalog={catalog}
@@ -1027,11 +1090,18 @@ export function AppearanceEditorV3({
               disabled={isSaving}
               onChange={changeMixMaterials}
             />
-            <MixPickerColorsRow
+            <MixPickerTexturesRow
               recipe={activeSelection.recipe}
               catalog={catalog}
               disabled={isSaving}
-              onChange={changeMixColors}
+              onChange={changeMixMaterials}
+            />
+            <MixPickerStartFromRow
+              catalog={catalog}
+              selectedStyleId={activeSelection.styleId}
+              thumbVersion={thumbVersion}
+              disabled={isSaving}
+              onSelect={selectStyle}
             />
             <MixPickerNumbersRow
               recipe={activeSelection.recipe}

@@ -49,6 +49,7 @@ export type AppearanceProfileResource<
 > = {
   revision: number;
   profile: Profile | null;
+  canRestorePreviousMix: boolean;
 };
 
 export type AppearancePreviewV4 = {

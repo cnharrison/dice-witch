@@ -79,6 +79,8 @@ function post(path: string, body: unknown): Promise<Response> {
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM guild_appearance_reset_snapshots"),
+    dataEnv.DATA.prepare("DELETE FROM user_appearance_reset_snapshots"),
     dataEnv.DATA.prepare("DELETE FROM guild_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM user_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM mutation_receipts"),
@@ -142,6 +144,48 @@ describe("Data Worker V4 appearance service", () => {
       revision: 1,
       profile: guild,
       updatedByUserId: userId,
+    });
+  });
+
+  it("resets and restores a personal mix through the internal contract", async () => {
+    const profile = personalProfile("rainbow");
+    await post("/internal/appearance/v4/personal/put", {
+      userId,
+      expectedRevision: 0,
+      profile,
+      mutationId: "appearance-v4-reset-create",
+      occurredAt,
+    });
+
+    const reset = await post("/internal/appearance/v4/personal/state/reset", {
+      userId,
+      expectedRevision: 1,
+      profile,
+      mutationId: "appearance-v4-reset",
+      occurredAt: occurredAt + 1,
+    });
+    expect(reset.status).toBe(200);
+    const resetResult = await reset.json();
+    expect(resetResult).toMatchObject({
+      status: "applied",
+      revision: 2,
+      profile: { assignments: { all: null, overrides: {} } },
+      canRestorePreviousMix: true,
+    });
+
+    const restore = await post("/internal/appearance/v4/personal/state/restore", {
+      userId,
+      expectedRevision: 2,
+      profile: (resetResult as { profile: AppearanceProfileV4 }).profile,
+      mutationId: "appearance-v4-restore",
+      occurredAt: occurredAt + 2,
+    });
+    expect(restore.status).toBe(200);
+    await expect(restore.json()).resolves.toMatchObject({
+      status: "applied",
+      revision: 3,
+      profile,
+      canRestorePreviousMix: true,
     });
   });
 

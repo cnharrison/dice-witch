@@ -55,6 +55,8 @@ import {
   BUILTIN_APPEARANCE_RECIPES_V3,
   BUILTIN_APPEARANCE_STYLES_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
+  COLOR_SCHEME_STYLE_IDS_V3,
+  COMPLETE_LOOK_STYLE_IDS_V3,
   FEATURED_APPEARANCE_PATTERN_IDS,
   FEATURED_APPEARANCE_STYLE_IDS,
   appearanceCatalogForPolicyV3,
@@ -477,6 +479,12 @@ describe("built-in appearance catalog", () => {
     );
     expect(APPEARANCE_CATALOG_V3.collectorStyleIds).toEqual(
       APPROVED_COLLECTOR_STYLE_IDS_V3,
+    );
+    expect(APPEARANCE_CATALOG_V3.colorSchemeStyleIds).toEqual(
+      COLOR_SCHEME_STYLE_IDS_V3,
+    );
+    expect(APPEARANCE_CATALOG_V3.completeLookStyleIds).toEqual(
+      COMPLETE_LOOK_STYLE_IDS_V3,
     );
     expect(APPEARANCE_CATALOG_V3.featuredPatternIds).toEqual(
       FEATURED_APPEARANCE_PATTERN_IDS,

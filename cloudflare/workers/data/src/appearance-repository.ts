@@ -25,8 +25,19 @@ type StoredGuildProfileRow = StoredProfileRow & {
   updated_by_user_id: string;
 };
 
+type StoredMixRow = {
+  mix_json: string;
+};
+
+type AppearanceMixV4 = Pick<AppearanceProfileV4, "assignments" | "designs">;
+
 export type AppearanceProfileReadResult<Profile> =
-  | { status: "found"; revision: number; profile: Profile }
+  | {
+      status: "found";
+      revision: number;
+      profile: Profile;
+      canRestorePreviousMix: boolean;
+    }
   | { status: "missing" };
 
 export type GuildAppearanceProfileReadResult<Profile> =
@@ -35,6 +46,7 @@ export type GuildAppearanceProfileReadResult<Profile> =
       revision: number;
       profile: Profile;
       updatedByUserId: string;
+      canRestorePreviousMix: boolean;
     }
   | { status: "missing" };
 
@@ -43,8 +55,9 @@ export type AppearanceProfileWriteResult<Profile> =
       status: "applied" | "existing";
       revision: number;
       profile: Profile;
+      canRestorePreviousMix: boolean;
     }
-  | { status: "missing" | "mutation_conflict" }
+  | { status: "missing" | "mutation_conflict" | "restore_missing" }
   | { status: "revision_conflict"; revision: number };
 
 export type PutPersonalAppearanceV4Input = {
@@ -63,6 +76,11 @@ export type PutGuildAppearanceV4Input = {
   mutationId: string;
   occurredAt: number;
 };
+
+export type ResetPersonalAppearanceV4Input = PutPersonalAppearanceV4Input;
+export type ResetGuildAppearanceV4Input = PutGuildAppearanceV4Input;
+export type RestorePersonalAppearanceV4Input = PutPersonalAppearanceV4Input;
+export type RestoreGuildAppearanceV4Input = PutGuildAppearanceV4Input;
 
 type StoredProfileState =
   | { status: "missing" }
@@ -91,16 +109,30 @@ type StoredGuildProfile =
       profile: GuildAppearanceProfileV4;
     };
 
+type RestoreTarget<Profile> =
+  | { status: "missing" }
+  | { status: "found"; revision: number; profile: Profile };
+
 type PreparedWrite<Profile> = {
   receipt: MutationReceipt;
   mutationId: string;
   expectedRevision: number;
   profile: Profile;
-  statements: (
-    target: StoredProfileState,
-  ) => [D1PreparedStatement, D1PreparedStatement];
+  statements: (target: StoredProfileState) => D1PreparedStatement[];
   parentExists: () => Promise<boolean>;
   readTarget: () => Promise<StoredProfileState>;
+  canRestorePreviousMix: () => Promise<boolean>;
+};
+
+type PreparedRestore<Profile> = {
+  statements: D1PreparedStatement[];
+  receipt: MutationReceipt;
+  mutationId: string;
+  expectedRevision: number;
+  profile: Profile;
+  parentExists: () => Promise<boolean>;
+  readTarget: () => Promise<RestoreTarget<Profile>>;
+  snapshotExists: () => Promise<boolean>;
 };
 
 type TargetGuard = {
@@ -127,6 +159,107 @@ function serializeProfile(profile: object): string {
     throw new Error("Appearance profile is too large");
   }
   return profileJson;
+}
+
+function mixFromProfile(profile: AppearanceProfileV4): AppearanceMixV4 {
+  return {
+    designs: structuredClone(profile.designs),
+    assignments: structuredClone(profile.assignments),
+  };
+}
+
+function resetProfile<Profile extends AppearanceProfileV4>(
+  profile: Profile,
+): Profile {
+  return {
+    ...structuredClone(profile),
+    assignments: { all: null, overrides: {} },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const keys = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return (
+    keys.length === sortedExpected.length &&
+    keys.every((key, index) => key === sortedExpected[index])
+  );
+}
+
+function isExactMix(value: unknown): value is AppearanceMixV4 {
+  return isRecord(value) && hasExactKeys(value, ["assignments", "designs"]);
+}
+
+function restoreReceiptProfile(
+  row: MutationReceiptRow,
+  receipt: Omit<MutationReceipt, "payloadJson">,
+  requestJson: string,
+): { matched: false } | { matched: true; profile: unknown } {
+  if (
+    row.entity_type !== receipt.entityType ||
+    row.entity_key !== receipt.entityKey ||
+    row.operation !== receipt.operation ||
+    row.occurred_at !== receipt.occurredAt
+  ) {
+    return { matched: false };
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(row.payload_json) as unknown;
+  } catch {
+    return { matched: false };
+  }
+  if (!isRecord(payload) || !hasExactKeys(payload, ["profile", "request"])) {
+    return { matched: false };
+  }
+  return JSON.stringify(payload.request) === requestJson
+    ? { matched: true, profile: payload.profile }
+    : { matched: false };
+}
+
+function parseStoredPersonalMix(
+  value: string,
+  current: AppearanceProfileV4,
+  catalog: AppearanceValidationCatalogV3,
+): AppearanceProfileV4 {
+  const mix = parseStoredJson(value);
+  if (!isExactMix(mix)) throw new Error("Stored appearance reset mix is invalid");
+  return parseStoredProfile(() =>
+    parseAppearanceProfileV4(
+      {
+        ...current,
+        designs: mix.designs,
+        assignments: mix.assignments,
+      },
+      catalog,
+    ),
+  );
+}
+
+function parseStoredGuildMix(
+  value: string,
+  current: GuildAppearanceProfileV4,
+  catalog: AppearanceValidationCatalogV3,
+): GuildAppearanceProfileV4 {
+  const mix = parseStoredJson(value);
+  if (!isExactMix(mix)) throw new Error("Stored appearance reset mix is invalid");
+  return parseStoredProfile(() =>
+    parseGuildAppearanceProfileV4(
+      {
+        ...current,
+        designs: mix.designs,
+        assignments: mix.assignments,
+      },
+      catalog,
+    ),
+  );
 }
 
 function parseStoredJson(value: string): unknown {
@@ -194,15 +327,16 @@ function targetGuard(
   };
 }
 
-function existingWriteResult<Profile extends object>(
+async function existingWriteResult<Profile extends object>(
   row: MutationReceiptRow,
   write: PreparedWrite<Profile>,
-): AppearanceProfileWriteResult<Profile> {
+): Promise<AppearanceProfileWriteResult<Profile>> {
   return matchesMutationReceipt(row, write.receipt)
     ? {
         status: "existing",
         revision: write.expectedRevision + 1,
         profile: write.profile,
+        canRestorePreviousMix: await write.canRestorePreviousMix(),
       }
     : { status: "mutation_conflict" };
 }
@@ -223,6 +357,7 @@ export class D1AppearanceRepository {
       status: "found",
       revision: stored.revision,
       profile: stored.profile,
+      canRestorePreviousMix: await this.personalSnapshotExists(userId),
     };
   }
 
@@ -237,6 +372,7 @@ export class D1AppearanceRepository {
       revision: stored.revision,
       profile: stored.profile,
       updatedByUserId: stored.updatedByUserId,
+      canRestorePreviousMix: await this.guildSnapshotExists(guildId),
     };
   }
 
@@ -276,6 +412,7 @@ export class D1AppearanceRepository {
       parentExists: () => this.userExists(userId),
       readTarget: async () =>
         storedProfileState(await this.readPersonalProfile(userId)),
+      canRestorePreviousMix: () => this.personalSnapshotExists(userId),
     });
   }
 
@@ -324,6 +461,273 @@ export class D1AppearanceRepository {
       parentExists: () => this.guildAndUserExist(guildId, updatedByUserId),
       readTarget: async () =>
         storedProfileState(await this.readGuildProfile(guildId)),
+      canRestorePreviousMix: () => this.guildSnapshotExists(guildId),
+    });
+  }
+
+  async resetPersonalV4(
+    input: ResetPersonalAppearanceV4Input,
+  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV4>> {
+    const userId = validateSnowflake(input.userId, "User id");
+    const expectedRevision = validateExpectedRevision(input.expectedRevision);
+    validateMutationMetadata(input.mutationId, input.occurredAt);
+    const currentProfile = parseAppearanceProfileV4(input.profile, this.catalog);
+    const profile = resetProfile(currentProfile);
+    const profileJson = serializeProfile(profile);
+    const mixJson = serializeProfile(mixFromProfile(currentProfile));
+    const payloadJson = JSON.stringify({
+      action: "reset",
+      expectedRevision,
+      profile: currentProfile,
+    });
+    const receipt: MutationReceipt = {
+      entityType: "user",
+      entityKey: userId,
+      operation: "upsert",
+      payloadJson,
+      occurredAt: input.occurredAt,
+    };
+    return this.applyWrite({
+      receipt,
+      mutationId: input.mutationId,
+      expectedRevision,
+      profile,
+      statements: (target) =>
+        this.personalResetStatements(
+          {
+            userId,
+            expectedRevision,
+            profileJson,
+            mixJson,
+            payloadJson,
+            mutationId: input.mutationId,
+            occurredAt: input.occurredAt,
+          },
+          target,
+        ),
+      parentExists: () => this.userExists(userId),
+      readTarget: async () =>
+        storedProfileState(await this.readPersonalProfile(userId)),
+      canRestorePreviousMix: () => Promise.resolve(true),
+    });
+  }
+
+  async resetGuildV4(
+    input: ResetGuildAppearanceV4Input,
+  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV4>> {
+    const guildId = validateSnowflake(input.guildId, "Guild id");
+    const updatedByUserId = validateSnowflake(
+      input.updatedByUserId,
+      "Appearance profile author id",
+    );
+    const expectedRevision = validateExpectedRevision(input.expectedRevision);
+    validateMutationMetadata(input.mutationId, input.occurredAt);
+    const currentProfile = parseGuildAppearanceProfileV4(
+      input.profile,
+      this.catalog,
+    );
+    const profile = resetProfile(currentProfile);
+    const profileJson = serializeProfile(profile);
+    const mixJson = serializeProfile(mixFromProfile(currentProfile));
+    const payloadJson = JSON.stringify({
+      action: "reset",
+      expectedRevision,
+      updatedByUserId,
+      profile: currentProfile,
+    });
+    const receipt: MutationReceipt = {
+      entityType: "guild",
+      entityKey: guildId,
+      operation: "upsert",
+      payloadJson,
+      occurredAt: input.occurredAt,
+    };
+    return this.applyWrite({
+      receipt,
+      mutationId: input.mutationId,
+      expectedRevision,
+      profile,
+      statements: (target) =>
+        this.guildResetStatements(
+          {
+            guildId,
+            updatedByUserId,
+            expectedRevision,
+            profileJson,
+            mixJson,
+            payloadJson,
+            mutationId: input.mutationId,
+            occurredAt: input.occurredAt,
+          },
+          target,
+        ),
+      parentExists: () => this.guildAndUserExist(guildId, updatedByUserId),
+      readTarget: async () =>
+        storedProfileState(await this.readGuildProfile(guildId)),
+      canRestorePreviousMix: () => Promise.resolve(true),
+    });
+  }
+
+  async restorePersonalV4(
+    input: RestorePersonalAppearanceV4Input,
+  ): Promise<AppearanceProfileWriteResult<AppearanceProfileV4>> {
+    const userId = validateSnowflake(input.userId, "User id");
+    const expectedRevision = validateExpectedRevision(input.expectedRevision);
+    validateMutationMetadata(input.mutationId, input.occurredAt);
+    const currentDraft = parseAppearanceProfileV4(input.profile, this.catalog);
+    const requestPayload = {
+      action: "restore",
+      expectedRevision,
+      profile: currentDraft,
+    } as const;
+    const requestJson = JSON.stringify(requestPayload);
+    const receiptMetadata = {
+      entityType: "user",
+      entityKey: userId,
+      operation: "upsert",
+      occurredAt: input.occurredAt,
+    } as const;
+    const existing = await readMutationReceipt(this.db, input.mutationId);
+    if (existing !== null) {
+      const existingProfile = restoreReceiptProfile(
+        existing,
+        receiptMetadata,
+        requestJson,
+      );
+      return !existingProfile.matched
+        ? { status: "mutation_conflict" }
+        : {
+            status: "existing",
+            revision: expectedRevision + 1,
+            profile: parseAppearanceProfileV4(
+              existingProfile.profile,
+              this.catalog,
+            ),
+            canRestorePreviousMix: true,
+          };
+    }
+    const target = await this.readPersonalProfile(userId);
+    if (target.status === "missing") {
+      return (await this.userExists(userId))
+        ? { status: "restore_missing" }
+        : { status: "missing" };
+    }
+    const snapshot = await this.readPersonalSnapshot(userId);
+    if (snapshot === null) return { status: "restore_missing" };
+    const profile = parseStoredPersonalMix(
+      snapshot.mix_json,
+      currentDraft,
+      this.catalog,
+    );
+    const payloadJson = JSON.stringify({ request: requestPayload, profile });
+    const receipt: MutationReceipt = { ...receiptMetadata, payloadJson };
+    const statements = this.personalRestoreStatements(
+      {
+        userId,
+        expectedRevision,
+        profileJson: serializeProfile(profile),
+        mixJson: serializeProfile(mixFromProfile(currentDraft)),
+        payloadJson,
+        mutationId: input.mutationId,
+        occurredAt: input.occurredAt,
+      },
+      storedProfileState(target),
+    );
+    return this.applyRestoreBatch({
+      statements,
+      receipt,
+      mutationId: input.mutationId,
+      expectedRevision,
+      profile,
+      parentExists: () => this.userExists(userId),
+      readTarget: () => this.readPersonalProfile(userId),
+      snapshotExists: () => this.personalSnapshotExists(userId),
+    });
+  }
+
+  async restoreGuildV4(
+    input: RestoreGuildAppearanceV4Input,
+  ): Promise<AppearanceProfileWriteResult<GuildAppearanceProfileV4>> {
+    const guildId = validateSnowflake(input.guildId, "Guild id");
+    const updatedByUserId = validateSnowflake(
+      input.updatedByUserId,
+      "Appearance profile author id",
+    );
+    const expectedRevision = validateExpectedRevision(input.expectedRevision);
+    validateMutationMetadata(input.mutationId, input.occurredAt);
+    const currentDraft = parseGuildAppearanceProfileV4(
+      input.profile,
+      this.catalog,
+    );
+    const requestPayload = {
+      action: "restore",
+      expectedRevision,
+      updatedByUserId,
+      profile: currentDraft,
+    } as const;
+    const requestJson = JSON.stringify(requestPayload);
+    const receiptMetadata = {
+      entityType: "guild",
+      entityKey: guildId,
+      operation: "upsert",
+      occurredAt: input.occurredAt,
+    } as const;
+    const existing = await readMutationReceipt(this.db, input.mutationId);
+    if (existing !== null) {
+      const existingProfile = restoreReceiptProfile(
+        existing,
+        receiptMetadata,
+        requestJson,
+      );
+      return !existingProfile.matched
+        ? { status: "mutation_conflict" }
+        : {
+            status: "existing",
+            revision: expectedRevision + 1,
+            profile: parseGuildAppearanceProfileV4(
+              existingProfile.profile,
+              this.catalog,
+            ),
+            canRestorePreviousMix: true,
+          };
+    }
+    const target = await this.readGuildProfile(guildId);
+    if (target.status === "missing") {
+      return (await this.guildAndUserExist(guildId, updatedByUserId))
+        ? { status: "restore_missing" }
+        : { status: "missing" };
+    }
+    const snapshot = await this.readGuildSnapshot(guildId);
+    if (snapshot === null) return { status: "restore_missing" };
+    const profile = parseStoredGuildMix(
+      snapshot.mix_json,
+      currentDraft,
+      this.catalog,
+    );
+    const payloadJson = JSON.stringify({ request: requestPayload, profile });
+    const receipt: MutationReceipt = { ...receiptMetadata, payloadJson };
+    const statements = this.guildRestoreStatements(
+      {
+        guildId,
+        updatedByUserId,
+        expectedRevision,
+        profileJson: serializeProfile(profile),
+        mixJson: serializeProfile(mixFromProfile(currentDraft)),
+        payloadJson,
+        mutationId: input.mutationId,
+        occurredAt: input.occurredAt,
+      },
+      storedProfileState(target),
+    );
+    return this.applyRestoreBatch({
+      statements,
+      receipt,
+      mutationId: input.mutationId,
+      expectedRevision,
+      profile,
+      parentExists: () => this.guildAndUserExist(guildId, updatedByUserId),
+      readTarget: () => this.readGuildProfile(guildId),
+      snapshotExists: () => this.guildSnapshotExists(guildId),
     });
   }
 
@@ -395,6 +799,195 @@ export class D1AppearanceRepository {
         ...guard.updateBindings,
       );
     return [receiptStatement, profileStatement];
+  }
+
+  private personalResetStatements(
+    input: {
+      userId: string;
+      expectedRevision: number;
+      profileJson: string;
+      mixJson: string;
+      payloadJson: string;
+      mutationId: string;
+      occurredAt: number;
+    },
+    target: StoredProfileState,
+  ): D1PreparedStatement[] {
+    const guard = targetGuard(
+      "user_appearance_profiles",
+      "user_id",
+      input.userId,
+      input.expectedRevision,
+      target,
+    );
+    const receiptStatement = this.db
+      .prepare(
+        `INSERT INTO mutation_receipts (
+           mutation_id, entity_type, entity_key,
+           operation, payload_json, occurred_at
+         )
+         SELECT ?, 'user', ?, 'upsert', ?, ?
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+           AND ${guard.predicate}`,
+      )
+      .bind(
+        input.mutationId,
+        input.userId,
+        input.payloadJson,
+        input.occurredAt,
+        input.userId,
+        ...guard.predicateBindings,
+      );
+    const snapshotStatement = this.db
+      .prepare(
+        `INSERT INTO user_appearance_reset_snapshots (
+           user_id, mix_json, updated_at
+         )
+         SELECT ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM mutation_receipts
+           WHERE mutation_id = ? AND entity_type = 'user'
+             AND entity_key = ? AND operation = 'upsert'
+             AND payload_json = ? AND occurred_at = ?
+         )
+           AND ${guard.predicate}
+         ON CONFLICT(user_id) DO UPDATE SET
+           mix_json = excluded.mix_json,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(
+        input.userId,
+        input.mixJson,
+        input.occurredAt,
+        input.mutationId,
+        input.userId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.predicateBindings,
+      );
+    const profileStatement = this.db
+      .prepare(
+        `INSERT INTO user_appearance_profiles (
+           user_id, revision, profile_json, updated_at
+         )
+         SELECT ?, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM mutation_receipts
+           WHERE mutation_id = ? AND entity_type = 'user'
+             AND entity_key = ? AND operation = 'upsert'
+             AND payload_json = ? AND occurred_at = ?
+         )
+           AND ${guard.predicate}
+         ON CONFLICT(user_id) DO UPDATE SET
+           revision = excluded.revision,
+           profile_json = excluded.profile_json,
+           updated_at = excluded.updated_at
+         WHERE ${guard.updatePredicate}`,
+      )
+      .bind(
+        input.userId,
+        input.expectedRevision + 1,
+        input.profileJson,
+        input.occurredAt,
+        input.mutationId,
+        input.userId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.predicateBindings,
+        ...guard.updateBindings,
+      );
+    return [receiptStatement, snapshotStatement, profileStatement];
+  }
+
+  private personalRestoreStatements(
+    input: {
+      userId: string;
+      expectedRevision: number;
+      profileJson: string;
+      mixJson: string;
+      payloadJson: string;
+      mutationId: string;
+      occurredAt: number;
+    },
+    target: StoredProfileState,
+  ): D1PreparedStatement[] {
+    const guard = targetGuard(
+      "user_appearance_profiles",
+      "user_id",
+      input.userId,
+      input.expectedRevision,
+      target,
+    );
+    const receiptStatement = this.db
+      .prepare(
+        `INSERT INTO mutation_receipts (
+           mutation_id, entity_type, entity_key,
+           operation, payload_json, occurred_at
+         )
+         SELECT ?, 'user', ?, 'upsert', ?, ?
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+           AND EXISTS (
+             SELECT 1 FROM user_appearance_reset_snapshots WHERE user_id = ?
+           )
+           AND ${guard.predicate}`,
+      )
+      .bind(
+        input.mutationId,
+        input.userId,
+        input.payloadJson,
+        input.occurredAt,
+        input.userId,
+        input.userId,
+        ...guard.predicateBindings,
+      );
+    const snapshotStatement = this.db
+      .prepare(
+        `UPDATE user_appearance_reset_snapshots
+         SET mix_json = ?, updated_at = ?
+         WHERE user_id = ?
+           AND EXISTS (
+             SELECT 1 FROM mutation_receipts
+             WHERE mutation_id = ? AND entity_type = 'user'
+               AND entity_key = ? AND operation = 'upsert'
+               AND payload_json = ? AND occurred_at = ?
+           )
+           AND ${guard.predicate}`,
+      )
+      .bind(
+        input.mixJson,
+        input.occurredAt,
+        input.userId,
+        input.mutationId,
+        input.userId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.predicateBindings,
+      );
+    const profileStatement = this.db
+      .prepare(
+        `UPDATE user_appearance_profiles
+         SET revision = ?, profile_json = ?, updated_at = ?
+         WHERE user_id = ?
+           AND EXISTS (
+             SELECT 1 FROM mutation_receipts
+             WHERE mutation_id = ? AND entity_type = 'user'
+               AND entity_key = ? AND operation = 'upsert'
+               AND payload_json = ? AND occurred_at = ?
+           )
+           AND ${guard.updatePredicate}`,
+      )
+      .bind(
+        input.expectedRevision + 1,
+        input.profileJson,
+        input.occurredAt,
+        input.userId,
+        input.mutationId,
+        input.userId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.updateBindings,
+      );
+    return [receiptStatement, snapshotStatement, profileStatement];
   }
 
   private guildWriteStatements(
@@ -472,30 +1065,232 @@ export class D1AppearanceRepository {
     return [receiptStatement, profileStatement];
   }
 
+  private guildResetStatements(
+    input: {
+      guildId: string;
+      updatedByUserId: string;
+      expectedRevision: number;
+      profileJson: string;
+      mixJson: string;
+      payloadJson: string;
+      mutationId: string;
+      occurredAt: number;
+    },
+    target: StoredProfileState,
+  ): D1PreparedStatement[] {
+    const guard = targetGuard(
+      "guild_appearance_profiles",
+      "guild_id",
+      input.guildId,
+      input.expectedRevision,
+      target,
+    );
+    const receiptStatement = this.db
+      .prepare(
+        `INSERT INTO mutation_receipts (
+           mutation_id, entity_type, entity_key,
+           operation, payload_json, occurred_at
+         )
+         SELECT ?, 'guild', ?, 'upsert', ?, ?
+         WHERE EXISTS (SELECT 1 FROM guilds WHERE id = ?)
+           AND EXISTS (SELECT 1 FROM users WHERE id = ?)
+           AND ${guard.predicate}`,
+      )
+      .bind(
+        input.mutationId,
+        input.guildId,
+        input.payloadJson,
+        input.occurredAt,
+        input.guildId,
+        input.updatedByUserId,
+        ...guard.predicateBindings,
+      );
+    const snapshotStatement = this.db
+      .prepare(
+        `INSERT INTO guild_appearance_reset_snapshots (
+           guild_id, mix_json, updated_at
+         )
+         SELECT ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM mutation_receipts
+           WHERE mutation_id = ? AND entity_type = 'guild'
+             AND entity_key = ? AND operation = 'upsert'
+             AND payload_json = ? AND occurred_at = ?
+         )
+           AND ${guard.predicate}
+         ON CONFLICT(guild_id) DO UPDATE SET
+           mix_json = excluded.mix_json,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(
+        input.guildId,
+        input.mixJson,
+        input.occurredAt,
+        input.mutationId,
+        input.guildId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.predicateBindings,
+      );
+    const profileStatement = this.db
+      .prepare(
+        `INSERT INTO guild_appearance_profiles (
+           guild_id, revision, profile_json, updated_by_user_id, updated_at
+         )
+         SELECT ?, ?, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM mutation_receipts
+           WHERE mutation_id = ? AND entity_type = 'guild'
+             AND entity_key = ? AND operation = 'upsert'
+             AND payload_json = ? AND occurred_at = ?
+         )
+           AND ${guard.predicate}
+         ON CONFLICT(guild_id) DO UPDATE SET
+           revision = excluded.revision,
+           profile_json = excluded.profile_json,
+           updated_by_user_id = excluded.updated_by_user_id,
+           updated_at = excluded.updated_at
+         WHERE ${guard.updatePredicate}`,
+      )
+      .bind(
+        input.guildId,
+        input.expectedRevision + 1,
+        input.profileJson,
+        input.updatedByUserId,
+        input.occurredAt,
+        input.mutationId,
+        input.guildId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.predicateBindings,
+        ...guard.updateBindings,
+      );
+    return [receiptStatement, snapshotStatement, profileStatement];
+  }
+
+  private guildRestoreStatements(
+    input: {
+      guildId: string;
+      updatedByUserId: string;
+      expectedRevision: number;
+      profileJson: string;
+      mixJson: string;
+      payloadJson: string;
+      mutationId: string;
+      occurredAt: number;
+    },
+    target: StoredProfileState,
+  ): D1PreparedStatement[] {
+    const guard = targetGuard(
+      "guild_appearance_profiles",
+      "guild_id",
+      input.guildId,
+      input.expectedRevision,
+      target,
+    );
+    const receiptStatement = this.db
+      .prepare(
+        `INSERT INTO mutation_receipts (
+           mutation_id, entity_type, entity_key,
+           operation, payload_json, occurred_at
+         )
+         SELECT ?, 'guild', ?, 'upsert', ?, ?
+         WHERE EXISTS (SELECT 1 FROM guilds WHERE id = ?)
+           AND EXISTS (SELECT 1 FROM users WHERE id = ?)
+           AND EXISTS (
+             SELECT 1 FROM guild_appearance_reset_snapshots WHERE guild_id = ?
+           )
+           AND ${guard.predicate}`,
+      )
+      .bind(
+        input.mutationId,
+        input.guildId,
+        input.payloadJson,
+        input.occurredAt,
+        input.guildId,
+        input.updatedByUserId,
+        input.guildId,
+        ...guard.predicateBindings,
+      );
+    const snapshotStatement = this.db
+      .prepare(
+        `UPDATE guild_appearance_reset_snapshots
+         SET mix_json = ?, updated_at = ?
+         WHERE guild_id = ?
+           AND EXISTS (
+             SELECT 1 FROM mutation_receipts
+             WHERE mutation_id = ? AND entity_type = 'guild'
+               AND entity_key = ? AND operation = 'upsert'
+               AND payload_json = ? AND occurred_at = ?
+           )
+           AND ${guard.predicate}`,
+      )
+      .bind(
+        input.mixJson,
+        input.occurredAt,
+        input.guildId,
+        input.mutationId,
+        input.guildId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.predicateBindings,
+      );
+    const profileStatement = this.db
+      .prepare(
+        `UPDATE guild_appearance_profiles
+         SET revision = ?, profile_json = ?, updated_by_user_id = ?, updated_at = ?
+         WHERE guild_id = ?
+           AND EXISTS (
+             SELECT 1 FROM mutation_receipts
+             WHERE mutation_id = ? AND entity_type = 'guild'
+               AND entity_key = ? AND operation = 'upsert'
+               AND payload_json = ? AND occurred_at = ?
+           )
+           AND ${guard.updatePredicate}`,
+      )
+      .bind(
+        input.expectedRevision + 1,
+        input.profileJson,
+        input.updatedByUserId,
+        input.occurredAt,
+        input.guildId,
+        input.mutationId,
+        input.guildId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.updateBindings,
+      );
+    return [receiptStatement, snapshotStatement, profileStatement];
+  }
+
   private async applyWrite<Profile extends object>(
     write: PreparedWrite<Profile>,
   ): Promise<AppearanceProfileWriteResult<Profile>> {
     const existing = await readMutationReceipt(this.db, write.mutationId);
-    if (existing !== null) return existingWriteResult(existing, write);
+    if (existing !== null) {
+      return await existingWriteResult(existing, write);
+    }
 
     const target = await write.readTarget();
     const statements = write.statements(target);
     try {
-      const [receiptResult, profileResult] = await this.db.batch(statements);
-      const receiptChanges = receiptResult?.meta.changes ?? 0;
-      const profileChanges = profileResult?.meta.changes ?? 0;
-      if (receiptChanges === 1 && profileChanges === 1) {
+      const results = await this.db.batch(statements);
+      const changes = results.map((result) => result.meta.changes);
+      if (changes.every((count) => count === 1)) {
         return {
           status: "applied",
           revision: write.expectedRevision + 1,
           profile: write.profile,
+          canRestorePreviousMix: await write.canRestorePreviousMix(),
         };
       }
-      if (receiptChanges !== 0 || profileChanges !== 0) {
+      if (changes.some((count) => count !== 0)) {
         throw new Error("Appearance profile mutation was not atomic");
       }
       const concurrent = await readMutationReceipt(this.db, write.mutationId);
-      if (concurrent !== null) return existingWriteResult(concurrent, write);
+      if (concurrent !== null) {
+        return await existingWriteResult(concurrent, write);
+      }
       if (!(await write.parentExists())) return { status: "missing" };
       const current = await write.readTarget();
       return {
@@ -505,7 +1300,64 @@ export class D1AppearanceRepository {
     } catch (error) {
       const concurrent = await readMutationReceipt(this.db, write.mutationId);
       if (concurrent === null) throw error;
-      return existingWriteResult(concurrent, write);
+      return await existingWriteResult(concurrent, write);
+    }
+  }
+
+  private async applyRestoreBatch<Profile extends object>(
+    restore: PreparedRestore<Profile>,
+  ): Promise<AppearanceProfileWriteResult<Profile>> {
+    const existingResult = async (
+      row: MutationReceiptRow,
+    ): Promise<AppearanceProfileWriteResult<Profile>> => {
+      if (!matchesMutationReceipt(row, restore.receipt)) {
+        return { status: "mutation_conflict" };
+      }
+      const current = await restore.readTarget();
+      return current.status === "found" &&
+        current.revision === restore.expectedRevision + 1
+        ? {
+            status: "existing",
+            revision: current.revision,
+            profile: current.profile,
+            canRestorePreviousMix: true,
+          }
+        : { status: "mutation_conflict" };
+    };
+
+    try {
+      const results = await this.db.batch(restore.statements);
+      const changes = results.map((result) => result.meta.changes);
+      if (changes.every((count) => count === 1)) {
+        return {
+          status: "applied",
+          revision: restore.expectedRevision + 1,
+          profile: restore.profile,
+          canRestorePreviousMix: true,
+        };
+      }
+      if (changes.some((count) => count !== 0)) {
+        throw new Error("Appearance profile restore was not atomic");
+      }
+      const concurrent = await readMutationReceipt(
+        this.db,
+        restore.mutationId,
+      );
+      if (concurrent !== null) return await existingResult(concurrent);
+      if (!(await restore.parentExists())) return { status: "missing" };
+      if (!(await restore.snapshotExists())) return { status: "restore_missing" };
+      const current = await restore.readTarget();
+      return {
+        status: "revision_conflict",
+        revision: current.status === "found" ? current.revision : 0,
+      };
+    } catch (error) {
+      const concurrent = await readMutationReceipt(
+        this.db,
+        restore.mutationId,
+      );
+      if (concurrent === null) throw error;
+      return await existingResult(concurrent);
     }
   }
 
@@ -530,6 +1382,60 @@ export class D1AppearanceRepository {
            AND EXISTS (SELECT 1 FROM users WHERE id = ?)`,
       )
       .bind(guildId, userId)
+      .first<{ present: number }>();
+    return row !== null;
+  }
+
+  private async readPersonalSnapshot(
+    userId: string,
+  ): Promise<StoredMixRow | null> {
+    return this.db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT mix_json
+         FROM user_appearance_reset_snapshots
+         WHERE user_id = ?`,
+      )
+      .bind(userId)
+      .first<StoredMixRow>();
+  }
+
+  private async readGuildSnapshot(
+    guildId: string,
+  ): Promise<StoredMixRow | null> {
+    return this.db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT mix_json
+         FROM guild_appearance_reset_snapshots
+         WHERE guild_id = ?`,
+      )
+      .bind(guildId)
+      .first<StoredMixRow>();
+  }
+
+  private async personalSnapshotExists(userId: string): Promise<boolean> {
+    const row = await this.db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT 1 AS present
+         FROM user_appearance_reset_snapshots
+         WHERE user_id = ?`,
+      )
+      .bind(userId)
+      .first<{ present: number }>();
+    return row !== null;
+  }
+
+  private async guildSnapshotExists(guildId: string): Promise<boolean> {
+    const row = await this.db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT 1 AS present
+         FROM guild_appearance_reset_snapshots
+         WHERE guild_id = ?`,
+      )
+      .bind(guildId)
       .first<{ present: number }>();
     return row !== null;
   }

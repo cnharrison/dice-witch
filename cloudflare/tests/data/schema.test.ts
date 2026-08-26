@@ -24,6 +24,8 @@ beforeEach(async () => {
     dataEnv.DATA.prepare("DELETE FROM saved_rolls"),
     dataEnv.DATA.prepare("DELETE FROM guild_saved_roll_lists"),
     dataEnv.DATA.prepare("DELETE FROM user_saved_roll_lists"),
+    dataEnv.DATA.prepare("DELETE FROM guild_appearance_reset_snapshots"),
+    dataEnv.DATA.prepare("DELETE FROM user_appearance_reset_snapshots"),
     dataEnv.DATA.prepare("DELETE FROM guild_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM user_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM mutation_receipts"),
@@ -67,7 +69,10 @@ async function insertGuild(id = guildId): Promise<void> {
     .run();
 }
 
-async function insertUser(id = userId): Promise<void> {
+async function insertUser(
+  id = userId,
+  email = "fixture@example.com",
+): Promise<void> {
   await dataEnv.DATA.prepare(
     `INSERT INTO users (
        id, username, email, last_web_login, flags, discriminator, avatar,
@@ -77,7 +82,7 @@ async function insertUser(id = userId): Promise<void> {
     .bind(
       id,
       "fixture-user",
-      "fixture@example.com",
+      email,
       timestamp,
       64,
       "0",
@@ -102,12 +107,14 @@ describe("D1 business schema migration", () => {
         "game_detection_sessions",
         "game_detections",
         "guild_appearance_profiles",
+        "guild_appearance_reset_snapshots",
         "guilds",
         "mutation_receipts",
         "interaction_receipts",
         "oauth_states",
         "stats",
         "user_appearance_profiles",
+        "user_appearance_reset_snapshots",
         "users",
         "users_guilds",
         "web_sessions",
@@ -128,12 +135,14 @@ describe("D1 business schema migration", () => {
       "game_detection_sessions",
       "game_detections",
       "guild_appearance_profiles",
+      "guild_appearance_reset_snapshots",
       "guilds",
       "mutation_receipts",
       "interaction_receipts",
       "oauth_states",
       "stats",
       "user_appearance_profiles",
+      "user_appearance_reset_snapshots",
       "users",
       "users_guilds",
       "web_sessions",
@@ -142,6 +151,40 @@ describe("D1 business schema migration", () => {
         expect.objectContaining({ name, strict: 1 }),
       );
     }
+  });
+
+  it("bounds reset snapshots and removes them with their owner", async () => {
+    await insertGuild();
+    await insertUser();
+    const invalidUserId = "100000000000000009";
+    await insertUser(invalidUserId, "invalid@example.com");
+    const mix = JSON.stringify({ designs: [], assignments: { all: null, overrides: {} } });
+    await dataEnv.DATA.batch([
+      dataEnv.DATA.prepare(
+        "INSERT INTO user_appearance_reset_snapshots (user_id, mix_json, updated_at) VALUES (?, ?, ?)",
+      ).bind(userId, mix, timestamp),
+      dataEnv.DATA.prepare(
+        "INSERT INTO guild_appearance_reset_snapshots (guild_id, mix_json, updated_at) VALUES (?, ?, ?)",
+      ).bind(guildId, mix, timestamp),
+    ]);
+    await expect(
+      dataEnv.DATA.prepare(
+        "INSERT INTO user_appearance_reset_snapshots (user_id, mix_json, updated_at) VALUES (?, '[]', ?)",
+      ).bind(invalidUserId, timestamp).run(),
+    ).rejects.toThrow();
+
+    await dataEnv.DATA.prepare("DELETE FROM users WHERE id = ?").bind(userId).run();
+    await dataEnv.DATA.prepare("DELETE FROM guilds WHERE id = ?").bind(guildId).run();
+    await expect(
+      dataEnv.DATA.prepare(
+        "SELECT COUNT(*) AS count FROM user_appearance_reset_snapshots",
+      ).first("count"),
+    ).resolves.toBe(0);
+    await expect(
+      dataEnv.DATA.prepare(
+        "SELECT COUNT(*) AS count FROM guild_appearance_reset_snapshots",
+      ).first("count"),
+    ).resolves.toBe(0);
   });
 
   it("preserves retained business columns with explicit SQLite names", async () => {
@@ -304,6 +347,7 @@ describe("D1 business schema migration", () => {
       { name: "0017_oauth_state_context.sql" },
       { name: "0018_appearance_profile_fonts_r37.sql" },
       { name: "0019_game_detection_ingest_skips.sql" },
+      { name: "0020_appearance_reset_snapshots.sql" },
     ]);
   });
 

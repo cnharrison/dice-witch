@@ -1,0 +1,84 @@
+// @vitest-environment jsdom
+
+import { MixPickerTexturesRow } from "@/components/MixPickerTexturesRow";
+import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
+import type {
+  AppearanceMaterialV4,
+  AppearanceRecipeV3,
+} from "@dice-witch/dice-v4-model";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+function styleRecipe(styleId: string): AppearanceRecipeV3 {
+  const style = APPEARANCE_CATALOG_V3.styles.find(({ id }) => id === styleId);
+  if (style === undefined) throw new Error(`Style is missing: ${styleId}`);
+  return structuredClone(style.recipe);
+}
+
+function defaultMaterial(family: string): AppearanceMaterialV4 {
+  const material = APPEARANCE_CATALOG_V3.materials.find(
+    ({ family: candidate }) => candidate === family,
+  );
+  if (material === undefined) throw new Error(`Material is missing: ${family}`);
+  return structuredClone(material.defaultValue);
+}
+
+afterEach(cleanup);
+
+describe("MixPickerTexturesRow", () => {
+  it("edits one selected material without changing colors, siblings, or weights", () => {
+    const recipe = {
+      ...styleRecipe("solid"),
+      material: {
+        mode: "weighted" as const,
+        options: [
+          { value: defaultMaterial("metal"), weight: 700 },
+          { value: defaultMaterial("wood"), weight: 300 },
+        ],
+      },
+    };
+    const onChange = vi.fn();
+    render(
+      <MixPickerTexturesRow
+        recipe={recipe}
+        catalog={APPEARANCE_CATALOG_V3}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Textures" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Metal" })).toHaveProperty(
+      "ariaExpanded",
+      "true",
+    );
+    fireEvent.change(screen.getByLabelText("Material finish"), {
+      target: { value: "hammered" },
+    });
+
+    const next = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
+    expect(next.colors).toEqual(recipe.colors);
+    expect(next.material.mode).toBe("weighted");
+    if (next.material.mode !== "weighted") throw new Error("Expected weights");
+    expect(next.material.options.map(({ weight }) => weight)).toEqual([700, 300]);
+    expect(next.material.options[0]?.value).toMatchObject({
+      family: "metal",
+      finish: "hammered",
+    });
+    expect(next.material.options[1]?.value).toEqual(recipe.material.options[1]?.value);
+  });
+
+  it("disables expanded texture controls while a mutation is pending", () => {
+    render(
+      <MixPickerTexturesRow
+        recipe={styleRecipe("solid")}
+        catalog={APPEARANCE_CATALOG_V3}
+        disabled
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByLabelText("Classic treatment").closest("fieldset"),
+    ).toHaveProperty("disabled", true);
+  });
+});

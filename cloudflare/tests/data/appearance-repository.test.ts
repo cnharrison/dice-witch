@@ -92,6 +92,8 @@ function databaseWithBatchRace(race: () => Promise<void>): D1Database {
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
+    dataEnv.DATA.prepare("DELETE FROM guild_appearance_reset_snapshots"),
+    dataEnv.DATA.prepare("DELETE FROM user_appearance_reset_snapshots"),
     dataEnv.DATA.prepare("DELETE FROM guild_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM user_appearance_profiles"),
     dataEnv.DATA.prepare("DELETE FROM mutation_receipts"),
@@ -129,11 +131,17 @@ describe("D1AppearanceRepository V4", () => {
         mutationId: "appearance-personal-create",
         occurredAt,
       }),
-    ).resolves.toEqual({ status: "applied", revision: 1, profile: first });
+    ).resolves.toEqual({
+      status: "applied",
+      revision: 1,
+      profile: first,
+      canRestorePreviousMix: false,
+    });
     await expect(store.getPersonalV4(userId)).resolves.toEqual({
       status: "found",
       revision: 1,
       profile: first,
+      canRestorePreviousMix: false,
     });
     await expect(
       store.putPersonalV4({
@@ -143,7 +151,12 @@ describe("D1AppearanceRepository V4", () => {
         mutationId: "appearance-personal-update",
         occurredAt: occurredAt + 1,
       }),
-    ).resolves.toEqual({ status: "applied", revision: 2, profile: second });
+    ).resolves.toEqual({
+      status: "applied",
+      revision: 2,
+      profile: second,
+      canRestorePreviousMix: false,
+    });
   });
 
   it("stores a guild profile with its author", async () => {
@@ -157,13 +170,205 @@ describe("D1AppearanceRepository V4", () => {
         mutationId: "appearance-guild-create",
         occurredAt,
       }),
-    ).resolves.toEqual({ status: "applied", revision: 1, profile });
+    ).resolves.toEqual({
+      status: "applied",
+      revision: 1,
+      profile,
+      canRestorePreviousMix: false,
+    });
     await expect(repository().getGuildV4(guildId)).resolves.toEqual({
       status: "found",
       revision: 1,
       profile,
       updatedByUserId: userId,
+      canRestorePreviousMix: false,
     });
+  });
+
+  it("atomically resets and swaps a durable personal dice mix", async () => {
+    const store = repository();
+    const original = personalProfile();
+    original.assignments.overrides.d20 = { source: "builtin", id: "rainbow" };
+    await store.putPersonalV4({
+      userId,
+      expectedRevision: 0,
+      profile: original,
+      mutationId: "appearance-reset-create",
+      occurredAt,
+    });
+
+    const reset = await store.resetPersonalV4({
+      userId,
+      expectedRevision: 1,
+      profile: original,
+      mutationId: "appearance-reset",
+      occurredAt: occurredAt + 1,
+    });
+    expect(reset).toEqual({
+      status: "applied",
+      revision: 2,
+      profile: {
+        ...original,
+        assignments: { all: null, overrides: {} },
+      },
+      canRestorePreviousMix: true,
+    });
+
+    const resetProfile = reset.status === "applied" ? reset.profile : original;
+    const restored = await store.restorePersonalV4({
+      userId,
+      expectedRevision: 2,
+      profile: resetProfile,
+      mutationId: "appearance-restore",
+      occurredAt: occurredAt + 2,
+    });
+    expect(restored).toEqual({
+      status: "applied",
+      revision: 3,
+      profile: original,
+      canRestorePreviousMix: true,
+    });
+
+    const resetAgain = await store.restorePersonalV4({
+      userId,
+      expectedRevision: 3,
+      profile: original,
+      mutationId: "appearance-restore-again",
+      occurredAt: occurredAt + 3,
+    });
+    expect(resetAgain).toMatchObject({
+      status: "applied",
+      revision: 4,
+      profile: { assignments: { all: null, overrides: {} } },
+      canRestorePreviousMix: true,
+    });
+
+    const replacement = personalProfile("#abcdef");
+    const replacementReset = await store.resetPersonalV4({
+      userId,
+      expectedRevision: 4,
+      profile: replacement,
+      mutationId: "appearance-reset-replacement",
+      occurredAt: occurredAt + 4,
+    });
+    if (replacementReset.status !== "applied") {
+      throw new Error("Replacement reset must apply");
+    }
+    await expect(
+      store.restorePersonalV4({
+        userId,
+        expectedRevision: 5,
+        profile: replacementReset.profile,
+        mutationId: "appearance-restore-replacement",
+        occurredAt: occurredAt + 5,
+      }),
+    ).resolves.toMatchObject({
+      status: "applied",
+      revision: 6,
+      profile: replacement,
+    });
+  });
+
+  it("replays a restore result after a later write", async () => {
+    const store = repository();
+    const original = personalProfile();
+    await store.putPersonalV4({
+      userId,
+      expectedRevision: 0,
+      profile: original,
+      mutationId: "appearance-restore-replay-create",
+      occurredAt,
+    });
+    const reset = await store.resetPersonalV4({
+      userId,
+      expectedRevision: 1,
+      profile: original,
+      mutationId: "appearance-restore-replay-reset",
+      occurredAt: occurredAt + 1,
+    });
+    if (reset.status !== "applied") throw new Error("Reset must apply");
+    const restoreInput = {
+      userId,
+      expectedRevision: 2,
+      profile: reset.profile,
+      mutationId: "appearance-restore-replay",
+      occurredAt: occurredAt + 2,
+    };
+    await expect(store.restorePersonalV4(restoreInput)).resolves.toMatchObject({
+      status: "applied",
+      revision: 3,
+      profile: original,
+    });
+    await store.putPersonalV4({
+      userId,
+      expectedRevision: 3,
+      profile: personalProfile("#abcdef"),
+      mutationId: "appearance-after-restore",
+      occurredAt: occurredAt + 3,
+    });
+
+    await expect(store.restorePersonalV4(restoreInput)).resolves.toMatchObject({
+      status: "existing",
+      revision: 3,
+      profile: original,
+    });
+  });
+
+  it("resets a Server mix without changing its view or mode", async () => {
+    const store = repository();
+    const original = guildProfile();
+    original.diceView.mode = "clear";
+    await store.putGuildV4({
+      guildId,
+      updatedByUserId: userId,
+      expectedRevision: 0,
+      profile: original,
+      mutationId: "appearance-guild-reset-create",
+      occurredAt,
+    });
+
+    const result = await store.resetGuildV4({
+      guildId,
+      updatedByUserId: secondUserId,
+      expectedRevision: 1,
+      profile: original,
+      mutationId: "appearance-guild-reset",
+      occurredAt: occurredAt + 1,
+    });
+    expect(result).toMatchObject({
+      status: "applied",
+      revision: 2,
+      profile: {
+        mode: "enforced",
+        diceView: { mode: "clear" },
+        assignments: { all: null, overrides: {} },
+      },
+      canRestorePreviousMix: true,
+    });
+    await expect(store.getGuildV4(guildId)).resolves.toMatchObject({
+      updatedByUserId: secondUserId,
+      canRestorePreviousMix: true,
+    });
+  });
+
+  it("fails clearly when no previous mix exists", async () => {
+    const profile = personalProfile();
+    await repository().putPersonalV4({
+      userId,
+      expectedRevision: 0,
+      profile,
+      mutationId: "appearance-restore-missing-create",
+      occurredAt,
+    });
+    await expect(
+      repository().restorePersonalV4({
+        userId,
+        expectedRevision: 1,
+        profile,
+        mutationId: "appearance-restore-missing",
+        occurredAt: occurredAt + 1,
+      }),
+    ).resolves.toEqual({ status: "restore_missing" });
   });
 
   it("preserves idempotency and rejects mutation-id reuse", async () => {

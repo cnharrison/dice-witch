@@ -46,7 +46,11 @@ export function MixPickerVarietyControl({
             key={variety}
             type="button"
             aria-pressed={selected === variety}
-            disabled={disabled}
+            disabled={
+              disabled ||
+              (variety === "matched" &&
+                recipe.colorDistribution === "one-per-die")
+            }
             onClick={() =>
               variety === "chaos" ? onChaos() : onSelect(variety)
             }

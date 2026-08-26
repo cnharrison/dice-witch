@@ -85,8 +85,7 @@ import type {
 import { migrateAppearanceRecipeV1 } from "./migrate";
 
 export const CHAOTIC_APPEARANCE_STYLE_ID = "chaotic";
-export const FEATURED_APPEARANCE_STYLE_IDS = [
-  "dice-witch",
+export const COLOR_SCHEME_STYLE_IDS_V3 = [
   "solid",
   "rainbow",
   "pride",
@@ -96,8 +95,13 @@ export const FEATURED_APPEARANCE_STYLE_IDS = [
   "verdant-palette",
   "azure-palette",
   "monochrome-palette",
+] as const;
+export const FEATURED_APPEARANCE_STYLE_IDS = [
+  "dice-witch",
+  ...COLOR_SCHEME_STYLE_IDS_V3,
   CHAOTIC_APPEARANCE_STYLE_ID,
 ] as const;
+
 export const FEATURED_APPEARANCE_PATTERN_IDS = [
   "checkerboard",
   "dots",
@@ -117,6 +121,12 @@ export const APPROVED_COLLECTOR_STYLE_IDS_V3 = [
   "elemental-blue-sky-r33",
   "elemental-sunset-r33",
   "paint-splatter",
+] as const;
+
+export const COMPLETE_LOOK_STYLE_IDS_V3 = [
+  "dice-witch",
+  CHAOTIC_APPEARANCE_STYLE_ID,
+  ...APPROVED_COLLECTOR_STYLE_IDS_V3,
 ] as const;
 
 const PATTERNS: AppearanceCatalogOptionV3<PatternIdV4>[] = [
@@ -2132,6 +2142,8 @@ function appearanceCatalogV3(
     },
     featuredStyleIds: FEATURED_APPEARANCE_STYLE_IDS,
     collectorStyleIds: APPROVED_COLLECTOR_STYLE_IDS_V3,
+    colorSchemeStyleIds: COLOR_SCHEME_STYLE_IDS_V3,
+    completeLookStyleIds: COMPLETE_LOOK_STYLE_IDS_V3,
     featuredPatternIds: FEATURED_APPEARANCE_PATTERN_IDS,
     styles,
     targets: TARGETS_V3,

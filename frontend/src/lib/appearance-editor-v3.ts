@@ -44,13 +44,9 @@ type NamedAppearanceDesignV3 = Readonly<{ name: string }>;
 
 export function nextPresetEditNameV3(
   designs: readonly NamedAppearanceDesignV3[],
+  presetName: string,
 ): string {
-  const names = new Set(designs.map(({ name }) => name));
-  for (let edit = 1; edit <= designs.length + 1; edit += 1) {
-    const candidate = `Edit ${String(edit)}`;
-    if (!names.has(candidate)) return candidate;
-  }
-  throw new Error("Appearance edit name could not be allocated");
+  return nextAppearanceDesignNameV3(designs, `${presetName} edit`);
 }
 
 function copySuffixV3(copy: number): string {
@@ -211,10 +207,7 @@ export function createDefaultAppearanceMaterialV3(
   return material;
 }
 
-function sameSelection<Value>(
-  left: AppearanceSelection<Value>,
-  right: AppearanceSelection<Value>,
-): boolean {
+function sameValue<Value>(left: Value, right: Value): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -263,6 +256,7 @@ export function reconcileAppearanceColorEditV3(
   if (
     parsed.colors.mode === "solid" ||
     parsed.randomization === "one-palette-color-v1" ||
+    parsed.colorDistribution === "one-per-die" ||
     !usesFixedClassicSolidV3(parsed)
   ) {
     return parsed;
@@ -308,14 +302,17 @@ export function reconcileAppearanceMaterialEditV3(
   catalog: AppearanceCatalogV3,
 ): AppearanceRecipeV3 {
   const parsed = parseAppearanceRecipeV3(recipe);
-  const curatedColors = curatedMaterialColorsV3(parsed, catalog);
+  const curatedColors = parsed.colorDistribution === undefined
+    ? curatedMaterialColorsV3(parsed, catalog)
+    : null;
   if (curatedColors !== null) {
     return parseAppearanceRecipeV3({ ...parsed, colors: curatedColors });
   }
   if (
     !usesFixedClassicSolidV3(parsed) ||
     parsed.colors.mode === "solid" ||
-    parsed.randomization === "one-palette-color-v1"
+    parsed.randomization === "one-palette-color-v1" ||
+    parsed.colorDistribution === "one-per-die"
   ) {
     return parsed;
   }
@@ -337,6 +334,9 @@ export function createEmptyAppearanceProfileV4(
 export function createEmptyAppearanceProfileV4(
   kind: "guild",
 ): GuildAppearanceProfileV4;
+export function createEmptyAppearanceProfileV4(
+  kind: "personal" | "guild",
+): AppearanceProfileV4 | GuildAppearanceProfileV4;
 export function createEmptyAppearanceProfileV4(
   kind: "personal" | "guild",
 ): AppearanceProfileV4 | GuildAppearanceProfileV4 {
@@ -419,7 +419,7 @@ export function beginAppearanceRecipeEditV3(
   const parsedCurrent = parseAppearanceRecipeV3(current);
   const parsedNext = withAutomaticMaterialFormsV3(next);
   if (!editingBuiltin) return parsedNext;
-  const strength = sameSelection(
+  const strength = sameValue(
     parsedCurrent.lighting.strength,
     parsedNext.lighting.strength,
   )
@@ -432,7 +432,7 @@ export function beginAppearanceRecipeEditV3(
   const preservesFullSpectrum =
     (editable.randomization === "full-spectrum-v1" ||
       editable.randomization === "full-spectrum-v2") &&
-    sameSelection(parsedCurrent.colors, parsedNext.colors);
+    sameValue(parsedCurrent.colors, parsedNext.colors);
   if (
     editable.randomization !== "one-palette-color-v1" &&
     !preservesFullSpectrum

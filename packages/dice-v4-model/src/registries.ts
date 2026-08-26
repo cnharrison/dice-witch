@@ -40,6 +40,11 @@ export const APPEARANCE_RANDOMIZATION_POLICIES_V3 = Object.freeze([
   "one-palette-color-v1",
 ] as const);
 
+export const APPEARANCE_COLOR_DISTRIBUTIONS_V3 = Object.freeze([
+  "coordinated",
+  "one-per-die",
+] as const);
+
 export const APPEARANCE_FORM_POLICIES_V3 = Object.freeze([
   "material-default-v1",
 ] as const);

@@ -21,11 +21,19 @@ import {
   hashOpaqueToken,
 } from "../../data/src/session-repository";
 import {
+  getGuildAppearanceStateV4,
   getGuildAppearanceV4,
+  getPersonalAppearanceStateV4,
   getPersonalAppearanceV4,
   previewAppearanceV4,
+  putGuildAppearanceStateV4,
   putGuildAppearanceV4,
+  putPersonalAppearanceStateV4,
   putPersonalAppearanceV4,
+  resetGuildAppearanceV4,
+  resetPersonalAppearanceV4,
+  restoreGuildAppearanceV4,
+  restorePersonalAppearanceV4,
 } from "./appearance-api";
 import { synchronizeGuildProof } from "./guild-authorization";
 import {
@@ -321,6 +329,22 @@ function preflight(
     /^\/api\/guilds\/[1-9][0-9]{16,19}\/appearance\/v4$/.test(pathname)
   ) {
     methods = "GET, PUT";
+    allowedHeaders = "content-type, idempotency-key";
+  } else if (
+    pathname === "/api/appearance/v4/me/state" ||
+    /^\/api\/guilds\/[1-9][0-9]{16,19}\/appearance\/v4\/state$/.test(
+      pathname,
+    )
+  ) {
+    methods = "GET, PUT";
+    allowedHeaders = "content-type, idempotency-key";
+  } else if (
+    /^\/api\/appearance\/v4\/me\/state\/(?:reset|restore)$/.test(pathname) ||
+    /^\/api\/guilds\/[1-9][0-9]{16,19}\/appearance\/v4\/state\/(?:reset|restore)$/.test(
+      pathname,
+    )
+  ) {
+    methods = "POST";
     allowedHeaders = "content-type, idempotency-key";
   } else if (
     /^\/api\/saved-rolls\/v[12]\/(?:libraries|search|me(?:\/(?:[0-9a-f-]+|copy|delete-batch|reorder))?)$/.test(
@@ -2046,6 +2070,83 @@ export async function handleAuthRequest(
       return exactOrigin ? withCors(response, configuration) : response;
     }
     if (
+      pathname === "/api/appearance/v4/me/state" &&
+      (request.method === "GET" || request.method === "PUT")
+    ) {
+      const exactOrigin =
+        request.headers.get("origin") === configuration.FRONTEND_ORIGIN;
+      if (
+        (request.method === "GET" &&
+          !isFrontendRequest(request, configuration)) ||
+        (request.method === "PUT" && !exactOrigin)
+      ) {
+        return json({ error: "appearance_origin_forbidden" }, 403);
+      }
+      const authentication = await authenticateSession(request, env, now);
+      if (!authentication.authenticated) {
+        const response = v3AppearanceAccessError(
+          authentication.response.status === 401
+            ? "authentication"
+            : "service",
+          authentication.response,
+        );
+        return exactOrigin ? withCors(response, configuration) : response;
+      }
+      const response = request.method === "GET"
+        ? await getPersonalAppearanceStateV4(
+            env.DATA_SERVICE,
+            authentication.session.user.id,
+            configuration.APPEARANCE_CATALOG_POLICY,
+          )
+        : await putPersonalAppearanceStateV4(
+            request,
+            env.DATA_SERVICE,
+            authentication.session.user.id,
+            now,
+            configuration.APPEARANCE_CATALOG_POLICY,
+          );
+      return exactOrigin ? withCors(response, configuration) : response;
+    }
+    const personalAppearanceAction = pathname.match(
+      /^\/api\/appearance\/v4\/me\/state\/(reset|restore)$/,
+    )?.[1];
+    if (
+      request.method === "POST" &&
+      (personalAppearanceAction === "reset" ||
+        personalAppearanceAction === "restore")
+    ) {
+      const exactOrigin =
+        request.headers.get("origin") === configuration.FRONTEND_ORIGIN;
+      if (!exactOrigin) {
+        return json({ error: "appearance_origin_forbidden" }, 403);
+      }
+      const authentication = await authenticateSession(request, env, now);
+      if (!authentication.authenticated) {
+        return withCors(
+          v3AppearanceAccessError(
+            authentication.response.status === 401
+              ? "authentication"
+              : "service",
+            authentication.response,
+          ),
+          configuration,
+        );
+      }
+      const mutate = personalAppearanceAction === "reset"
+        ? resetPersonalAppearanceV4
+        : restorePersonalAppearanceV4;
+      return withCors(
+        await mutate(
+          request,
+          env.DATA_SERVICE,
+          authentication.session.user.id,
+          now,
+          configuration.APPEARANCE_CATALOG_POLICY,
+        ),
+        configuration,
+      );
+    }
+    if (
       request.method === "POST" &&
       pathname === "/api/appearance/v4/preview"
     ) {
@@ -2185,11 +2286,17 @@ export async function handleAuthRequest(
         : response;
     }
     const appearanceMatch = pathname.match(
-      /^\/api\/guilds\/([1-9][0-9]{16,19})\/appearance\/v4$/,
+      /^\/api\/guilds\/([1-9][0-9]{16,19})\/appearance\/v4(?:\/(state)(?:\/(reset|restore))?)?$/,
     );
+    const usesRestoreState = appearanceMatch?.[2] === "state";
+    const guildAppearanceAction = appearanceMatch?.[3];
     if (
       appearanceMatch !== null &&
-      (request.method === "GET" || request.method === "PUT")
+      ((guildAppearanceAction === undefined &&
+        (request.method === "GET" || request.method === "PUT")) ||
+        ((guildAppearanceAction === "reset" ||
+          guildAppearanceAction === "restore") &&
+          request.method === "POST"))
     ) {
       const guildId = appearanceMatch[1];
       if (guildId === undefined) {
@@ -2200,7 +2307,7 @@ export async function handleAuthRequest(
       if (
         (request.method === "GET" &&
           !isFrontendRequest(request, configuration)) ||
-        (request.method === "PUT" && !exactOrigin)
+        (request.method !== "GET" && !exactOrigin)
       ) {
         return json({ error: "appearance_origin_forbidden" }, 403);
       }
@@ -2212,20 +2319,34 @@ export async function handleAuthRequest(
         );
         return exactOrigin ? withCors(response, configuration) : response;
       }
-      const response = request.method === "GET"
-        ? await getGuildAppearanceV4(
-            env.DATA_SERVICE,
-            guildId,
-            configuration.APPEARANCE_CATALOG_POLICY,
-          )
-        : await putGuildAppearanceV4(
-            request,
-            env.DATA_SERVICE,
-            guildId,
-            authorization.userId,
-            now,
-            configuration.APPEARANCE_CATALOG_POLICY,
-          );
+      let response: Response;
+      if (request.method === "GET") {
+        const getAppearance = usesRestoreState
+          ? getGuildAppearanceStateV4
+          : getGuildAppearanceV4;
+        response = await getAppearance(
+          env.DATA_SERVICE,
+          guildId,
+          configuration.APPEARANCE_CATALOG_POLICY,
+        );
+      } else {
+        let mutate = usesRestoreState
+          ? putGuildAppearanceStateV4
+          : putGuildAppearanceV4;
+        if (guildAppearanceAction === "reset") {
+          mutate = resetGuildAppearanceV4;
+        } else if (guildAppearanceAction === "restore") {
+          mutate = restoreGuildAppearanceV4;
+        }
+        response = await mutate(
+          request,
+          env.DATA_SERVICE,
+          guildId,
+          authorization.userId,
+          now,
+          configuration.APPEARANCE_CATALOG_POLICY,
+        );
+      }
       return exactOrigin ? withCors(response, configuration) : response;
     }
     const preferenceMatch = pathname.match(

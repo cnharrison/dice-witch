@@ -932,11 +932,12 @@ function propertyScopeV3(
   recipe: AppearanceRecipeV3,
   context: AppearanceResolutionContextV3,
   sharedAcrossDice: boolean,
+  forcePerDie = false,
 ): string {
-  if (sharedAcrossDice || recipe.varyBy === "roll") {
+  if (!forcePerDie && (sharedAcrossDice || recipe.varyBy === "roll")) {
     return `${String(context.renderSeed)}:roll:${recipe.variation}`;
   }
-  if (recipe.varyBy === "group") {
+  if (!forcePerDie && recipe.varyBy === "group") {
     return context.groupIdentity === undefined
       ? `${String(context.renderSeed)}:group:${String(context.groupIndex)}:${recipe.variation}`
       : `${String(context.renderSeed)}:group-id:${context.groupIdentity}:${recipe.variation}`;
@@ -971,10 +972,18 @@ function propertySeedV3(
       policy === "property-streams-r35" ||
       policy === "property-streams-r37") &&
     (usesFullSpectrumRandomizationV3(recipe) ||
-      recipe.randomization === "one-palette-color-v1");
+      recipe.randomization === "one-palette-color-v1" ||
+      recipe.colorDistribution === "one-per-die");
   const sharePropertyAcrossDice = sharedAcrossDice && !usesPerDieRandomPalette;
+  const forcePerDie =
+    stream === "colors" && recipe.colorDistribution === "one-per-die";
   return hashStringV4(
-    `property-r27:${propertyScopeV3(recipe, context, sharePropertyAcrossDice)}:${stream}:${canonicalJsonV4(value)}`,
+    `property-r27:${propertyScopeV3(
+      recipe,
+      context,
+      sharePropertyAcrossDice,
+      forcePerDie,
+    )}:${stream}:${canonicalJsonV4(value)}`,
   );
 }
 
@@ -1082,6 +1091,7 @@ function rotateAccentColorsV3(colors: NativeColors, start: number): NativeColors
 function distributesSharedPaletteV3(recipe: AppearanceRecipeV3): boolean {
   return (
     recipe.randomization === undefined &&
+    recipe.colorDistribution === undefined &&
     (recipe.colors.mode === "palette" ||
       recipe.colors.mode === "random-pair" ||
       recipe.colors.mode === "vivid-random-pair")
@@ -1133,9 +1143,12 @@ function resolveRandomizedColorsV3(
   seedPolicy: AppearanceResolutionSeedPolicyV3,
   authoredPalette?: readonly [string, string, ...string[]],
 ): NativeColors {
-  if (recipe.randomization === "one-palette-color-v1") {
+  if (
+    recipe.colorDistribution === "one-per-die" ||
+    recipe.randomization === "one-palette-color-v1"
+  ) {
     if (recipe.colors.mode !== "palette") {
-      throw new Error("One-color palette randomization requires a palette");
+      throw new Error("One-color palette distribution requires a palette");
     }
     const random = namedRandomV3(seed, "one-palette-color");
     const color = recipe.colors.colors[random.index(recipe.colors.colors.length)];
@@ -1144,6 +1157,9 @@ function resolveRandomizedColorsV3(
     }
     const canonical = canonicalColor(color);
     return { ordered: [canonical, canonical], pair: [canonical, canonical] };
+  }
+  if (recipe.colorDistribution === "coordinated") {
+    return resolveColorsV3(recipe, namedRandomV3(seed, "colors"), seedPolicy);
   }
   if (usesFullSpectrumRandomizationV3(recipe) && authoredPalette !== undefined) {
     return colorsFromPaletteV3(authoredPalette);
@@ -1425,6 +1441,9 @@ export function resolveAppearanceRecipeV3(
     ...(recipe.randomization === undefined
       ? {}
       : { randomization: recipe.randomization }),
+    ...(recipe.colorDistribution === undefined
+      ? {}
+      : { colorDistribution: recipe.colorDistribution }),
   };
   let colors = resolveRandomizedColorsV3(
     recipe,
@@ -1463,7 +1482,11 @@ export function resolveAppearanceRecipeV3(
       ? rotateAccentColorsV3(colors, colorOrder)
       : rotateColorsV3(colors, colorOrder);
   }
-  if (usesR33 && material.family === "fantasy") {
+  if (
+    usesR33 &&
+    material.family === "fantasy" &&
+    recipe.colorDistribution === undefined
+  ) {
     colors = colorsFromPaletteV3(
       FANTASY_ESSENCE_PALETTES_R33_V4[material.essence],
     );

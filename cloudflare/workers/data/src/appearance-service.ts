@@ -127,23 +127,51 @@ function errorResponse(message: string, status: number): Response {
 
 function writeResponse<Profile extends object>(
   result: AppearanceProfileWriteResult<Profile>,
+  includeRestoreState: boolean,
 ): Response {
   let status = 200;
-  if (result.status === "missing") status = 404;
+  if (result.status === "missing" || result.status === "restore_missing") {
+    status = 404;
+  }
   if (
     result.status === "revision_conflict" ||
     result.status === "mutation_conflict"
   ) {
     status = 409;
   }
-  return Response.json(result, { status, headers: responseHeaders });
+  const body =
+    !includeRestoreState &&
+    (result.status === "applied" || result.status === "existing")
+      ? {
+          status: result.status,
+          revision: result.revision,
+          profile: result.profile,
+        }
+      : result;
+  return Response.json(body, { status, headers: responseHeaders });
 }
 
 function readResponse<Profile extends object>(
   result:
     | AppearanceProfileReadResult<Profile>
     | GuildAppearanceProfileReadResult<Profile>,
+  includeRestoreState: boolean,
 ): Response {
+  if (!includeRestoreState && result.status === "found") {
+    const body = "updatedByUserId" in result
+      ? {
+          status: result.status,
+          revision: result.revision,
+          profile: result.profile,
+          updatedByUserId: result.updatedByUserId,
+        }
+      : {
+          status: result.status,
+          revision: result.revision,
+          profile: result.profile,
+        };
+    return Response.json(body, { headers: responseHeaders });
+  }
   return Response.json(result, { headers: responseHeaders });
 }
 
@@ -154,6 +182,7 @@ function appearanceRepository(db: D1Database): D1AppearanceRepository {
 async function getPersonalProfileV4(
   request: Request,
   db: D1Database,
+  includeRestoreState: boolean,
 ): Promise<Response> {
   let userId: string;
   try {
@@ -167,16 +196,21 @@ async function getPersonalProfileV4(
   }
 
   try {
-    return readResponse(await appearanceRepository(db).getPersonalV4(userId));
+    return readResponse(
+      await appearanceRepository(db).getPersonalV4(userId),
+      includeRestoreState,
+    );
   } catch {
     return errorResponse("Personal appearance lookup failed", 500);
   }
 }
 
-async function putPersonalProfileV4(
+async function mutatePersonalProfileV4(
   request: Request,
   db: D1Database,
   policy: AppearanceCatalogPolicyV3,
+  action: "put" | "reset" | "restore",
+  includeRestoreState: boolean,
 ): Promise<Response> {
   let input: PutPersonalAppearanceV4Input & { profile: AppearanceProfileV4 };
   try {
@@ -214,7 +248,16 @@ async function putPersonalProfileV4(
   }
 
   try {
-    return writeResponse(await appearanceRepository(db).putPersonalV4(input));
+    const repository = appearanceRepository(db);
+    let result: AppearanceProfileWriteResult<AppearanceProfileV4>;
+    if (action === "reset") {
+      result = await repository.resetPersonalV4(input);
+    } else if (action === "restore") {
+      result = await repository.restorePersonalV4(input);
+    } else {
+      result = await repository.putPersonalV4(input);
+    }
+    return writeResponse(result, includeRestoreState);
   } catch {
     return errorResponse("Personal appearance update failed", 500);
   }
@@ -223,6 +266,7 @@ async function putPersonalProfileV4(
 async function getGuildProfileV4(
   request: Request,
   db: D1Database,
+  includeRestoreState: boolean,
 ): Promise<Response> {
   let guildId: string;
   try {
@@ -236,16 +280,21 @@ async function getGuildProfileV4(
   }
 
   try {
-    return readResponse(await appearanceRepository(db).getGuildV4(guildId));
+    return readResponse(
+      await appearanceRepository(db).getGuildV4(guildId),
+      includeRestoreState,
+    );
   } catch {
     return errorResponse("Guild appearance lookup failed", 500);
   }
 }
 
-async function putGuildProfileV4(
+async function mutateGuildProfileV4(
   request: Request,
   db: D1Database,
   policy: AppearanceCatalogPolicyV3,
+  action: "put" | "reset" | "restore",
+  includeRestoreState: boolean,
 ): Promise<Response> {
   let input: PutGuildAppearanceV4Input & {
     profile: GuildAppearanceProfileV4;
@@ -289,7 +338,16 @@ async function putGuildProfileV4(
   }
 
   try {
-    return writeResponse(await appearanceRepository(db).putGuildV4(input));
+    const repository = appearanceRepository(db);
+    let result: AppearanceProfileWriteResult<GuildAppearanceProfileV4>;
+    if (action === "reset") {
+      result = await repository.resetGuildV4(input);
+    } else if (action === "restore") {
+      result = await repository.restoreGuildV4(input);
+    } else {
+      result = await repository.putGuildV4(input);
+    }
+    return writeResponse(result, includeRestoreState);
   } catch {
     return errorResponse("Guild appearance update failed", 500);
   }
@@ -355,13 +413,29 @@ export function handleAppearanceRequest(
   if (request.method !== "POST") return null;
   switch (new URL(request.url).pathname) {
     case "/internal/appearance/v4/personal/get":
-      return getPersonalProfileV4(request, db);
+      return getPersonalProfileV4(request, db, false);
     case "/internal/appearance/v4/personal/put":
-      return putPersonalProfileV4(request, db, policy);
+      return mutatePersonalProfileV4(request, db, policy, "put", false);
+    case "/internal/appearance/v4/personal/state/get":
+      return getPersonalProfileV4(request, db, true);
+    case "/internal/appearance/v4/personal/state/put":
+      return mutatePersonalProfileV4(request, db, policy, "put", true);
+    case "/internal/appearance/v4/personal/state/reset":
+      return mutatePersonalProfileV4(request, db, policy, "reset", true);
+    case "/internal/appearance/v4/personal/state/restore":
+      return mutatePersonalProfileV4(request, db, policy, "restore", true);
     case "/internal/appearance/v4/guild/get":
-      return getGuildProfileV4(request, db);
+      return getGuildProfileV4(request, db, false);
     case "/internal/appearance/v4/guild/put":
-      return putGuildProfileV4(request, db, policy);
+      return mutateGuildProfileV4(request, db, policy, "put", false);
+    case "/internal/appearance/v4/guild/state/get":
+      return getGuildProfileV4(request, db, true);
+    case "/internal/appearance/v4/guild/state/put":
+      return mutateGuildProfileV4(request, db, policy, "put", true);
+    case "/internal/appearance/v4/guild/state/reset":
+      return mutateGuildProfileV4(request, db, policy, "reset", true);
+    case "/internal/appearance/v4/guild/state/restore":
+      return mutateGuildProfileV4(request, db, policy, "restore", true);
     case "/internal/appearance/v4/effective":
       return getEffectiveAppearanceV4(request, db, policy);
     default:

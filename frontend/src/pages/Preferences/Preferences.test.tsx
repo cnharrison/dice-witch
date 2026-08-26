@@ -55,19 +55,21 @@ function mockFetch(options: {
       if (url.pathname === "/api/appearance/v4/catalog") {
         return Response.json(APPEARANCE_CATALOG_V3);
       }
-      if (url.pathname === "/api/appearance/v4/me") {
+      if (url.pathname === "/api/appearance/v4/me/state") {
         if (init?.method === "PUT") {
           const body = JSON.parse(String(init.body)) as { profile: unknown };
           return Response.json({
             status: "applied",
             revision: 1,
             profile: body.profile,
+            canRestorePreviousMix: false,
           });
         }
         return personalStatus === 200
           ? Response.json({
               revision: personalProfile === null ? 0 : 1,
               profile: personalProfile,
+              canRestorePreviousMix: false,
             })
           : Response.json(
               { error: "appearance_profile_version_conflict" },
@@ -83,8 +85,12 @@ function mockFetch(options: {
           base64: "iVBORw0KGgo=",
         });
       }
-      if (url.pathname === `/api/guilds/${GUILD_ID}/appearance/v4`) {
-        return Response.json({ revision: 0, profile: null });
+      if (url.pathname === `/api/guilds/${GUILD_ID}/appearance/v4/state`) {
+        return Response.json({
+          revision: 0,
+          profile: null,
+          canRestorePreviousMix: false,
+        });
       }
       if (url.pathname === `/api/guilds/${GUILD_ID}/preferences`) {
         return init?.method === "PATCH"
@@ -160,11 +166,11 @@ describe("appearance preference authorization", () => {
     mockFetch({ isAdmin: true });
     renderPreferences();
 
-    const startFrom = await screen.findByRole("region", {
-      name: "Start from",
+    const completeLooks = await screen.findByRole("region", {
+      name: "Complete looks",
     });
     await user.click(
-      within(startFrom).getByRole("button", { name: /Dice Witch/ }),
+      within(completeLooks).getByRole("button", { name: /Dice Witch/ }),
     );
     await user.click(screen.getByRole("button", { name: "Server" }));
     expect(confirm).toHaveBeenCalledWith("Discard unsaved appearance changes?");
@@ -186,11 +192,11 @@ describe("appearance preference authorization", () => {
     renderPreferences();
 
     await user.click(await screen.findByRole("button", { name: "Server" }));
-    const startFrom = await screen.findByRole("region", {
-      name: "Start from",
+    const completeLooks = await screen.findByRole("region", {
+      name: "Complete looks",
     });
     await user.click(
-      within(startFrom).getByRole("button", { name: /Dice Witch/ }),
+      within(completeLooks).getByRole("button", { name: /Dice Witch/ }),
     );
     await user.click(screen.getByRole("link", { name: "Refresh" }));
 
@@ -210,7 +216,7 @@ describe("appearance preference authorization", () => {
     expect(
       vi.mocked(fetch).mock.calls.some(
         ([input, init]) =>
-          requestUrl(input).pathname === "/api/appearance/v4/me" &&
+          requestUrl(input).pathname === "/api/appearance/v4/me/state" &&
           init?.method === "PUT",
       ),
     ).toBe(false);
@@ -219,7 +225,7 @@ describe("appearance preference authorization", () => {
     await waitFor(() => {
       const mutation = vi.mocked(fetch).mock.calls.find(
         ([input, init]) =>
-          requestUrl(input).pathname === "/api/appearance/v4/me" &&
+          requestUrl(input).pathname === "/api/appearance/v4/me/state" &&
           init?.method === "PUT",
       );
       expect(mutation).toBeDefined();

@@ -11,6 +11,7 @@ import {
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 import {
   CHAOS_ASSIGNMENT_V3,
+  applyColorScheme,
   applyColorsRow,
   applyMaterialRows,
   applyStringRows,
@@ -18,6 +19,7 @@ import {
   colorsRowFromRecipe,
   hasProceduralFontSelection,
   materialRowsFromRecipe,
+  replaceMaterialFamily,
   stringRowsFromSelection,
   varietyFromRecipe,
 } from "@/lib/mix-picker-state";
@@ -304,6 +306,109 @@ function base(): AppearanceRecipeV3 {
 }
 
 describe("colors row", () => {
+  it("patches only color semantics and preserves weighted texture values", () => {
+    const metal = {
+      family: "metal",
+      metal: "steel",
+      finish: "brushed",
+      patinaStrength: 42,
+      textureScale: 137,
+    } as const satisfies AppearanceMaterialV4;
+    const wood = {
+      family: "wood",
+      wood: "walnut",
+      finish: "polished",
+      grainDensity: 71,
+      textureScale: 163,
+    } as const satisfies AppearanceMaterialV4;
+    const recipe = {
+      ...recipeWithMaterial({
+        mode: "weighted",
+        options: [
+          { value: metal, weight: 700 },
+          { value: wood, weight: 300 },
+        ],
+      }),
+      randomization: "full-spectrum-v2" as const,
+    };
+    const colors = {
+      mode: "palette" as const,
+      colors: ["#e40303", "#ff8c00", "#ffed00", "#008026"],
+    };
+
+    const next = applyColorScheme(recipe, colors, "coordinated");
+    expect(next.colors).toEqual(colors);
+    expect(next.colorDistribution).toBe("coordinated");
+    expect(next.material).toEqual(recipe.material);
+    expect(next.randomization).toBe("full-spectrum-v2");
+    expect(next.form).toEqual(recipe.form);
+    expect(next.font).toEqual(recipe.font);
+    expect(next.engraving).toEqual(recipe.engraving);
+    expect(next.gradient).toEqual(recipe.gradient);
+    expect(next.lighting).toEqual(recipe.lighting);
+  });
+
+  it("treats Classic solid and gradient as color presentation", () => {
+    const classic = {
+      family: "classic",
+      treatment: "solid",
+      opacity: "translucent",
+      finish: "gloss",
+      textureScale: 137,
+    } as const satisfies AppearanceMaterialV4;
+    const recipe = recipeWithMaterial({ mode: "fixed", value: classic });
+    const colors = {
+      mode: "palette" as const,
+      colors: ["#e40303", "#ff8c00", "#ffed00"],
+    };
+
+    const next = applyColorScheme(recipe, colors, "coordinated");
+    expect(next.material).toEqual({
+      mode: "fixed",
+      value: { ...classic, treatment: "gradient" },
+    });
+  });
+
+  it("replaces one compatible texture without changing siblings or weights", () => {
+    const recipe = recipeWithMaterial({
+      mode: "weighted",
+      options: [
+        { value: materialValue("metal"), weight: 700 },
+        { value: materialValue("wood"), weight: 300 },
+      ],
+    });
+    const replacement = materialValue("tuned-metal");
+    expect(
+      replaceMaterialFamily(recipe.material, "metal", replacement),
+    ).toEqual({
+      mode: "weighted",
+      options: [
+        { value: replacement, weight: 700 },
+        { value: materialValue("wood"), weight: 300 },
+      ],
+    });
+  });
+
+  it("collapses duplicate-family texture variants into one weighted option", () => {
+    const selection: AppearanceRecipeV3["material"] = {
+      mode: "weighted",
+      options: [
+        { value: materialValue("metal"), weight: 400 },
+        { value: materialValue("metal"), weight: 300 },
+        { value: materialValue("wood"), weight: 300 },
+      ],
+    };
+    const replacement = materialValue("tuned-metal");
+
+    expect(replaceMaterialFamily(selection, "metal", replacement)).toEqual({
+      mode: "weighted",
+      options: [
+        { value: replacement, weight: 700 },
+        { value: materialValue("wood"), weight: 300 },
+      ],
+    });
+  });
+
   it("round-trips palette, solid, tonal, and random modes one-to-one", () => {
     const modes: AppearanceRecipeV3["colors"][] = [
       { mode: "palette", colors: ["#111111", "#222222", "#333333"] },

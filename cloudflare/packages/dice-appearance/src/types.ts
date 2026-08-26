@@ -353,6 +353,8 @@ export type AppearancePublicCatalogV3 = Readonly<{
   }>;
   featuredStyleIds: readonly string[];
   collectorStyleIds: readonly string[];
+  colorSchemeStyleIds: readonly string[];
+  completeLookStyleIds: readonly string[];
   featuredPatternIds: readonly PatternIdV4[];
   styles: readonly AppearanceBuiltinStyleV3[];
   targets: readonly AppearanceCatalogOptionV3<AppearanceTargetV4>[];

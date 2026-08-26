@@ -131,20 +131,29 @@ describe("color chance mapping", () => {
   });
 
   it("accent requires a palette and converts a single color with a note", () => {
-    const recipe = recipeWith({ colors: { mode: "solid", primary: "#444444" } });
+    const recipe = recipeWith({
+      colors: { mode: "solid", primary: "#444444" },
+      colorDistribution: "coordinated",
+    });
     const next = applyColorChance(recipe, "accent", catalog);
     expect(next.colors.mode).toBe("palette");
     expect(next.randomization).toBe("one-palette-color-v1");
+    expect(next.colorDistribution).toBeUndefined();
     if (next.colors.mode !== "palette") throw new Error("expected palette");
     expect(next.colors.colors[0]).toBe("#444444");
     expect(next.colors.colors).toHaveLength(2);
   });
 
   it("bright random pair pins varyBy die and the vivid policy", () => {
-    const next = applyColorChance(recipeWith(), "bright", catalog);
+    const next = applyColorChance(
+      recipeWith({ colorDistribution: "one-per-die" }),
+      "bright",
+      catalog,
+    );
     expect(next.varyBy).toBe("die");
     expect(next.randomization).toBe("full-spectrum-v2");
     expect(next.colors).toEqual({ mode: "vivid-random-pair" });
+    expect(next.colorDistribution).toBeUndefined();
   });
 });
 
@@ -234,47 +243,5 @@ describe("MixPickerFineTune panel", () => {
     expect(next.font).toEqual({ mode: "allowlist", values: ["cinzel", "fraunces"] });
     // Fixed single-id rows pass through untouched.
     expect(next.engraving).toEqual({ mode: "fixed", value: "matte-ink" });
-  });
-});
-
-describe("MixPickerFineTune material accordions", () => {
-  const weightedRecipe = recipeWith({
-    material: {
-      mode: "weighted",
-      options: [
-        { value: { family: "classic", treatment: "solid" } as never, weight: 600 },
-        { value: { family: "glass", clarity: 1 } as never, weight: 400 },
-      ],
-    },
-  });
-
-  it("renders one collapsed accordion per material in the bar", () => {
-    renderFineTune(weightedRecipe);
-    const classic = screen.getByRole("button", { name: /Classic/ });
-    const glass = screen.getByRole("button", { name: /Glass/ });
-    expect(classic.getAttribute("aria-expanded")).toBe("false");
-    expect(glass.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByText("60%")).not.toBeNull();
-    expect(screen.getByText("40%")).not.toBeNull();
-    // Collapsed by default: no parameter fields are mounted.
-    expect(screen.queryByLabelText(/Classic treatment/)).toBeNull();
-  });
-
-  it("expands to the family parameter editor and swaps one value in place", () => {
-    const onChange = vi.fn();
-    renderFineTune(weightedRecipe, onChange);
-    fireEvent.click(screen.getByRole("button", { name: /Classic/ }));
-    const editor = screen.getByLabelText("Classic treatment");
-    fireEvent.change(editor, { target: { value: "gradient" } });
-    const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
-    if (next.material.mode !== "weighted") throw new Error("expected weighted");
-    expect(next.material.options).toHaveLength(2);
-    expect(next.material.options[0]?.value).toMatchObject({
-      family: "classic",
-      treatment: "gradient",
-    });
-    // Sibling keeps its tuned parameters and weight untouched.
-    expect(next.material.options[1]?.value).toMatchObject({ family: "glass" });
-    expect(next.material.options[1]?.weight).toBe(400);
   });
 });

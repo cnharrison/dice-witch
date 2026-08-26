@@ -1,4 +1,5 @@
 import type {
+  APPEARANCE_COLOR_DISTRIBUTIONS_V3,
   APPEARANCE_FORM_POLICIES_V3,
   APPEARANCE_RANDOMIZATION_POLICIES_V3,
   APPEARANCE_TARGETS_V4,
@@ -50,6 +51,8 @@ export type AppearanceVariationScopeV3 =
   (typeof APPEARANCE_VARIATION_SCOPES_V3)[number];
 export type AppearanceRandomizationPolicyV3 =
   (typeof APPEARANCE_RANDOMIZATION_POLICIES_V3)[number];
+export type AppearanceColorDistributionV3 =
+  (typeof APPEARANCE_COLOR_DISTRIBUTIONS_V3)[number];
 export type AppearanceFormPolicyV3 =
   (typeof APPEARANCE_FORM_POLICIES_V3)[number];
 export type MaterialFamilyV4 = (typeof MATERIAL_FAMILIES_V4)[number];
@@ -244,6 +247,7 @@ export type AppearanceRecipeV3 = {
   variation: AppearanceVariationV3;
   varyBy: AppearanceVariationScopeV3;
   randomization?: AppearanceRandomizationPolicyV3;
+  colorDistribution?: AppearanceColorDistributionV3;
   colors: AppearanceColorsV3;
   material: AppearanceSelection<AppearanceMaterialV4>;
   form: {

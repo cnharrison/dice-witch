@@ -19,6 +19,8 @@ import {
   parseAppearanceProfileResourceV4,
   putGuildAppearanceProfileV4,
   putPersonalAppearanceProfileV4,
+  resetPersonalAppearanceProfileV4,
+  restorePersonalAppearanceProfileV4,
 } from "./appearance-v4";
 
 const designId = "5dbb69e6-e748-4b01-9d6f-a19aa5c24a8f";
@@ -115,11 +117,11 @@ describe("appearance V4 contracts", () => {
     const profile = personalProfileV4();
     expect(
       parseAppearanceProfileResourceV4(
-        { revision: 3, profile },
+        { revision: 3, profile, canRestorePreviousMix: false },
         catalog,
         false,
       ),
-    ).toEqual({ revision: 3, profile });
+    ).toEqual({ revision: 3, profile, canRestorePreviousMix: false });
     expect(() =>
       parseAppearanceProfileResourceV4(
         {
@@ -150,9 +152,15 @@ describe("appearance V4 contracts", () => {
         if (url.pathname === "/api/appearance/v4/catalog") {
           return catalogResponse;
         }
-        if (url.pathname === "/api/appearance/v4/me") {
+        if (url.pathname === "/api/appearance/v4/me/state") {
           profileRequested = true;
-          return Promise.resolve(Response.json({ revision: 1, profile }));
+          return Promise.resolve(
+            Response.json({
+              revision: 1,
+              profile,
+              canRestorePreviousMix: false,
+            }),
+          );
         }
         return Promise.reject(new Error(`Unexpected request: ${url.pathname}`));
       }),
@@ -164,7 +172,7 @@ describe("appearance V4 contracts", () => {
 
     await expect(bootstrap).resolves.toEqual({
       catalog: APPEARANCE_CATALOG_V3,
-      resource: { revision: 1, profile },
+      resource: { revision: 1, profile, canRestorePreviousMix: false },
     });
   });
 
@@ -223,21 +231,61 @@ describe("appearance V4 contracts", () => {
       .fn()
       .mockResolvedValueOnce(Response.json(APPEARANCE_CATALOG_V3))
       .mockResolvedValueOnce(
-        Response.json({ status: "applied", revision: 2, profile }),
+        Response.json({
+          status: "applied",
+          revision: 2,
+          profile,
+          canRestorePreviousMix: false,
+        }),
       )
-      .mockResolvedValueOnce(Response.json({ revision: 3, profile: guildProfile }))
       .mockResolvedValueOnce(
-        Response.json({ status: "existing", revision: 3, profile: guildProfile }),
+        Response.json({
+          revision: 3,
+          profile: guildProfile,
+          canRestorePreviousMix: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "existing",
+          revision: 3,
+          profile: guildProfile,
+          canRestorePreviousMix: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "applied",
+          revision: 4,
+          profile,
+          canRestorePreviousMix: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "applied",
+          revision: 5,
+          profile,
+          canRestorePreviousMix: true,
+        }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getAppearanceCatalogV4()).resolves.toEqual(APPEARANCE_CATALOG_V3);
     await expect(
       putPersonalAppearanceProfileV4(1, profile, catalog),
-    ).resolves.toEqual({ revision: 2, profile });
+    ).resolves.toEqual({
+      revision: 2,
+      profile,
+      canRestorePreviousMix: false,
+    });
     await expect(
       getGuildAppearanceProfileV4("123456789012345678", catalog),
-    ).resolves.toEqual({ revision: 3, profile: guildProfile });
+    ).resolves.toEqual({
+      revision: 3,
+      profile: guildProfile,
+      canRestorePreviousMix: false,
+    });
     await expect(
       putGuildAppearanceProfileV4(
         "123456789012345678",
@@ -245,14 +293,29 @@ describe("appearance V4 contracts", () => {
         guildProfile,
         catalog,
       ),
-    ).resolves.toEqual({ revision: 3, profile: guildProfile });
+    ).resolves.toEqual({
+      revision: 3,
+      profile: guildProfile,
+      canRestorePreviousMix: false,
+    });
+
+    await expect(
+      resetPersonalAppearanceProfileV4(3, profile, catalog),
+    ).resolves.toMatchObject({ revision: 4, canRestorePreviousMix: true });
+    await expect(
+      restorePersonalAppearanceProfileV4(4, profile, catalog),
+    ).resolves.toMatchObject({ revision: 5, canRestorePreviousMix: true });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "https://api.example.com/api/appearance/v4/catalog?build=abcdef0123456789abcdef0123456789abcdef01",
-      "https://api.example.com/api/appearance/v4/me",
-      "https://api.example.com/api/guilds/123456789012345678/appearance/v4",
-      "https://api.example.com/api/guilds/123456789012345678/appearance/v4",
+      "https://api.example.com/api/appearance/v4/me/state",
+      "https://api.example.com/api/guilds/123456789012345678/appearance/v4/state",
+      "https://api.example.com/api/guilds/123456789012345678/appearance/v4/state",
+      "https://api.example.com/api/appearance/v4/me/state/reset",
+      "https://api.example.com/api/appearance/v4/me/state/restore",
     ]);
+    expect(fetchMock.mock.calls[4]?.[1]?.method).toBe("POST");
+    expect(fetchMock.mock.calls[5]?.[1]?.method).toBe("POST");
     const personalRequest = fetchMock.mock.calls[1]?.[1] as RequestInit;
     expect(new Headers(personalRequest.headers).get("idempotency-key")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,

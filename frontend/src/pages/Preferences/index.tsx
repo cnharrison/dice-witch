@@ -12,6 +12,10 @@ import {
   getPersonalAppearanceBootstrapV4,
   putGuildAppearanceProfileV4,
   putPersonalAppearanceProfileV4,
+  resetGuildAppearanceProfileV4,
+  resetPersonalAppearanceProfileV4,
+  restoreGuildAppearanceProfileV4,
+  restorePersonalAppearanceProfileV4,
   type PersonalAppearanceBootstrapV4,
 } from "@/lib/appearance-v4";
 import {
@@ -33,6 +37,7 @@ import { RefreshCw } from "lucide-react";
 import * as React from "react";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+type AppearanceMutationAction = "save" | "reset" | "restore";
 
 interface GuildMembership {
   guilds: {
@@ -300,14 +305,22 @@ export default function Preferences() {
 
   const personalMutation = useMutation({
     mutationFn: async ({
+      action,
       profile,
       revision,
     }: {
+      action: AppearanceMutationAction;
       profile: AppearanceProfileV4;
       revision: number;
     }) => {
       if (!catalog) {
         throw new Error("Personal appearance catalog is not loaded");
+      }
+      if (action === "reset") {
+        return resetPersonalAppearanceProfileV4(revision, profile, catalog);
+      }
+      if (action === "restore") {
+        return restorePersonalAppearanceProfileV4(revision, profile, catalog);
       }
       return putPersonalAppearanceProfileV4(revision, profile, catalog);
     },
@@ -327,16 +340,34 @@ export default function Preferences() {
 
   const guildAppearanceMutation = useMutation({
     mutationFn: async ({
+      action,
       profile,
       guildId,
       revision,
     }: {
+      action: AppearanceMutationAction;
       profile: GuildAppearanceProfileV4;
       guildId: string;
       revision: number;
     }) => {
       if (!catalog) {
         throw new Error("Guild appearance catalog is not loaded");
+      }
+      if (action === "reset") {
+        return resetGuildAppearanceProfileV4(
+          guildId,
+          revision,
+          profile,
+          catalog,
+        );
+      }
+      if (action === "restore") {
+        return restoreGuildAppearanceProfileV4(
+          guildId,
+          revision,
+          profile,
+          catalog,
+        );
       }
       return putGuildAppearanceProfileV4(guildId, revision, profile, catalog);
     },
@@ -419,7 +450,31 @@ export default function Preferences() {
           if ("mode" in profile) {
             throw new Error("Personal appearance profile is required");
           }
-          await personalMutation.mutateAsync({ profile, revision });
+          await personalMutation.mutateAsync({
+            action: "save",
+            profile,
+            revision,
+          });
+        }}
+        onReset={(profile, revision) => {
+          if ("mode" in profile) {
+            throw new Error("Personal appearance profile is required");
+          }
+          return personalMutation.mutateAsync({
+            action: "reset",
+            profile,
+            revision,
+          });
+        }}
+        onRestore={(profile, revision) => {
+          if ("mode" in profile) {
+            throw new Error("Personal appearance profile is required");
+          }
+          return personalMutation.mutateAsync({
+            action: "restore",
+            profile,
+            revision,
+          });
         }}
       />
     );
@@ -527,6 +582,7 @@ export default function Preferences() {
                     catalog,
                   );
                   await guildAppearanceMutation.mutateAsync({
+                    action: "save",
                     profile,
                     guildId: selectedGuildId,
                     revision: guildResource.revision,
@@ -549,6 +605,29 @@ export default function Preferences() {
               throw new Error("Guild appearance profile is required");
             }
             await guildAppearanceMutation.mutateAsync({
+              action: "save",
+              profile,
+              guildId: selectedGuildId,
+              revision,
+            });
+          }}
+          onReset={(profile, revision) => {
+            if (!("mode" in profile)) {
+              throw new Error("Guild appearance profile is required");
+            }
+            return guildAppearanceMutation.mutateAsync({
+              action: "reset",
+              profile,
+              guildId: selectedGuildId,
+              revision,
+            });
+          }}
+          onRestore={(profile, revision) => {
+            if (!("mode" in profile)) {
+              throw new Error("Guild appearance profile is required");
+            }
+            return guildAppearanceMutation.mutateAsync({
+              action: "restore",
               profile,
               guildId: selectedGuildId,
               revision,

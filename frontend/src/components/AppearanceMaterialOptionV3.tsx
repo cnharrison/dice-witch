@@ -151,11 +151,13 @@ export function AppearanceMaterialOptionV3({
   material,
   catalog,
   repeatedGradient,
+  disabled = false,
   onChange,
 }: {
   material: AppearanceMaterial;
   catalog: AppearanceCatalogV3;
   repeatedGradient: boolean;
+  disabled?: boolean;
   onChange(material: AppearanceMaterial): void;
 }) {
   let controls: React.ReactNode;
@@ -685,8 +687,11 @@ export function AppearanceMaterialOptionV3({
   }
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3">
+    <fieldset
+      disabled={disabled}
+      className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3 disabled:opacity-60"
+    >
       {controls}
-    </div>
+    </fieldset>
   );
 }

@@ -21,6 +21,7 @@ import {
   materialSelectionValuesV3,
   nextAppearanceDesignNameV3,
   nextPresetEditNameV3,
+  reconcileAppearanceMaterialEditV3,
   withAutomaticMaterialFormsV3,
   resolveAppearanceEditorSelectionV3,
   setGuildAppearanceModeV3,
@@ -49,9 +50,9 @@ function personalProfile(): AppearanceProfileV4 {
 }
 
 describe("appearance editor V3 draft operations", () => {
-  it("numbers preset-derived edits without changing existing names", () => {
+  it("names preset-derived custom designs after their source", () => {
     const designs = [
-      { id: designId, name: "Edit 1", recipe: styleRecipe("pride") },
+      { id: designId, name: "Pride edit", recipe: styleRecipe("pride") },
       {
         id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         name: "My resin",
@@ -59,9 +60,10 @@ describe("appearance editor V3 draft operations", () => {
       },
     ];
 
-    expect(nextPresetEditNameV3(designs)).toBe("Edit 2");
+    expect(nextPresetEditNameV3([], "Pride")).toBe("Pride edit");
+    expect(nextPresetEditNameV3(designs, "Pride")).toBe("Pride edit copy");
     expect(designs.map(({ name }) => name)).toEqual([
-      "Edit 1",
+      "Pride edit",
       "My resin",
     ]);
   });
@@ -258,6 +260,30 @@ describe("appearance editor V3 draft operations", () => {
       true,
     );
     expect(editedRainbow.randomization).toBe("one-palette-color-v1");
+  });
+
+  it("preserves an explicit one-per-die palette through texture edits", () => {
+    const rainbow = {
+      ...styleRecipe("rainbow"),
+      colorDistribution: "one-per-die" as const,
+    };
+    if (
+      rainbow.material.mode !== "fixed" ||
+      rainbow.material.value.family !== "classic"
+    ) {
+      throw new Error("Rainbow material must be fixed Classic");
+    }
+    const edited: AppearanceRecipeV3 = {
+      ...rainbow,
+      material: {
+        mode: "fixed" as const,
+        value: { ...rainbow.material.value, finish: "matte" as const },
+      },
+    };
+
+    expect(
+      reconcileAppearanceMaterialEditV3(edited, APPEARANCE_CATALOG_V3),
+    ).toEqual(edited);
   });
 
   it("makes material-driven forms automatic without rewriting the stored manual selection", () => {

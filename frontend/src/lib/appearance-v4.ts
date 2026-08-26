@@ -72,6 +72,8 @@ const CATALOG_ROOT_KEYS = [
   "bounds",
   "collectorStyleIds",
   "colorModes",
+  "colorSchemeStyleIds",
+  "completeLookStyleIds",
   "defaultStyleId",
   "editorDefaults",
   "engravingFinishes",
@@ -395,6 +397,8 @@ function validateStyles(catalog: Record<string, unknown>): ReadonlySet<string> {
   }
   requireSubset(catalog.featuredStyleIds, ids, "Appearance featured styles are invalid");
   requireSubset(catalog.collectorStyleIds, ids, "Appearance material styles are invalid");
+  requireSubset(catalog.colorSchemeStyleIds, ids, "Appearance color schemes are invalid");
+  requireSubset(catalog.completeLookStyleIds, ids, "Appearance complete looks are invalid");
   return ids;
 }
 
@@ -580,7 +584,7 @@ function validateBounds(value: unknown): void {
 export function parseAppearanceCatalogV3(value: unknown): AppearanceCatalogV3 {
   const catalog = requireRecord(value, CATALOG_ROOT_KEYS, "Appearance catalog V3 is invalid");
   if (catalog.version !== 3) throw new Error("Appearance catalog V3 is invalid");
-  const styleIds = validateStyles(catalog);
+  validateStyles(catalog);
   requireOptionCatalog(catalog.targets, APPEARANCE_TARGETS_V4, "Appearance target catalog is invalid");
   requireOptionCatalog(catalog.patterns, PATTERN_IDS_V4, "Appearance pattern catalog is invalid");
   requireOptionCatalogVariant(
@@ -621,8 +625,6 @@ export function parseAppearanceCatalogV3(value: unknown): AppearanceCatalogV3 {
   requireOptionCatalog(lighting.directions, LIGHTING_DIRECTIONS_V4, "Appearance lighting catalog is invalid");
   requireSubset(catalog.featuredPatternIds, new Set(PATTERN_IDS_V4), "Appearance featured patterns are invalid");
   validateEditorDefaults(catalog.editorDefaults);
-  requireSubset(catalog.featuredStyleIds, styleIds, "Appearance featured styles are invalid");
-  requireSubset(catalog.collectorStyleIds, styleIds, "Appearance material styles are invalid");
   validateBounds(catalog.bounds);
   return structuredClone(value) as AppearanceCatalogV3;
 }
@@ -647,14 +649,19 @@ export function parseAppearanceProfileResourceV4(
 ): AppearanceProfileResource<AppearanceProfileV4 | GuildAppearanceProfileV4> {
   const resource = requireRecord(
     value,
-    ["profile", "revision"],
+    ["canRestorePreviousMix", "profile", "revision"],
     "Appearance profile V4 response is invalid",
   );
-  if (!Number.isSafeInteger(resource.revision) || Number(resource.revision) < 0) {
+  if (
+    !Number.isSafeInteger(resource.revision) ||
+    Number(resource.revision) < 0 ||
+    typeof resource.canRestorePreviousMix !== "boolean"
+  ) {
     throw new Error("Appearance profile V4 response is invalid");
   }
   return {
     revision: Number(resource.revision),
+    canRestorePreviousMix: resource.canRestorePreviousMix,
     profile:
       resource.profile === null
         ? null
@@ -823,9 +830,12 @@ export type PersonalAppearanceBootstrapV4 = Readonly<{
 
 export async function getPersonalAppearanceBootstrapV4(): Promise<PersonalAppearanceBootstrapV4> {
   const catalogPromise = getAppearanceCatalogV4();
-  const profileResponsePromise = apiFetch(apiUrl("/api/appearance/v4/me"), {
-    credentials: "include",
-  }).then(requireOk);
+  const profileResponsePromise = apiFetch(
+    apiUrl("/api/appearance/v4/me/state"),
+    {
+      credentials: "include",
+    },
+  ).then(requireOk);
   const [catalog, profileResponse] = await Promise.all([
     catalogPromise,
     profileResponsePromise,
@@ -849,7 +859,7 @@ export function getGuildAppearanceProfileV4(
     return Promise.reject(clientError("appearance_guild_id_invalid", 400));
   }
   return getGuildProfileV4(
-    `/api/guilds/${guildId}/appearance/v4`,
+    `/api/guilds/${guildId}/appearance/v4/state`,
     catalog,
   );
 }
@@ -861,21 +871,26 @@ function parseSavedProfileV4(
 ): AppearanceProfileResource<AppearanceProfileV4 | GuildAppearanceProfileV4> {
   const saved = requireRecord(
     value,
-    ["profile", "revision", "status"],
+    ["canRestorePreviousMix", "profile", "revision", "status"],
     "Appearance profile V4 save response is invalid",
   );
   if (saved.status !== "applied" && saved.status !== "existing") {
     throw new Error("Appearance profile V4 save response is invalid");
   }
   return parseAppearanceProfileResourceV4(
-    { revision: saved.revision, profile: saved.profile },
+    {
+      revision: saved.revision,
+      profile: saved.profile,
+      canRestorePreviousMix: saved.canRestorePreviousMix,
+    },
     catalog,
     guild,
   );
 }
 
-async function putProfileV4(
+async function mutateProfileV4(
   path: string,
+  method: "POST" | "PUT",
   expectedRevision: number,
   profile: AppearanceProfileV4 | GuildAppearanceProfileV4,
   catalog: AppearanceCatalogV3,
@@ -894,7 +909,7 @@ async function putProfileV4(
   }
   const response = await requireOk(
     await apiFetch(apiUrl(path), {
-      method: "PUT",
+      method,
       credentials: "include",
       headers: {
         "content-type": "application/json",
@@ -915,8 +930,39 @@ export function putPersonalAppearanceProfileV4(
   profile: AppearanceProfileV4,
   catalog: AppearanceCatalogV3,
 ): Promise<AppearanceProfileResource<AppearanceProfileV4>> {
-  return putProfileV4(
-    "/api/appearance/v4/me",
+  return mutateProfileV4(
+    "/api/appearance/v4/me/state",
+    "PUT",
+    expectedRevision,
+    profile,
+    catalog,
+    false,
+  ) as Promise<AppearanceProfileResource<AppearanceProfileV4>>;
+}
+
+export function resetPersonalAppearanceProfileV4(
+  expectedRevision: number,
+  profile: AppearanceProfileV4,
+  catalog: AppearanceCatalogV3,
+): Promise<AppearanceProfileResource<AppearanceProfileV4>> {
+  return mutateProfileV4(
+    "/api/appearance/v4/me/state/reset",
+    "POST",
+    expectedRevision,
+    profile,
+    catalog,
+    false,
+  ) as Promise<AppearanceProfileResource<AppearanceProfileV4>>;
+}
+
+export function restorePersonalAppearanceProfileV4(
+  expectedRevision: number,
+  profile: AppearanceProfileV4,
+  catalog: AppearanceCatalogV3,
+): Promise<AppearanceProfileResource<AppearanceProfileV4>> {
+  return mutateProfileV4(
+    "/api/appearance/v4/me/state/restore",
+    "POST",
     expectedRevision,
     profile,
     catalog,
@@ -933,8 +979,47 @@ export function putGuildAppearanceProfileV4(
   if (!GUILD_ID.test(guildId)) {
     return Promise.reject(clientError("appearance_guild_id_invalid", 400));
   }
-  return putProfileV4(
-    `/api/guilds/${guildId}/appearance/v4`,
+  return mutateProfileV4(
+    `/api/guilds/${guildId}/appearance/v4/state`,
+    "PUT",
+    expectedRevision,
+    profile,
+    catalog,
+    true,
+  ) as Promise<AppearanceProfileResource<GuildAppearanceProfileV4>>;
+}
+
+export function resetGuildAppearanceProfileV4(
+  guildId: string,
+  expectedRevision: number,
+  profile: GuildAppearanceProfileV4,
+  catalog: AppearanceCatalogV3,
+): Promise<AppearanceProfileResource<GuildAppearanceProfileV4>> {
+  if (!GUILD_ID.test(guildId)) {
+    return Promise.reject(clientError("appearance_guild_id_invalid", 400));
+  }
+  return mutateProfileV4(
+    `/api/guilds/${guildId}/appearance/v4/state/reset`,
+    "POST",
+    expectedRevision,
+    profile,
+    catalog,
+    true,
+  ) as Promise<AppearanceProfileResource<GuildAppearanceProfileV4>>;
+}
+
+export function restoreGuildAppearanceProfileV4(
+  guildId: string,
+  expectedRevision: number,
+  profile: GuildAppearanceProfileV4,
+  catalog: AppearanceCatalogV3,
+): Promise<AppearanceProfileResource<GuildAppearanceProfileV4>> {
+  if (!GUILD_ID.test(guildId)) {
+    return Promise.reject(clientError("appearance_guild_id_invalid", 400));
+  }
+  return mutateProfileV4(
+    `/api/guilds/${guildId}/appearance/v4/state/restore`,
+    "POST",
     expectedRevision,
     profile,
     catalog,

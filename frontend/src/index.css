@@ -299,9 +299,33 @@ select {
     padding: 0.5rem;
   }
 
+  .appearance-editor-rail:has(.appearance-saved-design-editor) {
+    gap: 0.25rem;
+  }
+
+  .appearance-editor-rail:has(.appearance-saved-design-editor)
+    > .appearance-editor-target-card,
+  .appearance-editor-rail:has(.appearance-saved-design-editor)
+    .appearance-editor-variety-card,
+  .appearance-editor-rail:has(.appearance-saved-design-editor)
+    .appearance-editor-saved-card {
+    padding: 0.5rem;
+  }
+
+  .appearance-editor-rail:has(.appearance-saved-design-editor)
+    .appearance-preview-card {
+    padding: 0.375rem;
+  }
+
   .appearance-editor-rail:has(.appearance-saved-design-editor)
     .appearance-preview-canvas {
-    height: 3.5rem;
+    margin-top: 0.25rem;
+  }
+
+  .appearance-editor-rail:has(.appearance-saved-design-editor)
+    > .appearance-editor-target-card
+    > :first-child {
+    margin-bottom: 0.25rem;
   }
 }
 

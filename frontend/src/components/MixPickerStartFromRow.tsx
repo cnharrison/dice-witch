@@ -23,7 +23,7 @@ export function MixPickerStartFromRow({
   const styleFor = (styleId: string) => {
     const style = catalog.styles.find(({ id }) => id === styleId);
     if (style === undefined) {
-      throw new Error(`Appearance start-from style is missing: ${styleId}`);
+      throw new Error(`Appearance complete look is missing: ${styleId}`);
     }
     return style;
   };
@@ -82,28 +82,23 @@ export function MixPickerStartFromRow({
   };
 
   return (
-    <section aria-label="Start from">
+    <section aria-label="Complete looks">
       <header className="flex items-baseline justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide">
-          Start from
+          Complete looks
         </h3>
         <p className="text-xs font-medium text-muted-foreground">
           {activeStyle?.name ?? ""}
         </p>
       </header>
       <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible sm:snap-none">
-        {catalog.featuredStyleIds.map((styleId) =>
+        {catalog.completeLookStyleIds.map((styleId) =>
           card(
             styleId,
             styleId === RANDOM_STYLE_ID_V3 ? "The default" : undefined,
           ),
         )}
       </div>
-      {catalog.collectorStyleIds.length > 0 && (
-        <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible sm:snap-none">
-          {catalog.collectorStyleIds.map((styleId) => card(styleId))}
-        </div>
-      )}
     </section>
   );
 }

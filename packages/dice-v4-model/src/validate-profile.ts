@@ -20,6 +20,7 @@ import {
 } from "./limits";
 import { canonicalJsonV4 } from "./random";
 import {
+  APPEARANCE_COLOR_DISTRIBUTIONS_V3,
   APPEARANCE_FORM_POLICIES_V3,
   APPEARANCE_RANDOMIZATION_POLICIES_V3,
   APPEARANCE_TARGETS_V4,
@@ -286,6 +287,9 @@ export function parseAppearanceRecipeV3(value: unknown): AppearanceRecipeV3 {
   const recipe = requireExactRecord(
     value,
     [
+      ...(isRecord(value) && Object.hasOwn(value, "colorDistribution")
+        ? ["colorDistribution"]
+        : []),
       "colors",
       "engraving",
       "font",
@@ -350,6 +354,15 @@ export function parseAppearanceRecipeV3(value: unknown): AppearanceRecipeV3 {
           ),
         }
       : {}),
+    ...(Object.hasOwn(recipe, "colorDistribution")
+      ? {
+          colorDistribution: supportedValue(
+            recipe.colorDistribution,
+            APPEARANCE_COLOR_DISTRIBUTIONS_V3,
+            "Appearance color distribution is not supported",
+          ),
+        }
+      : {}),
     colors: parseColors(recipe.colors),
     material: parseMaterialSelection(recipe.material),
     form: {
@@ -410,6 +423,12 @@ export function parseAppearanceRecipeV3(value: unknown): AppearanceRecipeV3 {
     parsed.colors.mode !== "palette"
   ) {
     throw new Error("One-color palette randomization requires a palette");
+  }
+  if (
+    parsed.colorDistribution === "one-per-die" &&
+    parsed.colors.mode !== "palette"
+  ) {
+    throw new Error("One-per-die color distribution requires a palette");
   }
   if (parsed.form.policy === undefined) {
     validateMaterialForms(parsed.material, parsed.form.polyhedral);
