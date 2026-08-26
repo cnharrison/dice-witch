@@ -1712,7 +1712,7 @@ describe("RollWork Durable Object", () => {
       ...structuredClone(rollWorkV4Fixture),
       renderRequest: {
         ...structuredClone(rollWorkV4Fixture.renderRequest),
-        rendererRevision: "canvaskit-v4-r42",
+        rendererRevision: "canvaskit-v4-r43",
       },
     };
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(

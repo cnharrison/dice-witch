@@ -60,6 +60,7 @@ export type RendererRevisionPolicyV4 = {
   r32Materials: boolean;
   polyhedralSurfaceMapping: "authored" | "view-octahedral-r33";
   textureGeneration: "v1" | "r33-v2";
+  hollowMetalTexture: "legacy" | "embossed-r42";
   d6FiveOpticalOffsetX: number;
   d6NormalCameraInset: boolean;
   faceWidePhysicalSeparation: boolean;
@@ -117,6 +118,7 @@ const r1 = policy({
   r32Materials: false,
   polyhedralSurfaceMapping: "authored",
   textureGeneration: "v1",
+  hollowMetalTexture: "legacy",
   d6FiveOpticalOffsetX: 0,
   d6NormalCameraInset: false,
   faceWidePhysicalSeparation: true,
@@ -225,6 +227,7 @@ const r38 = policy({ ...r37, gridLayout: "group-dynamic-r38" });
 const r39 = policy({ ...r38, outlineContrast: "adaptive-r39" });
 const r40 = policy({ ...r39, outlineContrast: "silhouette-r40" });
 const r41 = policy({ ...r40, outlineContrast: "near-black-solid-r41" });
+const r42 = policy({ ...r41, hollowMetalTexture: "embossed-r42" });
 
 export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r1": r1,
@@ -268,6 +271,7 @@ export const RENDERER_REVISION_POLICIES_V4 = Object.freeze({
   "canvaskit-v4-r39": r39,
   "canvaskit-v4-r40": r40,
   "canvaskit-v4-r41": r41,
+  "canvaskit-v4-r42": r42,
 } satisfies Record<RendererRevisionV4, Readonly<RendererRevisionPolicyV4>>);
 
 export function rendererRevisionPolicyV4(

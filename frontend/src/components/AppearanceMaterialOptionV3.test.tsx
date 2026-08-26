@@ -22,7 +22,6 @@ function Harness({ family }: { family: MaterialFamilyV4 }) {
     <AppearanceMaterialOptionV3
       material={material}
       catalog={APPEARANCE_CATALOG_V3}
-      repeatedGradient={false}
       onChange={setMaterial}
     />
   );

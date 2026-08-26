@@ -7,30 +7,17 @@ import { AppearanceScopeBanner } from "./AppearanceScopeBanner";
 afterEach(cleanup);
 
 describe("AppearanceScopeBanner", () => {
-  it("states that ALL edits apply to every die without its own design", () => {
-    render(
-      <AppearanceScopeBanner
-        target="all"
-        hasOverride={false}
-        affectedTargets={["d4", "d6", "d20", "fudge"]}
-      />,
+  it("renders no persistent scope copy while editing all dice", () => {
+    const { container } = render(
+      <AppearanceScopeBanner target="all" hasOverride={false} />,
     );
-    expect(screen.getByText("Editing ALL")).not.toBeNull();
-    expect(
-      screen.getByText("Applies to d4, d6, d20, and Fudge."),
-    ).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /Reset to ALL/ })).toBeNull();
+    expect(container.innerHTML).toBe("");
   });
 
   it("warns a following target that its first change forks a copy", () => {
     render(
-      <AppearanceScopeBanner
-        target="d10"
-        hasOverride={false}
-        affectedTargets={[]}
-      />,
+      <AppearanceScopeBanner target="d10" hasOverride={false} />,
     );
-    expect(screen.getByText("d10 follows ALL right now")).not.toBeNull();
     expect(
       screen.getByText(/Your first change gives d10 its own copy/),
     ).not.toBeNull();
@@ -42,14 +29,12 @@ describe("AppearanceScopeBanner", () => {
       <AppearanceScopeBanner
         target="d20"
         hasOverride
-        affectedTargets={[]}
         sharedNotices={[
           "Changes to Night garden affect: All dice.",
         ]}
         onReset={onReset}
       />,
     );
-    expect(screen.getByText("Editing d20 only")).not.toBeNull();
     const reset = screen.getByRole("button", { name: /Reset to ALL/ });
     fireEvent.click(reset);
     expect(onReset).toHaveBeenCalledTimes(1);

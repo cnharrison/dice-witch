@@ -229,9 +229,14 @@ describe("V4 renderer revision policies", () => {
       ...revision39,
       outlineContrast: "silhouette-r40",
     });
-    expect(rendererRevisionPolicyV4("canvaskit-v4-r41")).toEqual({
+    const revision41 = rendererRevisionPolicyV4("canvaskit-v4-r41");
+    expect(revision41).toEqual({
       ...revision40,
       outlineContrast: "near-black-solid-r41",
+    });
+    expect(rendererRevisionPolicyV4("canvaskit-v4-r42")).toEqual({
+      ...revision41,
+      hollowMetalTexture: "embossed-r42",
     });
     expect(revision31.r32Fonts).toBe(false);
     expect(revision31.r32Materials).toBe(false);
@@ -242,7 +247,7 @@ describe("V4 renderer revision policies", () => {
     expect(() =>
       rendererRevisionPolicyV4(
         // SAFETY: This future revision deliberately exercises runtime validation.
-        "canvaskit-v4-r42" as RendererRevisionV4,
+        "canvaskit-v4-r43" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");
   });

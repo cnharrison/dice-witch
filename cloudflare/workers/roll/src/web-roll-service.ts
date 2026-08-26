@@ -83,6 +83,7 @@ import {
   buildRollRenderRequestR39V4,
   buildRollRenderRequestR40V4,
   buildRollRenderRequestR41V4,
+  buildRollRenderRequestR42V4,
 } from "../../../packages/roll-render-model/src";
 import { parseSavedRollNameColorV2 } from "../../../packages/saved-rolls/src";
 import {
@@ -132,6 +133,7 @@ const ROLL_VIEW_BUILDERS_V4 = {
   r39: buildRollRenderRequestR39V4,
   r40: buildRollRenderRequestR40V4,
   r41: buildRollRenderRequestR41V4,
+  r42: buildRollRenderRequestR42V4,
 } satisfies Record<
   Exclude<RollViewPolicy, "r19">,
   typeof buildRollRenderRequestR20V4
@@ -739,6 +741,15 @@ export function buildAppearancePreviewRenderRequestR41V4(
   );
 }
 
+export function buildAppearancePreviewRenderRequestR42V4(
+  value: SchemaInput,
+): RenderRequestV4 {
+  return buildResolvedAppearancePreviewRenderRequestV4(
+    value,
+    buildRollRenderRequestR42V4,
+  );
+}
+
 export function buildAppearancePreviewRenderRequestForPolicyV4(
   value: SchemaInput,
   viewPolicy: RollViewPolicy,
@@ -790,6 +801,8 @@ export function buildAppearancePreviewRenderRequestForPolicyV4(
       return buildAppearancePreviewRenderRequestR40V4(value);
     case "r41":
       return buildAppearancePreviewRenderRequestR41V4(value);
+    case "r42":
+      return buildAppearancePreviewRenderRequestR42V4(value);
   }
 }
 

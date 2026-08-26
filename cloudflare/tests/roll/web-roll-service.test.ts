@@ -461,6 +461,10 @@ describe("appearance preview", () => {
       buildAppearancePreviewRenderRequestForPolicyV4(input, "r41")
         .rendererRevision,
     ).toBe("canvaskit-v4-r41");
+    expect(
+      buildAppearancePreviewRenderRequestForPolicyV4(input, "r42")
+        .rendererRevision,
+    ).toBe("canvaskit-v4-r42");
   });
 
   it("renders per-die override designs inside the ALL composite preview", () => {
@@ -858,7 +862,7 @@ describe("appearance preview", () => {
     );
   });
 
-  it.each(["r38", "r41"] as const)(
+  it.each(["r38", "r42"] as const)(
     "keeps the %s all-dice preview in two rows of five",
     async (viewPolicy) => {
       const rendered = await renderAppearancePreviewV4(

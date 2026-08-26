@@ -48,10 +48,11 @@ describe("MixPickerTexturesRow", () => {
     );
 
     expect(screen.getByRole("region", { name: "Textures" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Metal" })).toHaveProperty(
-      "ariaExpanded",
-      "true",
-    );
+    const metal = screen.getByRole("button", { name: "Metal" });
+    const wood = screen.getByRole("button", { name: "Wood" });
+    expect(metal).toHaveProperty("ariaExpanded", "true");
+    expect(metal.parentElement?.getAttribute("data-state")).toBe("open");
+    expect(wood.parentElement?.getAttribute("data-state")).toBe("closed");
     fireEvent.change(screen.getByLabelText("Material finish"), {
       target: { value: "hammered" },
     });
@@ -66,6 +67,10 @@ describe("MixPickerTexturesRow", () => {
       finish: "hammered",
     });
     expect(next.material.options[1]?.value).toEqual(recipe.material.options[1]?.value);
+
+    fireEvent.click(wood);
+    expect(metal.parentElement?.getAttribute("data-state")).toBe("closed");
+    expect(wood.parentElement?.getAttribute("data-state")).toBe("open");
   });
 
   it("disables expanded texture controls while a mutation is pending", () => {

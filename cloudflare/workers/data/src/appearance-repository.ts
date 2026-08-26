@@ -294,6 +294,20 @@ function storedProfileState(
   };
 }
 
+function previousMixJson(
+  storedProfile: StoredProfileState,
+  nextProfile: AppearanceProfileV4,
+  parse: (value: StoredAppearanceProfileJson) => AppearanceProfileV4,
+): string | null {
+  if (storedProfile.status === "missing") return null;
+  const stored = parseStoredProfile(() =>
+    parse(parseStoredJson(storedProfile.profileJson)),
+  );
+  const storedMix = serializeProfile(mixFromProfile(stored));
+  const nextMix = serializeProfile(mixFromProfile(nextProfile));
+  return storedMix === nextMix ? null : storedMix;
+}
+
 function targetGuard(
   table: "user_appearance_profiles" | "guild_appearance_profiles",
   keyColumn: "user_id" | "guild_id",
@@ -401,6 +415,9 @@ export class D1AppearanceRepository {
             userId,
             expectedRevision,
             profileJson,
+            mixJson: previousMixJson(target, profile, (value) =>
+              parseAppearanceProfileV4(value, this.catalog),
+            ),
             payloadJson,
             mutationId: input.mutationId,
             occurredAt: input.occurredAt,
@@ -450,6 +467,9 @@ export class D1AppearanceRepository {
             updatedByUserId,
             expectedRevision,
             profileJson,
+            mixJson: previousMixJson(target, profile, (value) =>
+              parseGuildAppearanceProfileV4(value, this.catalog),
+            ),
             payloadJson,
             mutationId: input.mutationId,
             occurredAt: input.occurredAt,
@@ -729,17 +749,57 @@ export class D1AppearanceRepository {
     });
   }
 
+  private personalSnapshotStatement(
+    input: {
+      userId: string;
+      mixJson: string;
+      payloadJson: string;
+      mutationId: string;
+      occurredAt: number;
+    },
+    guard: TargetGuard,
+  ): D1PreparedStatement {
+    return this.db
+      .prepare(
+        `INSERT INTO user_appearance_reset_snapshots (
+           user_id, mix_json, updated_at
+         )
+         SELECT ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM mutation_receipts
+           WHERE mutation_id = ? AND entity_type = 'user'
+             AND entity_key = ? AND operation = 'upsert'
+             AND payload_json = ? AND occurred_at = ?
+         )
+           AND ${guard.predicate}
+         ON CONFLICT(user_id) DO UPDATE SET
+           mix_json = excluded.mix_json,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(
+        input.userId,
+        input.mixJson,
+        input.occurredAt,
+        input.mutationId,
+        input.userId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.predicateBindings,
+      );
+  }
+
   private personalWriteStatements(
     input: {
       userId: string;
       expectedRevision: number;
       profileJson: string;
+      mixJson: string | null;
       payloadJson: string;
       mutationId: string;
       occurredAt: number;
     },
     target: StoredProfileState,
-  ): [D1PreparedStatement, D1PreparedStatement] {
+  ): D1PreparedStatement[] {
     const guard = targetGuard(
       "user_appearance_profiles",
       "user_id",
@@ -765,6 +825,13 @@ export class D1AppearanceRepository {
         input.userId,
         ...guard.predicateBindings,
       );
+    const statements = [receiptStatement];
+    const mixJson = input.mixJson;
+    if (mixJson !== null) {
+      statements.push(
+        this.personalSnapshotStatement({ ...input, mixJson }, guard),
+      );
+    }
     const profileStatement = this.db
       .prepare(
         `INSERT INTO user_appearance_profiles (
@@ -796,7 +863,8 @@ export class D1AppearanceRepository {
         ...guard.predicateBindings,
         ...guard.updateBindings,
       );
-    return [receiptStatement, profileStatement];
+    statements.push(profileStatement);
+    return statements;
   }
 
   private personalResetStatements(
@@ -836,33 +904,7 @@ export class D1AppearanceRepository {
         input.userId,
         ...guard.predicateBindings,
       );
-    const snapshotStatement = this.db
-      .prepare(
-        `INSERT INTO user_appearance_reset_snapshots (
-           user_id, mix_json, updated_at
-         )
-         SELECT ?, ?, ?
-         WHERE EXISTS (
-           SELECT 1 FROM mutation_receipts
-           WHERE mutation_id = ? AND entity_type = 'user'
-             AND entity_key = ? AND operation = 'upsert'
-             AND payload_json = ? AND occurred_at = ?
-         )
-           AND ${guard.predicate}
-         ON CONFLICT(user_id) DO UPDATE SET
-           mix_json = excluded.mix_json,
-           updated_at = excluded.updated_at`,
-      )
-      .bind(
-        input.userId,
-        input.mixJson,
-        input.occurredAt,
-        input.mutationId,
-        input.userId,
-        input.payloadJson,
-        input.occurredAt,
-        ...guard.predicateBindings,
-      );
+    const snapshotStatement = this.personalSnapshotStatement(input, guard);
     const profileStatement = this.db
       .prepare(
         `INSERT INTO user_appearance_profiles (
@@ -988,18 +1030,58 @@ export class D1AppearanceRepository {
     return [receiptStatement, snapshotStatement, profileStatement];
   }
 
+  private guildSnapshotStatement(
+    input: {
+      guildId: string;
+      mixJson: string;
+      payloadJson: string;
+      mutationId: string;
+      occurredAt: number;
+    },
+    guard: TargetGuard,
+  ): D1PreparedStatement {
+    return this.db
+      .prepare(
+        `INSERT INTO guild_appearance_reset_snapshots (
+           guild_id, mix_json, updated_at
+         )
+         SELECT ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM mutation_receipts
+           WHERE mutation_id = ? AND entity_type = 'guild'
+             AND entity_key = ? AND operation = 'upsert'
+             AND payload_json = ? AND occurred_at = ?
+         )
+           AND ${guard.predicate}
+         ON CONFLICT(guild_id) DO UPDATE SET
+           mix_json = excluded.mix_json,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(
+        input.guildId,
+        input.mixJson,
+        input.occurredAt,
+        input.mutationId,
+        input.guildId,
+        input.payloadJson,
+        input.occurredAt,
+        ...guard.predicateBindings,
+      );
+  }
+
   private guildWriteStatements(
     input: {
       guildId: string;
       updatedByUserId: string;
       expectedRevision: number;
       profileJson: string;
+      mixJson: string | null;
       payloadJson: string;
       mutationId: string;
       occurredAt: number;
     },
     target: StoredProfileState,
-  ): [D1PreparedStatement, D1PreparedStatement] {
+  ): D1PreparedStatement[] {
     const guard = targetGuard(
       "guild_appearance_profiles",
       "guild_id",
@@ -1027,6 +1109,11 @@ export class D1AppearanceRepository {
         input.updatedByUserId,
         ...guard.predicateBindings,
       );
+    const statements = [receiptStatement];
+    const mixJson = input.mixJson;
+    if (mixJson !== null) {
+      statements.push(this.guildSnapshotStatement({ ...input, mixJson }, guard));
+    }
     const profileStatement = this.db
       .prepare(
         `INSERT INTO guild_appearance_profiles (
@@ -1060,7 +1147,8 @@ export class D1AppearanceRepository {
         ...guard.predicateBindings,
         ...guard.updateBindings,
       );
-    return [receiptStatement, profileStatement];
+    statements.push(profileStatement);
+    return statements;
   }
 
   private guildResetStatements(
@@ -1103,33 +1191,7 @@ export class D1AppearanceRepository {
         input.updatedByUserId,
         ...guard.predicateBindings,
       );
-    const snapshotStatement = this.db
-      .prepare(
-        `INSERT INTO guild_appearance_reset_snapshots (
-           guild_id, mix_json, updated_at
-         )
-         SELECT ?, ?, ?
-         WHERE EXISTS (
-           SELECT 1 FROM mutation_receipts
-           WHERE mutation_id = ? AND entity_type = 'guild'
-             AND entity_key = ? AND operation = 'upsert'
-             AND payload_json = ? AND occurred_at = ?
-         )
-           AND ${guard.predicate}
-         ON CONFLICT(guild_id) DO UPDATE SET
-           mix_json = excluded.mix_json,
-           updated_at = excluded.updated_at`,
-      )
-      .bind(
-        input.guildId,
-        input.mixJson,
-        input.occurredAt,
-        input.mutationId,
-        input.guildId,
-        input.payloadJson,
-        input.occurredAt,
-        ...guard.predicateBindings,
-      );
+    const snapshotStatement = this.guildSnapshotStatement(input, guard);
     const profileStatement = this.db
       .prepare(
         `INSERT INTO guild_appearance_profiles (

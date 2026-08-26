@@ -64,7 +64,7 @@ function validConfigs() {
     roll: {
       ...baseConfig(rollName, "workers/roll/src/index.ts"),
       alias: { crypto: "./packages/roll-domain/src/worker-crypto.ts" },
-      vars: { ROLL_RENDER_VERSION: "4", ROLL_VIEW_POLICY: "r41" },
+      vars: { ROLL_RENDER_VERSION: "4", ROLL_VIEW_POLICY: "r42" },
       services: [
         service("DATA_SERVICE", dataName),
         service("DISCORD_REST", restName, "DiscordRestService"),
@@ -259,6 +259,13 @@ test("rejects routes, unsafe Crons, and undeclared bindings outside the staging 
   assert.throws(
     () => validateStagingConfigs(legacyRollEmission),
     /Staging Roll ROLL_RENDER_VERSION must equal 4/,
+  );
+
+  const legacyViewPolicy = validConfigs();
+  legacyViewPolicy.roll.vars.ROLL_VIEW_POLICY = "r41";
+  assert.throws(
+    () => validateStagingConfigs(legacyViewPolicy),
+    /Staging Roll ROLL_VIEW_POLICY must equal r42/,
   );
 
   const unsafeAssetRule = validConfigs();

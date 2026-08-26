@@ -556,6 +556,64 @@ describe("AppearanceEditorV3", () => {
       .toBeUndefined();
   });
 
+  it("applies every Classic control from a gradient design", async () => {
+    const user = userEvent.setup();
+    const profile = personalProfileV4();
+    const recipe = styleRecipe("solid");
+    if (
+      recipe.material.mode !== "fixed" ||
+      recipe.material.value.family !== "classic"
+    ) {
+      throw new Error("Solid style must use fixed Classic material");
+    }
+    recipe.material = {
+      mode: "fixed",
+      value: { ...recipe.material.value, treatment: "gradient" },
+    };
+    profile.designs = [{ id: designId, name: "Classic controls", recipe }];
+    profile.assignments = {
+      all: { source: "custom", id: designId },
+      overrides: {},
+    };
+    const onSave = vi.fn(async () => undefined);
+    renderEditor({
+      catalog: APPEARANCE_CATALOG_V3,
+      resource: { revision: 4, profile },
+      kind: "personal",
+      personalDesigns: [],
+      isSaving: false,
+      onSave,
+    });
+
+    await user.selectOptions(screen.getByLabelText("Classic treatment"), "pattern");
+    await user.selectOptions(screen.getByLabelText("Opacity"), "translucent");
+    await user.selectOptions(screen.getByLabelText("Material finish"), "matte");
+    expect(screen.getByLabelText("Classic treatment")).toHaveProperty(
+      "value",
+      "pattern",
+    );
+    expect(screen.getByLabelText("Opacity")).toHaveProperty(
+      "value",
+      "translucent",
+    );
+    expect(screen.getByLabelText("Material finish")).toHaveProperty(
+      "value",
+      "matte",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save & apply" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0].designs[0]?.recipe.material).toMatchObject({
+      mode: "fixed",
+      value: {
+        family: "classic",
+        treatment: "pattern",
+        opacity: "translucent",
+        finish: "matte",
+      },
+    });
+  });
+
   it("edits Random as one weighted segment per material family", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(designId);
@@ -1355,7 +1413,9 @@ describe("AppearanceEditorV3 chip actions", () => {
       screen.getByText(/Deleting Pride edit is staged/),
     ).toBeDefined();
     // d20 falls back to following ALL.
-    expect(screen.getByText("d20 follows ALL right now")).toBeDefined();
+    expect(
+      screen.getByText(/Your first change gives d20 its own copy/),
+    ).toBeDefined();
   });
 
   it("saves Matched Set as a fresh roll-scoped draw", async () => {
@@ -1420,7 +1480,9 @@ describe("AppearanceEditorV3 chip actions", () => {
       onReset,
     });
 
-    await user.click(screen.getByRole("button", { name: "Reset to default" }));
+    const reset = screen.getByRole("button", { name: "Reset to default" });
+    expect(reset.textContent).toContain("Reset default");
+    await user.click(reset);
     await waitFor(() => expect(onReset).toHaveBeenCalledWith(profile, 4));
     expect(confirm).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Save & apply" })).toBeNull();
@@ -1456,9 +1518,11 @@ describe("AppearanceEditorV3 chip actions", () => {
       onRestore,
     });
 
-    await user.click(
-      screen.getByRole("button", { name: "Restore previous mix" }),
-    );
+    const restore = screen.getByRole("button", {
+      name: "Restore previous mix",
+    });
+    expect(restore.textContent).toContain("Restore prev.");
+    await user.click(restore);
     await waitFor(() => expect(onRestore).toHaveBeenCalledWith(current, 4));
     expect(confirm).not.toHaveBeenCalled();
     expect(screen.getByText("Previous dice mix restored.")).toBeDefined();

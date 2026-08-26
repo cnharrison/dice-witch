@@ -174,7 +174,7 @@ describe("D1AppearanceRepository V4", () => {
       status: "applied",
       revision: 2,
       profile: second,
-      canRestorePreviousMix: false,
+      canRestorePreviousMix: true,
     });
   });
 
@@ -285,6 +285,145 @@ describe("D1AppearanceRepository V4", () => {
       status: "applied",
       revision: 6,
       profile: replacement,
+    });
+  });
+
+  it("restores the immediately previous personal mix after a later save", async () => {
+    const store = repository();
+    const original = personalProfile();
+    await store.putPersonalV4({
+      userId,
+      expectedRevision: 0,
+      profile: original,
+      mutationId: "appearance-previous-personal-create",
+      occurredAt,
+    });
+    const reset = await store.resetPersonalV4({
+      userId,
+      expectedRevision: 1,
+      profile: original,
+      mutationId: "appearance-previous-personal-reset",
+      occurredAt: occurredAt + 1,
+    });
+    if (reset.status !== "applied") throw new Error("Reset must apply");
+
+    const latest = personalProfile("#abcdef");
+    const saved = await store.putPersonalV4({
+      userId,
+      expectedRevision: 2,
+      profile: latest,
+      mutationId: "appearance-previous-personal-save",
+      occurredAt: occurredAt + 2,
+    });
+    if (saved.status !== "applied") throw new Error("Save must apply");
+
+    await expect(
+      store.restorePersonalV4({
+        userId,
+        expectedRevision: 3,
+        profile: latest,
+        mutationId: "appearance-previous-personal-restore",
+        occurredAt: occurredAt + 3,
+      }),
+    ).resolves.toMatchObject({
+      status: "applied",
+      revision: 4,
+      profile: reset.profile,
+    });
+  });
+
+  it("keeps the previous mix through a camera-only save", async () => {
+    const store = repository();
+    const original = personalProfile();
+    await store.putPersonalV4({
+      userId,
+      expectedRevision: 0,
+      profile: original,
+      mutationId: "appearance-camera-create",
+      occurredAt,
+    });
+    const nextMix = personalProfile("#abcdef");
+    await store.putPersonalV4({
+      userId,
+      expectedRevision: 1,
+      profile: nextMix,
+      mutationId: "appearance-camera-mix-save",
+      occurredAt: occurredAt + 1,
+    });
+    const cameraUpdate = structuredClone(nextMix);
+    cameraUpdate.diceView.mode = "clear";
+    await store.putPersonalV4({
+      userId,
+      expectedRevision: 2,
+      profile: cameraUpdate,
+      mutationId: "appearance-camera-only-save",
+      occurredAt: occurredAt + 2,
+    });
+
+    await expect(
+      store.restorePersonalV4({
+        userId,
+        expectedRevision: 3,
+        profile: cameraUpdate,
+        mutationId: "appearance-camera-restore",
+        occurredAt: occurredAt + 3,
+      }),
+    ).resolves.toMatchObject({
+      status: "applied",
+      revision: 4,
+      profile: {
+        ...cameraUpdate,
+        designs: original.designs,
+        assignments: original.assignments,
+      },
+    });
+  });
+
+  it("restores the immediately previous Server mix after a later save", async () => {
+    const store = repository();
+    const original = guildProfile();
+    await store.putGuildV4({
+      guildId,
+      updatedByUserId: userId,
+      expectedRevision: 0,
+      profile: original,
+      mutationId: "appearance-previous-guild-create",
+      occurredAt,
+    });
+    const reset = await store.resetGuildV4({
+      guildId,
+      updatedByUserId: userId,
+      expectedRevision: 1,
+      profile: original,
+      mutationId: "appearance-previous-guild-reset",
+      occurredAt: occurredAt + 1,
+    });
+    if (reset.status !== "applied") throw new Error("Reset must apply");
+
+    const latest = guildProfile("#abcdef");
+    const saved = await store.putGuildV4({
+      guildId,
+      updatedByUserId: secondUserId,
+      expectedRevision: 2,
+      profile: latest,
+      mutationId: "appearance-previous-guild-save",
+      occurredAt: occurredAt + 2,
+    });
+    if (saved.status !== "applied") throw new Error("Save must apply");
+
+    await expect(
+      store.restoreGuildV4({
+        guildId,
+        updatedByUserId: secondUserId,
+        expectedRevision: 3,
+        profile: latest,
+        mutationId: "appearance-previous-guild-restore",
+        occurredAt: occurredAt + 3,
+      }),
+    ).resolves.toMatchObject({
+      status: "applied",
+      revision: 4,
+      profile: reset.profile,
     });
   });
 

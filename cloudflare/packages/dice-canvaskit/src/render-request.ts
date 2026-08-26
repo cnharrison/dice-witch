@@ -17,7 +17,6 @@ import {
   type RendererRevisionV4,
   type RenderRequestInputV4,
   type RenderRequestV4,
-  type TextureColorPolicyV4,
   type TextureRasterV4,
   type TextureScopeV4,
 } from "@dice-witch/dice-v4-model";
@@ -96,12 +95,6 @@ type TextureCachesV4 = {
   sphericalMaterials: Map<string, SphericalMaterialRasterV4>;
 };
 
-function textureColorPolicyV4(
-  rendererRevision: RendererRevisionV4,
-): TextureColorPolicyV4 {
-  return rendererRevisionPolicyV4(rendererRevision).textureColors;
-}
-
 function renderPolicyV4(
   rendererRevision: RendererRevisionV4,
   geometryId: string,
@@ -152,9 +145,11 @@ function texturesForDieV4(
   );
   let source = textures.sources.get(key);
   if (source === undefined) {
+    const policy = rendererRevisionPolicyV4(rendererRevision);
     source = generateMaterialTextureV4(
       createTextureGenerationInputV4(rendererRevision, die.appearance),
-      textureColorPolicyV4(rendererRevision),
+      policy.textureColors,
+      policy.hollowMetalTexture,
     );
     textures.sources.set(key, source);
   }
@@ -417,6 +412,7 @@ const RENDERER_REVISION_DISPATCH_V4 = Object.freeze({
   "canvaskit-v4-r39": renderCanvasKit,
   "canvaskit-v4-r40": renderCanvasKit,
   "canvaskit-v4-r41": renderCanvasKit,
+  "canvaskit-v4-r42": renderCanvasKit,
 } satisfies Record<RendererRevisionV4, RevisionRendererV4>);
 
 export class CanvasKitDiceRequestRendererV4 implements DiceRequestRendererV4 {

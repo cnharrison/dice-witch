@@ -165,13 +165,11 @@ function RangeField({
 export function AppearanceMaterialOptionV3({
   material,
   catalog,
-  repeatedGradient,
   disabled = false,
   onChange,
 }: {
   material: AppearanceMaterial;
   catalog: AppearanceCatalogV3;
-  repeatedGradient: boolean;
   disabled?: boolean;
   onChange(material: AppearanceMaterial): void;
 }) {
@@ -186,11 +184,6 @@ export function AppearanceMaterialOptionV3({
             label="Classic treatment"
             value={material.treatment}
             options={metadata.treatments}
-            disabled={
-              repeatedGradient
-                ? { solid: true, pattern: true }
-                : undefined
-            }
             onChange={(treatment) => {
               if (treatment === "pattern") {
                 onChange({

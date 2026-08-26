@@ -46,13 +46,12 @@ import {
   type AppearanceProfileResource,
 } from "@/types/appearance";
 import {
-  APPEARANCE_TARGETS_V4,
   MAX_APPEARANCE_DESIGNS_V3,
   type AppearanceRecipeV3,
   type AppearanceTargetV4,
   type CustomAppearanceDesignV3,
 } from "@dice-witch/dice-v4-model";
-import { Save, Undo2 } from "lucide-react";
+import { History, Save, Undo2 } from "lucide-react";
 import * as React from "react";
 
 export type AppearanceEditorV3Props = {
@@ -339,10 +338,6 @@ export function AppearanceEditorV3View({
     .map(([overrideTarget]) => overrideTarget as AppearanceTargetV4);
   const isDefaultMix =
     draftProfile.assignments.all === null && overrideTargets.length === 0;
-  const overriddenTargetSet = new Set(overrideTargets);
-  const allAffectedTargets = APPEARANCE_TARGETS_V4.filter(
-    (candidate) => !overriddenTargetSet.has(candidate),
-  );
   const atDesignCap = draftProfile.designs.length >= MAX_APPEARANCE_DESIGNS_V3;
   // The ALL composite preview shows each die with its own design where one
   // exists; only the remaining dice take the ALL recipe.
@@ -904,24 +899,29 @@ export function AppearanceEditorV3View({
                 type="button"
                 variant="ghost"
                 size="sm"
+                aria-label="Restore previous mix"
+                className="text-brand hover:text-brand"
                 disabled={isSaving}
                 onClick={() => void restorePreviousMix()}
               >
-                Restore previous mix
+                <History aria-hidden="true" />
+                Restore prev.
               </Button>
             )}
             <Button
               type="button"
               variant="outline"
               size="sm"
+              aria-label="Reset to default"
+              className="text-destructive hover:text-destructive"
               disabled={
                 isSaving ||
                 (target === "all" ? isDefaultMix : !hasTargetOverride)
               }
               onClick={() => void backToDefault()}
             >
-              <Undo2 className="mr-2 h-4 w-4" aria-hidden="true" />
-              Reset to default
+              <Undo2 aria-hidden="true" />
+              Reset default
             </Button>
           </div>
           <AppearanceTargetPickerV3
@@ -936,7 +936,6 @@ export function AppearanceEditorV3View({
             <AppearanceScopeBanner
               target={target}
               hasOverride={hasTargetOverride}
-              affectedTargets={allAffectedTargets}
               disabled={isSaving}
               sharedNotices={changedSharedDesigns}
               onReset={target === "all" ? undefined : clearTargetOverride}

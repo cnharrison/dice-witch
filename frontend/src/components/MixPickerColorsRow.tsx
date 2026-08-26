@@ -136,6 +136,19 @@ export function MixPickerColorsRow({
     emit({ mode: "palette", colors: [primary, additionalColor] });
   };
 
+  const removePaletteColor = (index: number) => {
+    if (colors.mode !== "palette") return;
+    const remaining = colors.colors.filter(
+      (_, position) => position !== index,
+    );
+    const primary = remaining[0];
+    if (remaining.length === 1 && primary !== undefined) {
+      emit({ mode: "solid", primary });
+      return;
+    }
+    emit({ mode: "palette", colors: remaining });
+  };
+
   let editor: React.ReactNode;
   if (colors.mode === "random") {
     editor = (
@@ -156,21 +169,14 @@ export function MixPickerColorsRow({
               className="block h-9 w-9 rounded-full border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               style={{ backgroundColor: color }}
             />
-            {colors.colors.length > 2 && !disabled && (
+            {colors.colors.length > 1 && !disabled && (
               <button
                 type="button"
                 aria-label={`Remove palette color ${index + 1}`}
-                onClick={() =>
-                  emit({
-                    mode: "palette",
-                    colors: colors.colors.filter(
-                      (_, position) => position !== index,
-                    ),
-                  })
-                }
-                className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full border bg-background text-muted-foreground hover:text-foreground"
+                onClick={() => removePaletteColor(index)}
+                className="absolute -right-1 -top-1 z-10 grid h-5 w-5 place-items-center rounded-full border bg-background text-muted-foreground hover:text-foreground"
               >
-                <X className="h-2.5 w-2.5" aria-hidden="true" />
+                <X className="h-3 w-3" aria-hidden="true" />
               </button>
             )}
           </span>

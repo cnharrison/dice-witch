@@ -8,6 +8,7 @@ import {
   WOOD_STYLES_V4,
   type AppearanceMaterialV4,
   type ClassicMaterialV4,
+  type HollowMetalMaterialV4,
   type TextureGenerationInputV4,
   type WoodMaterialV4,
 } from "../src";
@@ -776,6 +777,50 @@ describe("V4 material texture generation", () => {
       }
     }
     expect(repeatedBlocks).toBeLessThan(100);
+  });
+
+  it("gives r42 hollow-metal construction and openness visible texture states", () => {
+    const base: HollowMetalMaterialV4 = {
+      family: "hollow-metal",
+      construction: "filigree",
+      metal: "brass",
+      finish: "polished",
+      openness: 58,
+      textureScale: 100,
+    };
+    const textureHash = (
+      construction: HollowMetalMaterialV4["construction"],
+      openness: number,
+      detailPolicy: "legacy" | "embossed-r42",
+    ) =>
+      sha256(
+        generateMaterialTextureV4(
+          input({ ...base, construction, openness }, 0x4d41_5404),
+          "balanced-surface-r27",
+          detailPolicy,
+        ).pixels,
+      );
+
+    expect(textureHash("filigree", 63, "legacy")).toBe(
+      textureHash("filigree", 100, "legacy"),
+    );
+    expect(
+      new Set(
+        (["filigree", "lattice", "cage"] as const).map((construction) =>
+          textureHash(construction, 50, "embossed-r42"),
+        ),
+      ),
+    ).toHaveLength(3);
+    expect(
+      new Set(
+        [0, 25, 50, 75, 100].map((openness) =>
+          textureHash("filigree", openness, "embossed-r42"),
+        ),
+      ),
+    ).toHaveLength(5);
+    expect(textureHash("filigree", 63, "embossed-r42")).not.toBe(
+      textureHash("filigree", 100, "embossed-r42"),
+    );
   });
 
   it("leaves hollow-metal cut-throughs to geometry instead of encoding black holes", () => {

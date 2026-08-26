@@ -45,6 +45,8 @@ export type TextureColorPolicyV4 =
   | "exact-gradient-r5"
   | "balanced-surface-r27";
 
+export type HollowMetalTexturePolicyV4 = "legacy" | "embossed-r42";
+
 function usesVividColorPolicyV4(policy: TextureColorPolicyV4): boolean {
   return policy !== "legacy";
 }
@@ -55,6 +57,7 @@ type PixelContextV4 = {
   seed: number;
   palette: readonly TextureColorV4[];
   colorPolicy: TextureColorPolicyV4;
+  hollowMetalTexturePolicy: HollowMetalTexturePolicyV4;
   noise: (salt: number, x?: number, y?: number) => number;
 };
 
@@ -477,10 +480,14 @@ const hollowMetalPixel: PixelGeneratorV4<HollowMetalMaterialV4> = (
   const cycles = materialCycles(material.textureScale, 6);
   const u = phase(context.x, cycles);
   const v = phase(context.y, cycles);
-  const ornamentWidth = Math.max(
-    4,
-    Math.round((100 - material.openness) * 0.12),
-  );
+  const enhancedDetail =
+    context.hollowMetalTexturePolicy === "embossed-r42";
+  const ornamentWidth = enhancedDetail
+    ? 2 + Math.round((100 - material.openness) * 0.22)
+    : Math.max(4, Math.round((100 - material.openness) * 0.12));
+  const highlightWidth = enhancedDetail
+    ? Math.max(4, Math.round(ornamentWidth * 0.35))
+    : 3;
   const distance = hollowMetalOrnamentDistance(
     material.construction,
     u,
@@ -506,9 +513,9 @@ const hollowMetalPixel: PixelGeneratorV4<HollowMetalMaterialV4> = (
     tintAmount,
   );
   if (distance < ornamentWidth) {
-    color = shadeTextureColorV4(color, 38);
-  } else if (distance < ornamentWidth + 3) {
-    color = shadeTextureColorV4(color, -18);
+    color = shadeTextureColorV4(color, enhancedDetail ? 72 : 38);
+  } else if (distance < ornamentWidth + highlightWidth) {
+    color = shadeTextureColorV4(color, enhancedDetail ? -32 : -18);
   }
   return finishColor(
     polishedBrassGleam(context, material, color),
@@ -979,6 +986,7 @@ function exactClassicGradientTextureV4(
 export function generateMaterialTextureV4(
   input: TextureGenerationInputV4,
   colorPolicy: TextureColorPolicyV4 = "legacy",
+  hollowMetalTexturePolicy: HollowMetalTexturePolicyV4 = "legacy",
 ): TextureRasterV4 {
   validateInput(input);
   const palette = input.palette.map(parseTextureColorV4);
@@ -999,6 +1007,7 @@ export function generateMaterialTextureV4(
     seed: input.seed,
     palette,
     colorPolicy,
+    hollowMetalTexturePolicy,
     noise: (salt, x = currentX, y = currentY) => {
       let sampler = noiseSamplers.get(salt);
       if (sampler === undefined) {

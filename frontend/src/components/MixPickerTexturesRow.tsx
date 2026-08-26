@@ -15,18 +15,6 @@ type MixPickerTexturesRowProps = {
   onChange(recipe: AppearanceRecipeV3): void;
 };
 
-function supportsRepeatedGradient(recipe: AppearanceRecipeV3): boolean {
-  return (
-    selectionValuesV3(recipe.material).every(
-      (material) =>
-        material.family === "classic" && material.treatment === "gradient",
-    ) &&
-    selectionValuesV3(recipe.form.polyhedral).every(
-      (form) => form === "standard",
-    )
-  );
-}
-
 export function MixPickerTexturesRow({
   recipe,
   catalog,
@@ -56,7 +44,6 @@ export function MixPickerTexturesRow({
     }
   }, [firstFamily, materials, openFamily]);
 
-  const repeatedGradient = supportsRepeatedGradient(recipe);
   return (
     <section aria-label="Textures">
       <h3 className="text-xs font-semibold uppercase tracking-wide">
@@ -69,23 +56,34 @@ export function MixPickerTexturesRow({
               ?.name ?? material.family;
           const expanded = openFamily === material.family;
           return (
-            <div key={material.family} className="rounded-lg border">
+            <div
+              key={material.family}
+              data-state={expanded ? "open" : "closed"}
+              className={`overflow-hidden rounded-lg border transition-colors ${
+                expanded
+                  ? "border-brand/40 bg-secondary/50 shadow-sm"
+                  : "border-border bg-muted/40 hover:bg-muted/60"
+              }`}
+            >
               <button
                 type="button"
                 aria-expanded={expanded}
                 disabled={disabled}
                 onClick={() => setOpenFamily(expanded ? null : material.family)}
-                className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                className={`flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                  expanded
+                    ? "bg-muted/60 text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
                 <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
                 {name}
               </button>
               {expanded && (
-                <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
+                <div className="grid gap-3 border-t border-border bg-background/70 p-3 sm:grid-cols-2">
                   <AppearanceMaterialOptionV3
                     material={material}
                     catalog={catalog}
-                    repeatedGradient={repeatedGradient}
                     disabled={disabled}
                     onChange={(next: AppearanceMaterial) =>
                       onChange({

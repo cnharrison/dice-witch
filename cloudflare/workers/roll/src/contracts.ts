@@ -980,6 +980,7 @@ const StoredRollViewPolicySchema = z.enum([
   "r39",
   "r40",
   "r41",
+  "r42",
 ]);
 const StoredV5RecordSchema = z.union([
   z.strictObject({

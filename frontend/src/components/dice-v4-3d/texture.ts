@@ -9,7 +9,6 @@ import {
   type PolyhedralGeometryDescriptorV4,
   type RenderAppearanceV4,
   type RendererRevisionV4,
-  type TextureColorPolicyV4,
   type TexturePlacementV4,
   type TextureRasterV4,
 } from "@dice-witch/dice-v4-model";
@@ -61,24 +60,16 @@ export function createRasterDataTextureV4(
   return texture;
 }
 
-function textureColorPolicyV4(
-  rendererRevision?: RendererRevisionV4,
-): TextureColorPolicyV4 {
-  return rendererRevision === undefined
-    ? "legacy"
-    : rendererRevisionPolicyV4(rendererRevision).textureColors;
-}
-
 export function createMaterialRasterV4(
   appearance: RenderAppearanceV4,
   rendererRevision?: RendererRevisionV4,
 ): TextureRasterV4 {
+  const revision = rendererRevision ?? "canvaskit-v4-r1";
+  const policy = rendererRevisionPolicyV4(revision);
   return generateMaterialTextureV4(
-    createTextureGenerationInputV4(
-      rendererRevision ?? "canvaskit-v4-r1",
-      appearance,
-    ),
-    textureColorPolicyV4(rendererRevision),
+    createTextureGenerationInputV4(revision, appearance),
+    policy.textureColors,
+    policy.hollowMetalTexture,
   );
 }
 

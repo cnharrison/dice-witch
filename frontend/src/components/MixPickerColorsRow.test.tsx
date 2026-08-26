@@ -277,7 +277,12 @@ describe("MixPickerColorsRow", () => {
         onChange={onChange}
       />,
     );
-    expect(screen.queryByLabelText(/Remove palette color/)).toBeNull();
+    onChange.mockClear();
+    fireEvent.click(screen.getByLabelText("Remove palette color 1"));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...recipeWith(material, { mode: "palette", colors: [] }),
+      colors: { mode: "solid", primary: "#222222" },
+    });
   });
 
   it("edits dice colors through the custom picker instead of a native input", () => {

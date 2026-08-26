@@ -227,7 +227,11 @@ export function AppearanceTargetPickerV3({
                     )}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>{name}</TooltipContent>
+                <TooltipContent>
+                  {checked
+                    ? `Editing ${target === "all" ? "all dice" : name}`
+                    : name}
+                </TooltipContent>
               </Tooltip>
               {hasOverride && (
                 <span

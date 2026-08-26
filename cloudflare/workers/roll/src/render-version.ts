@@ -26,6 +26,7 @@ import {
   buildRollRenderRequestR39V4,
   buildRollRenderRequestR40V4,
   buildRollRenderRequestR41V4,
+  buildRollRenderRequestR42V4,
 } from "../../../packages/roll-render-model/src";
 import type { RenderRequestV3 } from "../../../packages/dice-svg/src";
 import {
@@ -57,6 +58,7 @@ const ROLL_VIEW_POLICIES = [
   "r39",
   "r40",
   "r41",
+  "r42",
 ] as const;
 const RollRenderVersionSchema = z.literal("4");
 const RollViewPolicySchema = z.enum(ROLL_VIEW_POLICIES);
@@ -88,6 +90,7 @@ const ROLL_VIEW_BUILDERS_V4 = {
   r39: buildRollRenderRequestR39V4,
   r40: buildRollRenderRequestR40V4,
   r41: buildRollRenderRequestR41V4,
+  r42: buildRollRenderRequestR42V4,
 } satisfies Record<
   Exclude<RollViewPolicy, "r19">,
   typeof buildRollRenderRequestR20V4
@@ -103,7 +106,7 @@ export function parseRollViewPolicy(value: SchemaInput): RollViewPolicy {
   const result = RollViewPolicySchema.safeParse(value);
   if (result.success) return result.data;
   throw new Error(
-    "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, r32, r33, r34, r35, r36, r37, r38, r39, r40, or r41",
+    "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, r32, r33, r34, r35, r36, r37, r38, r39, r40, r41, or r42",
   );
 }
 

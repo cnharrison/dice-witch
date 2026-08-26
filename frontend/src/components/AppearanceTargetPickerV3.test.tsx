@@ -52,6 +52,21 @@ describe("AppearanceTargetPickerV3", () => {
     expect(screen.queryByText(/choose which dice/i)).toBeNull();
   });
 
+  it("shows the selected editing scope only on hover or focus", async () => {
+    const user = userEvent.setup();
+    render(<AppearanceTargetPickerV3 value="all" onChange={vi.fn()} />);
+
+    const all = screen.getByRole("radio", { name: "All dice" });
+    await user.hover(all);
+    expect(await screen.findAllByText("Editing all dice")).not.toHaveLength(0);
+    await user.unhover(all);
+
+    const d20 = screen.getByRole("radio", { name: "d20" });
+    d20.focus();
+    expect(await screen.findAllByText("d20")).not.toHaveLength(0);
+    expect(screen.queryByText("Editing d20")).toBeNull();
+  });
+
   it("supports click and arrow-key selection without exposing disabled controls", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

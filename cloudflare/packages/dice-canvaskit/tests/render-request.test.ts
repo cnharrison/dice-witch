@@ -706,7 +706,7 @@ describe("CanvasKit Render Request V4", () => {
     canvasKit = await loadCanvasKitV4();
   });
 
-  it("renders stored white outlines only for supported standard dice", async () => {
+  it("applies revisioned outline and hollow-detail policies", async () => {
     const createRenderer = () => createRequestRenderer(canvasKit);
     const darkAppearance: RenderAppearanceV4 = {
       ...appearance,
@@ -816,6 +816,21 @@ describe("CanvasKit Render Request V4", () => {
         );
       }
     }
+
+    const hollow = subjects[2];
+    if (hollow === undefined) throw new Error("Hollow detail die is missing");
+    const historicalHollow = historicalRequest(hollow);
+    expect(
+      await render({
+        ...historicalHollow,
+        rendererRevision: "canvaskit-v4-r42",
+      }),
+    ).not.toEqual(
+      await render({
+        ...historicalHollow,
+        rendererRevision: "canvaskit-v4-r41",
+      }),
+    );
   });
 
   it("skips labels on exactly edge-on faces without failing the roll", async () => {
@@ -3586,7 +3601,7 @@ describe("CanvasKit Render Request V4", () => {
     };
 
     const invalidRevision = request();
-    Object.assign(invalidRevision, { rendererRevision: "canvaskit-v4-r42" });
+    Object.assign(invalidRevision, { rendererRevision: "canvaskit-v4-r43" });
     await expect(
       renderDiceRequestV4ToPng(invalidRevision, factory),
     ).rejects.toThrow("Render request rendererRevision is not supported");
