@@ -113,7 +113,7 @@ describe("bakeAppearanceThumbs", () => {
     const result = BakeResponseSchema.parse(await response.json());
     expect(result).toMatchObject({
       version: 2,
-      cacheRevision: 3,
+      cacheRevision: 4,
       baked: 1,
       skipped: 0,
       total: 1,
@@ -200,7 +200,7 @@ describe("appearanceThumbsVersion", () => {
       version: 2,
       catalogVersion: 3,
       rendererRevision: "canvaskit-v4-r41",
-      cacheRevision: 3,
+      cacheRevision: 4,
     });
   });
 

@@ -2361,6 +2361,31 @@ describe("resolveAppearanceRecipeV3", () => {
     ).toBe(true);
   });
 
+  it("keeps Striated Steel's authored tone order across a matched set", () => {
+    const metal = APPEARANCE_CATALOG_V3.styles.find(
+      ({ id }) => id === "heavy-metal",
+    );
+    if (metal === undefined || metal.recipe.colors.mode !== "palette") {
+      throw new Error("Striated Steel fixture is missing");
+    }
+
+    const palettes = Array.from({ length: 32 }, (_, dieIndex) =>
+      resolveAppearanceRecipeV3(
+        metal.recipe,
+        contextV3({
+          target: "d6",
+          dieIndex,
+          dieIdentity: `custom:${String(dieIndex)}`,
+        }),
+        "property-streams-r37",
+      ).appearance.palette,
+    );
+
+    for (const palette of palettes) {
+      expect(palette).toEqual(metal.recipe.colors.colors);
+    }
+  });
+
   it("keeps Lava's crust and glow colors in their authored order", () => {
     const lava = APPEARANCE_CATALOG_V3.styles.find(
       ({ id }) => id === "elemental-lava-r33",

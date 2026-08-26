@@ -92,7 +92,7 @@ describe("appearanceThumbnailManifestV3", () => {
       mode: "fixed",
       value: { family: "elemental", style: "lava" },
     });
-    expect(APPEARANCE_THUMB_CACHE_REVISION_V3).toBe(3);
+    expect(APPEARANCE_THUMB_CACHE_REVISION_V3).toBe(4);
   });
 });
 
