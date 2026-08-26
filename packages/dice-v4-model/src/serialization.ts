@@ -1,8 +1,11 @@
+import type * as z from "zod";
 import { canonicalJsonV4 } from "./random";
 import type { PublicRenderModelV4, RenderRequestV4 } from "./types";
 import { validateRenderRequestV4 } from "./validate-render-request";
 
 export const MAX_RENDER_REQUEST_JSON_CHARACTERS_V4 = 96 * 1_024;
+
+export type RenderRequestInputV4 = z.input<z.ZodUnknown>;
 
 function requireBoundedJson(value: string): void {
   if (value.length > MAX_RENDER_REQUEST_JSON_CHARACTERS_V4) {
@@ -10,7 +13,7 @@ function requireBoundedJson(value: string): void {
   }
 }
 
-export function serializeRenderRequestV4(value: unknown): string {
+export function serializeRenderRequestV4(value: RenderRequestInputV4): string {
   const serialized = canonicalJsonV4(validateRenderRequestV4(value));
   requireBoundedJson(serialized);
   return serialized;
@@ -18,9 +21,9 @@ export function serializeRenderRequestV4(value: unknown): string {
 
 export function parseRenderRequestV4Json(value: string): RenderRequestV4 {
   requireBoundedJson(value);
-  let parsed: unknown;
+  let parsed: RenderRequestInputV4;
   try {
-    parsed = JSON.parse(value) as unknown;
+    parsed = JSON.parse(value);
   } catch {
     throw new Error("Render request V4 JSON is invalid");
   }
@@ -28,7 +31,7 @@ export function parseRenderRequestV4Json(value: string): RenderRequestV4 {
 }
 
 export function parsePublicRenderModelV4(
-  value: unknown,
+  value: RenderRequestInputV4,
 ): PublicRenderModelV4 {
   return validateRenderRequestV4(value);
 }

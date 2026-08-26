@@ -1,4 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import type { ComponentType } from "react";
 import { BookOpen, Bookmark, Box, LogOut, Settings } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "react-router";
@@ -23,6 +24,27 @@ import {
   PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
   PERSONAL_APPEARANCE_STALE_TIME_MS,
 } from "@/lib/appearance-query";
+import type { User } from "@/types/auth";
+
+interface NavbarRouteModule {
+  default: ComponentType;
+}
+
+interface NavbarRouteLoaders {
+  loadDocs: () => Promise<NavbarRouteModule>;
+  loadHome: () => Promise<NavbarRouteModule>;
+  loadLibrary: () => Promise<NavbarRouteModule>;
+  loadPreferences: () => Promise<NavbarRouteModule>;
+}
+
+interface NavbarViewProps {
+  signOut: () => void;
+  user: Pick<User, "name" | "image"> | null;
+  MobileMenuSlot: ComponentType;
+  ThemeToggleSlot: ComponentType;
+  routeLoaders: NavbarRouteLoaders;
+  loadPersonalAppearance: () => Promise<object>;
+}
 
 function currentSectionLabel(pathname: string): "Preferences" | "Library" | null {
   if (pathname.startsWith("/app/preferences")) return "Preferences";
@@ -38,21 +60,23 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-export function Navbar() {
+export function NavbarView({
+  signOut,
+  user,
+  MobileMenuSlot,
+  ThemeToggleSlot,
+  routeLoaders,
+  loadPersonalAppearance,
+}: NavbarViewProps) {
   const queryClient = useQueryClient();
   const { pathname } = useLocation();
   const sectionLabel = currentSectionLabel(pathname);
-  const { signOut } = useAuth();
-  const { user } = useUser();
   const userName = user?.name || "User";
   const prefetchPreferences = () => {
-    void loadPreferencesPage();
+    void routeLoaders.loadPreferences();
     void queryClient.prefetchQuery({
       queryKey: PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY,
-      queryFn: async () => {
-        const appearance = await import("@/lib/appearance-v4");
-        return appearance.getPersonalAppearanceBootstrapV4();
-      },
+      queryFn: loadPersonalAppearance,
       staleTime: PERSONAL_APPEARANCE_STALE_TIME_MS,
     });
   };
@@ -78,8 +102,8 @@ export function Navbar() {
             <Link
               to="/app"
               replace
-              onMouseEnter={() => void loadHomePage()}
-              onFocus={() => void loadHomePage()}
+              onMouseEnter={() => void routeLoaders.loadHome()}
+              onFocus={() => void routeLoaders.loadHome()}
             >
               <Button variant="ghost" className="flex items-center gap-2">
                 <Box className="h-4 w-4" aria-hidden="true" />
@@ -89,8 +113,8 @@ export function Navbar() {
             <Link
               to="/app/library"
               replace
-              onMouseEnter={() => void loadLibraryPage()}
-              onFocus={() => void loadLibraryPage()}
+              onMouseEnter={() => void routeLoaders.loadLibrary()}
+              onFocus={() => void routeLoaders.loadLibrary()}
             >
               <Button variant="ghost" className="flex items-center gap-2">
                 <Bookmark className="h-4 w-4" aria-hidden="true" />
@@ -114,8 +138,8 @@ export function Navbar() {
                   <Link
                     to="/docs"
                     aria-label="Docs"
-                    onMouseEnter={() => void loadDocsApp()}
-                    onFocus={() => void loadDocsApp()}
+                    onMouseEnter={() => void routeLoaders.loadDocs()}
+                    onFocus={() => void routeLoaders.loadDocs()}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <BookOpen className="h-4 w-4" aria-hidden="true" />
@@ -127,9 +151,9 @@ export function Navbar() {
           </div>
 
           <div className="sm:hidden">
-            <MobileMenu />
+            <MobileMenuSlot />
           </div>
-          <ThemeToggle />
+          <ThemeToggleSlot />
 
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
@@ -165,5 +189,29 @@ export function Navbar() {
         </div>
       </div>
     </nav>
+  );
+}
+
+export function Navbar() {
+  const { signOut } = useAuth();
+  const { user } = useUser();
+
+  return (
+    <NavbarView
+      signOut={signOut}
+      user={user}
+      MobileMenuSlot={MobileMenu}
+      ThemeToggleSlot={ThemeToggle}
+      routeLoaders={{
+        loadDocs: loadDocsApp,
+        loadHome: loadHomePage,
+        loadLibrary: loadLibraryPage,
+        loadPreferences: loadPreferencesPage,
+      }}
+      loadPersonalAppearance={async () => {
+        const appearance = await import("@/lib/appearance-v4");
+        return appearance.getPersonalAppearanceBootstrapV4();
+      }}
+    />
   );
 }

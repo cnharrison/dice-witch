@@ -5,22 +5,9 @@ import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ mobile: false }));
+import { ThemeProvider } from "@/components/theme-provider";
 
-vi.mock("./dice-v4-3d/browser-media", () => ({
-  useBrowserMediaQueryV4: () => mocks.mobile,
-}));
-vi.mock("@/components/theme-provider", () => ({
-  useTheme: () => ({ theme: "light" }),
-}));
-vi.mock("@/components/ui/tooltip", () => ({
-  TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
-  Tooltip: ({ children }: { children: React.ReactNode }) => children,
-  TooltipTrigger: ({ children }: { children: React.ReactNode }) => children,
-  TooltipContent: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-}));
+const mocks = { mobile: false };
 
 import {
   countDiceNotation,
@@ -32,18 +19,35 @@ import {
 function Harness({ initial = "" }: { initial?: string }) {
   const [input, setInput] = React.useState(initial);
   return (
-    <>
+    <ThemeProvider defaultTheme="light" storageKey="notation-test-theme">
       <output data-testid="notation">{input}</output>
       <DiceNotationButtons input={input} setInput={setInput} />
-    </>
+    </ThemeProvider>
   );
 }
 
 beforeEach(() => {
   mocks.mobile = false;
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: query === "(max-width: 639px)" ? mocks.mobile : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.unstubAllGlobals();
+});
 
 describe("dice notation quick controls", () => {
   it("increments and subtracts the most recent matching die term", () => {
@@ -150,13 +154,18 @@ describe("dice notation quick controls", () => {
     expect(screen.getAllByRole("tab")).toHaveLength(3);
     expect(indicator?.getAttribute("class")).toContain("rotate-180");
     expect(screen.getByRole("tab", { name: "Modifiers" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("button", { name: "Keep highest" })).toBeDefined();
+    const keepHighest = screen.getByRole("button", { name: "Keep highest" });
+    await user.hover(keepHighest);
     expect(
-      screen.getByText("Keeps the highest die result in the group."),
-    ).toBeDefined();
+      (await screen.findAllByText(
+        "Keeps the highest die result in the group.",
+      )).length,
+    ).toBeGreaterThan(0);
+    await user.keyboard("{Escape}");
+    await user.hover(screen.getByRole("button", { name: "Reroll once" }));
     expect(
-      screen.getByText("Rerolls matching results once."),
-    ).toBeDefined();
+      (await screen.findAllByText("Rerolls matching results once.")).length,
+    ).toBeGreaterThan(0);
     await user.click(screen.getByRole("tab", { name: "Numbers" }));
     await user.click(screen.getByRole("button", { name: "7" }));
     expect(screen.getByTestId("notation").textContent).toBe("1d20+7");

@@ -1,28 +1,73 @@
+import { z } from "zod";
 import {
   parseDiscordChannelContextRequestV1,
   parseDiscordChannelContextResponseV1,
   type DiscordChannelContextRequestV1,
   type DiscordChannelContextResultV1,
 } from "./discord-channel-context";
+import {
+  boundedNameSchema,
+  exactEnumSchema,
+  positiveSafeIntegerSchema,
+  type SchemaInput,
+  snowflakeSchema,
+  strictObjectSchema,
+  timestampSchema,
+} from "./schema-primitives";
 
-export type GameDetectionAnnouncementV1 = Readonly<{
-  version: 1;
-  detectionId: string;
-  sessionId: string;
-  previousGameId: string | null;
-  gameId: string;
-  gameName: string;
-  confidence: "plausible" | "strong" | "distinctive";
-  detectedAt: number;
-  scope: "guild" | "dm";
-  guildId: string | null;
-  channelId: string;
-  guildName: string | null;
-  channelName: string | null;
-  rollCount: number;
-  sessionStartedAt: number;
-  sessionLastRollAt: number;
-}>;
+const DETECTION_ID = /^[1-9][0-9]{16,19}:[a-f0-9]{16}$/u;
+const GAME_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
+const GameIdSchema = z.string().max(100).regex(GAME_ID);
+const NullableGameIdSchema = z.nullable(GameIdSchema);
+const NullableNameSchema = z.nullable(boundedNameSchema(1, 100));
+const GameDetectionAnnouncementV1Schema = strictObjectSchema({
+  version: z.literal(1),
+  detectionId: z.string().regex(DETECTION_ID),
+  sessionId: snowflakeSchema,
+  previousGameId: NullableGameIdSchema,
+  gameId: GameIdSchema,
+  gameName: boundedNameSchema(1, 100),
+  confidence: exactEnumSchema(["plausible", "strong", "distinctive"]),
+  detectedAt: timestampSchema,
+  scope: exactEnumSchema(["guild", "dm"]),
+  guildId: z.nullable(snowflakeSchema),
+  channelId: snowflakeSchema,
+  guildName: NullableNameSchema,
+  channelName: NullableNameSchema,
+  rollCount: positiveSafeIntegerSchema,
+  sessionStartedAt: timestampSchema,
+  sessionLastRollAt: timestampSchema,
+}).superRefine((announcement, context) => {
+  if (!announcement.detectionId.startsWith(`${announcement.sessionId}:`)) {
+    context.addIssue({ code: "custom", message: "Detection session mismatch" });
+  }
+  if (
+    (announcement.scope === "guild" && announcement.guildId === null) ||
+    (announcement.scope === "dm" && announcement.guildId !== null)
+  ) {
+    context.addIssue({ code: "custom", message: "Scope identity mismatch" });
+  }
+  if (announcement.scope === "dm" && announcement.guildName !== null) {
+    context.addIssue({ code: "custom", message: "DM guild name is invalid" });
+  }
+  if (announcement.previousGameId === announcement.gameId) {
+    context.addIssue({ code: "custom", message: "Previous game is unchanged" });
+  }
+  if (announcement.sessionLastRollAt < announcement.sessionStartedAt) {
+    context.addIssue({ code: "custom", message: "Session timestamps are invalid" });
+  }
+  if (announcement.detectedAt < announcement.sessionStartedAt) {
+    context.addIssue({ code: "custom", message: "Detection timestamp is invalid" });
+  }
+});
+export type GameDetectionAnnouncementV1 = Readonly<
+  z.infer<typeof GameDetectionAnnouncementV1Schema>
+>;
+const GameDetectionAnnouncementIdentitySchema =
+  z.custom<GameDetectionAnnouncementV1>((value) =>
+    GameDetectionAnnouncementV1Schema.safeParse(value).success
+  );
 
 // Remove these compatibility aliases with the legacy Discord REST RPC after
 // every Data environment uses the generic channel-context contract.
@@ -31,107 +76,17 @@ export type GameDetectionChannelContextRequestV1 =
 export type GameDetectionChannelContextResultV1 =
   DiscordChannelContextResultV1;
 
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/u;
-const DETECTION_ID = /^[1-9][0-9]{16,19}:[a-f0-9]{16}$/u;
-const GAME_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-const CONFIDENCE = new Set(["plausible", "strong", "distinctive"]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    actual.length === sortedExpected.length &&
-    actual.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function nullableName(value: unknown): value is string | null {
-  return (
-    value === null ||
-    (typeof value === "string" && value.length >= 1 && value.length <= 100)
-  );
-}
-
 export const parseGameDetectionChannelContextRequestV1 =
   parseDiscordChannelContextRequestV1;
 export const parseGameDetectionChannelContextResponseV1 =
   parseDiscordChannelContextResponseV1;
 
 export function parseGameDetectionAnnouncementV1(
-  value: unknown,
+  value: SchemaInput,
 ): GameDetectionAnnouncementV1 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "channelId",
-      "channelName",
-      "confidence",
-      "detectedAt",
-      "detectionId",
-      "gameId",
-      "gameName",
-      "guildId",
-      "guildName",
-      "previousGameId",
-      "rollCount",
-      "scope",
-      "sessionId",
-      "sessionLastRollAt",
-      "sessionStartedAt",
-      "version",
-    ]) ||
-    value.version !== 1 ||
-    typeof value.detectionId !== "string" ||
-    !DETECTION_ID.test(value.detectionId) ||
-    typeof value.sessionId !== "string" ||
-    !SNOWFLAKE.test(value.sessionId) ||
-    !value.detectionId.startsWith(`${value.sessionId}:`) ||
-    (value.scope !== "guild" && value.scope !== "dm") ||
-    typeof value.channelId !== "string" ||
-    !SNOWFLAKE.test(value.channelId) ||
-    (value.guildId !== null &&
-      (typeof value.guildId !== "string" || !SNOWFLAKE.test(value.guildId))) ||
-    (value.scope === "guild" && value.guildId === null) ||
-    (value.scope === "dm" && value.guildId !== null) ||
-    !nullableName(value.guildName) ||
-    !nullableName(value.channelName) ||
-    (value.scope === "dm" && value.guildName !== null) ||
-    typeof value.gameId !== "string" ||
-    value.gameId.length > 100 ||
-    !GAME_ID.test(value.gameId) ||
-    (value.previousGameId !== null &&
-      (typeof value.previousGameId !== "string" ||
-        value.previousGameId.length > 100 ||
-        !GAME_ID.test(value.previousGameId))) ||
-    value.previousGameId === value.gameId ||
-    typeof value.gameName !== "string" ||
-    value.gameName.length < 1 ||
-    value.gameName.length > 100 ||
-    typeof value.confidence !== "string" ||
-    !CONFIDENCE.has(value.confidence) ||
-    typeof value.detectedAt !== "number" ||
-    !Number.isSafeInteger(value.detectedAt) ||
-    value.detectedAt < 0 ||
-    typeof value.rollCount !== "number" ||
-    !Number.isSafeInteger(value.rollCount) ||
-    value.rollCount < 1 ||
-    typeof value.sessionStartedAt !== "number" ||
-    !Number.isSafeInteger(value.sessionStartedAt) ||
-    value.sessionStartedAt < 0 ||
-    typeof value.sessionLastRollAt !== "number" ||
-    !Number.isSafeInteger(value.sessionLastRollAt) ||
-    value.sessionLastRollAt < value.sessionStartedAt ||
-    value.detectedAt < value.sessionStartedAt
-  ) {
+  const result = GameDetectionAnnouncementIdentitySchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Game-detection announcement is invalid");
   }
-
-  return value as unknown as GameDetectionAnnouncementV1;
+  return result.data;
 }

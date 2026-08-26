@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   MAX_NOTATION_LENGTH,
   MAX_REPETITIONS,
@@ -9,10 +10,19 @@ import {
   type DiscordContainer,
   type DiscordTopLevelComponent,
 } from "./responses";
+import {
+  boundaryObjectSchema,
+  boundedNameSchema,
+  interactionTokenSchema,
+  nonNegativeSafeIntegerSchema,
+  positiveSafeIntegerSchema,
+  type BoundaryObject,
+  type SchemaInput,
+  snowflakeSchema,
+  strictObjectSchema,
+  uuidV4Schema,
+} from "./schema-primitives";
 
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
-const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAVE_ROLL_CUSTOM_ID = /^save-roll:v([12]):([dw]):([^:]+)(?::(retry|submit))?$/;
 const SAVE_ROLL_NAME_CUSTOM_ID = "save-roll-name";
 const SAVE_ROLL_TITLE_MODE_CUSTOM_ID = "save-roll-title-mode";
@@ -21,32 +31,59 @@ const MAX_TITLE_LENGTH = 256;
 
 export const ROLL_SAVE_INTENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
 
-export type SaveRollSourceV1 =
-  | { kind: "discord"; id: string }
-  | { kind: "web"; id: string; userId: string };
-
-type SaveRollIntentFields = {
-  source: "fresh" | "library";
-  notation: string;
-  title: string | null;
-  repetitions: number;
-  nameColor: string | null;
-  createdAt: number;
-  expiresAt: number;
+const SaveRollSourceSchema = z.discriminatedUnion("kind", [
+  strictObjectSchema({ kind: z.literal("discord"), id: snowflakeSchema }),
+  strictObjectSchema({
+    kind: z.literal("web"),
+    id: uuidV4Schema,
+    userId: snowflakeSchema,
+  }),
+]);
+const SaveRollTitleModeSchema = z.enum(SAVE_ROLL_TITLE_MODES);
+const saveRollIntentFields = {
+  source: z.enum(["fresh", "library"]),
+  notation: z.string().min(1).max(MAX_NOTATION_LENGTH),
+  title: z.nullable(z.string().min(1).max(MAX_TITLE_LENGTH)),
+  repetitions: positiveSafeIntegerSchema.max(MAX_REPETITIONS),
+  nameColor: z.nullable(z.string()),
+  createdAt: nonNegativeSafeIntegerSchema,
+  expiresAt: nonNegativeSafeIntegerSchema,
 };
+const SaveRollIntentV1Schema = strictObjectSchema({
+  version: z.literal(1),
+  ...saveRollIntentFields,
+  defaultName: z.string().min(1).max(4_000),
+}).refine(
+  ({ createdAt, expiresAt }) =>
+    expiresAt === createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
+);
+const SaveRollIntentV2Schema = strictObjectSchema({
+  version: z.literal(2),
+  ...saveRollIntentFields,
+  defaultName: z.nullable(z.string().min(1).max(4_000)),
+}).superRefine((intent, context) => {
+  if (intent.expiresAt !== intent.createdAt + ROLL_SAVE_INTENT_RETENTION_MS) {
+    context.addIssue({ code: "custom", message: "Intent expiry is invalid" });
+  }
+  if (
+    intent.defaultName === null &&
+    (intent.source !== "fresh" ||
+      intent.title !== null ||
+      intent.repetitions <= 1)
+  ) {
+    context.addIssue({ code: "custom", message: "Default name is invalid" });
+  }
+});
+const SaveRollIntentSchema = z.discriminatedUnion("version", [
+  SaveRollIntentV1Schema,
+  SaveRollIntentV2Schema,
+]);
 
-export type SaveRollIntentV1 = SaveRollIntentFields & {
-  version: 1;
-  defaultName: string;
-};
-
-export type SaveRollIntentV2 = SaveRollIntentFields & {
-  version: 2;
-  defaultName: string | null;
-};
-
-export type SaveRollIntent = SaveRollIntentV1 | SaveRollIntentV2;
-export type SaveRollTitleMode = typeof SAVE_ROLL_TITLE_MODES[number];
+export type SaveRollSourceV1 = z.infer<typeof SaveRollSourceSchema>;
+export type SaveRollIntentV1 = z.infer<typeof SaveRollIntentV1Schema>;
+export type SaveRollIntentV2 = z.infer<typeof SaveRollIntentV2Schema>;
+export type SaveRollIntent = z.infer<typeof SaveRollIntentSchema>;
+export type SaveRollTitleMode = z.infer<typeof SaveRollTitleModeSchema>;
 
 export type ParsedSaveRollInteractionV1 = {
   kind: "open" | "submit";
@@ -100,23 +137,32 @@ type SaveRollModalResponseV2 = {
   };
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function nonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isSaveRollTitleMode(value: unknown): value is SaveRollTitleMode {
-  return typeof value === "string" &&
-    (SAVE_ROLL_TITLE_MODES as readonly string[]).includes(value);
-}
-
-function selectedModalValue(value: unknown): unknown {
-  if (!Array.isArray(value) || value.length !== 1) return null;
-  return value[0] as unknown;
-}
+const SaveRollInteractionSchema = z.looseObject({
+  type: z.union([z.literal(3), z.literal(5)]),
+  id: snowflakeSchema,
+  application_id: snowflakeSchema,
+  token: interactionTokenSchema,
+  channel_id: snowflakeSchema,
+  guild_id: snowflakeSchema.optional(),
+  data: boundaryObjectSchema,
+});
+const SaveRollUserSchema = z.looseObject({
+  id: snowflakeSchema,
+  username: boundedNameSchema(1, 32),
+});
+const ModalLabelSchema = z.looseObject({
+  type: z.literal(18),
+  component: boundaryObjectSchema,
+});
+const ModalComponentsSchema = z.array(z.unknown());
+const LegacyNameInputSchema = z.looseObject({
+  type: z.literal(4),
+  value: z.string(),
+});
+const TitleModeInputSchema = z.looseObject({
+  type: z.literal(3),
+  values: z.tuple([SaveRollTitleModeSchema]),
+});
 
 function escapeDiscordMarkdown(value: string): string {
   return value
@@ -131,78 +177,76 @@ function parseSaveRollSource(
   discriminator: string,
   value: string,
 ): SaveRollSourceV1 | null {
-  if (discriminator === "d" && SNOWFLAKE.test(value)) {
-    return { kind: "discord", id: value };
+  if (discriminator === "d") {
+    const source = SaveRollSourceSchema.safeParse({ kind: "discord", id: value });
+    return source.success ? source.data : null;
   }
-  if (discriminator === "w") {
-    const separator = value.indexOf(".");
-    const userId = value.slice(0, separator);
-    const id = value.slice(separator + 1);
-    if (separator > 0 && SNOWFLAKE.test(userId) && UUID_V4.test(id)) {
-      return { kind: "web", id, userId };
-    }
-  }
-  return null;
+  if (discriminator !== "w") return null;
+  const separator = value.indexOf(".");
+  if (separator < 1) return null;
+  const source = SaveRollSourceSchema.safeParse({
+    kind: "web",
+    userId: value.slice(0, separator),
+    id: value.slice(separator + 1),
+  });
+  return source.success ? source.data : null;
 }
 
-function parseUser(value: Record<string, unknown>): {
+function parseUser(value: BoundaryObject): {
   userId: string;
   username: string;
 } | null {
-  const member = isRecord(value.member) ? value.member : null;
-  let user: Record<string, unknown> | null = null;
-  if (member !== null && isRecord(member.user)) user = member.user;
-  else if (isRecord(value.user)) user = value.user;
-  if (
-    user === null ||
-    typeof user.id !== "string" ||
-    !SNOWFLAKE.test(user.id) ||
-    typeof user.username !== "string" ||
-    user.username.length < 1 ||
-    user.username.length > 32
-  ) {
-    return null;
-  }
-  return { userId: user.id, username: user.username };
+  const member = boundaryObjectSchema.safeParse(value.member);
+  const memberUser = member.success
+    ? boundaryObjectSchema.safeParse(member.data.user)
+    : null;
+  const user = SaveRollUserSchema.safeParse(
+    memberUser?.success ? memberUser.data : value.user,
+  );
+  return user.success
+    ? { userId: user.data.id, username: user.data.username }
+    : null;
 }
 
 function parseModalComponents(
-  value: unknown,
+  value: SchemaInput,
   expectedCustomIds: readonly string[],
-): Map<string, Record<string, unknown>> | null {
-  if (!Array.isArray(value) || value.length !== expectedCustomIds.length) {
+): Map<string, BoundaryObject> | null {
+  const labels = ModalComponentsSchema.safeParse(value);
+  if (!labels.success || labels.data.length !== expectedCustomIds.length) {
     return null;
   }
-  const components = new Map<string, Record<string, unknown>>();
-  for (const label of value) {
-    if (!isRecord(label) || label.type !== 18 || !isRecord(label.component)) {
-      return null;
-    }
-    const customId = label.component.custom_id;
+  const components = new Map<string, BoundaryObject>();
+  for (const labelValue of labels.data) {
+    const label = ModalLabelSchema.safeParse(labelValue);
+    if (!label.success) return null;
+    const customId = z.string().safeParse(label.data.component.custom_id);
     if (
-      typeof customId !== "string" ||
-      !expectedCustomIds.includes(customId) ||
-      components.has(customId)
+      !customId.success ||
+      !expectedCustomIds.includes(customId.data) ||
+      components.has(customId.data)
     ) {
       return null;
     }
-    components.set(customId, label.component);
+    components.set(customId.data, label.data.component);
   }
   return components;
 }
 
-function parseLegacySubmission(value: unknown): {
+function parseLegacySubmission(value: SchemaInput): {
   name: string;
   titleMode: "keep";
 } | null {
   const components = parseModalComponents(value, [SAVE_ROLL_NAME_CUSTOM_ID]);
-  const name = components?.get(SAVE_ROLL_NAME_CUSTOM_ID);
-  return name?.type === 4 && typeof name.value === "string"
-    ? { name: name.value, titleMode: "keep" }
+  const name = LegacyNameInputSchema.safeParse(
+    components?.get(SAVE_ROLL_NAME_CUSTOM_ID),
+  );
+  return name.success
+    ? { name: name.data.value, titleMode: "keep" }
     : null;
 }
 
-function parseTitleAwareSubmission(value: unknown): {
+function parseTitleAwareSubmission(value: SchemaInput): {
   name: string;
   titleMode: SaveRollTitleMode;
 } | null {
@@ -210,18 +254,14 @@ function parseTitleAwareSubmission(value: unknown): {
     SAVE_ROLL_NAME_CUSTOM_ID,
     SAVE_ROLL_TITLE_MODE_CUSTOM_ID,
   ]);
-  const name = components?.get(SAVE_ROLL_NAME_CUSTOM_ID);
-  const mode = components?.get(SAVE_ROLL_TITLE_MODE_CUSTOM_ID);
-  const selectedMode = selectedModalValue(mode?.values);
-  if (
-    name?.type !== 4 ||
-    typeof name.value !== "string" ||
-    mode?.type !== 3 ||
-    !isSaveRollTitleMode(selectedMode)
-  ) {
-    return null;
-  }
-  return { name: name.value, titleMode: selectedMode };
+  const name = LegacyNameInputSchema.safeParse(
+    components?.get(SAVE_ROLL_NAME_CUSTOM_ID),
+  );
+  const mode = TitleModeInputSchema.safeParse(
+    components?.get(SAVE_ROLL_TITLE_MODE_CUSTOM_ID),
+  );
+  if (!name.success || !mode.success) return null;
+  return { name: name.data.value, titleMode: mode.data.values[0] };
 }
 
 function buildVersionedSaveRollCustomId(
@@ -229,17 +269,14 @@ function buildVersionedSaveRollCustomId(
   action: "retry" | "submit" | undefined,
   version: 1 | 2,
 ): string {
-  if (
-    (source.kind === "discord" && !SNOWFLAKE.test(source.id)) ||
-    (source.kind === "web" &&
-      (!SNOWFLAKE.test(source.userId) || !UUID_V4.test(source.id)))
-  ) {
+  const parsedSource = SaveRollSourceSchema.safeParse(source);
+  if (!parsedSource.success) {
     throw new Error("Save roll source is invalid");
   }
-  const discriminator = source.kind === "discord" ? "d" : "w";
-  const sourceId = source.kind === "discord"
-    ? source.id
-    : `${source.userId}.${source.id}`;
+  const discriminator = parsedSource.data.kind === "discord" ? "d" : "w";
+  const sourceId = parsedSource.data.kind === "discord"
+    ? parsedSource.data.id
+    : `${parsedSource.data.userId}.${parsedSource.data.id}`;
   const customId = `save-roll:v${String(version)}:${discriminator}:${sourceId}${
     action === undefined ? "" : `:${action}`
   }`;
@@ -255,33 +292,23 @@ export function buildSaveRollCustomId(
 }
 
 export function parseSaveRollInteraction(
-  value: unknown,
+  value: SchemaInput,
   options: { applicationId: string },
 ): ParsedSaveRollInteractionV1 | null {
+  if (!snowflakeSchema.safeParse(options.applicationId).success) return null;
+  const interaction = SaveRollInteractionSchema.safeParse(value);
   if (
-    !SNOWFLAKE.test(options.applicationId) ||
-    !isRecord(value) ||
-    (value.type !== 3 && value.type !== 5) ||
-    typeof value.id !== "string" ||
-    !SNOWFLAKE.test(value.id) ||
-    value.application_id !== options.applicationId ||
-    typeof value.token !== "string" ||
-    !INTERACTION_TOKEN.test(value.token) ||
-    typeof value.channel_id !== "string" ||
-    !SNOWFLAKE.test(value.channel_id) ||
-    (value.guild_id !== undefined &&
-      (typeof value.guild_id !== "string" || !SNOWFLAKE.test(value.guild_id))) ||
-    !isRecord(value.data)
+    !interaction.success ||
+    interaction.data.application_id !== options.applicationId
   ) {
     return null;
   }
-  const user = parseUser(value);
+  const user = parseUser(interaction.data);
   if (user === null) return null;
 
-  const data = value.data;
-  const customId = data.custom_id;
-  if (typeof customId !== "string") return null;
-  const match = SAVE_ROLL_CUSTOM_ID.exec(customId);
+  const customId = z.string().safeParse(interaction.data.data.custom_id);
+  if (!customId.success) return null;
+  const match = SAVE_ROLL_CUSTOM_ID.exec(customId.data);
   if (match === null) return null;
   const customIdVersion = match[1] === "2" ? 2 : 1;
   const source = parseSaveRollSource(match[2] ?? "", match[3] ?? "");
@@ -289,92 +316,76 @@ export function parseSaveRollInteraction(
   const action = match[4];
 
   if (
-    value.type === 3 &&
-    (data.component_type !== 2 ||
+    interaction.data.type === 3 &&
+    (interaction.data.data.component_type !== 2 ||
       (action !== undefined && action !== "retry"))
   ) {
     return null;
   }
-  if (value.type === 5 && action !== "submit") return null;
-  let submission: ReturnType<typeof parseLegacySubmission> |
-    ReturnType<typeof parseTitleAwareSubmission> = null;
-  if (value.type === 5) {
+  if (interaction.data.type === 5 && action !== "submit") return null;
+
+  let submission: {
+    name: string;
+    titleMode: SaveRollTitleMode | "keep";
+  } | null = null;
+  if (interaction.data.type === 5) {
     submission = customIdVersion === 1
-      ? parseLegacySubmission(data.components)
-      : parseTitleAwareSubmission(data.components);
+      ? parseLegacySubmission(interaction.data.data.components)
+      : parseTitleAwareSubmission(interaction.data.data.components);
     if (submission === null) return null;
   }
 
   return {
-    kind: value.type === 3 ? "open" : "submit",
+    kind: interaction.data.type === 3 ? "open" : "submit",
     source,
     retry: action === "retry",
     name: submission?.name ?? null,
     titleMode: submission?.titleMode ?? null,
-    interactionId: value.id,
+    interactionId: interaction.data.id,
     applicationId: options.applicationId,
-    token: value.token,
+    token: interaction.data.token,
     userId: user.userId,
     username: user.username,
-    guildId: typeof value.guild_id === "string" ? value.guild_id : null,
-    channelId: value.channel_id,
+    guildId: interaction.data.guild_id ?? null,
+    channelId: interaction.data.channel_id,
   };
 }
 
-export function parseSaveRollIntent(value: unknown): SaveRollIntent {
-  if (
-    !isRecord(value) ||
-    Object.keys(value).sort().join(",") !==
-      "createdAt,defaultName,expiresAt,nameColor,notation,repetitions,source,title,version" ||
-    (value.version !== 1 && value.version !== 2) ||
-    (value.source !== "fresh" && value.source !== "library") ||
-    typeof value.notation !== "string" ||
-    value.notation.length < 1 ||
-    value.notation.length > MAX_NOTATION_LENGTH ||
-    (value.title !== null &&
-      (typeof value.title !== "string" ||
-        value.title.length < 1 ||
-        value.title.length > MAX_TITLE_LENGTH)) ||
-    typeof value.repetitions !== "number" ||
-    !Number.isSafeInteger(value.repetitions) ||
-    value.repetitions < 1 ||
-    value.repetitions > MAX_REPETITIONS ||
-    (value.defaultName !== null &&
-      (typeof value.defaultName !== "string" ||
-        value.defaultName.length < 1 ||
-        value.defaultName.length > 4_000)) ||
-    (value.defaultName === null &&
-      (value.version !== 2 ||
-        value.source !== "fresh" ||
-        value.title !== null ||
-        value.repetitions <= 1)) ||
-    !nonNegativeSafeInteger(value.createdAt) ||
-    !nonNegativeSafeInteger(value.expiresAt) ||
-    value.expiresAt !== value.createdAt + ROLL_SAVE_INTENT_RETENTION_MS
-  ) {
+export function parseSaveRollIntent(value: SchemaInput): SaveRollIntent {
+  const intent = SaveRollIntentSchema.safeParse(value);
+  if (!intent.success) {
     throw new Error("Save roll intent is invalid");
   }
   let nameColor: string | null;
   try {
-    nameColor = parseSavedRollNameColorV2(value.nameColor);
+    nameColor = parseSavedRollNameColorV2(intent.data.nameColor);
   } catch {
     throw new Error("Save roll intent is invalid");
   }
-  const fields: SaveRollIntentFields = {
-    source: value.source,
-    notation: value.notation,
-    title: value.title,
-    repetitions: value.repetitions,
+  const fields = {
+    source: intent.data.source,
+    notation: intent.data.notation,
+    title: intent.data.title,
+    repetitions: intent.data.repetitions,
     nameColor,
-    createdAt: value.createdAt,
-    expiresAt: value.expiresAt,
+    createdAt: intent.data.createdAt,
+    expiresAt: intent.data.expiresAt,
   };
-  return value.version === 1
-    ? { ...fields, version: 1, defaultName: value.defaultName as string }
-    : { ...fields, version: 2, defaultName: value.defaultName };
+  if (intent.data.version === 1) {
+    return {
+      ...fields,
+      version: intent.data.version,
+      defaultName: intent.data.defaultName,
+    };
+  }
+  return {
+    ...fields,
+    version: intent.data.version,
+    defaultName: intent.data.defaultName,
+  };
 }
 
-export function parseSaveRollIntentV1(value: unknown): SaveRollIntentV1 {
+export function parseSaveRollIntentV1(value: SchemaInput): SaveRollIntentV1 {
   const intent = parseSaveRollIntent(value);
   if (intent.version !== 1) throw new Error("Save roll intent is invalid");
   return intent;
@@ -414,6 +425,17 @@ export function buildSaveRollModalResponse(
     ? "Choose a different name"
     : "Name this roll";
 
+  const nameTitleOption: DiscordModalStringSelect["options"][number] = {
+    label: "Use name above as title",
+    value: "name",
+  };
+  const noTitleOption: DiscordModalStringSelect["options"][number] = {
+    label: "No title",
+    value: "none",
+  };
+  if (options.defaultTitleMode === "name") nameTitleOption.default = true;
+  else noTitleOption.default = true;
+
   return {
     type: 9,
     data: {
@@ -434,22 +456,7 @@ export function buildSaveRollModalResponse(
             required: true,
             min_values: 1,
             max_values: 1,
-            options: [
-              {
-                label: "Use name above as title",
-                value: "name",
-                ...(options.defaultTitleMode === "name"
-                  ? { default: true as const }
-                  : {}),
-              },
-              {
-                label: "No title",
-                value: "none",
-                ...(options.defaultTitleMode === "none"
-                  ? { default: true as const }
-                  : {}),
-              },
-            ],
+            options: [nameTitleOption, noTitleOption],
           },
         },
       ],
@@ -473,9 +480,18 @@ function validatedLibraryUrl(value: string): string {
   return url.href;
 }
 
+type PrivateMessageResponse = {
+  type: 4;
+  data: {
+    flags: number;
+    allowed_mentions: { parse: [] };
+    components: DiscordTopLevelComponent[];
+  };
+};
+
 function buildPrivateMessageResponse(
   components: DiscordTopLevelComponent[],
-): { type: 4; data: { flags: number; allowed_mentions: { parse: [] }; components: DiscordTopLevelComponent[] } } {
+): PrivateMessageResponse {
   return {
     type: 4,
     data: {

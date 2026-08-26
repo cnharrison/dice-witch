@@ -1,5 +1,7 @@
+import * as z from "zod";
 import {
   NARRATION_GAME_CATALOG_V1,
+  NARRATION_GAME_FEATURES_V1,
   type NarrationGameConfidenceV1,
   type NarrationGameFeatureV1,
   type NarrationGameFingerprintV1,
@@ -80,49 +82,51 @@ type RankedCandidate = Readonly<{
   rollLabelMatched: boolean;
 }>;
 
-const CONFIDENCE_RANK: Readonly<Record<NarrationGameConfidenceV1, number>> = {
+const CONFIDENCE_RANK = {
   weak: 1,
   plausible: 2,
   strong: 3,
   distinctive: 4,
-};
+} as const satisfies Readonly<Record<NarrationGameConfidenceV1, number>>;
 
 const CATALOG_SYSTEMS: readonly NarrationGameSystemV1[] =
   NARRATION_GAME_CATALOG_V1.systems;
 
-function fingerprintFeatureKinds(
-  fingerprint: NarrationGameFingerprintV1,
-): readonly NarrationGameFeatureV1[] {
-  return [
-    ...fingerprint.features,
-    ...(fingerprint.counterevidence ?? []).flatMap(({
-      feature,
-      atLeastAsFrequentAsFeature,
-    }) => [feature, atLeastAsFrequentAsFeature]),
-  ];
-}
-
-const CATALOG_FEATURES = new Set<NarrationGameFeatureV1>([
-  "observed-roll-expression",
-  ...CATALOG_SYSTEMS.flatMap(({ fingerprints }) =>
-    fingerprints.flatMap(fingerprintFeatureKinds),
-  ),
-]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactFields(
-  value: Record<string, unknown>,
-  fields: readonly string[],
-): boolean {
-  const actual = Object.keys(value);
-  return (
-    actual.length === fields.length &&
-    actual.every((field) => fields.includes(field))
-  );
-}
+const NarrationGameCandidateFeatureEnvelopeSchemaV1 = z.strictObject({
+  kind: z.unknown(),
+  occurrences: z.unknown(),
+});
+const NarrationGameCandidateFeatureListSchemaV1 = z.array(z.unknown());
+const NarrationGameCandidateFeatureKindSchemaV1 = z.enum(
+  NARRATION_GAME_FEATURES_V1,
+);
+const NarrationGameCandidateContextTermsV2Schema = z
+  .array(z.string().min(1).max(512))
+  .max(64);
+const NarrationGameCandidateLocationNamesV3Schema = z
+  .array(z.string().min(1).max(512))
+  .max(2);
+const NarrationGameCandidateRollLabelsV3Schema = z
+  .array(z.string().min(1).max(512))
+  .max(32);
+const NarrationGameCandidateContextEnvelopeV3Schema = z.strictObject({
+  locationNames: z.unknown(),
+  rollLabels: z.unknown(),
+});
+const NarrationGameCandidateRequestEnvelopeV1Schema = z.strictObject({
+  version: z.unknown(),
+  features: z.unknown(),
+});
+const NarrationGameCandidateRequestEnvelopeV2Schema = z.strictObject({
+  version: z.unknown(),
+  features: z.unknown(),
+  context: z.unknown(),
+});
+const NarrationGameCandidateRequestEnvelopeV3Schema = z.strictObject({
+  version: z.unknown(),
+  features: z.unknown(),
+  context: z.unknown(),
+});
 
 function lowerConfidence(
   left: NarrationGameConfidenceV1,
@@ -144,41 +148,41 @@ function highestConfidence(
 }
 
 function validateFeatures(
-  value: unknown,
+  features: z.output<typeof NarrationGameCandidateFeatureListSchemaV1>,
 ): readonly NarrationGameFeatureObservationV1[] {
-  if (!Array.isArray(value) || value.length > CATALOG_FEATURES.size) {
-    throw new Error("Narration game candidate features are invalid");
-  }
-
   const seen = new Set<NarrationGameFeatureV1>();
-  return value.map((feature) => {
-    if (!isRecord(feature) || !hasExactFields(feature, ["kind", "occurrences"])) {
+  return features.map((input) => {
+    const featureResult =
+      NarrationGameCandidateFeatureEnvelopeSchemaV1.safeParse(input);
+    if (!featureResult.success) {
       throw new Error(
         "Narration game candidate feature contains an unsupported field",
       );
     }
-    if (
-      typeof feature.kind !== "string" ||
-      !CATALOG_FEATURES.has(feature.kind as NarrationGameFeatureV1)
-    ) {
+    const feature = featureResult.data;
+    const kindResult = NarrationGameCandidateFeatureKindSchemaV1.safeParse(
+      feature.kind,
+    );
+    if (!kindResult.success) {
       throw new Error("Narration game candidate feature kind is unsupported");
     }
-    const kind = feature.kind as NarrationGameFeatureV1;
+    const kind = kindResult.data;
     if (seen.has(kind)) {
       throw new Error("Narration game candidate features must be unique");
     }
     seen.add(kind);
 
+    const occurrencesResult = z.number().safeParse(feature.occurrences);
     if (
-      typeof feature.occurrences !== "number" ||
-      !Number.isSafeInteger(feature.occurrences) ||
-      feature.occurrences < 1
+      !occurrencesResult.success ||
+      !Number.isSafeInteger(occurrencesResult.data) ||
+      occurrencesResult.data < 1
     ) {
       throw new Error(
         "Narration game candidate feature occurrences are invalid",
       );
     }
-    return { kind, occurrences: feature.occurrences };
+    return { kind, occurrences: occurrencesResult.data };
   });
 }
 
@@ -225,10 +229,7 @@ function fingerprintEvidenceTier(
     const counterevidenceCount = observations.get(counterevidence.feature) ?? 0;
     const comparisonCount =
       observations.get(counterevidence.atLeastAsFrequentAsFeature) ?? 0;
-    if (
-      counterevidenceCount > 0 &&
-      counterevidenceCount >= comparisonCount
-    ) {
+    if (counterevidenceCount > 0 && counterevidenceCount >= comparisonCount) {
       evidenceTier = lowerConfidence(
         evidenceTier,
         counterevidence.confidenceCeiling,
@@ -297,43 +298,39 @@ function normalizeContext(value: string): string {
     .trim();
 }
 
-function validateContextTerms(
-  value: unknown,
-  maximumTerms: number,
-): readonly string[] {
-  if (
-    !Array.isArray(value) ||
-    value.length > maximumTerms ||
-    !value.every(
-      (term) =>
-        typeof term === "string" && term.length >= 1 && term.length <= 512,
-    )
-  ) {
-    throw new Error("Narration game candidate context is invalid");
-  }
-  const normalized = value
-    .map((term) => normalizeContext(String(term)))
-    .filter(Boolean);
+function normalizeContextTerms(terms: readonly string[]): readonly string[] {
+  const normalized = terms.map(normalizeContext).filter(Boolean);
   return [...new Set(normalized)];
 }
 
-function validateContext(value: unknown): readonly string[] {
-  return validateContextTerms(value, 64);
-}
-
-export function normalizeNarrationGameCandidateContextV3(
-  value: unknown,
+function normalizeCandidateContextV3(
+  context: z.output<typeof NarrationGameCandidateContextEnvelopeV3Schema>,
 ): NarrationGameCandidateContextV3 {
-  if (
-    !isRecord(value) ||
-    !hasExactFields(value, ["locationNames", "rollLabels"])
-  ) {
+  const locationNamesResult =
+    NarrationGameCandidateLocationNamesV3Schema.safeParse(
+      context.locationNames,
+    );
+  const rollLabelsResult = NarrationGameCandidateRollLabelsV3Schema.safeParse(
+    context.rollLabels,
+  );
+  if (!locationNamesResult.success || !rollLabelsResult.success) {
     throw new Error("Narration game candidate context is invalid");
   }
   return {
-    locationNames: validateContextTerms(value.locationNames, 2),
-    rollLabels: validateContextTerms(value.rollLabels, 32),
+    locationNames: normalizeContextTerms(locationNamesResult.data),
+    rollLabels: normalizeContextTerms(rollLabelsResult.data),
   };
+}
+
+export function normalizeNarrationGameCandidateContextV3(
+  value: z.input<typeof NarrationGameCandidateContextEnvelopeV3Schema>,
+): NarrationGameCandidateContextV3 {
+  const contextResult =
+    NarrationGameCandidateContextEnvelopeV3Schema.safeParse(value);
+  if (!contextResult.success) {
+    throw new Error("Narration game candidate context is invalid");
+  }
+  return normalizeCandidateContextV3(contextResult.data);
 }
 
 function matchesContextAlias(
@@ -405,7 +402,10 @@ function addContextEvidence(
   };
 }
 
-function compareCandidates(left: RankedCandidate, right: RankedCandidate): number {
+function compareCandidates(
+  left: RankedCandidate,
+  right: RankedCandidate,
+): number {
   const tierDifference =
     CONFIDENCE_RANK[right.candidate.evidenceTier] -
     CONFIDENCE_RANK[left.candidate.evidenceTier];
@@ -474,28 +474,40 @@ export function retrieveNarrationGameCandidatesV1(
   request: NarrationGameCandidateRequestV1,
 ): NarrationGameCandidateResultV1;
 export function retrieveNarrationGameCandidatesV1(
-  request: unknown,
+  request: z.input<typeof NarrationGameCandidateRequestEnvelopeV1Schema>,
 ): NarrationGameCandidateResultV1 {
-  if (
-    !isRecord(request) ||
-    !hasExactFields(request, ["version", "features"])
-  ) {
+  const requestResult =
+    NarrationGameCandidateRequestEnvelopeV1Schema.safeParse(request);
+  if (!requestResult.success) {
     throw new Error(
       "Narration game candidate request contains an unsupported field",
     );
   }
-  if (request.version !== 1) {
+  const parsedRequest = requestResult.data;
+  if (parsedRequest.version !== 1) {
     throw new Error("Narration game candidate request version must be 1");
   }
 
-  const features = validateFeatures(request.features);
+  const featuresResult = NarrationGameCandidateFeatureListSchemaV1.safeParse(
+    parsedRequest.features,
+  );
+  if (
+    !featuresResult.success ||
+    featuresResult.data.length > NARRATION_GAME_FEATURES_V1.length
+  ) {
+    throw new Error("Narration game candidate features are invalid");
+  }
+  const features = validateFeatures(featuresResult.data);
   const observations = new Map(
     features.map(({ kind, occurrences }) => [kind, occurrences]),
   );
   const matches = CATALOG_SYSTEMS.filter(
     ({ legacyRetrievalExcluded }) => legacyRetrievalExcluded !== true,
-  ).map((system) => buildCandidate(system, observations))
-    .filter((candidate): candidate is RankedCandidate => candidate !== undefined)
+  )
+    .map((system) => buildCandidate(system, observations))
+    .filter(
+      (candidate): candidate is RankedCandidate => candidate !== undefined,
+    )
     .sort(compareCandidates);
 
   if (matches.length === 0) {
@@ -524,22 +536,37 @@ export function retrieveNarrationGameCandidatesV2(
   request: NarrationGameCandidateRequestV2,
 ): NarrationGameCandidateResultV1;
 export function retrieveNarrationGameCandidatesV2(
-  request: unknown,
+  request: z.input<typeof NarrationGameCandidateRequestEnvelopeV2Schema>,
 ): NarrationGameCandidateResultV1 {
-  if (
-    !isRecord(request) ||
-    !hasExactFields(request, ["version", "features", "context"])
-  ) {
+  const requestResult =
+    NarrationGameCandidateRequestEnvelopeV2Schema.safeParse(request);
+  if (!requestResult.success) {
     throw new Error(
       "Narration game candidate request contains an unsupported field",
     );
   }
-  if (request.version !== 2) {
+  const parsedRequest = requestResult.data;
+  if (parsedRequest.version !== 2) {
     throw new Error("Narration game candidate request version must be 2");
   }
 
-  const features = validateFeatures(request.features);
-  const context = validateContext(request.context);
+  const featuresResult = NarrationGameCandidateFeatureListSchemaV1.safeParse(
+    parsedRequest.features,
+  );
+  if (
+    !featuresResult.success ||
+    featuresResult.data.length > NARRATION_GAME_FEATURES_V1.length
+  ) {
+    throw new Error("Narration game candidate features are invalid");
+  }
+  const features = validateFeatures(featuresResult.data);
+  const contextResult = NarrationGameCandidateContextTermsV2Schema.safeParse(
+    parsedRequest.context,
+  );
+  if (!contextResult.success) {
+    throw new Error("Narration game candidate context is invalid");
+  }
+  const context = normalizeContextTerms(contextResult.data);
   const observations = new Map(
     features.map(({ kind, occurrences }) => [kind, occurrences]),
   );
@@ -549,7 +576,9 @@ export function retrieveNarrationGameCandidatesV2(
       ? addContextEvidence(system, ranked)
       : ranked;
   })
-    .filter((candidate): candidate is RankedCandidate => candidate !== undefined)
+    .filter(
+      (candidate): candidate is RankedCandidate => candidate !== undefined,
+    )
     .sort(compareCandidates);
 
   if (matches.length === 0) {
@@ -593,22 +622,37 @@ export function retrieveNarrationGameCandidatesV3(
   request: NarrationGameCandidateRequestV3,
 ): NarrationGameCandidateResultV1;
 export function retrieveNarrationGameCandidatesV3(
-  request: unknown,
+  request: z.input<typeof NarrationGameCandidateRequestEnvelopeV3Schema>,
 ): NarrationGameCandidateResultV1 {
-  if (
-    !isRecord(request) ||
-    !hasExactFields(request, ["version", "features", "context"])
-  ) {
+  const requestResult =
+    NarrationGameCandidateRequestEnvelopeV3Schema.safeParse(request);
+  if (!requestResult.success) {
     throw new Error(
       "Narration game candidate request contains an unsupported field",
     );
   }
-  if (request.version !== 3) {
+  const parsedRequest = requestResult.data;
+  if (parsedRequest.version !== 3) {
     throw new Error("Narration game candidate request version must be 3");
   }
 
-  const features = validateFeatures(request.features);
-  const context = normalizeNarrationGameCandidateContextV3(request.context);
+  const featuresResult = NarrationGameCandidateFeatureListSchemaV1.safeParse(
+    parsedRequest.features,
+  );
+  if (
+    !featuresResult.success ||
+    featuresResult.data.length > NARRATION_GAME_FEATURES_V1.length
+  ) {
+    throw new Error("Narration game candidate features are invalid");
+  }
+  const features = validateFeatures(featuresResult.data);
+  const contextResult = NarrationGameCandidateContextEnvelopeV3Schema.safeParse(
+    parsedRequest.context,
+  );
+  if (!contextResult.success) {
+    throw new Error("Narration game candidate context is invalid");
+  }
+  const context = normalizeCandidateContextV3(contextResult.data);
   const observations = new Map(
     features.map(({ kind, occurrences }) => [kind, occurrences]),
   );
@@ -635,7 +679,9 @@ export function retrieveNarrationGameCandidatesV3(
     }
     return ranked;
   })
-    .filter((candidate): candidate is RankedCandidate => candidate !== undefined)
+    .filter(
+      (candidate): candidate is RankedCandidate => candidate !== undefined,
+    )
     .sort(compareCandidates);
 
   if (matches.length === 0) {

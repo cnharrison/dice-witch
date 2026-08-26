@@ -373,6 +373,7 @@ export function createThreeModifierIconPlacementsV4(
       if (cell.iconViewport === null) {
         throw new Error("Three.js V4 modifier-icon viewport is missing");
       }
+      // SAFETY: The surrounding validation establishes the 1 | 2 | 3 invariant used below.
       const iconCount = icons.length as 1 | 2 | 3;
       const iconSize = modifierIconSizeV4(rendererRevision);
       const y =

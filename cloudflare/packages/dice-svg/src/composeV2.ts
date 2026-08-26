@@ -18,6 +18,7 @@ import type {
   RenderDieV2,
 } from "./types";
 import { validateRenderRequestV2 } from "./validateV2";
+import type { ValidationInput } from "./validationBoundary";
 
 type AppearanceRequest = Omit<
   RenderAppearanceV2,
@@ -68,7 +69,7 @@ function composeAppearanceDie(die: RenderDieV2): string {
   }
 }
 
-export function composeDiceSvgV2(input: unknown): ComposedSvg {
+export function composeDiceSvgV2(input: ValidationInput): ComposedSvg {
   const request = validateRenderRequestV2(input);
   return composeRenderedDiceGrid(
     request.groups.map((group) =>

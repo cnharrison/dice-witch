@@ -68,15 +68,15 @@ describe("appearance V4 contracts", () => {
   });
 
   it("rejects malformed, oversized, and incompatible catalog data", () => {
-    const extra = structuredClone(APPEARANCE_CATALOG_V3) as unknown as Record<
-      string,
-      unknown
-    >;
-    extra.unexpected = true;
+    const extra = {
+      ...structuredClone(APPEARANCE_CATALOG_V3),
+      unexpected: true,
+    };
     expect(() => parseAppearanceCatalogV3(extra)).toThrow(
       "Appearance catalog V3 is invalid",
     );
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const oversized = structuredClone(APPEARANCE_CATALOG_V3) as {
       styles: Array<(typeof APPEARANCE_CATALOG_V3.styles)[number]>;
     };
@@ -98,6 +98,7 @@ describe("appearance V4 contracts", () => {
       "Appearance font catalog is invalid",
     );
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const incompatible = structuredClone(APPEARANCE_CATALOG_V3) as {
       forms: Array<{
         id: string;
@@ -148,7 +149,7 @@ describe("appearance V4 contracts", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: string | URL | Request) => {
-        const url = new URL(typeof input === "string" ? input : input.toString());
+        const url = new URL(input instanceof Request ? input.url : input.toString());
         if (url.pathname === "/api/appearance/v4/catalog") {
           return catalogResponse;
         }
@@ -316,6 +317,7 @@ describe("appearance V4 contracts", () => {
     ]);
     expect(fetchMock.mock.calls[4]?.[1]?.method).toBe("POST");
     expect(fetchMock.mock.calls[5]?.[1]?.method).toBe("POST");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const personalRequest = fetchMock.mock.calls[1]?.[1] as RequestInit;
     expect(new Headers(personalRequest.headers).get("idempotency-key")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -338,7 +340,7 @@ describe("appearance V4 contracts", () => {
           version: 3,
           designs: [],
           assignments: { all: null, overrides: {} },
-        } as unknown as AppearanceProfileV4,
+        },
         catalog,
       ),
     ).rejects.toEqual(

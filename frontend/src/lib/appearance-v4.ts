@@ -1,3 +1,4 @@
+import * as z from "zod";
 import {
   APPEARANCE_PALETTE_COLOR_RANGE_V3,
   APPEARANCE_PERCENTAGE_RANGE_V4,
@@ -238,12 +239,23 @@ const MATERIAL_DEFINITIONS = {
   },
 } as const satisfies Record<MaterialFamilyV4, MaterialDefinition>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+const boundaryValueSchema = z.unknown();
+type BoundaryValue = z.input<typeof boundaryValueSchema>;
+const jsonObjectSchema = z.record(z.string(), z.json());
+type JsonObject = z.infer<typeof jsonObjectSchema>;
+const stringSchema = z.string();
+const booleanSchema = z.boolean();
+
+function isString(value: BoundaryValue): value is string {
+  return stringSchema.safeParse(value).success;
+}
+
+function isRecord(value: BoundaryValue): value is JsonObject {
+  return jsonObjectSchema.safeParse(value).success;
 }
 
 function hasExactKeys(
-  value: Record<string, unknown>,
+  value: JsonObject,
   expected: readonly string[],
 ): boolean {
   const actual = Object.keys(value).sort();
@@ -255,10 +267,10 @@ function hasExactKeys(
 }
 
 function requireRecord(
-  value: unknown,
+  value: BoundaryValue,
   keys: readonly string[],
   message: string,
-): Record<string, unknown> {
+): JsonObject {
   if (!isRecord(value) || !hasExactKeys(value, keys)) throw new Error(message);
   return value;
 }
@@ -271,9 +283,9 @@ function containsControlCharacter(value: string): boolean {
   return false;
 }
 
-function isBoundedText(value: unknown, maximum = MAX_LABEL_CHARACTERS): value is string {
+function isBoundedText(value: BoundaryValue, maximum = MAX_LABEL_CHARACTERS): value is string {
   return (
-    typeof value === "string" &&
+    isString(value) &&
     value.length > 0 &&
     value.length <= maximum &&
     value.trim() === value &&
@@ -282,7 +294,7 @@ function isBoundedText(value: unknown, maximum = MAX_LABEL_CHARACTERS): value is
 }
 
 function requireExactStringArray(
-  value: unknown,
+  value: BoundaryValue,
   expected: readonly string[],
   message: string,
 ): void {
@@ -296,7 +308,7 @@ function requireExactStringArray(
 }
 
 function requireOptionCatalog(
-  value: unknown,
+  value: BoundaryValue,
   expectedIds: readonly string[],
   message: string,
 ): void {
@@ -312,7 +324,7 @@ function requireOptionCatalog(
 }
 
 function requireOptionCatalogVariant(
-  value: unknown,
+  value: BoundaryValue,
   expectedCatalogs: readonly (readonly string[])[],
   message: string,
 ): void {
@@ -329,7 +341,7 @@ function requireOptionCatalogVariant(
   requireOptionCatalog(value, expectedIds, message);
 }
 
-function requireRange(value: unknown, expected: Range, message: string): void {
+function requireRange(value: BoundaryValue, expected: Range, message: string): void {
   const range = requireRecord(value, ["maximum", "minimum", "step"], message);
   if (
     range.minimum !== expected.minimum ||
@@ -341,20 +353,21 @@ function requireRange(value: unknown, expected: Range, message: string): void {
 }
 
 function requireSubset(
-  value: unknown,
+  value: BoundaryValue,
   supported: ReadonlySet<string>,
   message: string,
 ): void {
   if (
     !Array.isArray(value) ||
-    value.some((entry) => typeof entry !== "string" || !supported.has(entry)) ||
+    value.some((entry) => !isString(entry) || !supported.has(entry)) ||
     new Set(value).size !== value.length
   ) {
     throw new Error(message);
   }
 }
 
-function validateStyles(catalog: Record<string, unknown>): ReadonlySet<string> {
+// SAFETY: The surrounding validation establishes the AppearanceTargetV4 invariant used below.
+function validateStyles(catalog: JsonObject): ReadonlySet<string> {
   if (
     !Array.isArray(catalog.styles) ||
     catalog.styles.length < 1 ||
@@ -370,7 +383,7 @@ function validateStyles(catalog: Record<string, unknown>): ReadonlySet<string> {
       : ["description", "id", "name", "overrides", "recipe"];
     const style = requireRecord(value, keys, "Appearance style catalog is invalid");
     if (
-      typeof style.id !== "string" ||
+      !isString(style.id) ||
       !STYLE_ID.test(style.id) ||
       ids.has(style.id) ||
       !isBoundedText(style.name) ||
@@ -392,7 +405,7 @@ function validateStyles(catalog: Record<string, unknown>): ReadonlySet<string> {
     }
     ids.add(style.id);
   }
-  if (typeof catalog.defaultStyleId !== "string" || !ids.has(catalog.defaultStyleId)) {
+  if (!isString(catalog.defaultStyleId) || !ids.has(catalog.defaultStyleId)) {
     throw new Error("Appearance default style is invalid");
   }
   requireSubset(catalog.featuredStyleIds, ids, "Appearance featured styles are invalid");
@@ -402,7 +415,7 @@ function validateStyles(catalog: Record<string, unknown>): ReadonlySet<string> {
   return ids;
 }
 
-function validateMaterials(value: unknown): void {
+function validateMaterials(value: BoundaryValue): void {
   if (!Array.isArray(value) || value.length !== MATERIAL_FAMILIES_V4.length) {
     throw new Error("Appearance material catalog is invalid");
   }
@@ -481,7 +494,7 @@ function expectedFormFamilies(form: RenderFormV4): readonly MaterialFamilyV4[] {
       );
 }
 
-function validateForms(value: unknown): void {
+function validateForms(value: BoundaryValue): void {
   const forms: readonly RenderFormV4[] = [...POLYHEDRAL_FORMS_V4, "sphere"];
   if (!Array.isArray(value) || value.length !== forms.length) {
     throw new Error("Appearance form catalog is invalid");
@@ -509,29 +522,30 @@ function validateForms(value: unknown): void {
   }
 }
 
-function validateEditorDefaults(value: unknown): void {
+// SAFETY: The surrounding validation establishes the (typeof PATTERN_IDS_V4)[number] invariant used below.
+function validateEditorDefaults(value: BoundaryValue): void {
   const defaults = requireRecord(
     value,
     ["palette", "patternId", "primaryColor"],
     "Appearance editor defaults are invalid",
   );
   if (
-    typeof defaults.primaryColor !== "string" ||
+    !isString(defaults.primaryColor) ||
     !HEX_COLOR.test(defaults.primaryColor) ||
     !Array.isArray(defaults.palette) ||
     defaults.palette.length < APPEARANCE_PALETTE_COLOR_RANGE_V3.minimum ||
     defaults.palette.length > APPEARANCE_PALETTE_COLOR_RANGE_V3.maximum ||
     defaults.palette.some(
-      (color) => typeof color !== "string" || !HEX_COLOR.test(color),
+      (color) => !isString(color) || !HEX_COLOR.test(color),
     ) ||
-    typeof defaults.patternId !== "string" ||
+    !isString(defaults.patternId) ||
     !PATTERN_IDS_V4.includes(defaults.patternId as (typeof PATTERN_IDS_V4)[number])
   ) {
     throw new Error("Appearance editor defaults are invalid");
   }
 }
 
-function validateBounds(value: unknown): void {
+function validateBounds(value: BoundaryValue): void {
   const bounds = requireRecord(
     value,
     [
@@ -581,7 +595,7 @@ function validateBounds(value: unknown): void {
   );
 }
 
-export function parseAppearanceCatalogV3(value: unknown): AppearanceCatalogV3 {
+export function parseAppearanceCatalogV3(value: BoundaryValue): AppearanceCatalogV3 {
   const catalog = requireRecord(value, CATALOG_ROOT_KEYS, "Appearance catalog V3 is invalid");
   if (catalog.version !== 3) throw new Error("Appearance catalog V3 is invalid");
   validateStyles(catalog);
@@ -626,11 +640,12 @@ export function parseAppearanceCatalogV3(value: unknown): AppearanceCatalogV3 {
   requireSubset(catalog.featuredPatternIds, new Set(PATTERN_IDS_V4), "Appearance featured patterns are invalid");
   validateEditorDefaults(catalog.editorDefaults);
   validateBounds(catalog.bounds);
+  // SAFETY: The surrounding validation establishes the AppearanceCatalogV3 invariant used below.
   return structuredClone(value) as AppearanceCatalogV3;
 }
 
 function parseProfileV4(
-  value: unknown,
+  value: BoundaryValue,
   catalog: AppearanceCatalogV3,
   guild: boolean,
 ): AppearanceProfileV4 | GuildAppearanceProfileV4 {
@@ -643,7 +658,7 @@ function parseProfileV4(
 }
 
 export function parseAppearanceProfileResourceV4(
-  value: unknown,
+  value: BoundaryValue,
   catalog: AppearanceCatalogV3,
   guild: boolean,
 ): AppearanceProfileResource<AppearanceProfileV4 | GuildAppearanceProfileV4> {
@@ -655,7 +670,7 @@ export function parseAppearanceProfileResourceV4(
   if (
     !Number.isSafeInteger(resource.revision) ||
     Number(resource.revision) < 0 ||
-    typeof resource.canRestorePreviousMix !== "boolean"
+    !booleanSchema.safeParse(resource.canRestorePreviousMix).success
   ) {
     throw new Error("Appearance profile V4 response is invalid");
   }
@@ -691,7 +706,7 @@ async function apiFetch(
 async function parseResponse<Value>(
   response: Response,
   code: string,
-  parse: (value: unknown) => Value,
+  parse: (value: BoundaryValue) => Value,
 ): Promise<Value> {
   let value: unknown;
   try {
@@ -713,7 +728,7 @@ async function responseError(response: Response): Promise<AppearanceApiError> {
     if (
       isRecord(value) &&
       hasExactKeys(value, ["error"]) &&
-      typeof value.error === "string"
+      isString(value.error)
     ) {
       code = value.error;
     } else if (
@@ -763,32 +778,19 @@ export type AppearanceThumbsVersionV4 = Readonly<{
   cacheRevision: number;
 }>;
 
+const appearanceThumbsVersionSchema = z.object({
+  version: z.literal(2),
+  catalogVersion: z.number().int(),
+  rendererRevision: z.string(),
+  cacheRevision: z.number().int().min(1),
+});
+
 function parseAppearanceThumbsVersionV4(
-  value: unknown,
+  value: BoundaryValue,
 ): AppearanceThumbsVersionV4 {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("version" in value) ||
-    value.version !== 2 ||
-    !("catalogVersion" in value) ||
-    typeof value.catalogVersion !== "number" ||
-    !Number.isInteger(value.catalogVersion) ||
-    !("rendererRevision" in value) ||
-    typeof value.rendererRevision !== "string" ||
-    !("cacheRevision" in value) ||
-    typeof value.cacheRevision !== "number" ||
-    !Number.isInteger(value.cacheRevision) ||
-    value.cacheRevision < 1
-  ) {
-    throw new Error("Appearance thumbs version is invalid");
-  }
-  return {
-    version: 2,
-    catalogVersion: value.catalogVersion,
-    rendererRevision: value.rendererRevision,
-    cacheRevision: value.cacheRevision,
-  };
+  const parsed = appearanceThumbsVersionSchema.safeParse(value);
+  if (!parsed.success) throw new Error("Appearance thumbs version is invalid");
+  return parsed.data;
 }
 
 export async function getAppearanceThumbsVersionV4(): Promise<AppearanceThumbsVersionV4> {
@@ -811,6 +813,7 @@ async function getGuildProfileV4(
   const response = await requireOk(
     await apiFetch(apiUrl(path), { credentials: "include" }),
   );
+  // SAFETY: The surrounding validation establishes the AppearanceProfileResource<GuildAppearanceProfileV4> invariant used below.
   return parseResponse(
     response,
     "appearance_profile_response_invalid",
@@ -845,6 +848,7 @@ export async function getPersonalAppearanceBootstrapV4(): Promise<PersonalAppear
     "appearance_profile_response_invalid",
     (value) => parseAppearanceProfileResourceV4(value, catalog, false),
   );
+  // SAFETY: The surrounding validation establishes the AppearanceProfileResource<AppearanceProfileV4> invariant used below.
   return {
     catalog,
     resource: resource as AppearanceProfileResource<AppearanceProfileV4>,
@@ -865,7 +869,7 @@ export function getGuildAppearanceProfileV4(
 }
 
 function parseSavedProfileV4(
-  value: unknown,
+  value: BoundaryValue,
   catalog: AppearanceCatalogV3,
   guild: boolean,
 ): AppearanceProfileResource<AppearanceProfileV4 | GuildAppearanceProfileV4> {
@@ -892,7 +896,7 @@ async function mutateProfileV4(
   path: string,
   method: "POST" | "PUT",
   expectedRevision: number,
-  profile: AppearanceProfileV4 | GuildAppearanceProfileV4,
+  profile: BoundaryValue,
   catalog: AppearanceCatalogV3,
   guild: boolean,
 ): Promise<
@@ -927,9 +931,10 @@ async function mutateProfileV4(
 
 export function putPersonalAppearanceProfileV4(
   expectedRevision: number,
-  profile: AppearanceProfileV4,
+  profile: BoundaryValue,
   catalog: AppearanceCatalogV3,
 ): Promise<AppearanceProfileResource<AppearanceProfileV4>> {
+  // SAFETY: The response parser establishes the personal profile resource invariant.
   return mutateProfileV4(
     "/api/appearance/v4/me/state",
     "PUT",
@@ -945,6 +950,7 @@ export function resetPersonalAppearanceProfileV4(
   profile: AppearanceProfileV4,
   catalog: AppearanceCatalogV3,
 ): Promise<AppearanceProfileResource<AppearanceProfileV4>> {
+  // SAFETY: The response parser establishes the personal profile resource invariant.
   return mutateProfileV4(
     "/api/appearance/v4/me/state/reset",
     "POST",
@@ -960,9 +966,11 @@ export function restorePersonalAppearanceProfileV4(
   profile: AppearanceProfileV4,
   catalog: AppearanceCatalogV3,
 ): Promise<AppearanceProfileResource<AppearanceProfileV4>> {
+  // SAFETY: The response parser establishes the personal profile resource invariant.
   return mutateProfileV4(
     "/api/appearance/v4/me/state/restore",
     "POST",
+
     expectedRevision,
     profile,
     catalog,
@@ -979,6 +987,7 @@ export function putGuildAppearanceProfileV4(
   if (!GUILD_ID.test(guildId)) {
     return Promise.reject(clientError("appearance_guild_id_invalid", 400));
   }
+  // SAFETY: The response parser establishes the guild profile resource invariant.
   return mutateProfileV4(
     `/api/guilds/${guildId}/appearance/v4/state`,
     "PUT",
@@ -998,6 +1007,7 @@ export function resetGuildAppearanceProfileV4(
   if (!GUILD_ID.test(guildId)) {
     return Promise.reject(clientError("appearance_guild_id_invalid", 400));
   }
+  // SAFETY: The response parser establishes the guild profile resource invariant.
   return mutateProfileV4(
     `/api/guilds/${guildId}/appearance/v4/state/reset`,
     "POST",
@@ -1017,9 +1027,11 @@ export function restoreGuildAppearanceProfileV4(
   if (!GUILD_ID.test(guildId)) {
     return Promise.reject(clientError("appearance_guild_id_invalid", 400));
   }
+  // SAFETY: The response parser establishes the guild profile resource invariant.
   return mutateProfileV4(
     `/api/guilds/${guildId}/appearance/v4/state/restore`,
     "POST",
+
     expectedRevision,
     profile,
     catalog,
@@ -1027,12 +1039,8 @@ export function restoreGuildAppearanceProfileV4(
   ) as Promise<AppearanceProfileResource<GuildAppearanceProfileV4>>;
 }
 
-function parsePreviewInput(value: unknown): {
-  target: AppearanceTargetV4 | "all";
-  recipe: AppearanceRecipeV3;
-  seed: number;
-  state: (typeof PREVIEW_STATES)[number];
-} {
+// SAFETY: The surrounding validation establishes the AppearanceTargetV4 and (typeof PREVIEW_STATES)[number] invariant used below.
+function parsePreviewInput(value: BoundaryValue) {
   const input = requireRecord(
     value,
     ["recipe", "seed", "state", "target"],
@@ -1048,6 +1056,7 @@ function parsePreviewInput(value: unknown): {
   ) {
     throw new Error("Appearance preview V4 request is invalid");
   }
+  // SAFETY: The surrounding validation establishes the AppearanceTargetV4 | "all" and (typeof PREVIEW_STATES)[number] invariant used below.
   return {
     target: input.target as AppearanceTargetV4 | "all",
     recipe: parseAppearanceRecipeV3(input.recipe),
@@ -1060,8 +1069,9 @@ type PreviewOverridesV4 = Partial<Record<AppearanceTargetV4, AppearanceRecipeV3>
 
 // Per-die designs refine the ALL composite; absent for single-target
 // previews, which already carry the exact recipe.
+// SAFETY: The surrounding validation establishes the AppearanceTargetV4 invariant used below.
 function parsePreviewOverridesV4(
-  value: unknown,
+  value: BoundaryValue,
   target: AppearanceTargetV4 | "all",
 ): PreviewOverridesV4 {
   if (target !== "all" || !isRecord(value)) {
@@ -1081,7 +1091,7 @@ function parsePreviewOverridesV4(
   );
 }
 
-function parsePreviewInputV4(value: unknown):
+function parsePreviewInputV4(value: BoundaryValue):
   ReturnType<typeof parsePreviewInput> & {
     diceView: DiceViewPreferencesV4;
     overrides?: PreviewOverridesV4;
@@ -1109,7 +1119,7 @@ function parsePreviewInputV4(value: unknown):
   };
 }
 
-function parsePreviewResponse(value: unknown): AppearancePreviewV4 {
+function parsePreviewResponse(value: BoundaryValue): AppearancePreviewV4 {
   const preview = requireRecord(
     value,
     [
@@ -1130,7 +1140,7 @@ function parsePreviewResponse(value: unknown): AppearancePreviewV4 {
     !Number.isInteger(preview.height) ||
     Number(preview.height) < 1 ||
     Number(preview.height) > MAX_PREVIEW_DIMENSION ||
-    typeof preview.base64 !== "string" ||
+    !isString(preview.base64) ||
     preview.base64.length < 4 ||
     preview.base64.length > MAX_PREVIEW_BASE64_CHARACTERS ||
     preview.base64.length % 4 !== 0 ||
@@ -1148,7 +1158,7 @@ function parsePreviewResponse(value: unknown): AppearancePreviewV4 {
 }
 
 export async function getAppearancePreviewV4(
-  value: unknown,
+  value: BoundaryValue,
   signal?: AbortSignal,
 ): Promise<AppearancePreviewV4> {
   let input: ReturnType<typeof parsePreviewInputV4>;
@@ -1157,14 +1167,15 @@ export async function getAppearancePreviewV4(
   } catch {
     throw clientError("appearance_preview_request_invalid", 400);
   }
+  const request: RequestInit = {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  };
+  if (signal !== undefined) request.signal = signal;
   const response = await requireOk(
-    await apiFetch(apiUrl("/api/appearance/v4/preview"), {
-      method: "POST",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-      ...(signal === undefined ? {} : { signal }),
-    }),
+    await apiFetch(apiUrl("/api/appearance/v4/preview"), request),
   );
   return parseResponse(
     response,

@@ -5,25 +5,24 @@ import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { DocsAppView, PublicDocsHeaderView } from "./DocsApp";
 
-const { authState, authenticateWithRedirect } = vi.hoisted(() => ({
-  authState: { isSignedIn: false },
-  authenticateWithRedirect: vi.fn(),
-}));
+const authState = { isSignedIn: false };
+const authenticateWithRedirect = vi.fn();
 
-vi.mock("@/lib/AuthProvider", () => ({
-  useAuth: () => authState,
-  useSignIn: () => ({
-    isLoaded: true,
-    signIn: { authenticateWithRedirect },
-  }),
-}));
-vi.mock("@/components/Navbar", () => ({
-  Navbar: () => <nav aria-label="Authenticated">Authenticated navigation</nav>,
-}));
-vi.mock("@/components/ui/theme-toggle", () => ({ ThemeToggle: () => null }));
+function AuthenticatedNavbar() {
+  return <nav aria-label="Authenticated">Authenticated navigation</nav>;
+}
 
-import DocsApp from "./DocsApp";
+function PublicHeader() {
+  return (
+    <PublicDocsHeaderView
+      authenticateWithRedirect={authenticateWithRedirect}
+      isLoaded
+      ThemeToggleSlot={() => null}
+    />
+  );
+}
 
 beforeEach(() => {
   authState.isSignedIn = false;
@@ -36,7 +35,16 @@ function renderDocs(path: string): void {
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/docs/*" element={<DocsApp />} />
+        <Route
+          path="/docs/*"
+          element={
+            <DocsAppView
+              isSignedIn={authState.isSignedIn}
+              NavbarSlot={AuthenticatedNavbar}
+              PublicHeaderSlot={PublicHeader}
+            />
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );

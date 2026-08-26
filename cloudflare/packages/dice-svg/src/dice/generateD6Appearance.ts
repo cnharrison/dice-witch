@@ -21,6 +21,7 @@ import {
   composeFacetedAppearanceSvgV3,
   type FacetedAppearanceRequestV3,
 } from "../facetedAppearanceV3";
+import type { ValidationInput } from "../validationBoundary";
 
 export type D6AppearanceRequest = AppearanceDieRequest;
 export type D6AppearanceRequestV3 = FacetedAppearanceRequestV3;
@@ -68,14 +69,14 @@ const D6_FACES: readonly D6FaceLayout[] = [
   },
 ];
 
-const D6_SHADES: Record<
-  D6LabelSlot,
-  FacetedFaceLayout<D6LabelSlot>["shade"]
-> = {
+const D6_SHADES = {
   result: null,
   top: { color: "#ffffff", opacity: 0.12 },
   right: { color: "#000000", opacity: 0.18 },
-};
+} satisfies Record<
+  D6LabelSlot,
+  FacetedFaceLayout<D6LabelSlot>["shade"]
+>;
 
 const D6_V3_GEOMETRY: FacetedAppearanceGeometry<D6LabelSlot> = {
   die: "d6",
@@ -106,7 +107,7 @@ const D6_VISIBLE_VALUES: readonly D6VisibleFaceValues[] = [
   { result: 6, top: 5, right: 4 },
 ];
 
-export function getD6VisibleFaceValues(result: number): D6VisibleFaceValues {
+export function getD6VisibleFaceValues(result: number) {
   if (!Number.isInteger(result) || result < 1 || result > 6) {
     throw new Error("D6 appearance result must be from 1 through 6");
   }
@@ -114,7 +115,7 @@ export function getD6VisibleFaceValues(result: number): D6VisibleFaceValues {
   if (values === undefined) {
     throw new Error("D6 appearance face mapping is missing");
   }
-  return { ...values };
+  return { ...values } satisfies D6VisibleFaceValues;
 }
 
 function faceClipPath({ slot, points }: D6FaceLayout): string {
@@ -142,7 +143,7 @@ function label(
 }
 
 export function composeD6AppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parseAppearanceDieRequest(value, 6);
@@ -181,7 +182,7 @@ export function composeD6AppearanceSvgWithOptions(
 </svg>`;
 }
 
-export function composeD6AppearanceSvg(value: unknown): string {
+export function composeD6AppearanceSvg(value: ValidationInput): string {
   return composeD6AppearanceSvgWithOptions(value, { localSeparation: false });
 }
 

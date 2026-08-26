@@ -1,16 +1,22 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 
 const NO_PENDING_MIGRATIONS = "No migrations to apply!";
 const PENDING_MIGRATIONS = "Migrations to be applied:";
 const CLI_USAGE =
   "Usage: node tools/assert-migration-state.mjs --output <path> --apply-migrations <true|false>";
 
-export function assertMigrationState({ output, applyMigrations }) {
-  if (typeof output !== "string" || typeof applyMigrations !== "boolean") {
+export function assertMigrationState(value) {
+  const input = z.object({
+    output: z.string(),
+    applyMigrations: z.boolean(),
+  }).safeParse(value);
+  if (!input.success) {
     throw new Error("D1 migration state input is invalid");
   }
+  const { output, applyMigrations } = input.data;
   const noPending = output.includes(NO_PENDING_MIGRATIONS);
   const pending = output.includes(PENDING_MIGRATIONS);
   if (noPending === pending) {

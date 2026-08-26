@@ -3,9 +3,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MixPickerStartFromRow } from "@/components/MixPickerStartFromRow";
-import type {
-  AppearanceCatalogV3,
-} from "@/types/appearance";
+import type { AppearanceCatalogV3 } from "@/types/appearance";
+import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 
 function styleEntry(id: string) {
   return {
@@ -16,6 +15,7 @@ function styleEntry(id: string) {
 }
 
 const catalog = {
+  ...APPEARANCE_CATALOG_V3,
   styles: [
     "dice-witch",
     "solid",
@@ -62,7 +62,7 @@ const catalog = {
     "classic-material",
     "glass-material",
   ],
-} as never as AppearanceCatalogV3;
+} satisfies AppearanceCatalogV3;
 
 const thumbVersion = {
   catalogVersion: 3,
@@ -184,7 +184,7 @@ describe("MixPickerStartFromRow", () => {
     const broken = {
       ...catalog,
       styles: catalog.styles.slice(1),
-    } as unknown as AppearanceCatalogV3;
+    } satisfies AppearanceCatalogV3;
     expect(() =>
       render(
         <MixPickerStartFromRow

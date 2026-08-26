@@ -37,6 +37,7 @@ export function MixPickerVarietyControl({
   onChaos,
 }: MixPickerVarietyControlProps) {
   const selected = varietyFromRecipe(recipe, isChaosAssignment);
+  // SAFETY: The surrounding validation establishes the MixPickerVariety[] invariant used below.
   return (
     <section aria-label="Variety">
       <h3 className="text-xs font-semibold uppercase tracking-wide">Variety</h3>

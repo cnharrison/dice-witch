@@ -254,6 +254,11 @@ describe("Appearance Profile V3", () => {
       }),
     ).toThrow("Appearance randomization policy is not supported");
 
+    const withoutPolicies = parseAppearanceRecipeV3(recipe());
+    expect(Object.hasOwn(withoutPolicies, "randomization")).toBe(false);
+    expect(Object.hasOwn(withoutPolicies, "colorDistribution")).toBe(false);
+    expect(Object.hasOwn(withoutPolicies.form, "policy")).toBe(false);
+
     for (const colorDistribution of [
       "coordinated",
       "one-per-die",
@@ -268,22 +273,29 @@ describe("Appearance Profile V3", () => {
         colors: { mode: "solid", primary: "#123456" },
       }),
     ).toThrow("One-per-die color distribution requires a palette");
-    expect(() =>
-      parseAppearanceRecipeV3({
-        ...recipe(),
-        colorDistribution: "unversioned-distribution",
-      }),
-    ).toThrow("Appearance color distribution is not supported");
+    for (const colorDistribution of [
+      "unversioned-distribution",
+      undefined,
+    ]) {
+      expect(() =>
+        parseAppearanceRecipeV3({
+          ...recipe(),
+          colorDistribution,
+        }),
+      ).toThrow("Appearance color distribution is not supported");
+    }
 
     const automaticForms = recipe();
     Object.assign(automaticForms.form, { policy: "material-default-v1" });
     expect(parseAppearanceRecipeV3(automaticForms)).toEqual(automaticForms);
-    expect(() =>
-      parseAppearanceRecipeV3({
-        ...recipe(),
-        form: { ...recipe().form, policy: "unversioned-automatic" },
-      }),
-    ).toThrow("Appearance form policy is not supported");
+    for (const policy of ["unversioned-automatic", undefined]) {
+      expect(() =>
+        parseAppearanceRecipeV3({
+          ...recipe(),
+          form: { ...recipe().form, policy },
+        }),
+      ).toThrow("Appearance form policy is not supported");
+    }
   });
 
   it("accepts one exact solid body color", () => {

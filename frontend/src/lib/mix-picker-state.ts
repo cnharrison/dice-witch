@@ -253,10 +253,13 @@ export function replaceMaterialFamily(
     : weights;
   return {
     mode: "weighted",
-    options: collapsed.map(({ value }, index) => ({
-      value,
-      weight: normalized[index] as number,
-    })),
+    options: collapsed.map(({ value }, index) => {
+      const weight = normalized[index];
+      if (weight === undefined) {
+        throw new Error("Normalized material weight is missing");
+      }
+      return { value, weight };
+    }),
   };
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildInvalidRollHelpMessage,
   buildRollHelperMessage,
+  parseRollHelperDmInteraction,
 } from "../../packages/discord-contracts/src";
 import type { RollExecutionError } from "../../packages/roll-domain/src";
 
@@ -20,6 +21,40 @@ function helpMessage(error: RollExecutionError) {
 }
 
 describe("invalid-roll helper contract", () => {
+  it("routes helper components before validating recognized interactions", () => {
+    const applicationId = "100000000000000002";
+    const interaction = {
+      id: "100000000000000003",
+      application_id: applicationId,
+      type: 3,
+      token: "fixture.interaction.token",
+      user: { id: "100000000000000004" },
+      data: {
+        component_type: 2,
+        custom_id: `roll-help:dm-knowledgebase:${rollId}`,
+      },
+    };
+    expect(parseRollHelperDmInteraction(interaction, applicationId)).toEqual({
+      id: interaction.id,
+      applicationId,
+      token: interaction.token,
+      rollId,
+      userId: interaction.user.id,
+    });
+    expect(
+      parseRollHelperDmInteraction(
+        { ...interaction, id: "invalid", data: { custom_id: "other" } },
+        applicationId,
+      ),
+    ).toBeNull();
+    expect(() =>
+      parseRollHelperDmInteraction(
+        { ...interaction, id: "invalid" },
+        applicationId,
+      )
+    ).toThrow("Roll helper DM interaction is invalid");
+  });
+
   it.each([
     {
       error: { code: "NO_DICE", message: "Roll notation contains no dice" },

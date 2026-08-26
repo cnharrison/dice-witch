@@ -33,6 +33,15 @@ describe("Discord guild lifecycle Dispatches", () => {
     });
   });
 
+  it("routes unavailable creates before requiring a profile", () => {
+    expect(
+      parseGuildLifecycleDispatch("GUILD_CREATE", {
+        id: guildId,
+        unavailable: true,
+      }),
+    ).toEqual({ type: "unavailable", guildId });
+  });
+
   it("distinguishes removal from temporary unavailability", () => {
     expect(
       parseGuildLifecycleDispatch("GUILD_DELETE", {
@@ -54,6 +63,17 @@ describe("Discord guild lifecycle Dispatches", () => {
       parseGuildLifecycleDispatch("GUILD_CREATE", {
         id: "bad",
         name: "Test Guild",
+      }),
+    ).toThrow("Discord guild lifecycle data is invalid");
+    expect(() =>
+      parseGuildLifecycleDispatch("GUILD_CREATE", {
+        id: guildId,
+        name: "Test Guild",
+        icon: null,
+        owner_id: "100000000000000002",
+        member_count: 42,
+        preferred_locale: "en-US",
+        joined_at: "not-a-timestamp",
       }),
     ).toThrow("Discord guild lifecycle data is invalid");
   });

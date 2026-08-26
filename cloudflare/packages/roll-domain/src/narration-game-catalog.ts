@@ -1,44 +1,52 @@
 import { NARRATION_POPULAR_GAME_SYSTEMS_V1 } from "./narration-popular-game-systems";
 
+export const NARRATION_GAME_CONFIDENCES_V1 = [
+  "weak",
+  "plausible",
+  "strong",
+  "distinctive",
+] as const;
+
 export type NarrationGameConfidenceV1 =
-  | "weak"
-  | "plausible"
-  | "strong"
-  | "distinctive";
+  (typeof NARRATION_GAME_CONFIDENCES_V1)[number];
 
 export type NarrationGameSourceAuthorityV1 =
   | "licensed-rules-reference"
   | "official-srd"
   | "publisher";
 
+export const NARRATION_GAME_FEATURES_V1 = [
+  "observed-roll-expression",
+  "d6-pool-keep-highest",
+  "exploding-step-die",
+  "exploding-trait-plus-wild-d6-keep-highest",
+  "four-d6-keep-highest-three",
+  "four-fate-dice",
+  "percentile-roll-under-threshold",
+  "single-d20-plus-modifier",
+  "single-percentile-roll",
+  "two-d6-keep-lowest",
+  "d20-roll-under-threshold",
+  "d20-with-accuracy-d6",
+  "d20-with-plot-d6",
+  "dcc-dice-chain",
+  "dcc-diverse-dice-chain",
+  "diverse-uncatalogued-die-sides",
+  "mixed-step-dice-pool",
+  "plain-d10-pool",
+  "plain-d6-pool",
+  "single-d10-plus-modifier",
+  "single-d20-roll",
+  "three-d6",
+  "three-d20",
+  "two-d10-plus-modifier",
+  "two-d12-plus-modifier",
+  "two-d20-roll-under-threshold",
+  "two-d6-plus-modifier",
+] as const;
+
 export type NarrationGameFeatureV1 =
-  | "observed-roll-expression"
-  | "d6-pool-keep-highest"
-  | "exploding-step-die"
-  | "exploding-trait-plus-wild-d6-keep-highest"
-  | "four-d6-keep-highest-three"
-  | "four-fate-dice"
-  | "percentile-roll-under-threshold"
-  | "single-d20-plus-modifier"
-  | "single-percentile-roll"
-  | "two-d6-keep-lowest"
-  | "d20-roll-under-threshold"
-  | "d20-with-accuracy-d6"
-  | "d20-with-plot-d6"
-  | "dcc-dice-chain"
-  | "dcc-diverse-dice-chain"
-  | "diverse-uncatalogued-die-sides"
-  | "mixed-step-dice-pool"
-  | "plain-d10-pool"
-  | "plain-d6-pool"
-  | "single-d10-plus-modifier"
-  | "single-d20-roll"
-  | "three-d6"
-  | "three-d20"
-  | "two-d10-plus-modifier"
-  | "two-d12-plus-modifier"
-  | "two-d20-roll-under-threshold"
-  | "two-d6-plus-modifier";
+  (typeof NARRATION_GAME_FEATURES_V1)[number];
 
 export type NarrationGameSourceV1 = Readonly<{
   id: string;

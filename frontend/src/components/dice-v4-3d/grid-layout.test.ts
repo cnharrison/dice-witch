@@ -190,6 +190,7 @@ describe("V4 Three.js grid layout", () => {
       width: 150,
       height: 9_350,
     });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(() =>
       createThreeDiceGridLayoutV4(
         [[{ icons: ["trashcan", "explosion", "recycle", "unique"] }]],

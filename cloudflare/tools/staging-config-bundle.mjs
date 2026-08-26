@@ -1,6 +1,7 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 import { validateStagingConfigs } from "./staging-config.mjs";
 
 const WORKERS = [
@@ -16,20 +17,23 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const ROLL_LIFECYCLE_TELEMETRY_VERSION = "2";
 
+const BundleSchema = z.record(z.string(), z.json());
+
 function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return z.object({}).passthrough().safeParse(value).success;
 }
 
-function decodeBundle(encodedBundle) {
+function decodeBundle(value) {
+  const encodedBundle = z.string().safeParse(value);
   if (
-    typeof encodedBundle !== "string" ||
-    encodedBundle.length === 0 ||
-    encodedBundle.length % 4 !== 0 ||
-    !/^[A-Za-z0-9+/]*={0,2}$/.test(encodedBundle)
+    !encodedBundle.success ||
+    encodedBundle.data.length === 0 ||
+    encodedBundle.data.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(encodedBundle.data)
   ) {
     throw new Error("Staging configuration bundle is invalid");
   }
-  const decoded = Buffer.from(encodedBundle, "base64");
+  const decoded = Buffer.from(encodedBundle.data, "base64");
   if (decoded.byteLength > MAX_BUNDLE_BYTES) {
     throw new Error("Staging configuration bundle exceeds 64 KiB");
   }
@@ -39,16 +43,18 @@ function decodeBundle(encodedBundle) {
   } catch {
     throw new Error("Staging configuration bundle is invalid");
   }
-  if (!isRecord(bundle)) {
+  const parsedBundle = BundleSchema.safeParse(bundle);
+  if (!parsedBundle.success) {
     throw new Error("Staging configuration bundle is invalid");
   }
+  bundle = parsedBundle.data;
   if (Object.keys(bundle).sort().join(",") !== [...WORKERS].sort().join(",")) {
     throw new Error(
       "Staging configuration bundle must contain exactly the six staging Worker configs",
     );
   }
   for (const worker of WORKERS) {
-    if (!isRecord(bundle[worker])) {
+    if (!z.object({}).passthrough().safeParse(bundle[worker]).success) {
       throw new Error(`${worker} staging configuration must be an object`);
     }
   }

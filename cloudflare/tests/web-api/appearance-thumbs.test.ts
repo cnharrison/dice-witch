@@ -1,16 +1,41 @@
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
+import { APPEARANCE_THUMB_CACHE_REVISION_V3 } from "../../packages/dice-appearance/src";
 import {
   appearanceThumbsVersion,
   bakeAppearanceThumbs,
   serveAppearanceThumb,
+  type AppearanceThumbsEnv,
 } from "../../workers/web-api/src/appearance-thumbs-api";
 
-function thumbEnv(overrides = {}) {
-  const objects = new Map();
+const BakeResponseSchema = z.strictObject({
+  version: z.literal(2),
+  catalogVersion: z.number(),
+  rendererRevision: z.string(),
+  cacheRevision: z.literal(APPEARANCE_THUMB_CACHE_REVISION_V3),
+  baked: z.number(),
+  skipped: z.number(),
+  total: z.number(),
+});
+const VersionResponseSchema = BakeResponseSchema.pick({
+  version: true,
+  catalogVersion: true,
+  rendererRevision: true,
+  cacheRevision: true,
+});
+
+type BakeRequestBody = {
+  ids: string[] | string;
+  force?: boolean;
+};
+type ThumbEnvOverrides = {
+  ROLL_WEB?: Partial<AppearanceThumbsEnv["ROLL_WEB"]>;
+};
+
+function thumbEnv(overrides: ThumbEnvOverrides = {}) {
+  const objects = new Map<string, Uint8Array>();
   return {
     ROLL_WEB: {
-      prepare: vi.fn(),
-      execute: vi.fn(),
       previewV4: vi.fn(() =>
         Promise.resolve({
           version: 4,
@@ -25,6 +50,7 @@ function thumbEnv(overrides = {}) {
       previewRendererRevisionV4: vi.fn(() =>
         Promise.resolve("canvaskit-v4-r41"),
       ),
+      ...overrides.ROLL_WEB,
     },
     THUMBS: {
       get: vi.fn((key: string) =>
@@ -36,24 +62,20 @@ function thumbEnv(overrides = {}) {
         objects.set(key, value);
         return Promise.resolve(undefined);
       }),
-      head: vi.fn((key: string) => Promise.resolve(objects.get(key) ?? null)),
-      createMultipartUpload: vi.fn(),
-      resumeMultipartUpload: vi.fn(),
-      delete: vi.fn(),
-      list: vi.fn(),
+      head: vi.fn((key: string) =>
+        Promise.resolve(objects.has(key) ? {} : null)
+      ),
     },
     APPEARANCE_CATALOG_POLICY: "r37",
     APPEARANCE_THUMBS_BAKE_SECRET: "secret-value",
-    ...overrides,
-  };
+  } satisfies AppearanceThumbsEnv;
 }
 
 function bakeRequest(
-  env: unknown,
-  body?: unknown,
+  body?: BakeRequestBody,
   secret: string | null = "secret-value",
-) {
-  return new Request("https://web-api.internal/api/internal/appearance/thumbs", {
+): Request {
+  const init: RequestInit = {
     method: "POST",
     headers:
       secret === null
@@ -62,30 +84,33 @@ function bakeRequest(
             "content-type": "application/json",
             "x-appearance-thumbs-bake-secret": secret,
           },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  return new Request(
+    "https://web-api.internal/api/internal/appearance/thumbs",
+    init,
+  );
 }
 
 describe("bakeAppearanceThumbs", () => {
   it("rejects requests without a valid secret", async () => {
     const env = thumbEnv();
     expect(
-      (await bakeAppearanceThumbs(bakeRequest(env, undefined, null), env)).status,
+      (await bakeAppearanceThumbs(bakeRequest(undefined, null), env)).status,
     ).toBe(403);
     expect(
-      (await bakeAppearanceThumbs(bakeRequest(env, undefined, "wrong"), env))
-        .status,
+      (await bakeAppearanceThumbs(bakeRequest(undefined, "wrong"), env)).status,
     ).toBe(403);
   });
 
   it("bakes a requested tile into a versioned bucket key", async () => {
     const env = thumbEnv();
     const response = await bakeAppearanceThumbs(
-      bakeRequest(env, { ids: ["material/glass"] }),
+      bakeRequest({ ids: ["material/glass"] }),
       env,
     );
     expect(response.status).toBe(200);
-    const result = await response.json();
+    const result = BakeResponseSchema.parse(await response.json());
     expect(result).toMatchObject({
       version: 2,
       cacheRevision: 3,
@@ -102,18 +127,23 @@ describe("bakeAppearanceThumbs", () => {
 
   it("skips tiles that already exist unless force is set", async () => {
     const env = thumbEnv();
-    await bakeAppearanceThumbs(bakeRequest(env, { ids: ["material/glass"] }), env);
+    await bakeAppearanceThumbs(bakeRequest({ ids: ["material/glass"] }), env);
     const skipped = await bakeAppearanceThumbs(
-      bakeRequest(env, { ids: ["material/glass"] }),
+      bakeRequest({ ids: ["material/glass"] }),
       env,
     );
-    expect(await skipped.json()).toMatchObject({ baked: 0, skipped: 1 });
+    expect(BakeResponseSchema.parse(await skipped.json())).toMatchObject({
+      baked: 0,
+      skipped: 1,
+    });
     env.THUMBS.head.mockClear();
     const forced = await bakeAppearanceThumbs(
-      bakeRequest(env, { ids: ["material/glass"], force: true }),
+      bakeRequest({ ids: ["material/glass"], force: true }),
       env,
     );
-    expect(await forced.json()).toMatchObject({ baked: 1 });
+    expect(BakeResponseSchema.parse(await forced.json())).toMatchObject({
+      baked: 1,
+    });
   });
 
   it("fails loudly when the renderer returns a non-PNG result", async () => {
@@ -124,7 +154,7 @@ describe("bakeAppearanceThumbs", () => {
       },
     });
     const response = await bakeAppearanceThumbs(
-      bakeRequest(env, { ids: ["ink/matte-ink"] }),
+      bakeRequest({ ids: ["ink/matte-ink"] }),
       env,
     );
     expect(response.status).toBe(502);
@@ -133,8 +163,7 @@ describe("bakeAppearanceThumbs", () => {
   it("rejects an invalid bake input", async () => {
     const env = thumbEnv();
     expect(
-      (await bakeAppearanceThumbs(bakeRequest(env, { ids: "glass" }), env))
-        .status,
+      (await bakeAppearanceThumbs(bakeRequest({ ids: "glass" }), env)).status,
     ).toBe(400);
   });
 });
@@ -142,7 +171,7 @@ describe("bakeAppearanceThumbs", () => {
 describe("serveAppearanceThumb", () => {
   it("serves stored tiles as immutable PNGs", async () => {
     const env = thumbEnv();
-    await bakeAppearanceThumbs(bakeRequest(env, { ids: ["font/fraunces"] }), env);
+    await bakeAppearanceThumbs(bakeRequest({ ids: ["font/fraunces"] }), env);
     const response = await serveAppearanceThumb(
       "/thumbs/3-canvaskit-v4-r41/font/fraunces.png",
       env,
@@ -167,7 +196,7 @@ describe("appearanceThumbsVersion", () => {
     const env = thumbEnv();
     const response = await appearanceThumbsVersion(env);
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
+    expect(VersionResponseSchema.parse(await response.json())).toEqual({
       version: 2,
       catalogVersion: 3,
       rendererRevision: "canvaskit-v4-r41",

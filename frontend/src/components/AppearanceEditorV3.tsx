@@ -55,7 +55,7 @@ import {
 import { Save, Undo2 } from "lucide-react";
 import * as React from "react";
 
-type AppearanceEditorV3Props = {
+export type AppearanceEditorV3Props = {
   catalog: AppearanceCatalogV3;
   resource: AppearanceProfileResource<EditableAppearanceProfileV4>;
   kind: "personal" | "guild";
@@ -81,13 +81,13 @@ type DeletionNotice = Readonly<{
   targets: readonly AppearanceEditorTargetV3[];
 }>;
 
-const TAB_LABELS: Readonly<Record<AppearanceEditorTab, string>> = {
+const TAB_LABELS = {
   design: "Design",
   camera: "Camera",
   server: "Server settings",
-};
+} satisfies Readonly<Record<AppearanceEditorTab, string>>;
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: Error): string {
   if (!(error instanceof AppearanceApiError)) {
     return error instanceof Error ? error.message : "Appearance could not be saved";
   }
@@ -109,11 +109,11 @@ function errorMessage(error: unknown): string {
   }
 }
 
-function designState(profile: EditableAppearanceProfileV4): unknown {
+function designState(profile: EditableAppearanceProfileV4) {
   return { designs: profile.designs, assignments: profile.assignments };
 }
 
-function sameValue(left: unknown, right: unknown): boolean {
+function sameValue<Value>(left: Value, right: Value): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -141,6 +141,7 @@ function designTargets(
     profile.assignments.overrides,
   )) {
     if (reference?.source === "custom" && reference.id === designId) {
+      // SAFETY: The surrounding validation establishes the AppearanceTargetV4 invariant used below.
       targets.push(target as AppearanceTargetV4);
     }
   }
@@ -159,7 +160,7 @@ function targetList(targets: readonly string[]): string {
   return `${targets.slice(0, -1).join(", ")} and ${targets.at(-1)}`;
 }
 
-export function AppearanceEditorV3({
+export function AppearanceEditorV3View({
   catalog,
   resource,
   kind,
@@ -170,7 +171,10 @@ export function AppearanceEditorV3({
   onSave,
   onReset,
   onRestore,
-}: AppearanceEditorV3Props) {
+  PreviewPane,
+}: AppearanceEditorV3Props & {
+  PreviewPane: typeof AppearancePreviewPaneV3;
+}) {
   const resourceProfile = React.useMemo(
     () => resource.profile ?? createEmptyAppearanceProfileV4(kind),
     [kind, resource.profile],
@@ -329,6 +333,7 @@ export function AppearanceEditorV3({
   const hasUnsavedChanges = unsavedDrafts.length > 0;
   const hasTargetOverride =
     target !== "all" && draftProfile.assignments.overrides[target] !== undefined;
+  // SAFETY: The surrounding validation establishes the AppearanceTargetV4 invariant used below.
   const overrideTargets = Object.entries(draftProfile.assignments.overrides)
     .filter(([, reference]) => reference !== undefined)
     .map(([overrideTarget]) => overrideTarget as AppearanceTargetV4);
@@ -952,7 +957,7 @@ export function AppearanceEditorV3({
           id={`${kind}-appearance-preview`}
           className={previewExpanded ? "" : "hidden xl:block"}
         >
-          <AppearancePreviewPaneV3
+          <PreviewPane
             target={previewTarget}
             recipe={previewRecipe}
             diceView={draftProfile.diceView}
@@ -1075,6 +1080,7 @@ export function AppearanceEditorV3({
               </div>
             </div>
           )}
+
 
           <div className="space-y-6">
             <MixPickerColorsRow
@@ -1215,5 +1221,14 @@ export function AppearanceEditorV3({
         />
       </div>
     </section>
+  );
+}
+
+export function AppearanceEditorV3(props: AppearanceEditorV3Props) {
+  return (
+    <AppearanceEditorV3View
+      {...props}
+      PreviewPane={AppearancePreviewPaneV3}
+    />
   );
 }

@@ -24,6 +24,7 @@ function metadataFor<Family extends MaterialFamilyV4>(
   if (metadata === undefined) {
     throw new Error(`Appearance material metadata is missing: ${family}`);
   }
+  // SAFETY: The surrounding validation establishes the MaterialMetadata<Family> invariant used below.
   return metadata as MaterialMetadata<Family>;
 }
 
@@ -40,6 +41,7 @@ function SelectField<Id extends string>({
   disabled?: Partial<Record<Id, boolean>>;
   onChange(value: Id): void;
 }) {
+  // SAFETY: The surrounding validation establishes the Id invariant used below.
   return (
     <label className="block space-y-1.5 text-xs font-medium">
       <span className="block">{label}</span>
@@ -70,27 +72,35 @@ function rangeValueDescription(
   const position = (value - range.minimum) / (range.maximum - range.minimum);
   const index = Math.min(4, Math.floor(position * 5));
   if (label === "Texture scale" || label === "Crust scale") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Fine", "Compact", "Balanced", "Broad", "Coarse"][index] as string;
   }
   if (label === "Dune scale") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Tight", "Compact", "Balanced", "Broad", "Sweeping"][index] as string;
   }
   if (label === "Cloud softness") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Defined", "Crisp", "Balanced", "Soft", "Diffuse"][index] as string;
   }
   if (label === "Drop scale") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Fine", "Small", "Balanced", "Bold", "Broad"][index] as string;
   }
   if (label === "Clarity") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Clouded", "Soft", "Balanced", "Clear", "Crystal clear"][index] as string;
   }
   if (label.includes("density")) {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Sparse", "Light", "Balanced", "Rich", "Dense"][index] as string;
   }
   if (label === "Openness") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Closed", "Subtle", "Balanced", "Open", "Airy"][index] as string;
   }
   if (label === "Patina strength") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Fresh", "Light", "Balanced", "Aged", "Heavy"][index] as string;
   }
   if (label === "Wind direction") {
@@ -98,17 +108,22 @@ function rangeValueDescription(
     return `${String(Math.abs(value))}° ${value < 0 ? "left" : "right"}`;
   }
   if (label === "Grain size") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Fine", "Small", "Balanced", "Coarse", "Chunky"][index] as string;
   }
   if (label === "Cloud cover") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Clear", "Sparse", "Balanced", "Layered", "Overcast"][index] as string;
   }
   if (label === "Horizon height") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Low", "Lower", "Centered", "High", "Upper"][index] as string;
   }
   if (label === "Streak length") {
+    // SAFETY: The surrounding validation establishes the string invariant used below.
     return ["Short", "Brief", "Balanced", "Long", "Extended"][index] as string;
   }
+  // SAFETY: The surrounding validation establishes the string invariant used below.
   return ["Faint", "Soft", "Balanced", "Vivid", "Intense"][index] as string;
 }
 

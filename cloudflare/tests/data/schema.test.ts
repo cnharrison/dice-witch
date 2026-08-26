@@ -1,11 +1,7 @@
-import { env } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { dataTestEnv as dataEnv } from "./test-bindings";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
 
 const guildId = "100000000000000002";
 const userId = "100000000000000003";

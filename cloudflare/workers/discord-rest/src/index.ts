@@ -1,4 +1,5 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { z } from "zod";
 import { readWorkerSecret, type WorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
   buildRollHelperMessage,
@@ -28,11 +29,20 @@ import {
   type DiscordRollChannelType,
   type GameDetectionAnnouncementV1,
   type RollLifecycleAlert,
+  type RollLifecycleMessageProbeOutcome,
   type RollLoggingContext,
   type RollLogArtifact,
   type RollLogDisplayContextV1,
   type RollLogShardV1,
 } from "../../../packages/discord-contracts/src";
+import {
+  boundaryObjectSchema,
+  type BoundaryObject,
+  type SchemaInput,
+  safeIntegerSchema,
+  snowflakeSchema,
+  strictObjectSchema,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 
 export type DiscordRestEnv = {
   DISCORD_APPLICATION_ID: string;
@@ -71,10 +81,166 @@ const INVOKE_DICE_WITCH_PERMISSIONS =
   POST_CHANNEL_PERMISSIONS | USE_APPLICATION_COMMANDS_PERMISSION;
 const MAX_GUILDS_PER_STATS_RUN = 100_000;
 const MAX_SHARDS_PER_STATS_RUN = 1_000;
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const PNG_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/i;
 const ROLL_LOG_TITLE = "receivedCommand: /roll";
 const INVALID_ROLL_LOG_TITLE = "invalidRoll: /roll";
+
+const DiscordResourceIdentitySchema = z.looseObject({ id: snowflakeSchema });
+const DiscordGuildSchema = z.looseObject({
+  id: snowflakeSchema,
+  name: z.string().min(1),
+});
+const DiscordGuildOwnerSchema = z.looseObject({ owner_id: snowflakeSchema });
+const DiscordChannelIdentitySchema = z.looseObject({
+  id: snowflakeSchema,
+  guild_id: snowflakeSchema,
+  name: z.string().min(1),
+  type: safeIntegerSchema,
+});
+const DiscordErrorSchema = z.looseObject({ code: safeIntegerSchema });
+const DiscordBodyStreamSchema = z.custom<ReadableStream<Uint8Array>>(
+  (value) => value instanceof ReadableStream,
+);
+const DiscordErrorFieldsSchema = z.looseObject({ errors: boundaryObjectSchema });
+const DiscordRateLimitSchema = z.looseObject({ retry_after: z.number() });
+const NonNegativeNumericHeaderSchema = z
+  .string()
+  .transform(Number)
+  .pipe(z.number().nonnegative());
+const DiscordGuildMemberSchema = z.looseObject({
+  roles: z.array(snowflakeSchema).max(250),
+  communication_disabled_until: z.string().nullable().optional(),
+});
+const DiscordRoleIdentitySchema = z.looseObject({ id: snowflakeSchema });
+const DiscordAssignedRoleSchema = z.looseObject({
+  id: snowflakeSchema,
+  name: z.string().max(100),
+  permissions: z.string().max(32).regex(/^(0|[1-9][0-9]*)$/u),
+});
+const PermissionStringSchema = z.string().max(32).regex(/^(0|[1-9][0-9]*)$/u);
+const PermissionOverwriteIdentitySchema = z.looseObject({
+  id: snowflakeSchema,
+  type: z.union([z.literal(0), z.literal(1)]),
+});
+const DiscordChannelTypeSchema = z.looseObject({ type: safeIntegerSchema });
+const DiscordTextChannelSchema = z.looseObject({
+  id: snowflakeSchema,
+  name: z.string().min(1).max(100),
+  type: z.union([z.literal(0), z.literal(5)]),
+});
+const DiscordGuildPageEntrySchema = z.looseObject({
+  id: snowflakeSchema,
+  approximate_member_count: safeIntegerSchema.nonnegative(),
+});
+const DiscordGuildListEntrySchema = z.looseObject({ id: snowflakeSchema });
+const DiscordCommandSchema = z.looseObject({
+  id: snowflakeSchema,
+  name: z.string(),
+});
+const DiscordCommandOptionSchema = z.looseObject({
+  name: z.string(),
+});
+const DiscordCommandChoiceSchema = z.looseObject({ value: z.string() });
+const GuildLifecycleLogInputSchema = strictObjectSchema({
+  eventType: z.enum(["guildAdd", "guildRemove"]),
+  guildName: z.string().min(1).max(255),
+  mutationId: z.string().min(1).max(255),
+});
+const RollHelperInputSchema = strictObjectSchema({
+  rollId: snowflakeSchema,
+  userId: snowflakeSchema,
+});
+const ShardCountSchema = safeIntegerSchema.min(1).max(
+  MAX_SHARDS_PER_STATS_RUN,
+);
+const ShardCountInputSchema = strictObjectSchema({
+  shardCount: ShardCountSchema,
+});
+const TimestampSchema = safeIntegerSchema.nonnegative();
+const TrimmedSecretSchema = z.string().min(1).refine((value) =>
+  value.trim() === value
+);
+const BotListReportingConfigurationSchema = z.looseObject({
+  DISCORD_APPLICATION_ID: snowflakeSchema,
+  TOPGG_KEY: TrimmedSecretSchema,
+  DISCORD_BOT_LIST_KEY: TrimmedSecretSchema,
+});
+const MessageProbeInputSchema = strictObjectSchema({
+  channelId: snowflakeSchema,
+  messageId: snowflakeSchema,
+});
+const RollLogInputSchema = z.looseObject({
+  rollId: snowflakeSchema,
+  source: z.enum(["discord", "web"]),
+  notation: z.string().min(1),
+  username: z.string().min(1),
+  guildId: snowflakeSchema.nullable(),
+  channelId: snowflakeSchema,
+  context: z.unknown().optional(),
+});
+const RollLogShardSchema = z.discriminatedUnion("status", [
+  strictObjectSchema({ status: z.literal("not-applicable") }),
+  strictObjectSchema({ status: z.literal("unavailable") }),
+  strictObjectSchema({
+    status: z.literal("available"),
+    shardId: safeIntegerSchema.nonnegative(),
+    shardCount: safeIntegerSchema.positive(),
+    generation: safeIntegerSchema.positive(),
+  }).refine((shard) => shard.shardId < shard.shardCount),
+]);
+const ChannelRollMessageInputBaseSchema = {
+  version: z.literal(1),
+  channelId: snowflakeSchema,
+  payload: boundaryObjectSchema,
+};
+const ChannelRollMessageInputSchema = z.discriminatedUnion("operation", [
+  strictObjectSchema({
+    ...ChannelRollMessageInputBaseSchema,
+    operation: z.literal("create-clatter"),
+    rollId: snowflakeSchema,
+  }),
+  strictObjectSchema({
+    ...ChannelRollMessageInputBaseSchema,
+    operation: z.literal("create-result"),
+    rollId: snowflakeSchema,
+    filename: z.string().regex(PNG_FILENAME),
+    png: z.instanceof(Uint8Array).refine(
+      (png) => png.byteLength > 0 && png.byteLength <= MAX_ROLL_PNG_BYTES,
+    ),
+  }),
+  strictObjectSchema({
+    ...ChannelRollMessageInputBaseSchema,
+    operation: z.literal("edit-result"),
+    messageId: snowflakeSchema,
+    filename: z.string().regex(PNG_FILENAME),
+    png: z.instanceof(Uint8Array).refine(
+      (png) => png.byteLength > 0 && png.byteLength <= MAX_ROLL_PNG_BYTES,
+    ),
+  }),
+]);
+const UnknownArraySchema = z.array(z.unknown());
+const DiscordRolesResponseSchema = UnknownArraySchema.max(250);
+const PermissionOverwritesResponseSchema = UnknownArraySchema.max(1_000);
+const DiscordGuildStatsPageSchema = UnknownArraySchema.max(200);
+const DiscordGuildListPageSchema = z
+  .array(DiscordGuildListEntrySchema)
+  .max(200);
+const DiscordCommandsResponseSchema = z.array(DiscordCommandSchema);
+const DiscordAssignedRolesResponseSchema = z.array(DiscordAssignedRoleSchema);
+
+const WebRollInputSchema = z.looseObject({
+  rollId: snowflakeSchema.optional(),
+  guildId: snowflakeSchema,
+  channelId: snowflakeSchema,
+  payload: boundaryObjectSchema,
+  clatter: z.string().min(1).max(2_000),
+  filename: z.string().regex(PNG_FILENAME),
+  png: z.instanceof(Uint8Array).refine((png) => png.byteLength > 0),
+  skipDelay: z.boolean(),
+  delayMs: safeIntegerSchema.min(0).max(5_000),
+}).refine((input) =>
+  input.skipDelay ? input.delayMs === 0 : input.delayMs >= 1
+);
 
 export type MembershipInspection =
   | {
@@ -218,20 +384,16 @@ export type RollLogResult =
 
 type RequestFetch = (request: Request) => Promise<Response>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+type AssignedRolesInspection = {
+  isAdmin: boolean;
+  isDiceWitchAdmin: boolean;
+};
+
+function isBoundaryObject(value: SchemaInput): value is BoundaryObject {
+  return boundaryObjectSchema.safeParse(value).success;
 }
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  return actual.length === expected.length &&
-    actual.every((key, index) => key === expected[index]);
-}
-
-async function readBoundedDiscordJson(response: Response): Promise<unknown> {
+async function readBoundedDiscordJson(response: Response): Promise<SchemaInput> {
   if (response.body === null) return null;
   const contentLength = response.headers.get("content-length");
   if (
@@ -241,7 +403,9 @@ async function readBoundedDiscordJson(response: Response): Promise<unknown> {
   ) {
     return null;
   }
-  const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+  const stream = DiscordBodyStreamSchema.safeParse(response.body);
+  if (!stream.success) return null;
+  const reader = stream.data.getReader();
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
   try {
@@ -265,7 +429,8 @@ async function readBoundedDiscordJson(response: Response): Promise<unknown> {
     offset += chunk.byteLength;
   }
   try {
-    return JSON.parse(new TextDecoder().decode(body)) as unknown;
+    const parsed: SchemaInput = JSON.parse(new TextDecoder().decode(body));
+    return parsed;
   } catch {
     return null;
   }
@@ -279,7 +444,7 @@ function isAdvancingGuildCursor(
 }
 
 function isRollLoggingContext(
-  value: unknown,
+  value: SchemaInput,
   guildId: string | null,
   channelId: string,
 ): value is RollLoggingContext {
@@ -291,59 +456,45 @@ function isRollLoggingContext(
   }
 }
 
-function isRollLogInput(value: unknown): value is RollLogInput {
-  return (
-    isRecord(value) &&
-    typeof value.rollId === "string" &&
-    SNOWFLAKE.test(value.rollId) &&
-    (value.source === "discord" || value.source === "web") &&
-    typeof value.notation === "string" &&
-    value.notation.length > 0 &&
-    typeof value.username === "string" &&
-    value.username.length > 0 &&
-    (value.guildId === null ||
-      (typeof value.guildId === "string" && SNOWFLAKE.test(value.guildId))) &&
-    typeof value.channelId === "string" &&
-    SNOWFLAKE.test(value.channelId) &&
-    (value.context === undefined ||
-      isRollLoggingContext(value.context, value.guildId, value.channelId))
-  );
+function isRollLogInput(value: SchemaInput): value is RollLogInput {
+  const result = RollLogInputSchema.safeParse(value);
+  return result.success &&
+    (result.data.context === undefined ||
+      isRollLoggingContext(
+        result.data.context,
+        result.data.guildId,
+        result.data.channelId,
+      ));
 }
 
-function parseMemberRoles(value: unknown): string[] {
+type DiscordGuildMember = z.output<typeof DiscordGuildMemberSchema>;
+
+function parseGuildMember(value: SchemaInput): DiscordGuildMember {
+  const result = DiscordGuildMemberSchema.safeParse(value);
   if (
-    !isRecord(value) ||
-    !Array.isArray(value.roles) ||
-    value.roles.length > 250 ||
-    !value.roles.every(
-      (roleId): roleId is string =>
-        typeof roleId === "string" && SNOWFLAKE.test(roleId),
-    ) ||
-    new Set(value.roles).size !== value.roles.length
+    !result.success ||
+    new Set(result.data.roles).size !== result.data.roles.length
   ) {
     throw new Error("Discord guild member response is invalid");
   }
-  return value.roles;
+  return result.data;
 }
 
-function parsePermission(value: unknown, source: string): bigint {
-  if (
-    typeof value !== "string" ||
-    value.length > 32 ||
-    !/^(0|[1-9][0-9]*)$/.test(value)
-  ) {
+function parseMemberRoles(value: SchemaInput): string[] {
+  return parseGuildMember(value).roles;
+}
+
+function parsePermission(value: SchemaInput, source: string): bigint {
+  const result = PermissionStringSchema.safeParse(value);
+  if (!result.success) {
     throw new Error(`${source} permissions are invalid`);
   }
-  return BigInt(value);
+  return BigInt(result.data);
 }
 
-function memberTimeout(value: unknown, now: number): boolean {
-  if (!isRecord(value)) throw new Error("Discord guild member response is invalid");
-  const timeout = value.communication_disabled_until;
+function memberTimeout(member: DiscordGuildMember, now: number): boolean {
+  const timeout = member.communication_disabled_until;
   if (timeout === undefined || timeout === null) return false;
-  if (typeof timeout !== "string") {
-    throw new Error("Discord guild member response is invalid");
-  }
   const expiresAt = Date.parse(timeout);
   if (!Number.isFinite(expiresAt)) {
     throw new Error("Discord guild member response is invalid");
@@ -351,23 +502,20 @@ function memberTimeout(value: unknown, now: number): boolean {
   return expiresAt > now;
 }
 
-function rolePermissions(value: unknown): Map<string, bigint> {
-  if (!Array.isArray(value) || value.length > 250) {
+function rolePermissions(value: SchemaInput): Map<string, bigint> {
+  const roles = DiscordRolesResponseSchema.safeParse(value);
+  if (!roles.success) {
     throw new Error("Discord guild roles response is invalid");
   }
   const permissions = new Map<string, bigint>();
-  for (const role of value) {
-    if (
-      !isRecord(role) ||
-      typeof role.id !== "string" ||
-      !SNOWFLAKE.test(role.id) ||
-      permissions.has(role.id)
-    ) {
+  for (const roleValue of roles.data) {
+    const role = DiscordRoleIdentitySchema.safeParse(roleValue);
+    if (!role.success || permissions.has(role.data.id)) {
       throw new Error("Discord guild roles response is invalid");
     }
     permissions.set(
-      role.id,
-      parsePermission(role.permissions, "Discord guild role"),
+      role.data.id,
+      parsePermission(role.data.permissions, "Discord guild role"),
     );
   }
   return permissions;
@@ -380,31 +528,31 @@ type PermissionOverwrite = {
   deny: bigint;
 };
 
-function permissionOverwrites(value: unknown): PermissionOverwrite[] {
-  if (!Array.isArray(value) || value.length > 1_000) {
+function permissionOverwrites(value: SchemaInput): PermissionOverwrite[] {
+  const values = PermissionOverwritesResponseSchema.safeParse(value);
+  if (!values.success) {
     throw new Error("Discord channel permission overwrites are invalid");
   }
   const overwrites: PermissionOverwrite[] = [];
   const keys = new Set<string>();
-  for (const overwrite of value) {
-    if (
-      !isRecord(overwrite) ||
-      typeof overwrite.id !== "string" ||
-      !SNOWFLAKE.test(overwrite.id) ||
-      (overwrite.type !== 0 && overwrite.type !== 1)
-    ) {
+  for (const overwriteValue of values.data) {
+    const overwrite = PermissionOverwriteIdentitySchema.safeParse(overwriteValue);
+    if (!overwrite.success) {
       throw new Error("Discord channel permission overwrites are invalid");
     }
-    const key = `${String(overwrite.type)}:${overwrite.id}`;
+    const key = `${String(overwrite.data.type)}:${overwrite.data.id}`;
     if (keys.has(key)) {
       throw new Error("Discord channel permission overwrites are invalid");
     }
     keys.add(key);
     overwrites.push({
-      id: overwrite.id,
-      type: overwrite.type,
-      allow: parsePermission(overwrite.allow, "Discord channel overwrite"),
-      deny: parsePermission(overwrite.deny, "Discord channel overwrite"),
+      id: overwrite.data.id,
+      type: overwrite.data.type,
+      allow: parsePermission(
+        overwrite.data.allow,
+        "Discord channel overwrite",
+      ),
+      deny: parsePermission(overwrite.data.deny, "Discord channel overwrite"),
     });
   }
   return overwrites;
@@ -418,27 +566,16 @@ function applyPermissionOverwrite(
 }
 
 function inspectAssignedRoles(
-  value: unknown,
+  value: SchemaInput,
   assignedRoleIds: Set<string>,
-): { isAdmin: boolean; isDiceWitchAdmin: boolean } {
-  if (!Array.isArray(value)) {
+): AssignedRolesInspection {
+  const roles = DiscordAssignedRolesResponseSchema.safeParse(value);
+  if (!roles.success) {
     throw new Error("Discord guild roles response is invalid");
   }
   let isAdmin = false;
   let isDiceWitchAdmin = false;
-  for (const role of value) {
-    if (
-      !isRecord(role) ||
-      typeof role.id !== "string" ||
-      !SNOWFLAKE.test(role.id) ||
-      typeof role.name !== "string" ||
-      role.name.length > 100 ||
-      typeof role.permissions !== "string" ||
-      role.permissions.length > 32 ||
-      !/^(0|[1-9][0-9]*)$/.test(role.permissions)
-    ) {
-      throw new Error("Discord guild roles response is invalid");
-    }
+  for (const role of roles.data) {
     if (!assignedRoleIds.has(role.id)) continue;
     if ((BigInt(role.permissions) & 8n) === 8n) isAdmin = true;
     if (role.name === DICE_WITCH_ADMIN_ROLE) isDiceWitchAdmin = true;
@@ -446,26 +583,29 @@ function inspectAssignedRoles(
   return { isAdmin, isDiceWitchAdmin };
 }
 
-function parseGuildOwnerId(value: unknown): string {
-  if (
-    !isRecord(value) ||
-    typeof value.owner_id !== "string" ||
-    !SNOWFLAKE.test(value.owner_id)
-  ) {
+function parseGuildOwnerId(value: SchemaInput): string {
+  const result = DiscordGuildOwnerSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Discord guild response is invalid");
   }
-  return value.owner_id;
+  return result.data.owner_id;
 }
 
-function hasRegisteredFudgeChoice(command: Record<string, unknown>): boolean {
-  if (!Array.isArray(command.options)) return false;
-  const topic = (command.options as unknown[]).find(
-    (option) => isRecord(option) && option.name === "topic",
-  );
-  if (!isRecord(topic) || !Array.isArray(topic.choices)) return false;
-  return (topic.choices as unknown[]).some(
-    (choice) => isRecord(choice) && choice.value === "fudge",
-  );
+type RegisteredCommand = z.output<typeof DiscordCommandSchema>;
+
+function hasRegisteredFudgeChoice(command: RegisteredCommand): boolean {
+  const options = UnknownArraySchema.safeParse(command.options);
+  if (!options.success) return false;
+  const topic = options.data
+    .map((option) => DiscordCommandOptionSchema.safeParse(option))
+    .find((option) => option.success && option.data.name === "topic");
+  if (topic === undefined || !topic.success) return false;
+  const choices = UnknownArraySchema.safeParse(topic.data.choices);
+  if (!choices.success) return false;
+  return choices.data.some((choice) => {
+    const result = DiscordCommandChoiceSchema.safeParse(choice);
+    return result.success && result.data.value === "fudge";
+  });
 }
 
 async function registerCommands(
@@ -485,21 +625,18 @@ async function registerCommands(
     }),
   );
   if (!response.ok) throw new Error("Discord command registration failed");
-  const value: unknown = await response.json();
-  if (!Array.isArray(value) || value.length !== DISCORD_GLOBAL_COMMANDS.length) {
+  const commands = DiscordCommandsResponseSchema.safeParse(
+    await response.json(),
+  );
+  if (
+    !commands.success ||
+    commands.data.length !== DISCORD_GLOBAL_COMMANDS.length
+  ) {
     throw new Error("Discord command registration response is invalid");
   }
   const commandNames: string[] = [];
   let hasFudgeChoice = false;
-  for (const command of value as unknown[]) {
-    if (
-      !isRecord(command) ||
-      typeof command.id !== "string" ||
-      !SNOWFLAKE.test(command.id) ||
-      typeof command.name !== "string"
-    ) {
-      throw new Error("Discord command registration response is invalid");
-    }
+  for (const command of commands.data) {
     commandNames.push(command.name);
     if (command.name === "knowledgebase") {
       hasFudgeChoice = hasRegisteredFudgeChoice(command);
@@ -520,7 +657,7 @@ export function registerGlobalCommands(
   env: Pick<DiscordRestEnv, "DISCORD_APPLICATION_ID" | "DISCORD_BOT_TOKEN">,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<CommandRegistrationResult> {
-  if (!SNOWFLAKE.test(env.DISCORD_APPLICATION_ID)) {
+  if (!snowflakeSchema.safeParse(env.DISCORD_APPLICATION_ID).success) {
     throw new Error("Discord application id is invalid");
   }
   return registerCommands(
@@ -538,8 +675,8 @@ export function registerDevelopmentGuildCommands(
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<CommandRegistrationResult> {
   if (
-    !SNOWFLAKE.test(env.DISCORD_APPLICATION_ID) ||
-    !SNOWFLAKE.test(env.DISCORD_TEST_GUILD_ID)
+    !snowflakeSchema.safeParse(env.DISCORD_APPLICATION_ID).success ||
+    !snowflakeSchema.safeParse(env.DISCORD_TEST_GUILD_ID).success
   ) {
     throw new Error("Discord command registration scope is invalid");
   }
@@ -556,11 +693,7 @@ export async function fetchPublicStats(
   discordFetch: RequestFetch = (request) => fetch(request),
   wait: Sleep = sleep,
 ): Promise<PublicDiscordStats> {
-  if (
-    !Number.isSafeInteger(shardCount) ||
-    shardCount < 1 ||
-    shardCount > MAX_SHARDS_PER_STATS_RUN
-  ) {
+  if (!ShardCountSchema.safeParse(shardCount).success) {
     throw new Error("Discord guild stats shard count is invalid");
   }
   const seen = new Set<string>();
@@ -579,46 +712,44 @@ export async function fetchPublicStats(
       wait,
       "Discord guild stats",
     );
-    const page: unknown = await response.json();
-    if (!Array.isArray(page) || page.length > 200) {
+    const page = DiscordGuildStatsPageSchema.safeParse(
+      await response.json(),
+    );
+    if (!page.success) {
       throw new Error("Discord guild stats response is invalid");
     }
-    if (page.length === 0) break;
-    for (const guild of page) {
-      if (
-        !isRecord(guild) ||
-        typeof guild.id !== "string" ||
-        !SNOWFLAKE.test(guild.id) ||
-        seen.has(guild.id) ||
-        !Number.isSafeInteger(guild.approximate_member_count) ||
-        Number(guild.approximate_member_count) < 0
-      ) {
+    if (page.data.length === 0) break;
+    let lastGuildId: string | undefined;
+    for (const value of page.data) {
+      const guild = DiscordGuildPageEntrySchema.safeParse(value);
+      if (!guild.success || seen.has(guild.data.id)) {
         throw new Error("Discord guild stats response is invalid");
       }
-      seen.add(guild.id);
+      seen.add(guild.data.id);
+      lastGuildId = guild.data.id;
       if (seen.size > MAX_GUILDS_PER_STATS_RUN) {
         throw new Error("Discord guild stats limit exceeded");
       }
-      const shardId = Number((BigInt(guild.id) >> 22n) % BigInt(shardCount));
+      const shardId = Number(
+        (BigInt(guild.data.id) >> 22n) % BigInt(shardCount),
+      );
       const shardGuilds = guildCountsByShard[shardId];
       if (shardGuilds === undefined) {
         throw new Error("Discord guild stats shard calculation failed");
       }
       guildCountsByShard[shardId] = shardGuilds + 1;
-      estimatedGuildMemberships += Number(guild.approximate_member_count);
+      estimatedGuildMemberships += guild.data.approximate_member_count;
       if (!Number.isSafeInteger(estimatedGuildMemberships)) {
         throw new Error("Discord guild stats total is invalid");
       }
     }
-    const last: unknown = page[page.length - 1];
     if (
-      !isRecord(last) ||
-      typeof last.id !== "string" ||
-      !isAdvancingGuildCursor(after, last.id)
+      lastGuildId === undefined ||
+      !isAdvancingGuildCursor(after, lastGuildId)
     ) {
       throw new Error("Discord guild stats response is invalid");
     }
-    after = last.id;
+    after = lastGuildId;
   }
   return {
     liveGuilds: seen.size,
@@ -628,10 +759,14 @@ export async function fetchPublicStats(
   };
 }
 
+type BotListStatBody =
+  | { server_count: number }
+  | { guilds: number };
+
 async function postBotListStat(
   url: string,
   token: string,
-  body: unknown,
+  body: BotListStatBody,
   externalFetch: RequestFetch,
 ): Promise<{ delivered: boolean; httpStatus: number | null }> {
   try {
@@ -658,7 +793,7 @@ export async function captureAudienceSnapshot(
   discordFetch: RequestFetch = (request) => fetch(request),
   capturedAt = Date.now(),
 ): Promise<DiscordAudienceCaptureV1> {
-  if (!Number.isSafeInteger(capturedAt) || capturedAt < 0) {
+  if (!TimestampSchema.safeParse(capturedAt).success) {
     throw new Error("Audience snapshot timestamp is invalid");
   }
   return {
@@ -680,13 +815,7 @@ export async function reportBotListStats(
   externalFetch: RequestFetch = (request) => fetch(request),
   capturedAt = Date.now(),
 ): Promise<BotListReportResult> {
-  if (
-    !SNOWFLAKE.test(env.DISCORD_APPLICATION_ID) ||
-    env.TOPGG_KEY.trim() !== env.TOPGG_KEY ||
-    env.TOPGG_KEY.length === 0 ||
-    env.DISCORD_BOT_LIST_KEY.trim() !== env.DISCORD_BOT_LIST_KEY ||
-    env.DISCORD_BOT_LIST_KEY.length === 0
-  ) {
+  if (!BotListReportingConfigurationSchema.safeParse(env).success) {
     throw new Error("Bot list reporting configuration is invalid");
   }
   const capture = await captureAudienceSnapshot(
@@ -738,17 +867,12 @@ function sleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-function parseShardCountInput(value: unknown): number {
-  if (
-    !isRecord(value) ||
-    Object.keys(value).length !== 1 ||
-    !Number.isSafeInteger(value.shardCount) ||
-    Number(value.shardCount) < 1 ||
-    Number(value.shardCount) > MAX_SHARDS_PER_STATS_RUN
-  ) {
+function parseShardCountInput(value: SchemaInput): number {
+  const result = ShardCountInputSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Discord guild stats request is invalid");
   }
-  return Number(value.shardCount);
+  return result.data.shardCount;
 }
 
 async function fetchGuildPageResponse(
@@ -774,10 +898,10 @@ async function fetchGuildPageResponse(
     if (retries === MAX_GUILD_PAGE_RATE_LIMIT_RETRIES) {
       throw new Error(`${errorPrefix} rate limit retries exhausted`);
     }
-    const value: unknown = await response.json();
-    const retryAfter = isRecord(value) ? value.retry_after : undefined;
-    const delayMs =
-      typeof retryAfter === "number" ? Math.ceil(retryAfter * 1_000) : NaN;
+    const rateLimit = DiscordRateLimitSchema.safeParse(await response.json());
+    const delayMs = rateLimit.success
+      ? Math.ceil(rateLimit.data.retry_after * 1_000)
+      : NaN;
     if (
       !Number.isSafeInteger(delayMs) ||
       delayMs < 0 ||
@@ -796,7 +920,7 @@ export async function listCurrentGuildIdsPage(
   discordFetch: RequestFetch = (request) => fetch(request),
   wait: Sleep = sleep,
 ): Promise<CurrentGuildIdsPage> {
-  if (after !== null && !SNOWFLAKE.test(after)) {
+  if (after !== null && !snowflakeSchema.safeParse(after).success) {
     throw new Error("Discord guild list cursor is invalid");
   }
   const url = new URL(`${DISCORD_API}/users/@me/guilds`);
@@ -809,20 +933,13 @@ export async function listCurrentGuildIdsPage(
     wait,
     "Discord guild list",
   );
-  const page: unknown = await response.json();
-  if (!Array.isArray(page) || page.length > 200) {
+  const page = DiscordGuildListPageSchema.safeParse(
+    await response.json(),
+  );
+  if (!page.success) {
     throw new Error("Discord guild list response is invalid");
   }
-  const guildIds = page.map((guild) => {
-    if (
-      !isRecord(guild) ||
-      typeof guild.id !== "string" ||
-      !SNOWFLAKE.test(guild.id)
-    ) {
-      throw new Error("Discord guild list response is invalid");
-    }
-    return guild.id;
-  });
+  const guildIds = page.data.map((guild) => guild.id);
   if (new Set(guildIds).size !== guildIds.length) {
     throw new Error("Discord guild list response is invalid");
   }
@@ -859,7 +976,7 @@ export async function listTextChannels(
   guildId: string,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<TextChannel[]> {
-  if (!SNOWFLAKE.test(guildId)) {
+  if (!snowflakeSchema.safeParse(guildId).success) {
     throw new Error("Guild id is invalid");
   }
   const response = await discordFetch(
@@ -871,26 +988,26 @@ export async function listTextChannels(
     }),
   );
   if (!response.ok) throw new Error("Discord guild channels request failed");
-  const value: unknown = await response.json();
-  if (!Array.isArray(value)) {
+  const values = UnknownArraySchema.safeParse(await response.json());
+  if (!values.success) {
     throw new Error("Discord guild channels response is invalid");
   }
   const channels: TextChannel[] = [];
-  for (const channel of value) {
-    if (!isRecord(channel) || typeof channel.type !== "number") {
+  for (const value of values.data) {
+    const channelType = DiscordChannelTypeSchema.safeParse(value);
+    if (!channelType.success) {
       throw new Error("Discord guild channels response is invalid");
     }
-    if (channel.type !== 0 && channel.type !== 5) continue;
-    if (
-      typeof channel.id !== "string" ||
-      !SNOWFLAKE.test(channel.id) ||
-      typeof channel.name !== "string" ||
-      channel.name.length < 1 ||
-      channel.name.length > 100
-    ) {
+    if (channelType.data.type !== 0 && channelType.data.type !== 5) continue;
+    const channel = DiscordTextChannelSchema.safeParse(value);
+    if (!channel.success) {
       throw new Error("Discord guild channels response is invalid");
     }
-    channels.push({ id: channel.id, name: channel.name, type: channel.type });
+    channels.push({
+      id: channel.data.id,
+      name: channel.data.name,
+      type: channel.data.type,
+    });
   }
   return channels;
 }
@@ -904,14 +1021,15 @@ type GuildMemberPermissions = {
 };
 
 function guildMemberPermissions(
-  member: unknown,
+  value: SchemaInput,
   permissionsByRole: Map<string, bigint>,
   everyonePermissions: bigint,
   ownerId: string,
   userId: string,
   now: number,
 ): GuildMemberPermissions {
-  const roleIds = new Set(parseMemberRoles(member));
+  const member = parseGuildMember(value);
+  const roleIds = new Set(member.roles);
   let base = everyonePermissions;
   for (const roleId of roleIds) {
     const permissions = permissionsByRole.get(roleId);
@@ -982,9 +1100,9 @@ async function inspectMemberTextChannels(
   now: number,
 ): Promise<MemberTextChannelInspection> {
   if (
-    !SNOWFLAKE.test(guildId) ||
-    !SNOWFLAKE.test(userId) ||
-    !SNOWFLAKE.test(env.DISCORD_APPLICATION_ID)
+    !snowflakeSchema.safeParse(guildId).success ||
+    !snowflakeSchema.safeParse(userId).success ||
+    !snowflakeSchema.safeParse(env.DISCORD_APPLICATION_ID).success
   ) {
     throw new Error("Membership identifiers are invalid");
   }
@@ -1013,9 +1131,9 @@ async function inspectMemberTextChannels(
   if (!guildResponse.ok) throw new Error("Discord guild request failed");
   if (!channelsResponse.ok) throw new Error("Discord guild channels request failed");
 
-  const member: unknown = await memberResponse.json();
-  const bot: unknown = await botResponse.json();
-  const roles: unknown = await rolesResponse.json();
+  const member: SchemaInput = await memberResponse.json();
+  const bot: SchemaInput = await botResponse.json();
+  const roles: SchemaInput = await rolesResponse.json();
   const permissionsByRole = rolePermissions(roles);
   const everyonePermissions = permissionsByRole.get(guildId);
   if (everyonePermissions === undefined) {
@@ -1039,26 +1157,24 @@ async function inspectMemberTextChannels(
     now,
   );
 
-  const value: unknown = await channelsResponse.json();
-  if (!Array.isArray(value)) {
+  const values = UnknownArraySchema.safeParse(await channelsResponse.json());
+  if (!values.success) {
     throw new Error("Discord guild channels response is invalid");
   }
   const channels: TextChannel[] = [];
-  for (const channel of value) {
-    if (!isRecord(channel) || typeof channel.type !== "number") {
+  for (const value of values.data) {
+    const channelType = DiscordChannelTypeSchema.safeParse(value);
+    if (!channelType.success) {
       throw new Error("Discord guild channels response is invalid");
     }
-    if (channel.type !== 0 && channel.type !== 5) continue;
-    if (
-      typeof channel.id !== "string" ||
-      !SNOWFLAKE.test(channel.id) ||
-      typeof channel.name !== "string" ||
-      channel.name.length < 1 ||
-      channel.name.length > 100
-    ) {
+    if (channelType.data.type !== 0 && channelType.data.type !== 5) continue;
+    const channel = DiscordTextChannelSchema.safeParse(value);
+    if (!channel.success) {
       throw new Error("Discord guild channels response is invalid");
     }
-    const overwrites = permissionOverwrites(channel.permission_overwrites);
+    const overwrites = permissionOverwrites(
+      channel.data.permission_overwrites,
+    );
     const memberCanUseDiceWitch = canUseTextChannel(
       memberPermissions,
       guildId,
@@ -1072,7 +1188,11 @@ async function inspectMemberTextChannels(
       POST_CHANNEL_PERMISSIONS,
     );
     if (memberCanUseDiceWitch && botCanPost) {
-      channels.push({ id: channel.id, name: channel.name, type: channel.type });
+      channels.push({
+        id: channel.data.id,
+        name: channel.data.name,
+        type: channel.data.type,
+      });
     }
   }
   const assignedRoles = inspectAssignedRoles(
@@ -1149,18 +1269,14 @@ function failedRollLogResult(
 function numericResponseHeader(response: Response, name: string): number | null {
   const value = response.headers.get(name);
   if (value === null) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  const parsed = NonNegativeNumericHeaderSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 async function discordErrorCode(response: Response): Promise<number | null> {
   try {
-    const value: unknown = await response.clone().json();
-    return isRecord(value) &&
-      typeof value.code === "number" &&
-      Number.isSafeInteger(value.code)
-      ? value.code
-      : null;
+    const result = DiscordErrorSchema.safeParse(await response.clone().json());
+    return result.success ? result.data.code : null;
   } catch {
     return null;
   }
@@ -1169,7 +1285,7 @@ async function discordErrorCode(response: Response): Promise<number | null> {
 async function discordJson(
   url: string,
   token: string,
-  body: unknown,
+  body: BoundaryObject,
   discordFetch: RequestFetch,
 ): Promise<Response> {
   return discordFetch(
@@ -1187,25 +1303,17 @@ async function discordJson(
 
 export async function logGuildLifecycle(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "LOG_OUTPUT_CHANNEL_ID">,
-  input: unknown,
+  input: SchemaInput,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<GuildLifecycleLogResult> {
-  if (
-    !isRecord(input) ||
-    Object.keys(input).length !== 3 ||
-    (input.eventType !== "guildAdd" && input.eventType !== "guildRemove") ||
-    typeof input.guildName !== "string" ||
-    input.guildName.length < 1 ||
-    input.guildName.length > 255 ||
-    typeof input.mutationId !== "string" ||
-    input.mutationId.length < 1 ||
-    input.mutationId.length > 255
-  ) {
+  const parsedInput = GuildLifecycleLogInputSchema.safeParse(input);
+  if (!parsedInput.success) {
     throw new Error("Guild lifecycle log request is invalid");
   }
+  const lifecycle = parsedInput.data;
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(input.mutationId),
+    new TextEncoder().encode(lifecycle.mutationId),
   );
   const nonce = [...new Uint8Array(digest)]
     .slice(0, 12)
@@ -1221,11 +1329,11 @@ export async function logGuildLifecycle(
       components: [
         {
           type: 17,
-          accent_color: input.eventType === "guildAdd" ? 0x00_ff_00 : 0xff_00_00,
+          accent_color: lifecycle.eventType === "guildAdd" ? 0x00_ff_00 : 0xff_00_00,
           components: [
             {
               type: 10,
-              content: `## ${input.eventType}\n${escapeDiscordMarkdown(input.guildName)}`,
+              content: `## ${lifecycle.eventType}\n${escapeDiscordMarkdown(lifecycle.guildName)}`,
             },
           ],
         },
@@ -1243,46 +1351,45 @@ export async function sendRollHelper(
     DiscordRestEnv,
     "DISCORD_BOT_TOKEN" | "INVITE_LINK" | "SUPPORT_SERVER_LINK"
   >,
-  input: unknown,
+  input: SchemaInput,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<RollHelperResult> {
-  if (
-    !isRecord(input) ||
-    Object.keys(input).length !== 2 ||
-    typeof input.rollId !== "string" ||
-    !SNOWFLAKE.test(input.rollId) ||
-    typeof input.userId !== "string" ||
-    !SNOWFLAKE.test(input.userId)
-  ) {
+  const parsedInput = RollHelperInputSchema.safeParse(input);
+  if (!parsedInput.success) {
     throw new Error("Roll helper request is invalid");
   }
+  const helper = parsedInput.data;
   const channelResponse = await discordJson(
     `${DISCORD_API}/users/@me/channels`,
     env.DISCORD_BOT_TOKEN,
-    { recipient_id: input.userId },
+    { recipient_id: helper.userId },
     discordFetch,
   );
   if (!channelResponse.ok) throw new Error("Discord DM channel request failed");
-  const channel: unknown = await channelResponse.json();
-  if (!isRecord(channel) || typeof channel.id !== "string" || !SNOWFLAKE.test(channel.id)) {
+  const channel = DiscordResourceIdentitySchema.safeParse(
+    await channelResponse.json(),
+  );
+  if (!channel.success) {
     throw new Error("Discord DM channel response is invalid");
   }
   const messageResponse = await discordJson(
-    `${DISCORD_API}/channels/${channel.id}/messages`,
+    `${DISCORD_API}/channels/${channel.data.id}/messages`,
     env.DISCORD_BOT_TOKEN,
     {
       ...buildRollHelperMessage({
         inviteUrl: env.INVITE_LINK,
         supportUrl: env.SUPPORT_SERVER_LINK,
       }),
-      nonce: input.rollId,
+      nonce: helper.rollId,
       enforce_nonce: true,
     },
     discordFetch,
   );
   if (!messageResponse.ok) throw new Error("Discord roll helper delivery failed");
-  const message: unknown = await messageResponse.json();
-  if (!isRecord(message) || typeof message.id !== "string" || !SNOWFLAKE.test(message.id)) {
+  const message = DiscordResourceIdentitySchema.safeParse(
+    await messageResponse.json(),
+  );
+  if (!message.success) {
     throw new Error("Discord roll helper response is invalid");
   }
   return { status: "delivered" };
@@ -1330,10 +1437,10 @@ function rollLogLocation(context: RollLoggingContext): string {
 
 export async function logRoll(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "LOG_OUTPUT_CHANNEL_ID">,
-  input: unknown,
+  input: SchemaInput,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<RollLogResult> {
-  if (!SNOWFLAKE.test(env.LOG_OUTPUT_CHANNEL_ID) || !isRollLogInput(input)) {
+  if (!snowflakeSchema.safeParse(env.LOG_OUTPUT_CHANNEL_ID).success || !isRollLogInput(input)) {
     throw new Error("Roll log request is invalid");
   }
 
@@ -1381,32 +1488,29 @@ export async function logRoll(
       );
       location = "an **inaccessible channel/server** [HTTP]";
     } else {
-      const channel: unknown = await channelResponse.json();
-      const guild: unknown = await guildResponse.json();
+      const channelValue: SchemaInput = await channelResponse.json();
+      const guildValue: SchemaInput = await guildResponse.json();
+      const channel = DiscordChannelIdentitySchema.safeParse(channelValue);
       if (
-        !isRecord(channel) ||
-        channel.id !== input.channelId ||
-        channel.guild_id !== input.guildId ||
-        typeof channel.name !== "string" ||
-        channel.name.length < 1 ||
-        !isDiscordRollChannelType(channel.type)
+        !channel.success ||
+        channel.data.id !== input.channelId ||
+        channel.data.guild_id !== input.guildId ||
+        !isDiscordRollChannelType(channel.data.type)
       ) {
         console.error(
           JSON.stringify({
             level: "error",
             message: "Discord roll log context response is invalid",
             context: "channel",
-            channelType: isRecord(channel) ? Number(channel.type) : null,
+            channelType: isBoundaryObject(channelValue)
+              ? Number(channelValue.type)
+              : null,
           }),
         );
         throw new Error("Discord roll log context response is invalid");
       }
-      if (
-        !isRecord(guild) ||
-        guild.id !== input.guildId ||
-        typeof guild.name !== "string" ||
-        guild.name.length < 1
-      ) {
+      const guild = DiscordGuildSchema.safeParse(guildValue);
+      if (!guild.success || guild.data.id !== input.guildId) {
         console.error(
           JSON.stringify({
             level: "error",
@@ -1416,10 +1520,10 @@ export async function logRoll(
         );
         throw new Error("Discord roll log context response is invalid");
       }
-      const channelType = [10, 11, 12].includes(channel.type)
+      const channelType = [10, 11, 12].includes(channel.data.type)
         ? "thread"
         : "channel";
-      location = `${channelType} **${escapeDiscordMarkdown(channel.name)}** on **${escapeDiscordMarkdown(guild.name)}** [HTTP]`;
+      location = `${channelType} **${escapeDiscordMarkdown(channel.data.name)}** on **${escapeDiscordMarkdown(guild.data.name)}** [HTTP]`;
     }
   }
 
@@ -1472,53 +1576,26 @@ export async function logRoll(
     );
     return failedRollLogResult("delivery", response.status);
   }
-  const value: unknown = await response.json();
-  if (!isRecord(value) || typeof value.id !== "string" || !SNOWFLAKE.test(value.id)) {
+  const message = DiscordResourceIdentitySchema.safeParse(await response.json());
+  if (!message.success) {
     throw new Error("Discord roll log response is invalid");
   }
   return { status: "delivered" };
 }
 
 function validateRollLogShard(
-  value: unknown,
+  value: SchemaInput,
   guildId: string | null,
 ): RollLogShardV1 {
-  if (!isRecord(value)) throw new Error("Roll log shard is invalid");
+  const shard = RollLogShardSchema.safeParse(value);
   if (
-    value.status === "not-applicable" &&
-    guildId === null &&
-    Object.keys(value).length === 1
-  ) {
-    return { status: "not-applicable" };
-  }
-  if (
-    value.status === "unavailable" &&
-    guildId !== null &&
-    Object.keys(value).length === 1
-  ) {
-    return { status: "unavailable" };
-  }
-  if (
-    value.status !== "available" ||
-    guildId === null ||
-    Object.keys(value).sort().join(",") !==
-      "generation,shardCount,shardId,status" ||
-    !Number.isSafeInteger(value.generation) ||
-    Number(value.generation) < 1 ||
-    !Number.isSafeInteger(value.shardCount) ||
-    Number(value.shardCount) < 1 ||
-    !Number.isSafeInteger(value.shardId) ||
-    Number(value.shardId) < 0 ||
-    Number(value.shardId) >= Number(value.shardCount)
+    !shard.success ||
+    (shard.data.status === "not-applicable" && guildId !== null) ||
+    (shard.data.status !== "not-applicable" && guildId === null)
   ) {
     throw new Error("Roll log shard is invalid");
   }
-  return {
-    status: "available",
-    shardId: Number(value.shardId),
-    shardCount: Number(value.shardCount),
-    generation: Number(value.generation),
-  };
+  return shard.data;
 }
 
 async function isImageSpecificDiscordRejection(
@@ -1529,9 +1606,11 @@ async function isImageSpecificDiscordRejection(
   const code = await discordErrorCode(response);
   if (code === 40_005 || code === 50_045) return true;
   try {
-    const body: unknown = await response.clone().json();
-    if (!isRecord(body) || !isRecord(body.errors)) return false;
-    return Object.keys(body.errors).some(
+    const body = DiscordErrorFieldsSchema.safeParse(
+      await response.clone().json(),
+    );
+    if (!body.success) return false;
+    return Object.keys(body.data.errors).some(
       (key) => key === "attachments" || key === "files",
     );
   } catch {
@@ -1578,34 +1657,27 @@ async function rollLogChannelContext(
   response: Response,
   artifact: RollLogArtifact,
 ): Promise<{ name: string; type: DiscordRollChannelType }> {
-  const channel: unknown = await response.json();
+  const channel = DiscordChannelIdentitySchema.safeParse(await response.json());
   if (
-    !isRecord(channel) ||
-    channel.id !== artifact.channelId ||
-    channel.guild_id !== artifact.guildId ||
-    typeof channel.name !== "string" ||
-    channel.name.length < 1 ||
-    !isDiscordRollChannelType(channel.type)
+    !channel.success ||
+    channel.data.id !== artifact.channelId ||
+    channel.data.guild_id !== artifact.guildId ||
+    !isDiscordRollChannelType(channel.data.type)
   ) {
     throw new Error("Discord roll log channel response is invalid");
   }
-  return { name: channel.name, type: channel.type };
+  return { name: channel.data.name, type: channel.data.type };
 }
 
 async function rollLogGuildName(
   response: Response,
   guildId: string,
 ): Promise<string> {
-  const guild: unknown = await response.json();
-  if (
-    !isRecord(guild) ||
-    guild.id !== guildId ||
-    typeof guild.name !== "string" ||
-    guild.name.length < 1
-  ) {
+  const guild = DiscordGuildSchema.safeParse(await response.json());
+  if (!guild.success || guild.data.id !== guildId) {
     throw new Error("Discord roll log guild response is invalid");
   }
-  return guild.name;
+  return guild.data.name;
 }
 
 async function resolveRollLogContext(
@@ -1837,8 +1909,8 @@ export async function deliverRollLogV1(
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<DeliverRollLogResultV1> {
   if (
-    !SNOWFLAKE.test(env.LOG_OUTPUT_CHANNEL_ID) ||
-    !isRecord(input) ||
+    !snowflakeSchema.safeParse(env.LOG_OUTPUT_CHANNEL_ID).success ||
+    !isBoundaryObject(input) ||
     Object.keys(input).sort().join(",") !== "artifact,logicalShard"
   ) {
     throw new Error("Roll log delivery request is invalid");
@@ -1963,8 +2035,8 @@ export async function deliverRollLogV1(
     );
     return { status: "failed", httpStatus: response.status };
   }
-  const value: unknown = await response.json();
-  if (!isRecord(value) || typeof value.id !== "string" || !SNOWFLAKE.test(value.id)) {
+  const message = DiscordResourceIdentitySchema.safeParse(await response.json());
+  if (!message.success) {
     throw new Error("Discord roll log response is invalid");
   }
   console.info(
@@ -1974,7 +2046,7 @@ export async function deliverRollLogV1(
       message: "Private roll log delivered",
       subsystem: "private-roll-log",
       ...telemetryContext,
-      logMessageId: value.id,
+      logMessageId: message.data.id,
       userImpact: "none",
       httpStatus: response.status,
     }),
@@ -1983,66 +2055,15 @@ export async function deliverRollLogV1(
 }
 
 function parseChannelRollMessageDeliveryInputV1(
-  value: unknown,
+  value: SchemaInput,
 ): ChannelRollMessageDeliveryInputV1 {
-  if (!isRecord(value) || value.version !== 1) {
-    throw new Error("Channel roll message delivery request is invalid");
-  }
-  const commonValid =
-    typeof value.channelId === "string" &&
-    SNOWFLAKE.test(value.channelId) &&
-    isRecord(value.payload);
-  const isCreateClatter =
-    value.operation === "create-clatter" &&
-    hasExactKeys(value, [
-      "channelId",
-      "operation",
-      "payload",
-      "rollId",
-      "version",
-    ]);
-  const isCreateResult =
-    value.operation === "create-result" &&
-    hasExactKeys(value, [
-      "channelId",
-      "filename",
-      "operation",
-      "payload",
-      "png",
-      "rollId",
-      "version",
-    ]);
-  const isEditResult =
-    value.operation === "edit-result" &&
-    hasExactKeys(value, [
-      "channelId",
-      "filename",
-      "messageId",
-      "operation",
-      "payload",
-      "png",
-      "version",
-    ]);
-  if (
-    !commonValid ||
-    (!isCreateClatter && !isCreateResult && !isEditResult) ||
-    ((isCreateClatter || isCreateResult) &&
-      (typeof value.rollId !== "string" || !SNOWFLAKE.test(value.rollId))) ||
-    (isEditResult &&
-      (typeof value.messageId !== "string" ||
-        !SNOWFLAKE.test(value.messageId))) ||
-    ((isCreateResult || isEditResult) &&
-      (typeof value.filename !== "string" ||
-        !PNG_FILENAME.test(value.filename) ||
-        !(value.png instanceof Uint8Array) ||
-        value.png.byteLength === 0 ||
-        value.png.byteLength > MAX_ROLL_PNG_BYTES))
-  ) {
+  const result = ChannelRollMessageInputSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Channel roll message delivery request is invalid");
   }
   let payload;
   try {
-    payload = validateDiscordMessage(value.payload);
+    payload = validateDiscordMessage(result.data.payload);
   } catch {
     throw new Error("Channel roll message delivery request is invalid");
   }
@@ -2052,7 +2073,7 @@ function parseChannelRollMessageDeliveryInputV1(
   ) {
     throw new Error("Channel roll message delivery request is invalid");
   }
-  return { ...value, payload } as ChannelRollMessageDeliveryInputV1;
+  return { ...result.data, payload };
 }
 
 function channelRollResultForm(
@@ -2089,7 +2110,7 @@ function channelRollResultForm(
 
 export async function deliverChannelRollMessageV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<ChannelRollMessageDeliveryResultV1> {
   const input = parseChannelRollMessageDeliveryInputV1(value);
@@ -2143,17 +2164,15 @@ export async function deliverChannelRollMessageV1(
       discordErrorCode: await discordErrorCode(response),
     };
   }
-  const responseBody = await readBoundedDiscordJson(response);
-  if (
-    !isRecord(responseBody) ||
-    typeof responseBody.id !== "string" ||
-    !SNOWFLAKE.test(responseBody.id)
-  ) {
+  const responseBody = DiscordResourceIdentitySchema.safeParse(
+    await readBoundedDiscordJson(response),
+  );
+  if (!responseBody.success) {
     return { status: "invalid_response" };
   }
   return {
     status: "delivered",
-    messageId: responseBody.id,
+    messageId: responseBody.data.id,
     httpStatus: response.status,
   };
 }
@@ -2164,7 +2183,7 @@ export async function deliverWebRoll(
     rollId?: string;
     guildId: string;
     channelId: string;
-    payload: unknown;
+    payload: SchemaInput;
     clatter: string;
     filename: string;
     png: Uint8Array;
@@ -2174,43 +2193,35 @@ export async function deliverWebRoll(
   discordFetch: RequestFetch = (request) => fetch(request),
   wait: Sleep = sleep,
 ): Promise<WebRollDeliveryResult> {
-  if (
-    (input.rollId !== undefined && !SNOWFLAKE.test(input.rollId)) ||
-    !SNOWFLAKE.test(input.guildId) ||
-    !SNOWFLAKE.test(input.channelId) ||
-    !isRecord(input.payload) ||
-    input.clatter.length < 1 ||
-    input.clatter.length > 2_000 ||
-    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/i.test(input.filename) ||
-    !(input.png instanceof Uint8Array) ||
-    input.png.byteLength === 0 ||
-    typeof input.skipDelay !== "boolean" ||
-    !Number.isSafeInteger(input.delayMs) ||
-    input.delayMs < 0 ||
-    input.delayMs > 5_000 ||
-    (input.skipDelay ? input.delayMs !== 0 : input.delayMs < 1)
-  ) {
+  const result = WebRollInputSchema.safeParse(input);
+  if (!result.success) {
     throw new Error("Web roll delivery request is invalid");
   }
-  const channels = await listTextChannels(env, input.guildId, discordFetch);
-  if (!channels.some(({ id }) => id === input.channelId)) {
+  const webRoll = result.data;
+  const channels = await listTextChannels(env, webRoll.guildId, discordFetch);
+  if (!channels.some(({ id }) => id === webRoll.channelId)) {
     return { status: "failed", httpStatus: 404 };
   }
 
   let referenceId: string | null = null;
-  const messagesUrl = `${DISCORD_API}/channels/${input.channelId}/messages`;
-  if (!input.skipDelay) {
+  const messagesUrl = `${DISCORD_API}/channels/${webRoll.channelId}/messages`;
+  if (!webRoll.skipDelay) {
     const clatterResponse = await discordJson(
       messagesUrl,
       env.DISCORD_BOT_TOKEN,
-      {
-        flags: DISCORD_COMPONENTS_V2_FLAG,
-        components: [{ type: 10, content: input.clatter }],
-        allowed_mentions: { parse: [] },
-        ...(input.rollId === undefined
-          ? {}
-          : { nonce: `c${input.rollId}`, enforce_nonce: true }),
-      },
+      webRoll.rollId === undefined
+        ? {
+            flags: DISCORD_COMPONENTS_V2_FLAG,
+            components: [{ type: 10, content: webRoll.clatter }],
+            allowed_mentions: { parse: [] },
+          }
+        : {
+            flags: DISCORD_COMPONENTS_V2_FLAG,
+            components: [{ type: 10, content: webRoll.clatter }],
+            allowed_mentions: { parse: [] },
+            nonce: `c${webRoll.rollId}`,
+            enforce_nonce: true,
+          },
       discordFetch,
     );
     if (clatterResponse.status === 403) return { status: "permission_error" };
@@ -2231,41 +2242,55 @@ export async function deliverWebRoll(
       }
       return { status: "failed", httpStatus: clatterResponse.status };
     }
-    const clatterMessage: unknown = await clatterResponse.json();
-    if (
-      !isRecord(clatterMessage) ||
-      typeof clatterMessage.id !== "string" ||
-      !SNOWFLAKE.test(clatterMessage.id)
-    ) {
+    const clatterMessage = DiscordResourceIdentitySchema.safeParse(
+      await clatterResponse.json(),
+    );
+    if (!clatterMessage.success) {
       throw new Error("Discord clatter response is invalid");
     }
-    referenceId = clatterMessage.id;
-    await wait(input.delayMs);
+    referenceId = clatterMessage.data.id;
+    await wait(webRoll.delayMs);
   }
 
   // Empty legacy fields are edit controls for a retained pre-rollout clatter;
   // they do not add legacy content to the resulting Components V2 message.
-  const payload = {
-    ...input.payload,
-    ...(referenceId !== null || input.rollId === undefined
-      ? {}
-      : { nonce: input.rollId, enforce_nonce: true }),
-    allowed_mentions: { parse: [] },
-    ...(referenceId === null ? {} : { content: null, embeds: [] }),
-    attachments: [
-      {
-        id: 0,
-        filename: input.filename,
-        description: "Rendered dice result",
-      },
-    ],
-  };
+  const attachments = [
+    {
+      id: 0,
+      filename: webRoll.filename,
+      description: "Rendered dice result",
+    },
+  ];
+  let resultPayload;
+  if (referenceId !== null) {
+    resultPayload = {
+      ...webRoll.payload,
+      allowed_mentions: { parse: [] },
+      content: null,
+      embeds: [],
+      attachments,
+    };
+  } else if (webRoll.rollId !== undefined) {
+    resultPayload = {
+      ...webRoll.payload,
+      nonce: webRoll.rollId,
+      enforce_nonce: true,
+      allowed_mentions: { parse: [] },
+      attachments,
+    };
+  } else {
+    resultPayload = {
+      ...webRoll.payload,
+      allowed_mentions: { parse: [] },
+      attachments,
+    };
+  }
   const form = new FormData();
-  form.set("payload_json", JSON.stringify(payload));
+  form.set("payload_json", JSON.stringify(resultPayload));
   form.set(
     "files[0]",
-    new Blob([input.png], { type: "image/png" }),
-    input.filename,
+    new Blob([webRoll.png], { type: "image/png" }),
+    webRoll.filename,
   );
   const resultUrl = referenceId === null
     ? messagesUrl
@@ -2295,20 +2320,18 @@ export async function deliverWebRoll(
     }
     return { status: "failed", httpStatus: response.status };
   }
-  const message = await readBoundedDiscordJson(response);
-  if (
-    !isRecord(message) ||
-    typeof message.id !== "string" ||
-    !SNOWFLAKE.test(message.id)
-  ) {
+  const message = DiscordResourceIdentitySchema.safeParse(
+    await readBoundedDiscordJson(response),
+  );
+  if (!message.success) {
     throw new Error("Discord web roll response is invalid");
   }
-  return { status: "delivered", messageId: message.id };
+  return { status: "delivered", messageId: message.data.id };
 }
 
 export async function resolveDiscordChannelContextV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<DiscordChannelContextResultV1> {
   const input = parseDiscordChannelContextRequestV1(value);
@@ -2351,7 +2374,7 @@ export async function resolveDiscordChannelContextV1(
 // it after every Data environment uses resolveDiscordChannelContextV1.
 export function resolveGameDetectionChannelContextV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<DiscordChannelContextResultV1> {
   return resolveDiscordChannelContextV1(env, value, discordFetch);
@@ -2433,11 +2456,11 @@ function gameDetectionPayload(detection: GameDetectionAnnouncementV1) {
 
 export async function createGameDetectionAnnouncementV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "GAME_DETECTION_CHANNEL_ID">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<GameDetectionAnnouncementDeliveryResult> {
   const detection = parseGameDetectionAnnouncementV1(value);
-  if (!SNOWFLAKE.test(env.GAME_DETECTION_CHANNEL_ID)) {
+  if (!snowflakeSchema.safeParse(env.GAME_DETECTION_CHANNEL_ID).success) {
     throw new Error("Game-detection channel is invalid");
   }
 
@@ -2475,24 +2498,18 @@ export async function createGameDetectionAnnouncementV1(
     return { status: "failed", httpStatus: response.status };
   }
 
-  const created: unknown = await response.json();
-  if (
-    !isRecord(created) ||
-    typeof created.id !== "string" ||
-    !SNOWFLAKE.test(created.id)
-  ) {
+  const created = DiscordResourceIdentitySchema.safeParse(await response.json());
+  if (!created.success) {
     throw new Error("Discord game-detection response is invalid");
   }
   return {
     status: "delivered",
-    messageId: created.id,
+    messageId: created.data.id,
     httpStatus: response.status,
   };
 }
 
-function lifecycleAlertPresentation(
-  state: RollLifecycleAlert["state"],
-): { label: string; color: number } {
+function lifecycleAlertPresentation(state: RollLifecycleAlert["state"]) {
   switch (state) {
     case "delivered":
       return { label: "Recovered", color: 0x2e_cc71 };
@@ -2634,12 +2651,12 @@ function lifecycleAlertForm(alert: RollLifecycleAlert, create: boolean): FormDat
 
 async function deliverRollLifecycleAlert(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
-  value: unknown,
+  value: SchemaInput,
   operation: "create" | "update",
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<RollLifecycleAlertDeliveryResult> {
   const alert = parseRollLifecycleAlert(value);
-  if (!SNOWFLAKE.test(env.ROLL_LIFECYCLE_ALERT_CHANNEL_ID)) {
+  if (!snowflakeSchema.safeParse(env.ROLL_LIFECYCLE_ALERT_CHANNEL_ID).success) {
     throw new Error("Roll lifecycle alert channel is invalid");
   }
   if (operation === "update" && alert.alertMessageId === null) {
@@ -2678,25 +2695,23 @@ async function deliverRollLifecycleAlert(
     }
     return { status: "failed", httpStatus: response.status };
   }
-  const created: unknown = await response.json();
+  const created = DiscordResourceIdentitySchema.safeParse(await response.json());
   if (
-    !isRecord(created) ||
-    typeof created.id !== "string" ||
-    !SNOWFLAKE.test(created.id) ||
-    (messageId !== null && created.id !== messageId)
+    !created.success ||
+    (messageId !== null && created.data.id !== messageId)
   ) {
     throw new Error("Discord roll lifecycle alert response is invalid");
   }
   return {
     status: "delivered",
-    messageId: created.id,
+    messageId: created.data.id,
     httpStatus: response.status,
   };
 }
 
 export function createRollLifecycleAlertV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch?: RequestFetch,
 ): Promise<RollLifecycleAlertDeliveryResult> {
   return deliverRollLifecycleAlert(env, value, "create", discordFetch);
@@ -2704,7 +2719,7 @@ export function createRollLifecycleAlertV1(
 
 export function updateRollLifecycleAlertV1(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch?: RequestFetch,
 ): Promise<RollLifecycleAlertDeliveryResult> {
   return deliverRollLifecycleAlert(env, value, "update", discordFetch);
@@ -2712,7 +2727,7 @@ export function updateRollLifecycleAlertV1(
 
 export function createRollLifecycleAlertV2(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch?: RequestFetch,
 ): Promise<RollLifecycleAlertDeliveryResult> {
   return deliverRollLifecycleAlert(env, value, "create", discordFetch);
@@ -2720,36 +2735,30 @@ export function createRollLifecycleAlertV2(
 
 export function updateRollLifecycleAlertV2(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN" | "ROLL_LIFECYCLE_ALERT_CHANNEL_ID">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch?: RequestFetch,
 ): Promise<RollLifecycleAlertDeliveryResult> {
   return deliverRollLifecycleAlert(env, value, "update", discordFetch);
 }
 
 export type DiscordMessageExistenceResult = {
-  outcome: "exists" | "missing" | "inaccessible" | "probe-failed";
+  outcome: RollLifecycleMessageProbeOutcome;
 };
 
 export async function inspectDiscordMessageExistence(
   env: Pick<DiscordRestEnv, "DISCORD_BOT_TOKEN">,
-  value: unknown,
+  value: SchemaInput,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<DiscordMessageExistenceResult> {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["channelId", "messageId"]) ||
-    typeof value.channelId !== "string" ||
-    !SNOWFLAKE.test(value.channelId) ||
-    typeof value.messageId !== "string" ||
-    !SNOWFLAKE.test(value.messageId)
-  ) {
+  const input = MessageProbeInputSchema.safeParse(value);
+  if (!input.success) {
     throw new Error("Discord message existence request is invalid");
   }
   let response: Response;
   try {
     response = await discordFetch(
       new Request(
-        `${DISCORD_API}/channels/${value.channelId}/messages/${value.messageId}`,
+        `${DISCORD_API}/channels/${input.data.channelId}/messages/${input.data.messageId}`,
         {
           headers: {
             authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
@@ -2766,11 +2775,16 @@ export async function inspectDiscordMessageExistence(
   if (response.status === 403) return { outcome: "inaccessible" };
   if (response.status !== 404) return { outcome: "probe-failed" };
   try {
-    const error = await readBoundedDiscordJson(response);
-    if (isRecord(error) && error.code === 10_008) {
+    const error = DiscordErrorSchema.safeParse(
+      await readBoundedDiscordJson(response),
+    );
+    if (error.success && error.data.code === 10_008) {
       return { outcome: "missing" };
     }
-    if (isRecord(error) && (error.code === 10_003 || error.code === 50_001)) {
+    if (
+      error.success &&
+      (error.data.code === 10_003 || error.data.code === 50_001)
+    ) {
       return { outcome: "inaccessible" };
     }
   } catch {
@@ -2785,7 +2799,10 @@ export async function inspectMembership(
   userId: string,
   discordFetch: RequestFetch = (request) => fetch(request),
 ): Promise<MembershipInspection> {
-  if (!SNOWFLAKE.test(guildId) || !SNOWFLAKE.test(userId)) {
+  if (
+    !snowflakeSchema.safeParse(guildId).success ||
+    !snowflakeSchema.safeParse(userId).success
+  ) {
     throw new Error("Membership identifiers are invalid");
   }
   const headers = {
@@ -2868,7 +2885,7 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
   }
 
   async captureAudienceSnapshotV1(
-    input: unknown,
+    input: SchemaInput,
   ): Promise<DiscordAudienceCaptureV1> {
     return captureAudienceSnapshot(
       await this.botEnv(),
@@ -2876,7 +2893,7 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     );
   }
 
-  async reportBotListStatsV1(input: unknown): Promise<BotListReportResult> {
+  async reportBotListStatsV1(input: SchemaInput): Promise<BotListReportResult> {
     const env = await this.botEnv();
     return reportBotListStats(
       {
@@ -2901,15 +2918,15 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     return listCurrentGuildIdsPage(await this.botEnv(), after);
   }
 
-  async logGuildLifecycle(input: unknown): Promise<GuildLifecycleLogResult> {
+  async logGuildLifecycle(input: SchemaInput): Promise<GuildLifecycleLogResult> {
     return logGuildLifecycle(await this.botEnv(), input);
   }
 
-  async sendRollHelper(input: unknown): Promise<RollHelperResult> {
+  async sendRollHelper(input: SchemaInput): Promise<RollHelperResult> {
     return sendRollHelper(await this.botEnv(), input);
   }
 
-  async logRoll(input: unknown): Promise<RollLogResult> {
+  async logRoll(input: SchemaInput): Promise<RollLogResult> {
     return logRoll(await this.botEnv(), input);
   }
 
@@ -2919,35 +2936,35 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
     return deliverRollLogV1(await this.botEnv(), input);
   }
 
-  async createGameDetectionAnnouncementV1(input: unknown) {
+  async createGameDetectionAnnouncementV1(input: SchemaInput) {
     return createGameDetectionAnnouncementV1(await this.botEnv(), input);
   }
 
-  async resolveDiscordChannelContextV1(input: unknown) {
+  async resolveDiscordChannelContextV1(input: SchemaInput) {
     return resolveDiscordChannelContextV1(await this.botEnv(), input);
   }
 
-  async resolveGameDetectionChannelContextV1(input: unknown) {
+  async resolveGameDetectionChannelContextV1(input: SchemaInput) {
     return resolveDiscordChannelContextV1(await this.botEnv(), input);
   }
 
-  async createRollLifecycleAlertV1(input: unknown) {
+  async createRollLifecycleAlertV1(input: SchemaInput) {
     return createRollLifecycleAlertV1(await this.botEnv(), input);
   }
 
-  async updateRollLifecycleAlertV1(input: unknown) {
+  async updateRollLifecycleAlertV1(input: SchemaInput) {
     return updateRollLifecycleAlertV1(await this.botEnv(), input);
   }
 
-  async createRollLifecycleAlertV2(input: unknown) {
+  async createRollLifecycleAlertV2(input: SchemaInput) {
     return createRollLifecycleAlertV2(await this.botEnv(), input);
   }
 
-  async updateRollLifecycleAlertV2(input: unknown) {
+  async updateRollLifecycleAlertV2(input: SchemaInput) {
     return updateRollLifecycleAlertV2(await this.botEnv(), input);
   }
 
-  async deliverChannelRollMessageV1(input: unknown) {
+  async deliverChannelRollMessageV1(input: SchemaInput) {
     return deliverChannelRollMessageV1(await this.botEnv(), input);
   }
 
@@ -2981,7 +2998,7 @@ export class DiscordRestService extends WorkerEntrypoint<DiscordRestBindings> {
 }
 
 export class DiscordMessageProbeService extends WorkerEntrypoint<DiscordRestBindings> {
-  async inspectDiscordMessageExistence(input: unknown) {
+  async inspectDiscordMessageExistence(input: SchemaInput) {
     return inspectDiscordMessageExistence(
       {
         ...this.env,

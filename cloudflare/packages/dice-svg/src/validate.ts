@@ -1,56 +1,66 @@
+import { z } from "zod";
 import {
-  PATTERN_NAMES_V1_V2,
   type IconName,
-  type PatternNameV1V2,
   type RenderDie,
   type RenderFill,
   type RenderRequest,
 } from "./types";
+import {
+  iconNameSchema,
+  isBoundaryRecord,
+  numberValueSchema,
+  patternNameV1V2Schema,
+  stringValueSchema,
+  type BoundaryRecord,
+  type ValidationInput,
+} from "./validationBoundary";
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
-const ICON_NAMES = new Set<IconName>([
-  "trashcan",
-  "explosion",
-  "recycle",
-  "chevronUp",
-  "chevronDown",
-  "target-success",
-  "critical-success",
-  "critical-failure",
-  "penetrate",
-  "unique",
-  "blank",
-]);
-const PATTERN_NAMES: ReadonlySet<string> = new Set(PATTERN_NAMES_V1_V2);
+const specialSidesSchema = z.enum(["%", "F"]);
 
-function assertRecord(value: unknown, path: string): asserts value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+function requireRecord(value: ValidationInput, path: string): BoundaryRecord {
+  if (!isBoundaryRecord(value)) {
     throw new Error(`${path} must be an object`);
   }
+  return value;
 }
 
-function parseColor(value: unknown, path: string): string {
-  if (typeof value !== "string" || !HEX_COLOR.test(value)) {
+function parseColor(value: ValidationInput, path: string): string {
+  const parsed = stringValueSchema.safeParse(value);
+  if (!parsed.success || !HEX_COLOR.test(parsed.data)) {
     throw new Error(`${path} must be a six-digit hex color`);
   }
-  return value;
+  return parsed.data;
 }
 
-function parseSides(value: unknown, path: string): RenderDie["sides"] {
-  if (value === "%" || value === "F") {
-    return value;
-  }
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 999) {
+function parseSides(
+  value: ValidationInput,
+  path: string,
+): RenderDie["sides"] {
+  const specialSides = specialSidesSchema.safeParse(value);
+  if (specialSides.success) return specialSides.data;
+  const numericSides = numberValueSchema.safeParse(value);
+  if (
+    !numericSides.success ||
+    !Number.isInteger(numericSides.data) ||
+    numericSides.data < 1 ||
+    numericSides.data > 999
+  ) {
     throw new Error(`${path} must be an integer from 1 through 999, %, or F`);
   }
-  return value;
+  return numericSides.data;
 }
 
-function parseRolled(value: unknown, sides: RenderDie["sides"], path: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+function parseRolled(
+  value: ValidationInput,
+  sides: RenderDie["sides"],
+  path: string,
+): number {
+  const parsed = numberValueSchema.safeParse(value);
+  if (!parsed.success || !Number.isSafeInteger(parsed.data)) {
     throw new Error(`${path} must be a safe integer`);
   }
-  const rolled = value;
+  const rolled = parsed.data;
   if (sides === "F" && ![-1, 0, 1].includes(rolled)) {
     throw new Error(`${path} must be -1, 0, or 1 for Fudge dice`);
   }
@@ -58,7 +68,8 @@ function parseRolled(value: unknown, sides: RenderDie["sides"], path: string): n
     throw new Error(`${path} must be a multiple of 10 from 0 through 90 for percentile dice`);
   }
   if (
-    typeof sides === "number" &&
+    sides !== "%" &&
+    sides !== "F" &&
     rolled < 1 &&
     !(sides === 10 && rolled === 0)
   ) {
@@ -67,68 +78,71 @@ function parseRolled(value: unknown, sides: RenderDie["sides"], path: string): n
   return rolled;
 }
 
-function parseIcons(value: unknown, path: string): IconName[] {
+function parseIcons(value: ValidationInput, path: string): IconName[] {
   if (!Array.isArray(value) || value.length > 3) {
     throw new Error(`${path} must be an array containing at most three icons`);
   }
   return value.map((icon, index) => {
-    if (typeof icon !== "string" || !ICON_NAMES.has(icon as IconName)) {
-      throw new Error(`${path}[${index}] is not a supported icon`);
+    const parsed = iconNameSchema.safeParse(icon);
+    if (!parsed.success) {
+      throw new Error(`${path}[${String(index)}] is not a supported icon`);
     }
-    return icon as IconName;
+    return parsed.data;
   });
 }
 
-function parseFill(value: unknown, path: string): RenderFill {
-  assertRecord(value, path);
-  if (value.type === "gradient") {
+function parseFill(value: ValidationInput, path: string): RenderFill {
+  const record = requireRecord(value, path);
+  if (record.type === "gradient") {
     return { type: "gradient" };
   }
-  if (
-    value.type === "pattern" &&
-    typeof value.pattern === "string" &&
-    PATTERN_NAMES.has(value.pattern)
-  ) {
-    return { type: "pattern", pattern: value.pattern as PatternNameV1V2 };
+  if (record.type === "pattern") {
+    const pattern = patternNameV1V2Schema.safeParse(record.pattern);
+    if (pattern.success) {
+      return { type: "pattern", pattern: pattern.data };
+    }
   }
   throw new Error(`${path} must select gradient or a supported pattern`);
 }
 
-function parseDie(value: unknown, path: string): RenderDie {
-  assertRecord(value, path);
-  const sides = parseSides(value.sides, `${path}.sides`);
+function parseDie(value: ValidationInput, path: string): RenderDie {
+  const record = requireRecord(value, path);
+  const sides = parseSides(record.sides, `${path}.sides`);
   return {
     sides,
-    rolled: parseRolled(value.rolled, sides, `${path}.rolled`),
-    color: parseColor(value.color, `${path}.color`),
-    secondaryColor: parseColor(value.secondaryColor, `${path}.secondaryColor`),
-    textColor: parseColor(value.textColor, `${path}.textColor`),
-    outlineColor: parseColor(value.outlineColor, `${path}.outlineColor`),
-    icons: parseIcons(value.icons, `${path}.icons`),
-    fill: parseFill(value.fill, `${path}.fill`),
+    rolled: parseRolled(record.rolled, sides, `${path}.rolled`),
+    color: parseColor(record.color, `${path}.color`),
+    secondaryColor: parseColor(record.secondaryColor, `${path}.secondaryColor`),
+    textColor: parseColor(record.textColor, `${path}.textColor`),
+    outlineColor: parseColor(record.outlineColor, `${path}.outlineColor`),
+    icons: parseIcons(record.icons, `${path}.icons`),
+    fill: parseFill(record.fill, `${path}.fill`),
   };
 }
 
-export function validateRenderRequest(value: unknown): RenderRequest {
-  assertRecord(value, "Render request");
-  if (value.version !== 1) {
+export function validateRenderRequest(value: ValidationInput): RenderRequest {
+  const request = requireRecord(value, "Render request");
+  if (request.version !== 1) {
     throw new Error("Render request version must be 1");
   }
-  if (!Array.isArray(value.groups) || value.groups.length === 0) {
+  if (!Array.isArray(request.groups) || request.groups.length === 0) {
     throw new Error("Render request groups must be a non-empty array");
   }
 
   let diceCount = 0;
-  const groups = value.groups.map((group, groupIndex) => {
+  const groups = request.groups.map((group, groupIndex) => {
     if (!Array.isArray(group) || group.length === 0) {
-      throw new Error(`Render request groups[${groupIndex}] must be a non-empty array`);
+      throw new Error(`Render request groups[${String(groupIndex)}] must be a non-empty array`);
     }
     diceCount += group.length;
     if (diceCount > 50) {
       throw new Error("Render request exceeds 50 dice");
     }
     return group.map((die, dieIndex) =>
-      parseDie(die, `Render request groups[${groupIndex}][${dieIndex}]`),
+      parseDie(
+        die,
+        `Render request groups[${String(groupIndex)}][${String(dieIndex)}]`,
+      ),
     );
   });
 

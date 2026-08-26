@@ -1,23 +1,26 @@
+import { z } from "zod";
 import { APPEARANCE_BORDER_COLOR } from "./appearance";
 import {
-  APPEARANCE_FONT_IDS,
-  PATTERN_NAMES_V3,
-  type AppearanceFontId,
   type IconName,
-  type PatternNameV3,
   type RenderAppearanceV3,
   type RenderDieV3,
-  type RenderGradientScopeV3,
-  type RenderLightingDirectionV3,
-  type RenderLightingStrengthV3,
   type RenderLightingV3,
-  type RenderLinearDirectionV3,
   type RenderRequestV3,
   type RenderSurfaceV3,
   type RenderTargetV3,
 } from "./types";
+import {
+  appearanceFontSchema,
+  booleanValueSchema,
+  hasExactKeys,
+  iconNameSchema,
+  isBoundaryRecord,
+  numberValueSchema,
+  patternNameV3Schema,
+  stringValueSchema,
+  type ValidationInput,
+} from "./validationBoundary";
 
-const APPEARANCE_FONTS: ReadonlySet<unknown> = new Set(APPEARANCE_FONT_IDS);
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const REQUEST_KEYS = ["groups", "version"] as const;
 const DIE_KEYS = ["appearance", "icons", "result", "target"] as const;
@@ -31,7 +34,7 @@ const APPEARANCE_KEYS = [
   "surface",
   "textColor",
 ] as const;
-const TARGETS = new Set<RenderTargetV3>([
+const targetSchema = z.enum([
   "d4",
   "d6",
   "d8",
@@ -42,35 +45,18 @@ const TARGETS = new Set<RenderTargetV3>([
   "percentile",
   "fudge",
   "other",
+] satisfies readonly RenderTargetV3[]);
+const FIXED_TARGET_SIDES = new Map<RenderTargetV3, number>([
+  ["d4", 4],
+  ["d6", 6],
+  ["d8", 8],
+  ["d10", 10],
+  ["d10-original", 10],
+  ["d12", 12],
+  ["d20", 20],
 ]);
-const TARGET_SIDES: Partial<Record<RenderTargetV3, number>> = {
-  d4: 4,
-  d6: 6,
-  d8: 8,
-  d10: 10,
-  "d10-original": 10,
-  d12: 12,
-  d20: 20,
-};
-const ICON_NAMES = new Set<IconName>([
-  "trashcan",
-  "explosion",
-  "recycle",
-  "chevronUp",
-  "chevronDown",
-  "target-success",
-  "critical-success",
-  "critical-failure",
-  "penetrate",
-  "unique",
-  "blank",
-]);
-const PATTERN_NAMES: ReadonlySet<string> = new Set(PATTERN_NAMES_V3);
-const GRADIENT_SCOPES = new Set<RenderGradientScopeV3>([
-  "repeated",
-  "die-wide",
-]);
-const LINEAR_DIRECTIONS = new Set<RenderLinearDirectionV3>([
+const gradientScopeSchema = z.enum(["repeated", "die-wide"]);
+const linearDirectionSchema = z.enum([
   "top-to-bottom",
   "upper-right-to-lower-left",
   "right-to-left",
@@ -80,43 +66,26 @@ const LINEAR_DIRECTIONS = new Set<RenderLinearDirectionV3>([
   "left-to-right",
   "upper-left-to-lower-right",
 ]);
-const LIGHTING_STRENGTHS = new Set<RenderLightingStrengthV3>([
-  "gentle",
-  "subtle",
-  "strong",
-]);
-const LIGHTING_DIRECTIONS = new Set<RenderLightingDirectionV3>([
+const lightingStrengthSchema = z.enum(["gentle", "subtle", "strong"]);
+const lightingDirectionSchema = z.enum([
   "top",
   "upper-left",
   "upper-right",
   "left",
   "right",
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    keys.length === sortedExpected.length &&
-    keys.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function parseColor(value: unknown, path: string): string {
-  if (typeof value !== "string" || !HEX_COLOR.test(value)) {
+function parseColor(value: ValidationInput, path: string): string {
+  const parsed = stringValueSchema.safeParse(value);
+  if (!parsed.success || !HEX_COLOR.test(parsed.data)) {
     throw new Error(`${path} must be a six-digit hex color`);
   }
-  return value.toLowerCase();
+  return parsed.data.toLowerCase();
 }
 
-function parseOutlineColor(value: unknown, path: string): "#000000" {
+function parseOutlineColor(
+  value: ValidationInput,
+  path: string,
+): "#000000" {
   if (parseColor(value, path) !== APPEARANCE_BORDER_COLOR) {
     throw new Error(`${path} must be ${APPEARANCE_BORDER_COLOR}`);
   }
@@ -124,7 +93,7 @@ function parseOutlineColor(value: unknown, path: string): "#000000" {
 }
 
 function parseTextColor(
-  value: unknown,
+  value: ValidationInput,
   path: string,
 ): RenderAppearanceV3["textColor"] {
   const color = parseColor(value, path);
@@ -134,21 +103,21 @@ function parseTextColor(
   return color;
 }
 
-function isPatternName(value: unknown): value is PatternNameV3 {
-  return typeof value === "string" && PATTERN_NAMES.has(value);
-}
-
-function parseSurface(value: unknown, path: string): RenderSurfaceV3 {
-  if (!isRecord(value) || typeof value.type !== "string") {
+function parseSurface(value: ValidationInput, path: string): RenderSurfaceV3 {
+  if (!isBoundaryRecord(value)) {
     throw new Error(`${path} is invalid`);
   }
-  if (value.type === "solid") {
+  const surfaceType = stringValueSchema.safeParse(value.type);
+  if (!surfaceType.success) {
+    throw new Error(`${path} is invalid`);
+  }
+  if (surfaceType.data === "solid") {
     if (!hasExactKeys(value, ["color", "type"])) {
       throw new Error(`${path} is invalid`);
     }
     return { type: "solid", color: parseColor(value.color, `${path}.color`) };
   }
-  if (value.type === "gradient") {
+  if (surfaceType.data === "gradient") {
     if (!hasExactKeys(value, ["colors", "direction", "scope", "type"])) {
       throw new Error(`${path} is invalid`);
     }
@@ -159,12 +128,12 @@ function parseSurface(value: unknown, path: string): RenderSurfaceV3 {
     ) {
       throw new Error(`${path}.colors must contain from two through six colors`);
     }
-    if (
-      typeof value.scope !== "string" ||
-      !GRADIENT_SCOPES.has(value.scope as RenderGradientScopeV3) ||
-      typeof value.direction !== "string" ||
-      !LINEAR_DIRECTIONS.has(value.direction as RenderLinearDirectionV3)
-    ) {
+    const scope = gradientScopeSchema.safeParse(value.scope);
+    if (!scope.success) {
+      throw new Error(`${path} is invalid`);
+    }
+    const direction = linearDirectionSchema.safeParse(value.direction);
+    if (!direction.success) {
       throw new Error(`${path} is invalid`);
     }
     const colors = value.colors.map((color, index) =>
@@ -178,29 +147,29 @@ function parseSurface(value: unknown, path: string): RenderSurfaceV3 {
     return {
       type: "gradient",
       colors: [first, second, ...colors.slice(2)],
-      scope: value.scope as RenderGradientScopeV3,
-      direction: value.direction as RenderLinearDirectionV3,
+      scope: scope.data,
+      direction: direction.data,
     };
   }
-  if (value.type === "pattern") {
+  if (surfaceType.data === "pattern") {
     if (
       !hasExactKeys(value, [
         "pattern",
         "primaryColor",
         "secondaryColor",
         "type",
-      ]) ||
-      !isPatternName(value.pattern)
+      ])
     ) {
+      throw new Error(`${path} is invalid`);
+    }
+    const pattern = patternNameV3Schema.safeParse(value.pattern);
+    if (!pattern.success) {
       throw new Error(`${path} is invalid`);
     }
     return {
       type: "pattern",
-      pattern: value.pattern,
-      primaryColor: parseColor(
-        value.primaryColor,
-        `${path}.primaryColor`,
-      ),
+      pattern: pattern.data,
+      primaryColor: parseColor(value.primaryColor, `${path}.primaryColor`),
       secondaryColor: parseColor(
         value.secondaryColor,
         `${path}.secondaryColor`,
@@ -210,62 +179,57 @@ function parseSurface(value: unknown, path: string): RenderSurfaceV3 {
   throw new Error(`${path} is invalid`);
 }
 
-function isLightingStrength(
-  value: unknown,
-): value is RenderLightingStrengthV3 {
-  return (
-    typeof value === "string" &&
-    LIGHTING_STRENGTHS.has(value as RenderLightingStrengthV3)
-  );
-}
-
-function isLightingDirection(
-  value: unknown,
-): value is RenderLightingDirectionV3 {
-  return (
-    typeof value === "string" &&
-    LIGHTING_DIRECTIONS.has(value as RenderLightingDirectionV3)
-  );
-}
-
-function parseLighting(value: unknown, path: string): RenderLightingV3 {
-  if (!isRecord(value) || typeof value.mode !== "string") {
+function parseLighting(value: ValidationInput, path: string): RenderLightingV3 {
+  if (!isBoundaryRecord(value)) {
     throw new Error(`${path} is invalid`);
   }
-  if (value.mode === "none" && hasExactKeys(value, ["mode"])) {
-    return { mode: "none" };
+  const mode = stringValueSchema.safeParse(value.mode);
+  if (!mode.success) {
+    throw new Error(`${path} is invalid`);
   }
-  if (
-    value.mode === "facet" &&
-    hasExactKeys(value, ["mode", "strength"]) &&
-    isLightingStrength(value.strength)
-  ) {
-    return { mode: "facet", strength: value.strength };
+  if (mode.data === "none") {
+    if (hasExactKeys(value, ["mode"])) return { mode: "none" };
+    throw new Error(`${path} is invalid`);
   }
-  if (
-    (value.mode === "directional" || value.mode === "combined") &&
-    hasExactKeys(value, ["direction", "mode", "strength"]) &&
-    isLightingStrength(value.strength) &&
-    isLightingDirection(value.direction)
-  ) {
-    return {
-      mode: value.mode,
-      strength: value.strength,
-      direction: value.direction,
-    };
+  if (mode.data === "facet") {
+    if (!hasExactKeys(value, ["mode", "strength"])) {
+      throw new Error(`${path} is invalid`);
+    }
+    const strength = lightingStrengthSchema.safeParse(value.strength);
+    if (strength.success) {
+      return { mode: "facet", strength: strength.data };
+    }
+    throw new Error(`${path} is invalid`);
+  }
+  if (mode.data === "directional" || mode.data === "combined") {
+    if (!hasExactKeys(value, ["direction", "mode", "strength"])) {
+      throw new Error(`${path} is invalid`);
+    }
+    const strength = lightingStrengthSchema.safeParse(value.strength);
+    if (!strength.success) {
+      throw new Error(`${path} is invalid`);
+    }
+    const direction = lightingDirectionSchema.safeParse(value.direction);
+    if (direction.success) {
+      return {
+        mode: mode.data,
+        strength: strength.data,
+        direction: direction.data,
+      };
+    }
   }
   throw new Error(`${path} is invalid`);
 }
 
-function isAppearanceFontId(value: unknown): value is AppearanceFontId {
-  return typeof value === "string" && APPEARANCE_FONTS.has(value);
-}
-
-function parseAppearance(value: unknown, path: string): RenderAppearanceV3 {
-  if (!isRecord(value) || !hasExactKeys(value, APPEARANCE_KEYS)) {
+function parseAppearance(
+  value: ValidationInput,
+  path: string,
+): RenderAppearanceV3 {
+  if (!isBoundaryRecord(value) || !hasExactKeys(value, APPEARANCE_KEYS)) {
     throw new Error(`${path} has invalid fields`);
   }
-  if (!isAppearanceFontId(value.fontId)) {
+  const fontId = appearanceFontSchema.safeParse(value.fontId);
+  if (!fontId.success) {
     throw new Error(`${path}.fontId is not supported`);
   }
   if (
@@ -275,69 +239,74 @@ function parseAppearance(value: unknown, path: string): RenderAppearanceV3 {
   ) {
     throw new Error(`${path}.effect is not supported`);
   }
-  if (typeof value.requiresLocalSeparation !== "boolean") {
+  const requiresLocalSeparation = booleanValueSchema.safeParse(
+    value.requiresLocalSeparation,
+  );
+  if (!requiresLocalSeparation.success) {
     throw new Error(`${path}.requiresLocalSeparation must be a boolean`);
   }
   return {
     surface: parseSurface(value.surface, `${path}.surface`),
     lighting: parseLighting(value.lighting, `${path}.lighting`),
     textColor: parseTextColor(value.textColor, `${path}.textColor`),
-    outlineColor: parseOutlineColor(
-      value.outlineColor,
-      `${path}.outlineColor`,
-    ),
-    fontId: value.fontId,
+    outlineColor: parseOutlineColor(value.outlineColor, `${path}.outlineColor`),
+    fontId: fontId.data,
     effect: value.effect,
-    requiresLocalSeparation: value.requiresLocalSeparation,
+    requiresLocalSeparation: requiresLocalSeparation.data,
   };
 }
 
-function parseIcons(value: unknown, path: string): IconName[] {
+function parseIcons(value: ValidationInput, path: string): IconName[] {
   if (!Array.isArray(value) || value.length > 3) {
     throw new Error(`${path} must contain at most three icons`);
   }
   return value.map((icon, index) => {
-    if (typeof icon !== "string" || !ICON_NAMES.has(icon as IconName)) {
+    const parsed = iconNameSchema.safeParse(icon);
+    if (!parsed.success) {
       throw new Error(`${path}[${String(index)}] is not supported`);
     }
-    return icon as IconName;
+    return parsed.data;
   });
 }
 
-function parseTarget(value: unknown, path: string): RenderTargetV3 {
-  if (typeof value !== "string" || !TARGETS.has(value as RenderTargetV3)) {
+function parseTarget(value: ValidationInput, path: string): RenderTargetV3 {
+  const parsed = targetSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error(`${path}.target is not supported`);
   }
-  return value as RenderTargetV3;
+  return parsed.data;
 }
 
-function parseOtherSides(value: unknown, path: string): number {
+function parseOtherSides(value: ValidationInput, path: string): number {
+  const parsed = numberValueSchema.safeParse(value);
   if (
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < 1 ||
-    value > 999
+    !parsed.success ||
+    !Number.isInteger(parsed.data) ||
+    parsed.data < 1 ||
+    parsed.data > 999
   ) {
     throw new Error(`${path}.sides must be from 1 through 999`);
   }
-  return value;
+  return parsed.data;
 }
 
 function parseResult(
-  value: unknown,
+  value: ValidationInput,
   target: RenderTargetV3,
   sides: number | undefined,
   path: string,
 ): number {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
+  const parsed = numberValueSchema.safeParse(value);
+  if (!parsed.success || !Number.isInteger(parsed.data)) {
     throw new Error(`${path}.result must be an integer`);
   }
-  const fixedSides = TARGET_SIDES[target];
+  const result = parsed.data;
+  const fixedSides = FIXED_TARGET_SIDES.get(target);
   const minimumFixedResult =
     target === "d10" || target === "d10-original" ? 0 : 1;
   if (
     fixedSides !== undefined &&
-    (value < minimumFixedResult || value > fixedSides)
+    (result < minimumFixedResult || result > fixedSides)
   ) {
     throw new Error(
       `${path}.result must be from ${String(minimumFixedResult)} through ${String(fixedSides)}`,
@@ -345,28 +314,26 @@ function parseResult(
   }
   if (
     target === "percentile" &&
-    (value < 0 || value > 90 || value % 10 !== 0)
+    (result < 0 || result > 90 || result % 10 !== 0)
   ) {
-    throw new Error(
-      `${path}.result must be a multiple of 10 from 0 through 90`,
-    );
+    throw new Error(`${path}.result must be a multiple of 10 from 0 through 90`);
   }
-  if (target === "fudge" && ![-1, 0, 1].includes(value)) {
+  if (target === "fudge" && ![-1, 0, 1].includes(result)) {
     throw new Error(`${path}.result must be -1, 0, or 1`);
   }
   if (target === "other") {
     if (sides === undefined) {
       throw new Error(`${path}.sides is required for Other dice`);
     }
-    if (value < 1 || value > sides) {
+    if (result < 1 || result > sides) {
       throw new Error(`${path}.result must be from 1 through ${String(sides)}`);
     }
   }
-  return value;
+  return result;
 }
 
-function parseDie(value: unknown, path: string): RenderDieV3 {
-  if (!isRecord(value)) {
+function parseDie(value: ValidationInput, path: string): RenderDieV3 {
+  if (!isBoundaryRecord(value)) {
     throw new Error(`${path} must be an object`);
   }
   const target = parseTarget(value.target, path);
@@ -394,8 +361,10 @@ function parseDie(value: unknown, path: string): RenderDieV3 {
   };
 }
 
-export function validateRenderRequestV3(value: unknown): RenderRequestV3 {
-  if (!isRecord(value) || !hasExactKeys(value, REQUEST_KEYS)) {
+export function validateRenderRequestV3(
+  value: ValidationInput,
+): RenderRequestV3 {
+  if (!isBoundaryRecord(value) || !hasExactKeys(value, REQUEST_KEYS)) {
     throw new Error("Render request V3 has invalid fields");
   }
   if (value.version !== 3) {

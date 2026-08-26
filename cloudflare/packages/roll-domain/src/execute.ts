@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   Dice,
   DiceRoll,
@@ -57,6 +58,57 @@ export type RollExecutionResult = {
 };
 
 type RandomEngine = { next(): number };
+type NumericStandardDice = Dice.StandardDice & { readonly sides: number };
+type ParsedDiceDefinition =
+  | Dice.FudgeDice
+  | Dice.PercentileDice
+  | NumericStandardDice;
+type ParsedRollExpression =
+  | ParsedDiceDefinition
+  | RollGroup
+  | string
+  | number
+  | readonly ParsedRollExpression[];
+type ParsedRollResult =
+  | Results.RollResults
+  | Results.ResultGroup
+  | string
+  | number
+  | readonly ParsedRollResult[];
+type ParserBoundaryInput = z.input<z.ZodUnknown>;
+
+const ParserPrimitiveSchema = z.union([z.string(), z.number()]);
+const RandomEngineSchema = z.object({
+  next: z.function({ output: z.number() }),
+});
+
+function parseRollExpression(value: ParserBoundaryInput): ParsedRollExpression {
+  if (
+    value instanceof Dice.FudgeDice ||
+    value instanceof Dice.PercentileDice ||
+    value instanceof Dice.StandardDice ||
+    value instanceof RollGroup
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(parseRollExpression);
+  const primitive = ParserPrimitiveSchema.safeParse(value);
+  if (primitive.success) return primitive.data;
+  throw new Error("Roll parser returned an invalid expression");
+}
+
+function parseRollResult(value: ParserBoundaryInput): ParsedRollResult {
+  if (
+    value instanceof Results.RollResults ||
+    value instanceof Results.ResultGroup
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(parseRollResult);
+  const primitive = ParserPrimitiveSchema.safeParse(value);
+  if (primitive.success) return primitive.data;
+  throw new Error("Roll parser returned an invalid result");
+}
 
 function validateSeed(seed: number): void {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffff_ffff) {
@@ -88,36 +140,50 @@ function normalizeNotation(notation: string): string {
 }
 
 function collectDiceDefinitions(
-  value: unknown,
-  definitions: Dice.StandardDice[],
+  expression: ParsedRollExpression,
+  definitions: ParsedDiceDefinition[],
 ): void {
-  if (value instanceof Dice.StandardDice) {
-    definitions.push(value);
+  if (
+    expression instanceof Dice.FudgeDice ||
+    expression instanceof Dice.PercentileDice
+  ) {
+    definitions.push(expression);
     return;
   }
-  if (value instanceof RollGroup) {
-    collectDiceDefinitions(value.expressions, definitions);
+  if (expression instanceof Dice.StandardDice) {
+    definitions.push(expression);
     return;
   }
-  if (Array.isArray(value)) {
-    for (const item of value) collectDiceDefinitions(item, definitions);
+  if (expression instanceof RollGroup) {
+    collectDiceDefinitions(
+      parseRollExpression(expression.expressions),
+      definitions,
+    );
+    return;
+  }
+  if (Array.isArray(expression)) {
+    for (const item of expression) {
+      collectDiceDefinitions(parseRollExpression(item), definitions);
+    }
   }
 }
 
 function collectRollResults(
-  value: unknown,
+  result: ParsedRollResult,
   groups: Results.RollResults[],
 ): void {
-  if (value instanceof Results.RollResults) {
-    groups.push(value);
+  if (result instanceof Results.RollResults) {
+    groups.push(result);
     return;
   }
-  if (value instanceof Results.ResultGroup) {
-    collectRollResults(value.results, groups);
+  if (result instanceof Results.ResultGroup) {
+    collectRollResults(parseRollResult(result.results), groups);
     return;
   }
-  if (Array.isArray(value)) {
-    for (const item of value) collectRollResults(item, groups);
+  if (Array.isArray(result)) {
+    for (const item of result) {
+      collectRollResults(parseRollResult(item), groups);
+    }
   }
 }
 
@@ -130,13 +196,21 @@ function identityFields(
   identity: AppearanceIdentityV4 | undefined,
   component?: string,
 ): Pick<RollDie, "appearanceGroupIdentity" | "appearanceDieIdentity"> {
-  return identity === undefined
-    ? {}
-    : {
-        appearanceGroupIdentity: identity.group,
-        appearanceDieIdentity:
-          component === undefined ? identity.die : `${identity.die}:${component}`,
-      };
+  const fields: Pick<
+    RollDie,
+    "appearanceGroupIdentity" | "appearanceDieIdentity"
+  > = {};
+  if (identity !== undefined) {
+    fields.appearanceGroupIdentity = identity.group;
+    fields.appearanceDieIdentity =
+      component === undefined ? identity.die : `${identity.die}:${component}`;
+  }
+  return fields;
+}
+
+function withPhysicalFace(die: RollDie, physicalFace?: number): RollDie {
+  if (physicalFace !== undefined) die.physicalFace = physicalFace;
+  return die;
 }
 
 function percentileDice(
@@ -156,25 +230,29 @@ function percentileDice(
       ? 10
       : physicalValue % 10;
   return [
-    {
-      sides: "%",
-      rolled: value === 100 ? 0 : Math.floor(value / 10) * 10,
-      modifiers,
-      ...(physicalTens === undefined ? {} : { physicalFace: physicalTens }),
-      ...identityFields(identity, "percentile"),
-    },
-    {
-      sides: 10,
-      rolled: value % 10,
-      modifiers: [],
-      ...(physicalOnes === undefined ? {} : { physicalFace: physicalOnes }),
-      ...identityFields(identity, "ones"),
-    },
+    withPhysicalFace(
+      {
+        sides: "%",
+        rolled: value === 100 ? 0 : Math.floor(value / 10) * 10,
+        modifiers,
+        ...identityFields(identity, "percentile"),
+      },
+      physicalTens,
+    ),
+    withPhysicalFace(
+      {
+        sides: 10,
+        rolled: value % 10,
+        modifiers: [],
+        ...identityFields(identity, "ones"),
+      },
+      physicalOnes,
+    ),
   ];
 }
 
 function physicalDice(
-  definition: Dice.StandardDice,
+  definition: ParsedDiceDefinition,
   result: Results.RollResult,
   identity?: AppearanceIdentityV4,
   preserveOutOfRangePhysicalFaces = false,
@@ -187,13 +265,15 @@ function physicalDice(
         ? result.initialValue
         : undefined;
     return [
-      {
-        sides: "F",
-        rolled: result.value,
-        modifiers,
-        ...(physicalFace === undefined ? {} : { physicalFace }),
-        ...identityFields(identity),
-      },
+      withPhysicalFace(
+        {
+          sides: "F",
+          rolled: result.value,
+          modifiers,
+          ...identityFields(identity),
+        },
+        physicalFace,
+      ),
     ];
   }
   if (definition instanceof Dice.PercentileDice || definition.sides === 100) {
@@ -203,9 +283,6 @@ function physicalDice(
         ? result.initialValue
         : undefined;
     return percentileDice(result.value, modifiers, identity, physicalValue);
-  }
-  if (typeof definition.sides !== "number") {
-    throw new Error("Roll result contains unsupported die sides");
   }
   const physicalFace =
     result.value < 1 ||
@@ -221,17 +298,19 @@ function physicalDice(
     throw new Error("Roll result contains an invalid physical face");
   }
   return [
-    {
-      sides: definition.sides,
-      rolled: result.value,
-      modifiers,
-      ...(physicalFace === undefined ? {} : { physicalFace }),
-      ...identityFields(identity),
-    },
+    withPhysicalFace(
+      {
+        sides: definition.sides,
+        rolled: result.value,
+        modifiers,
+        ...identityFields(identity),
+      },
+      physicalFace,
+    ),
   ];
 }
 
-function definitionKind(definition: Dice.StandardDice): string {
+function definitionKind(definition: ParsedDiceDefinition): string {
   return definition instanceof Dice.FudgeDice
     ? "fudge"
     : definition instanceof Dice.PercentileDice || definition.sides === 100
@@ -240,7 +319,7 @@ function definitionKind(definition: Dice.StandardDice): string {
 }
 
 function definitionIdentity(
-  definitions: readonly Dice.StandardDice[],
+  definitions: readonly ParsedDiceDefinition[],
   definitionIndex: number,
 ): string {
   const definition = definitions[definitionIndex];
@@ -251,7 +330,7 @@ function definitionIdentity(
 }
 
 function definitionDieOffset(
-  definitions: readonly Dice.StandardDice[],
+  definitions: readonly ParsedDiceDefinition[],
   definitionIndex: number,
 ): number {
   const definition = definitions[definitionIndex];
@@ -266,7 +345,7 @@ function definitionDieOffset(
 }
 
 function resultAppearanceIdentities(
-  definition: Dice.StandardDice,
+  definition: ParsedDiceDefinition,
   group: Results.RollResults,
   appearanceGroupIdentity: string,
   definitionId: string,
@@ -307,12 +386,12 @@ function resultAppearanceIdentities(
 
 function diceForRoll(
   notation: string,
-  parsed: unknown,
+  parsed: ParsedRollExpression,
   roll: DiceRoll,
   appearanceGroupIdentity?: string,
   preserveOutOfRangePhysicalFaces = false,
 ): RollDie[] {
-  const definitions: Dice.StandardDice[] = [];
+  const definitions: ParsedDiceDefinition[] = [];
   const resultGroups: Results.RollResults[] = [];
   collectDiceDefinitions(parsed, definitions);
   collectRollResults(roll.rolls, resultGroups);
@@ -365,8 +444,8 @@ function limitError(
 }
 
 function previewDiceForDefinition(
-  definition: Dice.StandardDice,
-  definitions: readonly Dice.StandardDice[],
+  definition: ParsedDiceDefinition,
+  definitions: readonly ParsedDiceDefinition[],
   definitionIndex: number,
   appearanceGroupIdentity: string,
 ): RollDie[] {
@@ -389,9 +468,6 @@ function previewDiceForDefinition(
     }
     if (definition instanceof Dice.PercentileDice || definition.sides === 100) {
       return percentileDice(100, [], identity);
-    }
-    if (typeof definition.sides !== "number") {
-      throw new Error("Roll preview contains unsupported die sides");
     }
     return [
       {
@@ -439,14 +515,14 @@ export function prepareRollAppearance(
   const errors: RollExecutionError[] = [];
   for (let repetitionIndex = 0; repetitionIndex < repetitions; repetitionIndex += 1) {
     for (const [expressionIndex, value] of notation.entries()) {
-      let parsed: unknown;
+      let parsed: ParsedRollExpression;
       try {
-        parsed = Parser.parse(value) as unknown;
+        parsed = parseRollExpression(Parser.parse(value));
       } catch {
         errors.push({ code: "INVALID_NOTATION", notation: value });
         continue;
       }
-      const definitions: Dice.StandardDice[] = [];
+      const definitions: ParsedDiceDefinition[] = [];
       collectDiceDefinitions(parsed, definitions);
       const appearanceGroupIdentity = `expression:${String(expressionIndex)}:repeat:${String(repetitionIndex)}`;
       outcomes.push({
@@ -521,14 +597,16 @@ export function executeRoll(request: RollExecutionRequest): RollExecutionResult 
   const outcomes: RollOutcome[] = [];
   const errors: RollExecutionError[] = [];
   const generator = NumberGenerator.generator;
-  const previousEngine = generator.engine as RandomEngine;
+  const previousEngine: RandomEngine = RandomEngineSchema.parse(
+    generator.engine,
+  );
   generator.engine = seededEngine(request.seed);
   try {
     for (const { value, appearanceGroupIdentity } of repeatedNotation) {
-      let parsed: unknown;
+      let parsed: ParsedRollExpression;
       let roll: DiceRoll;
       try {
-        parsed = Parser.parse(value) as unknown;
+        parsed = parseRollExpression(Parser.parse(value));
         roll = new DiceRoll(value);
       } catch {
         errors.push({ code: "INVALID_NOTATION", notation: value });

@@ -16,9 +16,7 @@ type GradientVector = Readonly<{
   y2: string;
 }>;
 
-const REPEATED_VECTORS: Readonly<
-  Record<RenderLinearDirectionV3, GradientVector>
-> = {
+const REPEATED_VECTORS = {
   "top-to-bottom": { x1: ".5", y1: "0", x2: ".5", y2: "1" },
   "upper-right-to-lower-left": { x1: "1", y1: "0", x2: "0", y2: "1" },
   "right-to-left": { x1: "1", y1: ".5", x2: "0", y2: ".5" },
@@ -27,11 +25,9 @@ const REPEATED_VECTORS: Readonly<
   "lower-left-to-upper-right": { x1: "0", y1: "1", x2: "1", y2: "0" },
   "left-to-right": { x1: "0", y1: ".5", x2: "1", y2: ".5" },
   "upper-left-to-lower-right": { x1: "0", y1: "0", x2: "1", y2: "1" },
-};
+} satisfies Readonly<Record<RenderLinearDirectionV3, GradientVector>>;
 
-const WHOLE_DIE_VECTORS: Readonly<
-  Record<RenderLinearDirectionV3, GradientVector>
-> = {
+const WHOLE_DIE_VECTORS = {
   "top-to-bottom": { x1: "300", y1: "45", x2: "300", y2: "555" },
   "upper-right-to-lower-left": {
     x1: "530",
@@ -60,11 +56,9 @@ const WHOLE_DIE_VECTORS: Readonly<
     x2: "530",
     y2: "540",
   },
-};
+} satisfies Readonly<Record<RenderLinearDirectionV3, GradientVector>>;
 
-const OTHER_VECTORS: Readonly<
-  Record<RenderLinearDirectionV3, GradientVector>
-> = {
+const OTHER_VECTORS = {
   "top-to-bottom": { x1: "300", y1: "48", x2: "300", y2: "552" },
   "upper-right-to-lower-left": {
     x1: "552",
@@ -93,7 +87,7 @@ const OTHER_VECTORS: Readonly<
     x2: "552",
     y2: "552",
   },
-};
+} satisfies Readonly<Record<RenderLinearDirectionV3, GradientVector>>;
 
 function gradientId(surface: GradientSurfaceV3): string {
   return [

@@ -13,34 +13,21 @@ import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/ui/resizable", () => ({
-  ResizablePanelGroup: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
+import type { DiceAnimation3DProps } from "./DiceAnimation3D";
+import { RollerView, type RollerSlots } from "./Roller";
+
+const testSlots = {
+  ResizablePanelGroupSlot: ({ children }) => <div>{children}</div>,
+  ResizablePanelSlot: ({ children, defaultSize }) => (
+    <div data-panel-default-size={defaultSize}>{children}</div>
   ),
-  ResizablePanel: ({
-    children,
-    defaultSize,
-  }: {
-    children: React.ReactNode;
-    defaultSize: number;
-  }) => <div data-panel-default-size={defaultSize}>{children}</div>,
-  ResizableHandle: () => <div />,
-}));
-
-vi.mock("./DiceNotationButtons", () => ({
-  DiceNotationButtons: () => <div>Notation controls</div>,
-}));
-
-vi.mock("./DiceAnimation3D", () => ({
-  DiceAnimation3D: ({
+  ResizableHandleSlot: () => <div />,
+  DiceNotationButtonsSlot: () => <div>Notation controls</div>,
+  DiceAnimation3DSlot: ({
     blankFaces,
     onReadyChange,
     onUnavailable,
-  }: {
-    blankFaces: boolean;
-    onReadyChange?: (ready: boolean) => void;
-    onUnavailable: (error: Error) => void;
-  }) => (
+  }: DiceAnimation3DProps) => (
     <div data-testid="three-dice" data-blank-faces={String(blankFaces)}>
       <button type="button" onClick={() => onReadyChange?.(true)}>
         Complete 3D preparation
@@ -53,9 +40,7 @@ vi.mock("./DiceAnimation3D", () => ({
       </button>
     </div>
   ),
-}));
-
-import { Roller } from "./Roller";
+} satisfies RollerSlots;
 
 const rollResponse: RollResponse = {
   diceArray: [
@@ -118,7 +103,8 @@ function rollerElement(
 ): React.ReactElement {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="roller-test-theme">
-      <Roller
+      <RollerView
+        slots={testSlots}
         rollPreparation={preparation}
         rollResults={response}
         isPreparing={isPreparing}
@@ -257,6 +243,7 @@ describe("Roller V4 display modes", () => {
 
     expect(screen.getByRole("img", { name: "Rendered dice result" })).toBeDefined();
     expect(screen.queryByTestId("three-dice")).toBeNull();
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(
       (screen.getByRole("button", { name: "Show 3D dice" }) as HTMLButtonElement)
         .disabled,

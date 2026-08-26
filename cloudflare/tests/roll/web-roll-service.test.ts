@@ -9,12 +9,14 @@ import type {
   RenderedDiceRequestV4,
 } from "../../packages/dice-canvaskit/src";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   APPEARANCE_TARGETS,
   APPROVED_COLLECTOR_STYLE_IDS_V3,
   BUILTIN_APPEARANCE_STYLES_R34_V3,
   BUILTIN_APPEARANCE_STYLES_V3,
   FEATURED_APPEARANCE_STYLE_IDS,
+  type AppearanceFill,
 } from "../../packages/dice-appearance/src";
 import {
   buildAppearancePreviewRenderRequest,
@@ -40,10 +42,29 @@ import {
   renderAppearancePreviewV2,
   renderAppearancePreviewV3,
   renderAppearancePreviewV4,
+  type WebSavedRollAttribution,
 } from "../../workers/roll/src/web-roll-service";
 
 const userId = "100000000000000003";
 const guildId = "100000000000000002";
+
+const AppearanceLookupSchema = z.strictObject({
+  userId: z.string(),
+  guildId: z.string(),
+});
+type AppearanceLookup = z.output<typeof AppearanceLookupSchema>;
+type WebRollFixture = {
+  notation: string;
+  repetitions: number;
+  username: string;
+  title: string | null;
+  userId: string;
+  guildId: string;
+  renderSeed: number;
+  appearanceDigest: string;
+  savedRoll?: WebSavedRollAttribution;
+  channelId?: string;
+};
 const recipe = {
   version: 1,
   variation: "fixed",
@@ -103,13 +124,13 @@ const materialProvenanceRecipeV3: AppearanceRecipeV3 = {
 };
 
 function appearanceService(
-  onRequest?: (value: unknown, path: string) => void,
+  onRequest?: (value: AppearanceLookup, path: string) => void,
   activeRecipe: AppearanceRecipeV3 = defaultRecipeV3,
   activeDiceView = createDefaultDiceViewPreferencesV4(),
 ) {
   return {
     async fetch(request: Request): Promise<Response> {
-      const value: unknown = await request.json();
+      const value = AppearanceLookupSchema.parse(await request.json());
       onRequest?.(value, new URL(request.url).pathname);
       const path = new URL(request.url).pathname;
       const version = path.includes("/v4/")
@@ -117,20 +138,22 @@ function appearanceService(
         : path.includes("/v3/")
           ? 3
           : 2;
-      return Response.json({
-        version,
-        recipes: Object.fromEntries(
-          (version >= 3 ? APPEARANCE_TARGETS_V4 : APPEARANCE_TARGETS).map(
-            (target) => [target, version >= 3 ? activeRecipe : recipeV2],
-          ),
+      const recipes = Object.fromEntries(
+        (version >= 3 ? APPEARANCE_TARGETS_V4 : APPEARANCE_TARGETS).map(
+          (target) => [target, version >= 3 ? activeRecipe : recipeV2],
         ),
-        ...(version === 4 ? { diceView: activeDiceView } : {}),
-      });
+      );
+      if (version === 4) {
+        return Response.json({ version, recipes, diceView: activeDiceView });
+      }
+      return Response.json({ version, recipes });
     },
   };
 }
 
-function request(overrides: Record<string, unknown> = {}) {
+function request(
+  overrides: Partial<WebRollFixture> = {},
+): WebRollFixture {
   return {
     notation: "1d20",
     repetitions: 1,
@@ -147,7 +170,7 @@ function request(overrides: Record<string, unknown> = {}) {
 async function preparedRequest(
   dataService: ReturnType<typeof appearanceService>,
   version: "3" | "4",
-  overrides: Record<string, unknown> = {},
+  overrides: Partial<WebRollFixture> = {},
 ) {
   const value = request(overrides);
   const preparation = await prepareWebRoll(
@@ -230,7 +253,7 @@ describe("appearance preview", () => {
       variation: "fixed",
       colors: { mode: "palette", colors: ["#ff0000", "#0000ff"] },
     };
-    const surface = (fill: unknown) =>
+    const surface = (fill: AppearanceFill) =>
       buildAppearancePreviewRenderRequestV3({
         target: "d20",
         recipe: { ...palette, fill: { mode: "fixed", value: fill } },
@@ -1432,7 +1455,7 @@ describe("WebRollService", () => {
   });
 
   it("executes staging rolls once and uses one exact renderer-v4 PNG for web and Discord", async () => {
-    const lookups: Array<{ path: string; value: unknown }> = [];
+    const lookups: Array<{ path: string; value: AppearanceLookup }> = [];
     const dataService = appearanceService((value, path) =>
       lookups.push({ path, value }),
     );

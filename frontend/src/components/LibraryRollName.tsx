@@ -13,6 +13,7 @@ export function LibraryRollName({
 }>) {
   if (color === null) return <span className={className}>{children}</span>;
   const variants = libraryRollColorVariants(color);
+  // SAFETY: The surrounding validation establishes the CSSProperties invariant used below.
   return (
     <span
       className={cn(

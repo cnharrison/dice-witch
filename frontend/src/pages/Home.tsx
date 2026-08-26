@@ -18,6 +18,7 @@ import { useUser } from '@/lib/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { BookmarkPlus, PanelRightOpen } from "lucide-react";
 import * as React from 'react';
+import * as z from "zod";
 import type { ImperativePanelHandle } from "react-resizable-panels";
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,51 @@ type ActiveLibraryRoll = Readonly<{
   displayName: string;
   nameColor: string | null;
 }>;
+type GuildSelection = ReturnType<typeof useGuild>;
+type Toast = ReturnType<typeof useToast>["toast"];
+type DiceInputSlot = React.ComponentType<React.ComponentProps<typeof DiceInput>>;
+type GuildDropdownSlot = React.ComponentType<React.ComponentProps<typeof GuildDropdown>>;
+type ChannelDropdownSlot = React.ComponentType<React.ComponentProps<typeof ChannelDropdown>>;
+type RollerSlot = React.ComponentType<React.ComponentProps<typeof Roller>>;
+type LoadingMediaSlot = React.ComponentType<React.ComponentProps<typeof LoadingMedia>>;
+type SavedRollQuickAccessSlot = React.ComponentType<
+  React.ComponentProps<typeof SavedRollQuickAccess>
+>;
+type SaveLibraryRollDialogSlot = React.ComponentType<
+  React.ComponentProps<typeof SaveLibraryRollDialog>
+>;
+
+interface DiceValidationState {
+  input: string;
+  setInput: (value: string) => void;
+  isValid: boolean;
+  validatedInput: string;
+  hasDiceInfo: boolean;
+}
+
+interface QueryState<T> {
+  data: T | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+}
+
+export interface HomeDependencies {
+  useUserId: () => string | undefined;
+  useGuildSelection: () => GuildSelection;
+  useDiceValidation: () => DiceValidationState;
+  useIsMobile: () => boolean;
+  useRollerGuilds: (userId: string | undefined) => QueryState<RollerGuild[]>;
+  useGuildChannels: (selectedGuildId: string | undefined) => Channel[];
+  useRollToast: () => Toast;
+  fetchResponse: typeof customFetch;
+  DiceInputSlot: DiceInputSlot;
+  GuildDropdownSlot: GuildDropdownSlot;
+  ChannelDropdownSlot: ChannelDropdownSlot;
+  RollerSlot: RollerSlot;
+  LoadingMediaSlot: LoadingMediaSlot;
+  SavedRollQuickAccessSlot: SavedRollQuickAccessSlot;
+  SaveLibraryRollDialogSlot: SaveLibraryRollDialogSlot;
+}
 
 const MOBILE_QUERY = "(max-width: 639px)";
 const MOBILE_TABS: ReadonlyArray<{ id: MobileRollTab; label: string }> = [
@@ -79,21 +125,21 @@ function focusVisibleNotationInput(): void {
 }
 
 function recentComposition(roll: RecentRoll): QuickRollComposition {
-  return {
+  const composition = {
     notation: roll.notation,
     title: roll.title,
     repetitions: roll.repetitions,
-    ...(roll.libraryRoll === undefined
-      ? {}
-      : {
-          libraryRoll: {
-            scope: roll.libraryRoll.scope,
-            id: roll.libraryRoll.id,
-            revision: roll.libraryRoll.revision,
-          },
-          libraryDisplayName: roll.libraryRoll.displayName,
-          libraryNameColor: roll.libraryRoll.nameColor,
-        }),
+  };
+  if (roll.libraryRoll === undefined) return composition;
+  return {
+    ...composition,
+    libraryRoll: {
+      scope: roll.libraryRoll.scope,
+      id: roll.libraryRoll.id,
+      revision: roll.libraryRoll.revision,
+    },
+    libraryDisplayName: roll.libraryRoll.displayName,
+    libraryNameColor: roll.libraryRoll.nameColor,
   };
 }
 
@@ -145,16 +191,34 @@ function MobileRollTabs({
   );
 }
 
-export const Home = () => {
-  const { user } = useUser();
+export function HomeView({ dependencies }: { dependencies: HomeDependencies }) {
+  const {
+    useUserId,
+    useGuildSelection,
+    useDiceValidation: useHomeDiceValidation,
+    useIsMobile,
+    useRollerGuilds,
+    useGuildChannels,
+    useRollToast,
+    fetchResponse,
+    DiceInputSlot,
+    GuildDropdownSlot,
+    ChannelDropdownSlot,
+    RollerSlot,
+    LoadingMediaSlot,
+    SavedRollQuickAccessSlot,
+    SaveLibraryRollDialogSlot,
+  } = dependencies;
+  const userId = useUserId();
   const {
     selectedGuildId: selectedGuild,
     selectedChannelId: selectedChannel,
     setSelectedGuildId: setSelectedGuild,
-    setSelectedChannelId: setSelectedChannel
-  } = useGuild();
-  const { input, setInput, isValid, diceInfo, validatedInput } = useDiceValidation('');
-  const isMobile = useBrowserMediaQueryV4(MOBILE_QUERY);
+    setSelectedChannelId: setSelectedChannel,
+  } = useGuildSelection();
+  const { input, setInput, isValid, hasDiceInfo, validatedInput } =
+    useHomeDiceValidation();
+  const isMobile = useIsMobile();
   const [mobileTab, setMobileTab] = React.useState<MobileRollTab>("roll");
   const [destinationOpen, setDestinationOpen] = React.useState(false);
   const [savedRollsCollapsed, setSavedRollsCollapsed] = React.useState(false);
@@ -208,26 +272,15 @@ export const Home = () => {
   );
 
   React.useEffect(() => {
-    if (user?.id === undefined) {
+    if (userId === undefined) {
       setRecentRolls([]);
       return;
     }
-    setRecentRolls(readRecentRolls(window.localStorage, user.id));
-  }, [user?.id]);
+    setRecentRolls(readRecentRolls(window.localStorage, userId));
+  }, [userId]);
 
-  const { data: mutualGuilds, isLoading, isFetching } = useQuery<RollerGuild[]>({
-    queryKey: ['guilds', 'roller'],
-    queryFn: async () => {
-      const response = await customFetch('/api/guilds/mutual?view=roller');
-      if (!response.ok) {
-        throw new Error('Failed to fetch guilds');
-      }
-      const data = await response.json();
-      return data.guilds || [];
-    },
-    enabled: !!user?.id,
-    staleTime: 1000 * 60 * 5,
-  });
+  const { data: mutualGuilds, isLoading, isFetching } =
+    useRollerGuilds(userId);
 
   const handleInputChange = (value: string) => {
     resetHistoryNavigation();
@@ -241,26 +294,8 @@ export const Home = () => {
     }
   };
 
-  const { data: channelsResponse } = useQuery({
-    queryKey: ['channels', selectedGuild],
-    queryFn: async () => {
-      const response = await customFetch(`/api/guilds/${selectedGuild}/channels`);
-      const data = await response.json();
-      return data;
-    },
-    enabled: !!selectedGuild,
-    staleTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-  });
-
-
-  const channels: Channel[] = Array.isArray(channelsResponse?.channels)
-    ? channelsResponse.channels
-    : [];
-
-  const { toast } = useToast();
+  const channels = useGuildChannels(selectedGuild);
+  const toast = useRollToast();
 
   React.useEffect(() => {
     if (
@@ -268,36 +303,33 @@ export const Home = () => {
       !input ||
       validatedInput !== input ||
       !isValid ||
-      diceInfo === null
+      !hasDiceInfo
     ) {
       setPreparation({ status: "idle" });
       return;
     }
     const controller = new AbortController();
     setPreparation({ status: "loading" });
-    void customFetch('/api/dice/prepare', {
+    const preparationRequest = {
+      guildId: selectedGuild,
+      notation: input,
+      timesToRepeat,
+    };
+    if (stableRenderSeed.current !== undefined) {
+      Object.assign(preparationRequest, { renderSeed: stableRenderSeed.current });
+    }
+    void fetchResponse('/api/dice/prepare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        guildId: selectedGuild,
-        notation: input,
-        timesToRepeat,
-        ...(stableRenderSeed.current === undefined
-          ? {}
-          : { renderSeed: stableRenderSeed.current }),
-      }),
+      body: JSON.stringify(preparationRequest),
       signal: controller.signal,
     })
       .then(async (response) => {
         const value: unknown = await response.json();
         if (!response.ok) {
+          const error = z.object({ error: z.string() }).safeParse(value);
           throw new Error(
-            typeof value === "object" &&
-              value !== null &&
-              "error" in value &&
-              typeof value.error === "string"
-              ? value.error
-              : "Exact dice preparation failed",
+            error.success ? error.data.error : "Exact dice preparation failed",
           );
         }
         return parseWebRollPreparation(value);
@@ -310,7 +342,7 @@ export const Home = () => {
           setPreparation({ status: "ready", value });
         }
       })
-      .catch((error: unknown) => {
+      .catch((error: Error) => {
         if (controller.signal.aborted) return;
         setPreparation({
           status: "error",
@@ -322,7 +354,8 @@ export const Home = () => {
       });
     return () => controller.abort();
   }, [
-    diceInfo,
+    fetchResponse,
+    hasDiceInfo,
     input,
     isValid,
     preparationRetry,
@@ -370,20 +403,21 @@ export const Home = () => {
           : crypto.randomUUID();
       pendingDelivery.current = { id: deliveryId, requestKey };
 
-      const response = await customFetch("/api/dice/roll", {
+      const rollRequest = {
+        deliveryId,
+        guildId: selectedGuild,
+        channelId: selectedChannel,
+        notation: input,
+        renderSeed: preparation.value.renderSeed,
+        appearanceDigest: preparation.value.appearanceDigest,
+        timesToRepeat,
+        title: rollTitle || undefined,
+      };
+      if (libraryRoll !== undefined) Object.assign(rollRequest, { libraryRoll });
+      const response = await fetchResponse("/api/dice/roll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deliveryId,
-          guildId: selectedGuild,
-          channelId: selectedChannel,
-          notation: input,
-          renderSeed: preparation.value.renderSeed,
-          appearanceDigest: preparation.value.appearanceDigest,
-          timesToRepeat,
-          title: rollTitle || undefined,
-          ...(libraryRoll === undefined ? {} : { libraryRoll }),
-        }),
+        body: JSON.stringify(rollRequest),
         signal: controller.signal,
       });
       const responseBody: unknown = await response.json();
@@ -411,23 +445,24 @@ export const Home = () => {
       }
       setRollResults(data);
       if (data.error === undefined) {
-        const recentRoll = {
+        const recentRollBase = {
           notation: input,
           title: rollTitle.trim() === "" ? null : rollTitle,
           repetitions: timesToRepeat,
-          ...(activeLibrary === undefined
-            ? {}
-            : {
-                libraryRoll: {
-                  ...activeLibrary.selection,
-                  displayName: activeLibrary.displayName,
-                  nameColor: activeLibrary.nameColor,
-                },
-              }),
-        } satisfies RecentRoll;
-        if (user?.id !== undefined) {
+        };
+        const recentRoll: RecentRoll = activeLibrary === undefined
+          ? recentRollBase
+          : {
+              ...recentRollBase,
+              libraryRoll: {
+                ...activeLibrary.selection,
+                displayName: activeLibrary.displayName,
+                nameColor: activeLibrary.nameColor,
+              },
+            };
+        if (userId !== undefined) {
           try {
-            setRecentRolls(addRecentRoll(window.localStorage, user.id, recentRoll));
+            setRecentRolls(addRecentRoll(window.localStorage, userId, recentRoll));
             resetHistoryNavigation();
           } catch (error) {
             console.error("Could not persist the recent roll", error);
@@ -454,6 +489,7 @@ export const Home = () => {
       }
     }
   }, [
+    fetchResponse,
     input,
     isMobile,
     isValid,
@@ -465,7 +501,7 @@ export const Home = () => {
     timesToRepeat,
     toast,
     resetHistoryNavigation,
-    user?.id,
+    userId,
   ]);
 
   React.useEffect(() => {
@@ -594,18 +630,19 @@ export const Home = () => {
     if (historyIndex.current < 0) {
       if (direction === "next") return;
       const activeLibrary = activeLibraryRoll.current;
-      historyDraft.current = {
+      const draft = {
         notation: input,
         title: rollTitle.trim() === "" ? null : rollTitle,
         repetitions: timesToRepeat,
-        ...(activeLibrary === undefined
-          ? {}
-          : {
-              libraryRoll: activeLibrary.selection,
-              libraryDisplayName: activeLibrary.displayName,
-              libraryNameColor: activeLibrary.nameColor,
-            }),
       };
+      historyDraft.current = activeLibrary === undefined
+        ? draft
+        : {
+            ...draft,
+            libraryRoll: activeLibrary.selection,
+            libraryDisplayName: activeLibrary.displayName,
+            libraryNameColor: activeLibrary.nameColor,
+          };
     }
     const nextIndex = direction === "previous"
       ? Math.min(historyIndex.current + 1, recentRolls.length - 1)
@@ -645,7 +682,7 @@ export const Home = () => {
   }
 
   const diceInput = (
-    <DiceInput
+    <DiceInputSlot
       input={input}
       setInput={handleInputChange}
       isValid={isValid}
@@ -691,7 +728,7 @@ export const Home = () => {
     </div>
   );
   const renderRoller = (mobileView: "controls" | "result") => (
-    <Roller
+    <RollerSlot
       rollPreparation={visiblePreparation}
       rollResults={rollResults}
       isPreparing={preparation.status === "loading"}
@@ -704,7 +741,7 @@ export const Home = () => {
     />
   );
   const renderSavedRolls = (onCollapse?: () => void) => (
-    <SavedRollQuickAccess
+    <SavedRollQuickAccessSlot
       guildScope={savedRollGuildScope}
       recentRolls={recentRolls}
       stagingReady={selectedGuild !== undefined}
@@ -712,9 +749,9 @@ export const Home = () => {
       onLoad={(composition) => loadComposition(composition)}
       onRollNow={(composition) => loadComposition(composition, true)}
       onClearRecent={() => {
-        if (user?.id === undefined) return;
+        if (userId === undefined) return;
         try {
-          clearRecentRolls(window.localStorage, user.id);
+          clearRecentRolls(window.localStorage, userId);
         } catch (error) {
           console.error("Could not clear recent rolls", error);
           return;
@@ -729,7 +766,7 @@ export const Home = () => {
   return (
     <TooltipProvider>
       <>
-        <SaveLibraryRollDialog
+        <SaveLibraryRollDialogSlot
           open={saveDialogOpen}
           onOpenChange={setSaveDialogOpen}
           composition={{ notation: input, title: rollTitle, repetitions: timesToRepeat }}
@@ -767,7 +804,7 @@ export const Home = () => {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-3">
-                    <GuildDropdown
+                    <GuildDropdownSlot
                       guilds={availableGuilds}
                       value={selectedGuild}
                       onValueChange={selectGuild}
@@ -776,7 +813,7 @@ export const Home = () => {
                       contentClassName="min-w-[var(--radix-select-trigger-width)]"
                     />
                     {selectedGuild && channels.length > 0 && (
-                      <ChannelDropdown
+                      <ChannelDropdownSlot
                         channels={channels}
                         value={selectedChannel}
                         onValueChange={(value) => {
@@ -822,7 +859,7 @@ export const Home = () => {
           <>
             <header className="mx-auto flex w-full max-w-7xl flex-none items-center justify-center gap-4 pb-2">
               <div className="w-[clamp(7.5rem,16dvh,9rem)] shrink-0 overflow-visible">
-                <LoadingMedia
+                <LoadingMediaSlot
                   staticImage={diceWitchPortrait}
                   loadingVideo="/videos/dice-witch-loading.mp4"
                   className="h-auto w-full rounded-full"
@@ -833,13 +870,13 @@ export const Home = () => {
                 />
               </div>
               <div className="grid w-[300px] gap-2">
-                <GuildDropdown
+                <GuildDropdownSlot
                   guilds={availableGuilds}
                   value={selectedGuild}
                   onValueChange={selectGuild}
                 />
                 {selectedGuild && channels.length > 0 && (
-                  <ChannelDropdown
+                  <ChannelDropdownSlot
                     channels={channels}
                     value={selectedChannel}
                     onValueChange={selectChannel}
@@ -899,6 +936,88 @@ export const Home = () => {
       </>
     </TooltipProvider>
   );
+}
+
+function useProductionUserId(): string | undefined {
+  return useUser().user?.id;
+}
+
+function useProductionDiceValidation(): DiceValidationState {
+  const { input, setInput, isValid, validatedInput, diceInfo } =
+    useDiceValidation("");
+  return {
+    input,
+    setInput,
+    isValid,
+    validatedInput,
+    hasDiceInfo: diceInfo !== null,
+  };
+}
+
+function useProductionIsMobile(): boolean {
+  return useBrowserMediaQueryV4(MOBILE_QUERY);
+}
+
+function useProductionRollToast(): Toast {
+  return useToast().toast;
+}
+
+function useProductionRollerGuilds(
+  userId: string | undefined,
+): QueryState<RollerGuild[]> {
+  return useQuery<RollerGuild[]>({
+    queryKey: ["guilds", "roller"],
+    queryFn: async () => {
+      const response = await customFetch("/api/guilds/mutual?view=roller");
+      if (!response.ok) throw new Error("Failed to fetch guilds");
+      const data = await response.json();
+      return data.guilds || [];
+    },
+    enabled: userId !== undefined,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+function useProductionGuildChannels(
+  selectedGuildId: string | undefined,
+): Channel[] {
+  const { data } = useQuery({
+    queryKey: ["channels", selectedGuildId],
+    queryFn: async () => {
+      const response = await customFetch(
+        `/api/guilds/${selectedGuildId}/channels`,
+      );
+      return response.json();
+    },
+    enabled: selectedGuildId !== undefined,
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+  });
+  return Array.isArray(data?.channels) ? data.channels : [];
+}
+
+const productionHomeDependencies: HomeDependencies = {
+  useUserId: useProductionUserId,
+  useGuildSelection: useGuild,
+  useDiceValidation: useProductionDiceValidation,
+  useIsMobile: useProductionIsMobile,
+  useRollerGuilds: useProductionRollerGuilds,
+  useGuildChannels: useProductionGuildChannels,
+  useRollToast: useProductionRollToast,
+  fetchResponse: customFetch,
+  DiceInputSlot: DiceInput,
+  GuildDropdownSlot: GuildDropdown,
+  ChannelDropdownSlot: ChannelDropdown,
+  RollerSlot: Roller,
+  LoadingMediaSlot: LoadingMedia,
+  SavedRollQuickAccessSlot: SavedRollQuickAccess,
+  SaveLibraryRollDialogSlot: SaveLibraryRollDialog,
 };
+
+export function Home() {
+  return <HomeView dependencies={productionHomeDependencies} />;
+}
 
 export default Home;

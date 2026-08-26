@@ -20,12 +20,7 @@ import {
 } from "@/lib/saved-rolls";
 import type { Guild } from "@/types/guild";
 
-export function SaveLibraryRollDialog({
-  open,
-  onOpenChange,
-  composition,
-  manageableGuilds,
-}: Readonly<{
+type SaveLibraryRollDialogProps = Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   composition: Readonly<{
@@ -34,7 +29,23 @@ export function SaveLibraryRollDialog({
     repetitions: number;
   }>;
   manageableGuilds: readonly Guild[];
-}>) {
+}>;
+
+type SaveLibraryRollDialogDependencies = Readonly<{
+  createSavedRoll: typeof createSavedRoll;
+  listSavedRolls: typeof listSavedRolls;
+}>;
+
+export function SaveLibraryRollDialogView({
+  open,
+  onOpenChange,
+  composition,
+  manageableGuilds,
+  dependencies,
+}: SaveLibraryRollDialogProps & {
+  dependencies: SaveLibraryRollDialogDependencies;
+}) {
+  const { createSavedRoll, listSavedRolls } = dependencies;
   const queryClient = useQueryClient();
   const [name, setName] = React.useState("");
   const [nameColor, setNameColor] = React.useState<string | null>(null);
@@ -98,7 +109,7 @@ export function SaveLibraryRollDialog({
       }
       await queryClient.invalidateQueries({ queryKey: ["saved-rolls"] });
     },
-    onError: (error: unknown) => {
+    onError: (error: Error) => {
       setMessage(
         error instanceof SavedRollApiError
           ? error.message
@@ -186,5 +197,14 @@ export function SaveLibraryRollDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function SaveLibraryRollDialog(props: SaveLibraryRollDialogProps) {
+  return (
+    <SaveLibraryRollDialogView
+      {...props}
+      dependencies={{ createSavedRoll, listSavedRolls }}
+    />
   );
 }

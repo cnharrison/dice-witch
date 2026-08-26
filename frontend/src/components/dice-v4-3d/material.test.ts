@@ -384,7 +384,9 @@ describe("V4 Three.js material policy", () => {
       texture,
     ).material;
     expect(glass).toBeInstanceOf(MeshPhysicalMaterial);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((glass as MeshPhysicalMaterial).transmission).toBeCloseTo(0.602);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((glass as MeshPhysicalMaterial).dispersion).toBe(0.08);
 
     const fantasyAppearance = { ...d6.appearance, material: MATERIALS[9] };
@@ -402,6 +404,7 @@ describe("V4 Three.js material policy", () => {
   });
 
   it("rejects an unknown material family", () => {
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(() =>
       resolveThreeMaterialPolicyV4({ family: "paper" } as never),
     ).toThrow("Three.js V4 material family is invalid");

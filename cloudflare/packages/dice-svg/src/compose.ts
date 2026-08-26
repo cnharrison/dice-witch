@@ -32,25 +32,25 @@ import type {
   RenderTargetV3,
 } from "./types";
 import { validateRenderRequest } from "./validate";
+import type { ValidationInput } from "./validationBoundary";
 
 const DICE_SIZE = 150;
 const ICON_SIZE = 37;
 const MAX_DICE_PER_ROW = 10;
 
-const diceGenerators: Partial<
-  Record<RenderDie["sides"], (props: GenerateDieProps) => string>
-> = {
-  4: generateD4,
-  6: generateD6,
-  8: generateD8,
-  10: generateD10,
-  12: generateD12,
-  20: generateD20,
-  "%": generateDPercent,
-  F: generateDF,
-};
+type DiceGenerator = (props: GenerateDieProps) => string;
+const diceGenerators = new Map<RenderDie["sides"], DiceGenerator>([
+  [4, generateD4],
+  [6, generateD6],
+  [8, generateD8],
+  [10, generateD10],
+  [12, generateD12],
+  [20, generateD20],
+  ["%", generateDPercent],
+  ["F", generateDF],
+]);
 
-const icons: Record<IconName, string> = {
+const icons = {
   trashcan: trashcanIcon,
   explosion: explosionIcon,
   recycle: recycleIcon,
@@ -62,7 +62,7 @@ const icons: Record<IconName, string> = {
   penetrate: arrowThroughIcon,
   unique: snowflakeIcon,
   blank: blankIcon,
-};
+} satisfies Record<IconName, string>;
 
 export type RenderedDie = {
   svg: string;
@@ -162,10 +162,12 @@ function getIconSpacing(iconCount: number): number {
 }
 
 function renderDie(die: RenderDie): string {
-  const generator = diceGenerators[die.sides] ?? generateGeneric;
+  const generator = diceGenerators.get(die.sides) ?? generateGeneric;
+  const numericSides =
+    die.sides === "%" || die.sides === "F" ? undefined : die.sides;
   const displayValue =
-    typeof die.sides === "number" && die.rolled > die.sides
-      ? ((die.rolled - 1) % die.sides) + 1
+    numericSides !== undefined && die.rolled > numericSides
+      ? ((die.rolled - 1) % numericSides) + 1
       : die.rolled;
 
   return generator({
@@ -229,7 +231,7 @@ export function composeRenderedDiceGrid(groups: RenderedDie[][]): ComposedSvg {
   };
 }
 
-export function composeDiceSvg(input: unknown): ComposedSvg {
+export function composeDiceSvg(input: ValidationInput): ComposedSvg {
   const request = validateRenderRequest(input);
   return composeRenderedDiceGrid(
     request.groups.map((group) =>

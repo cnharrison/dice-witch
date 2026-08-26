@@ -1,5 +1,6 @@
 import { open, realpath, rm } from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 
 function isInside(parent, candidate) {
   const relative = path.relative(parent, candidate);
@@ -15,18 +16,22 @@ export async function canonicalizePrivateJsonPath(
   repositoryRoot,
   label,
 ) {
+  const parsedPath = z.string().safeParse(evidencePath);
   if (
-    typeof evidencePath !== "string" ||
-    !path.isAbsolute(evidencePath) ||
-    path.extname(evidencePath) !== ".json"
+    !parsedPath.success ||
+    !path.isAbsolute(parsedPath.data) ||
+    path.extname(parsedPath.data) !== ".json"
   ) {
     throw new Error(`${label} must use an absolute private JSON path`);
   }
   const [evidenceParent, sourceRoot] = await Promise.all([
-    realpath(path.dirname(evidencePath)),
+    realpath(path.dirname(parsedPath.data)),
     realpath(repositoryRoot),
   ]);
-  const canonicalPath = path.join(evidenceParent, path.basename(evidencePath));
+  const canonicalPath = path.join(
+    evidenceParent,
+    path.basename(parsedPath.data),
+  );
   if (isInside(sourceRoot, canonicalPath)) {
     throw new Error(`${label} must be stored outside the source repository`);
   }

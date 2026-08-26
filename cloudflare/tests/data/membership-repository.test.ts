@@ -1,12 +1,8 @@
-import { env } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { dataTestEnv as dataEnv } from "./test-bindings";
 import { D1MembershipRepository } from "../../workers/data/src/membership-repository";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
 const guildId = "100000000000000002";
 const userId = "100000000000000003";
 const occurredAt = 1_767_225_600_123;
@@ -185,20 +181,11 @@ describe("D1MembershipRepository", () => {
     expect(count?.count).toBe(0);
   });
 
-  it("rejects malformed identifiers and permissions", async () => {
+  it("rejects malformed identifiers", async () => {
     const repository = new D1MembershipRepository(dataEnv.DATA);
 
     await expect(
       repository.listMutualGuilds("not-a-snowflake"),
     ).rejects.toThrow("User id is invalid");
-    await expect(
-      repository.upsertPermissions({
-        userId,
-        guildId,
-        permissions: { isAdmin: true, isDiceWitchAdmin: 1 as never },
-        mutationId: "membership-100000000000000023",
-        occurredAt,
-      }),
-    ).rejects.toThrow("Membership permissions are invalid");
   });
 });

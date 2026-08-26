@@ -334,7 +334,7 @@ export function resolveSphereLightingParametersV4(
 export function sphereLightingSampleV4(
   normal: Point3V4,
   parameters: SphereLightingParametersV4,
-): { shade: number; rim: number } {
+) {
   const diffuse = Math.max(
     normalizedDot(normal, parameters.lightDirection),
     0,

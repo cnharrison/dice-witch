@@ -1,3 +1,4 @@
+import * as z from "zod";
 import {
   APPEARANCE_GRADIENT_COLOR_SOURCES,
   APPEARANCE_GRADIENT_SCOPES,
@@ -36,12 +37,54 @@ const MAX_CATALOG_ID_LENGTH = 64;
 const MAX_SELECTION_WEIGHT = 1_000;
 const MAX_TOTAL_SELECTION_WEIGHT = 10_000;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+type ValidationInput = z.input<z.ZodUnknown>;
+type BoundaryRecord = z.output<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+
+const nonRecordValueSchema = z.union([
+  z.null(),
+  z.undefined(),
+  z.string(),
+  z.number(),
+  z.nan(),
+  z.literal(Number.POSITIVE_INFINITY),
+  z.literal(Number.NEGATIVE_INFINITY),
+  z.boolean(),
+  z.bigint(),
+  z.symbol(),
+  z.function(),
+]);
+const objectValueSchema = z.custom<object>(
+  (value) =>
+    !nonRecordValueSchema.safeParse(value).success && !Array.isArray(value),
+);
+const boundaryRecordSchema = z.custom<BoundaryRecord>((value) => {
+  const objectValue = objectValueSchema.safeParse(value);
+  if (!objectValue.success) return false;
+  const prototype = Reflect.getPrototypeOf(objectValue.data);
+  return prototype === Object.prototype || prototype === null;
+});
+const colorSchema = z
+  .string()
+  .regex(HEX_COLOR)
+  .transform((value) => value.toLowerCase());
+const catalogIdSchema = z.string().min(1).max(MAX_CATALOG_ID_LENGTH);
+const selectionWeightSchema = z
+  .number()
+  .refine(Number.isSafeInteger)
+  .min(1)
+  .max(MAX_SELECTION_WEIGHT);
+const uuidV4Schema = z.string().regex(UUID_V4);
+const designNameSchema = z.string();
+const appearanceVariationSchema = z.enum(["fixed", "curated", "wild"]);
+const appearanceVariationScopeSchema = z.enum(["die", "group", "roll"]);
+const appearanceTargetSchema = z.enum(APPEARANCE_TARGETS);
+
+function isRecord(value: ValidationInput): value is BoundaryRecord {
+  return boundaryRecordSchema.safeParse(value).success;
 }
 
 function hasExactKeys(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   expected: readonly string[],
 ): boolean {
   const keys = Object.keys(value).sort();
@@ -53,41 +96,38 @@ function hasExactKeys(
 }
 
 function requireRecord(
-  value: unknown,
+  value: ValidationInput,
   expectedKeys: readonly string[],
   message: string,
-): Record<string, unknown> {
+): BoundaryRecord {
   if (!isRecord(value) || !hasExactKeys(value, expectedKeys)) {
     throw new Error(message);
   }
   return value;
 }
 
-function parseColor(value: unknown): string {
-  if (typeof value !== "string" || !HEX_COLOR.test(value)) {
+function parseColor(value: ValidationInput): string {
+  const parsed = colorSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error("Appearance color must be a six-digit hex color");
   }
-  return value.toLowerCase();
+  return parsed.data;
 }
 
 function supportedId(
-  value: unknown,
+  value: ValidationInput,
   supported: readonly string[],
   message: string,
 ): string {
-  if (
-    typeof value !== "string" ||
-    value.length < 1 ||
-    value.length > MAX_CATALOG_ID_LENGTH ||
-    !supported.includes(value)
-  ) {
+  const parsed = catalogIdSchema.safeParse(value);
+  if (!parsed.success || !supported.includes(parsed.data)) {
     throw new Error(message);
   }
-  return value;
+  return parsed.data;
 }
 
-function parseColors(value: unknown): AppearanceColors {
-  if (!isRecord(value) || typeof value.mode !== "string") {
+function parseColors(value: ValidationInput): AppearanceColors {
+  if (!isRecord(value)) {
     throw new Error("Appearance colors are invalid");
   }
   if (value.mode === "tonal" || value.mode === "random") {
@@ -112,8 +152,8 @@ function parseColors(value: unknown): AppearanceColors {
   return { mode: "palette", colors };
 }
 
-function parseColorsV2(value: unknown): AppearanceColorsV2 {
-  if (!isRecord(value) || typeof value.mode !== "string") {
+function parseColorsV2(value: ValidationInput): AppearanceColorsV2 {
+  if (!isRecord(value)) {
     throw new Error("Appearance colors are invalid");
   }
   if (
@@ -141,8 +181,8 @@ function parseColorsV2(value: unknown): AppearanceColorsV2 {
   return { mode: "palette", colors };
 }
 
-function parseFill(value: unknown, catalog: AppearanceCatalog): AppearanceFill {
-  if (!isRecord(value) || typeof value.type !== "string") {
+function parseFill(value: ValidationInput, catalog: AppearanceCatalog): AppearanceFill {
+  if (!isRecord(value)) {
     throw new Error("Appearance fill is invalid");
   }
   if (value.type === "solid" || value.type === "gradient") {
@@ -164,18 +204,14 @@ function parseFill(value: unknown, catalog: AppearanceCatalog): AppearanceFill {
   };
 }
 
-function parseSelectionWeight(value: unknown): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 1 ||
-    value > MAX_SELECTION_WEIGHT
-  ) {
+function parseSelectionWeight(value: ValidationInput): number {
+  const parsed = selectionWeightSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error(
       `Appearance selection weight must be from 1 through ${String(MAX_SELECTION_WEIGHT)}`,
     );
   }
-  return value;
+  return parsed.data;
 }
 
 function validateTotalWeight(options: readonly { weight: number }[]): void {
@@ -192,10 +228,10 @@ function fillKey(fill: AppearanceFill): string {
 }
 
 function parseFillSelection(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): AppearanceFillSelection {
-  if (!isRecord(value) || typeof value.mode !== "string") {
+  if (!isRecord(value)) {
     throw new Error("Appearance fill selection is invalid");
   }
   if (value.mode === "fixed") {
@@ -250,10 +286,10 @@ function parseFillSelection(
 }
 
 function parseFontSelection(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): AppearanceFontSelection {
-  if (!isRecord(value) || typeof value.mode !== "string") {
+  if (!isRecord(value)) {
     throw new Error("Appearance font selection is invalid");
   }
   if (value.mode === "fixed") {
@@ -321,7 +357,7 @@ function parseFontSelection(
 }
 
 export function parseAppearanceRecipe(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): AppearanceRecipeV1 {
   const recipe = requireRecord(
@@ -329,17 +365,15 @@ export function parseAppearanceRecipe(
     ["colors", "fill", "font", "variation", "varyBy", "version"],
     "Appearance recipe has invalid fields",
   );
-  if (
-    recipe.version !== 1 ||
-    !["fixed", "curated", "wild"].includes(String(recipe.variation)) ||
-    !["die", "group", "roll"].includes(String(recipe.varyBy))
-  ) {
+  const variation = appearanceVariationSchema.safeParse(recipe.variation);
+  const varyBy = appearanceVariationScopeSchema.safeParse(recipe.varyBy);
+  if (recipe.version !== 1 || !variation.success || !varyBy.success) {
     throw new Error("Appearance recipe is invalid");
   }
   return {
     version: 1,
-    variation: recipe.variation as AppearanceRecipeV1["variation"],
-    varyBy: recipe.varyBy as AppearanceRecipeV1["varyBy"],
+    variation: variation.data,
+    varyBy: varyBy.data,
     colors: parseColors(recipe.colors),
     fill: parseFillSelection(recipe.fill, catalog),
     font: parseFontSelection(recipe.font, catalog),
@@ -354,25 +388,21 @@ type SelectionMessages = {
 };
 
 function supportedValue<Value extends string>(
-  value: unknown,
+  value: ValidationInput,
   supported: readonly Value[],
   message: string,
 ): Value {
-  if (
-    typeof value !== "string" ||
-    !supported.includes(value as Value)
-  ) {
-    throw new Error(message);
-  }
-  return value as Value;
+  const parsed = z.enum(supported).safeParse(value);
+  if (!parsed.success) throw new Error(message);
+  return parsed.data;
 }
 
 function parseValueSelection<Value extends string>(
-  value: unknown,
+  value: ValidationInput,
   supported: readonly Value[],
   messages: SelectionMessages,
 ): AppearanceSelection<Value> {
-  if (!isRecord(value) || typeof value.mode !== "string") {
+  if (!isRecord(value)) {
     throw new Error(messages.invalid);
   }
   if (value.mode === "fixed") {
@@ -428,7 +458,7 @@ function parseValueSelection<Value extends string>(
   return { mode: "weighted", options };
 }
 
-function parseGradientV2(value: unknown): AppearanceGradientV2 {
+function parseGradientV2(value: ValidationInput): AppearanceGradientV2 {
   const gradient = requireRecord(
     value,
     ["colorSource", "direction", "scope"],
@@ -463,7 +493,7 @@ function parseGradientV2(value: unknown): AppearanceGradientV2 {
   };
 }
 
-function parseLightingV2(value: unknown): AppearanceLightingV2 {
+function parseLightingV2(value: ValidationInput): AppearanceLightingV2 {
   const lighting = requireRecord(
     value,
     ["direction", "mode", "strength"],
@@ -534,7 +564,7 @@ function validateTreatmentCompatibility(recipe: AppearanceRecipeV2): void {
 }
 
 export function parseAppearanceRecipeV2(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): AppearanceRecipeV2 {
   const recipe = requireRecord(
@@ -552,11 +582,9 @@ export function parseAppearanceRecipeV2(
     ],
     "Appearance recipe V2 has invalid fields",
   );
-  if (
-    recipe.version !== 2 ||
-    !["fixed", "curated", "wild"].includes(String(recipe.variation)) ||
-    !["die", "group", "roll"].includes(String(recipe.varyBy))
-  ) {
+  const variation = appearanceVariationSchema.safeParse(recipe.variation);
+  const varyBy = appearanceVariationScopeSchema.safeParse(recipe.varyBy);
+  if (recipe.version !== 2 || !variation.success || !varyBy.success) {
     throw new Error("Appearance recipe V2 is invalid");
   }
   const parsed: AppearanceRecipeV2 = {
@@ -566,8 +594,8 @@ export function parseAppearanceRecipeV2(
       APPEARANCE_RECIPE_COMPATIBILITIES,
       "Appearance recipe V2 is invalid",
     ),
-    variation: recipe.variation as AppearanceRecipeV2["variation"],
-    varyBy: recipe.varyBy as AppearanceRecipeV2["varyBy"],
+    variation: variation.data,
+    varyBy: varyBy.data,
     colors: parseColorsV2(recipe.colors),
     fill: parseFillSelection(recipe.fill, catalog),
     font: parseFontSelection(recipe.font, catalog),
@@ -578,31 +606,33 @@ export function parseAppearanceRecipeV2(
   return parsed;
 }
 
-function parseDesign(value: unknown, catalog: AppearanceCatalog): CustomDesignV1 {
+function parseDesign(value: ValidationInput, catalog: AppearanceCatalog): CustomDesignV1 {
   const design = requireRecord(
     value,
     ["id", "name", "recipe"],
     "Appearance design has invalid fields",
   );
-  if (typeof design.id !== "string" || !UUID_V4.test(design.id)) {
+  const id = uuidV4Schema.safeParse(design.id);
+  if (!id.success) {
     throw new Error("Appearance design id must be a UUID v4");
   }
-  if (typeof design.name !== "string") {
+  const parsedName = designNameSchema.safeParse(design.name);
+  if (!parsedName.success) {
     throw new Error("Appearance design name is invalid");
   }
-  const name = design.name.trim();
+  const name = parsedName.data.trim();
   if (name.length < 1 || name.length > MAX_DESIGN_NAME_LENGTH) {
     throw new Error("Appearance design name is invalid");
   }
   return {
-    id: design.id.toLowerCase(),
+    id: id.data.toLowerCase(),
     name,
     recipe: parseAppearanceRecipe(design.recipe, catalog),
   };
 }
 
 function parseDesignV2(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): CustomDesignV2 {
   const design = requireRecord(
@@ -610,25 +640,27 @@ function parseDesignV2(
     ["id", "name", "recipe"],
     "Appearance design has invalid fields",
   );
-  if (typeof design.id !== "string" || !UUID_V4.test(design.id)) {
+  const id = uuidV4Schema.safeParse(design.id);
+  if (!id.success) {
     throw new Error("Appearance design id must be a UUID v4");
   }
-  if (typeof design.name !== "string") {
+  const parsedName = designNameSchema.safeParse(design.name);
+  if (!parsedName.success) {
     throw new Error("Appearance design name is invalid");
   }
-  const name = design.name.trim();
+  const name = parsedName.data.trim();
   if (name.length < 1 || name.length > MAX_DESIGN_NAME_LENGTH) {
     throw new Error("Appearance design name is invalid");
   }
   return {
-    id: design.id.toLowerCase(),
+    id: id.data.toLowerCase(),
     name,
     recipe: parseAppearanceRecipeV2(design.recipe, catalog),
   };
 }
 
 function parseReference(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): DesignReference {
   const reference = requireRecord(
@@ -646,14 +678,11 @@ function parseReference(
       ),
     };
   }
-  if (
-    reference.source !== "custom" ||
-    typeof reference.id !== "string" ||
-    !UUID_V4.test(reference.id)
-  ) {
+  const id = uuidV4Schema.safeParse(reference.id);
+  if (reference.source !== "custom" || !id.success) {
     throw new Error("Appearance design reference is invalid");
   }
-  return { source: "custom", id: reference.id.toLowerCase() };
+  return { source: "custom", id: id.data.toLowerCase() };
 }
 
 function assertOwnedReference(
@@ -666,7 +695,7 @@ function assertOwnedReference(
 }
 
 function parseAssignments(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
   designIds: ReadonlySet<string>,
 ): AppearanceProfileV1["assignments"] {
@@ -682,16 +711,13 @@ function parseAssignments(
   if (!isRecord(assignments.overrides)) {
     throw new Error("Appearance overrides are invalid");
   }
-  const targetIds = new Set<string>(APPEARANCE_TARGETS);
   const overrides: AppearanceProfileV1["assignments"]["overrides"] = {};
   for (const [target, reference] of Object.entries(assignments.overrides)) {
-    if (!targetIds.has(target)) {
+    const parsedTarget = appearanceTargetSchema.safeParse(target);
+    if (!parsedTarget.success) {
       throw new Error("Appearance override target is not supported");
     }
-    overrides[target as keyof typeof overrides] = parseReference(
-      reference,
-      catalog,
-    );
+    overrides[parsedTarget.data] = parseReference(reference, catalog);
   }
 
   assertOwnedReference(all, designIds);
@@ -702,7 +728,7 @@ function parseAssignments(
 }
 
 export function parseAppearanceProfile(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): AppearanceProfileV1 {
   const profile = requireRecord(
@@ -734,7 +760,7 @@ export function parseAppearanceProfile(
 }
 
 export function parseAppearanceProfileV2(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): AppearanceProfileV2 {
   const profile = requireRecord(
@@ -768,7 +794,7 @@ export function parseAppearanceProfileV2(
 }
 
 export function parseGuildAppearanceProfile(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): GuildAppearanceProfileV1 {
   const guildProfile = requireRecord(
@@ -795,7 +821,7 @@ export function parseGuildAppearanceProfile(
 }
 
 export function parseGuildAppearanceProfileV2(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): GuildAppearanceProfileV2 {
   const guildProfile = requireRecord(

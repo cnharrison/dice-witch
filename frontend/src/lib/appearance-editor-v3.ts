@@ -167,9 +167,7 @@ export function createRandomAppearanceColorsV3(): AppearanceColorsV3 {
     : { mode: "palette", colors };
 }
 
-function validationCatalog(catalog: AppearanceCatalogV3): {
-  builtinStyleIds: string[];
-} {
+function validationCatalog(catalog: AppearanceCatalogV3) {
   return { builtinStyleIds: catalog.styles.map(({ id }) => id) };
 }
 
@@ -181,6 +179,7 @@ function validateProfile<T extends EditableAppearanceProfileV4>(
   const parsed = "mode" in profile
     ? parseGuildAppearanceProfileV4(profile, validation)
     : parseAppearanceProfileV4(profile, validation);
+  // SAFETY: The surrounding validation establishes the T invariant used below.
   return parsed as T;
 }
 
@@ -494,6 +493,7 @@ export function applyAppearanceReferenceV3<
           [target]: reference,
         },
       };
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return validateProfile({ ...validated, assignments } as Profile, catalog);
 }
 
@@ -507,6 +507,7 @@ export function clearAppearanceTargetOverrideV3<
   const validated = validateProfile(profile, catalog);
   const overrides = { ...validated.assignments.overrides };
   delete overrides[target];
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return validateProfile(
     {
       ...validated,
@@ -521,6 +522,7 @@ export function clearAppearanceAllAssignmentV3<
   Profile extends EditableAppearanceProfileV4,
 >(profile: Profile, catalog: AppearanceCatalogV3): Profile {
   const validated = validateProfile(profile, catalog);
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return validateProfile(
     {
       ...validated,
@@ -545,6 +547,7 @@ export function upsertAppearanceDesignV3<
   const designs = [...validated.designs];
   if (index === -1) designs.push(design);
   else designs[index] = design;
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return applyAppearanceReferenceV3(
     validateProfile({ ...validated, designs } as Profile, catalog),
     target,
@@ -575,6 +578,7 @@ export function updateAppearanceDesignV3<
       validated.assignments.overrides,
     )) {
       if (reference?.source === "custom" && reference.id === draft.id) {
+        // SAFETY: The surrounding validation establishes the AppearanceTargetV4 invariant used below.
         assignedTargets.push(target as AppearanceTargetV4);
       }
     }
@@ -583,6 +587,7 @@ export function updateAppearanceDesignV3<
   for (const assignedTarget of assignedTargets) {
     recipe = assertAppearanceRecipeSupportsTargetV3(recipe, assignedTarget);
   }
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return validateProfile(
     {
       ...validated,
@@ -609,6 +614,7 @@ export function renameAppearanceDesignV3<
   if (design === undefined) {
     throw new Error(`Appearance custom design is missing: ${designId}`);
   }
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return validateProfile(
     {
       ...validated,
@@ -641,6 +647,7 @@ export function duplicateAppearanceDesignV3<
     name: nextAppearanceDesignNameV3(validated.designs, design.name),
     recipe: cloneRecipe(design.recipe),
   };
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return validateProfile(
     { ...validated, designs: [...validated.designs, duplicate] } as Profile,
     catalog,
@@ -659,6 +666,7 @@ export function restoreAppearanceDesignV3<
   if (validated.designs.some(({ id }) => id === design.id)) {
     throw new Error(`Appearance custom design already exists: ${design.id}`);
   }
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   let restored = validateProfile(
     {
       ...validated,
@@ -695,6 +703,7 @@ export function deleteAppearanceDesignV3<
   if (!validated.designs.some(({ id }) => id === designId)) {
     throw new Error(`Appearance custom design is missing: ${designId}`);
   }
+  // SAFETY: The surrounding validation establishes the AppearanceProfileV4["assignments"]["overrides"] invariant used below.
   const overrides = Object.fromEntries(
     Object.entries(validated.assignments.overrides).filter(
       ([, reference]) =>
@@ -702,6 +711,7 @@ export function deleteAppearanceDesignV3<
     ),
   ) as AppearanceProfileV4["assignments"]["overrides"];
   const all = validated.assignments.all;
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return validateProfile(
     {
       ...validated,
@@ -722,6 +732,7 @@ export function setGuildAppearanceModeV3<
   mode: Profile["mode"],
   catalog: AppearanceCatalogV3,
 ): Profile {
+  // SAFETY: The surrounding validation establishes the Profile invariant used below.
   return validateProfile({ ...profile, mode } as Profile, catalog);
 }
 

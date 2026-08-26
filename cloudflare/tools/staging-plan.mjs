@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { z } from "zod";
 import {
   loadStagingConfigs,
   validateForbiddenTargets,
@@ -123,10 +124,13 @@ export function createStagingPlan(input) {
   if (input.productionIsolationVerified !== true) {
     throw new Error("Production-target isolation must be verified");
   }
-  if (typeof input.configSummary !== "object" || input.configSummary === null) {
+  const configSummary = z.object({ buildSha: z.string() })
+    .passthrough()
+    .safeParse(input.configSummary);
+  if (!configSummary.success) {
     throw new Error("Validated staging configuration summary is required");
   }
-  if (input.configSummary.buildSha !== input.requestedSha) {
+  if (configSummary.data.buildSha !== input.requestedSha) {
     throw new Error("Web API BUILD_SHA must match the requested source SHA");
   }
 

@@ -12,7 +12,6 @@ import {
   getRenderGeometryIdV4,
   getRenderTexturePlacementV4,
   type PolyhedralGeometryDescriptorV4,
-  type RenderDieV4,
   type SphericalGeometryDescriptorV4,
 } from "../src";
 
@@ -85,6 +84,7 @@ describe("V4 geometry contract", () => {
     ).toBe("d20-sharp-r1");
     expect(() =>
       getRenderGeometryIdV4(
+        // SAFETY: This unsupported revision deliberately exercises runtime validation.
         "unsupported" as "canvaskit-v4-r3",
         standardD20,
       ),
@@ -204,7 +204,7 @@ describe("V4 geometry contract", () => {
           texture: { rotation: 350, offsetU: 0, offsetV: 0 },
         },
         view: { kind: "sphere-surface", rotationDegrees: 20 },
-      } as unknown as RenderDieV4),
+      }),
     ).toMatchObject({ rotation: 10, offsetU: 0, offsetV: 0 });
     expect(D20_STANDARD_GEOMETRY_R2_V4.camera.position).toEqual([
       3.8, 6.5, 7,

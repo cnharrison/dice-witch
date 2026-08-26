@@ -104,6 +104,7 @@ describe("V4 Three.js modifier-icon composition", () => {
     expect(
       createThreeModifierIconPlacementsV4(layout, "canvaskit-v4-r7"),
     ).toEqual([]);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(() =>
       createThreeModifierIconResourcesV4(
         layout,
@@ -126,6 +127,7 @@ describe("V4 Three.js modifier-icon composition", () => {
         "canvaskit-v4-r7",
       ),
     ).toThrow("Three.js V4 modifier-icon atlas is missing");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(() =>
       createThreeModifierIconResourcesV4(
         layout,
@@ -168,6 +170,7 @@ describe("V4 Three.js modifier-icon composition", () => {
         height: 42,
       },
     ]);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const resources = createThreeModifierIconResourcesV4(
       layout,
       { width: 1_320, height: 132 } as HTMLCanvasElement,
@@ -182,6 +185,7 @@ describe("V4 Three.js modifier-icon composition", () => {
       [[die(["unique"])]],
       ({ icons }) => icons,
     );
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const resources = createThreeModifierIconResourcesV4(
       layout,
       { width: 660, height: 66 } as HTMLCanvasElement,

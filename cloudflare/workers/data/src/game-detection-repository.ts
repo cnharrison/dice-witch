@@ -1,3 +1,6 @@
+import { z } from "zod";
+import type { SchemaInput } from "../../../packages/discord-contracts/src/schema-primitives";
+import { NARRATION_GAME_FEATURES_V1 } from "../../../packages/roll-domain/src/narration-game-catalog";
 import {
   assessGameDetectionActivePlayV1,
   buildGameDetectionCandidateSignatureInputV1,
@@ -141,60 +144,83 @@ type AnnouncementRow = Readonly<{
   channel_name: string | null;
 }>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const StoredRollContextEnvelopeSchema = z.looseObject({
+  request: z.looseObject({
+    notation: z.array(z.string()).min(1),
+    repetitions: z.number().refine(Number.isSafeInteger),
+  }),
+  savedRoll: z.union([z.null(), z.looseObject({})]),
+});
+const OutcomeEnvelopeSchema = z.looseObject({
+  outcomes: z.array(z.unknown()),
+});
+const OutcomeTotalSchema = z.looseObject({
+  total: z
+    .number()
+    .min(-Number.MAX_SAFE_INTEGER)
+    .max(Number.MAX_SAFE_INTEGER),
+});
+const channelTypeSchema = z
+  .number()
+  .refine(Number.isSafeInteger)
+  .min(0)
+  .max(20)
+  .nullable();
+const RankingRequestSchema = z.strictObject({
+  version: z.literal(1),
+  features: z
+    .array(
+      z.strictObject({
+        kind: z.enum(NARRATION_GAME_FEATURES_V1),
+        occurrences: z.number().refine(Number.isSafeInteger).min(1),
+      }),
+    )
+    .max(NARRATION_GAME_FEATURES_V1.length)
+    .refine(
+      (features) =>
+        new Set(features.map(({ kind }) => kind)).size === features.length,
+    ),
+});
 
 function requiredString(
-  value: unknown,
+  value: SchemaInput,
   field: string,
   maximumLength: number,
 ): string {
-  if (
-    typeof value !== "string" ||
-    value.length < 1 ||
-    value.length > maximumLength
-  ) {
+  const result = z.string().min(1).max(maximumLength).safeParse(value);
+  if (!result.success) {
     throw new Error(`Stored game-detection ${field} is invalid`);
   }
-  return value;
+  return result.data;
 }
 
 function nullableString(
-  value: unknown,
+  value: SchemaInput,
   field: string,
   maximumLength: number,
 ): string | null {
   return value === null ? null : requiredString(value, field, maximumLength);
 }
 
-function parseChannelType(value: unknown): number | null {
-  if (value === null) return null;
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 0 ||
-    value > 20
-  ) {
+function parseChannelType(value: SchemaInput): number | null {
+  const result = channelTypeSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Stored game-detection channel type is invalid");
   }
-  return value;
+  return result.data;
 }
 
-function parseOutcomeTotal(value: unknown): number {
-  if (!isRecord(value) || !Array.isArray(value.outcomes)) {
+function parseOutcomeTotal(value: SchemaInput): number {
+  const envelope = OutcomeEnvelopeSchema.safeParse(value);
+  if (!envelope.success) {
     throw new Error("Stored game-detection outcome is invalid");
   }
-  const total = value.outcomes.reduce((sum: number, outcome: unknown) => {
-    if (
-      !isRecord(outcome) ||
-      typeof outcome.total !== "number" ||
-      !Number.isFinite(outcome.total) ||
-      Math.abs(outcome.total) > Number.MAX_SAFE_INTEGER
-    ) {
+  const total = envelope.data.outcomes.reduce((sum: number, outcome) => {
+    const parsed = OutcomeTotalSchema.safeParse(outcome);
+    if (!parsed.success) {
       throw new Error("Stored game-detection outcome total is invalid");
     }
-    return sum + outcome.total;
+    return sum + parsed.data.total;
   }, 0);
   if (!Number.isFinite(total) || Math.abs(total) > 1_000_000_000) {
     throw new Error("Stored game-detection combined total is invalid");
@@ -203,20 +229,11 @@ function parseOutcomeTotal(value: unknown): number {
 }
 
 function parseStoredRollContext(raw: string): StoredRollContext {
-  const value: unknown = JSON.parse(raw);
-  if (
-    !isRecord(value) ||
-    !isRecord(value.request) ||
-    !Array.isArray(value.request.notation) ||
-    value.request.notation.length < 1 ||
-    !value.request.notation.every((notation) => typeof notation === "string") ||
-    typeof value.request.repetitions !== "number" ||
-    !Number.isSafeInteger(value.request.repetitions) ||
-    (!isRecord(value.savedRoll) && value.savedRoll !== null)
-  ) {
+  const parsed = StoredRollContextEnvelopeSchema.safeParse(JSON.parse(raw));
+  if (!parsed.success) {
     throw new Error("Stored game-detection roll context is invalid");
   }
-
+  const value = parsed.data;
   return {
     channelId: requiredString(value.channelId, "channel ID", 32),
     guildId: nullableString(value.guildId, "guild ID", 32),
@@ -251,11 +268,12 @@ async function sha256(value: string): Promise<string> {
 }
 
 function parseRankingRequest(raw: string): NarrationGameRankingRequestV1 {
-  const value: unknown = JSON.parse(raw);
-  buildGameDetectionCandidateSignatureInputV1(
-    value as NarrationGameRankingRequestV1,
-  );
-  return value as NarrationGameRankingRequestV1;
+  const result = RankingRequestSchema.safeParse(JSON.parse(raw));
+  if (!result.success) {
+    throw new Error("Stored game-detection ranking request is invalid");
+  }
+  buildGameDetectionCandidateSignatureInputV1(result.data);
+  return result.data;
 }
 
 function gameName(gameId: string): string {
@@ -317,7 +335,7 @@ export class D1GameDetectionRepository {
 
   private async recordSkippedReceipt(
     row: LifecycleRow,
-    error: unknown,
+    error: SchemaInput,
     now: number,
   ): Promise<void> {
     const detail = error instanceof Error ? error.message : String(error);
@@ -1424,6 +1442,10 @@ export class D1GameDetectionRepository {
            WHERE observed.session_id = game_detection_sessions.session_id
          )`,
     ).run();
-    return changes(results[1] as D1Result);
+    const deleted = results[1];
+    if (deleted === undefined) {
+      throw new Error("Game-detection retention mutation was not atomic");
+    }
+    return changes(deleted);
   }
 }

@@ -30,5 +30,8 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.65.0",
     "vitest": "4.1.10"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
   }
 }

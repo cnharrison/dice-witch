@@ -21,6 +21,7 @@ import {
   composeFacetedAppearanceSvgV3,
   type FacetedAppearanceRequestV3,
 } from "../facetedAppearanceV3";
+import type { ValidationInput } from "../validationBoundary";
 
 export type { AppearanceFontId } from "../appearance";
 export type D20AppearanceRequest = AppearanceDieRequest;
@@ -167,10 +168,7 @@ const D20_FACES: readonly D20FaceLayout[] = [
   },
 ];
 
-const D20_SHADES: Record<
-  D20LabelSlot,
-  FacetedFaceLayout<D20LabelSlot>["shade"]
-> = {
+const D20_SHADES = {
   result: { color: "#ffffff", opacity: 0.11 },
   "top-left": { color: "#ffffff", opacity: 0.11 },
   "top-right": { color: "#000000", opacity: 0.18 },
@@ -181,7 +179,10 @@ const D20_SHADES: Record<
   "bottom-left": null,
   "bottom-center": null,
   "bottom-right": null,
-};
+} satisfies Record<
+  D20LabelSlot,
+  FacetedFaceLayout<D20LabelSlot>["shade"]
+>;
 
 const D20_V3_GEOMETRY: FacetedAppearanceGeometry<D20LabelSlot> = {
   die: "d20",
@@ -209,9 +210,7 @@ function assertD20Result(result: number): void {
   }
 }
 
-export function getD20VisibleFaceValues(
-  result: number,
-): D20VisibleFaceValues {
+export function getD20VisibleFaceValues(result: number) {
   assertD20Result(result);
   const offset = (amount: number) => ((result - 1 + amount) % 20) + 1;
   return {
@@ -225,7 +224,7 @@ export function getD20VisibleFaceValues(
     "bottom-left": offset(5),
     "bottom-center": offset(16),
     "bottom-right": offset(11),
-  };
+  } satisfies D20VisibleFaceValues;
 }
 
 export function getD20NeighborValues(result: number): [number, number, number] {
@@ -260,7 +259,7 @@ function facePolygon(
 }
 
 export function composeD20AppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parseAppearanceDieRequest(value, 20);
@@ -301,7 +300,7 @@ export function composeD20AppearanceSvgWithOptions(
 </svg>`;
 }
 
-export function composeD20AppearanceSvg(value: unknown): string {
+export function composeD20AppearanceSvg(value: ValidationInput): string {
   return composeD20AppearanceSvgWithOptions(value, {
     localSeparation: false,
   });

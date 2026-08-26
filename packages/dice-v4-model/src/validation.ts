@@ -1,15 +1,46 @@
+import * as z from "zod";
+
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const prototype = Reflect.getPrototypeOf(value);
+export type ValidationInput = z.input<z.ZodUnknown>;
+export type BoundaryRecord = z.output<
+  z.ZodRecord<z.ZodString, z.ZodUnknown>
+>;
+
+const nonRecordValueSchema = z.union([
+  z.null(),
+  z.undefined(),
+  z.string(),
+  z.number(),
+  z.nan(),
+  z.literal(Number.POSITIVE_INFINITY),
+  z.literal(Number.NEGATIVE_INFINITY),
+  z.boolean(),
+  z.bigint(),
+  z.symbol(),
+  z.function(),
+]);
+const objectValueSchema = z.custom<object>(
+  (value) =>
+    !nonRecordValueSchema.safeParse(value).success && !Array.isArray(value),
+);
+const boundaryRecordSchema = z.custom<BoundaryRecord>((value) => {
+  const objectValue = objectValueSchema.safeParse(value);
+  if (!objectValue.success) return false;
+  const prototype = Reflect.getPrototypeOf(objectValue.data);
   return prototype === Object.prototype || prototype === null;
+});
+const safeIntegerSchema = z.number().int();
+const hexColorSchema = z.string().regex(HEX_COLOR).transform((value) =>
+  value.toLowerCase()
+);
+
+export function isRecord(value: ValidationInput): value is BoundaryRecord {
+  return boundaryRecordSchema.safeParse(value).success;
 }
 
 export function hasExactKeys(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   expected: readonly string[],
 ): boolean {
   const keys = Object.keys(value).sort();
@@ -21,10 +52,10 @@ export function hasExactKeys(
 }
 
 export function requireExactRecord(
-  value: unknown,
+  value: ValidationInput,
   expected: readonly string[],
   message: string,
-): Record<string, unknown> {
+): BoundaryRecord {
   if (!isRecord(value) || !hasExactKeys(value, expected)) {
     throw new Error(message);
   }
@@ -32,41 +63,38 @@ export function requireExactRecord(
 }
 
 export function supportedValue<Value extends string>(
-  value: unknown,
+  value: ValidationInput,
   supported: readonly Value[],
   message: string,
 ): Value {
-  if (
-    typeof value !== "string" ||
-    !supported.includes(value as Value)
-  ) {
-    throw new Error(message);
-  }
-  return value as Value;
+  const parsed = z.enum(supported).safeParse(value);
+  if (!parsed.success) throw new Error(message);
+  return parsed.data;
 }
 
 export function boundedInteger(
-  value: unknown,
+  value: ValidationInput,
   minimum: number,
   maximum: number,
   path: string,
 ): number {
+  const parsed = safeIntegerSchema.safeParse(value);
   if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < minimum ||
-    value > maximum
+    !parsed.success ||
+    parsed.data < minimum ||
+    parsed.data > maximum
   ) {
     throw new Error(
       `${path} must be from ${String(minimum)} through ${String(maximum)}`,
     );
   }
-  return value;
+  return parsed.data;
 }
 
-export function hexColor(value: unknown, path: string): string {
-  if (typeof value !== "string" || !HEX_COLOR.test(value)) {
+export function hexColor(value: ValidationInput, path: string): string {
+  const parsed = hexColorSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error(`${path} must be a six-digit hex color`);
   }
-  return value.toLowerCase();
+  return parsed.data;
 }

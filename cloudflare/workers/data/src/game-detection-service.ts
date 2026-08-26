@@ -1,5 +1,13 @@
-import type {
-  DiscordChannelContextResultV1,
+import { z } from "zod";
+import {
+  boundaryObjectSchema,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
+import {
+  parseGameDetectionAnnouncementV1,
+  type DiscordChannelContextRequestV1,
+  type DiscordChannelContextResultV1,
+  type GameDetectionAnnouncementV1,
 } from "../../../packages/discord-contracts/src";
 import {
   buildGameDetectionCandidateRequestV3,
@@ -28,10 +36,10 @@ export type GameDetectionServiceEnv = Readonly<{
   AI: Ai;
   DISCORD_REST: Readonly<{
     createGameDetectionAnnouncementV1(
-      input: unknown,
+      announcement: GameDetectionAnnouncementV1,
     ): Promise<DiscordAnnouncementResult>;
     resolveDiscordChannelContextV1(
-      input: unknown,
+      request: DiscordChannelContextRequestV1,
     ): Promise<DiscordChannelContextResultV1>;
   }>;
 }>;
@@ -48,11 +56,7 @@ export type GameDetectionMinuteResult = Readonly<{
   announcement: "none" | "sent" | "retrying" | "failed";
 }>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function parseJson(value: string): unknown {
+function parseJson(value: string): SchemaInput {
   try {
     return JSON.parse(value);
   } catch {
@@ -60,21 +64,26 @@ function parseJson(value: string): unknown {
   }
 }
 
-function extractModelOutput(value: unknown): unknown {
-  if (!isRecord(value)) return value;
-  const result = isRecord(value.result) ? value.result : value;
+function extractModelOutput(value: SchemaInput): SchemaInput {
+  const envelope = boundaryObjectSchema.safeParse(value);
+  if (!envelope.success) return value;
+  const nestedResult = boundaryObjectSchema.safeParse(envelope.data.result);
+  const result = nestedResult.success ? nestedResult.data : envelope.data;
   if (result.response !== undefined) {
-    return typeof result.response === "string"
-      ? parseJson(result.response)
-      : result.response;
+    const responseText = z.string().safeParse(result.response);
+    return responseText.success ? parseJson(responseText.data) : result.response;
   }
-  const choices: unknown = result.choices;
-  if (Array.isArray(choices)) {
-    const first: unknown = choices[0];
-    if (isRecord(first) && isRecord(first.message)) {
-      return typeof first.message.content === "string"
-        ? parseJson(first.message.content)
-        : first.message.content;
+  const choices = z.array(z.unknown()).safeParse(result.choices);
+  if (choices.success) {
+    const first = boundaryObjectSchema.safeParse(choices.data[0]);
+    const message = first.success
+      ? boundaryObjectSchema.safeParse(first.data.message)
+      : null;
+    if (message?.success) {
+      const contentText = z.string().safeParse(message.data.content);
+      return contentText.success
+        ? parseJson(contentText.data)
+        : message.data.content;
     }
   }
   return result;
@@ -84,7 +93,7 @@ function seedFor(signature: string): number {
   return (Number.parseInt(signature.slice(0, 12), 16) % 9_999_999_999) + 1;
 }
 
-function failureDetail(error: unknown): string {
+function failureDetail(error: SchemaInput): string {
   if (error instanceof DOMException && error.name === "TimeoutError") {
     return "model-timeout";
   }
@@ -245,7 +254,7 @@ export async function processGameDetectionMinute(
   if (claimed !== null) {
     let result: DiscordAnnouncementResult;
     try {
-      result = await env.DISCORD_REST.createGameDetectionAnnouncementV1({
+      const announcement = parseGameDetectionAnnouncementV1({
         version: 1,
         detectionId: claimed.detectionId,
         sessionId: claimed.sessionId,
@@ -263,6 +272,9 @@ export async function processGameDetectionMinute(
         sessionStartedAt: claimed.sessionStartedAt,
         sessionLastRollAt: claimed.sessionLastRollAt,
       });
+      result = await env.DISCORD_REST.createGameDetectionAnnouncementV1(
+        announcement,
+      );
     } catch {
       result = { status: "retryable", httpStatus: null, retryAfterMs: null };
     }

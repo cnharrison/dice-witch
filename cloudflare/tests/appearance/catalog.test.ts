@@ -87,15 +87,15 @@ function materialCatalog<
   Family extends AppearanceMaterialCatalogV3["family"],
 >(family: Family): Extract<AppearanceMaterialCatalogV3, { family: Family }> {
   const material = APPEARANCE_CATALOG_V3.materials.find(
-    (candidate) => candidate.family === family,
+    (candidate): candidate is Extract<
+      AppearanceMaterialCatalogV3,
+      { family: Family }
+    > => candidate.family === family,
   );
   if (material === undefined) {
     throw new Error(`Appearance material ${family} is missing`);
   }
-  return material as Extract<
-    AppearanceMaterialCatalogV3,
-    { family: Family }
-  >;
+  return material;
 }
 
 describe("built-in appearance catalog", () => {

@@ -1,39 +1,120 @@
-import { D1GuildRepository } from "./guild-repository";
+import { z } from "zod";
+import {
+  snowflakeSchema,
+  strictObjectSchema,
+  timestampSchema,
+} from "../../../packages/discord-contracts/src/schema-primitives";
+import {
+  D1GuildRepository,
+  type GuildLifecycleInput,
+} from "./guild-repository";
 import { D1MembershipRepository } from "./membership-repository";
 
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const MAX_GUILD_FILTER_IDS = 200;
 const GUILD_FILTER_BATCH_SIZE = 100;
+const mutationIdSchema = z.string().min(1).max(255);
+const guildIdListSchema = z
+  .array(snowflakeSchema)
+  .refine((guildIds) => new Set(guildIds).size === guildIds.length);
 const responseHeaders = {
   "cache-control": "no-store",
   "x-content-type-options": "nosniff",
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const GuildFilterRequestSchema = strictObjectSchema({
+  guildIds: guildIdListSchema.max(MAX_GUILD_FILTER_IDS),
+});
+const GuildFilterRowSchema = strictObjectSchema({ id: snowflakeSchema });
+const GuildSettingsRequestV1Schema = strictObjectSchema({
+  guildId: snowflakeSchema,
+});
+const GuildSettingsRequestV2Schema = strictObjectSchema({
+  guildId: snowflakeSchema,
+  version: z.literal(2),
+});
+const GuildSettingsRequestSchema = z.union([
+  GuildSettingsRequestV1Schema,
+  GuildSettingsRequestV2Schema,
+]);
+const guildSettingsMutationFields = {
+  guildId: snowflakeSchema,
+  mutationId: mutationIdSchema,
+  occurredAt: timestampSchema,
+  skipDiceDelay: z.boolean(),
+};
+const GuildSettingsUpdateV1Schema = strictObjectSchema(
+  guildSettingsMutationFields,
+);
+const GuildSettingsUpdateV2Schema = strictObjectSchema({
+  ...guildSettingsMutationFields,
+  hideRollResultText: z.boolean(),
+  version: z.literal(2),
+});
+const GuildSettingsUpdateSchema = z.union([
+  GuildSettingsUpdateV1Schema,
+  GuildSettingsUpdateV2Schema,
+]);
+const membershipPermissionFields = {
+  guildId: snowflakeSchema,
+  isAdmin: z.boolean(),
+  isDiceWitchAdmin: z.boolean(),
+  mutationId: mutationIdSchema,
+  occurredAt: timestampSchema,
+  userId: snowflakeSchema,
+};
+const MembershipUpsertSchema = strictObjectSchema({
+  ...membershipPermissionFields,
+  guildIcon: z.nullable(z.string().max(255)),
+  guildMutationId: mutationIdSchema,
+  guildName: z.string().min(1).max(255),
+});
+const MembershipPermissionUpsertSchema = strictObjectSchema(
+  membershipPermissionFields,
+);
+const LifecycleDeactivateSchema = strictObjectSchema({
+  guildId: z.string(),
+  mutationId: z.string(),
+  occurredAt: z.number(),
+  type: z.literal("deactivate"),
+});
+const LifecycleGuildSchema = strictObjectSchema({
+  approximateMemberCount: z.nullable(z.number()),
+  icon: z.nullable(z.string()),
+  id: z.string(),
+  isActive: z.literal(true),
+  joinedTimestamp: z.number(),
+  memberCount: z.number(),
+  name: z.string(),
+  ownerId: z.string(),
+  preferredLocale: z.string(),
+});
+const LifecycleUpsertSchema = strictObjectSchema({
+  guild: LifecycleGuildSchema,
+  mutationId: z.string(),
+  occurredAt: z.number(),
+  type: z.literal("upsert"),
+});
+const GuildLifecycleRequestSchema = z.discriminatedUnion("type", [
+  LifecycleDeactivateSchema,
+  LifecycleUpsertSchema,
+]);
+const GuildReconciliationRequestSchema = strictObjectSchema({
+  guildIds: guildIdListSchema,
+  occurredAt: timestampSchema,
+  runId: z.string().min(1).max(234),
+});
+const StatusStatsRequestSchema = strictObjectSchema({
+  shardCount: z.number().refine(Number.isSafeInteger).min(1),
+});
+const MembershipLookupSchema = strictObjectSchema({
+  userId: snowflakeSchema,
+});
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expectedKeys: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expected = [...expectedKeys].sort();
-  return (
-    keys.length === expected.length &&
-    keys.every((key, index) => key === expected[index])
-  );
-}
-
-async function parseBody(
+async function parseRequest<Schema extends z.ZodType>(
   request: Request,
-  keys: readonly string[],
-): Promise<Record<string, unknown>> {
-  const value: unknown = await request.json();
-  if (!isRecord(value) || !hasExactKeys(value, keys)) {
-    throw new Error("Membership request is invalid");
-  }
-  return value;
+  schema: Schema,
+): Promise<z.output<Schema>> {
+  return schema.parse(await request.json());
 }
 
 function errorResponse(message: string, status: number): Response {
@@ -47,19 +128,7 @@ async function filterGuilds(
 ): Promise<Response> {
   let guildIds: string[];
   try {
-    const value = await parseBody(request, ["guildIds"]);
-    if (
-      !Array.isArray(value.guildIds) ||
-      value.guildIds.length > MAX_GUILD_FILTER_IDS ||
-      !value.guildIds.every(
-        (guildId): guildId is string =>
-          typeof guildId === "string" && SNOWFLAKE.test(guildId),
-      ) ||
-      new Set(value.guildIds).size !== value.guildIds.length
-    ) {
-      throw new Error("Guild filter is invalid");
-    }
-    guildIds = value.guildIds;
+    ({ guildIds } = await parseRequest(request, GuildFilterRequestSchema));
   } catch {
     return errorResponse("Guild filter is invalid", 400);
   }
@@ -83,8 +152,9 @@ async function filterGuilds(
            WHERE id IN (${placeholders})${activeOnly ? " AND is_active = 1" : ""}`,
         )
         .bind(...batch)
-        .all<{ id: string }>();
-      for (const { id } of result.results) matchingIds.add(id);
+        .all();
+      const rows = z.array(GuildFilterRowSchema).parse(result.results);
+      for (const { id } of rows) matchingIds.add(id);
     }
     return Response.json(
       { guildIds: guildIds.filter((id) => matchingIds.has(id)) },
@@ -99,27 +169,15 @@ async function getGuildSettings(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let guildId: string;
-  let version: 1 | 2;
+  let input: z.output<typeof GuildSettingsRequestSchema>;
   try {
-    const value: unknown = await request.json();
-    if (
-      !isRecord(value) ||
-      (!hasExactKeys(value, ["guildId"]) &&
-        !hasExactKeys(value, ["guildId", "version"])) ||
-      typeof value.guildId !== "string" ||
-      !SNOWFLAKE.test(value.guildId) ||
-      (value.version !== undefined && value.version !== 2)
-    ) {
-      throw new Error("Guild settings request is invalid");
-    }
-    guildId = value.guildId;
-    version = value.version === 2 ? 2 : 1;
+    input = await parseRequest(request, GuildSettingsRequestSchema);
   } catch {
     return errorResponse("Guild settings request is invalid", 400);
   }
   try {
-    const result = await new D1GuildRepository(db).getSettings(guildId);
+    const result = await new D1GuildRepository(db).getSettings(input.guildId);
+    const version = "version" in input ? 2 : 1;
     const body = result.status === "missing" || version === 2
       ? result
       : {
@@ -139,56 +197,25 @@ async function updateGuildSettings(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let value: Record<string, unknown>;
-  let version: 1 | 2;
+  let input: z.output<typeof GuildSettingsUpdateSchema>;
   try {
-    const parsed: unknown = await request.json();
-    if (!isRecord(parsed)) throw new Error("Guild settings update is invalid");
-    const v1Keys = ["guildId", "mutationId", "occurredAt", "skipDiceDelay"];
-    const v2Keys = [
-      ...v1Keys,
-      "hideRollResultText",
-      "version",
-    ];
-    if (
-      (!hasExactKeys(parsed, v1Keys) && !hasExactKeys(parsed, v2Keys)) ||
-      typeof parsed.guildId !== "string" ||
-      !SNOWFLAKE.test(parsed.guildId) ||
-      typeof parsed.skipDiceDelay !== "boolean" ||
-      typeof parsed.mutationId !== "string" ||
-      parsed.mutationId.length < 1 ||
-      parsed.mutationId.length > 255 ||
-      typeof parsed.occurredAt !== "number" ||
-      !Number.isSafeInteger(parsed.occurredAt) ||
-      parsed.occurredAt < 0 ||
-      (parsed.version !== undefined &&
-        (parsed.version !== 2 || typeof parsed.hideRollResultText !== "boolean"))
-    ) {
-      throw new Error("Guild settings update is invalid");
-    }
-    value = parsed;
-    version = parsed.version === 2 ? 2 : 1;
+    input = await parseRequest(request, GuildSettingsUpdateSchema);
   } catch {
     return errorResponse("Guild settings update is invalid", 400);
   }
   try {
     const repository = new D1GuildRepository(db);
-    const result = version === 1
-      ? await repository.setSkipDiceDelay({
-          guildId: value.guildId as string,
-          skipDiceDelay: value.skipDiceDelay as boolean,
-          mutationId: value.mutationId as string,
-          occurredAt: value.occurredAt as number,
-        })
-      : await repository.setSettings({
-          guildId: value.guildId as string,
+    const result = "version" in input
+      ? await repository.setSettings({
+          guildId: input.guildId,
           settings: {
-            skipDiceDelay: value.skipDiceDelay as boolean,
-            hideRollResultText: value.hideRollResultText as boolean,
+            skipDiceDelay: input.skipDiceDelay,
+            hideRollResultText: input.hideRollResultText,
           },
-          mutationId: value.mutationId as string,
-          occurredAt: value.occurredAt as number,
-        });
+          mutationId: input.mutationId,
+          occurredAt: input.occurredAt,
+        })
+      : await repository.setSkipDiceDelay(input);
     let status = 200;
     if (result.status === "missing") status = 404;
     if (result.status === "conflict") status = 409;
@@ -202,53 +229,19 @@ async function upsertMembership(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let value: Record<string, unknown>;
+  let input: z.output<typeof MembershipUpsertSchema>;
   try {
-    value = await parseBody(request, [
-      "guildIcon",
-      "guildId",
-      "guildMutationId",
-      "guildName",
-      "isAdmin",
-      "isDiceWitchAdmin",
-      "mutationId",
-      "occurredAt",
-      "userId",
-    ]);
-    if (
-      typeof value.guildId !== "string" ||
-      !SNOWFLAKE.test(value.guildId) ||
-      typeof value.guildName !== "string" ||
-      value.guildName.length < 1 ||
-      value.guildName.length > 255 ||
-      (value.guildIcon !== null &&
-        (typeof value.guildIcon !== "string" || value.guildIcon.length > 255)) ||
-      typeof value.guildMutationId !== "string" ||
-      value.guildMutationId.length < 1 ||
-      value.guildMutationId.length > 255 ||
-      typeof value.userId !== "string" ||
-      !SNOWFLAKE.test(value.userId) ||
-      typeof value.isAdmin !== "boolean" ||
-      typeof value.isDiceWitchAdmin !== "boolean" ||
-      typeof value.mutationId !== "string" ||
-      value.mutationId.length < 1 ||
-      value.mutationId.length > 255 ||
-      typeof value.occurredAt !== "number" ||
-      !Number.isSafeInteger(value.occurredAt) ||
-      value.occurredAt < 0
-    ) {
-      throw new Error("Membership upsert is invalid");
-    }
+    input = await parseRequest(request, MembershipUpsertSchema);
   } catch {
     return errorResponse("Membership upsert is invalid", 400);
   }
 
   try {
     const guildResult = await new D1GuildRepository(db).setDisplayProfile({
-      guildId: value.guildId,
-      profile: { name: value.guildName, icon: value.guildIcon },
-      mutationId: value.guildMutationId,
-      occurredAt: value.occurredAt,
+      guildId: input.guildId,
+      profile: { name: input.guildName, icon: input.guildIcon },
+      mutationId: input.guildMutationId,
+      occurredAt: input.occurredAt,
     });
     if (guildResult.status === "missing") {
       return errorResponse("Membership guild is missing", 404);
@@ -257,14 +250,14 @@ async function upsertMembership(
       return errorResponse("Guild profile mutation conflicts", 409);
     }
     const result = await new D1MembershipRepository(db).upsertPermissions({
-      userId: value.userId,
-      guildId: value.guildId,
+      userId: input.userId,
+      guildId: input.guildId,
       permissions: {
-        isAdmin: value.isAdmin,
-        isDiceWitchAdmin: value.isDiceWitchAdmin,
+        isAdmin: input.isAdmin,
+        isDiceWitchAdmin: input.isDiceWitchAdmin,
       },
-      mutationId: value.mutationId,
-      occurredAt: value.occurredAt,
+      mutationId: input.mutationId,
+      occurredAt: input.occurredAt,
     });
     let status = 200;
     if (result.status === "missing") status = 404;
@@ -279,46 +272,23 @@ async function upsertMembershipPermissions(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let value: Record<string, unknown>;
+  let input: z.output<typeof MembershipPermissionUpsertSchema>;
   try {
-    value = await parseBody(request, [
-      "guildId",
-      "isAdmin",
-      "isDiceWitchAdmin",
-      "mutationId",
-      "occurredAt",
-      "userId",
-    ]);
-    if (
-      typeof value.guildId !== "string" ||
-      !SNOWFLAKE.test(value.guildId) ||
-      typeof value.userId !== "string" ||
-      !SNOWFLAKE.test(value.userId) ||
-      typeof value.isAdmin !== "boolean" ||
-      typeof value.isDiceWitchAdmin !== "boolean" ||
-      typeof value.mutationId !== "string" ||
-      value.mutationId.length < 1 ||
-      value.mutationId.length > 255 ||
-      typeof value.occurredAt !== "number" ||
-      !Number.isSafeInteger(value.occurredAt) ||
-      value.occurredAt < 0
-    ) {
-      throw new Error("Membership permission upsert is invalid");
-    }
+    input = await parseRequest(request, MembershipPermissionUpsertSchema);
   } catch {
     return errorResponse("Membership permission upsert is invalid", 400);
   }
 
   try {
     const result = await new D1MembershipRepository(db).upsertPermissions({
-      userId: value.userId,
-      guildId: value.guildId,
+      userId: input.userId,
+      guildId: input.guildId,
       permissions: {
-        isAdmin: value.isAdmin,
-        isDiceWitchAdmin: value.isDiceWitchAdmin,
+        isAdmin: input.isAdmin,
+        isDiceWitchAdmin: input.isDiceWitchAdmin,
       },
-      mutationId: value.mutationId,
-      occurredAt: value.occurredAt,
+      mutationId: input.mutationId,
+      occurredAt: input.occurredAt,
     });
     let status = 200;
     if (result.status === "missing") status = 404;
@@ -333,78 +303,9 @@ async function applyGuildLifecycle(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let input: Parameters<D1GuildRepository["applyLifecycle"]>[0];
+  let input: GuildLifecycleInput;
   try {
-    const value: unknown = await request.json();
-    if (!isRecord(value)) throw new Error("Guild lifecycle request is invalid");
-    if (value.type === "deactivate") {
-      if (
-        !hasExactKeys(value, [
-          "guildId",
-          "mutationId",
-          "occurredAt",
-          "type",
-        ]) ||
-        typeof value.guildId !== "string" ||
-        typeof value.mutationId !== "string" ||
-        typeof value.occurredAt !== "number"
-      ) {
-        throw new Error("Guild lifecycle request is invalid");
-      }
-      input = {
-        type: "deactivate",
-        guildId: value.guildId,
-        mutationId: value.mutationId,
-        occurredAt: value.occurredAt,
-      };
-    } else {
-      if (
-        value.type !== "upsert" ||
-        !hasExactKeys(value, ["guild", "mutationId", "occurredAt", "type"]) ||
-        !isRecord(value.guild) ||
-        !hasExactKeys(value.guild, [
-          "approximateMemberCount",
-          "icon",
-          "id",
-          "isActive",
-          "joinedTimestamp",
-          "memberCount",
-          "name",
-          "ownerId",
-          "preferredLocale",
-        ]) ||
-        typeof value.guild.id !== "string" ||
-        typeof value.guild.name !== "string" ||
-        (value.guild.icon !== null && typeof value.guild.icon !== "string") ||
-        typeof value.guild.ownerId !== "string" ||
-        typeof value.guild.memberCount !== "number" ||
-        (value.guild.approximateMemberCount !== null &&
-          typeof value.guild.approximateMemberCount !== "number") ||
-        typeof value.guild.preferredLocale !== "string" ||
-        typeof value.guild.joinedTimestamp !== "number" ||
-        value.guild.isActive !== true ||
-        typeof value.mutationId !== "string" ||
-        typeof value.occurredAt !== "number"
-      ) {
-        throw new Error("Guild lifecycle request is invalid");
-      }
-      input = {
-        type: "upsert",
-        mutationId: value.mutationId,
-        occurredAt: value.occurredAt,
-        guild: {
-          id: value.guild.id,
-          name: value.guild.name,
-          icon: value.guild.icon,
-          ownerId: value.guild.ownerId,
-          memberCount: value.guild.memberCount,
-          approximateMemberCount: value.guild.approximateMemberCount,
-          preferredLocale: value.guild.preferredLocale,
-          joinedTimestamp: value.guild.joinedTimestamp,
-          isActive: true,
-        },
-      };
-    }
+    input = await parseRequest(request, GuildLifecycleRequestSchema);
   } catch {
     return errorResponse("Guild lifecycle request is invalid", 400);
   }
@@ -412,10 +313,9 @@ async function applyGuildLifecycle(
   try {
     const repository = new D1GuildRepository(db);
     const result = await repository.applyLifecycle(input);
-    const guildName =
-      input.type === "upsert"
-        ? input.guild.name
-        : (await repository.getDisplayProfile(input.guildId))?.name ?? null;
+    const guildName = input.type === "upsert"
+      ? input.guild.name
+      : (await repository.getDisplayProfile(input.guildId))?.name ?? null;
     const status = result.status === "conflict" ? 409 : 200;
     return Response.json(
       { ...result, guildName },
@@ -430,32 +330,9 @@ async function reconcileGuilds(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let input: Parameters<D1GuildRepository["reconcileActiveGuilds"]>[0];
+  let input: z.output<typeof GuildReconciliationRequestSchema>;
   try {
-    const value: unknown = await request.json();
-    if (
-      !isRecord(value) ||
-      !hasExactKeys(value, ["guildIds", "occurredAt", "runId"]) ||
-      !Array.isArray(value.guildIds) ||
-      !value.guildIds.every(
-        (guildId): guildId is string =>
-          typeof guildId === "string" && SNOWFLAKE.test(guildId),
-      ) ||
-      new Set(value.guildIds).size !== value.guildIds.length ||
-      typeof value.runId !== "string" ||
-      value.runId.length < 1 ||
-      value.runId.length > 234 ||
-      typeof value.occurredAt !== "number" ||
-      !Number.isSafeInteger(value.occurredAt) ||
-      value.occurredAt < 0
-    ) {
-      throw new Error("Guild reconciliation request is invalid");
-    }
-    input = {
-      guildIds: value.guildIds,
-      runId: value.runId,
-      occurredAt: value.occurredAt,
-    };
+    input = await parseRequest(request, GuildReconciliationRequestSchema);
   } catch {
     return errorResponse("Guild reconciliation request is invalid", 400);
   }
@@ -472,23 +349,15 @@ async function getStatusStats(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let shardCount: number;
+  let input: z.output<typeof StatusStatsRequestSchema>;
   try {
-    const value = await parseBody(request, ["shardCount"]);
-    if (
-      typeof value.shardCount !== "number" ||
-      !Number.isSafeInteger(value.shardCount) ||
-      value.shardCount < 1
-    ) {
-      throw new Error("Status stats request is invalid");
-    }
-    shardCount = value.shardCount;
+    input = await parseRequest(request, StatusStatsRequestSchema);
   } catch {
     return errorResponse("Status stats request is invalid", 400);
   }
 
   try {
-    const stats = await new D1GuildRepository(db).getStatusStats(shardCount);
+    const stats = await new D1GuildRepository(db).getStatusStats(input.shardCount);
     return Response.json(stats, { headers: responseHeaders });
   } catch {
     return errorResponse("Status stats lookup failed", 500);
@@ -499,20 +368,16 @@ async function listMemberships(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let userId: string;
+  let input: z.output<typeof MembershipLookupSchema>;
   try {
-    const value = await parseBody(request, ["userId"]);
-    if (typeof value.userId !== "string" || !SNOWFLAKE.test(value.userId)) {
-      throw new Error("Membership lookup is invalid");
-    }
-    userId = value.userId;
+    input = await parseRequest(request, MembershipLookupSchema);
   } catch {
     return errorResponse("Membership lookup is invalid", 400);
   }
 
   try {
     const memberships = await new D1MembershipRepository(db).listMutualGuilds(
-      userId,
+      input.userId,
     );
     return Response.json({ memberships }, { headers: responseHeaders });
   } catch {

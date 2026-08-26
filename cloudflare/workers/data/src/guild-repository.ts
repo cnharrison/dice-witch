@@ -1,4 +1,16 @@
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+import { z } from "zod";
+import {
+  snowflakeSchema,
+  timestampSchema,
+} from "../../../packages/discord-contracts/src/schema-primitives";
+
+const mutationIdSchema = z.string().min(1).max(255);
+const booleanSchema = z.boolean();
+const GuildSettingsSchema = z.object({
+  skipDiceDelay: booleanSchema,
+  hideRollResultText: booleanSchema,
+});
+const reconciliationRunIdSchema = z.string().min(1).max(234);
 
 export type GuildDisplayProfile = {
   name: string;
@@ -104,29 +116,20 @@ type MutationReceiptRow = {
 };
 
 function validateGuildId(value: string): string {
-  if (!SNOWFLAKE.test(value)) throw new Error("Guild id is invalid");
+  if (!snowflakeSchema.safeParse(value).success) {
+    throw new Error("Guild id is invalid");
+  }
   return value;
 }
 
-function validateMutation(input: SetSkipDiceDelayInput): {
-  guildId: string;
-  skipDiceDelay: boolean;
-  mutationId: string;
-  occurredAt: number;
-  payloadJson: string;
-} {
+function validateMutation(input: SetSkipDiceDelayInput) {
   const guildId = validateGuildId(input.guildId);
-  if (
-    typeof input.mutationId !== "string" ||
-    input.mutationId.length === 0 ||
-    input.mutationId.length > 255
-  ) {
+  if (!mutationIdSchema.safeParse(input.mutationId).success) {
     throw new Error("Mutation id is invalid");
   }
   if (
-    typeof input.skipDiceDelay !== "boolean" ||
-    !Number.isSafeInteger(input.occurredAt) ||
-    input.occurredAt < 0
+    !booleanSchema.safeParse(input.skipDiceDelay).success ||
+    !timestampSchema.safeParse(input.occurredAt).success
   ) {
     throw new Error("Guild preference mutation is invalid");
   }
@@ -139,33 +142,19 @@ function validateMutation(input: SetSkipDiceDelayInput): {
   };
 }
 
-function validateSettingsMutation(input: SetGuildSettingsInput): {
-  guildId: string;
-  settings: GuildSettings;
-  mutationId: string;
-  occurredAt: number;
-  payloadJson: string;
-} {
+function validateSettingsMutation(input: SetGuildSettingsInput) {
   const guildId = validateGuildId(input.guildId);
-  if (
-    typeof input.mutationId !== "string" ||
-    input.mutationId.length === 0 ||
-    input.mutationId.length > 255
-  ) {
+  if (!mutationIdSchema.safeParse(input.mutationId).success) {
     throw new Error("Mutation id is invalid");
   }
+  const settingsResult = GuildSettingsSchema.safeParse(input.settings);
   if (
-    typeof input.settings.skipDiceDelay !== "boolean" ||
-    typeof input.settings.hideRollResultText !== "boolean" ||
-    !Number.isSafeInteger(input.occurredAt) ||
-    input.occurredAt < 0
+    !settingsResult.success ||
+    !timestampSchema.safeParse(input.occurredAt).success
   ) {
     throw new Error("Guild preference mutation is invalid");
   }
-  const settings = {
-    skipDiceDelay: input.settings.skipDiceDelay,
-    hideRollResultText: input.settings.hideRollResultText,
-  };
+  const settings = settingsResult.data;
   return {
     guildId,
     settings,
@@ -175,13 +164,7 @@ function validateSettingsMutation(input: SetGuildSettingsInput): {
   };
 }
 
-function validateDisplayProfile(input: SetGuildDisplayProfileInput): {
-  guildId: string;
-  profile: GuildDisplayProfile;
-  mutationId: string;
-  occurredAt: number;
-  payloadJson: string;
-} {
+function validateDisplayProfile(input: SetGuildDisplayProfileInput) {
   const guildId = validateGuildId(input.guildId);
   if (
     input.profile.name.length < 1 ||
@@ -275,7 +258,7 @@ export class D1GuildRepository {
       (value.guild.name.length < 1 ||
         value.guild.name.length > 255 ||
         (value.guild.icon !== null && value.guild.icon.length > 255) ||
-        !SNOWFLAKE.test(value.guild.ownerId) ||
+        !snowflakeSchema.safeParse(value.guild.ownerId).success ||
         !Number.isSafeInteger(value.guild.memberCount) ||
         value.guild.memberCount < 0 ||
         (value.guild.approximateMemberCount !== null &&
@@ -444,13 +427,12 @@ export class D1GuildRepository {
   ): Promise<ReconcileActiveGuildsResult> {
     if (
       !Array.isArray(input.guildIds) ||
-      !input.guildIds.every((guildId) => SNOWFLAKE.test(guildId)) ||
+      !input.guildIds.every(
+        (guildId) => snowflakeSchema.safeParse(guildId).success,
+      ) ||
       new Set(input.guildIds).size !== input.guildIds.length ||
-      typeof input.runId !== "string" ||
-      input.runId.length < 1 ||
-      input.runId.length > 234 ||
-      !Number.isSafeInteger(input.occurredAt) ||
-      input.occurredAt < 0
+      !reconciliationRunIdSchema.safeParse(input.runId).success ||
+      !timestampSchema.safeParse(input.occurredAt).success
     ) {
       throw new Error("Guild reconciliation input is invalid");
     }

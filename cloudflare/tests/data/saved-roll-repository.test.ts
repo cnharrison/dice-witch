@@ -1,9 +1,8 @@
-import { env } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { dataTestEnv as dataEnv } from "./test-bindings";
 import { D1SavedRollRepository } from "../../workers/data/src/saved-roll-repository";
 
-const dataEnv = env as unknown as { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 const userId = "100000000000000003";
 const guildId = "100000000000000002";
 const timestamp = 1_767_225_600_123;
@@ -40,7 +39,11 @@ function repository() {
   return new D1SavedRollRepository(dataEnv.DATA);
 }
 
-function createInput(overrides: Record<string, unknown> = {}) {
+type CreateSavedRollInput = Parameters<D1SavedRollRepository["create"]>[0];
+
+function createInput(
+  overrides: Partial<CreateSavedRollInput> = {},
+): CreateSavedRollInput {
   return {
     owner: { type: "user" as const, userId },
     actorUserId: userId,

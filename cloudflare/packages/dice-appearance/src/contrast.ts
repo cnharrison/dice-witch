@@ -19,9 +19,7 @@ export type AppearanceLightingOpacities = Readonly<{
   shadow: number;
 }>;
 
-export const APPEARANCE_FACET_LIGHTING_OPACITIES: Readonly<
-  Record<AppearanceTarget, AppearanceLightingOpacities>
-> = {
+export const APPEARANCE_FACET_LIGHTING_OPACITIES = {
   d4: { highlight: 0.1, shadow: 0.14 },
   d6: { highlight: 0.12, shadow: 0.18 },
   d8: { highlight: 0.1, shadow: 0.18 },
@@ -31,15 +29,15 @@ export const APPEARANCE_FACET_LIGHTING_OPACITIES: Readonly<
   percentile: { highlight: 0.1, shadow: 0.18 },
   fudge: { highlight: 0.12, shadow: 0.18 },
   other: { highlight: 0.2, shadow: 0.12 },
-};
+} satisfies Readonly<Record<AppearanceTarget, AppearanceLightingOpacities>>;
 
-export const APPEARANCE_DIRECTIONAL_LIGHTING_OPACITIES: Readonly<
-  Record<AppearanceLightingStrength, AppearanceLightingOpacities>
-> = {
+export const APPEARANCE_DIRECTIONAL_LIGHTING_OPACITIES = {
   gentle: { highlight: 0.03, shadow: 0.04 },
   subtle: { highlight: 0.2, shadow: 0.3 },
   strong: { highlight: 0.34, shadow: 0.5 },
-};
+} satisfies Readonly<
+  Record<AppearanceLightingStrength, AppearanceLightingOpacities>
+>;
 
 export type AppearanceInkColor =
   | typeof DARK_APPEARANCE_INK

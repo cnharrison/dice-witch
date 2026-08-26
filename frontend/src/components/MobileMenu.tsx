@@ -17,8 +17,11 @@ import {
   loadPreferencesPage,
 } from "@/lib/app-route-loaders";
 
-export function MobileMenu() {
-  const { theme } = useTheme();
+interface MobileMenuViewProps {
+  theme: ReturnType<typeof useTheme>["theme"];
+}
+
+export function MobileMenuView({ theme }: MobileMenuViewProps) {
   const [open, setOpen] = React.useState(false);
 
   const D20SVG = ({className}: {className?: string}) => {
@@ -128,4 +131,10 @@ export function MobileMenu() {
       </SheetContent>
     </Sheet>
   );
+}
+
+export function MobileMenu() {
+  const { theme } = useTheme();
+
+  return <MobileMenuView theme={theme} />;
 }

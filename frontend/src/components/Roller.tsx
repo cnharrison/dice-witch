@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import type { RollPreparation, RollResponse } from "@/types/dice";
 import { SparkleLoadingIndicator } from "./SparkleLoadingIndicator";
 import * as React from "react";
+import * as z from "zod";
 import { AuthoritativeDiceImageGrid } from "./AuthoritativeDiceImageGrid";
 import { DiceNotationButtons } from "./DiceNotationButtons";
+import type { DiceAnimation3DProps } from "./DiceAnimation3D";
 import { useBrowserMediaQueryV4 } from "./dice-v4-3d/browser-media";
 import {
   readRollDisplayModeV4,
@@ -17,7 +19,7 @@ import {
 } from "./dice-v4-3d/roll-display-mode";
 import { ThreeRendererErrorBoundaryV4 } from "./dice-v4-3d/renderer-error-boundary";
 
-const DiceAnimation3D = React.lazy(async () => {
+const LazyDiceAnimation3D = React.lazy(async () => {
   const module = await import("./DiceAnimation3D");
   return { default: module.DiceAnimation3D };
 });
@@ -28,7 +30,7 @@ const WEBGL_NOTICE_V4 =
 const PREVIEW_NOTICE_V4 =
   "The 3D dice preview is unavailable. A completed roll will still use its authoritative 2D result.";
 
-interface RollerProps {
+export interface RollerProps {
   rollPreparation: RollPreparation | null;
   rollResults: RollResponse | null;
   isPreparing: boolean;
@@ -40,11 +42,17 @@ interface RollerProps {
   mobileView: "controls" | "result";
 }
 
+export type RollerSlots = {
+  DiceAnimation3DSlot: React.ComponentType<DiceAnimation3DProps>;
+  DiceNotationButtonsSlot: typeof DiceNotationButtons;
+  ResizablePanelGroupSlot: typeof ResizablePanelGroup;
+  ResizablePanelSlot: typeof ResizablePanel;
+  ResizableHandleSlot: typeof ResizableHandle;
+};
+
 function initialRollDisplayModeV4(): RollDisplayModeV4 {
-  const mobile =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(MOBILE_QUERY_V4).matches;
+  const browser = z.object({ matchMedia: z.function() }).safeParse(globalThis);
+  const mobile = browser.success && window.matchMedia(MOBILE_QUERY_V4).matches;
   try {
     return readRollDisplayModeV4(window.localStorage, mobile);
   } catch {
@@ -116,6 +124,7 @@ function DiceDisplayModeToggle({
 }
 
 function DiceResultDisplay({
+  DiceAnimation3DSlot,
   rollPreparation,
   rollResults,
   isPreparing,
@@ -124,6 +133,7 @@ function DiceResultDisplay({
   displayMode,
   onDisplayModeChange,
 }: {
+  DiceAnimation3DSlot: RollerSlots["DiceAnimation3DSlot"];
   rollPreparation: RollPreparation | null;
   rollResults: RollResponse | null;
   isPreparing: boolean;
@@ -200,7 +210,7 @@ function DiceResultDisplay({
           <div className="absolute inset-0 z-10">
             <ThreeRendererErrorBoundaryV4 onUnavailable={handleUnavailable}>
               <React.Suspense fallback={null}>
-                <DiceAnimation3D
+                <DiceAnimation3DSlot
                   renderModel={activeRenderModel ?? null}
                   appearanceIdentities={activeAppearanceIdentities}
                   rerolledAppearanceIdentities={rerolledAppearanceIdentities}
@@ -255,7 +265,8 @@ function DiceResultDisplay({
   );
 }
 
-export function Roller({
+export function RollerView({
+  slots,
   rollPreparation,
   rollResults,
   isPreparing,
@@ -265,7 +276,14 @@ export function Roller({
   setInput,
   selectedChannel,
   mobileView,
-}: RollerProps) {
+}: RollerProps & { slots: RollerSlots }) {
+  const {
+    DiceAnimation3DSlot,
+    DiceNotationButtonsSlot,
+    ResizablePanelGroupSlot,
+    ResizablePanelSlot,
+    ResizableHandleSlot,
+  } = slots;
   const isMobile = useBrowserMediaQueryV4(MOBILE_QUERY_V4);
   const [displayMode, setDisplayMode] = React.useState<RollDisplayModeV4>(
     initialRollDisplayModeV4,
@@ -289,6 +307,7 @@ export function Roller({
 
   const display = (
     <DiceResultDisplay
+      DiceAnimation3DSlot={DiceAnimation3DSlot}
       rollPreparation={rollPreparation}
       rollResults={rollResults}
       isPreparing={isPreparing}
@@ -312,7 +331,7 @@ export function Roller({
         className="h-full min-h-0 overflow-y-auto rounded-lg border"
         aria-busy={isPreparing || isRolling}
       >
-        <DiceNotationButtons
+        <DiceNotationButtonsSlot
           input={input}
           setInput={setInput}
           isDisabled={!selectedChannel}
@@ -322,24 +341,36 @@ export function Roller({
   }
 
   return (
-    <ResizablePanelGroup
+    <ResizablePanelGroupSlot
       direction="horizontal"
       className="h-full min-h-0 rounded-lg border"
       aria-busy={isPreparing || isRolling}
     >
-      <ResizablePanel defaultSize={34} minSize={25}>
+      <ResizablePanelSlot defaultSize={34} minSize={25}>
         <div className="flex h-full min-h-0 flex-col items-center justify-center overflow-hidden p-2">
-          <DiceNotationButtons
+          <DiceNotationButtonsSlot
             input={input}
             setInput={setInput}
             isDisabled={!selectedChannel}
           />
         </div>
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel defaultSize={66} minSize={45}>
+      </ResizablePanelSlot>
+      <ResizableHandleSlot />
+      <ResizablePanelSlot defaultSize={66} minSize={45}>
         {display}
-      </ResizablePanel>
-    </ResizablePanelGroup>
+      </ResizablePanelSlot>
+    </ResizablePanelGroupSlot>
   );
+}
+
+const productionRollerSlots = {
+  DiceAnimation3DSlot: LazyDiceAnimation3D,
+  DiceNotationButtonsSlot: DiceNotationButtons,
+  ResizablePanelGroupSlot: ResizablePanelGroup,
+  ResizablePanelSlot: ResizablePanel,
+  ResizableHandleSlot: ResizableHandle,
+} satisfies RollerSlots;
+
+export function Roller(props: RollerProps) {
+  return <RollerView {...props} slots={productionRollerSlots} />;
 }

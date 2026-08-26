@@ -24,7 +24,11 @@ function nextPreviewIndex(current: number): number {
   return (current + 1 + (value % (RANDOM_PREVIEWS.length - 1))) % RANDOM_PREVIEWS.length;
 }
 
-export default function MarketingAppearancePreview() {
+export function MarketingAppearancePreviewView({
+  ImageTransition,
+}: {
+  ImageTransition: typeof PixelatedImageTransition;
+}) {
   const [previewIndex, setPreviewIndex] = React.useState(0);
   const [previewFailed, setPreviewFailed] = React.useState(false);
 
@@ -55,7 +59,7 @@ export default function MarketingAppearancePreview() {
             Preview unavailable.
           </p>
         ) : (
-          <PixelatedImageTransition
+          <ImageTransition
             candidate={RANDOM_PREVIEWS[previewIndex]}
             alt={`Random Dice Witch appearance ${String(previewIndex + 1)}`}
             onDisplay={() => setPreviewFailed(false)}
@@ -64,5 +68,13 @@ export default function MarketingAppearancePreview() {
         )}
       </div>
     </section>
+  );
+}
+
+export default function MarketingAppearancePreview() {
+  return (
+    <MarketingAppearancePreviewView
+      ImageTransition={PixelatedImageTransition}
+    />
   );
 }

@@ -61,25 +61,25 @@ describe("CanvasKit V4 octahedral texture atlas", () => {
   });
 
   it("rejects a malformed source texture", () => {
-    const malformed = {
+    const malformed: TextureRasterV4 = {
       version: 1,
       width: 192,
       height: 192,
       colorSpace: "srgb",
       alphaMode: "opaque",
       pixels: new Uint8Array(4),
-    } as TextureRasterV4;
+    };
 
     expect(() => createOctahedralTextureAtlasV4(malformed)).toThrow(
       "V4 octahedral source texture is invalid",
     );
+    const malformedDimensions = {
+      ...malformed,
+      pixels: new Uint8Array(4),
+    };
+    Object.assign(malformedDimensions, { width: 1, height: 1 });
     expect(() =>
-      createOctahedralTextureAtlasV4({
-        ...malformed,
-        width: 1,
-        height: 1,
-        pixels: new Uint8Array(4),
-      } as unknown as TextureRasterV4),
+      createOctahedralTextureAtlasV4(malformedDimensions),
     ).toThrow("V4 octahedral source texture is invalid");
   });
 });

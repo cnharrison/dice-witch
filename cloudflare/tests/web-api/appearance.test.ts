@@ -48,9 +48,13 @@ function guildProfileV4(): GuildAppearanceProfileV4 {
   });
 }
 
+function unexpectedConnect(): never {
+  throw new Error("Unexpected socket connection");
+}
+
 function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBindings {
   return {
-    DATA_SERVICE: { fetch: dataFetch } as Fetcher,
+    DATA_SERVICE: { fetch: dataFetch, connect: unexpectedConnect },
     DISCORD_REST: {
       deliverWebRoll: vi.fn(() =>
         Promise.resolve({ status: "delivered" as const }),

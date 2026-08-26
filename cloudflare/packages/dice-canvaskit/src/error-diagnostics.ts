@@ -17,13 +17,13 @@ export type CanvasKitFailureNameV4 =
   | "UnknownError";
 
 export function canvasKitFailureNameV4(
-  error: unknown,
+  cause: unknown,
 ): CanvasKitFailureNameV4 {
   try {
-    if (!(error instanceof Error)) return "UnknownError";
+    if (!(cause instanceof Error)) return "UnknownError";
     return (
       SAFE_CANVASKIT_FAILURE_NAMES_V4.find(
-        (name) => name === error.name,
+        (name) => name === cause.name,
       ) ?? "UnknownError"
     );
   } catch {

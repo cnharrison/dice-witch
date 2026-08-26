@@ -8,7 +8,7 @@ import {
 const applicationId = "100000000000000001";
 const guildId = "100000000000000002";
 
-function interaction(overrides: Record<string, unknown> = {}) {
+function interaction() {
   return {
     id: "1400000000000000000",
     application_id: applicationId,
@@ -16,7 +16,6 @@ function interaction(overrides: Record<string, unknown> = {}) {
     type: 2,
     token: "interaction-token-value",
     data: { id: "1400000000000000001", name: "status", type: 1 },
-    ...overrides,
   };
 }
 

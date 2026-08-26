@@ -1,13 +1,67 @@
+import { z } from "zod";
 import {
   extractRollLoggingContext,
   type RollLoggingContext,
 } from "./roll-interaction";
+import {
+  boundaryObjectSchema,
+  boundedNameSchema,
+  interactionTokenSchema,
+  type BoundaryObject,
+  type SchemaInput,
+  snowflakeSchema,
+} from "./schema-primitives";
 
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
-const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
 const SAVED_ROLL_SELECTION = /^(mine|server):[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SAVED_ROLL_COMPONENT = /^saved-roll:v1:([1-9][0-9]{16,19}):(mine|server|previous|next|run|copy|select|rename|run:(?:mine|server):.+)$/;
 const MAX_TYPED_SELECTION_LENGTH = 256;
+
+const SavedRollInteractionTypeSchema = z.union([
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+]);
+const SavedRollSelectionSchema = z.string().regex(SAVED_ROLL_SELECTION);
+const SavedRollComponentActionSchema = z.enum([
+  "mine",
+  "server",
+  "previous",
+  "next",
+  "run",
+  "copy",
+  "select",
+]);
+const SavedRollUserSchema = z.looseObject({
+  username: boundedNameSchema(1, 32),
+});
+const SavedRollCommandOptionsSchema = z.array(boundaryObjectSchema).length(1);
+const SavedRollCommandOptionSchema = z.looseObject({
+  name: z.literal("name"),
+  type: z.literal(3),
+  value: z.string().max(MAX_TYPED_SELECTION_LENGTH),
+  focused: z.undefined().optional(),
+});
+const SavedRollAutocompleteOptionSchema = z.looseObject({
+  name: z.literal("name"),
+  type: z.literal(3),
+  value: z.string().max(MAX_TYPED_SELECTION_LENGTH),
+  focused: z.literal(true),
+});
+const RenameModalComponentsSchema = z.array(boundaryObjectSchema).length(1);
+const RenameLabelSchema = z.looseObject({
+  type: z.literal(18),
+  component: boundaryObjectSchema,
+});
+const RenameLegacyRowSchema = z.looseObject({
+  components: z.tuple([boundaryObjectSchema]),
+});
+const RenameInputSchema = z.looseObject({
+  type: z.literal(4),
+  custom_id: z.literal("saved-roll-name"),
+  value: z.string(),
+});
+const SelectedComponentValueSchema = z.tuple([SavedRollSelectionSchema]);
 
 export type SavedRollInteractionScope = {
   applicationId: string;
@@ -37,7 +91,7 @@ export type SavedRollInteraction =
   | (SavedRollInteractionContext & {
       kind: "component";
       sessionId: string;
-      action: "mine" | "server" | "previous" | "next" | "run" | "copy" | "select";
+      action: z.infer<typeof SavedRollComponentActionSchema>;
       selection: string | null;
     })
   | (SavedRollInteractionContext & {
@@ -46,19 +100,16 @@ export type SavedRollInteraction =
       name: string;
     });
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function requireSnowflake(value: unknown, name: string): string {
-  if (typeof value !== "string" || !SNOWFLAKE.test(value)) {
+function requireSnowflake(value: SchemaInput, name: string): string {
+  const result = snowflakeSchema.safeParse(value);
+  if (!result.success) {
     throw new Error(`${name} must be a Discord Snowflake`);
   }
-  return value;
+  return result.data;
 }
 
 function parseContext(
-  value: Record<string, unknown>,
+  value: BoundaryObject,
   scope: SavedRollInteractionScope,
 ): SavedRollInteractionContext {
   const applicationId = requireSnowflake(
@@ -79,21 +130,21 @@ function parseContext(
   ) {
     throw new Error("Saved roll guild does not match");
   }
-  const token = value.token;
-  if (typeof token !== "string" || !INTERACTION_TOKEN.test(token)) {
+  const token = interactionTokenSchema.safeParse(value.token);
+  if (!token.success) {
     throw new Error("Saved roll interaction token is invalid");
   }
-  const member = value.member;
-  const user = isRecord(member) && isRecord(member.user) ? member.user : value.user;
-  if (
-    !isRecord(user) ||
-    typeof user.username !== "string" ||
-    user.username.length < 1 ||
-    user.username.length > 32
-  ) {
+  const member = boundaryObjectSchema.safeParse(value.member);
+  const memberUser = member.success
+    ? boundaryObjectSchema.safeParse(member.data.user)
+    : null;
+  const user = SavedRollUserSchema.safeParse(
+    memberUser?.success ? memberUser.data : value.user,
+  );
+  if (!user.success) {
     throw new Error("Saved roll user is invalid");
   }
-  const userId = requireSnowflake(user.id, "Saved roll user id");
+  const userId = requireSnowflake(user.data.id, "Saved roll user id");
   const channelId = requireSnowflake(value.channel_id, "Saved roll channel id");
   let loggingContext: RollLoggingContext;
   try {
@@ -104,55 +155,62 @@ function parseContext(
   return {
     id: requireSnowflake(value.id, "Saved roll interaction id"),
     applicationId,
-    token,
+    token: token.data,
     guildId,
     channelId,
     loggingContext,
     userId,
-    username: user.username,
+    username: user.data.username,
   };
 }
 
 function parseCommandOption(
-  value: unknown,
+  value: SchemaInput,
   autocomplete: boolean,
 ): string | null {
   if (value === undefined) return null;
-  if (!Array.isArray(value) || value.length !== 1 || !isRecord(value[0])) {
+  const options = SavedRollCommandOptionsSchema.safeParse(value);
+  if (!options.success) {
     throw new Error("Saved roll command options are invalid");
   }
-  const option = value[0];
-  if (
-    option.name !== "name" ||
-    option.type !== 3 ||
-    typeof option.value !== "string" ||
-    option.value.length > MAX_TYPED_SELECTION_LENGTH ||
-    (autocomplete ? option.focused !== true : option.focused !== undefined)
-  ) {
+  const optionSchema = autocomplete
+    ? SavedRollAutocompleteOptionSchema
+    : SavedRollCommandOptionSchema;
+  const option = optionSchema.safeParse(options.data[0]);
+  if (!option.success) {
     throw new Error("Saved roll command option is invalid");
   }
-  return option.value;
+  return option.data.value;
 }
 
 export function parseSavedRollInteraction(
-  value: unknown,
+  value: SchemaInput,
   scope: SavedRollInteractionScope,
 ): SavedRollInteraction | null {
-  if (!isRecord(value)) throw new Error("Interaction must be an object");
-  if (value.type !== 2 && value.type !== 3 && value.type !== 4 && value.type !== 5) return null;
-  if (!isRecord(value.data)) throw new Error("Saved roll data is invalid");
-  const data = value.data;
-  if (value.type === 2 || value.type === 4) {
+  const interaction = boundaryObjectSchema.safeParse(value);
+  if (!interaction.success) throw new Error("Interaction must be an object");
+  const interactionType = SavedRollInteractionTypeSchema.safeParse(
+    interaction.data.type,
+  );
+  if (!interactionType.success) return null;
+  const parsedData = boundaryObjectSchema.safeParse(interaction.data.data);
+  if (!parsedData.success) throw new Error("Saved roll data is invalid");
+  const data = parsedData.data;
+  if (interactionType.data === 2 || interactionType.data === 4) {
     if (data.name !== "library" || data.type !== 1) return null;
-    const context = parseContext(value, scope);
-    const selection = parseCommandOption(data.options, value.type === 4);
-    if (value.type === 4) {
+    const context = parseContext(interaction.data, scope);
+    const selection = parseCommandOption(
+      data.options,
+      interactionType.data === 4,
+    );
+    if (interactionType.data === 4) {
       return { ...context, kind: "autocomplete", query: selection ?? "" };
     }
     return { ...context, kind: "command", selection };
   }
-  if (typeof data.custom_id !== "string") return null;
-  const match = SAVED_ROLL_COMPONENT.exec(data.custom_id);
+  const customId = z.string().safeParse(data.custom_id);
+  if (!customId.success) return null;
+  const match = SAVED_ROLL_COMPONENT.exec(customId.data);
   if (match === null) return null;
   const sessionId = match[1];
   const componentValue = match[2];
@@ -163,68 +221,51 @@ export function parseSavedRollInteraction(
     ? componentValue.slice(4)
     : null;
   const matchedAction = encodedRunSelection === null ? componentValue : "run";
-  if (value.type === 5) {
-    if (
-      matchedAction !== "rename" ||
-      !Array.isArray(data.components) ||
-      data.components.length !== 1 ||
-      !isRecord(data.components[0])
-    ) {
+  if (interactionType.data === 5) {
+    const modal = RenameModalComponentsSchema.safeParse(data.components);
+    if (matchedAction !== "rename" || !modal.success) {
       throw new Error("Saved roll rename modal is invalid");
     }
-    const wrapper = data.components[0];
-    let input: Record<string, unknown> | null = null;
-    if (wrapper.type === 18 && isRecord(wrapper.component)) {
-      input = wrapper.component;
-    } else if (
-      Array.isArray(wrapper.components) &&
-      wrapper.components.length === 1 &&
-      isRecord(wrapper.components[0])
-    ) {
-      input = wrapper.components[0];
-    }
-    if (input === null) {
-      throw new Error("Saved roll rename modal is invalid");
-    }
-    if (
-      input.type !== 4 ||
-      input.custom_id !== "saved-roll-name" ||
-      typeof input.value !== "string"
-    ) {
+    const wrapper = modal.data[0];
+    const label = RenameLabelSchema.safeParse(wrapper);
+    const legacyRow = RenameLegacyRowSchema.safeParse(wrapper);
+    let input: BoundaryObject | null = null;
+    if (label.success) input = label.data.component;
+    else if (legacyRow.success) input = legacyRow.data.components[0];
+    const renamed = RenameInputSchema.safeParse(input);
+    if (!renamed.success) {
       throw new Error("Saved roll rename modal is invalid");
     }
     if (sessionId === undefined) {
       throw new Error("Saved roll component session is invalid");
     }
     return {
-      ...parseContext(value, scope),
+      ...parseContext(interaction.data, scope),
       kind: "modal",
       sessionId,
-      name: input.value,
+      name: renamed.data.value,
     };
   }
   if (matchedAction === "rename") {
     throw new Error("Saved roll component is invalid");
   }
-  const action = matchedAction as Extract<
-    SavedRollInteraction,
-    { kind: "component" }
-  >["action"];
+  const action = SavedRollComponentActionSchema.safeParse(matchedAction);
+  if (!action.success) {
+    throw new Error("Saved roll component is invalid");
+  }
   let selection: string | null = encodedRunSelection;
-  if (action === "select") {
-    if (
-      data.component_type !== 3 ||
-      !Array.isArray(data.values) ||
-      data.values.length !== 1 ||
-      typeof data.values[0] !== "string" ||
-      !SAVED_ROLL_SELECTION.test(data.values[0])
-    ) {
+  if (action.data === "select") {
+    const selected = SelectedComponentValueSchema.safeParse(data.values);
+    if (data.component_type !== 3 || !selected.success) {
       throw new Error("Saved roll component selection is invalid");
     }
-    selection = data.values[0];
+    selection = selected.data[0];
   } else {
+    const parsedSelection = selection === null
+      ? null
+      : SavedRollSelectionSchema.safeParse(selection);
     if (
-      (selection !== null && !SAVED_ROLL_SELECTION.test(selection)) ||
+      (parsedSelection !== null && !parsedSelection.success) ||
       data.component_type !== 2 ||
       data.values !== undefined
     ) {
@@ -239,10 +280,10 @@ export function parseSavedRollInteraction(
     throw new Error("Saved roll component session is invalid");
   }
   return {
-    ...parseContext(value, scope),
+    ...parseContext(interaction.data, scope),
     kind: "component",
     sessionId,
-    action,
+    action: action.data,
     selection,
   };
 }

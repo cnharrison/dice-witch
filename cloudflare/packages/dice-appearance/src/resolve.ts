@@ -49,6 +49,7 @@ import {
 } from "./types";
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+type CanonicalJsonInput = Parameters<typeof canonicalJsonV4>[0];
 
 class DeterministicRandom {
   private state: number;
@@ -693,9 +694,10 @@ function searchAccessibleVividSurface(
     | undefined;
   while (lower <= upper) {
     const level = Math.floor((lower + upper) / 2);
-    const candidatePair = generated.colors.map((color) =>
-      adjustedVividColor(color, family, level),
-    ) as [string, string];
+    const candidatePair: [string, string] = [
+      adjustedVividColor(generated.colors[0], family, level),
+      adjustedVividColor(generated.colors[1], family, level),
+    ];
     const candidateSurface = surfaceWithVividPair(surface, candidatePair);
     const candidateInk = resolveAppearanceInkV2(
       candidateSurface,
@@ -953,7 +955,7 @@ function propertySeedV3(
   seed: number,
   policy: AppearanceResolutionSeedPolicyV3,
   stream: string,
-  value: unknown,
+  value: CanonicalJsonInput,
   sharedAcrossDice = false,
 ): number {
   if (policy === "legacy") return seed;
@@ -993,7 +995,7 @@ function propertyRandomV3(
   seed: number,
   policy: AppearanceResolutionSeedPolicyV3,
   stream: string,
-  value: unknown,
+  value: CanonicalJsonInput,
 ): DeterministicRandom {
   return namedRandomV3(
     propertySeedV3(recipe, context, seed, policy, stream, value),
@@ -1069,22 +1071,42 @@ function colorsFromPaletteV3(
   return { ordered, pair: [ordered[0], ordered[1]] };
 }
 
+function requirePaletteColor(
+  colors: readonly string[],
+  index: number,
+): string {
+  const color = colors[index];
+  if (color === undefined) {
+    throw new Error("Appearance palette must contain at least two colors");
+  }
+  return color;
+}
+
 function rotateColorsV3(colors: NativeColors, start: number): NativeColors {
-  const ordered = [
+  const rotated = [
     ...colors.ordered.slice(start),
     ...colors.ordered.slice(0, start),
-  ] as [string, string, ...string[]];
+  ];
+  const ordered: [string, string, ...string[]] = [
+    requirePaletteColor(rotated, 0),
+    requirePaletteColor(rotated, 1),
+    ...rotated.slice(2),
+  ];
   return { ordered, pair: [ordered[0], ordered[1]] };
 }
 
 function rotateAccentColorsV3(colors: NativeColors, start: number): NativeColors {
   const [background, ...accents] = colors.ordered;
   const offset = start % accents.length;
-  const ordered = [
-    background,
+  const rotatedAccents = [
     ...accents.slice(offset),
     ...accents.slice(0, offset),
-  ] as [string, string, ...string[]];
+  ];
+  const ordered: [string, string, ...string[]] = [
+    background,
+    requirePaletteColor(rotatedAccents, 0),
+    ...rotatedAccents.slice(1),
+  ];
   return { ordered, pair: [ordered[0], ordered[1]] };
 }
 
@@ -1356,6 +1378,50 @@ function randomizeR32MaterialControlsV3(
   return material;
 }
 
+type RandomizationSeedValueV3 = {
+  randomization?: AppearanceRecipeV3["randomization"];
+};
+
+type MaterialSeedValueV3 = RandomizationSeedValueV3 & {
+  material: AppearanceMaterialV4;
+};
+
+type FormSeedValueV3 = RandomizationSeedValueV3 & {
+  form: AppearanceRecipeV3["form"];
+  materialFamily: AppearanceMaterialV4["family"];
+};
+
+type ColorSeedValueV3 = RandomizationSeedValueV3 & {
+  colors: AppearanceRecipeV3["colors"];
+  material?: AppearanceMaterialV4;
+  colorDistribution?: AppearanceRecipeV3["colorDistribution"];
+};
+
+function materialSeedValueV3(
+  recipe: AppearanceRecipeV3,
+  material: AppearanceMaterialV4,
+) {
+  const value: MaterialSeedValueV3 = { material };
+  if (recipe.randomization !== undefined) {
+    value.randomization = recipe.randomization;
+  }
+  return value;
+}
+
+function formSeedValueV3(
+  recipe: AppearanceRecipeV3,
+  material: AppearanceMaterialV4,
+) {
+  const value: FormSeedValueV3 = {
+    form: recipe.form,
+    materialFamily: material.family,
+  };
+  if (recipe.randomization !== undefined) {
+    value.randomization = recipe.randomization;
+  }
+  return value;
+}
+
 export function resolveAppearanceRecipeV3(
   inputRecipe: AppearanceRecipeV3,
   context: AppearanceResolutionContextV3,
@@ -1432,19 +1498,19 @@ export function resolveAppearanceRecipeV3(
   ) {
     material = { ...material, textureScale: 25 };
   }
-  const colorSeedValue = {
-    colors: recipe.colors,
-    ...(usesR27ColorBehaviorV3(seedPolicy) &&
-    !usesFullSpectrumRandomization
-      ? {}
-      : { material }),
-    ...(recipe.randomization === undefined
-      ? {}
-      : { randomization: recipe.randomization }),
-    ...(recipe.colorDistribution === undefined
-      ? {}
-      : { colorDistribution: recipe.colorDistribution }),
-  };
+  const colorSeedValue: ColorSeedValueV3 = { colors: recipe.colors };
+  if (
+    !usesR27ColorBehaviorV3(seedPolicy) ||
+    usesFullSpectrumRandomization
+  ) {
+    colorSeedValue.material = material;
+  }
+  if (recipe.randomization !== undefined) {
+    colorSeedValue.randomization = recipe.randomization;
+  }
+  if (recipe.colorDistribution !== undefined) {
+    colorSeedValue.colorDistribution = recipe.colorDistribution;
+  }
   let colors = resolveRandomizedColorsV3(
     recipe,
     material,
@@ -1527,13 +1593,14 @@ export function resolveAppearanceRecipeV3(
     form = resolveCompatiblePolyhedralFormV4(
       recipe.form.polyhedral,
       material.family,
-      propertyRandomV3(recipe, context, seed, seedPolicy, "form", {
-        form: recipe.form,
-        materialFamily: material.family,
-        ...(recipe.randomization === undefined
-          ? {}
-          : { randomization: recipe.randomization }),
-      }),
+      propertyRandomV3(
+        recipe,
+        context,
+        seed,
+        seedPolicy,
+        "form",
+        formSeedValueV3(recipe, material),
+      ),
     );
   }
   const fontId = resolveAppearanceSelectionV4(
@@ -1649,12 +1716,14 @@ export function resolveAppearanceRecipeV3(
         generatorId:
           TEXTURE_GENERATOR_BY_MATERIAL_FAMILY_V4[material.family],
         seed: deriveNamedSeedV4(
-          propertySeedV3(recipe, context, seed, seedPolicy, "texture", {
-            material,
-            ...(recipe.randomization === undefined
-              ? {}
-              : { randomization: recipe.randomization }),
-          }),
+          propertySeedV3(
+            recipe,
+            context,
+            seed,
+            seedPolicy,
+            "texture",
+            materialSeedValueV3(recipe, material),
+          ),
           "texture",
         ),
         scale: material.textureScale,

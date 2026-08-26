@@ -1,14 +1,12 @@
-import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createGenerationMachine,
   transitionGeneration,
 } from "../../packages/gateway-protocol/src";
-import type { GatewayCoordinator } from "../../workers/gateway/src/gateway-coordinator";
+import { GatewayCoordinator } from "../../workers/gateway/src/gateway-coordinator";
 import type { GatewayEnv } from "../../workers/gateway/src/index";
-
-const gatewayEnv = env as unknown as GatewayEnv;
+import { gatewayTestEnv as gatewayEnv } from "./test-environment";
 
 function gatewayBotResponse(
   remaining = 997,
@@ -115,9 +113,12 @@ describe("GatewayCoordinator generations", () => {
       activeShardCount: 1,
     });
     await expect(
-      runInDurableObject(coordinator, (instance) =>
-        (instance as GatewayCoordinator).initializeGeneration(2, 2),
-      ),
+      runInDurableObject(coordinator, (instance) => {
+        if (!(instance instanceof GatewayCoordinator)) {
+          throw new Error("Gateway coordinator fixture is invalid");
+        }
+        return instance.initializeGeneration(2, 2);
+      }),
     ).rejects.toThrow("already initialized");
   });
 
@@ -284,7 +285,7 @@ describe("GatewayCoordinator generations", () => {
         targetShardCount: null,
       },
     });
-    expect(typeof status.generation?.postponedUntil).toBe("number");
+    expect(status.generation?.postponedUntil).toBeTypeOf("number");
   });
 });
 
@@ -383,8 +384,8 @@ describe("GatewayCoordinator fleet lifecycle", () => {
     await coordinator.initializeFleet(7, 2, 2);
 
     const result = await runInDurableObject(coordinator, async (instance) => {
-      const coordinatorInstance = instance as GatewayCoordinator;
-      const runtime = coordinatorInstance as unknown as { env: GatewayEnv };
+      // SAFETY: Miniflare returns the configured GatewayCoordinator class instance; this test replaces only its environment binding.
+      const runtime = instance as GatewayCoordinator & { env: GatewayEnv };
       const forceFleetShardReidentify = vi.fn(() =>
         Promise.resolve({ accepted: true, status: {} }),
       );
@@ -437,8 +438,8 @@ describe("GatewayCoordinator fleet lifecycle", () => {
         },
       });
 
-      const inventory = await coordinatorInstance.activeGuildInventory();
-      await coordinatorInstance.forceActiveShardReidentify(1);
+      const inventory = await runtime.activeGuildInventory();
+      await runtime.forceActiveShardReidentify(1);
       return {
         inventory,
         forceCall: forceFleetShardReidentify.mock.calls[0],
@@ -466,10 +467,8 @@ describe("GatewayCoordinator fleet lifecycle", () => {
     await coordinator.initializeFleet(7, 1, 24);
 
     const result = await runInDurableObject(coordinator, async (instance) => {
-      const coordinatorInstance = instance as GatewayCoordinator;
-      const runtime = coordinatorInstance as unknown as {
-        env: GatewayEnv;
-      };
+      // SAFETY: Miniflare returns the configured GatewayCoordinator class instance; this test replaces only its environment binding.
+      const runtime = instance as GatewayCoordinator & { env: GatewayEnv };
       let attempts = 0;
       Object.defineProperty(runtime.env, "GATEWAY_PARTITION", {
         configurable: true,
@@ -485,11 +484,11 @@ describe("GatewayCoordinator fleet lifecycle", () => {
         },
       });
 
-      await expect(coordinatorInstance.stopFleet()).rejects.toThrow(
+      await expect(runtime.stopFleet()).rejects.toThrow(
         "injected partition failure",
       );
-      const stopping = await coordinatorInstance.fleetStatus();
-      const stopped = await coordinatorInstance.stopFleet();
+      const stopping = await runtime.fleetStatus();
+      const stopped = await runtime.stopFleet();
       return { attempts, stopped, stopping };
     });
 

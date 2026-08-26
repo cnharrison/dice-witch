@@ -2,21 +2,15 @@
 
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 import { AppearanceApiError } from "@/lib/appearance-api-error";
-import { getAppearancePreviewV4 } from "@/lib/appearance-v4";
 import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AppearancePreviewPaneV3 } from "./AppearancePreviewPaneV3";
+import { AppearancePreviewPaneV3View } from "./AppearancePreviewPaneV3";
 
-vi.mock("@/lib/appearance-v4", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/appearance-v4")>();
-  return { ...actual, getAppearancePreviewV4: vi.fn() };
-});
-
-const preview = vi.mocked(getAppearancePreviewV4);
+const preview = vi.fn();
 const recipe = APPEARANCE_CATALOG_V3.styles[0]?.recipe;
 const diceView = createDefaultDiceViewPreferencesV4();
 if (recipe === undefined) throw new Error("Preview recipe fixture is missing");
@@ -27,7 +21,8 @@ function renderPreview(target: "all" | "d20" = "all") {
   });
   const result = render(
     <QueryClientProvider client={client}>
-      <AppearancePreviewPaneV3
+      <AppearancePreviewPaneV3View
+        getPreview={preview}
         target={target}
         recipe={recipe}
         diceView={diceView}
@@ -104,7 +99,8 @@ describe("AppearancePreviewPaneV3", () => {
     const overrides = { d20: recipe };
     const { rerender } = render(
       <QueryClientProvider client={client}>
-        <AppearancePreviewPaneV3
+        <AppearancePreviewPaneV3View
+          getPreview={preview}
           target="all"
           recipe={recipe}
           diceView={diceView}
@@ -121,7 +117,8 @@ describe("AppearancePreviewPaneV3", () => {
 
     rerender(
       <QueryClientProvider client={client}>
-        <AppearancePreviewPaneV3
+        <AppearancePreviewPaneV3View
+          getPreview={preview}
           target="d20"
           recipe={recipe}
           diceView={diceView}
@@ -174,7 +171,8 @@ describe("AppearancePreviewPaneV3", () => {
     ).toBeDefined();
     rerender(
       <QueryClientProvider client={client}>
-        <AppearancePreviewPaneV3
+        <AppearancePreviewPaneV3View
+          getPreview={preview}
           target="d20"
           recipe={recipe}
           diceView={diceView}
@@ -204,7 +202,8 @@ describe("AppearancePreviewPaneV3", () => {
     const adjusted = { ...diceView, elevationDegrees: 47 };
     rerender(
       <QueryClientProvider client={client}>
-        <AppearancePreviewPaneV3
+        <AppearancePreviewPaneV3View
+          getPreview={preview}
           target="d20"
           recipe={recipe}
           diceView={adjusted}

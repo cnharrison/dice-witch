@@ -1,11 +1,18 @@
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { expect, it } from "vitest";
+import { z } from "zod";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+const TestMigrationsBindingSchema = z.object({
+  TEST_MIGRATIONS: z.array(z.strictObject({
+    name: z.string(),
+    queries: z.array(z.string()),
+  })),
+});
+const dataEnv = {
+  DATA: env.DATA,
+  ...TestMigrationsBindingSchema.parse(env),
+} satisfies { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 
 it("starts a clean active-play policy epoch without deleting prior telemetry", async () => {
   const migration = dataEnv.TEST_MIGRATIONS.find(

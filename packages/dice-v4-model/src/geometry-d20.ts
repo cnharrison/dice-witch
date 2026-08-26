@@ -277,7 +277,7 @@ function faceByValue(faceValue: number): GeometryFaceV4 {
 function resultPoseFrame(
   value: number,
   face: GeometryFaceV4,
-): { right: Point3V4; up: Point3V4 } {
+) {
   const topVertexIndex = D20_RESULT_POSE_TOP_VERTEX_V4.get(value);
   if (topVertexIndex === undefined) {
     throw new Error("D20 result pose top vertex is missing");

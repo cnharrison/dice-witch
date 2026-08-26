@@ -5,58 +5,55 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
-import { Navbar } from "./Navbar";
+import { NavbarView } from "./Navbar";
 
-const mocks = vi.hoisted(() => ({
-  getPersonalAppearanceBootstrapV4: vi.fn(async () => ({
-    catalog: {},
-    resource: { revision: 0, profile: null },
-  })),
-  loadDocsApp: vi.fn(async () => ({})),
-  loadHomePage: vi.fn(async () => ({})),
-  loadLibraryPage: vi.fn(async () => ({})),
-  loadPreferencesPage: vi.fn(async () => ({})),
-  signOut: vi.fn(),
+const loadPersonalAppearance = vi.fn(async () => ({
+  catalog: {},
+  resource: { revision: 0, profile: null },
 }));
+const loadDocs = vi.fn(async () => ({ default: () => null }));
+const loadHome = vi.fn(async () => ({ default: () => null }));
+const loadLibrary = vi.fn(async () => ({ default: () => null }));
+const loadPreferences = vi.fn(async () => ({ default: () => null }));
+const signOut = vi.fn();
 
-vi.mock("@/lib/AuthProvider", () => ({
-  useAuth: () => ({ signOut: mocks.signOut }),
-  useUser: () => ({
-    user: {
-      name: "Appearance Tester",
-      image: "https://cdn.example.test/avatar.png",
-    },
-  }),
-}));
+function renderNavbar(path = "/") {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
 
-vi.mock("@/lib/app-route-loaders", () => ({
-  loadDocsApp: mocks.loadDocsApp,
-  loadHomePage: mocks.loadHomePage,
-  loadLibraryPage: mocks.loadLibraryPage,
-  loadPreferencesPage: mocks.loadPreferencesPage,
-}));
-
-vi.mock("@/lib/appearance-v4", () => ({
-  getPersonalAppearanceBootstrapV4:
-    mocks.getPersonalAppearanceBootstrapV4,
-  PERSONAL_APPEARANCE_BOOTSTRAP_V4_QUERY_KEY: [
-    "appearanceBootstrapV4",
-    "personal",
-  ],
-}));
-
-vi.mock("@/components/theme-provider", () => ({
-  useTheme: () => ({ theme: "dark", setTheme: vi.fn() }),
-}));
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <NavbarView
+          signOut={signOut}
+          user={{
+            name: "Appearance Tester",
+            image: "https://cdn.example.test/avatar.png",
+          }}
+          MobileMenuSlot={() => null}
+          ThemeToggleSlot={() => null}
+          routeLoaders={{
+            loadDocs,
+            loadHome,
+            loadLibrary,
+            loadPreferences,
+          }}
+          loadPersonalAppearance={loadPersonalAppearance}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
 afterEach(() => {
   cleanup();
-  mocks.getPersonalAppearanceBootstrapV4.mockClear();
-  mocks.loadDocsApp.mockClear();
-  mocks.loadHomePage.mockClear();
-  mocks.loadLibraryPage.mockClear();
-  mocks.loadPreferencesPage.mockClear();
-  mocks.signOut.mockReset();
+  loadPersonalAppearance.mockClear();
+  loadDocs.mockClear();
+  loadHome.mockClear();
+  loadLibrary.mockClear();
+  loadPreferences.mockClear();
+  signOut.mockReset();
 });
 
 describe("Navbar", () => {
@@ -64,16 +61,7 @@ describe("Navbar", () => {
     ["/app/preferences", "Preferences"],
     ["/app/library", "Library"],
   ])("shows the %s section in the top bar", (path, label) => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={[path]}>
-          <Navbar />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    renderNavbar(path);
 
     const heading = screen.getByRole("heading", { name: label });
     expect(heading.className).toContain("border-l");
@@ -82,16 +70,7 @@ describe("Navbar", () => {
 
   it("shows branded navigation and moves logout into the avatar menu", async () => {
     const user = userEvent.setup();
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
-          <Navbar />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    renderNavbar();
 
     const brand = screen.getByRole("link", { name: "Dice Witch" });
     expect(brand.className).toContain("UnifrakturMaguntia");
@@ -102,12 +81,12 @@ describe("Navbar", () => {
     const docs = screen.getByRole("link", { name: "Docs" });
     expect(docs.textContent).toBe("");
     await user.hover(docs);
-    expect(mocks.loadDocsApp).toHaveBeenCalledOnce();
+    expect(loadDocs).toHaveBeenCalledOnce();
 
     await user.hover(screen.getByRole("link", { name: "Preferences" }));
     await waitFor(() => {
-      expect(mocks.loadPreferencesPage).toHaveBeenCalled();
-      expect(mocks.getPersonalAppearanceBootstrapV4).toHaveBeenCalledOnce();
+      expect(loadPreferences).toHaveBeenCalled();
+      expect(loadPersonalAppearance).toHaveBeenCalledOnce();
     });
 
     await user.click(
@@ -120,6 +99,6 @@ describe("Navbar", () => {
     });
     await user.click(logout);
 
-    expect(mocks.signOut).toHaveBeenCalledOnce();
+    expect(signOut).toHaveBeenCalledOnce();
   });
 });

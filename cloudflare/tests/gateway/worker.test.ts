@@ -1,9 +1,11 @@
+import { env as runtimeEnv } from "cloudflare:workers";
 import {
   createExecutionContext,
   createScheduledController,
   waitOnExecutionContext,
 } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
+import { parseDiscordAudienceCaptureV1 } from "../../packages/discord-contracts/src";
 import gatewayWorker, {
   AUDIENCE_SNAPSHOT_CRON,
   BOT_LIST_STATS_CRON,
@@ -232,9 +234,9 @@ function environment() {
   );
   const dataServiceFetch = vi.fn(async (request: Request) => {
     if (new URL(request.url).pathname === "/internal/audience-snapshot") {
-      const capture = await request
-        .clone()
-        .json<Record<string, unknown>>();
+      const capture = parseDiscordAudienceCaptureV1(
+        await request.clone().json(),
+      );
       return Response.json({
         status: "applied",
         snapshot: { ...capture, knownDiceWitchUsers: 7 },
@@ -246,7 +248,7 @@ function environment() {
       deactivatedCount: 0,
     });
   });
-  const env = {
+  const bindings = {
     DISCORD_APPLICATION_ID: "100000000000000001",
     DISCORD_TEST_GUILD_ID: "100000000000000002",
     DISCORD_GATEWAY_BOT_URL: "https://discord.com/api/v10/gateway/bot",
@@ -270,7 +272,7 @@ function environment() {
       captureAudienceSnapshotV1: captureAudienceSnapshot,
       listCurrentGuildIdsPage,
       logGuildLifecycle: vi.fn(() =>
-        Promise.resolve({ status: "delivered" }),
+        Promise.resolve({ status: "delivered" as const }),
       ),
       reportBotListStats: vi.fn(() =>
         Promise.resolve({
@@ -284,12 +286,13 @@ function environment() {
       reportBotListStatsV1: reportBotListStats,
     },
     DATA_SERVICE: { fetch: dataServiceFetch },
-  } as unknown as GatewayEnv;
+  };
+  const gatewayEnv: GatewayEnv = Object.assign({}, runtimeEnv, bindings);
   return {
     captureAudienceSnapshot,
     coordinator,
     dataServiceFetch,
-    env,
+    env: gatewayEnv,
     listCurrentGuildIdsPage,
     reportBotListStats,
     stub,
@@ -935,7 +938,7 @@ describe("Gateway control Worker", () => {
     const invalidEnv = {
       ...env,
       GATEWAY_CONTROL_TOKEN: "short",
-    } as GatewayEnv;
+    } satisfies GatewayEnv;
     const response = await gatewayWorker.fetch(
       request("/gateway/status", "GET", true),
       invalidEnv,

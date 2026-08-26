@@ -143,6 +143,7 @@ export function AppearanceTargetPickerV3({
             overrides.has(target) &&
             (onEditOverride !== undefined ||
               onDiscardOverride !== undefined);
+          // SAFETY: The surrounding validation establishes the AppearanceTargetV4 invariant used below.
           return (
             <div key={target} className="relative">
               {hasOverride && (

@@ -1,11 +1,23 @@
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { expect, it } from "vitest";
+import { z } from "zod";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+const TestMigrationsBindingSchema = z.object({
+  TEST_MIGRATIONS: z.array(z.strictObject({
+    name: z.string(),
+    queries: z.array(z.string()),
+  })),
+});
+const VersionRowsSchema = z.array(z.strictObject({
+  scope: z.enum(["personal", "server"]),
+  version: z.number().int(),
+  count: z.number().int().nonnegative(),
+}));
+const dataEnv = {
+  DATA: env.DATA,
+  ...TestMigrationsBindingSchema.parse(env),
+} satisfies { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 
 const timestamp = 1_767_225_600_000;
 const userIds = {
@@ -89,7 +101,7 @@ it("upgrades race-created V3 profiles and rejects every non-V4 write", async () 
     migration.queries.map((query) => dataEnv.DATA.prepare(query)),
   );
 
-  const versions = await dataEnv.DATA.prepare(
+  const versionsResult = await dataEnv.DATA.prepare(
     `SELECT 'personal' AS scope,
             json_extract(profile_json, '$.version') AS version,
             COUNT(*) AS count
@@ -100,8 +112,9 @@ it("upgrades race-created V3 profiles and rejects every non-V4 write", async () 
             COUNT(*) AS count
      FROM guild_appearance_profiles GROUP BY version
      ORDER BY scope, version`,
-  ).all<{ scope: string; version: number; count: number }>();
-  expect(versions.results).toEqual([
+  ).all();
+  const versions = VersionRowsSchema.parse(versionsResult.results);
+  expect(versions).toEqual([
     { scope: "personal", version: 4, count: 2 },
     { scope: "server", version: 4, count: 1 },
   ]);

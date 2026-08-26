@@ -6,28 +6,36 @@ import * as React from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { LandingPageView } from "./LandingPage";
+
 let intersectionCallback: IntersectionObserverCallback;
-const { authenticateWithRedirect } = vi.hoisted(() => ({
-  authenticateWithRedirect: vi.fn(),
-}));
+const authenticateWithRedirect = vi.fn();
 
-vi.mock("@/lib/AuthProvider", () => ({
-  useAuth: () => ({ isSignedIn: false }),
-  useSignIn: () => ({ isLoaded: true, signIn: { authenticateWithRedirect } }),
-}));
+function MarketingAppearancePreview() {
+  return (
+    <section aria-label="Random appearance preview">
+      <button type="button">Randomize</button>
+    </section>
+  );
+}
 
-vi.mock("@/hooks/useServerStats", () => ({
-  useServerStats: () => ({
-    liveGuilds: 23_432,
-    estimatedGuildMemberships: 1_000_000,
-    knownDiceWitchUsers: 73_429,
-    available: true,
-  }),
-}));
-
-vi.mock("@/components/SvgFilters", () => ({ SvgFilters: () => null }));
-
-import LandingPage from "./LandingPage";
+function TestLandingPage() {
+  return (
+    <LandingPageView
+      isSignedIn={false}
+      isSignInLoaded
+      authenticateWithRedirect={authenticateWithRedirect}
+      serverStats={{
+        liveGuilds: 23_432,
+        estimatedGuildMemberships: 1_000_000,
+        knownDiceWitchUsers: 73_429,
+        available: true,
+      }}
+      SvgFiltersSlot={() => null}
+      MarketingAppearancePreviewSlot={MarketingAppearancePreview}
+    />
+  );
+}
 
 describe("LandingPage", () => {
   beforeEach(() => {
@@ -58,7 +66,7 @@ describe("LandingPage", () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={["/?returnTo=%2Fapp%2Flibrary"]}>
-        <LandingPage />
+        <TestLandingPage />
       </MemoryRouter>,
     );
 
@@ -118,7 +126,7 @@ describe("LandingPage", () => {
   it("loads the random appearance preview only when its below-fold section approaches the viewport", async () => {
     render(
       <MemoryRouter>
-        <LandingPage />
+        <TestLandingPage />
       </MemoryRouter>,
     );
 
@@ -127,6 +135,7 @@ describe("LandingPage", () => {
     ).toBeNull();
 
     await act(async () => {
+      // SAFETY: The test controls this fixture and verifies its use in the scenario below.
       intersectionCallback(
         [{ isIntersecting: true } as IntersectionObserverEntry],
         {} as IntersectionObserver,

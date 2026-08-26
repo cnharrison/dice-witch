@@ -14,7 +14,7 @@ function LegacyCubeIcon({ fudge = false }: { fudge?: boolean }) {
 }
 
 function D10Icon({ paired = false }: { paired?: boolean }) {
-  const shape = (
+  const paths = (
     <>
       <path d="M50 5 95 53 50 96 5 53Z" />
       <path d="m50 5 23 43-23 14-23-14Z" />
@@ -24,14 +24,14 @@ function D10Icon({ paired = false }: { paired?: boolean }) {
   if (!paired) {
     return (
       <svg viewBox="0 0 100 100" className={iconClassName} aria-hidden="true">
-        {shape}
+        {paths}
       </svg>
     );
   }
   return (
     <svg viewBox="0 0 120 100" className={iconClassName} aria-hidden="true">
-      <g transform="translate(-5 15) scale(.72)">{shape}</g>
-      <g transform="translate(48 -8) scale(.72)">{shape}</g>
+      <g transform="translate(-5 15) scale(.72)">{paths}</g>
+      <g transform="translate(48 -8) scale(.72)">{paths}</g>
     </svg>
   );
 }

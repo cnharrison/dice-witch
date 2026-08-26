@@ -161,6 +161,11 @@ function gradientScopeAppearance(
   scope?: "die-wide" | "face-local",
   rotation = 45,
 ): RenderAppearanceV4 {
+  const texture: RenderAppearanceV4["texture"] = {
+    ...appearance.texture,
+    rotation,
+  };
+  if (scope !== undefined) texture.scope = scope;
   return {
     ...appearance,
     material: {
@@ -171,11 +176,7 @@ function gradientScopeAppearance(
       textureScale: 100,
     },
     palette: ["#170022", "#04c9df", "#f3d36a"],
-    texture: {
-      ...appearance.texture,
-      rotation,
-      ...(scope === undefined ? {} : { scope }),
-    },
+    texture,
     engraving: {
       ...appearance.engraving,
       color: "#faf9f6",
@@ -369,8 +370,28 @@ function renderedFixture(): RenderedDiceRequestV4 {
   };
 }
 
+async function rendererFailure(
+  rendering: Promise<RenderedDiceRequestV4>,
+): Promise<RendererV4FailedError> {
+  try {
+    await rendering;
+  } catch (error) {
+    if (error instanceof RendererV4FailedError) return error;
+    throw error;
+  }
+  throw new Error("Expected CanvasKit V4 rendering to fail");
+}
+
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function requiredByte(bytes: Uint8Array, offset: number): number {
+  const value = bytes[offset];
+  if (value === undefined) {
+    throw new Error("CanvasKit V4 test pixel is missing");
+  }
+  return value;
 }
 
 function transparentPixelCount(pixels: Uint8Array): number {
@@ -408,7 +429,7 @@ function maximumChannelDifference(
   for (let index = 0; index < first.length; index += 1) {
     maximum = Math.max(
       maximum,
-      Math.abs((first[index] as number) - (second[index] as number)),
+      Math.abs(requiredByte(first, index) - requiredByte(second, index)),
     );
   }
   return maximum;
@@ -424,13 +445,13 @@ function brighterPixelCount(
   let count = 0;
   for (let offset = 0; offset < baseline.length; offset += 4) {
     const baselineTotal =
-      (baseline[offset] as number) +
-      (baseline[offset + 1] as number) +
-      (baseline[offset + 2] as number);
+      requiredByte(baseline, offset) +
+      requiredByte(baseline, offset + 1) +
+      requiredByte(baseline, offset + 2);
     const candidateTotal =
-      (candidate[offset] as number) +
-      (candidate[offset + 1] as number) +
-      (candidate[offset + 2] as number);
+      requiredByte(candidate, offset) +
+      requiredByte(candidate, offset + 1) +
+      requiredByte(candidate, offset + 2);
     if (candidateTotal - baselineTotal >= 180) count += 1;
   }
   return count;
@@ -439,7 +460,7 @@ function brighterPixelCount(
 function alphaChannels(pixels: Uint8Array): Uint8Array {
   const alpha = new Uint8Array(pixels.length / 4);
   for (let index = 3; index < pixels.length; index += 4) {
-    alpha[(index - 3) / 4] = pixels[index] as number;
+    alpha[(index - 3) / 4] = requiredByte(pixels, index);
   }
   return alpha;
 }
@@ -451,7 +472,7 @@ function partialAlphaPixelCount(
 ): number {
   let count = 0;
   for (let alpha = (startY * width * 4) + 3; alpha < pixels.length; alpha += 4) {
-    const value = pixels[alpha] as number;
+    const value = requiredByte(pixels, alpha);
     if (value > 0 && value < 255) count += 1;
   }
   return count;
@@ -463,7 +484,7 @@ function pixelAlpha(
   x: number,
   y: number,
 ): number {
-  return pixels[(y * width + x) * 4 + 3] as number;
+  return requiredByte(pixels, (y * width + x) * 4 + 3);
 }
 
 function meanAbsoluteRgbDifference(
@@ -476,13 +497,13 @@ function meanAbsoluteRgbDifference(
   let total = 0;
   for (let offset = 0; offset < first.length; offset += 4) {
     total += Math.abs(
-      (first[offset] as number) - (second[offset] as number),
+      requiredByte(first, offset) - requiredByte(second, offset),
     );
     total += Math.abs(
-      (first[offset + 1] as number) - (second[offset + 1] as number),
+      requiredByte(first, offset + 1) - requiredByte(second, offset + 1),
     );
     total += Math.abs(
-      (first[offset + 2] as number) - (second[offset + 2] as number),
+      requiredByte(first, offset + 2) - requiredByte(second, offset + 2),
     );
   }
   return total / ((first.length / 4) * 3);
@@ -529,7 +550,7 @@ function alphaColumnRuns(
 function alphaBounds(
   pixels: Uint8Array,
   width: number,
-): { width: number; height: number } {
+) {
   let left = width;
   let top = 150;
   let right = -1;
@@ -1032,7 +1053,7 @@ describe("CanvasKit Render Request V4", () => {
       "#ffffff",
       "#f5abb9",
       "#5bcffa",
-    ] as [string, string, ...string[]];
+    ] satisfies RenderAppearanceV4["palette"];
     const r3Die = revision3.groups[0]?.[0];
     const r4Die = revision4.groups[0]?.[0];
     if (r3Die === undefined || r4Die === undefined) {
@@ -1445,7 +1466,7 @@ describe("CanvasKit Render Request V4", () => {
         icons: ["critical-failure"],
       },
       { ...die("d20", 20), icons: ["penetrate", "unique", "blank"] },
-    ] as RenderDieV4[];
+    ] satisfies RenderDieV4[];
     const iconRequest: RenderRequestV4 = {
       version: 4,
       rendererRevision: "canvaskit-v4-r1",
@@ -1542,7 +1563,7 @@ describe("CanvasKit Render Request V4", () => {
         appearance: criticalAppearance("critical-failure"),
         icons: ["critical-failure"],
       },
-    ] as RenderDieV4[];
+    ] satisfies RenderDieV4[];
     const iconRequest = (
       rendererRevision: "canvaskit-v4-r7" | "canvaskit-v4-r8",
     ) => ({
@@ -2468,10 +2489,10 @@ describe("CanvasKit Render Request V4", () => {
         form: "standard",
       }),
     };
-    const groups = [[...Array.from({ length: 7 }, () => [
+    const groups = [Array.from({ length: 7 }, () => [
       structuredClone(percentile),
       structuredClone(ones),
-    ]).flat()]];
+    ]).flat()];
     const rendered = await renderDiceRequestV4ToPng(
       { version: 4, rendererRevision: "canvaskit-v4-r38", groups },
       () => createRequestRenderer(canvasKit),
@@ -3564,15 +3585,10 @@ describe("CanvasKit Render Request V4", () => {
       throw new Error("renderer factory must not be called");
     };
 
+    const invalidRevision = request();
+    Object.assign(invalidRevision, { rendererRevision: "canvaskit-v4-r42" });
     await expect(
-      renderDiceRequestV4ToPng(
-        {
-          ...request(),
-          rendererRevision:
-            "canvaskit-v4-r42" as RenderRequestV4["rendererRevision"],
-        },
-        factory,
-      ),
+      renderDiceRequestV4ToPng(invalidRevision, factory),
     ).rejects.toThrow("Render request rendererRevision is not supported");
     const unsupportedMutations: readonly ((die: RenderDieV4) => void)[] = [
       (die) => {
@@ -3710,10 +3726,12 @@ describe("CanvasKit Render Request V4", () => {
     };
 
     try {
-      const failure = await renderV4WithSingleRetry(
-        serializeRenderRequestV4(request()),
-        factory,
-      ).catch((error: unknown) => error);
+      const failure = await rendererFailure(
+        renderV4WithSingleRetry(
+          serializeRenderRequestV4(request()),
+          factory,
+        ),
+      );
 
       expect(failure).toBeInstanceOf(RendererV4FailedError);
       expect(failure).toMatchObject({
@@ -3743,19 +3761,21 @@ describe("CanvasKit Render Request V4", () => {
       .mockImplementation(() => undefined);
     let factoryCalls = 0;
     try {
-      const failure = await renderV4WithSingleRetry(
-        serializeRenderRequestV4(request()),
-        () => {
-          factoryCalls += 1;
-          if (factoryCalls === 1) throw secretError("initialization");
-          return {
-            renderValidated() {
-              return Promise.reject(secretError("render"));
-            },
-            dispose() {},
-          };
-        },
-      ).catch((error: unknown) => error);
+      const failure = await rendererFailure(
+        renderV4WithSingleRetry(
+          serializeRenderRequestV4(request()),
+          () => {
+            factoryCalls += 1;
+            if (factoryCalls === 1) throw secretError("initialization");
+            return {
+              renderValidated() {
+                return Promise.reject(secretError("render"));
+              },
+              dispose() {},
+            };
+          },
+        ),
+      );
 
       expect(failure).toBeInstanceOf(RendererV4FailedError);
       expect(failure).toMatchObject({

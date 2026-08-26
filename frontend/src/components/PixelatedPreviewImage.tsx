@@ -1,5 +1,6 @@
 import type { AppearancePreviewV4 } from "@/types/appearance";
 import * as React from "react";
+import * as z from "zod";
 import { useBrowserMediaQueryV4 } from "./dice-v4-3d/browser-media";
 import {
   PIXEL_TRANSITION_MILLISECONDS,
@@ -33,8 +34,9 @@ function previewSource(preview: PreviewImage): string {
 function loadImage(source: string): Promise<HTMLImageElement> {
   const image = new Image();
   image.src = source;
-  return typeof image.decode === "function"
-    ? image.decode().then(() => image)
+  const decode = z.function().safeParse(image.decode);
+  return decode.success
+    ? decode.data.call(image).then(() => image)
     : Promise.resolve(image);
 }
 
@@ -210,13 +212,9 @@ export function PixelatedImageTransition({
           setDisplayed({ image: candidate, alt });
           onDisplayRef.current();
         })
-        .catch((error: unknown) => {
+        .catch((error: Error) => {
           if (generation !== generationRef.current) return;
-          onErrorRef.current(
-            error instanceof Error
-              ? error
-              : new Error("Preview image could not be decoded"),
-          );
+          onErrorRef.current(error);
         });
       return;
     }
@@ -237,14 +235,10 @@ export function PixelatedImageTransition({
         display: { image: candidate, alt },
         generation,
       });
-    }).catch((error: unknown) => {
+    }).catch((error: Error) => {
       if (generation !== generationRef.current) return;
       setTransition(null);
-      onErrorRef.current(
-        error instanceof Error
-          ? error
-          : new Error("Preview image could not be decoded"),
-      );
+      onErrorRef.current(error);
     });
   }, [alt, candidate, displayed, reducedMotion, retryKey]);
 

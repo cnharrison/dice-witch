@@ -334,8 +334,8 @@ export type PolyhedralRenderPolicyV4 =
   | "standard-r7";
 
 function assertPolyhedralRenderPolicyV4(
-  value: unknown,
-): asserts value is PolyhedralRenderPolicyV4 {
+  value: string,
+): void {
   if (
     value !== "legacy" &&
     value !== "d20-r3" &&
@@ -556,7 +556,7 @@ function balancedGroupRowsKeepingPairs<Die>(
           const result = length >= 1 && length <= MAX_GRID_COLUMNS_V4
             ? {
                 score: (length - targetLength) ** 2,
-                rows: [[...group.slice(offset)]],
+                rows: [group.slice(offset)],
               }
             : null;
           cache.set(key, result);
@@ -587,7 +587,7 @@ function balancedGroupRowsKeepingPairs<Die>(
           const length = end - offset;
           const candidate = {
             score: (length - targetLength) ** 2 + remainder.score,
-            rows: [[...group.slice(offset, end)], ...remainder.rows],
+            rows: [group.slice(offset, end), ...remainder.rows],
           };
           if (best === null || candidate.score < best.score) best = candidate;
         }
@@ -680,15 +680,7 @@ function groupRowSpacingV4(
   return undefined;
 }
 
-function geometryGridLayout<Die>(
-  groups: readonly (readonly Die[])[],
-  name: "geometry grid" | "polyhedral grid",
-  hasIcons: boolean,
-  iconSize: number,
-  layout: RendererRevisionPolicyV4["gridLayout"],
-  visualBoundsForDie?: (die: Die) => { left: number; right: number },
-  keepTogether?: (left: Die, right: Die) => boolean,
-): {
+type GeometryGridLayoutV4<Die> = {
   rows: readonly (readonly Die[])[];
   rowOffsets: readonly number[];
   rowVerticalOffsets: readonly number[];
@@ -699,7 +691,17 @@ function geometryGridLayout<Die>(
   height: number;
   rowHeight: number;
   columnOffsets: readonly (readonly number[])[];
-} {
+};
+
+function geometryGridLayout<Die>(
+  groups: readonly (readonly Die[])[],
+  name: "geometry grid" | "polyhedral grid",
+  hasIcons: boolean,
+  iconSize: number,
+  layout: RendererRevisionPolicyV4["gridLayout"],
+  visualBoundsForDie?: (die: Die) => { left: number; right: number },
+  keepTogether?: (left: Die, right: Die) => boolean,
+): GeometryGridLayoutV4<Die> {
   if (groups.length === 0) {
     throw new Error(
       `CanvasKit V4 ${name} groups must be a non-empty array`,
@@ -716,11 +718,12 @@ function geometryGridLayout<Die>(
   }
   const rowHeight = GRID_DIE_SIZE_V4 + (hasIcons ? iconSize : 0);
   if (layout === "group-dynamic-r38" && groups.length > 1) {
-    const dynamic = createDynamicGridLayoutR38({
-      groups,
-      rowHeight,
-      ...(keepTogether === undefined ? {} : { keepTogether }),
-    });
+    const dynamicOptions = { groups, rowHeight };
+    const dynamic = createDynamicGridLayoutR38(
+      keepTogether === undefined
+        ? dynamicOptions
+        : { ...dynamicOptions, keepTogether },
+    );
     return {
       rows: dynamic.rows.map(({ dice }) => dice),
       rowOffsets: dynamic.rows.map(({ offsetX }) => offsetX),
@@ -1393,10 +1396,7 @@ const D20_UNIFORM_INK_DIMENSIONS_BY_FONT_V4 = new WeakMap<
   UniformInkDimensionsV4
 >();
 
-function availableLabelSize(label: ProjectedGeometryLabelV4): {
-  width: number;
-  height: number;
-} {
+function availableLabelSize(label: ProjectedGeometryLabelV4) {
   const width = label.maxWidth - label.opticalInset * 2;
   const height = label.maxHeight - label.opticalInset * 2;
   if (
@@ -2913,11 +2913,7 @@ function sphericalGeometryMetrics({
   sides,
   result,
   size = 600,
-}: RenderCanonicalSphereV4Options): {
-  size: number;
-  center: number;
-  radius: number;
-} {
+}: RenderCanonicalSphereV4Options) {
   requireRenderSize(size);
   requireSphereResult(sides, result);
   if (
@@ -4056,7 +4052,17 @@ function geometryGridDieVisualBounds(
   if (icons.length > 3) {
     throw new Error("CanvasKit V4 modifier icon count is invalid");
   }
-  const iconCount = icons.length as 0 | 1 | 2 | 3;
+  let iconCount: 0 | 1 | 2 | 3;
+  switch (icons.length) {
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+      iconCount = icons.length;
+      break;
+    default:
+      throw new Error("CanvasKit V4 modifier icon count is invalid");
+  }
   const iconSize = modifierIconSizeV4(rendererRevision);
   icons.forEach((icon, index) => {
     if (icon === "blank") return;

@@ -11,6 +11,7 @@ import {
   resolveAppearanceInkV2,
   resolveAppearanceOutlineV2,
   resolveAppearanceSilhouetteOutlineV3,
+  type ResolvedAppearanceSurfaceV2,
 } from "../../packages/dice-appearance/src";
 
 describe("appearance ink contrast", () => {
@@ -228,11 +229,11 @@ describe("appearance ink contrast", () => {
 
   it("composes Strong facet and directional extrema conservatively", () => {
     const surface = {
-      type: "gradient" as const,
-      colors: ["#515151", "#767676"] as [string, string],
-      scope: "die-wide" as const,
-      direction: "upper-left-to-lower-right" as const,
-    };
+      type: "gradient",
+      colors: ["#515151", "#767676"],
+      scope: "die-wide",
+      direction: "upper-left-to-lower-right",
+    } satisfies ResolvedAppearanceSurfaceV2;
     const facet = resolveAppearanceInkV2(
       surface,
       { mode: "facet", strength: "strong" },

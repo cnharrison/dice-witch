@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
 const USAGE =
@@ -34,10 +35,21 @@ function nonNegativeInteger(value) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
+const NonNegativeIntegerSchema = z.number().int().nonnegative();
+const AudienceSnapshotRowSchema = z.object({
+  version: z.literal(1),
+  captured_at: NonNegativeIntegerSchema,
+  live_guilds: NonNegativeIntegerSchema,
+  estimated_guild_memberships: NonNegativeIntegerSchema,
+  known_dice_witch_users: NonNegativeIntegerSchema,
+  shard_count: z.number().int().positive(),
+  guild_counts_by_shard_json: z.string(),
+});
+
 export function validateAudienceSnapshotRows(rows, now, maxAgeMs) {
+  const parsedRows = z.array(AudienceSnapshotRowSchema).length(1).safeParse(rows);
   if (
-    !Array.isArray(rows) ||
-    rows.length !== 1 ||
+    !parsedRows.success ||
     !Number.isSafeInteger(now) ||
     now < 0 ||
     !Number.isSafeInteger(maxAgeMs) ||
@@ -45,21 +57,11 @@ export function validateAudienceSnapshotRows(rows, now, maxAgeMs) {
   ) {
     throw new Error("Audience snapshot gate failed");
   }
-  const row = rows[0];
+  const [row] = parsedRows.data;
   if (
-    typeof row !== "object" ||
-    row === null ||
-    Array.isArray(row) ||
-    row.version !== 1 ||
-    !nonNegativeInteger(row.captured_at) ||
+    row === undefined ||
     row.captured_at > now ||
-    now - row.captured_at > maxAgeMs ||
-    !nonNegativeInteger(row.live_guilds) ||
-    !nonNegativeInteger(row.estimated_guild_memberships) ||
-    !nonNegativeInteger(row.known_dice_witch_users) ||
-    !Number.isSafeInteger(row.shard_count) ||
-    row.shard_count < 1 ||
-    typeof row.guild_counts_by_shard_json !== "string"
+    now - row.captured_at > maxAgeMs
   ) {
     throw new Error("Audience snapshot gate failed");
   }

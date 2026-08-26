@@ -7,21 +7,29 @@ type DecodedPngRgba8 = {
   pixels: Uint8Array;
 };
 
+function requiredByte(bytes: Uint8Array, offset: number): number {
+  const value = bytes[offset];
+  if (value === undefined) {
+    throw new Error("CanvasKit V4 test PNG byte is missing");
+  }
+  return value;
+}
+
 function uint32(bytes: Uint8Array, offset: number): number {
   return (
-    ((bytes[offset] as number) << 24) |
-    ((bytes[offset + 1] as number) << 16) |
-    ((bytes[offset + 2] as number) << 8) |
-    (bytes[offset + 3] as number)
+    (requiredByte(bytes, offset) << 24) |
+    (requiredByte(bytes, offset + 1) << 16) |
+    (requiredByte(bytes, offset + 2) << 8) |
+    requiredByte(bytes, offset + 3)
   ) >>> 0;
 }
 
 function chunkName(bytes: Uint8Array, offset: number): string {
   return String.fromCharCode(
-    bytes[offset] as number,
-    bytes[offset + 1] as number,
-    bytes[offset + 2] as number,
-    bytes[offset + 3] as number,
+    requiredByte(bytes, offset),
+    requiredByte(bytes, offset + 1),
+    requiredByte(bytes, offset + 2),
+    requiredByte(bytes, offset + 3),
   );
 }
 
@@ -71,15 +79,20 @@ function unfilterScanlines(
   for (let y = 0; y < height; y += 1) {
     const inputOffset = y * (stride + 1);
     const outputOffset = y * stride;
-    const filter = filtered[inputOffset] as number;
+    const filter = requiredByte(filtered, inputOffset);
     for (let x = 0; x < stride; x += 1) {
-      const raw = filtered[inputOffset + x + 1] as number;
+      const raw = requiredByte(filtered, inputOffset + x + 1);
       const left = x >= RGBA_CHANNELS
-        ? (pixels[outputOffset + x - RGBA_CHANNELS] as number)
+        ? requiredByte(pixels, outputOffset + x - RGBA_CHANNELS)
         : 0;
-      const above = y > 0 ? (pixels[outputOffset - stride + x] as number) : 0;
+      const above = y > 0
+        ? requiredByte(pixels, outputOffset - stride + x)
+        : 0;
       const upperLeft = y > 0 && x >= RGBA_CHANNELS
-        ? (pixels[outputOffset - stride + x - RGBA_CHANNELS] as number)
+        ? requiredByte(
+            pixels,
+            outputOffset - stride + x - RGBA_CHANNELS,
+          )
         : 0;
       const prediction = filterPrediction(filter, left, above, upperLeft);
       pixels[outputOffset + x] = (raw + prediction) & 0xff;

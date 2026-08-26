@@ -7,13 +7,20 @@ import {
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { APPEARANCE_VALIDATION_CATALOG_V3 } from "../../packages/dice-appearance/src";
 import { D1AppearanceRepository } from "../../workers/data/src/appearance-repository";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+const TestMigrationsBindingSchema = z.object({
+  TEST_MIGRATIONS: z.array(z.strictObject({
+    name: z.string(),
+    queries: z.array(z.string()),
+  })),
+});
+const dataEnv = {
+  DATA: env.DATA,
+  ...TestMigrationsBindingSchema.parse(env),
+} satisfies { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 const userId = "100000000000000003";
 const secondUserId = "100000000000000004";
 const guildId = "100000000000000002";
@@ -77,16 +84,28 @@ function repository(db = dataEnv.DATA): D1AppearanceRepository {
 function databaseWithBatchRace(race: () => Promise<void>): D1Database {
   let pending = true;
   return {
-    prepare: dataEnv.DATA.prepare.bind(dataEnv.DATA),
-    withSession: dataEnv.DATA.withSession.bind(dataEnv.DATA),
-    batch: async (statements: D1PreparedStatement[]) => {
+    prepare(query: string): D1PreparedStatement {
+      return dataEnv.DATA.prepare(query);
+    },
+    async batch<T = unknown>(
+      statements: D1PreparedStatement[],
+    ): Promise<D1Result<T>[]> {
       if (pending) {
         pending = false;
         await race();
       }
-      return dataEnv.DATA.batch(statements);
+      return dataEnv.DATA.batch<T>(statements);
     },
-  } as D1Database;
+    exec(query: string): Promise<D1ExecResult> {
+      return dataEnv.DATA.exec(query);
+    },
+    withSession(constraintOrBookmark?: string): D1DatabaseSession {
+      return dataEnv.DATA.withSession(constraintOrBookmark);
+    },
+    dump(): Promise<ArrayBuffer> {
+      throw new Error("Database dump was not expected");
+    },
+  } satisfies D1Database;
 }
 
 beforeEach(async () => {

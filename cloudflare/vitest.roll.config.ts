@@ -1,5 +1,8 @@
+import Busboy from "@fastify/busboy";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
+import { z } from "zod";
+import type { SchemaInput } from "./packages/discord-contracts/src/schema-primitives";
 import {
   BUILTIN_APPEARANCE_RECIPES_V2,
   BUILTIN_APPEARANCE_RECIPES_R34_V3,
@@ -9,26 +12,89 @@ import {
 import { APPEARANCE_TARGETS } from "./packages/dice-appearance/src/types";
 import { createDefaultDiceViewPreferencesV4 } from "./../packages/dice-v4-model/src/dice-view-preferences";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const V2PayloadSchema = z.object({
+  flags: z.number().optional(),
+  components: z.array(z.object({
+    type: z.number(),
+    content: z.string().optional(),
+  }).loose()),
+});
+const AppearanceRequestSchema = z.object({
+  userId: z.string(),
+  guildId: z.string().nullable(),
+});
+const SavedRollCopySchema = z.object({
+  id: z.string(),
+  draft: z.object({
+    version: z.number(),
+    name: z.string(),
+    nameColor: z.string().optional(),
+  }),
+});
+const SavedRollGetSchema = z.object({
+  id: z.string(),
+  owner: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("user"), userId: z.string() }),
+    z.object({ type: z.literal("guild"), guildId: z.string() }),
+  ]),
+});
+const GuildSettingsRequestSchema = z.object({
+  guildId: z.string(),
+  version: z.literal(2),
+});
+const LifecycleRequestSchema = z.object({
+  interactionId: z.string(),
+  context: z.object({ rendererRevision: z.string().nullable() }),
+});
+const AccountingRequestSchema = z.object({
+  interactionId: z.string(),
+  username: z.string(),
+});
+
+type EmptyAppearanceResponse = {
+  version: number;
+  recipes: object;
+  diceView?: ReturnType<typeof createDefaultDiceViewPreferencesV4>;
+};
+type AppearanceResponse = {
+  version: number;
+  recipes:
+    | ReturnType<typeof effectiveRecipesV2>
+    | ReturnType<typeof effectiveRecipesV3>;
+  diceView?: ReturnType<typeof createDefaultDiceViewPreferencesV4>;
+};
+type SavedRollResponse = {
+  version: number;
+  id: string;
+  owner: z.output<typeof SavedRollGetSchema>["owner"];
+  displayName: string;
+  comparisonKey: string;
+  notation: string;
+  title: string;
+  repetitions: number;
+  nameColor?: string;
+  pinned: boolean;
+  manualOrder: number;
+  revision: number;
+  createdByUserId: string;
+  updatedByUserId: string;
+  createdAt: number;
+  updatedAt: number;
+};
 
 const accountingAttempts = new Map<string, number>();
 const appearanceAttempts = new Map<string, number>();
-const lifecycleRendererRevisions = new Map<string, unknown>();
+const lifecycleRendererRevisions = new Map<string, string | null>();
 const resultDeliveryAttempts = new Map<string, number>();
 
-function v2TopLevelText(payload: unknown): string | null {
-  if (!isRecord(payload) || !Array.isArray(payload.components)) return null;
-  const text = (payload.components as unknown[]).find(
-    (component) => isRecord(component) && component.type === 10,
-  );
-  return isRecord(text) && typeof text.content === "string"
-    ? text.content
-    : null;
+function v2TopLevelText(payload: SchemaInput): string | null {
+  const parsed = V2PayloadSchema.safeParse(payload);
+  if (!parsed.success) return null;
+  return parsed.data.components.find((component) => component.type === 10)
+    ?.content ?? null;
 }
 
-function effectiveRecipesV2(primary: string | null): Record<string, unknown> {
+function effectiveRecipesV2(primary: string | null) {
   const recipe =
     primary === null
       ? BUILTIN_APPEARANCE_RECIPES_V2[CHAOTIC_APPEARANCE_STYLE_ID]
@@ -58,7 +124,7 @@ function effectiveRecipesV2(primary: string | null): Record<string, unknown> {
   return Object.fromEntries(APPEARANCE_TARGETS.map((target) => [target, recipe]));
 }
 
-function effectiveRecipesV3(primary: string | null): Record<string, unknown> {
+function effectiveRecipesV3(primary: string | null) {
   const builtin = BUILTIN_APPEARANCE_RECIPES_R34_V3[CHAOTIC_APPEARANCE_STYLE_ID];
   if (builtin === undefined) throw new Error("Chaotic V3 test recipe is missing");
   const recipe = structuredClone(
@@ -75,48 +141,48 @@ function effectiveRecipesV3(primary: string | null): Record<string, unknown> {
 
 async function dataTestResponse(request: Request): Promise<Response> {
   const path = new URL(request.url).pathname;
-  const value: unknown = await request.json();
+  const value: SchemaInput = await request.json();
   if (
     path === "/internal/appearance/v2/effective" ||
     path === "/internal/appearance/v3/effective" ||
     path === "/internal/appearance/v4/effective"
   ) {
-    if (
-      !isRecord(value) ||
-      typeof value.userId !== "string" ||
-      (value.guildId !== null && typeof value.guildId !== "string")
-    ) {
+    const appearanceRequest = AppearanceRequestSchema.safeParse(value);
+    if (!appearanceRequest.success) {
       return Response.json({ error: "invalid" }, { status: 400 });
     }
-    const attempts = (appearanceAttempts.get(value.userId) ?? 0) + 1;
-    appearanceAttempts.set(value.userId, attempts);
-    if (value.userId === "100000000000000099") {
+    const { userId } = appearanceRequest.data;
+    const attempts = (appearanceAttempts.get(userId) ?? 0) + 1;
+    appearanceAttempts.set(userId, attempts);
+    if (userId === "100000000000000099") {
       return Response.json({ error: "temporary" }, { status: 503 });
     }
-    if (value.userId === "100000000000000098") {
-      return Response.json({
+    if (userId === "100000000000000098") {
+      const emptyAppearance: EmptyAppearanceResponse = {
         version: path.includes("/v4/") ? 4 : path.includes("/v3/") ? 3 : 2,
         recipes: {},
-        ...(path.includes("/v4/")
-          ? { diceView: createDefaultDiceViewPreferencesV4() }
-          : {}),
-      });
+      };
+      if (path.includes("/v4/")) {
+        emptyAppearance.diceView = createDefaultDiceViewPreferencesV4();
+      }
+      return Response.json(emptyAppearance);
     }
-    if (value.userId === "100000000000000088" && attempts > 1) {
+    if (userId === "100000000000000088" && attempts > 1) {
       return Response.json({ error: "changed" }, { status: 503 });
     }
     const version = path.includes("/v4/") ? 4 : path.includes("/v3/") ? 3 : 2;
-    const primary = value.userId === "100000000000000088" ? "#aa0000" : null;
-    return Response.json({
+    const primary = userId === "100000000000000088" ? "#aa0000" : null;
+    const appearanceResponse: AppearanceResponse = {
       version,
       recipes:
         version >= 3
           ? effectiveRecipesV3(primary)
           : effectiveRecipesV2(primary),
-      ...(version === 4
-        ? { diceView: createDefaultDiceViewPreferencesV4() }
-        : {}),
-    });
+    };
+    if (version === 4) {
+      appearanceResponse.diceView = createDefaultDiceViewPreferencesV4();
+    }
+    return Response.json(appearanceResponse);
   }
   if (path === "/internal/saved-rolls/v1/ensure-user") {
     return Response.json({ status: "existing" });
@@ -128,15 +194,16 @@ async function dataTestResponse(request: Request): Promise<Response> {
     path === "/internal/saved-rolls/v1/copy" ||
     path === "/internal/saved-rolls/v2/copy"
   ) {
+    const copyRequest = SavedRollCopySchema.safeParse(value);
     if (
-      !isRecord(value) ||
-      !isRecord(value.draft) ||
+      !copyRequest.success ||
       (path.includes("/v2/") &&
-        (value.draft.version !== 2 || value.draft.nameColor !== "#AABBCC"))
+        (copyRequest.data.draft.version !== 2 ||
+          copyRequest.data.draft.nameColor !== "#AABBCC"))
     ) {
       return Response.json({ error: "invalid" }, { status: 400 });
     }
-    if (value.draft.name === "Attack") {
+    if (copyRequest.data.draft.name === "Attack") {
       return Response.json(
         { status: "name_conflict", listRevision: 0 },
         { status: 409 },
@@ -145,130 +212,125 @@ async function dataTestResponse(request: Request): Promise<Response> {
     return Response.json({
       status: "applied",
       listRevision: 1,
-      savedRoll: { id: value.id },
+      savedRoll: { id: copyRequest.data.id },
     });
   }
   if (
     path === "/internal/saved-rolls/v1/get" ||
     path === "/internal/saved-rolls/v2/get"
   ) {
-    if (
-      !isRecord(value) ||
-      !isRecord(value.owner) ||
-      typeof value.id !== "string"
-    ) {
+    const getRequest = SavedRollGetSchema.safeParse(value);
+    if (!getRequest.success) {
       return Response.json({ error: "invalid" }, { status: 400 });
     }
-    if (value.id === "323e4567-e89b-42d3-a456-426614174000") {
+    const { id, owner } = getRequest.data;
+    if (id === "323e4567-e89b-42d3-a456-426614174000") {
       return Response.json({ status: "missing" }, { status: 404 });
     }
-    const owner = value.owner;
-    const ownerId = owner.type === "user" ? owner.userId : owner.guildId;
-    if (
-      (owner.type !== "user" && owner.type !== "guild") ||
-      typeof ownerId !== "string"
-    ) {
-      return Response.json({ error: "invalid" }, { status: 400 });
-    }
     const version = path.includes("/v2/") ? 2 : 1;
-    return Response.json({
-      status: "found",
-      savedRoll: {
-        version,
-        id: value.id,
-        owner,
+    const savedRoll: SavedRollResponse = {
+      version,
+      id,
+      owner,
         displayName: "Attack",
         comparisonKey: "attack",
         notation: "2d20+5",
         title: "Sword",
         repetitions: 2,
-        ...(version === 2 ? { nameColor: "#AABBCC" } : {}),
-        pinned: true,
+      pinned: true,
         manualOrder: 0,
-        revision:
-          value.id === "423e4567-e89b-42d3-a456-426614174000" ? 4 : 3,
-        createdByUserId: "100000000000000003",
-        updatedByUserId: "100000000000000003",
-        createdAt: 100,
-        updatedAt: 200,
-      },
-    });
+      revision: id === "423e4567-e89b-42d3-a456-426614174000" ? 4 : 3,
+      createdByUserId: "100000000000000003",
+      updatedByUserId: "100000000000000003",
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    if (version === 2) savedRoll.nameColor = "#AABBCC";
+    return Response.json({ status: "found", savedRoll });
   }
   if (path === "/internal/guilds/settings") {
-    if (
-      !isRecord(value) ||
-      typeof value.guildId !== "string" ||
-      value.version !== 2
-    ) {
+    const settingsRequest = GuildSettingsRequestSchema.safeParse(value);
+    if (!settingsRequest.success) {
       return Response.json({ error: "invalid" }, { status: 400 });
     }
+    const { guildId } = settingsRequest.data;
     return Response.json({
       status: "found",
       settings: {
         skipDiceDelay: [
           "100000000000000003",
           "100000000000000004",
-        ].includes(value.guildId),
-        hideRollResultText: value.guildId === "100000000000000004",
+        ].includes(guildId),
+        hideRollResultText: guildId === "100000000000000004",
       },
     });
   }
   if (path === "/internal/roll-lifecycle") {
-    if (
-      !isRecord(value) ||
-      typeof value.interactionId !== "string" ||
-      !isRecord(value.context) ||
-      (value.context.rendererRevision !== null &&
-        typeof value.context.rendererRevision !== "string")
-    ) {
+    const lifecycleRequest = LifecycleRequestSchema.safeParse(value);
+    if (!lifecycleRequest.success) {
       return Response.json({ error: "invalid" }, { status: 400 });
     }
-    const rendererRevision = value.context.rendererRevision;
+    const { interactionId, context } = lifecycleRequest.data;
+    const rendererRevision = context.rendererRevision;
     if (
-      lifecycleRendererRevisions.has(value.interactionId) &&
-      lifecycleRendererRevisions.get(value.interactionId) !== rendererRevision
+      lifecycleRendererRevisions.has(interactionId) &&
+      lifecycleRendererRevisions.get(interactionId) !== rendererRevision
     ) {
       return Response.json({ status: "conflict" }, { status: 409 });
     }
-    lifecycleRendererRevisions.set(value.interactionId, rendererRevision);
+    lifecycleRendererRevisions.set(interactionId, rendererRevision);
     return Response.json({ status: "applied" });
   }
   if (path !== "/internal/roll-accounting") {
     return Response.json({ error: "not found" }, { status: 404 });
   }
-  if (
-    !isRecord(value) ||
-    typeof value.interactionId !== "string" ||
-    typeof value.username !== "string"
-  ) {
+  const accountingRequest = AccountingRequestSchema.safeParse(value);
+  if (!accountingRequest.success) {
     return Response.json({ error: "invalid" }, { status: 400 });
   }
-  const attempts = (accountingAttempts.get(value.interactionId) ?? 0) + 1;
-  accountingAttempts.set(value.interactionId, attempts);
-  if (value.username === "accounting-temporary" && attempts === 1) {
+  const { interactionId, username } = accountingRequest.data;
+  const attempts = (accountingAttempts.get(interactionId) ?? 0) + 1;
+  accountingAttempts.set(interactionId, attempts);
+  if (username === "accounting-temporary" && attempts === 1) {
     return Response.json({ error: "temporary" }, { status: 503 });
   }
-  if (value.username === "accounting-conflict") {
+  if (username === "accounting-conflict") {
     return Response.json({ status: "conflict" }, { status: 409 });
   }
   return Response.json({ status: "applied" });
+}
+
+async function multipartPayload(request: Request): Promise<SchemaInput> {
+  const contentType = request.headers.get("content-type");
+  if (contentType === null) return null;
+  const parser = new Busboy({ headers: { "content-type": contentType } });
+  let payload: SchemaInput = null;
+  const completed = new Promise<void>((resolve, reject) => {
+    parser.on("field", (name, value) => {
+      if (name === "payload_json") payload = JSON.parse(value);
+    });
+    parser.on("finish", resolve);
+    parser.on("error", reject);
+  });
+  parser.end(Buffer.from(await request.arrayBuffer()));
+  await completed;
+  return payload;
 }
 
 async function discordTestResponse(request: Request): Promise<Response> {
   const token = new URL(request.url).pathname.split("/")[5] ?? "";
   if (token === "delivery-clatter-contract") {
     const contentType = request.headers.get("content-type") ?? "";
-    let payload: unknown;
+    let payload: SchemaInput;
     if (contentType.startsWith("application/json")) {
       payload = await request.json();
     } else {
-      const form = await request.formData();
-      const value = form.get("payload_json");
-      payload = typeof value === "string" ? JSON.parse(value) : null;
+      payload = await multipartPayload(request);
     }
+    const parsedPayload = V2PayloadSchema.safeParse(payload);
     if (
-      !isRecord(payload) ||
-      (payload.flags as number) !== (1 << 15) ||
+      !parsedPayload.success ||
+      parsedPayload.data.flags !== (1 << 15) ||
       !v2TopLevelText(payload)?.startsWith("_...") ||
       !v2TopLevelText(payload)?.endsWith("..._")
     ) {
@@ -326,11 +388,11 @@ async function discordTestResponse(request: Request): Promise<Response> {
   if (token === "delivery-deadline") {
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.startsWith("application/json")) {
-      const payload: unknown = await request.json();
+      const payload = V2PayloadSchema.safeParse(await request.json());
       if (
-        isRecord(payload) &&
-        payload.flags === ((1 << 15) | 64) &&
-        JSON.stringify(payload.components).includes(
+        payload.success &&
+        payload.data.flags === ((1 << 15) | 64) &&
+        JSON.stringify(payload.data.components).includes(
           "This roll could not be completed. Please try again.",
         )
       ) {
@@ -405,7 +467,7 @@ export default defineConfig({
     alias: {
       crypto: new URL(
         "./packages/roll-domain/src/worker-crypto.ts",
-        (import.meta as ImportMeta & { url: string }).url,
+        import.meta.url,
       ).pathname,
     },
   },

@@ -4,6 +4,7 @@ import {
   type RenderDieV4,
   type RenderRequestV4,
 } from "@dice-witch/dice-v4-model";
+import { z } from "zod";
 import {
   validateRenderRequestV2,
   validateRenderRequestV3,
@@ -19,6 +20,14 @@ import {
   type RollDeliveryTelemetryV2,
   type RollLoggingContext,
 } from "../../../packages/discord-contracts/src";
+import {
+  interactionTokenSchema,
+  nonNegativeSafeIntegerSchema,
+  safeIntegerSchema,
+  type SchemaInput,
+  seedSchema,
+  snowflakeSchema,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import { renderedRollFaceV4 } from "../../../packages/roll-render-model/src";
 import { parseSavedRollNameColorV2 } from "../../../packages/saved-rolls/src";
 import type { RollViewPolicy } from "./render-version";
@@ -37,7 +46,6 @@ const DISCORD_EPOCH_MS = 1_420_070_400_000;
 const INTERACTION_TOKEN_LIFETIME_MS = 15 * 60 * 1_000;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
 const MAX_TITLE_LENGTH = 256;
 const MAX_USERNAME_LENGTH = 32;
 const MAX_RETRY_DELAY_MS = 60_000;
@@ -301,124 +309,149 @@ type ValidatedRollDeliveryRequest = Omit<
   clatter: { deliveredAt: number } | null;
 };
 
-function isSeed(value: unknown): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value >= 0 &&
-    value <= 0xffff_ffff
-  );
+const NumberValueSchema = z.union([
+  z.number(),
+  z.nan(),
+  z.literal(Infinity),
+  z.literal(-Infinity),
+]);
+const RollWorkRequestSchema = z.strictObject({
+  notation: z.array(z.string()),
+  repetitions: NumberValueSchema,
+});
+const CoercedSnowflakeSchema = z.coerce.string().regex(SNOWFLAKE);
+const SavedRollInvocationSchema = z.strictObject({
+  version: z.literal(1),
+  id: z.string().regex(UUID_V4),
+  scope: z.enum(["personal", "guild"]),
+  name: z.string().min(1).max(1024),
+  nameColor: z.unknown().optional(),
+  notation: z.string().min(1).max(MAX_NOTATION_LENGTH),
+  title: z.nullable(z.string().min(1).max(MAX_TITLE_LENGTH)),
+  repetitions: safeIntegerSchema.min(1).max(MAX_REPETITIONS),
+  revision: safeIntegerSchema.min(1),
+});
+const RollDeliveryEnvelopeSchema = z.strictObject({
+  interaction: z.strictObject({
+    id: CoercedSnowflakeSchema,
+    applicationId: CoercedSnowflakeSchema,
+    token: interactionTokenSchema,
+  }),
+  request: z.strictObject({
+    notation: z.string(),
+    repetitions: NumberValueSchema,
+  }),
+  message: z.strictObject({
+    title: z.nullable(z.string().min(1).max(MAX_TITLE_LENGTH)),
+    username: z.string().min(1).max(MAX_USERNAME_LENGTH),
+  }),
+  accounting: z.unknown().optional(),
+  deferredAt: z.unknown().optional(),
+  rollSeed: z.unknown().optional(),
+  renderSeed: z.unknown().optional(),
+  clatter: z.unknown().optional(),
+  settings: z.unknown().optional(),
+  telemetry: z.unknown().optional(),
+  logging: z.unknown().optional(),
+  responseMode: z.unknown().optional(),
+  savedRoll: z.unknown().optional(),
+});
+const RollDeliveryAccountingSchema = z.strictObject({
+  guildId: z.nullable(snowflakeSchema),
+  userId: snowflakeSchema,
+  receivedAt: safeIntegerSchema,
+});
+const RollDeliveryTelemetrySchema = z.strictObject({
+  version: z.literal(2),
+  handlerStartedAt: safeIntegerSchema,
+  acknowledgementPreparedAt: safeIntegerSchema,
+  acknowledgementType: z.union([z.literal(4), z.literal(5), z.literal(6)]),
+});
+const LegacyDeliverySettingsSchema = z.strictObject({
+  skipDiceDelay: z.boolean(),
+});
+const CurrentDeliverySettingsSchema = z.strictObject({
+  skipDiceDelay: z.boolean(),
+  hideRollResultText: z.boolean(),
+});
+const RollDeliverySettingsSchema = z.union([
+  CurrentDeliverySettingsSchema,
+  LegacyDeliverySettingsSchema,
+]);
+const RollDeliveryClatterSchema = z.strictObject({
+  deliveredAt: safeIntegerSchema.positive(),
+});
+const RollDeliveryLoggingSchema = z.strictObject({
+  source: z.enum(["discord", "web"]),
+  channelId: snowflakeSchema,
+  notation: z.string().min(1).max(MAX_NOTATION_LENGTH),
+  context: z.unknown().optional(),
+});
+const RollDeliveryResponseModeSchema = z.enum([
+  "channel-message",
+  "edit-original",
+  "followup",
+]);
+
+type RollDeliveryEnvelope = z.output<typeof RollDeliveryEnvelopeSchema>;
+type DeliveryEnvelopeKey = keyof RollDeliveryEnvelope;
+
+const ADDITIVE_DELIVERY_KEYS: ReadonlySet<string> = new Set([
+  "deferredAt",
+  "telemetry",
+  "settings",
+  "renderSeed",
+  "clatter",
+]);
+
+function hasDeliveryKeys(
+  delivery: RollDeliveryEnvelope,
+  expected: readonly DeliveryEnvelopeKey[],
+): boolean {
+  const actual = Object.keys(delivery)
+    .filter((key) => !ADDITIVE_DELIVERY_KEYS.has(key))
+    .sort();
+  const sortedExpected = [...expected].sort();
+  return actual.length === sortedExpected.length &&
+    actual.every((key, index) => key === sortedExpected[index]);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+export function validateRequest(value: SchemaInput): RollWorkRequest {
+  const result = RollWorkRequestSchema.safeParse(value);
+  if (!result.success) throw new Error("Roll work request is invalid");
+  return result.data;
 }
 
-function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
-  const actual = Object.keys(value).sort();
-  return (
-    actual.length === keys.length &&
-    actual.every((key, index) => key === keys[index])
-  );
-}
-
-export function validateRequest(value: unknown): RollWorkRequest {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["notation", "repetitions"]) ||
-    !Array.isArray(value.notation) ||
-    !value.notation.every((item) => typeof item === "string") ||
-    typeof value.repetitions !== "number"
-  ) {
-    throw new Error("Roll work request is invalid");
-  }
-  return {
-    notation: [...value.notation],
-    repetitions: value.repetitions,
-  };
-}
-
-function parseSavedRollInvocation(value: unknown): SavedRollInvocationV1 {
-  const keys = [
-    "id",
-    "name",
-    "notation",
-    "repetitions",
-    "revision",
-    "scope",
-    "title",
-    "version",
-  ];
-  if (
-    !isRecord(value) ||
-    (!hasExactKeys(value, keys) &&
-      !hasExactKeys(value, [
-        "id",
-        "name",
-        "nameColor",
-        "notation",
-        "repetitions",
-        "revision",
-        "scope",
-        "title",
-        "version",
-      ])) ||
-    value.version !== 1 ||
-    typeof value.id !== "string" ||
-    !UUID_V4.test(value.id) ||
-    (value.scope !== "personal" && value.scope !== "guild") ||
-    typeof value.name !== "string" ||
-    value.name.length < 1 ||
-    value.name.length > 1024 ||
-    typeof value.notation !== "string" ||
-    value.notation.length < 1 ||
-    value.notation.length > MAX_NOTATION_LENGTH ||
-    (value.title !== null &&
-      (typeof value.title !== "string" ||
-        value.title.length < 1 ||
-        value.title.length > MAX_TITLE_LENGTH)) ||
-    typeof value.repetitions !== "number" ||
-    !Number.isSafeInteger(value.repetitions) ||
-    value.repetitions < 1 ||
-    value.repetitions > MAX_REPETITIONS ||
-    typeof value.revision !== "number" ||
-    !Number.isSafeInteger(value.revision) ||
-    value.revision < 1
-  ) {
-    throw new Error("Saved roll invocation is invalid");
-  }
+function parseSavedRollInvocation(
+  value: SchemaInput,
+): SavedRollInvocationV1 {
+  const result = SavedRollInvocationSchema.safeParse(value);
+  if (!result.success) throw new Error("Saved roll invocation is invalid");
   return {
     version: 1,
-    id: value.id,
-    scope: value.scope,
-    name: value.name,
-    notation: value.notation,
-    title: value.title,
-    repetitions: value.repetitions,
-    revision: value.revision,
-    nameColor: parseSavedRollNameColorV2(value.nameColor ?? null),
+    id: result.data.id,
+    scope: result.data.scope,
+    name: result.data.name,
+    notation: result.data.notation,
+    title: result.data.title,
+    repetitions: result.data.repetitions,
+    revision: result.data.revision,
+    nameColor: parseSavedRollNameColorV2(result.data.nameColor ?? null),
   };
 }
 
 export function validateDeliveryRequest(
-  value: unknown,
+  value: SchemaInput,
 ): ValidatedRollDeliveryRequest {
-  if (!isRecord(value)) throw new Error("Roll delivery request is invalid");
-  const hasDeferredAt = Object.hasOwn(value, "deferredAt");
-  const hasTelemetry = Object.hasOwn(value, "telemetry");
-  // Settings are additive: every accepted shape stays valid without them.
-  const hasSettings = Object.hasOwn(value, "settings");
-  // An acknowledged clatter is additive too, and always arrives with the seed
-  // that produced it so the roll can reproduce the same text.
-  const hasRenderSeed = Object.hasOwn(value, "renderSeed");
-  const hasClatter = Object.hasOwn(value, "clatter");
-  const shape = { ...value };
-  delete shape.deferredAt;
-  delete shape.telemetry;
-  delete shape.settings;
-  delete shape.renderSeed;
-  delete shape.clatter;
-  const hasPreflightedDirectRoll = hasExactKeys(shape, [
+  const envelope = RollDeliveryEnvelopeSchema.safeParse(value);
+  if (!envelope.success) throw new Error("Roll delivery request is invalid");
+  const delivery = envelope.data;
+  const hasDeferredAt = Object.hasOwn(delivery, "deferredAt");
+  const hasTelemetry = Object.hasOwn(delivery, "telemetry");
+  const hasSettings = Object.hasOwn(delivery, "settings");
+  const hasRenderSeed = Object.hasOwn(delivery, "renderSeed");
+  const hasClatter = Object.hasOwn(delivery, "clatter");
+  const hasPreflightedDirectRoll = hasDeliveryKeys(delivery, [
     "accounting",
     "interaction",
     "logging",
@@ -426,7 +459,7 @@ export function validateDeliveryRequest(
     "request",
     "rollSeed",
   ]);
-  const hasSavedRoll = hasExactKeys(shape, [
+  const hasSavedRoll = hasDeliveryKeys(delivery, [
     "accounting",
     "interaction",
     "logging",
@@ -435,9 +468,7 @@ export function validateDeliveryRequest(
     "responseMode",
     "savedRoll",
   ]);
-  // Private-first direct rolls remain valid while accepted deliveries from the
-  // coordinated Interactions/Roll rollout can still retry.
-  const hasLegacyPrivateDirectRoll = hasExactKeys(shape, [
+  const hasLegacyPrivateDirectRoll = hasDeliveryKeys(delivery, [
     "accounting",
     "interaction",
     "logging",
@@ -445,46 +476,31 @@ export function validateDeliveryRequest(
     "request",
     "responseMode",
   ]);
-  const hasLogging = hasExactKeys(shape, [
+  const hasLogging = hasDeliveryKeys(delivery, [
     "accounting",
     "interaction",
     "logging",
     "message",
     "request",
   ]);
-  const hasAccounting = hasExactKeys(shape, [
+  const hasAccounting = hasDeliveryKeys(delivery, [
     "accounting",
     "interaction",
     "message",
     "request",
   ]);
-  const isLegacy = hasExactKeys(shape, ["interaction", "message", "request"]);
+  const isLegacy = hasDeliveryKeys(delivery, [
+    "interaction",
+    "message",
+    "request",
+  ]);
   if (
-    (!hasPreflightedDirectRoll &&
-      !hasSavedRoll &&
-      !hasLegacyPrivateDirectRoll &&
-      !hasLogging &&
-      !hasAccounting &&
-      !isLegacy) ||
-    !isRecord(value.interaction) ||
-    !hasExactKeys(value.interaction, ["applicationId", "id", "token"]) ||
-    !SNOWFLAKE.test(String(value.interaction.id)) ||
-    !SNOWFLAKE.test(String(value.interaction.applicationId)) ||
-    typeof value.interaction.token !== "string" ||
-    !INTERACTION_TOKEN.test(value.interaction.token) ||
-    !isRecord(value.request) ||
-    !hasExactKeys(value.request, ["notation", "repetitions"]) ||
-    typeof value.request.notation !== "string" ||
-    typeof value.request.repetitions !== "number" ||
-    !isRecord(value.message) ||
-    !hasExactKeys(value.message, ["title", "username"]) ||
-    (value.message.title !== null &&
-      (typeof value.message.title !== "string" ||
-        value.message.title.length === 0 ||
-        value.message.title.length > MAX_TITLE_LENGTH)) ||
-    typeof value.message.username !== "string" ||
-    value.message.username.length === 0 ||
-    value.message.username.length > MAX_USERNAME_LENGTH
+    !hasPreflightedDirectRoll &&
+    !hasSavedRoll &&
+    !hasLegacyPrivateDirectRoll &&
+    !hasLogging &&
+    !hasAccounting &&
+    !isLegacy
   ) {
     throw new Error("Roll delivery request is invalid");
   }
@@ -497,126 +513,79 @@ export function validateDeliveryRequest(
     hasLogging ||
     hasAccounting
   ) {
+    const result = RollDeliveryAccountingSchema.safeParse(delivery.accounting);
     if (
-      !isRecord(value.accounting) ||
-      !hasExactKeys(value.accounting, ["guildId", "receivedAt", "userId"]) ||
-      (value.accounting.guildId !== null &&
-        (typeof value.accounting.guildId !== "string" ||
-          !SNOWFLAKE.test(value.accounting.guildId))) ||
-      typeof value.accounting.userId !== "string" ||
-      !SNOWFLAKE.test(value.accounting.userId) ||
-      !Number.isSafeInteger(value.accounting.receivedAt) ||
-      Number(value.accounting.receivedAt) !==
-        interactionCreatedAt(String(value.interaction.id))
+      !result.success ||
+      result.data.receivedAt !== interactionCreatedAt(delivery.interaction.id)
     ) {
       throw new Error("Roll delivery request is invalid");
     }
-    accounting = {
-      guildId: value.accounting.guildId,
-      userId: value.accounting.userId,
-      receivedAt: Number(value.accounting.receivedAt),
-    };
+    accounting = result.data;
   }
 
-  const deferredAt = hasDeferredAt ? Number(value.deferredAt) : accounting?.receivedAt ?? interactionCreatedAt(String(value.interaction.id));
-  if (
-    !Number.isSafeInteger(deferredAt) ||
-    deferredAt < (accounting?.receivedAt ?? interactionCreatedAt(String(value.interaction.id)))
-  ) {
+  const receivedAt = accounting?.receivedAt ??
+    interactionCreatedAt(delivery.interaction.id);
+  const deferred = safeIntegerSchema.safeParse(
+    hasDeferredAt ? delivery.deferredAt : receivedAt,
+  );
+  if (!deferred.success || deferred.data < receivedAt) {
     throw new Error("Roll delivery deferred timestamp is invalid");
   }
+  const deferredAt = deferred.data;
 
   let telemetry: RollDeliveryTelemetryV2 | null = null;
   if (hasTelemetry) {
+    const result = RollDeliveryTelemetrySchema.safeParse(delivery.telemetry);
     if (
       accounting === null ||
-      !isRecord(value.telemetry) ||
-      !hasExactKeys(value.telemetry, [
-        "acknowledgementPreparedAt",
-        "acknowledgementType",
-        "handlerStartedAt",
-        "version",
-      ]) ||
-      value.telemetry.version !== 2 ||
-      !Number.isSafeInteger(value.telemetry.handlerStartedAt) ||
-      Number(value.telemetry.handlerStartedAt) < accounting.receivedAt ||
-      Number(value.telemetry.handlerStartedAt) > deferredAt ||
-      !Number.isSafeInteger(value.telemetry.acknowledgementPreparedAt) ||
-      Number(value.telemetry.acknowledgementPreparedAt) < deferredAt ||
-      (value.telemetry.acknowledgementType !== 4 &&
-        value.telemetry.acknowledgementType !== 5 &&
-        value.telemetry.acknowledgementType !== 6)
+      !result.success ||
+      result.data.handlerStartedAt < accounting.receivedAt ||
+      result.data.handlerStartedAt > deferredAt ||
+      result.data.acknowledgementPreparedAt < deferredAt
     ) {
       throw new Error("Roll delivery telemetry is invalid");
     }
-    telemetry = {
-      version: 2,
-      handlerStartedAt: Number(value.telemetry.handlerStartedAt),
-      acknowledgementPreparedAt: Number(
-        value.telemetry.acknowledgementPreparedAt,
-      ),
-      acknowledgementType: value.telemetry.acknowledgementType,
-    };
+    telemetry = result.data;
   }
 
   let rollSeed: number | null = null;
   if (hasPreflightedDirectRoll) {
-    if (!isSeed(value.rollSeed)) {
-      throw new Error("Roll delivery seed is invalid");
-    }
-    rollSeed = value.rollSeed;
+    const result = seedSchema.safeParse(delivery.rollSeed);
+    if (!result.success) throw new Error("Roll delivery seed is invalid");
+    rollSeed = result.data;
   }
 
   let settings: ParsedRollDeliverySettings | null = null;
   if (hasSettings) {
-    const rawSettings = value.settings;
-    if (!isRecord(rawSettings)) {
-      throw new Error("Roll delivery settings are invalid");
-    }
-    const legacy = hasExactKeys(rawSettings, ["skipDiceDelay"]);
-    const current = hasExactKeys(rawSettings, [
-      "hideRollResultText",
-      "skipDiceDelay",
-    ]);
-    if (
-      (!legacy && !current) ||
-      typeof rawSettings.skipDiceDelay !== "boolean" ||
-      (current && typeof rawSettings.hideRollResultText !== "boolean")
-    ) {
+    const result = RollDeliverySettingsSchema.safeParse(delivery.settings);
+    if (!result.success) {
       throw new Error("Roll delivery settings are invalid");
     }
     settings = {
-      skipDiceDelay: rawSettings.skipDiceDelay,
-      hideRollResultText: current
-        ? rawSettings.hideRollResultText === true
+      skipDiceDelay: result.data.skipDiceDelay,
+      hideRollResultText: "hideRollResultText" in result.data
+        ? result.data.hideRollResultText
         : null,
     };
   }
 
   let renderSeed: number | null = null;
   if (hasRenderSeed) {
-    if (!isSeed(value.renderSeed)) {
+    const result = seedSchema.safeParse(delivery.renderSeed);
+    if (!result.success) {
       throw new Error("Roll delivery render seed is invalid");
     }
-    renderSeed = value.renderSeed;
+    renderSeed = result.data;
   }
 
   let clatter: { deliveredAt: number } | null = null;
   if (hasClatter) {
-    if (
-      !isRecord(value.clatter) ||
-      !hasExactKeys(value.clatter, ["deliveredAt"]) ||
-      typeof value.clatter.deliveredAt !== "number" ||
-      !Number.isSafeInteger(value.clatter.deliveredAt) ||
-      value.clatter.deliveredAt <= 0
-    ) {
-      throw new Error("Roll delivery clatter is invalid");
-    }
-    // The roll must be able to reproduce the acknowledged text verbatim.
+    const result = RollDeliveryClatterSchema.safeParse(delivery.clatter);
+    if (!result.success) throw new Error("Roll delivery clatter is invalid");
     if (renderSeed === null) {
       throw new Error("Roll delivery clatter has no render seed");
     }
-    clatter = { deliveredAt: value.clatter.deliveredAt };
+    clatter = result.data;
   }
 
   let logging: RollDeliveryRequest["logging"] | null = null;
@@ -626,62 +595,49 @@ export function validateDeliveryRequest(
     hasLegacyPrivateDirectRoll ||
     hasLogging
   ) {
-    if (
-      !isRecord(value.logging) ||
-      (!hasExactKeys(value.logging, ["channelId", "notation", "source"]) &&
-        !hasExactKeys(value.logging, [
-          "channelId",
-          "context",
-          "notation",
-          "source",
-        ])) ||
-      (value.logging.source !== "discord" && value.logging.source !== "web") ||
-      typeof value.logging.channelId !== "string" ||
-      !SNOWFLAKE.test(value.logging.channelId) ||
-      typeof value.logging.notation !== "string" ||
-      value.logging.notation.length < 1 ||
-      value.logging.notation.length > MAX_NOTATION_LENGTH
-    ) {
-      throw new Error("Roll delivery request is invalid");
-    }
+    const result = RollDeliveryLoggingSchema.safeParse(delivery.logging);
+    if (!result.success) throw new Error("Roll delivery request is invalid");
     logging = {
-      source: value.logging.source,
-      channelId: value.logging.channelId,
-      notation: value.logging.notation,
-      ...(value.logging.context === undefined
-        ? {}
-        : {
-            context: parseRollLoggingContext(
-              value.logging.context,
-              accounting?.guildId ?? null,
-              value.logging.channelId,
-            ),
-          }),
+      source: result.data.source,
+      channelId: result.data.channelId,
+      notation: result.data.notation,
     };
+    if (result.data.context !== undefined) {
+      logging.context = parseRollLoggingContext(
+        result.data.context,
+        accounting?.guildId ?? null,
+        result.data.channelId,
+      );
+    }
   }
 
-  let responseMode: RollDeliveryResponseMode = "edit-original";
-  let savedRoll: SavedRollInvocationV1 | null = null;
+  const parsedResponseMode = RollDeliveryResponseModeSchema.safeParse(
+    delivery.responseMode,
+  );
   if (
     (hasPreflightedDirectRoll && logging?.source !== "discord") ||
     (hasLegacyPrivateDirectRoll && logging?.source !== "discord") ||
-    (hasLegacyPrivateDirectRoll && value.responseMode !== "followup") ||
-    (hasSavedRoll &&
-      value.responseMode !== "channel-message" &&
-      value.responseMode !== "followup" &&
-      value.responseMode !== "edit-original")
+    (hasLegacyPrivateDirectRoll &&
+      (!parsedResponseMode.success || parsedResponseMode.data !== "followup")) ||
+    (hasSavedRoll && !parsedResponseMode.success)
   ) {
     throw new Error("Roll delivery response mode is invalid");
   }
+  let responseMode: RollDeliveryResponseMode = "edit-original";
   if (hasSavedRoll || hasLegacyPrivateDirectRoll) {
-    responseMode = value.responseMode as RollDeliveryResponseMode;
+    if (!parsedResponseMode.success) {
+      throw new Error("Roll delivery response mode is invalid");
+    }
+    responseMode = parsedResponseMode.data;
   }
+
+  let savedRoll: SavedRollInvocationV1 | null = null;
   if (hasSavedRoll) {
-    savedRoll = parseSavedRollInvocation(value.savedRoll);
+    savedRoll = parseSavedRollInvocation(delivery.savedRoll);
     if (
-      savedRoll.notation !== value.request.notation ||
-      savedRoll.title !== value.message.title ||
-      savedRoll.repetitions !== value.request.repetitions ||
+      savedRoll.notation !== delivery.request.notation ||
+      savedRoll.title !== delivery.message.title ||
+      savedRoll.repetitions !== delivery.request.repetitions ||
       (savedRoll.scope === "guild" &&
         (accounting === null || accounting.guildId === null)) ||
       logging?.source !== "discord"
@@ -689,20 +645,14 @@ export function validateDeliveryRequest(
       throw new Error("Saved roll delivery does not match its invocation");
     }
   }
+
   return {
-    interaction: {
-      id: String(value.interaction.id),
-      applicationId: String(value.interaction.applicationId),
-      token: value.interaction.token,
+    interaction: delivery.interaction,
+    request: {
+      notation: parseNotationArgs(delivery.request.notation),
+      repetitions: delivery.request.repetitions,
     },
-    request: validateRequest({
-      notation: parseNotationArgs(value.request.notation),
-      repetitions: value.request.repetitions,
-    }),
-    message: {
-      title: value.message.title,
-      username: value.message.username,
-    },
+    message: delivery.message,
     accounting,
     deferredAt,
     rollSeed,
@@ -716,7 +666,7 @@ export function validateDeliveryRequest(
   };
 }
 
-function validateRenderSnapshotShape(
+function validateRenderSnapshot(
   renderRequest: RenderRequestV2 | RenderRequestV3 | RenderRequestV4,
   outcome: RollExecutionResult,
 ): void {
@@ -748,59 +698,82 @@ function validateStoredRequestV4(request: RollWorkRequest): void {
   }
 }
 
-function isStoredRollDieV4(value: unknown): value is RollDie {
-  if (!isRecord(value)) return false;
-  const hasPhysicalFace = value.physicalFace !== undefined;
-  const hasAppearanceIdentity =
-    value.appearanceGroupIdentity !== undefined ||
-    value.appearanceDieIdentity !== undefined;
-  const expectedKeys = [
-    "modifiers",
-    "rolled",
-    "sides",
-    ...(hasPhysicalFace ? ["physicalFace"] : []),
-    ...(hasAppearanceIdentity
-      ? ["appearanceDieIdentity", "appearanceGroupIdentity"]
-      : []),
-  ].sort();
-  if (
-    !hasExactKeys(value, expectedKeys) ||
-    (hasAppearanceIdentity &&
-      (typeof value.appearanceGroupIdentity !== "string" ||
-        value.appearanceGroupIdentity.length < 1 ||
-        value.appearanceGroupIdentity.length > 256 ||
-        typeof value.appearanceDieIdentity !== "string" ||
-        value.appearanceDieIdentity.length < 1 ||
-        value.appearanceDieIdentity.length > 512)) ||
-    typeof value.rolled !== "number" ||
-    !Number.isSafeInteger(value.rolled) ||
-    !Array.isArray(value.modifiers) ||
-    !value.modifiers.every((modifier) => typeof modifier === "string")
-  ) {
-    return false;
-  }
-  const rolled = value.rolled;
-  const physicalFace = value.physicalFace;
-  if (value.sides === "F") {
+const StoredRollDieFields = {
+  sides: z.union([
+    safeIntegerSchema.min(1).max(MAX_DIE_SIDES),
+    z.literal("%"),
+    z.literal("F"),
+  ]),
+  rolled: safeIntegerSchema,
+  modifiers: z.array(z.string()),
+};
+const StoredAppearanceIdentityFields = {
+  appearanceGroupIdentity: z.string().min(1).max(256),
+  appearanceDieIdentity: z.string().min(1).max(512),
+};
+const StoredRollDieSchema = z.union([
+  z.strictObject(StoredRollDieFields),
+  z.strictObject({
+    ...StoredRollDieFields,
+    physicalFace: safeIntegerSchema,
+  }),
+  z.strictObject({
+    ...StoredRollDieFields,
+    ...StoredAppearanceIdentityFields,
+  }),
+  z.strictObject({
+    ...StoredRollDieFields,
+    physicalFace: safeIntegerSchema,
+    ...StoredAppearanceIdentityFields,
+  }),
+]);
+const StoredRollOutcomeSchema = z.strictObject({
+  notation: z.string(),
+  output: z.string(),
+  total: z.number(),
+  dice: z.array(StoredRollDieSchema),
+});
+const StoredRollExecutionErrorSchema = z.discriminatedUnion("code", [
+  z.strictObject({
+    code: z.enum([
+      "INVALID_NOTATION",
+      "NON_FINITE_TOTAL",
+      "TOTAL_TOO_LARGE",
+    ]),
+    notation: z.string(),
+  }),
+  z.strictObject({
+    code: z.enum([
+      "TOO_MANY_DICE",
+      "TOO_MANY_SIDES",
+      "UNSAFE_EXPLOSION",
+      "NO_DICE",
+    ]),
+    message: z.string(),
+  }),
+]);
+const StoredRollExecutionResultSchema = z.strictObject({
+  version: z.literal(1),
+  seed: seedSchema,
+  outcomes: z.array(StoredRollOutcomeSchema),
+  errors: z.array(StoredRollExecutionErrorSchema),
+});
+
+function hasValidStoredFace(die: RollDie): boolean {
+  const { rolled, physicalFace } = die;
+  if (die.sides === "F") {
     if (
       physicalFace !== undefined &&
-      (typeof physicalFace !== "number" ||
-        !Number.isSafeInteger(physicalFace) ||
-        physicalFace < -1 ||
-        physicalFace > 1)
+      (physicalFace < -1 || physicalFace > 1)
     ) {
       return false;
     }
     return (rolled >= -1 && rolled <= 1) || physicalFace !== undefined;
   }
-  if (value.sides === "%") {
+  if (die.sides === "%") {
     if (
       physicalFace !== undefined &&
-      (typeof physicalFace !== "number" ||
-        !Number.isSafeInteger(physicalFace) ||
-        physicalFace < 0 ||
-        physicalFace > 90 ||
-        physicalFace % 10 !== 0)
+      (physicalFace < 0 || physicalFace > 90 || physicalFace % 10 !== 0)
     ) {
       return false;
     }
@@ -810,26 +783,28 @@ function isStoredRollDieV4(value: unknown): value is RollDie {
     );
   }
   if (
-    typeof value.sides !== "number" ||
-    !Number.isSafeInteger(value.sides) ||
-    value.sides < 1 ||
-    value.sides > MAX_DIE_SIDES
-  ) {
-    return false;
-  }
-  if (
     physicalFace !== undefined &&
-    (typeof physicalFace !== "number" ||
-      !Number.isSafeInteger(physicalFace) ||
-      physicalFace < 1 ||
-      physicalFace > value.sides)
+    (physicalFace < 1 || physicalFace > die.sides)
   ) {
     return false;
   }
   return (
-    (rolled >= (value.sides === 10 ? 0 : 1) && rolled <= value.sides) ||
+    (rolled >= (die.sides === 10 ? 0 : 1) && rolled <= die.sides) ||
     physicalFace !== undefined
   );
+}
+
+function parseStoredOutcome(value: SchemaInput): RollExecutionResult {
+  const result = StoredRollExecutionResultSchema.safeParse(value);
+  if (
+    !result.success ||
+    result.data.outcomes.some((outcome) =>
+      outcome.dice.some((die) => !hasValidStoredFace(die))
+    )
+  ) {
+    throw new Error("Stored roll work is invalid");
+  }
+  return result.data;
 }
 
 function normalizedStoredNotation(value: string): string {
@@ -837,20 +812,11 @@ function normalizedStoredNotation(value: string): string {
 }
 
 function validateStoredOutcomeV4(
-  value: unknown,
+  value: RollExecutionResult,
   request: RollWorkRequest,
   rollSeed: number,
-): asserts value is RollExecutionResult {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["errors", "outcomes", "seed", "version"]) ||
-    value.version !== 1 ||
-    value.seed !== rollSeed ||
-    !Array.isArray(value.outcomes) ||
-    !Array.isArray(value.errors)
-  ) {
-    throw new Error("Stored roll work is invalid");
-  }
+): void {
+  if (value.seed !== rollSeed) throw new Error("Stored roll work is invalid");
 
   const remainingNotation = new Map<string, number>();
   for (const notation of request.notation) {
@@ -866,50 +832,13 @@ function validateStoredOutcomeV4(
     remainingNotation.set(notation, remaining - 1);
   };
 
-  for (const outcome of value.outcomes) {
-    if (
-      !isRecord(outcome) ||
-      !hasExactKeys(outcome, ["dice", "notation", "output", "total"]) ||
-      typeof outcome.notation !== "string" ||
-      typeof outcome.output !== "string" ||
-      typeof outcome.total !== "number" ||
-      !Number.isFinite(outcome.total) ||
-      !Array.isArray(outcome.dice) ||
-      !outcome.dice.every(isStoredRollDieV4)
-    ) {
-      throw new Error("Stored roll work is invalid");
-    }
-    consumeNotation(outcome.notation);
-  }
+  for (const outcome of value.outcomes) consumeNotation(outcome.notation);
 
   let terminalErrorCount = 0;
   for (const error of value.errors) {
-    if (!isRecord(error) || typeof error.code !== "string") {
-      throw new Error("Stored roll work is invalid");
-    }
-    if (
-      error.code === "INVALID_NOTATION" ||
-      error.code === "NON_FINITE_TOTAL" ||
-      error.code === "TOTAL_TOO_LARGE"
-    ) {
-      if (
-        !hasExactKeys(error, ["code", "notation"]) ||
-        typeof error.notation !== "string"
-      ) {
-        throw new Error("Stored roll work is invalid");
-      }
+    if ("notation" in error) {
       consumeNotation(error.notation);
       continue;
-    }
-    if (
-      (error.code !== "TOO_MANY_DICE" &&
-        error.code !== "TOO_MANY_SIDES" &&
-        error.code !== "UNSAFE_EXPLOSION" &&
-        error.code !== "NO_DICE") ||
-      !hasExactKeys(error, ["code", "message"]) ||
-      typeof error.message !== "string"
-    ) {
-      throw new Error("Stored roll work is invalid");
     }
     terminalErrorCount += 1;
   }
@@ -972,7 +901,7 @@ function validateRenderSnapshotV4(
   renderRequest: RenderRequestV4,
   outcome: RollExecutionResult,
 ): void {
-  validateRenderSnapshotShape(renderRequest, outcome);
+  validateRenderSnapshot(renderRequest, outcome);
   const renderableOutcomes = renderableRollOutcomes(outcome);
   for (const [groupIndex, group] of renderRequest.groups.entries()) {
     const rollGroup = renderableOutcomes[groupIndex]?.outcome;
@@ -1005,145 +934,151 @@ function validateRenderSnapshotV4(
   }
 }
 
+const StoredRecordCommonFields = {
+  request: z.unknown(),
+  rollSeed: seedSchema,
+  renderSeed: seedSchema,
+  outcome: z.unknown(),
+  createdAt: nonNegativeSafeIntegerSchema,
+};
+const StoredRecordEnvelopeSchema = z.looseObject({
+  version: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+  ]),
+  ...StoredRecordCommonFields,
+});
+const StoredSnapshotRecordSchema = z.strictObject({
+  version: z.union([z.literal(2), z.literal(3), z.literal(4)]),
+  ...StoredRecordCommonFields,
+  renderRequest: z.unknown(),
+});
+const StoredRollViewPolicySchema = z.enum([
+  "r19",
+  "r20",
+  "r21",
+  "r22",
+  "r23",
+  "r24",
+  "r25",
+  "r26",
+  "r27",
+  "r28",
+  "r29",
+  "r30",
+  "r31",
+  "r32",
+  "r33",
+  "r34",
+  "r35",
+  "r36",
+  "r37",
+  "r38",
+  "r39",
+  "r40",
+  "r41",
+]);
+const StoredV5RecordSchema = z.union([
+  z.strictObject({
+    version: z.literal(5),
+    ...StoredRecordCommonFields,
+    renderVersion: z.literal(3),
+    renderRequest: z.unknown(),
+  }),
+  z.strictObject({
+    version: z.literal(5),
+    ...StoredRecordCommonFields,
+    renderVersion: z.literal(4),
+    renderRequest: z.unknown(),
+  }),
+  z.strictObject({
+    version: z.literal(5),
+    ...StoredRecordCommonFields,
+    renderVersion: z.literal(4),
+    viewPolicy: StoredRollViewPolicySchema,
+    renderRequest: z.unknown(),
+  }),
+]);
+
 export function parseRecord(value: string): RollWorkRecord {
-  const parsed: unknown = JSON.parse(value);
-  if (
-    !isRecord(parsed) ||
-    (parsed.version !== 1 &&
-      parsed.version !== 2 &&
-      parsed.version !== 3 &&
-      parsed.version !== 4 &&
-      parsed.version !== 5) ||
-    !isRecord(parsed.request) ||
-    !Number.isInteger(parsed.rollSeed) ||
-    Number(parsed.rollSeed) < 0 ||
-    Number(parsed.rollSeed) > 0xffff_ffff ||
-    !Number.isInteger(parsed.renderSeed) ||
-    Number(parsed.renderSeed) < 0 ||
-    Number(parsed.renderSeed) > 0xffff_ffff ||
-    !isRecord(parsed.outcome) ||
-    parsed.outcome.version !== 1 ||
-    parsed.outcome.seed !== parsed.rollSeed ||
-    !Array.isArray(parsed.outcome.outcomes) ||
-    !Array.isArray(parsed.outcome.errors) ||
-    !Number.isSafeInteger(parsed.createdAt) ||
-    Number(parsed.createdAt) < 0
-  ) {
+  const input: SchemaInput = JSON.parse(value);
+  const envelope = StoredRecordEnvelopeSchema.safeParse(input);
+  if (!envelope.success) throw new Error("Stored roll work is invalid");
+
+  const request = validateRequest(envelope.data.request);
+  const outcome = parseStoredOutcome(envelope.data.outcome);
+  if (outcome.seed !== envelope.data.rollSeed) {
     throw new Error("Stored roll work is invalid");
   }
-  const request = validateRequest(parsed.request);
-  const common = {
+  const common: RollWorkRecordBase = {
     request,
-    rollSeed: Number(parsed.rollSeed),
-    renderSeed: Number(parsed.renderSeed),
-    outcome: parsed.outcome as RollExecutionResult,
-    createdAt: Number(parsed.createdAt),
+    rollSeed: envelope.data.rollSeed,
+    renderSeed: envelope.data.renderSeed,
+    outcome,
+    createdAt: envelope.data.createdAt,
   };
-  if (parsed.version === 1) return { version: 1, ...common };
+  if (envelope.data.version === 1) return { version: 1, ...common };
 
-  if (parsed.version === 5) {
-    const legacyKeys = [
-      "createdAt",
-      "outcome",
-      "renderRequest",
-      "renderSeed",
-      "renderVersion",
-      "request",
-      "rollSeed",
-      "version",
-    ];
-    const hasViewPolicy = hasExactKeys(parsed, [
-      ...legacyKeys,
-      "viewPolicy",
-    ]);
-    if (
-      (!hasExactKeys(parsed, legacyKeys) && !hasViewPolicy) ||
-      (parsed.renderVersion !== 3 && parsed.renderVersion !== 4) ||
-      (hasViewPolicy &&
-        (parsed.renderVersion !== 4 ||
-          parsed.viewPolicy !== "r19" &&
-          parsed.viewPolicy !== "r20" &&
-          parsed.viewPolicy !== "r21" &&
-          parsed.viewPolicy !== "r22" &&
-          parsed.viewPolicy !== "r23" &&
-          parsed.viewPolicy !== "r24" &&
-          parsed.viewPolicy !== "r25" &&
-          parsed.viewPolicy !== "r26" &&
-          parsed.viewPolicy !== "r27" &&
-          parsed.viewPolicy !== "r28" &&
-          parsed.viewPolicy !== "r29" &&
-          parsed.viewPolicy !== "r30" &&
-          parsed.viewPolicy !== "r31" &&
-          parsed.viewPolicy !== "r32" &&
-          parsed.viewPolicy !== "r33" &&
-          parsed.viewPolicy !== "r34" &&
-          parsed.viewPolicy !== "r35" &&
-          parsed.viewPolicy !== "r36" &&
-          parsed.viewPolicy !== "r37" &&
-          parsed.viewPolicy !== "r38" &&
-          parsed.viewPolicy !== "r39" &&
-          parsed.viewPolicy !== "r40" &&
-          parsed.viewPolicy !== "r41")) ||
-      common.outcome.outcomes.length === 0
-    ) {
+  if (envelope.data.version === 5) {
+    const stored = StoredV5RecordSchema.safeParse(input);
+    if (!stored.success || common.outcome.outcomes.length === 0) {
       throw new Error("Stored roll work is invalid");
     }
-    if (parsed.renderVersion === 4) {
+    if (stored.data.renderVersion === 4) {
       validateStoredRequestV4(request);
-      validateStoredOutcomeV4(parsed.outcome, request, common.rollSeed);
+      validateStoredOutcomeV4(outcome, request, common.rollSeed);
     }
-    if (parsed.renderRequest === null) {
-      if (parsed.renderVersion === 3) {
+    if (stored.data.renderRequest === null) {
+      if (stored.data.renderVersion === 3) {
         return { version: 5, renderVersion: 3, ...common, renderRequest: null };
+      }
+      if ("viewPolicy" in stored.data) {
+        return {
+          version: 5,
+          renderVersion: 4,
+          viewPolicy: stored.data.viewPolicy,
+          ...common,
+          renderRequest: null,
+        };
       }
       return {
         version: 5,
         renderVersion: 4,
-        ...(hasViewPolicy
-          ? { viewPolicy: parsed.viewPolicy as RollViewPolicy }
-          : {}),
         ...common,
         renderRequest: null,
       };
     }
-    if (parsed.renderVersion === 3) {
-      const renderRequest = validateRenderRequestV3(parsed.renderRequest);
-      validateRenderSnapshotShape(renderRequest, common.outcome);
+    if (stored.data.renderVersion === 3) {
+      const renderRequest = validateRenderRequestV3(stored.data.renderRequest);
+      validateRenderSnapshot(renderRequest, common.outcome);
       return { version: 5, renderVersion: 3, ...common, renderRequest };
     }
-    const renderRequest = validateRenderRequestV4(parsed.renderRequest);
+    const renderRequest = validateRenderRequestV4(stored.data.renderRequest);
     validateRenderSnapshotV4(renderRequest, common.outcome);
-    return {
-      version: 5,
-      renderVersion: 4,
-      ...(hasViewPolicy
-        ? { viewPolicy: parsed.viewPolicy as RollViewPolicy }
-        : {}),
-      ...common,
-      renderRequest,
-    };
+    if ("viewPolicy" in stored.data) {
+      return {
+        version: 5,
+        renderVersion: 4,
+        viewPolicy: stored.data.viewPolicy,
+        ...common,
+        renderRequest,
+      };
+    }
+    return { version: 5, renderVersion: 4, ...common, renderRequest };
   }
 
-  if (
-    !hasExactKeys(parsed, [
-      "createdAt",
-      "outcome",
-      "renderRequest",
-      "renderSeed",
-      "request",
-      "rollSeed",
-      "version",
-    ])
-  ) {
-    throw new Error("Stored roll work is invalid");
-  }
-  const snapshotVersion = parsed.version;
+  const stored = StoredSnapshotRecordSchema.safeParse(input);
+  if (!stored.success) throw new Error("Stored roll work is invalid");
+  const snapshotVersion = stored.data.version;
   if (snapshotVersion === 4) {
     validateStoredRequestV4(request);
-    validateStoredOutcomeV4(parsed.outcome, request, common.rollSeed);
+    validateStoredOutcomeV4(outcome, request, common.rollSeed);
   }
   if (common.outcome.outcomes.length === 0) {
-    if (parsed.renderRequest !== null) {
+    if (stored.data.renderRequest !== null) {
       throw new Error("Stored roll work is invalid");
     }
     if (snapshotVersion === 2) {
@@ -1154,16 +1089,16 @@ export function parseRecord(value: string): RollWorkRecord {
       : { version: 4, ...common, renderRequest: null };
   }
   if (snapshotVersion === 2) {
-    const renderRequest = validateRenderRequestV2(parsed.renderRequest);
-    validateRenderSnapshotShape(renderRequest, common.outcome);
+    const renderRequest = validateRenderRequestV2(stored.data.renderRequest);
+    validateRenderSnapshot(renderRequest, common.outcome);
     return { version: 2, ...common, renderRequest };
   }
   if (snapshotVersion === 3) {
-    const renderRequest = validateRenderRequestV3(parsed.renderRequest);
-    validateRenderSnapshotShape(renderRequest, common.outcome);
+    const renderRequest = validateRenderRequestV3(stored.data.renderRequest);
+    validateRenderSnapshot(renderRequest, common.outcome);
     return { version: 3, ...common, renderRequest };
   }
-  const renderRequest = validateRenderRequestV4(parsed.renderRequest);
+  const renderRequest = validateRenderRequestV4(stored.data.renderRequest);
   validateRenderSnapshotV4(renderRequest, common.outcome);
   return { version: 4, ...common, renderRequest };
 }
@@ -1247,201 +1182,174 @@ function deliveryMetadataVersion(
   return request.logging?.context === undefined ? 3 : 4;
 }
 
+type SerializedDeliveryMetadata = {
+  version: 3 | 4 | 5 | 6 | 7 | 8;
+  interactionId: string;
+  applicationId: string;
+  message: RollDeliveryRequest["message"];
+  accounting: RollDeliveryRequest["accounting"] | null;
+  logging: RollDeliveryRequest["logging"] | null;
+  preflighted?: true;
+  responseMode?: RollDeliveryResponseMode;
+  savedRoll?: SavedRollInvocationV1;
+};
+
 export function deliveryMetadata(
   request: ValidatedRollDeliveryRequest,
 ): string {
-  return JSON.stringify({
+  const metadata: SerializedDeliveryMetadata = {
     version: deliveryMetadataVersion(request),
     interactionId: request.interaction.id,
     applicationId: request.interaction.applicationId,
     message: request.message,
     accounting: request.accounting,
     logging: request.logging,
-    ...(request.rollSeed === null ? {} : { preflighted: true }),
-    ...(request.savedRoll === null
-      ? request.responseMode === "followup"
-        ? { responseMode: request.responseMode }
-        : {}
-      : {
-          responseMode: request.responseMode,
-          savedRoll: request.savedRoll,
-        }),
-  });
+  };
+  if (request.rollSeed !== null) metadata.preflighted = true;
+  if (request.savedRoll !== null) {
+    metadata.responseMode = request.responseMode;
+    metadata.savedRoll = request.savedRoll;
+  } else if (request.responseMode === "followup") {
+    metadata.responseMode = request.responseMode;
+  }
+  return JSON.stringify(metadata);
+}
+
+const StoredDeliveryMessageSchema = z.looseObject({
+  title: z.nullable(z.string()),
+  username: z.string(),
+});
+const StoredDeliveryAccountingSchema = z.nullable(
+  z.looseObject({
+    guildId: z.nullable(snowflakeSchema),
+    userId: snowflakeSchema,
+    receivedAt: nonNegativeSafeIntegerSchema,
+  }),
+);
+const StoredDeliveryLoggingSchema = z.nullable(
+  z.looseObject({
+    source: z.enum(["discord", "web"]),
+    channelId: snowflakeSchema,
+    notation: z.string().min(1).max(MAX_NOTATION_LENGTH),
+    context: z.unknown().optional(),
+  }),
+);
+const StoredDeliveryMetadataFields = {
+  interactionId: CoercedSnowflakeSchema,
+  applicationId: CoercedSnowflakeSchema,
+  message: StoredDeliveryMessageSchema,
+};
+const StoredCurrentDeliveryMetadataFields = {
+  ...StoredDeliveryMetadataFields,
+  accounting: StoredDeliveryAccountingSchema,
+  logging: StoredDeliveryLoggingSchema,
+};
+const StoredDeliveryMetadataSchema = z.union([
+  z.strictObject(StoredDeliveryMetadataFields),
+  z.strictObject({
+    version: z.literal(2),
+    ...StoredDeliveryMetadataFields,
+    accounting: StoredDeliveryAccountingSchema,
+  }),
+  z.strictObject({
+    version: z.literal(3),
+    ...StoredCurrentDeliveryMetadataFields,
+  }),
+  z.strictObject({
+    version: z.literal(4),
+    ...StoredCurrentDeliveryMetadataFields,
+  }),
+  z.strictObject({
+    version: z.literal(5),
+    ...StoredCurrentDeliveryMetadataFields,
+    responseMode: RollDeliveryResponseModeSchema,
+    savedRoll: z.unknown(),
+  }),
+  z.strictObject({
+    version: z.literal(6),
+    ...StoredCurrentDeliveryMetadataFields,
+    responseMode: z.literal("followup"),
+  }),
+  z.strictObject({
+    version: z.literal(7),
+    ...StoredCurrentDeliveryMetadataFields,
+    preflighted: z.literal(true),
+  }),
+  z.strictObject({
+    version: z.literal(8),
+    ...StoredCurrentDeliveryMetadataFields,
+    responseMode: z.literal("channel-message"),
+    savedRoll: z.unknown(),
+  }),
+]);
+
+function invalidStoredDeliveryMetadata(): Error {
+  return new Error("Stored roll delivery metadata is invalid");
 }
 
 export function parseDeliveryMetadata(value: string): DeliveryMetadata {
-  const parsed: unknown = JSON.parse(value);
-  if (!isRecord(parsed)) {
-    throw new Error("Stored roll delivery metadata is invalid");
-  }
-  const currentKeys = [
-    "accounting",
-    "applicationId",
-    "interactionId",
-    "logging",
-    "message",
-    "version",
-  ];
-  const version8 =
-    parsed.version === 8 &&
-    hasExactKeys(parsed, [
-      "accounting",
-      "applicationId",
-      "interactionId",
-      "logging",
-      "message",
-      "responseMode",
-      "savedRoll",
-      "version",
-    ]);
-  const version7 =
-    parsed.version === 7 &&
-    hasExactKeys(parsed, [
-      "accounting",
-      "applicationId",
-      "interactionId",
-      "logging",
-      "message",
-      "preflighted",
-      "version",
-    ]);
-  const version6 =
-    parsed.version === 6 &&
-    hasExactKeys(parsed, [
-      "accounting",
-      "applicationId",
-      "interactionId",
-      "logging",
-      "message",
-      "responseMode",
-      "version",
-    ]);
-  const version5 =
-    parsed.version === 5 &&
-    hasExactKeys(parsed, [
-      "accounting",
-      "applicationId",
-      "interactionId",
-      "logging",
-      "message",
-      "responseMode",
-      "savedRoll",
-      "version",
-    ]);
-  const version4 = parsed.version === 4 && hasExactKeys(parsed, currentKeys);
-  const version3 = parsed.version === 3 && hasExactKeys(parsed, currentKeys);
-  const version2 =
-    parsed.version === 2 &&
-    hasExactKeys(parsed, [
-      "accounting",
-      "applicationId",
-      "interactionId",
-      "message",
-      "version",
-    ]);
-  const legacy =
-    parsed.version === undefined &&
-    hasExactKeys(parsed, ["applicationId", "interactionId", "message"]);
+  const input: SchemaInput = JSON.parse(value);
+  const result = StoredDeliveryMetadataSchema.safeParse(input);
+  if (!result.success) throw invalidStoredDeliveryMetadata();
+  const stored = result.data;
+  const version = "version" in stored ? stored.version : undefined;
+  const storedAccounting = "accounting" in stored ? stored.accounting : null;
+  const accounting: RollDeliveryRequest["accounting"] | null =
+    storedAccounting === null
+      ? null
+      : {
+          guildId: storedAccounting.guildId,
+          userId: storedAccounting.userId,
+          receivedAt: storedAccounting.receivedAt,
+        };
+  const storedLogging = "logging" in stored ? stored.logging : null;
   if (
-    (!version8 &&
-      !version7 &&
-      !version6 &&
-      !version5 &&
-      !version4 &&
-      !version3 &&
-      !version2 &&
-      !legacy) ||
-    !SNOWFLAKE.test(String(parsed.interactionId)) ||
-    !SNOWFLAKE.test(String(parsed.applicationId)) ||
-    !isRecord(parsed.message) ||
-    (parsed.message.title !== null && typeof parsed.message.title !== "string") ||
-    typeof parsed.message.username !== "string" ||
-    (parsed.accounting !== undefined &&
-      parsed.accounting !== null &&
-      (!isRecord(parsed.accounting) ||
-        (parsed.accounting.guildId !== null &&
-          (typeof parsed.accounting.guildId !== "string" ||
-            !SNOWFLAKE.test(parsed.accounting.guildId))) ||
-        typeof parsed.accounting.userId !== "string" ||
-        !SNOWFLAKE.test(parsed.accounting.userId) ||
-        !Number.isSafeInteger(parsed.accounting.receivedAt) ||
-        Number(parsed.accounting.receivedAt) < 0)) ||
-    (parsed.logging !== undefined &&
-      parsed.logging !== null &&
-      (!isRecord(parsed.logging) ||
-        (parsed.logging.source !== "discord" &&
-          parsed.logging.source !== "web") ||
-        typeof parsed.logging.channelId !== "string" ||
-        !SNOWFLAKE.test(parsed.logging.channelId) ||
-        typeof parsed.logging.notation !== "string" ||
-        parsed.logging.notation.length < 1 ||
-        parsed.logging.notation.length > MAX_NOTATION_LENGTH ||
-        (version4 && parsed.logging.context === undefined) ||
-        (!version8 &&
-          !version7 &&
-          !version6 &&
-          !version5 &&
-          !version4 &&
-          parsed.logging.context !== undefined))) ||
-    (version8 &&
-      (parsed.responseMode !== "channel-message" ||
-        !isRecord(parsed.logging) ||
-        parsed.logging.source !== "discord")) ||
-    (version7 &&
-      (parsed.preflighted !== true ||
-        !isRecord(parsed.logging) ||
-        parsed.logging.source !== "discord")) ||
-    (version6 &&
-      (parsed.responseMode !== "followup" ||
-        !isRecord(parsed.logging) ||
-        parsed.logging.source !== "discord")) ||
-    (version5 &&
-      parsed.responseMode !== "edit-original" &&
-      parsed.responseMode !== "followup")
+    (storedLogging !== null &&
+      ((version === 4 && storedLogging.context === undefined) ||
+        ((version === undefined || version === 3) &&
+          storedLogging.context !== undefined))) ||
+    ((version === 6 || version === 7 || version === 8) &&
+      (storedLogging === null || storedLogging.source !== "discord")) ||
+    (version === 5 &&
+      "responseMode" in stored &&
+      stored.responseMode === "channel-message")
   ) {
-    throw new Error("Stored roll delivery metadata is invalid");
+    throw invalidStoredDeliveryMetadata();
   }
+
+  let logging: RollDeliveryRequest["logging"] | null = null;
+  if (storedLogging !== null) {
+    logging = {
+      source: storedLogging.source,
+      channelId: storedLogging.channelId,
+      notation: storedLogging.notation,
+    };
+    if (storedLogging.context !== undefined) {
+      logging.context = parseRollLoggingContext(
+        storedLogging.context,
+        accounting?.guildId ?? null,
+        storedLogging.channelId,
+      );
+    }
+  }
+
+  let responseMode: RollDeliveryResponseMode = "edit-original";
+  if ("responseMode" in stored) responseMode = stored.responseMode;
+  const savedRoll = "savedRoll" in stored
+    ? parseSavedRollInvocation(stored.savedRoll)
+    : null;
   return {
-    interactionId: String(parsed.interactionId),
-    applicationId: String(parsed.applicationId),
+    interactionId: stored.interactionId,
+    applicationId: stored.applicationId,
     message: {
-      title: parsed.message.title,
-      username: parsed.message.username,
+      title: stored.message.title,
+      username: stored.message.username,
     },
-    accounting:
-      parsed.accounting === undefined || parsed.accounting === null
-        ? null
-        : {
-            guildId: parsed.accounting.guildId as string | null,
-            userId: parsed.accounting.userId as string,
-            receivedAt: Number(parsed.accounting.receivedAt),
-          },
-    logging:
-      parsed.logging === undefined || parsed.logging === null
-        ? null
-        : {
-            source: parsed.logging.source as "discord" | "web",
-            channelId: parsed.logging.channelId as string,
-            notation: parsed.logging.notation as string,
-            ...(parsed.logging.context === undefined
-              ? {}
-              : {
-                  context: parseRollLoggingContext(
-                    parsed.logging.context,
-                    parsed.accounting === null
-                      ? null
-                      : (parsed.accounting as { guildId: string | null }).guildId,
-                    parsed.logging.channelId as string,
-                  ),
-                }),
-          },
-    preflighted: version7,
-    responseMode: version8 || version6 || version5
-      ? (parsed.responseMode as RollDeliveryResponseMode)
-      : "edit-original",
-    savedRoll: version8 || version5
-      ? parseSavedRollInvocation(parsed.savedRoll)
-      : null,
+    accounting,
+    logging,
+    preflighted: version === 7,
+    responseMode,
+    savedRoll,
   };
 }
 

@@ -1,10 +1,29 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   extractNarrationGameFeaturesV1,
   NARRATION_GAME_CATALOG_V1,
   type NarrationGameFeatureRequestV1,
   type NarrationGameFingerprintV1,
 } from "../../packages/roll-domain/src";
+
+const MalformedFeatureRequestSchema = z.strictObject({
+  version: z.number(),
+  rolls: z.array(z.strictObject({
+    notation: z.array(z.string()).readonly(),
+    repetitions: z.number(),
+    results: z.array(z.number()).readonly().optional(),
+  })).readonly(),
+  userId: z.string().optional(),
+});
+
+function malformedFeatureRequest(
+  value: z.input<typeof MalformedFeatureRequestSchema>,
+): NarrationGameFeatureRequestV1 {
+  const parsed = MalformedFeatureRequestSchema.parse(value);
+  // SAFETY: This parsed fixture intentionally includes unsupported fields to exercise runtime boundary validation.
+  return parsed as NarrationGameFeatureRequestV1;
+}
 
 describe("extractNarrationGameFeaturesV1", () => {
   it("normalizes equivalent four-d6 ability-score expressions", () => {
@@ -235,16 +254,16 @@ describe("extractNarrationGameFeaturesV1", () => {
     if (roll === undefined) throw new Error("Missing valid game feature roll");
 
     expect(() =>
-      extractNarrationGameFeaturesV1({
+      extractNarrationGameFeaturesV1(malformedFeatureRequest({
         ...valid,
         userId: "123",
-      } as unknown as NarrationGameFeatureRequestV1),
+      })),
     ).toThrow("Narration game feature request contains an unsupported field");
     expect(() =>
-      extractNarrationGameFeaturesV1({
+      extractNarrationGameFeaturesV1(malformedFeatureRequest({
         ...valid,
         rolls: [{ ...roll, results: [18, 17, 16] }],
-      } as unknown as NarrationGameFeatureRequestV1),
+      })),
     ).toThrow("Narration game feature roll contains an unsupported field");
     expect(() =>
       extractNarrationGameFeaturesV1({ ...valid, rolls: [] }),

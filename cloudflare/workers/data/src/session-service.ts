@@ -1,88 +1,101 @@
+import { z } from "zod";
+import {
+  snowflakeSchema,
+  strictObjectSchema,
+  timestampSchema,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   D1SessionRepository,
   generateOpaqueToken,
 } from "./session-repository";
-import {
-  D1WebLoginRepository,
-  type WebLoginProfile,
-} from "./web-login-repository";
+import { D1WebLoginRepository } from "./web-login-repository";
 
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const opaqueTokenSchema = z.string().regex(OPAQUE_TOKEN);
+const mutationIdSchema = z.string().min(1).max(255);
+const nullableProfileFieldSchema = z.nullable(z.string().max(255));
 const responseHeaders = {
   "cache-control": "no-store",
   "x-content-type-options": "nosniff",
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const sessionRangeFields = {
+  createdAt: timestampSchema,
+  expiresAt: timestampSchema,
+};
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expectedKeys: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expected = [...expectedKeys].sort();
-  return (
-    keys.length === expected.length &&
-    keys.every((key, index) => key === expected[index])
-  );
-}
+const CreateSessionRequestSchema = strictObjectSchema({
+  ...sessionRangeFields,
+  userId: snowflakeSchema,
+});
+const WebLoginProfileSchema = strictObjectSchema({
+  avatar: nullableProfileFieldSchema,
+  email: nullableProfileFieldSchema,
+  username: z.string().max(255),
+});
+const CompleteWebLoginRequestSchema = strictObjectSchema({
+  ...sessionRangeFields,
+  mutationId: mutationIdSchema,
+  profile: WebLoginProfileSchema,
+  token: opaqueTokenSchema,
+  userId: snowflakeSchema,
+});
+const GetSessionRequestSchema = strictObjectSchema({
+  now: timestampSchema,
+  token: opaqueTokenSchema,
+});
+const RevokeSessionRequestSchema = strictObjectSchema({
+  revokedAt: timestampSchema,
+  token: opaqueTokenSchema,
+});
+const SignInOAuthStateRequestSchema = strictObjectSchema({
+  ...sessionRangeFields,
+  expectedUserId: z.null(),
+  purpose: z.literal("sign_in"),
+  returnTo: z.string().min(1).max(2_048),
+});
+const RefreshOAuthStateRequestSchema = strictObjectSchema({
+  ...sessionRangeFields,
+  expectedUserId: snowflakeSchema,
+  purpose: z.literal("refresh"),
+  returnTo: z.string().min(1).max(2_048),
+});
+const CreateOAuthStateRequestSchema = z.union([
+  SignInOAuthStateRequestSchema,
+  RefreshOAuthStateRequestSchema,
+]);
+const ConsumeOAuthStateRequestSchema = strictObjectSchema({
+  consumedAt: timestampSchema,
+  token: opaqueTokenSchema,
+});
 
-async function parseBody(
+type SessionRange = {
+  createdAt: number;
+  expiresAt: number;
+};
+
+async function parseRequest<Schema extends z.ZodType>(
   request: Request,
-  keys: readonly string[],
-): Promise<Record<string, unknown>> {
-  const value: unknown = await request.json();
-  if (!isRecord(value) || !hasExactKeys(value, keys)) {
-    throw new Error("Internal session request is invalid");
-  }
-  return value;
+  schema: Schema,
+): Promise<z.output<Schema>> {
+  return schema.parse(await request.json());
 }
 
 function errorResponse(message: string, status: number): Response {
   return Response.json({ error: message }, { status, headers: responseHeaders });
 }
 
-function validTimestamp(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function validRange(createdAt: unknown, expiresAt: unknown): boolean {
-  return (
-    validTimestamp(createdAt) &&
-    validTimestamp(expiresAt) &&
-    expiresAt > createdAt
-  );
-}
-
-function validNullableString(value: unknown): value is string | null {
-  return value === null || (typeof value === "string" && value.length <= 255);
-}
-
-function validWebLoginProfile(value: unknown): value is WebLoginProfile {
-  return (
-    isRecord(value) &&
-    hasExactKeys(value, ["avatar", "email", "username"]) &&
-    typeof value.username === "string" &&
-    value.username.length <= 255 &&
-    validNullableString(value.email) &&
-    validNullableString(value.avatar)
-  );
+function requireValidRange(value: SessionRange): void {
+  if (value.expiresAt <= value.createdAt) {
+    throw new Error("Session timestamp range is invalid");
+  }
 }
 
 async function createSession(request: Request, db: D1Database): Promise<Response> {
-  let value: Record<string, unknown>;
+  let input: z.output<typeof CreateSessionRequestSchema>;
   try {
-    value = await parseBody(request, ["createdAt", "expiresAt", "userId"]);
-    if (
-      typeof value.userId !== "string" ||
-      !SNOWFLAKE.test(value.userId) ||
-      !validRange(value.createdAt, value.expiresAt)
-    ) {
-      throw new Error("Session request is invalid");
-    }
+    input = await parseRequest(request, CreateSessionRequestSchema);
+    requireValidRange(input);
   } catch {
     return errorResponse("Session request is invalid", 400);
   }
@@ -91,9 +104,9 @@ async function createSession(request: Request, db: D1Database): Promise<Response
   try {
     const result = await new D1SessionRepository(db).createSession({
       token,
-      userId: value.userId,
-      createdAt: value.createdAt as number,
-      expiresAt: value.expiresAt as number,
+      userId: input.userId,
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
     });
     if (result.status === "created") {
       return Response.json({ token }, { status: 201, headers: responseHeaders });
@@ -111,42 +124,16 @@ async function completeWebLogin(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let value: Record<string, unknown>;
+  let input: z.output<typeof CompleteWebLoginRequestSchema>;
   try {
-    value = await parseBody(request, [
-      "createdAt",
-      "expiresAt",
-      "mutationId",
-      "profile",
-      "token",
-      "userId",
-    ]);
-    if (
-      typeof value.token !== "string" ||
-      !OPAQUE_TOKEN.test(value.token) ||
-      typeof value.userId !== "string" ||
-      !SNOWFLAKE.test(value.userId) ||
-      typeof value.mutationId !== "string" ||
-      value.mutationId.length < 1 ||
-      value.mutationId.length > 255 ||
-      !validWebLoginProfile(value.profile) ||
-      !validRange(value.createdAt, value.expiresAt)
-    ) {
-      throw new Error("Web login request is invalid");
-    }
+    input = await parseRequest(request, CompleteWebLoginRequestSchema);
+    requireValidRange(input);
   } catch {
     return errorResponse("Web login request is invalid", 400);
   }
 
   try {
-    const result = await new D1WebLoginRepository(db).complete({
-      token: value.token,
-      userId: value.userId,
-      profile: value.profile,
-      mutationId: value.mutationId,
-      createdAt: value.createdAt as number,
-      expiresAt: value.expiresAt as number,
-    });
+    const result = await new D1WebLoginRepository(db).complete(input);
     return Response.json(result, {
       status: result.status === "conflict" ? 409 : 200,
       headers: responseHeaders,
@@ -157,24 +144,17 @@ async function completeWebLogin(
 }
 
 async function getSession(request: Request, db: D1Database): Promise<Response> {
-  let value: Record<string, unknown>;
+  let input: z.output<typeof GetSessionRequestSchema>;
   try {
-    value = await parseBody(request, ["now", "token"]);
-    if (
-      typeof value.token !== "string" ||
-      !OPAQUE_TOKEN.test(value.token) ||
-      !validTimestamp(value.now)
-    ) {
-      throw new Error("Session lookup is invalid");
-    }
+    input = await parseRequest(request, GetSessionRequestSchema);
   } catch {
     return errorResponse("Session lookup is invalid", 400);
   }
 
   try {
     const result = await new D1SessionRepository(db).getSession(
-      value.token,
-      value.now,
+      input.token,
+      input.now,
     );
     return result.status === "found"
       ? Response.json(result.session, { headers: responseHeaders })
@@ -185,24 +165,17 @@ async function getSession(request: Request, db: D1Database): Promise<Response> {
 }
 
 async function revokeSession(request: Request, db: D1Database): Promise<Response> {
-  let value: Record<string, unknown>;
+  let input: z.output<typeof RevokeSessionRequestSchema>;
   try {
-    value = await parseBody(request, ["revokedAt", "token"]);
-    if (
-      typeof value.token !== "string" ||
-      !OPAQUE_TOKEN.test(value.token) ||
-      !validTimestamp(value.revokedAt)
-    ) {
-      throw new Error("Session revocation is invalid");
-    }
+    input = await parseRequest(request, RevokeSessionRequestSchema);
   } catch {
     return errorResponse("Session revocation is invalid", 400);
   }
 
   try {
     const result = await new D1SessionRepository(db).revokeSession(
-      value.token,
-      value.revokedAt,
+      input.token,
+      input.revokedAt,
     );
     return Response.json(result, { headers: responseHeaders });
   } catch {
@@ -214,28 +187,10 @@ async function createOAuthState(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let value: Record<string, unknown>;
+  let input: z.output<typeof CreateOAuthStateRequestSchema>;
   try {
-    value = await parseBody(request, [
-      "createdAt",
-      "expectedUserId",
-      "expiresAt",
-      "purpose",
-      "returnTo",
-    ]);
-    if (
-      !validRange(value.createdAt, value.expiresAt) ||
-      (value.purpose !== "sign_in" && value.purpose !== "refresh") ||
-      (value.purpose === "sign_in" && value.expectedUserId !== null) ||
-      (value.purpose === "refresh" &&
-        (typeof value.expectedUserId !== "string" ||
-          !SNOWFLAKE.test(value.expectedUserId))) ||
-      typeof value.returnTo !== "string" ||
-      value.returnTo.length < 1 ||
-      value.returnTo.length > 2_048
-    ) {
-      throw new Error("OAuth state request is invalid");
-    }
+    input = await parseRequest(request, CreateOAuthStateRequestSchema);
+    requireValidRange(input);
   } catch {
     return errorResponse("OAuth state request is invalid", 400);
   }
@@ -244,11 +199,7 @@ async function createOAuthState(
   try {
     const result = await new D1SessionRepository(db).createOAuthState({
       token,
-      createdAt: value.createdAt as number,
-      expiresAt: value.expiresAt as number,
-      purpose: value.purpose,
-      expectedUserId: value.expectedUserId as string | null,
-      returnTo: value.returnTo,
+      ...input,
     });
     return result.status === "created"
       ? Response.json({ token }, { status: 201, headers: responseHeaders })
@@ -262,24 +213,17 @@ async function consumeOAuthState(
   request: Request,
   db: D1Database,
 ): Promise<Response> {
-  let value: Record<string, unknown>;
+  let input: z.output<typeof ConsumeOAuthStateRequestSchema>;
   try {
-    value = await parseBody(request, ["consumedAt", "token"]);
-    if (
-      typeof value.token !== "string" ||
-      !OPAQUE_TOKEN.test(value.token) ||
-      !validTimestamp(value.consumedAt)
-    ) {
-      throw new Error("OAuth state consumption is invalid");
-    }
+    input = await parseRequest(request, ConsumeOAuthStateRequestSchema);
   } catch {
     return errorResponse("OAuth state consumption is invalid", 400);
   }
 
   try {
     const result = await new D1SessionRepository(db).consumeOAuthState(
-      value.token,
-      value.consumedAt,
+      input.token,
+      input.consumedAt,
     );
     const statuses = {
       consumed: 200,

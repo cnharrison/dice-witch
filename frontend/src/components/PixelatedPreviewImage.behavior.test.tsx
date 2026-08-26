@@ -40,6 +40,7 @@ beforeEach(() => {
   animationFrames = new Map();
   nextAnimationFrame = 0;
   vi.stubGlobal("Image", FakeImage);
+  // SAFETY: PixelatedPreviewImage only uses the canvas methods represented by this faithful test double.
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     beginPath: vi.fn(),
     clearRect: vi.fn(),
@@ -58,7 +59,7 @@ beforeEach(() => {
     restore: vi.fn(),
     save: vi.fn(),
     translate: vi.fn(),
-  } as unknown as CanvasRenderingContext2D);
+  } as CanvasRenderingContext2D);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     const id = ++nextAnimationFrame;
     animationFrames.set(id, callback);

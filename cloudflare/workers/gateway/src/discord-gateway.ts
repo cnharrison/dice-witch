@@ -1,7 +1,50 @@
+import { z } from "zod";
 import { GatewayOpcode } from "../../../packages/gateway-protocol/src";
 
 const DISPATCH_EVENT = /^[A-Z][A-Z0-9_]{0,63}$/;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const SafeIntegerSchema = z.number().refine(Number.isSafeInteger);
+const NonNegativeSafeIntegerSchema = SafeIntegerSchema.nonnegative();
+const PositiveSafeIntegerSchema = SafeIntegerSchema.positive();
+const GatewayBotResponseSchema = z.looseObject({
+  url: z.string(),
+  shards: PositiveSafeIntegerSchema,
+  session_start_limit: z.looseObject({
+    total: PositiveSafeIntegerSchema,
+    remaining: NonNegativeSafeIntegerSchema,
+    reset_after: NonNegativeSafeIntegerSchema,
+    max_concurrency: PositiveSafeIntegerSchema,
+  }),
+});
+const GatewayEnvelopeSchema = z.looseObject({
+  op: z.number(),
+  s: z.unknown().optional(),
+  t: z.unknown().optional(),
+  d: z.unknown().optional(),
+});
+const GatewayObjectDataSchema = z.looseObject({});
+const GatewayReadySessionSchema = z.looseObject({
+  session_id: z.string().min(1),
+  resume_gateway_url: z.string(),
+  guilds: z.array(z.unknown()),
+});
+const GatewayReadyGuildSchema = z.looseObject({
+  id: z.string().regex(SNOWFLAKE),
+});
+const GatewayHelloSchema = z.looseObject({
+  heartbeat_interval: PositiveSafeIntegerSchema,
+});
+const DispatchEventSchema = z.string().regex(DISPATCH_EVENT);
+const BooleanSchema = z.boolean();
+const SerializedPayloadSchema = z.string();
+
+type GatewayBotResponseInput = Parameters<
+  typeof GatewayBotResponseSchema.safeParse
+>[0];
+type GatewayEnvelope = z.output<typeof GatewayEnvelopeSchema>;
+export type GatewayDispatchData = Parameters<
+  typeof GatewayEnvelopeSchema.safeParse
+>[0];
 
 export type GatewayBotInfo = {
   url: string;
@@ -33,48 +76,31 @@ export type ParsedGatewayMessage =
       type: "dispatch";
       sequence: number;
       eventType: string;
-      data: unknown;
+      data: GatewayDispatchData;
     };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export function parseGatewayBotResponse(
-  value: unknown,
+  value: GatewayBotResponseInput,
   observedAt: number,
   allowedHostname?: string,
 ): GatewayBotInfo {
-  if (!isRecord(value) || !isRecord(value.session_start_limit)) {
+  const result = GatewayBotResponseSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Get Gateway Bot response is invalid");
   }
-  const { url, shards } = value;
   const {
-    total,
-    remaining,
-    reset_after: resetAfter,
-    max_concurrency: maxConcurrency,
-  } = value.session_start_limit;
-  const resetAt =
-    typeof resetAfter === "number" ? observedAt + resetAfter : Number.NaN;
+    url,
+    shards,
+    session_start_limit: {
+      total,
+      remaining,
+      reset_after: resetAfter,
+      max_concurrency: maxConcurrency,
+    },
+  } = result.data;
+  const resetAt = observedAt + resetAfter;
   if (
-    typeof url !== "string" ||
-    typeof shards !== "number" ||
-    !Number.isSafeInteger(shards) ||
-    shards <= 0 ||
-    typeof total !== "number" ||
-    !Number.isSafeInteger(total) ||
-    total <= 0 ||
-    typeof remaining !== "number" ||
-    !Number.isSafeInteger(remaining) ||
-    remaining < 0 ||
     remaining > total ||
-    typeof resetAfter !== "number" ||
-    !Number.isSafeInteger(resetAfter) ||
-    resetAfter < 0 ||
-    typeof maxConcurrency !== "number" ||
-    !Number.isSafeInteger(maxConcurrency) ||
-    maxConcurrency <= 0 ||
     !Number.isSafeInteger(observedAt) ||
     observedAt < 0 ||
     !Number.isSafeInteger(resetAt)
@@ -123,72 +149,67 @@ export function normalizeDiscordGatewayUrl(
   return url.toString();
 }
 
-function requireSequence(value: unknown): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+function requireSequence(value: GatewayDispatchData): number {
+  const result = NonNegativeSafeIntegerSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Gateway Dispatch sequence is invalid");
   }
-  return value;
+  return result.data;
 }
 
-function parseDispatch(payload: Record<string, unknown>): ParsedGatewayMessage {
+function parseDispatch(payload: GatewayEnvelope): ParsedGatewayMessage {
   const sequence = requireSequence(payload.s);
-  if (typeof payload.t !== "string" || !DISPATCH_EVENT.test(payload.t)) {
+  const eventType = DispatchEventSchema.safeParse(payload.t);
+  if (!eventType.success) {
     throw new Error("Gateway Dispatch event type is invalid");
   }
-  if (payload.t === "RESUMED") {
+  if (eventType.data === "RESUMED") {
     return { type: "resumed", sequence };
   }
-  if (payload.t === "READY") {
-    if (!isRecord(payload.d)) {
+  if (eventType.data === "READY") {
+    const objectData = GatewayObjectDataSchema.safeParse(payload.d);
+    if (!objectData.success) {
       throw new Error("Gateway Ready data is invalid");
     }
-    const sessionId = payload.d.session_id;
-    const resumeGatewayUrl = payload.d.resume_gateway_url;
-    if (
-      typeof sessionId !== "string" ||
-      sessionId.length === 0 ||
-      typeof resumeGatewayUrl !== "string" ||
-      !Array.isArray(payload.d.guilds)
-    ) {
+    const session = GatewayReadySessionSchema.safeParse(objectData.data);
+    if (!session.success) {
       throw new Error("Gateway Ready session is invalid");
     }
-    const guilds: unknown[] = payload.d.guilds;
-    const initialGuildIds = guilds.map((guild) => {
-      if (
-        !isRecord(guild) ||
-        typeof guild.id !== "string" ||
-        !SNOWFLAKE.test(guild.id)
-      ) {
+    const initialGuildIds = session.data.guilds.map((guild) => {
+      const identity = GatewayReadyGuildSchema.safeParse(guild);
+      if (!identity.success) {
         throw new Error("Gateway Ready session is invalid");
       }
-      return guild.id;
+      return identity.data.id;
     });
     return {
       type: "ready",
       sequence,
-      sessionId,
-      resumeGatewayUrl,
+      sessionId: session.data.session_id,
+      resumeGatewayUrl: session.data.resume_gateway_url,
       initialGuildIds,
     };
   }
   return {
     type: "dispatch",
     sequence,
-    eventType: payload.t,
+    eventType: eventType.data,
     data: payload.d,
   };
 }
 
 export function parseGatewayMessage(message: string): ParsedGatewayMessage {
-  let payload: unknown;
+  let input: GatewayBotResponseInput;
   try {
-    payload = JSON.parse(message);
+    input = JSON.parse(message);
   } catch {
     throw new Error("Gateway message is not valid JSON");
   }
-  if (!isRecord(payload) || typeof payload.op !== "number") {
+  const envelope = GatewayEnvelopeSchema.safeParse(input);
+  if (!envelope.success) {
     throw new Error("Gateway message envelope is invalid");
   }
+  const payload = envelope.data;
 
   switch (payload.op) {
     case GatewayOpcode.Dispatch:
@@ -197,24 +218,23 @@ export function parseGatewayMessage(message: string): ParsedGatewayMessage {
       return { type: "heartbeat-requested" };
     case GatewayOpcode.Reconnect:
       return { type: "reconnect-requested" };
-    case GatewayOpcode.InvalidSession:
-      if (typeof payload.d !== "boolean") {
+    case GatewayOpcode.InvalidSession: {
+      const resumable = BooleanSchema.safeParse(payload.d);
+      if (!resumable.success) {
         throw new Error("Gateway Invalid Session data is invalid");
       }
-      return { type: "invalid-session", resumable: payload.d };
-    case GatewayOpcode.Hello:
-      if (
-        !isRecord(payload.d) ||
-        typeof payload.d.heartbeat_interval !== "number" ||
-        !Number.isSafeInteger(payload.d.heartbeat_interval) ||
-        payload.d.heartbeat_interval <= 0
-      ) {
+      return { type: "invalid-session", resumable: resumable.data };
+    }
+    case GatewayOpcode.Hello: {
+      const hello = GatewayHelloSchema.safeParse(payload.d);
+      if (!hello.success) {
         throw new Error("Gateway Hello heartbeat interval is invalid");
       }
       return {
         type: "hello",
-        heartbeatIntervalMs: payload.d.heartbeat_interval,
+        heartbeatIntervalMs: hello.data.heartbeat_interval,
       };
+    }
     case GatewayOpcode.HeartbeatAck:
       return { type: "heartbeat-ack" };
     default:
@@ -294,13 +314,13 @@ export function buildGatewayHeartbeat(sequence: number | null) {
   return { op: GatewayOpcode.Heartbeat, d: sequence };
 }
 
-export function serializeGatewayPayload(payload: unknown): string {
-  const serialized: unknown = JSON.stringify(payload);
-  if (typeof serialized !== "string") {
+export function serializeGatewayPayload(payload: GatewayDispatchData): string {
+  const result = SerializedPayloadSchema.safeParse(JSON.stringify(payload));
+  if (!result.success) {
     throw new Error("Discord Gateway payload must serialize to JSON");
   }
-  if (new TextEncoder().encode(serialized).byteLength > 4096) {
+  if (new TextEncoder().encode(result.data).byteLength > 4096) {
     throw new Error("Discord Gateway payload exceeds the 4096-byte limit");
   }
-  return serialized;
+  return result.data;
 }

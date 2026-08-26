@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { z } from "zod";
 import {
   createGenerationMachine,
   gatewayPartitionAssignments,
@@ -34,6 +35,60 @@ import {
 const IDENTIFY_WINDOW_MS = 5_000;
 const FLEET_STATE_KEY = "gateway-fleet-state-v1";
 const OWNER_ID = /^[a-z][a-z0-9-]{0,63}$/;
+const SafeIntegerSchema = z.number().refine(Number.isSafeInteger);
+const NonNegativeSafeIntegerSchema = SafeIntegerSchema.nonnegative();
+const PositiveSafeIntegerSchema = SafeIntegerSchema.positive();
+const GatewayGenerationPhaseSchema = z.enum([
+  "idle",
+  "planned",
+  "suspending-active",
+  "starting-target",
+  "rolling-back",
+]);
+const GenerationMachinePhaseSchema = z.enum([
+  "idle",
+  "suspending-active",
+  "starting-target",
+  "rolling-back",
+]);
+const GenerationPlanSchema = z.looseObject({
+  currentGeneration: z.number(),
+  currentShardCount: z.number(),
+  targetGeneration: z.number(),
+  targetShardCount: z.number(),
+  identifyWaves: z.array(z.array(z.number())),
+});
+const GenerationTargetSchema = z.looseObject({
+  plan: GenerationPlanSchema,
+  currentWaveIndex: z.number(),
+  readyShardIds: z.array(z.number()),
+  failure: z.nullable(
+    z.looseObject({
+      shardId: z.number(),
+      reason: z.string(),
+    }),
+  ),
+});
+const GenerationMachineSchema = z.looseObject({
+  phase: GenerationMachinePhaseSchema,
+  activeGeneration: z.number(),
+  activeShardCount: z.number(),
+  target: z.nullable(GenerationTargetSchema),
+});
+const StoredFleetStateSchema = z.looseObject({
+  version: z.literal(1),
+  machine: GenerationMachineSchema,
+  connectionCapacity: z.number(),
+  hasActiveFleet: z.boolean(),
+  nextGeneration: PositiveSafeIntegerSchema,
+  operatorStopped: z.boolean(),
+  pendingActions: z.boolean(),
+  rollbackReadyShardIds: z.array(NonNegativeSafeIntegerSchema),
+});
+type CoordinatorStorageInput = Parameters<
+  typeof StoredFleetStateSchema.safeParse
+>[0];
+
 const GENERATION_PHASES = new Set<GatewayGenerationPhase>([
   "idle",
   "planned",
@@ -1464,48 +1519,28 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
   }
 
   private async readFleetState(): Promise<StoredFleetState | null> {
-    const value: unknown = await this.ctx.storage.get(FLEET_STATE_KEY);
+    const value: CoordinatorStorageInput = await this.ctx.storage.get(
+      FLEET_STATE_KEY,
+    );
     if (value === undefined) return null;
-    if (
-      typeof value !== "object" ||
-      value === null ||
-      !("version" in value) ||
-      value.version !== 1 ||
-      !("machine" in value) ||
-      typeof value.machine !== "object" ||
-      value.machine === null ||
-      !("connectionCapacity" in value) ||
-      typeof value.connectionCapacity !== "number" ||
-      !("hasActiveFleet" in value) ||
-      typeof value.hasActiveFleet !== "boolean" ||
-      !("nextGeneration" in value) ||
-      typeof value.nextGeneration !== "number" ||
-      !Number.isSafeInteger(value.nextGeneration) ||
-      value.nextGeneration <= 0 ||
-      !("operatorStopped" in value) ||
-      typeof value.operatorStopped !== "boolean" ||
-      !("pendingActions" in value) ||
-      typeof value.pendingActions !== "boolean" ||
-      !("rollbackReadyShardIds" in value) ||
-      !Array.isArray(value.rollbackReadyShardIds) ||
-      !value.rollbackReadyShardIds.every(
-        (shardId) => Number.isSafeInteger(shardId) && shardId >= 0,
-      )
-    ) {
+    const stored = StoredFleetStateSchema.safeParse(value);
+    if (!stored.success) {
       throw new Error("Stored Gateway fleet state is invalid");
     }
-    validateGeneration(0, value.connectionCapacity);
-    const machine = value.machine as GenerationMachine;
-    validateGeneration(machine.activeGeneration, machine.activeShardCount);
+    validateGeneration(0, stored.data.connectionCapacity);
+    validateGeneration(
+      stored.data.machine.activeGeneration,
+      stored.data.machine.activeShardCount,
+    );
     return {
       version: 1,
-      machine,
-      connectionCapacity: value.connectionCapacity,
-      hasActiveFleet: value.hasActiveFleet,
-      nextGeneration: value.nextGeneration,
-      operatorStopped: value.operatorStopped,
-      pendingActions: value.pendingActions,
-      rollbackReadyShardIds: value.rollbackReadyShardIds as number[],
+      machine: stored.data.machine,
+      connectionCapacity: stored.data.connectionCapacity,
+      hasActiveFleet: stored.data.hasActiveFleet,
+      nextGeneration: stored.data.nextGeneration,
+      operatorStopped: stored.data.operatorStopped,
+      pendingActions: stored.data.pendingActions,
+      rollbackReadyShardIds: stored.data.rollbackReadyShardIds,
     };
   }
 
@@ -1572,10 +1607,14 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     if (state.target_plan === null) {
       throw new Error("Gateway target generation plan is unavailable");
     }
-    let value: unknown;
+    let value: CoordinatorStorageInput;
     try {
       value = JSON.parse(state.target_plan);
     } catch {
+      throw new Error("Gateway target generation plan is invalid");
+    }
+    const plan = GenerationPlanSchema.safeParse(value);
+    if (!plan.success) {
       throw new Error("Gateway target generation plan is invalid");
     }
     try {
@@ -1584,7 +1623,7 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
           state.active_generation,
           state.active_shard_count,
         ),
-        { type: "plan", plan: value as GenerationPlan },
+        { type: "plan", plan: plan.data },
       );
       if (transition.machine.target === null) {
         throw new Error("Gateway target generation plan is invalid");
@@ -1608,7 +1647,8 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
 
   private toGenerationStatus(row: GenerationStateRow): GatewayGenerationStatus {
     validateGeneration(row.active_generation, row.active_shard_count);
-    if (!GENERATION_PHASES.has(row.phase as GatewayGenerationPhase)) {
+    const phase = GatewayGenerationPhaseSchema.safeParse(row.phase);
+    if (!phase.success) {
       throw new Error("Gateway generation phase is invalid");
     }
     const hasTarget =
@@ -1628,7 +1668,7 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     return {
       activeGeneration: row.active_generation,
       activeShardCount: row.active_shard_count,
-      phase: row.phase as GatewayGenerationPhase,
+      phase: phase.data,
       targetGeneration: row.target_generation,
       targetShardCount: row.target_shard_count,
       lastRecommendationCheckAt: row.last_recommendation_check_at,

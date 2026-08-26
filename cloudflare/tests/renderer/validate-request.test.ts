@@ -12,7 +12,13 @@ const validDie = {
   fill: { type: "gradient" },
 };
 
-function requestWith(overrides: Record<string, unknown>) {
+type RenderDieOverride =
+  | { color: string }
+  | { sides: string | number; rolled?: number }
+  | { icons: string[] }
+  | { fill: { type: string; pattern?: string } };
+
+function requestWith(overrides: RenderDieOverride) {
   return {
     version: 1,
     groups: [[{ ...validDie, ...overrides }]],

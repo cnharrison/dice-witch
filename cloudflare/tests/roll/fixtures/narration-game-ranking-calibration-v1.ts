@@ -20,12 +20,12 @@ export const NARRATION_GAME_RANKING_CALIBRATION_POLICY_V1 = {
   modelCalls: 0,
 } as const;
 
-const CONFIDENCE_RANK: Readonly<Record<NarrationGameConfidenceV1, number>> = {
+const CONFIDENCE_RANK = {
   weak: 1,
   plausible: 2,
   strong: 3,
   distinctive: 4,
-};
+} as const satisfies Readonly<Record<NarrationGameConfidenceV1, number>>;
 
 function promptCandidates(
   request: NarrationGameRankingRequestV1,

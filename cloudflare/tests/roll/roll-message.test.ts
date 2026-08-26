@@ -5,6 +5,7 @@ import {
   buildRollResultMessage,
   DISCORD_COMPONENTS_V2_FLAG,
   rollResultText,
+  validateDiscordMessage,
 } from "../../packages/discord-contracts/src";
 import { executeRoll } from "../../packages/roll-domain/src";
 
@@ -16,13 +17,6 @@ function clatterText(message: ReturnType<typeof buildRollClatterMessage>): strin
   const component = message.components[0];
   if (component?.type !== 10) throw new Error("Clatter text is missing");
   return component.content;
-}
-
-function componentText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(componentText).join("\n");
-  if (typeof value !== "object" || value === null) return "";
-  return Object.values(value).map(componentText).filter(Boolean).join("\n");
 }
 
 describe("buildRollClatterMessage", () => {
@@ -169,8 +163,9 @@ describe("buildRollResultMessage", () => {
         },
       ],
     });
-    expect(componentText(message)).not.toContain(rollResultText(roll));
-    expect(componentText(message)).toContain("sent to roller via discord");
+    const payload = JSON.stringify(message);
+    expect(payload).not.toContain(rollResultText(roll));
+    expect(payload).toContain("sent to roller via discord");
   });
 
   it("uses a top action row without inventing a heading for untitled hidden results", () => {
@@ -198,8 +193,9 @@ describe("buildRollResultMessage", () => {
       }],
     });
     expect(container.components[1]).toMatchObject({ type: 12 });
-    expect(componentText(message)).not.toContain("## Roll");
-    expect(componentText(message)).not.toContain(rollResultText(roll));
+    const payload = JSON.stringify(message);
+    expect(payload).not.toContain("## Roll");
+    expect(payload).not.toContain(rollResultText(roll));
   });
 
   it("keeps an untitled library replay untitled with Save and attribution", () => {
@@ -399,5 +395,23 @@ describe("buildRollResultMessage", () => {
         filename: "dice.png",
       }),
     ).toThrow("Roll result has no displayable outcomes");
+  });
+
+  it("builds result trees accepted by the strict Components V2 contract", () => {
+    const roll = result(["1d20"]);
+    const message = buildRollResultMessage(roll, {
+      source: "discord",
+      title: "Attack",
+      repetitions: 1,
+      username: "roller",
+      filename: "dice.png",
+      clatter: "_clatter_",
+      saveRollCustomId: "save-roll:v1:d:1400000000000000000",
+    });
+
+    expect(validateDiscordMessage(message)).toEqual(message);
+    expect(validateDiscordMessage(buildRollClatterMessage(roll, 0))).toEqual(
+      buildRollClatterMessage(roll, 0),
+    );
   });
 });

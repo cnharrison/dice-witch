@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   matchesMutationReceipt,
   readMutationReceipt,
@@ -44,30 +45,21 @@ type ValidatedInput = UpsertUserProfileInput & {
   receipt: MutationReceipt;
 };
 
-function validNullableString(value: unknown): value is string | null {
-  return value === null || (typeof value === "string" && value.length <= 255);
-}
+const nullableProfileStringSchema = z.string().max(255).nullable();
+const safeIntegerSchema = z.number().refine(Number.isSafeInteger);
+const UserProfileSchema = z.object({
+  username: nullableProfileStringSchema,
+  email: nullableProfileStringSchema,
+  lastWebLogin: safeIntegerSchema.nonnegative().nullable(),
+  flags: safeIntegerSchema.nullable(),
+  discriminator: nullableProfileStringSchema,
+  avatar: nullableProfileStringSchema,
+});
 
 function validateProfile(value: UserProfile): UserProfile {
-  if (
-    !validNullableString(value.username) ||
-    !validNullableString(value.email) ||
-    !validNullableString(value.discriminator) ||
-    !validNullableString(value.avatar) ||
-    (value.lastWebLogin !== null &&
-      (!Number.isSafeInteger(value.lastWebLogin) || value.lastWebLogin < 0)) ||
-    (value.flags !== null && !Number.isSafeInteger(value.flags))
-  ) {
-    throw new Error("User profile is invalid");
-  }
-  return {
-    username: value.username,
-    email: value.email,
-    lastWebLogin: value.lastWebLogin,
-    flags: value.flags,
-    discriminator: value.discriminator,
-    avatar: value.avatar,
-  };
+  const result = UserProfileSchema.safeParse(value);
+  if (!result.success) throw new Error("User profile is invalid");
+  return result.data;
 }
 
 function validateInput(input: UpsertUserProfileInput): ValidatedInput {

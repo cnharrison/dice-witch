@@ -15,6 +15,7 @@ import {
   type RenderDieV4,
   type RenderLightingV4,
   type RendererRevisionV4,
+  type RenderRequestInputV4,
   type RenderRequestV4,
   type TextureColorPolicyV4,
   type TextureRasterV4,
@@ -252,7 +253,7 @@ function geometryGridDie(
       );
       textures.sphericalMaterials.set(key, materialRaster);
     }
-    return {
+    const renderedDie: RenderGeometryGridDieV4 = {
       kind: "sphere",
       geometry,
       sides: die.sides,
@@ -261,9 +262,6 @@ function geometryGridDie(
       materialRaster,
       engravingColor: die.appearance.engraving.color,
       engravingFinish: die.appearance.engraving.finish,
-      ...(engravingContrastEdge === null
-        ? {}
-        : { engravingContrastEdge }),
       engravingFontScale,
       lighting,
       materialFamily: die.appearance.material.family,
@@ -275,6 +273,10 @@ function geometryGridDie(
       renderPolicy: renderPolicyV4(rendererRevision, geometry.id),
       icons: die.icons,
     };
+    if (engravingContrastEdge !== null) {
+      renderedDie.engravingContrastEdge = engravingContrastEdge;
+    }
+    return renderedDie;
   }
   let textureMapping:
     | "source"
@@ -290,7 +292,7 @@ function geometryGridDie(
     textureMapping = "projected-texture";
   }
   else if (usesOctahedralAtlas) textureMapping = "octahedral-atlas";
-  return {
+  const renderedDie: RenderGeometryGridDieV4 = {
     kind: "polyhedral",
     geometry,
     result: die.result,
@@ -303,16 +305,7 @@ function geometryGridDie(
     textureScope,
     engravingColor: die.appearance.engraving.color,
     engravingFinish: die.appearance.engraving.finish,
-    ...(engravingContrastEdge === null
-      ? {}
-      : { engravingContrastEdge }),
     engravingFontScale,
-    ...(policy.d6FiveOpticalOffsetX !== 0 && die.target === "d6"
-      ? { d6FiveOpticalOffsetX: policy.d6FiveOpticalOffsetX }
-      : {}),
-    ...(die.target === "d10" && die.faceLabelSet !== undefined
-      ? { faceLabelSet: die.faceLabelSet }
-      : {}),
     lighting,
     materialFamily: die.appearance.material.family,
     outlineColor,
@@ -320,14 +313,26 @@ function geometryGridDie(
       policy.faceWidePhysicalSeparation &&
       die.appearance.requiresLocalSeparation,
     criticalEffect: die.appearance.effect,
-    ...(policy.d10CriticalHalo &&
-      (die.target === "d10" || die.target === "percentile")
-      ? { criticalOuterGlow: true }
-      : {}),
     blankFaces: options.blankFaces === true,
     renderPolicy: renderPolicyV4(rendererRevision, geometry.id),
     icons: die.icons,
   };
+  if (engravingContrastEdge !== null) {
+    renderedDie.engravingContrastEdge = engravingContrastEdge;
+  }
+  if (policy.d6FiveOpticalOffsetX !== 0 && die.target === "d6") {
+    renderedDie.d6FiveOpticalOffsetX = policy.d6FiveOpticalOffsetX;
+  }
+  if (die.target === "d10" && die.faceLabelSet !== undefined) {
+    renderedDie.faceLabelSet = die.faceLabelSet;
+  }
+  if (
+    policy.d10CriticalHalo &&
+    (die.target === "d10" || die.target === "percentile")
+  ) {
+    renderedDie.criticalOuterGlow = true;
+  }
+  return renderedDie;
 }
 
 async function renderCanvasKit(
@@ -340,7 +345,7 @@ async function renderCanvasKit(
     octahedralAtlases: new Map(),
     sphericalMaterials: new Map(),
   };
-  const rendered = await renderer.renderGeometryGrid({
+  const geometryGrid = {
     rendererRevision: request.rendererRevision,
     groups: request.groups.map((group) =>
       group.map((die) =>
@@ -352,10 +357,12 @@ async function renderCanvasKit(
         ),
       ),
     ),
-    ...(options.preserveGroupRows === true
-      ? { preserveGroupRows: true }
-      : {}),
-  });
+  };
+  const rendered = await renderer.renderGeometryGrid(
+    options.preserveGroupRows === true
+      ? { ...geometryGrid, preserveGroupRows: true }
+      : geometryGrid,
+  );
   return {
     ...rendered,
     rendererRevision: request.rendererRevision,
@@ -512,14 +519,14 @@ async function renderAttempt(
   return { ok: true, rendered };
 }
 
-function validatedRequest(value: unknown): RenderRequestV4 {
+function validatedRequest(value: RenderRequestInputV4): RenderRequestV4 {
   const request = parseRenderRequestV4Json(serializeRenderRequestV4(value));
   assertCanvasKitGeometrySupport(request);
   return request;
 }
 
 export async function renderDiceRequestV4ToPng(
-  value: unknown,
+  value: RenderRequestInputV4,
   createRenderer: DiceRequestRendererFactoryV4,
   options: DiceRequestRenderOptionsV4 = {},
 ): Promise<RenderedDiceRequestV4> {

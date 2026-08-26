@@ -53,7 +53,9 @@ function createDie(
 
 async function expectRenderable(dice: RenderDie[]): Promise<void> {
   const result = await renderDiceToPng({ version: 1, groups: [dice] });
-  expect([...result.png.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  expect(Array.from(result.png.slice(0, 8))).toEqual([
+    137, 80, 78, 71, 13, 10, 26, 10,
+  ]);
   expect(result.png.byteLength).toBeGreaterThan(1_000);
 }
 

@@ -5,17 +5,10 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createSavedRoll, listSavedRolls } = vi.hoisted(() => ({
-  createSavedRoll: vi.fn(),
-  listSavedRolls: vi.fn(),
-}));
+const createSavedRoll = vi.fn();
+const listSavedRolls = vi.fn();
 
-vi.mock("@/lib/saved-rolls", async (loadOriginal) => {
-  const original = await loadOriginal<typeof import("@/lib/saved-rolls")>();
-  return { ...original, createSavedRoll, listSavedRolls };
-});
-
-import { SaveLibraryRollDialog } from "./SaveLibraryRollDialog";
+import { SaveLibraryRollDialogView } from "./SaveLibraryRollDialog";
 
 beforeEach(() => {
   createSavedRoll.mockReset();
@@ -43,7 +36,8 @@ describe("SaveLibraryRollDialog", () => {
     const user = userEvent.setup();
     render(
       <QueryClientProvider client={queryClient}>
-        <SaveLibraryRollDialog
+        <SaveLibraryRollDialogView
+          dependencies={{ createSavedRoll, listSavedRolls }}
           open
           onOpenChange={onOpenChange}
           composition={{ notation: "2d20+5", title: "Attack", repetitions: 3 }}
@@ -83,6 +77,7 @@ describe("SaveLibraryRollDialog", () => {
     await user.click(screen.getByRole("button", { name: "Default" }));
 
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Sword attack");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false),
     );

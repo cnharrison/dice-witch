@@ -1,32 +1,41 @@
+import * as z from "zod";
+
 export type ThreeDrawingBufferLimitsV4 = {
   maxViewportWidth: number;
   maxViewportHeight: number;
   maxRenderbufferSize: number;
 };
 
-function requirePositiveSafeIntegerV4(value: unknown): number {
-  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+export type ThreeDrawingBufferContextV4 = Pick<
+  WebGLRenderingContext,
+  "MAX_RENDERBUFFER_SIZE" | "MAX_VIEWPORT_DIMS" | "getParameter"
+>;
+
+const positiveSafeIntegerSchema = z.number().int().positive();
+const viewportDimensionsSchema = z
+  .custom<ArrayLike<number>>(ArrayBuffer.isView)
+  .refine((value) => value.length >= 2);
+
+function requirePositiveSafeIntegerV4<Value>(value: Value): number {
+  const parsed = positiveSafeIntegerSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error("Three.js V4 WebGL drawing-buffer limits are invalid");
   }
-  return value as number;
+  return parsed.data;
 }
 
 export function readThreeDrawingBufferLimitsV4(
-  context: WebGLRenderingContext | WebGL2RenderingContext,
+  context: ThreeDrawingBufferContextV4,
 ): ThreeDrawingBufferLimitsV4 {
-  const viewportDimensions: unknown = context.getParameter(
-    context.MAX_VIEWPORT_DIMS,
+  const dimensions = viewportDimensionsSchema.safeParse(
+    context.getParameter(context.MAX_VIEWPORT_DIMS),
   );
-  if (!ArrayBuffer.isView(viewportDimensions)) {
-    throw new Error("Three.js V4 WebGL drawing-buffer limits are invalid");
-  }
-  const dimensions = viewportDimensions as unknown as ArrayLike<number>;
-  if (dimensions.length < 2) {
+  if (!dimensions.success) {
     throw new Error("Three.js V4 WebGL drawing-buffer limits are invalid");
   }
   return {
-    maxViewportWidth: requirePositiveSafeIntegerV4(dimensions[0]),
-    maxViewportHeight: requirePositiveSafeIntegerV4(dimensions[1]),
+    maxViewportWidth: requirePositiveSafeIntegerV4(dimensions.data[0]),
+    maxViewportHeight: requirePositiveSafeIntegerV4(dimensions.data[1]),
     maxRenderbufferSize: requirePositiveSafeIntegerV4(
       context.getParameter(context.MAX_RENDERBUFFER_SIZE),
     ),

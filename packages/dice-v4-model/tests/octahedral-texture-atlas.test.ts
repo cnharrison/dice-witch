@@ -78,9 +78,9 @@ describe("browser-neutral V4 octahedral texture atlas", () => {
     ];
 
     for (const invalid of invalidValues) {
-      expect(() =>
-        createOctahedralTextureAtlasV4(invalid as TextureRasterV4),
-      ).toThrow("V4 octahedral source texture is invalid");
+      expect(() => createOctahedralTextureAtlasV4(invalid)).toThrow(
+        "V4 octahedral source texture is invalid",
+      );
     }
   });
 });

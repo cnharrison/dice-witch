@@ -14,6 +14,7 @@ import {
   type SphericalGeometryDescriptorV4,
   type TextureRasterV4,
 } from "@dice-witch/dice-v4-model";
+import * as z from "zod";
 import {
   BackSide,
   Group,
@@ -51,6 +52,12 @@ import {
 } from "./texture";
 
 export type ThreeDiceLabelAtlasPolicyV4 = "full-atlas" | "tile-clipped";
+
+export type ThreeDiceLabelAtlasSourcePortV4 = {
+  createPhysical: typeof createPhysicalLabelAtlasSourceV4;
+  createTileClippedPhysical: typeof createTileClippedPhysicalLabelAtlasSourceV4;
+  createSpherical: typeof createSphericalLabelAtlasSourceV4;
+};
 
 export type PreparedThreeDiceV4 =
   | {
@@ -92,28 +99,20 @@ export type ThreeDiceResourceOwnershipV4 = {
   textureBytes: number;
 };
 
+const resourceValueSchema = z.unknown();
+type ResourceValue = z.input<typeof resourceValueSchema>;
+const attributeArraySchema = z.object({
+  array: z.object({ byteLength: z.number() }),
+});
+
 function geometryByteLengthV4(geometry: BufferGeometry): number {
   const arrays = new Set<object>();
   let bytes = 0;
-  const appendAttribute = (attribute: unknown): void => {
-    if (
-      typeof attribute !== "object" ||
-      attribute === null ||
-      !("array" in attribute)
-    ) {
-      return;
-    }
-    const array = attribute.array;
-    if (
-      typeof array === "object" &&
-      array !== null &&
-      "byteLength" in array &&
-      typeof array.byteLength === "number" &&
-      !arrays.has(array)
-    ) {
-      arrays.add(array);
-      bytes += array.byteLength;
-    }
+  const appendAttribute = (attribute: ResourceValue): void => {
+    const parsed = attributeArraySchema.safeParse(attribute);
+    if (!parsed.success || arrays.has(parsed.data.array)) return;
+    arrays.add(parsed.data.array);
+    bytes += parsed.data.array.byteLength;
   };
   Object.values(geometry.attributes).forEach(appendAttribute);
   Object.values(geometry.morphAttributes)
@@ -124,32 +123,17 @@ function geometryByteLengthV4(geometry: BufferGeometry): number {
 }
 
 function textureByteLengthV4(texture: Texture): number {
-  const image: unknown = texture.image;
-  if (typeof image !== "object" || image === null) return 0;
-  if ("data" in image) {
-    const data = image.data;
-    if (
-      typeof data === "object" &&
-      data !== null &&
-      "byteLength" in data &&
-      typeof data.byteLength === "number"
-    ) {
-      return data.byteLength;
-    }
-  }
-  if (
-    "width" in image &&
-    "height" in image &&
-    typeof image.width === "number" &&
-    typeof image.height === "number" &&
-    Number.isSafeInteger(image.width) &&
-    image.width > 0 &&
-    Number.isSafeInteger(image.height) &&
-    image.height > 0
-  ) {
-    return image.width * image.height * 4;
-  }
-  return 0;
+  const dataImage = z.object({
+    data: z.object({ byteLength: z.number() }),
+  }).safeParse(texture.image);
+  if (dataImage.success) return dataImage.data.data.byteLength;
+  const sizedImage = z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  }).safeParse(texture.image);
+  return sizedImage.success
+    ? sizedImage.data.width * sizedImage.data.height * 4
+    : 0;
 }
 
 export function measureThreeDiceResourceOwnershipV4(
@@ -195,11 +179,12 @@ export function createThreeDiceMaterialRasterV4(
   return source ?? createMaterialRasterV4(die.appearance, rendererRevision);
 }
 
-export function prepareThreeDiceV4(
+export function prepareThreeDiceWithLabelAtlasPortV4(
   descriptor: GeometryDescriptorV4,
   die: RenderDieV4,
   fontFamily: string,
   labelAtlasPolicy: ThreeDiceLabelAtlasPolicyV4,
+  labelAtlas: ThreeDiceLabelAtlasSourcePortV4,
   rendererRevision?: RendererRevisionV4,
   contrastRaster?: TextureRasterV4,
 ): PreparedThreeDiceV4 {
@@ -226,7 +211,7 @@ export function prepareThreeDiceV4(
     return {
       kind: "sphere",
       descriptor,
-      labelAtlasSource: createSphericalLabelAtlasSourceV4(
+      labelAtlasSource: labelAtlas.createSpherical(
         descriptor,
         die.result,
         die.appearance,
@@ -239,8 +224,8 @@ export function prepareThreeDiceV4(
   const physical = buildPhysicalPolyhedralMeshV4(descriptor, die.result);
   const createLabelAtlas =
     labelAtlasPolicy === "tile-clipped"
-      ? createTileClippedPhysicalLabelAtlasSourceV4
-      : createPhysicalLabelAtlasSourceV4;
+      ? labelAtlas.createTileClippedPhysical
+      : labelAtlas.createPhysical;
   return {
     kind: "polyhedral",
     descriptor,
@@ -256,6 +241,31 @@ export function prepareThreeDiceV4(
       die.target === "d10" ? die.faceLabelSet : undefined,
     ),
   };
+}
+
+const productionThreeDiceLabelAtlasSourcePortV4 = {
+  createPhysical: createPhysicalLabelAtlasSourceV4,
+  createTileClippedPhysical: createTileClippedPhysicalLabelAtlasSourceV4,
+  createSpherical: createSphericalLabelAtlasSourceV4,
+} satisfies ThreeDiceLabelAtlasSourcePortV4;
+
+export function prepareThreeDiceV4(
+  descriptor: GeometryDescriptorV4,
+  die: RenderDieV4,
+  fontFamily: string,
+  labelAtlasPolicy: ThreeDiceLabelAtlasPolicyV4,
+  rendererRevision?: RendererRevisionV4,
+  contrastRaster?: TextureRasterV4,
+): PreparedThreeDiceV4 {
+  return prepareThreeDiceWithLabelAtlasPortV4(
+    descriptor,
+    die,
+    fontFamily,
+    labelAtlasPolicy,
+    productionThreeDiceLabelAtlasSourcePortV4,
+    rendererRevision,
+    contrastRaster,
+  );
 }
 
 export function createThreeDiceResourcesV4(

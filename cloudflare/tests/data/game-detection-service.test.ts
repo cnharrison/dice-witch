@@ -1,17 +1,181 @@
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { RollLifecycleSnapshotV1 } from "../../packages/discord-contracts/src";
-import { processGameDetectionMinute } from "../../workers/data/src/game-detection-service";
+import type { SchemaInput } from "../../packages/discord-contracts/src/schema-primitives";
+import type { NarrationGameRankingResponseV1 } from "../../packages/roll-domain/src";
+import {
+  GAME_DETECTION_MODEL_ID,
+  processGameDetectionMinute,
+  type GameDetectionServiceEnv,
+} from "../../workers/data/src/game-detection-service";
 import dataWorker, { type DataEnv } from "../../workers/data/src/index";
 import { D1RollLifecycleRepository } from "../../workers/data/src/roll-lifecycle-repository";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+const TestMigrationsBindingSchema = z.object({
+  TEST_MIGRATIONS: z.array(z.strictObject({
+    name: z.string(),
+    queries: z.array(z.string()),
+  })),
+});
+const dataEnv = {
+  DATA: env.DATA,
+  ...TestMigrationsBindingSchema.parse(env),
+} satisfies { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 const observedAt = 1_767_225_600_000;
 const activeAt = observedAt + 180_000;
+const GameDetectionAiCallSchema = z.tuple([
+  z.literal(GAME_DETECTION_MODEL_ID),
+  z.strictObject({
+    messages: z.array(z.strictObject({
+      role: z.enum(["system", "user"]),
+      content: z.string(),
+    })),
+    response_format: z.strictObject({
+      type: z.literal("json_schema"),
+      json_schema: z.unknown(),
+    }),
+    max_tokens: z.literal(1_024),
+    temperature: z.literal(0),
+    top_p: z.literal(1),
+    seed: z.number().int().positive(),
+    stream: z.literal(false),
+  }),
+  z.strictObject({
+    signal: z.instanceof(AbortSignal),
+    tags: z.tuple([
+      z.literal("dice-witch:game-detection"),
+      z.literal("prompt:v3"),
+    ]),
+  }),
+]);
+type AiFallbackOutput = Awaited<ReturnType<Ai["run"]>>;
+type AnnouncementHandler =
+  GameDetectionServiceEnv["DISCORD_REST"]["createGameDetectionAnnouncementV1"];
+type ContextHandler =
+  GameDetectionServiceEnv["DISCORD_REST"]["resolveDiscordChannelContextV1"];
+
+class GameDetectionAiFake implements Ai {
+  aiGatewayLogId: string | null = null;
+  readonly gateway = vi.fn<Ai["gateway"]>();
+  readonly aiSearch = vi.fn<Ai["aiSearch"]>();
+  readonly autorag = vi.fn<Ai["autorag"]>();
+  readonly models = vi.fn<Ai["models"]>();
+  readonly runMock = vi.fn<(
+    model: string,
+    inputs: SchemaInput,
+    options?: AiOptions,
+  ) => Promise<SchemaInput>>();
+
+  run<Name extends keyof AiModels>(
+    model: Name,
+    inputs: { requests: AiModels[Name]["inputs"][] },
+    options: AiOptions & { queueRequest: true },
+  ): Promise<AiAsyncBatchResponse>;
+  run<Name extends keyof AiModels>(
+    model: Name,
+    inputs: AiModels[Name]["inputs"],
+    options: AiOptions & (
+      | { returnRawResponse: true }
+      | { websocket: true }
+    ),
+  ): Promise<Response>;
+  run<Name extends keyof AiModels>(
+    model: Name,
+    inputs: AiModels[Name]["inputs"] & { stream: true },
+    options?: AiOptions,
+  ): Promise<ReadableStream>;
+  run<Name extends keyof AiModels>(
+    model: Name,
+    inputs: AiModels[Name]["inputs"],
+    options?: AiOptions,
+  ): Promise<AiModels[Name]["postProcessedOutputs"]>;
+  run<Model extends string>(
+    model: Model extends keyof AiModels ? never : Model,
+    inputs: AiFallbackOutput,
+    options?: AiOptions,
+  ): Promise<AiFallbackOutput>;
+  run(
+    model: string,
+    inputs: SchemaInput,
+    options?: AiOptions,
+  ): Promise<SchemaInput> {
+    return this.runMock(model, inputs, options);
+  }
+
+  toMarkdown(): ToMarkdownService;
+  toMarkdown(
+    files: MarkdownDocument[],
+    options?: ConversionRequestOptions,
+  ): Promise<ConversionResponse[]>;
+  toMarkdown(
+    files: MarkdownDocument,
+    options?: ConversionRequestOptions,
+  ): Promise<ConversionResponse>;
+  toMarkdown(
+    _files?: MarkdownDocument | MarkdownDocument[],
+    _options?: ConversionRequestOptions,
+  ): never {
+    void _files;
+    void _options;
+    throw new Error("Markdown conversion was not expected");
+  }
+}
+
+type AiRunCall = Parameters<GameDetectionAiFake["runMock"]>;
+
+function modelPrompt(calls: readonly AiRunCall[]): string {
+  const call = GameDetectionAiCallSchema.parse(calls[0]);
+  return call[1].messages.map(({ content }) => content).join("\n");
+}
+
+function mockAiResponse(response: string): GameDetectionAiFake {
+  const ai = new GameDetectionAiFake();
+  ai.runMock.mockResolvedValue({ response });
+  return ai;
+}
+
+function rejectUnexpectedAiCall(): GameDetectionAiFake {
+  const ai = new GameDetectionAiFake();
+  ai.runMock.mockRejectedValue(new Error("AI inference was not expected"));
+  return ai;
+}
+
+function mockAnnouncement() {
+  return vi.fn<AnnouncementHandler>();
+}
+
+function mockContextResolution() {
+  return vi.fn<ContextHandler>();
+}
+
+function scheduledDataEnv(): DataEnv {
+  const unexpected = new Error("Discord REST call was not expected");
+  return {
+    APPEARANCE_CATALOG_POLICY: "r37",
+    DATA: env.DATA,
+    AI: rejectUnexpectedAiCall(),
+    DISCORD_REST: {
+      createRollLifecycleAlertV1:
+        vi.fn<DataEnv["DISCORD_REST"]["createRollLifecycleAlertV1"]>()
+          .mockRejectedValue(unexpected),
+      updateRollLifecycleAlertV1:
+        vi.fn<DataEnv["DISCORD_REST"]["updateRollLifecycleAlertV1"]>()
+          .mockRejectedValue(unexpected),
+      createRollLifecycleAlertV2:
+        vi.fn<DataEnv["DISCORD_REST"]["createRollLifecycleAlertV2"]>()
+          .mockRejectedValue(unexpected),
+      updateRollLifecycleAlertV2:
+        vi.fn<DataEnv["DISCORD_REST"]["updateRollLifecycleAlertV2"]>()
+          .mockRejectedValue(unexpected),
+      createGameDetectionAnnouncementV1: mockAnnouncement()
+        .mockRejectedValue(unexpected),
+      resolveDiscordChannelContextV1: mockContextResolution()
+        .mockRejectedValue(unexpected),
+    },
+  };
+}
 
 function deliveredRoll(interactionId: string): RollLifecycleSnapshotV1 {
   return {
@@ -121,9 +285,10 @@ const dndResponse = {
     },
   },
   abstentionReason: null,
-};
+} as const satisfies NarrationGameRankingResponseV1;
 
 beforeEach(async () => {
+  vi.restoreAllMocks();
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.batch([
     dataEnv.DATA.prepare("DELETE FROM discord_channel_directory"),
@@ -152,11 +317,7 @@ describe("Data minute maintenance", () => {
         scheduledTime: observedAt,
         noRetry,
       },
-      {
-        DATA: dataEnv.DATA,
-        AI: { run: vi.fn() } as unknown as Ai,
-        DISCORD_REST: {},
-      } as unknown as DataEnv,
+      scheduledDataEnv(),
     )).resolves.toBeUndefined();
     expect(noRetry).toHaveBeenCalledOnce();
   });
@@ -186,14 +347,14 @@ describe("processGameDetectionMinute", () => {
     });
     const lifecycle = new D1RollLifecycleRepository(dataEnv.DATA);
     for (const roll of rolls) await lifecycle.record(roll);
-    const aiRun = vi.fn();
-    const announce = vi.fn();
-    const resolveContext = vi.fn();
+    const ai = rejectUnexpectedAiCall();
+    const announce = mockAnnouncement();
+    const resolveContext = mockContextResolution();
 
     await expect(
       processGameDetectionMinute({
         DATA: dataEnv.DATA,
-        AI: { run: aiRun } as unknown as Ai,
+        AI: ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
           resolveDiscordChannelContextV1: resolveContext,
@@ -205,7 +366,7 @@ describe("processGameDetectionMinute", () => {
       rankJob: "none",
       announcement: "none",
     });
-    expect(aiRun).not.toHaveBeenCalled();
+    expect(ai.runMock).not.toHaveBeenCalled();
     expect(resolveContext).not.toHaveBeenCalled();
     expect(announce).not.toHaveBeenCalled();
   });
@@ -259,16 +420,16 @@ describe("processGameDetectionMinute", () => {
         },
       });
     }
-    const aiRun = vi.fn();
-    const announce = vi.fn();
+    const ai = rejectUnexpectedAiCall();
+    const announce = mockAnnouncement();
 
     await expect(
       processGameDetectionMinute({
         DATA: dataEnv.DATA,
-        AI: { run: aiRun } as unknown as Ai,
+        AI: ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveDiscordChannelContextV1: vi.fn(),
+          resolveDiscordChannelContextV1: mockContextResolution(),
         },
       }, observedAt + 240_000),
     ).resolves.toMatchObject({
@@ -276,12 +437,12 @@ describe("processGameDetectionMinute", () => {
       rankJob: "none",
       announcement: "none",
     });
-    expect(aiRun).not.toHaveBeenCalled();
+    expect(ai.runMock).not.toHaveBeenCalled();
     expect(announce).not.toHaveBeenCalled();
     await expect(
       dataEnv.DATA.prepare(
         "SELECT COUNT(*) AS count FROM game_detection_rank_jobs",
-      ).first(),
+      ).first<{ count: number }>(),
     ).resolves.toEqual({ count: 0 });
   });
 
@@ -304,36 +465,34 @@ describe("processGameDetectionMinute", () => {
         },
       });
     }
-    const aiRun = vi.fn(() => Promise.resolve({
-      response: JSON.stringify({
-        version: 1,
-        disposition: "select",
-        selectedSystemId: "dungeon-crawl-classics",
-        assessments: {
-          "dungeon-crawl-classics": {
-            confidenceTier: "plausible",
-            evidenceCitations: [{
-              claimId: "repeated-use-of-different-rare-dcc-dice-is-a-dice-chain-pattern",
-              sourceIds: ["dungeon-crawl-classics-rules"],
-            }],
-          },
+    const ai = mockAiResponse(JSON.stringify({
+      version: 1,
+      disposition: "select",
+      selectedSystemId: "dungeon-crawl-classics",
+      assessments: {
+        "dungeon-crawl-classics": {
+          confidenceTier: "plausible",
+          evidenceCitations: [{
+            claimId: "repeated-use-of-different-rare-dcc-dice-is-a-dice-chain-pattern",
+            sourceIds: ["dungeon-crawl-classics-rules"],
+          }],
         },
-        abstentionReason: null,
-      }),
-    }));
-    const announce = vi.fn(() => Promise.resolve({
-      status: "delivered" as const,
+      },
+      abstentionReason: null,
+    } satisfies NarrationGameRankingResponseV1));
+    const announce = mockAnnouncement().mockResolvedValue({
+      status: "delivered",
       messageId: "100000000000000097",
       httpStatus: 200,
-    }));
+    });
 
     await expect(
       processGameDetectionMinute({
         DATA: dataEnv.DATA,
-        AI: { run: aiRun } as unknown as Ai,
+        AI: ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveDiscordChannelContextV1: vi.fn(),
+          resolveDiscordChannelContextV1: mockContextResolution(),
         },
       }, activeAt),
     ).resolves.toMatchObject({
@@ -341,7 +500,7 @@ describe("processGameDetectionMinute", () => {
       rankJob: "selected",
       announcement: "sent",
     });
-    expect(aiRun).toHaveBeenCalledOnce();
+    expect(ai.runMock).toHaveBeenCalledOnce();
     expect(announce).toHaveBeenCalledWith(expect.objectContaining({
       gameId: "dungeon-crawl-classics",
       confidence: "plausible",
@@ -352,23 +511,21 @@ describe("processGameDetectionMinute", () => {
     await recordActiveMultiplayer(
       deliveredRoll("100000000000000031"),
     );
-    const aiRun = vi.fn(() =>
-      Promise.resolve({ response: JSON.stringify(dndResponse) })
-    );
+    const ai = mockAiResponse(JSON.stringify(dndResponse));
     const timeout = vi.spyOn(AbortSignal, "timeout");
-    const announce = vi.fn(() => Promise.resolve({
-      status: "delivered" as const,
+    const announce = mockAnnouncement().mockResolvedValue({
+      status: "delivered",
       messageId: "100000000000000099",
       httpStatus: 200,
-    }));
+    });
 
     await expect(
       processGameDetectionMinute({
         DATA: dataEnv.DATA,
-        AI: { run: aiRun } as unknown as Ai,
+        AI: ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveDiscordChannelContextV1: vi.fn(),
+          resolveDiscordChannelContextV1: mockContextResolution(),
         },
       }, activeAt),
     ).resolves.toMatchObject({
@@ -377,19 +534,19 @@ describe("processGameDetectionMinute", () => {
       announcement: "sent",
     });
 
-    expect(aiRun).toHaveBeenCalledOnce();
+    expect(ai.runMock).toHaveBeenCalledOnce();
     expect(timeout).toHaveBeenCalledOnce();
     expect(timeout).toHaveBeenCalledWith(45_000);
     timeout.mockRestore();
-    const modelInput = JSON.stringify(aiRun.mock.calls[0]);
-    expect(modelInput).toContain("Thursday D&D");
-    expect(modelInput).toContain("curse-of-strahd");
-    expect(modelInput).toContain("Create a Curse of Strahd character");
-    expect(modelInput).toContain("fixture-player");
-    expect(modelInput).not.toContain("100000000000000002");
-    expect(modelInput).not.toContain("100000000000000099");
-    expect(modelInput).not.toContain("renderSeed");
-    expect(modelInput).not.toContain("destinationPayload");
+    const prompt = modelPrompt(ai.runMock.mock.calls);
+    expect(prompt).toContain("Thursday D&D");
+    expect(prompt).toContain("curse-of-strahd");
+    expect(prompt).toContain("Create a Curse of Strahd character");
+    expect(prompt).toContain("fixture-player");
+    expect(prompt).not.toContain("100000000000000002");
+    expect(prompt).not.toContain("100000000000000099");
+    expect(prompt).not.toContain("renderSeed");
+    expect(prompt).not.toContain("destinationPayload");
 
     expect(announce).toHaveBeenCalledOnce();
     expect(announce).toHaveBeenCalledWith(
@@ -402,7 +559,7 @@ describe("processGameDetectionMinute", () => {
     await expect(
       dataEnv.DATA.prepare(
         `SELECT model_id, prompt_revision FROM game_detections`,
-      ).first(),
+      ).first<{ model_id: string; prompt_revision: string }>(),
     ).resolves.toEqual({
       model_id: "@cf/zai-org/glm-5.2",
       prompt_revision: "dice-witch-game-detection-v3",
@@ -430,43 +587,41 @@ describe("processGameDetectionMinute", () => {
         },
       },
     });
-    const aiRun = vi.fn(() => Promise.resolve({
-      response: JSON.stringify({
-        version: 1,
-        disposition: "select",
-        selectedSystemId: "cyberpunk-red",
-        assessments: {
-          "cyberpunk-red": {
-            confidenceTier: "plausible",
-            evidenceCitations: [
-              {
-                claimId: "explicit-system-name-in-location-context",
-                sourceIds: ["cyberpunk-red-rules"],
-              },
-            ],
-          },
+    const ai = mockAiResponse(JSON.stringify({
+      version: 1,
+      disposition: "select",
+      selectedSystemId: "cyberpunk-red",
+      assessments: {
+        "cyberpunk-red": {
+          confidenceTier: "plausible",
+          evidenceCitations: [
+            {
+              claimId: "explicit-system-name-in-location-context",
+              sourceIds: ["cyberpunk-red-rules"],
+            },
+          ],
         },
-        abstentionReason: null,
-      }),
-    }));
-    const announce = vi.fn(() => Promise.resolve({
-      status: "delivered" as const,
+      },
+      abstentionReason: null,
+    } satisfies NarrationGameRankingResponseV1));
+    const announce = mockAnnouncement().mockResolvedValue({
+      status: "delivered",
       messageId: "100000000000000098",
       httpStatus: 200,
-    }));
+    });
 
     await expect(
       processGameDetectionMinute({
         DATA: dataEnv.DATA,
-        AI: { run: aiRun } as unknown as Ai,
+        AI: ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
-          resolveDiscordChannelContextV1: vi.fn(),
+          resolveDiscordChannelContextV1: mockContextResolution(),
         },
       }, activeAt),
     ).resolves.toMatchObject({ rankJob: "selected", announcement: "sent" });
 
-    expect(JSON.stringify(aiRun.mock.calls[0])).toContain("cyberpunk-red");
+    expect(modelPrompt(ai.runMock.mock.calls)).toContain("cyberpunk-red");
     expect(announce).toHaveBeenCalledWith(
       expect.objectContaining({
         gameId: "cyberpunk-red",
@@ -495,24 +650,22 @@ describe("processGameDetectionMinute", () => {
       observedAt,
       observedAt,
     ).run();
-    const resolveContext = vi.fn(() => Promise.resolve({
-      status: "resolved" as const,
+    const resolveContext = mockContextResolution().mockResolvedValue({
+      status: "resolved",
       channelName: "resolved-strahd",
-      channelType: 0 as const,
-    }));
-    const aiRun = vi.fn(() =>
-      Promise.resolve({ response: JSON.stringify(dndResponse) })
-    );
-    const announce = vi.fn(() => Promise.resolve({
-      status: "delivered" as const,
+      channelType: 0,
+    });
+    const ai = mockAiResponse(JSON.stringify(dndResponse));
+    const announce = mockAnnouncement().mockResolvedValue({
+      status: "delivered",
       messageId: "100000000000000097",
       httpStatus: 200,
-    }));
+    });
 
     await expect(
       processGameDetectionMinute({
         DATA: dataEnv.DATA,
-        AI: { run: aiRun } as unknown as Ai,
+        AI: ai,
         DISCORD_REST: {
           createGameDetectionAnnouncementV1: announce,
           resolveDiscordChannelContextV1: resolveContext,
@@ -530,8 +683,9 @@ describe("processGameDetectionMinute", () => {
       guildId: "100000000000000003",
       channelId: "100000000000000004",
     });
-    expect(JSON.stringify(aiRun.mock.calls[0])).toContain("Stored Thursday Guild");
-    expect(JSON.stringify(aiRun.mock.calls[0])).toContain("resolved-strahd");
+    const prompt = modelPrompt(ai.runMock.mock.calls);
+    expect(prompt).toContain("Stored Thursday Guild");
+    expect(prompt).toContain("resolved-strahd");
     expect(announce).toHaveBeenCalledWith(expect.objectContaining({
       guildName: "Stored Thursday Guild",
       channelName: "resolved-strahd",
@@ -558,26 +712,26 @@ describe("processGameDetectionMinute", () => {
       observedAt,
       observedAt,
     ).run();
-    const resolveContext = vi.fn()
+    const resolveContext = mockContextResolution()
       .mockResolvedValueOnce({
-        status: "retryable" as const,
+        status: "retryable",
         httpStatus: 429,
         retryAfterMs: 60_000,
       })
       .mockResolvedValueOnce({
-        status: "failed" as const,
+        status: "failed",
         httpStatus: 401,
       });
-    const aiRun = vi.fn();
-    const announce = vi.fn();
+    const ai = rejectUnexpectedAiCall();
+    const announce = mockAnnouncement();
     const serviceEnv = {
       DATA: dataEnv.DATA,
-      AI: { run: aiRun } as unknown as Ai,
+      AI: ai,
       DISCORD_REST: {
         createGameDetectionAnnouncementV1: announce,
         resolveDiscordChannelContextV1: resolveContext,
       },
-    };
+    } satisfies GameDetectionServiceEnv;
 
     await expect(
       processGameDetectionMinute(serviceEnv, activeAt),
@@ -601,7 +755,7 @@ describe("processGameDetectionMinute", () => {
     });
 
     expect(resolveContext).toHaveBeenCalledTimes(2);
-    expect(aiRun).not.toHaveBeenCalled();
+    expect(ai.runMock).not.toHaveBeenCalled();
     expect(announce).not.toHaveBeenCalled();
   });
 
@@ -609,16 +763,16 @@ describe("processGameDetectionMinute", () => {
     await recordActiveMultiplayer(
       deliveredRoll("100000000000000041"),
     );
-    const aiRun = vi.fn(() => Promise.resolve({ response: "{}" }));
-    const announce = vi.fn();
+    const ai = mockAiResponse("{}");
+    const announce = mockAnnouncement();
     const serviceEnv = {
       DATA: dataEnv.DATA,
-      AI: { run: aiRun } as unknown as Ai,
+      AI: ai,
       DISCORD_REST: {
         createGameDetectionAnnouncementV1: announce,
-        resolveDiscordChannelContextV1: vi.fn(),
+        resolveDiscordChannelContextV1: mockContextResolution(),
       },
-    };
+    } satisfies GameDetectionServiceEnv;
 
     await expect(
       processGameDetectionMinute(serviceEnv, activeAt),
@@ -634,12 +788,17 @@ describe("processGameDetectionMinute", () => {
       closedSessions: 1,
     });
 
-    expect(aiRun).toHaveBeenCalledOnce();
+    expect(ai.runMock).toHaveBeenCalledOnce();
     expect(announce).not.toHaveBeenCalled();
     const job = await dataEnv.DATA.prepare(
       `SELECT state, attempt_count, result, detail
        FROM game_detection_rank_jobs`,
-    ).first();
+    ).first<{
+      state: string;
+      attempt_count: number;
+      result: string;
+      detail: string;
+    }>();
     expect(job).toEqual({
       state: "completed",
       attempt_count: 1,
@@ -648,7 +807,7 @@ describe("processGameDetectionMinute", () => {
     });
     const roll = await dataEnv.DATA.prepare(
       "SELECT classification FROM game_detection_rolls",
-    ).first();
+    ).first<{ classification: string }>();
     expect(roll).toEqual({ classification: "unknown" });
   });
 });

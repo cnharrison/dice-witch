@@ -241,6 +241,7 @@ describe("V4 renderer revision policies", () => {
   it("rejects unknown revisions instead of inferring a policy", () => {
     expect(() =>
       rendererRevisionPolicyV4(
+        // SAFETY: This future revision deliberately exercises runtime validation.
         "canvaskit-v4-r42" as RendererRevisionV4,
       ),
     ).toThrow("Render request rendererRevision is not supported");

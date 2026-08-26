@@ -4,12 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { customFetch } from '../lib/api';
-import { useServerStats } from './useServerStats';
+import { customFetch as productionFetch } from '../lib/api';
+import { createUseServerStats } from './useServerStats';
 
-vi.mock('../lib/api', () => ({ customFetch: vi.fn() }));
-
-const mockedFetch = vi.mocked(customFetch);
+const mockedFetch = vi.fn<typeof productionFetch>();
+const useServerStats = createUseServerStats(mockedFetch);
 
 function createWrapper() {
   const client = new QueryClient({

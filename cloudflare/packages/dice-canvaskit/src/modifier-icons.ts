@@ -370,7 +370,17 @@ export class CanvasKitModifierIconPainterV4 {
     if (icons.length > 3) {
       throw new Error("CanvasKit V4 supports at most three modifier icons");
     }
-    const iconCount = icons.length as 0 | 1 | 2 | 3;
+    let iconCount: 0 | 1 | 2 | 3;
+    switch (icons.length) {
+      case 0:
+      case 1:
+      case 2:
+      case 3:
+        iconCount = icons.length;
+        break;
+      default:
+        throw new Error("CanvasKit V4 supports at most three modifier icons");
+    }
     const iconSize = modifierIconSizeV4(rendererRevision);
     const design = modifierIconDesignV4(rendererRevision);
     icons.forEach((icon, index) => {

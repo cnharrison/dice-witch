@@ -1,3 +1,4 @@
+import * as z from "zod";
 import { isAuthoredRenderViewV4 } from "./authored-views";
 import {
   isMaterialFormCompatibleV4,
@@ -96,6 +97,8 @@ import {
   isRecord,
   requireExactRecord,
   supportedValue,
+  type BoundaryRecord,
+  type ValidationInput,
 } from "./validation";
 
 const REQUEST_KEYS = ["groups", "rendererRevision", "version"] as const;
@@ -147,15 +150,32 @@ const APPEARANCE_KEYS = [
   "requiresLocalSeparation",
   "texture",
 ] as const;
-const TARGET_SIDES: Partial<Record<AppearanceTargetV4, number>> = {
-  d4: 4,
-  d6: 6,
-  d8: 8,
-  d10: 10,
-  d12: 12,
-  d20: 20,
-};
-function parseTextureScale(value: unknown, path: string): number {
+const booleanSchema = z.boolean();
+const finiteNumberSchema = z.number();
+const safeIntegerSchema = z.number().refine(Number.isSafeInteger);
+
+function fixedSidesForTarget(target: AppearanceTargetV4): number | undefined {
+  switch (target) {
+    case "d4":
+      return 4;
+    case "d6":
+      return 6;
+    case "d8":
+      return 8;
+    case "d10":
+      return 10;
+    case "d12":
+      return 12;
+    case "d20":
+      return 20;
+    case "percentile":
+    case "fudge":
+    case "other":
+      return undefined;
+  }
+}
+
+function parseTextureScale(value: ValidationInput, path: string): number {
   return boundedInteger(
     value,
     APPEARANCE_TEXTURE_SCALE_RANGE_V4.minimum,
@@ -164,7 +184,7 @@ function parseTextureScale(value: unknown, path: string): number {
   );
 }
 
-function parsePercentage(value: unknown, path: string): number {
+function parsePercentage(value: ValidationInput, path: string): number {
   return boundedInteger(
     value,
     APPEARANCE_PERCENTAGE_RANGE_V4.minimum,
@@ -174,7 +194,7 @@ function parsePercentage(value: unknown, path: string): number {
 }
 
 function parseClassicMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): ClassicMaterialV4 {
   const treatment = supportedValue(
@@ -225,7 +245,7 @@ function parseClassicMaterial(
 }
 
 function parseSharpResinMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): SharpResinMaterialV4 {
   if (
@@ -268,7 +288,7 @@ function parseSharpResinMaterial(
 }
 
 function parseLiquidCoreMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): LiquidCoreMaterialV4 {
   if (
@@ -305,7 +325,7 @@ function parseLiquidCoreMaterial(
 }
 
 function parseGemstoneMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): GemstoneMaterialV4 {
   if (
@@ -337,7 +357,7 @@ function parseGemstoneMaterial(
 }
 
 function parseGlassMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): GlassMaterialV4 {
   if (
@@ -369,7 +389,7 @@ function parseGlassMaterial(
 }
 
 function parseStoneMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): StoneMaterialV4 {
   if (
@@ -401,7 +421,7 @@ function parseStoneMaterial(
 }
 
 function parseMetalMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): MetalMaterialV4 {
   if (
@@ -436,7 +456,7 @@ function parseMetalMaterial(
 }
 
 function parseHollowMetalMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): HollowMetalMaterialV4 {
   if (
@@ -474,7 +494,7 @@ function parseHollowMetalMaterial(
 }
 
 function parseWoodMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): WoodMaterialV4 {
   if (
@@ -506,7 +526,7 @@ function parseWoodMaterial(
 }
 
 function parseFantasyMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): FantasyMaterialV4 {
   if (
@@ -538,7 +558,7 @@ function parseFantasyMaterial(
 }
 
 function parseElementalMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): ElementalMaterialV4 {
   const style = supportedValue(
@@ -627,7 +647,7 @@ function parseElementalMaterial(
 }
 
 function parsePaintMaterial(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   path: string,
 ): PaintMaterialV4 {
   if (
@@ -655,7 +675,7 @@ function parsePaintMaterial(
 }
 
 export function parseAppearanceMaterialV4(
-  value: unknown,
+  value: ValidationInput,
   path = "Appearance material",
 ): AppearanceMaterialV4 {
   if (!isRecord(value)) throw new Error(`${path} has invalid fields`);
@@ -693,7 +713,7 @@ export function parseAppearanceMaterialV4(
 }
 
 function parsePalette(
-  value: unknown,
+  value: ValidationInput,
   path: string,
   rendererRevision: RendererRevisionV4,
 ): [string, string, ...string[]] {
@@ -724,7 +744,7 @@ function usesExplicitTextureScope(
 }
 
 function parseTexture(
-  value: unknown,
+  value: ValidationInput,
   path: string,
   rendererRevision: RendererRevisionV4,
 ): RenderTextureV4 {
@@ -757,10 +777,11 @@ function parseTexture(
   return parsed;
 }
 
-function parseLighting(value: unknown, path: string): RenderLightingV4 {
-  if (!isRecord(value) || typeof value.mode !== "string") {
-    throw new Error(`${path} is invalid`);
-  }
+function parseLighting(
+  value: ValidationInput,
+  path: string,
+): RenderLightingV4 {
+  if (!isRecord(value)) throw new Error(`${path} is invalid`);
   if (value.mode === "none" && hasExactKeys(value, ["mode"])) {
     return { mode: "none" };
   }
@@ -795,7 +816,10 @@ function parseLighting(value: unknown, path: string): RenderLightingV4 {
   throw new Error(`${path} is invalid`);
 }
 
-function parseEngraving(value: unknown, path: string): RenderEngravingV4 {
+function parseEngraving(
+  value: ValidationInput,
+  path: string,
+): RenderEngravingV4 {
   const engraving = requireExactRecord(
     value,
     ["color", "finish", "fontId"],
@@ -817,7 +841,7 @@ function parseEngraving(value: unknown, path: string): RenderEngravingV4 {
 }
 
 function parseEffect(
-  value: unknown,
+  value: ValidationInput,
   path: string,
 ): RenderCriticalEffectV4 | null {
   if (value === null) return null;
@@ -845,7 +869,7 @@ function parseEffect(
 }
 
 function parseOutlineColor(
-  value: unknown,
+  value: ValidationInput,
   path: string,
   rendererRevision: RendererRevisionV4,
 ): RenderAppearanceV4["outlineColor"] {
@@ -892,7 +916,7 @@ function validateMaterialAssets(
 }
 
 function parseAppearance(
-  value: unknown,
+  value: ValidationInput,
   path: string,
   rendererRevision: RendererRevisionV4,
 ): RenderAppearanceV4 {
@@ -901,7 +925,10 @@ function parseAppearance(
     APPEARANCE_KEYS,
     `${path} has invalid fields`,
   );
-  if (typeof appearance.requiresLocalSeparation !== "boolean") {
+  const requiresLocalSeparation = booleanSchema.safeParse(
+    appearance.requiresLocalSeparation,
+  );
+  if (!requiresLocalSeparation.success) {
     throw new Error(`${path}.requiresLocalSeparation must be a boolean`);
   }
   const parsed: RenderAppearanceV4 = {
@@ -926,7 +953,7 @@ function parseAppearance(
       `${path}.outlineColor`,
       rendererRevision,
     ),
-    requiresLocalSeparation: appearance.requiresLocalSeparation,
+    requiresLocalSeparation: requiresLocalSeparation.data,
     effect: parseEffect(appearance.effect, `${path}.effect`),
   };
   const revisionPolicy = rendererRevisionPolicyV4(rendererRevision);
@@ -961,7 +988,7 @@ function parseAppearance(
   return parsed;
 }
 
-function parseIcons(value: unknown, path: string): IconNameV4[] {
+function parseIcons(value: ValidationInput, path: string): IconNameV4[] {
   if (!Array.isArray(value) || value.length > 3) {
     throw new Error(`${path} must contain at most three icons`);
   }
@@ -995,40 +1022,43 @@ function validateCriticalState(
 }
 
 function parseResult(
-  value: unknown,
+  value: ValidationInput,
   target: AppearanceTargetV4,
   sides: number | undefined,
   path: string,
 ): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-    throw new Error(`${path}.result must be an integer`);
-  }
-  const fixedSides = TARGET_SIDES[target];
+  const parsed = safeIntegerSchema.safeParse(value);
+  if (!parsed.success) throw new Error(`${path}.result must be an integer`);
+  const result = parsed.data;
+  const fixedSides = fixedSidesForTarget(target);
   const minimum = 1;
-  if (fixedSides !== undefined && (value < minimum || value > fixedSides)) {
+  if (fixedSides !== undefined && (result < minimum || result > fixedSides)) {
     throw new Error(
       `${path}.result must be from ${String(minimum)} through ${String(fixedSides)}`,
     );
   }
-  if (target === "percentile" && (value < 0 || value > 90 || value % 10 !== 0)) {
+  if (
+    target === "percentile" &&
+    (result < 0 || result > 90 || result % 10 !== 0)
+  ) {
     throw new Error(
       `${path}.result must be a multiple of 10 from 0 through 90`,
     );
   }
-  if (target === "fudge" && ![-1, 0, 1].includes(value)) {
+  if (target === "fudge" && ![-1, 0, 1].includes(result)) {
     throw new Error(`${path}.result must be -1, 0, or 1`);
   }
   if (target === "other") {
     if (sides === undefined) throw new Error(`${path}.sides is required`);
-    if (value < 1 || value > sides) {
+    if (result < 1 || result > sides) {
       throw new Error(`${path}.result must be from 1 through ${String(sides)}`);
     }
   }
-  return value;
+  return result;
 }
 
 function parseForm(
-  value: unknown,
+  value: ValidationInput,
   target: AppearanceTargetV4,
   material: AppearanceMaterialV4,
   path: string,
@@ -1132,15 +1162,14 @@ function validateTextureScopeForDie(
   }
 }
 
-function finiteViewNumber(value: unknown, path: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`${path} must be finite`);
-  }
-  return value;
+function finiteViewNumber(value: ValidationInput, path: string): number {
+  const parsed = finiteNumberSchema.safeParse(value);
+  if (!parsed.success) throw new Error(`${path} must be finite`);
+  return parsed.data;
 }
 
 function parseView(
-  value: unknown,
+  value: ValidationInput,
   path: string,
   target: AppearanceTargetV4,
   form: RenderFormV4,
@@ -1246,9 +1275,12 @@ function parseView(
     ) {
       throw new Error(`${path}.resultRotation must contain four numbers`);
     }
-    const resultRotation = value.resultRotation.map((component, index) =>
-      finiteViewNumber(component, `${path}.resultRotation[${index}]`),
-    ) as [number, number, number, number];
+    const resultRotation: [number, number, number, number] = [
+      finiteViewNumber(value.resultRotation[0], `${path}.resultRotation[0]`),
+      finiteViewNumber(value.resultRotation[1], `${path}.resultRotation[1]`),
+      finiteViewNumber(value.resultRotation[2], `${path}.resultRotation[2]`),
+      finiteViewNumber(value.resultRotation[3], `${path}.resultRotation[3]`),
+    ];
     if (Math.abs(Math.hypot(...resultRotation) - 1) > 1e-9) {
       throw new Error(`${path}.resultRotation must be normalized`);
     }
@@ -1327,7 +1359,7 @@ function parseView(
 }
 
 function parseDie(
-  value: unknown,
+  value: ValidationInput,
   path: string,
   rendererRevision: RendererRevisionV4,
 ): RenderDieV4 {
@@ -1380,15 +1412,16 @@ function parseDie(
       result,
       rendererRevision,
     );
-    return {
+    const die: Extract<RenderDieV4, { target: "other" }> = {
       target,
       sides,
       result,
       form,
       appearance,
       icons,
-      ...(view === undefined ? {} : { view }),
     };
+    if (view !== undefined) die.view = view;
+    return die;
   }
   const form = parseForm(
     value.form,
@@ -1418,18 +1451,30 @@ function parseDie(
     result,
     rendererRevision,
   );
-  return {
+  if (target === "d10") {
+    const die: Extract<RenderDieV4, { target: "d10" }> = {
+      target,
+      result,
+      form,
+      appearance,
+      icons,
+    };
+    if (faceLabelSet !== undefined) die.faceLabelSet = faceLabelSet;
+    if (view !== undefined) die.view = view;
+    return die;
+  }
+  const die: RenderDieV4 = {
     target,
     result,
     form,
     appearance,
     icons,
-    ...(faceLabelSet === undefined ? {} : { faceLabelSet }),
-    ...(view === undefined ? {} : { view }),
   };
+  if (view !== undefined) die.view = view;
+  return die;
 }
 
-function parseRendererRevision(value: unknown): RendererRevisionV4 {
+function parseRendererRevision(value: ValidationInput): RendererRevisionV4 {
   return supportedValue(
     value,
     RENDERER_REVISIONS_V4,
@@ -1437,7 +1482,9 @@ function parseRendererRevision(value: unknown): RendererRevisionV4 {
   );
 }
 
-export function validateRenderRequestV4(value: unknown): RenderRequestV4 {
+export function validateRenderRequestV4(
+  value: ValidationInput,
+): RenderRequestV4 {
   if (!isRecord(value) || !hasExactKeys(value, REQUEST_KEYS)) {
     throw new Error("Render request V4 has invalid fields");
   }

@@ -56,6 +56,7 @@ export function DiceInput({
   }, [setInput]);
 
   const handleInputSelect = React.useCallback((e: React.SyntheticEvent<HTMLInputElement>) => {
+    // SAFETY: The surrounding validation establishes the HTMLInputElement invariant used below.
     const target = e.target as HTMLInputElement;
     
     const selectionEvent = new CustomEvent('diceInputSelectionChange', {

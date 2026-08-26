@@ -13,11 +13,12 @@ function expectedBindings(config) {
     bindings.set(name, { type: "plain_text", text });
   }
   for (const value of config.services ?? []) {
-    bindings.set(value.binding, {
+    const binding = {
       type: "service",
       service: value.service,
-      ...(value.entrypoint === undefined ? {} : { entrypoint: value.entrypoint }),
-    });
+    };
+    if (value.entrypoint !== undefined) binding.entrypoint = value.entrypoint;
+    bindings.set(value.binding, binding);
   }
   for (const value of config.secrets_store_secrets ?? []) {
     bindings.set(value.binding, {

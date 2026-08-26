@@ -12,7 +12,6 @@ import {
   renderOtherAppearanceToPng,
   renderPercentileAppearanceToPng,
   renderComposedSvgToPng,
-  type AppearanceFontId,
   type RenderAppearanceV3,
 } from "../../packages/dice-svg/src";
 import { composeOtherAppearanceSvgWithOptions } from "../../packages/dice-svg/src/dice/generateSpecialAppearance";
@@ -23,7 +22,7 @@ const baseAppearance = {
   textColor: "#ffffff",
   outlineColor: "#000000" as const,
   fill: { type: "gradient" as const },
-  fontId: "liberation-sans" as AppearanceFontId,
+  fontId: "liberation-sans" as const,
   effect: null,
 };
 
@@ -340,8 +339,19 @@ describe("Other appearance renderer", () => {
       "left-to-right": 'x1="48" y1="300" x2="552" y2="300"',
       "upper-left-to-lower-right": 'x1="48" y1="48" x2="552" y2="552"',
     } as const;
+    const directions = [
+      "top-to-bottom",
+      "upper-right-to-lower-left",
+      "right-to-left",
+      "lower-right-to-upper-left",
+      "bottom-to-top",
+      "lower-left-to-upper-right",
+      "left-to-right",
+      "upper-left-to-lower-right",
+    ] as const;
 
-    for (const [direction, vector] of Object.entries(vectors)) {
+    for (const direction of directions) {
+      const vector = vectors[direction];
       const render = (scope: "repeated" | "die-wide") =>
         composeOtherAppearanceSvgV3({
           ...baseAppearanceV3,
@@ -351,7 +361,7 @@ describe("Other appearance renderer", () => {
             type: "gradient",
             colors: ["#5426a8", "#c93ee8", "#f2d95c"],
             scope,
-            direction: direction as keyof typeof vectors,
+            direction,
           },
           lighting: { mode: "none" },
         });

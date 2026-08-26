@@ -9,6 +9,7 @@ import {
   PERCENTILE_STANDARD_GEOMETRY_V4,
   type GeometryFaceV4,
   type Point3V4,
+  type PolyhedralGeometryDescriptorV4,
   type QuaternionV4,
 } from "../src";
 
@@ -277,7 +278,7 @@ describe("canonical V4 d10 and percentile geometry", () => {
   });
 
   it("pins both approved descriptor hashes", () => {
-    const hash = (geometry: unknown): string =>
+    const hash = (geometry: PolyhedralGeometryDescriptorV4): string =>
       createHash("sha256").update(canonicalJsonV4(geometry)).digest("hex");
     expect(hash(D10_STANDARD_GEOMETRY_V4)).toBe(
       "d16654deafc360feb152ce594477e3c7666f2ac9ad4df64b1000572273ba4f03",

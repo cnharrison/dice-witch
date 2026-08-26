@@ -23,10 +23,7 @@ export const APPEARANCE_TARGETS = [
 export type AppearanceTarget = (typeof APPEARANCE_TARGETS)[number];
 export type AppearanceEditorTarget = AppearanceTarget | "all";
 
-export const APPEARANCE_TARGET_LABELS: Record<
-  AppearanceEditorTarget,
-  string
-> = {
+export const APPEARANCE_TARGET_LABELS = {
   all: "All dice",
   d4: "d4",
   d6: "d6",
@@ -37,7 +34,7 @@ export const APPEARANCE_TARGET_LABELS: Record<
   percentile: "Percentile",
   fudge: "Fudge",
   other: "Other",
-};
+} satisfies Record<AppearanceEditorTarget, string>;
 
 export type AppearanceRecipeV3 = SharedAppearanceRecipeV3;
 export type AppearanceProfileV4 = SharedAppearanceProfileV4;

@@ -51,9 +51,7 @@ function visibleFaceMarkup(svg: string, value: number): string {
   return svg.slice(start, next === -1 ? undefined : next);
 }
 
-async function sha256(value: string | Uint8Array): Promise<string> {
-  const bytes =
-    typeof value === "string" ? new TextEncoder().encode(value) : value;
+async function sha256(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -328,7 +326,9 @@ describe("d20 appearance prototype", () => {
   });
 
   it("is byte-stable for the approved d20 fixture", async () => {
-    expect(await sha256(composeD20AppearanceSvg(request))).toBe(
+    expect(
+      await sha256(new TextEncoder().encode(composeD20AppearanceSvg(request))),
+    ).toBe(
       "a10203a5dfb74a0a31a7329ebfe9c9cd335b7bf587e673588a4d4cc1bce0b65d",
     );
   });

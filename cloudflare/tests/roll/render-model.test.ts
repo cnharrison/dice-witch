@@ -14,7 +14,6 @@ import {
   randomRecipeForResolutionV3,
   type AppearanceRecipeV1,
   type AppearanceRecipeV2,
-  type AppearanceTarget,
   type EffectiveAppearanceV4,
 } from "../../packages/dice-appearance/src";
 import { validateRenderRequest } from "../../packages/dice-svg/src/validate";
@@ -175,10 +174,26 @@ function effectiveRecipesV3(
   );
 }
 
+function completeEffectiveRecipesV3(
+  recipe: AppearanceRecipeV3 = appearanceRecipeV3(),
+): EffectiveAppearanceV4["recipes"] {
+  return {
+    d4: recipe,
+    d6: recipe,
+    d8: recipe,
+    d10: recipe,
+    d12: recipe,
+    d20: recipe,
+    percentile: recipe,
+    fudge: recipe,
+    other: recipe,
+  };
+}
+
 function effectiveAppearanceV4(mode: DiceViewModeV4): EffectiveAppearanceV4 {
   return {
     version: 4,
-    recipes: effectiveRecipesV3() as EffectiveAppearanceV4["recipes"],
+    recipes: completeEffectiveRecipesV3(),
     diceView: {
       ...createDefaultDiceViewPreferencesV4(),
       mode,
@@ -367,16 +382,14 @@ describe("buildRollRenderRequestV2", () => {
   });
 
   it("requires an effective recipe for every rendered target", () => {
-    const recipes: Partial<Record<AppearanceTarget, AppearanceRecipeV1>> = {
-      ...effectiveRecipes(),
-    };
+    const recipes = { ...effectiveRecipes() };
     delete recipes.d20;
 
     expect(() =>
       buildRollRenderRequestV2(
         outcome(["d20"]),
         1,
-        recipes as EffectiveAppearanceRecipes,
+        recipes,
       ),
     ).toThrow("Effective appearance recipe for d20 is required");
   });
@@ -692,7 +705,7 @@ describe("buildRollRenderRequestV3", () => {
       buildRollRenderRequestV3(
         outcome(["d20"]),
         1,
-        missing as EffectiveAppearanceRecipesV2,
+        missing,
       ),
     ).toThrow("Effective appearance recipe V2 for d20 is required");
 
@@ -1171,10 +1184,10 @@ describe("Profile V4 roll rendering", () => {
     const recipe = appearanceRecipeV3({ colors: { mode: "vivid-random-pair" } });
     const withFont = (fontId: "stencil-ops" | "liberation-sans") => ({
       version: 4 as const,
-      recipes: effectiveRecipesV3({
+      recipes: completeEffectiveRecipesV3({
         ...recipe,
         font: { mode: "fixed" as const, value: fontId },
-      }) as EffectiveAppearanceV4["recipes"],
+      }),
       diceView: createDefaultDiceViewPreferencesV4(),
     });
     const roll = outcome(["d8"], 42);
@@ -1211,10 +1224,10 @@ describe("Profile V4 roll rendering", () => {
     });
     const withFont = (fontId: "stencil-ops" | "liberation-sans") => ({
       version: 4 as const,
-      recipes: effectiveRecipesV3({
+      recipes: completeEffectiveRecipesV3({
         ...recipe,
         font: { mode: "fixed" as const, value: fontId },
-      }) as EffectiveAppearanceV4["recipes"],
+      }),
       diceView: createDefaultDiceViewPreferencesV4(),
     });
     const roll = outcome(["d8"], 42);
@@ -1272,7 +1285,7 @@ describe("Profile V4 roll rendering", () => {
     };
     const effective: EffectiveAppearanceV4 = {
       version: 4,
-      recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
+      recipes: completeEffectiveRecipesV3(recipe),
       diceView: createDefaultDiceViewPreferencesV4(),
     };
     const palettes = buildRollRenderRequestR28V4(
@@ -1295,7 +1308,7 @@ describe("Profile V4 roll rendering", () => {
     };
     const effective: EffectiveAppearanceV4 = {
       version: 4,
-      recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
+      recipes: completeEffectiveRecipesV3(recipe),
       diceView: createDefaultDiceViewPreferencesV4(),
     };
 
@@ -1410,7 +1423,7 @@ describe("Profile V4 roll rendering", () => {
     });
     const effective = {
       ...effectiveAppearanceV4("normal"),
-      recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
+      recipes: completeEffectiveRecipesV3(recipe),
     };
     const result = outcome(["d20", "2d6"]);
     const r37 = buildRollRenderRequestR37V4(result, 7, effective);
@@ -1437,7 +1450,7 @@ describe("Profile V4 roll rendering", () => {
     });
     const effective = {
       ...effectiveAppearanceV4("normal"),
-      recipes: effectiveRecipesV3(recipe) as EffectiveAppearanceV4["recipes"],
+      recipes: completeEffectiveRecipesV3(recipe),
     };
     const result = outcome(["d6"]);
     const r38 = buildRollRenderRequestR38V4(result, 7, effective);
@@ -1475,9 +1488,7 @@ describe("Profile V4 roll rendering", () => {
       });
     const effectiveRecipe = (recipe: AppearanceRecipeV3) => ({
       ...effectiveAppearanceV4("normal"),
-      recipes: effectiveRecipesV3(
-        recipe,
-      ) as EffectiveAppearanceV4["recipes"],
+      recipes: completeEffectiveRecipesV3(recipe),
     });
     const effective = (primary: string) =>
       effectiveRecipe(solidRecipe(primary));

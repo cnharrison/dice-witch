@@ -2,9 +2,10 @@
 
 import { MixPickerTexturesRow } from "@/components/MixPickerTexturesRow";
 import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
-import type {
-  AppearanceMaterialV4,
-  AppearanceRecipeV3,
+import {
+  parseAppearanceRecipeV3,
+  type AppearanceMaterialV4,
+  type AppearanceRecipeV3,
 } from "@dice-witch/dice-v4-model";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -55,7 +56,7 @@ describe("MixPickerTexturesRow", () => {
       target: { value: "hammered" },
     });
 
-    const next = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
+    const next = parseAppearanceRecipeV3(onChange.mock.calls[0]?.[0]);
     expect(next.colors).toEqual(recipe.colors);
     expect(next.material.mode).toBe("weighted");
     if (next.material.mode !== "weighted") throw new Error("Expected weights");

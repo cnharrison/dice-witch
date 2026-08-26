@@ -578,6 +578,7 @@ export function SavedRollGrid({
     if (next.length === 0 || next[0] === undefined) return;
     if (searchMode) {
       if (next[0].id === "order" || next[0].id === "actions") return;
+      // SAFETY: The surrounding validation establishes the SavedRollSearchSort invariant used below.
       onSearchSortChange({
         column: next[0].id as SavedRollSearchSort,
         direction: next[0].desc ? "desc" : "asc",

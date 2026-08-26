@@ -37,7 +37,7 @@ const compatibilityCases = [
   },
 ] as const;
 
-function seededEngine(seed: number): { next(): number } {
+function seededEngine(seed: number) {
   let state = seed | 0;
   return {
     next() {

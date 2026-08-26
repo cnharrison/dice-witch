@@ -12,7 +12,7 @@ import {
   type TextureScopeV4,
 } from "../src";
 
-const materials: AppearanceMaterialV4[] = [
+const materials = [
   {
     family: "classic",
     treatment: "solid",
@@ -87,7 +87,7 @@ const materials: AppearanceMaterialV4[] = [
     finish: "radiant",
     textureScale: 140,
   },
-];
+] satisfies [AppearanceMaterialV4, ...AppearanceMaterialV4[]];
 
 const r32Materials: AppearanceMaterialV4[] = [
   {
@@ -135,9 +135,7 @@ function formFor(material: AppearanceMaterialV4): RenderDieV4["form"] {
   return "standard";
 }
 
-function die(
-  material: AppearanceMaterialV4 = materials[0] as AppearanceMaterialV4,
-): RenderDieV4 {
+function die(material: AppearanceMaterialV4 = materials[0]): RenderDieV4 {
   const family = material.family;
   return {
     target: "d20",
@@ -177,27 +175,38 @@ function die(
   };
 }
 
-function requestWithDie(value: unknown): unknown {
+type R1RequestFixture<Die> = {
+  version: 4;
+  rendererRevision: "canvaskit-v4-r1";
+  groups: [[Die]];
+};
+
+function singleDieGroup<Die>(value: Die): [[Die]] {
+  return [[value]];
+}
+
+function requestWithDie<Die>(value: Die): R1RequestFixture<Die> {
   return {
     version: 4,
     rendererRevision: "canvaskit-v4-r1",
-    groups: [[value]],
+    groups: singleDieGroup(value),
   };
 }
 
 function validRequest(): RenderRequestV4 {
-  return requestWithDie(die()) as RenderRequestV4;
+  return requestWithDie(die());
 }
 
 function revision2Request(
   value: RenderDieV4 = die(),
   scope: TextureScopeV4 = "die-wide",
-) {
+): RenderRequestV4 {
   const snapshot = structuredClone(value);
-  Object.assign(snapshot.appearance.texture, {
-    scope,
-    ...(scope === "face-local" ? { offsetU: 0, offsetV: 0 } : {}),
-  });
+  snapshot.appearance.texture.scope = scope;
+  if (scope === "face-local") {
+    snapshot.appearance.texture.offsetU = 0;
+    snapshot.appearance.texture.offsetV = 0;
+  }
   return {
     version: 4,
     rendererRevision: "canvaskit-v4-r2",
@@ -208,7 +217,6 @@ function revision2Request(
 describe("RenderRequestV4", () => {
   it("enforces revision-specific white outline boundaries", () => {
     const material = materials[0];
-    if (material === undefined) throw new Error("Outline test material is missing");
     const adaptiveDie = die(material);
     adaptiveDie.appearance.palette = ["#123456", "#123456"];
     const adaptive = revision2Request({
@@ -235,9 +243,6 @@ describe("RenderRequestV4", () => {
     expect(validateRenderRequestV4(nearBlackSolid)).toEqual(nearBlackSolid);
 
     const nonSolidMaterial = materials[5];
-    if (nonSolidMaterial === undefined) {
-      throw new Error("Non-solid outline test material is missing");
-    }
     const nonSolidDie = die(nonSolidMaterial);
     const nonSolid = revision2Request({
       ...nonSolidDie,
@@ -280,9 +285,6 @@ describe("RenderRequestV4", () => {
     );
 
     const hollowMaterial = materials[7];
-    if (hollowMaterial === undefined) {
-      throw new Error("Hollow outline test material is missing");
-    }
     const hollowDie = die(hollowMaterial);
     const hollow = revision2Request({
       ...hollowDie,
@@ -308,7 +310,7 @@ describe("RenderRequestV4", () => {
   });
 
   it("accepts percentile-ones labels only on d10 dice and preserves omitted labels", () => {
-    const d10 = {
+    const d10: Extract<RenderDieV4, { target: "d10" }> = {
       ...die(),
       target: "d10",
       result: 10,
@@ -318,8 +320,10 @@ describe("RenderRequestV4", () => {
       requestWithDie(d10),
     );
 
-    const historicalD10 = { ...d10 };
-    delete (historicalD10 as { faceLabelSet?: unknown }).faceLabelSet;
+    const historicalD10: Extract<RenderDieV4, { target: "d10" }> = {
+      ...d10,
+    };
+    delete historicalD10.faceLabelSet;
     expect(validateRenderRequestV4(requestWithDie(historicalD10))).toEqual(
       requestWithDie(historicalD10),
     );
@@ -331,6 +335,11 @@ describe("RenderRequestV4", () => {
     expect(() =>
       validateRenderRequestV4(
         requestWithDie({ ...d10, faceLabelSet: "native" }),
+      ),
+    ).toThrow("groups[0][0].faceLabelSet is not supported");
+    expect(() =>
+      validateRenderRequestV4(
+        requestWithDie({ ...d10, faceLabelSet: undefined }),
       ),
     ).toThrow("groups[0][0].faceLabelSet is not supported");
   });
@@ -350,14 +359,26 @@ describe("RenderRequestV4", () => {
     const current = {
       version: 4,
       rendererRevision: "canvaskit-v4-r16",
-      groups: [[currentDie]],
-    } as const;
+      groups: singleDieGroup(currentDie),
+    };
     expect(validateRenderRequestV4(current)).toEqual(current);
 
     const missingView = structuredClone(current);
-    delete (missingView.groups[0][0] as { view?: unknown }).view;
-    expect(() => validateRenderRequestV4(missingView)).toThrow(
+    const { view: omittedView, ...dieWithoutView } = missingView.groups[0][0];
+    expect(omittedView).toBeDefined();
+    const requestWithoutView = {
+      ...missingView,
+      groups: [[dieWithoutView]],
+    };
+    expect(() => validateRenderRequestV4(requestWithoutView)).toThrow(
       "Render request groups[0][0] has invalid fields",
+    );
+    const requestWithUndefinedView = {
+      ...current,
+      groups: singleDieGroup({ ...currentDie, view: undefined }),
+    };
+    expect(() => validateRenderRequestV4(requestWithUndefinedView)).toThrow(
+      "Render request groups[0][0].view must be an object",
     );
 
     const invalidPose = structuredClone(current);
@@ -870,11 +891,9 @@ describe("RenderRequestV4", () => {
       target: "other",
       sides: 20,
       form: "sphere",
-    };
+    } satisfies RenderDieV4;
     expect(() =>
-      validateRenderRequestV4(
-        revision2Request(otherValue as RenderDieV4, "face-local"),
-      ),
+      validateRenderRequestV4(revision2Request(otherValue, "face-local")),
     ).toThrow("face-local texture scope is invalid for other");
   });
 
@@ -885,7 +904,7 @@ describe("RenderRequestV4", () => {
       finish: "vine-carved",
       grainDensity: 48,
       textureScale: 100,
-    } as const;
+    } satisfies AppearanceMaterialV4;
     const parsed = validateRenderRequestV4(requestWithDie(die(material)));
     expect(parsed.groups[0]?.[0]?.appearance.material).toEqual(material);
   });
@@ -894,11 +913,18 @@ describe("RenderRequestV4", () => {
     expect(() =>
       validateRenderRequestV4({ ...validRequest(), extra: true }),
     ).toThrow("Render request V4 has invalid fields");
-    expect(() =>
-      validateRenderRequestV4(
-        Object.assign(Object.create({}) as object, validRequest()),
-      ),
-    ).toThrow("Render request V4 has invalid fields");
+    class NonPlainRequest {
+      isPrototypeFixture(): true {
+        return true;
+      }
+    }
+    const inheritedRequest = Object.assign(
+      new NonPlainRequest(),
+      validRequest(),
+    );
+    expect(() => validateRenderRequestV4(inheritedRequest)).toThrow(
+      "Render request V4 has invalid fields",
+    );
     expect(() =>
       validateRenderRequestV4({ ...validRequest(), version: 3 }),
     ).toThrow("Render request version must be 4");
@@ -976,7 +1002,6 @@ describe("RenderRequestV4", () => {
     for (const form of ["sharp", "crystal-cut", "hollow-cage"] as const) {
       const material =
         form === "hollow-cage" ? materials[7] : materials[4];
-      if (material === undefined) throw new Error("Test material is missing");
       expect(() =>
         validateRenderRequestV4(
           requestWithDie({ ...die(material), target: "d6", result: 6, form }),
@@ -992,7 +1017,6 @@ describe("RenderRequestV4", () => {
       ["crystal-cut", materials[4]],
       ["hollow-cage", materials[7]],
     ] as const) {
-      if (material === undefined) throw new Error("Test material is missing");
       const value = revision2Request({
         ...die(material),
         target: "d6",

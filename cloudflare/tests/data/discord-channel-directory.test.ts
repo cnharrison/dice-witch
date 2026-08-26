@@ -1,6 +1,11 @@
-import { env } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { dataTestEnv as dataEnv } from "./test-bindings";
+import {
+  parseDiscordChannelContextRequestV1,
+  parseDiscordChannelDirectoryDispatchV1,
+  parseDiscordChannelDirectoryMutationV1,
+} from "../../packages/discord-contracts/src";
 import {
   D1DiscordChannelDirectoryRepository,
   DISCORD_CHANNEL_DIRECTORY_TTL_MS,
@@ -10,10 +15,6 @@ import {
   resolveDiscordChannelContextCachedV1,
 } from "../../workers/data/src/discord-channel-directory-service";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
 const guildId = "100000000000000002";
 const channelId = "100000000000000003";
 const now = 1_783_800_000_000;
@@ -37,6 +38,53 @@ function upsert(
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.prepare("DELETE FROM discord_channel_directory").run();
+});
+
+describe("Discord channel directory contracts", () => {
+  it("keeps exact internal shapes and routes Dispatches before validation", () => {
+    expect(() =>
+      parseDiscordChannelContextRequestV1({
+        version: 1,
+        guildId,
+        channelId,
+        extra: true,
+      })
+    ).toThrow("Discord channel context request is invalid");
+    expect(() =>
+      parseDiscordChannelDirectoryMutationV1({
+        ...upsert(now),
+        extra: true,
+      })
+    ).toThrow("Discord channel directory mutation is invalid");
+    expect(() =>
+      parseDiscordChannelDirectoryMutationV1({
+        version: 1,
+        operation: "delete",
+        source: "rest",
+        guildId,
+        channelId,
+        observedAt: now,
+      })
+    ).toThrow("Discord channel directory mutation is invalid");
+
+    expect(
+      parseDiscordChannelDirectoryDispatchV1("MESSAGE_CREATE", null, -1),
+    ).toBeNull();
+    expect(
+      parseDiscordChannelDirectoryDispatchV1(
+        "CHANNEL_CREATE",
+        { id: channelId, guild_id: guildId, type: 4 },
+        now,
+      ),
+    ).toBeNull();
+    expect(() =>
+      parseDiscordChannelDirectoryDispatchV1(
+        "CHANNEL_CREATE",
+        { id: "bad", guild_id: guildId, type: 0 },
+        now,
+      )
+    ).toThrow("Discord channel directory dispatch is invalid");
+  });
 });
 
 describe("Discord channel directory", () => {

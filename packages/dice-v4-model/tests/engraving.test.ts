@@ -103,6 +103,7 @@ describe("V4 engraving layer recipes", () => {
   it("rejects an unknown finish", () => {
     expect(() =>
       createEngravingLayerRecipeV4(
+        // SAFETY: This unknown finish deliberately exercises runtime validation.
         "glitter" as never,
         0.2,
         0.4,

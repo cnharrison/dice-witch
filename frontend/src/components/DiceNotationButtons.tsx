@@ -38,7 +38,7 @@ const MODIFIERS = [
   ...SUCCESS_FAILURE,
   ...COMPARISON,
 ] as const;
-const MODIFIER_DESCRIPTIONS: Readonly<Record<string, string>> = {
+const MODIFIER_DESCRIPTIONS = new Map<string, string>(Object.entries({
   k: "Keeps the highest die result in the group.",
   kl: "Keeps the lowest die result in the group.",
   d: "Drops the lowest die result in the group.",
@@ -56,14 +56,14 @@ const MODIFIER_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "<": "Counts results below the comparison value as successes.",
   ">=": "Counts results at or above the comparison value as successes.",
   "<=": "Counts results at or below the comparison value as successes.",
-};
+}));
 const ADVANCED_TABS = ["dice", "modifiers", "numbers"] as const;
 type AdvancedTab = (typeof ADVANCED_TABS)[number];
-const ADVANCED_TAB_LABELS: Readonly<Record<AdvancedTab, string>> = {
+const ADVANCED_TAB_LABELS = {
   dice: "Dice",
   modifiers: "Modifiers",
   numbers: "Numbers",
-};
+} satisfies Readonly<Record<AdvancedTab, string>>;
 const MODIFIER_SUFFIX =
   "(?:k(?:l)?\\d+|d(?:h)?\\d+|!!|!p|!|ro|r|u|cs=\\d+|cf=\\d+|>=\\d+|<=\\d+|=\\d+|>\\d+|<\\d+)*";
 
@@ -170,6 +170,7 @@ function appendOperator(currentInput: string, operator: string): string {
   return /\d$/.test(currentInput) ? `${currentInput}${operator}` : currentInput;
 }
 
+// SAFETY: The surrounding validation establishes the (typeof SUCCESS_FAILURE)[number] and (typeof KEEP_DROP)[number] invariant used below.
 function appendModifier(currentInput: string, modifier: string): string {
   if (currentInput === "" || !/\d+d(?:\d+|%|F)/i.test(currentInput)) {
     return currentInput;
@@ -184,25 +185,25 @@ function appendModifier(currentInput: string, modifier: string): string {
 }
 
 function modifierLabel(modifier: string): string {
-  const labels: Record<string, string> = {
-    k: "Keep highest",
-    kl: "Keep lowest",
-    d: "Drop lowest",
-    dh: "Drop highest",
-    "!": "Explode",
-    "!!": "Compound explosion",
-    "!p": "Penetrating explosion",
-    r: "Reroll until no match",
-    ro: "Reroll once",
-    u: "Unique",
-    cs: "Critical success",
-    cf: "Critical failure",
-  };
-  return labels[modifier] ?? `Comparison ${modifier}`;
+  switch (modifier) {
+    case "k": return "Keep highest";
+    case "kl": return "Keep lowest";
+    case "d": return "Drop lowest";
+    case "dh": return "Drop highest";
+    case "!": return "Explode";
+    case "!!": return "Compound explosion";
+    case "!p": return "Penetrating explosion";
+    case "r": return "Reroll until no match";
+    case "ro": return "Reroll once";
+    case "u": return "Unique";
+    case "cs": return "Critical success";
+    case "cf": return "Critical failure";
+    default: return `Comparison ${modifier}`;
+  }
 }
 
 function modifierDescription(modifier: string): string {
-  const description = MODIFIER_DESCRIPTIONS[modifier];
+  const description = MODIFIER_DESCRIPTIONS.get(modifier);
   if (description === undefined) throw new Error("Unknown dice modifier");
   return description;
 }
@@ -572,6 +573,7 @@ export function DiceNotationButtons({
                     }
                     event.preventDefault();
                     const offset = event.key === "ArrowRight" ? 1 : -1;
+                    // SAFETY: The surrounding validation establishes the AdvancedTab invariant used below.
                     const next = ADVANCED_TABS[
                       (index + offset + ADVANCED_TABS.length) %
                         ADVANCED_TABS.length

@@ -12,6 +12,23 @@ const MarketingAppearancePreview = React.lazy(
   () => import('@/components/MarketingAppearancePreview'),
 );
 
+interface LandingPageViewProps {
+  isSignedIn: boolean;
+  isSignInLoaded: boolean;
+  authenticateWithRedirect: (options: {
+    strategy: string;
+    returnTo?: string;
+  }) => void;
+  serverStats: {
+    liveGuilds: number;
+    estimatedGuildMemberships: number;
+    knownDiceWitchUsers: number;
+    available: boolean;
+  };
+  SvgFiltersSlot: React.ComponentType;
+  MarketingAppearancePreviewSlot: React.ComponentType;
+}
+
 const DiscordIcon = () => (
   <svg
     width="32"
@@ -26,16 +43,21 @@ const DiscordIcon = () => (
   </svg>
 );
 
-const LandingPage = () => {
-  const { isSignedIn } = useAuth();
-  const { signIn, isLoaded } = useSignIn();
+export const LandingPageView = ({
+  isSignedIn,
+  isSignInLoaded,
+  authenticateWithRedirect,
+  serverStats,
+  SvgFiltersSlot,
+  MarketingAppearancePreviewSlot,
+}: LandingPageViewProps) => {
   const location = useLocation();
   const {
     liveGuilds,
     estimatedGuildMemberships,
     knownDiceWitchUsers,
-    available
-  } = useServerStats();
+    available,
+  } = serverStats;
   const previewSectionRef = React.useRef<HTMLElement>(null);
   const [previewActive, setPreviewActive] = React.useState(false);
 
@@ -55,14 +77,15 @@ const LandingPage = () => {
   }, []);
 
   const handleSignInWithDiscord = () => {
-    if (!isLoaded) return;
+    if (!isSignInLoaded) return;
     
     try {
       const returnTo = new URLSearchParams(location.search).get('returnTo');
-      signIn.authenticateWithRedirect({
-        strategy: 'oauth_discord',
-        ...(returnTo === null ? {} : { returnTo }),
-      });
+      if (returnTo === null) {
+        authenticateWithRedirect({ strategy: 'oauth_discord' });
+      } else {
+        authenticateWithRedirect({ strategy: 'oauth_discord', returnTo });
+      }
     } catch (error) {
       console.error('Authentication error:', error);
     }
@@ -70,7 +93,7 @@ const LandingPage = () => {
 
   return (
     <div className="flex min-h-screen flex-col bg-marketing-background font-mono text-marketing-foreground">
-      <SvgFilters />
+      <SvgFiltersSlot />
       <section className="py-24 md:py-32">
         <div className="container mx-auto px-4 text-center">
           <div className="relative w-60 h-60 md:w-80 md:h-80 mx-auto mb-16">
@@ -191,9 +214,9 @@ const LandingPage = () => {
                 <div className="group relative md:w-auto">
                   <Button
                     onClick={handleSignInWithDiscord}
-                    disabled={!isLoaded}
+                    disabled={!isSignInLoaded}
                     aria-describedby="login-with-discord-requirement"
-                    className={`w-full bg-discord text-discord-foreground hover:bg-discord-hover px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors md:w-auto ${!isLoaded ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    className={`w-full bg-discord text-discord-foreground hover:bg-discord-hover px-8 py-3 rounded-md flex items-center justify-center text-lg font-medium transition-colors md:w-auto ${!isSignInLoaded ? 'opacity-70 cursor-not-allowed' : ''}`}
                   >
                     <DiscordIcon />
                     Login with Discord
@@ -278,7 +301,7 @@ const LandingPage = () => {
           <div className="mx-auto max-w-4xl">
             {previewActive && (
               <React.Suspense fallback={<div className="min-h-96" aria-hidden="true" />}>
-                <MarketingAppearancePreview />
+                <MarketingAppearancePreviewSlot />
               </React.Suspense>
             )}
           </div>
@@ -293,6 +316,23 @@ const LandingPage = () => {
         </div>
       </footer>
     </div>
+  );
+};
+
+const LandingPage = () => {
+  const { isSignedIn } = useAuth();
+  const { signIn, isLoaded } = useSignIn();
+  const serverStats = useServerStats();
+
+  return (
+    <LandingPageView
+      isSignedIn={isSignedIn}
+      isSignInLoaded={isLoaded}
+      authenticateWithRedirect={signIn.authenticateWithRedirect}
+      serverStats={serverStats}
+      SvgFiltersSlot={SvgFilters}
+      MarketingAppearancePreviewSlot={MarketingAppearancePreview}
+    />
   );
 };
 

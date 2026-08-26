@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 
 export const UNDICI_EXCEPTION = {
   package: "undici",
@@ -46,53 +47,64 @@ export const UNDICI_EXCEPTION = {
   expiresAt: Date.parse("2026-08-19T00:00:00Z"),
 };
 
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const AdvisorySchema = z.object({
+  source: z.number(),
+  url: z.string(),
+  severity: z.string(),
+});
+const AllowedVulnerabilitySchema = z.object({
+  isDirect: z.literal(false),
+  range: z.string(),
+  via: z.array(z.json()),
+  effects: z.array(z.string()),
+  nodes: z.array(z.string()),
+});
+const AuditReportSchema = z.object({
+  vulnerabilities: z.record(z.string(), z.json()),
+});
+const VulnerabilitySeveritySchema = z.object({ severity: z.string() });
 
-function isAllowedUndiciAdvisory(name, vulnerability) {
+function isAllowedUndiciAdvisory(name, value) {
+  const vulnerability = AllowedVulnerabilitySchema.safeParse(value);
   if (
     name !== UNDICI_EXCEPTION.package ||
-    !isRecord(vulnerability) ||
-    vulnerability.isDirect !== false ||
-    vulnerability.range !== UNDICI_EXCEPTION.range ||
-    !Array.isArray(vulnerability.via) ||
-    !Array.isArray(vulnerability.effects) ||
-    !Array.isArray(vulnerability.nodes)
+    !vulnerability.success ||
+    vulnerability.data.range !== UNDICI_EXCEPTION.range
   ) {
     return false;
   }
-  const advisories = vulnerability.via
-    .map((advisory) =>
-      isRecord(advisory) &&
-        typeof advisory.source === "number" &&
-        typeof advisory.url === "string" &&
-        typeof advisory.severity === "string"
-        ? [advisory.source, advisory.url, advisory.severity]
-        : null)
+  const advisories = vulnerability.data.via
+    .map((value) => {
+      const advisory = AdvisorySchema.safeParse(value);
+      return advisory.success
+        ? [advisory.data.source, advisory.data.url, advisory.data.severity]
+        : null;
+    })
     .filter((advisory) => advisory !== null)
     .sort(([first], [second]) => first - second);
   return (
-    advisories.length === vulnerability.via.length &&
+    advisories.length === vulnerability.data.via.length &&
     JSON.stringify(advisories) === JSON.stringify(UNDICI_EXCEPTION.advisories) &&
-    JSON.stringify([...vulnerability.effects].sort()) ===
+    JSON.stringify([...vulnerability.data.effects].sort()) ===
       JSON.stringify(UNDICI_EXCEPTION.effects) &&
-    JSON.stringify([...vulnerability.nodes].sort()) ===
+    JSON.stringify([...vulnerability.data.nodes].sort()) ===
       JSON.stringify(UNDICI_EXCEPTION.nodes)
   );
 }
 
-export function evaluateAuditReport(report, now = Date.now()) {
-  if (!isRecord(report) || !isRecord(report.vulnerabilities)) {
+export function evaluateAuditReport(value, now = Date.now()) {
+  const report = AuditReportSchema.safeParse(value);
+  if (!report.success) {
     throw new Error("npm audit returned an invalid report");
   }
   const blocking = [];
   const allowed = [];
-  for (const [name, vulnerability] of Object.entries(report.vulnerabilities)) {
+  for (const [name, vulnerability] of Object.entries(report.data.vulnerabilities)) {
+    const parsed = VulnerabilitySeveritySchema.safeParse(vulnerability);
     if (
-      !isRecord(vulnerability) ||
-      (vulnerability.severity !== "high" &&
-        vulnerability.severity !== "critical")
+      !parsed.success ||
+      (parsed.data.severity !== "high" &&
+        parsed.data.severity !== "critical")
     ) {
       continue;
     }

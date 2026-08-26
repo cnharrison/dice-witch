@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   readMutationReceipt,
   validateMutationMetadata,
@@ -39,20 +40,23 @@ type ValidatedInput = CompleteWebLoginInput & {
   tokenHash: string;
 };
 
-function validNullableString(value: unknown): value is string | null {
-  return value === null || (typeof value === "string" && value.length <= 255);
-}
+const nullableProfileStringSchema = z.string().max(255).nullable();
+const WebLoginProfileSchema = z.object({
+  username: z.string().max(255),
+  email: nullableProfileStringSchema,
+  avatar: nullableProfileStringSchema,
+});
+const LoginMutationPayloadSchema = z.looseObject({
+  username: z.string(),
+  email: z.string().nullable(),
+  lastWebLogin: z.number(),
+  avatar: z.string().nullable(),
+});
 
 function validateProfile(value: WebLoginProfile): WebLoginProfile {
-  if (
-    typeof value.username !== "string" ||
-    value.username.length > 255 ||
-    !validNullableString(value.email) ||
-    !validNullableString(value.avatar)
-  ) {
-    throw new Error("Web login profile is invalid");
-  }
-  return { ...value };
+  const result = WebLoginProfileSchema.safeParse(value);
+  if (!result.success) throw new Error("Web login profile is invalid");
+  return result.data;
 }
 
 async function validateInput(
@@ -104,18 +108,15 @@ function sameLoginMutation(
     return false;
   }
   try {
-    const payload: unknown = JSON.parse(row.payload_json);
+    const payload = LoginMutationPayloadSchema.safeParse(
+      JSON.parse(row.payload_json),
+    );
     return (
-      typeof payload === "object" &&
-      payload !== null &&
-      "username" in payload &&
-      payload.username === input.profile.username &&
-      "email" in payload &&
-      payload.email === input.profile.email &&
-      "lastWebLogin" in payload &&
-      payload.lastWebLogin === input.createdAt &&
-      "avatar" in payload &&
-      payload.avatar === input.profile.avatar
+      payload.success &&
+      payload.data.username === input.profile.username &&
+      payload.data.email === input.profile.email &&
+      payload.data.lastWebLogin === input.createdAt &&
+      payload.data.avatar === input.profile.avatar
     );
   } catch {
     return false;

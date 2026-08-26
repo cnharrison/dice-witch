@@ -1,7 +1,14 @@
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
-const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
-const PNG_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/i;
-const ATTACHMENT_URL = /^attachment:\/\/[A-Za-z0-9][A-Za-z0-9._-]{0,103}$/;
+import { z } from "zod";
+import {
+  boundaryObjectSchema,
+  interactionTokenSchema,
+  type SchemaInput,
+  snowflakeSchema,
+  strictObjectSchema,
+} from "./schema-primitives";
+
+const PNG_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$/iu;
+const ATTACHMENT_URL = /^attachment:\/\/[A-Za-z0-9][A-Za-z0-9._-]{0,103}$/u;
 export const DISCORD_EPHEMERAL_FLAG = 1 << 6;
 export const DISCORD_SUPPRESS_NOTIFICATIONS_FLAG = 1 << 12;
 export const DISCORD_COMPONENTS_V2_FLAG = 1 << 15;
@@ -15,121 +22,212 @@ const MAX_ATTACHMENT_DESCRIPTION_LENGTH = 1_024;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_COMPONENTS = 40;
 
-export type InteractionResponseTarget = {
-  id: string;
-  applicationId: string;
-  token: string;
-};
+const LegacyContentSchema = z.string().min(1).max(MAX_CONTENT_LENGTH);
+const ComponentInputsSchema = z.array(z.unknown());
+const EmbedInputsSchema = ComponentInputsSchema.min(1).max(MAX_EMBEDS);
+const ActionRowInputsSchema = ComponentInputsSchema.min(1).max(5);
+const ColorSchema = z.number().int().min(0).max(0xff_ffff);
+const AttachmentDescriptionSchema = z
+  .string()
+  .min(1)
+  .max(MAX_ATTACHMENT_DESCRIPTION_LENGTH);
+const AttachmentUrlSchema = z.string().regex(ATTACHMENT_URL);
+const HttpsUrlSchema = z.string().refine((value) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === "";
+  } catch {
+    return false;
+  }
+});
+const MediaUrlSchema = z.union([AttachmentUrlSchema, HttpsUrlSchema]);
 
-export type DiscordEmbed = {
-  title?: string;
-  description?: string;
-  color?: number;
-  footer?: { text: string };
-  image?: { url: string };
-};
+const InteractionResponseTargetSchema = strictObjectSchema({
+  id: snowflakeSchema,
+  applicationId: snowflakeSchema,
+  token: interactionTokenSchema,
+});
+export type InteractionResponseTarget = z.infer<
+  typeof InteractionResponseTargetSchema
+>;
 
-export type DiscordCustomButton = {
-  type: 2;
-  style: 1 | 2 | 3 | 4;
-  label: string;
-  custom_id: string;
-  disabled?: boolean;
-};
+const DiscordEmbedSchema = strictObjectSchema({
+  title: z.string().min(1).max(MAX_TITLE_LENGTH).optional(),
+  description: z.string().min(1).max(MAX_DESCRIPTION_LENGTH).optional(),
+  color: ColorSchema.optional(),
+  footer: strictObjectSchema({
+    text: z.string().min(1).max(MAX_FOOTER_LENGTH),
+  }).optional(),
+  image: strictObjectSchema({ url: AttachmentUrlSchema }).optional(),
+}).refine(
+  (embed) =>
+    embed.title !== undefined ||
+    embed.description !== undefined ||
+    embed.footer !== undefined ||
+    embed.image !== undefined,
+);
+export type DiscordEmbed = z.infer<typeof DiscordEmbedSchema>;
 
-export type DiscordLinkButton = {
-  type: 2;
-  style: 5;
-  label: string;
-  url: string;
-  disabled?: boolean;
-};
+const DiscordCustomButtonSchema = strictObjectSchema({
+  type: z.literal(2),
+  style: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+  label: z.string().min(1).max(80),
+  custom_id: z.string().min(1).max(100),
+  disabled: z.boolean().optional(),
+});
+export type DiscordCustomButton = z.infer<
+  typeof DiscordCustomButtonSchema
+>;
 
-export type DiscordButton = DiscordCustomButton | DiscordLinkButton;
+const DiscordLinkButtonSchema = strictObjectSchema({
+  type: z.literal(2),
+  style: z.literal(5),
+  label: z.string().min(1).max(80),
+  url: HttpsUrlSchema,
+  disabled: z.boolean().optional(),
+});
+export type DiscordLinkButton = z.infer<typeof DiscordLinkButtonSchema>;
 
-export type DiscordStringSelectOption = {
-  label: string;
-  value: string;
-  description?: string;
-  default?: boolean;
-};
+const DiscordButtonSchema = z.discriminatedUnion("style", [
+  DiscordCustomButtonSchema,
+  DiscordLinkButtonSchema,
+]);
+export type DiscordButton = z.infer<typeof DiscordButtonSchema>;
 
-export type DiscordStringSelect = {
-  type: 3;
-  custom_id: string;
-  options: DiscordStringSelectOption[];
-  placeholder?: string;
-  min_values?: number;
-  max_values?: number;
-  disabled?: boolean;
-};
+const DiscordStringSelectOptionSchema = strictObjectSchema({
+  label: z.string().min(1).max(100),
+  value: z.string().min(1).max(100),
+  description: z.string().min(1).max(100).optional(),
+  default: z.boolean().optional(),
+});
+export type DiscordStringSelectOption = z.infer<
+  typeof DiscordStringSelectOptionSchema
+>;
 
-export type DiscordActionRow = {
-  type: 1;
-  components: Array<DiscordButton | DiscordStringSelect>;
-};
+const DiscordStringSelectSchema = strictObjectSchema({
+  type: z.literal(3),
+  custom_id: z.string().min(1).max(100),
+  options: z.array(DiscordStringSelectOptionSchema).min(1).max(25),
+  placeholder: z.string().min(1).max(150).optional(),
+  min_values: z.number().int().min(0).optional(),
+  max_values: z.number().int().min(1).optional(),
+  disabled: z.boolean().optional(),
+}).superRefine((select, context) => {
+  const minimum = select.min_values ?? 1;
+  const maximum = select.max_values ?? 1;
+  if (maximum > select.options.length || minimum > maximum) {
+    context.addIssue({ code: "custom", message: "Invalid select limits" });
+  }
+});
+export type DiscordStringSelect = z.infer<
+  typeof DiscordStringSelectSchema
+>;
 
-export type DiscordTextDisplay = {
-  type: 10;
-  content: string;
-};
+const DiscordActionRowSchema = strictObjectSchema({
+  type: z.literal(1),
+  components: z
+    .array(z.union([DiscordButtonSchema, DiscordStringSelectSchema]))
+    .min(1)
+    .max(5),
+}).superRefine((row, context) => {
+  const selects = row.components.filter((component) => component.type === 3);
+  if (selects.length > 0 && row.components.length !== 1) {
+    context.addIssue({ code: "custom", message: "Invalid action row layout" });
+  }
+});
+export type DiscordActionRow = z.infer<typeof DiscordActionRowSchema>;
 
-export type DiscordUnfurledMediaItem = {
-  url: string;
-};
+const DiscordTextDisplaySchema = strictObjectSchema({
+  type: z.literal(10),
+  content: z.string().min(1).max(MAX_TEXT_DISPLAY_LENGTH),
+});
+export type DiscordTextDisplay = z.infer<typeof DiscordTextDisplaySchema>;
 
-export type DiscordThumbnail = {
-  type: 11;
-  media: DiscordUnfurledMediaItem;
-  description?: string;
-  spoiler?: boolean;
-};
+const DiscordUnfurledMediaItemSchema = strictObjectSchema({
+  url: MediaUrlSchema,
+});
+export type DiscordUnfurledMediaItem = z.infer<
+  typeof DiscordUnfurledMediaItemSchema
+>;
 
-export type DiscordSection = {
-  type: 9;
-  components: DiscordTextDisplay[];
-  accessory: DiscordButton | DiscordThumbnail;
-};
+const DiscordThumbnailSchema = strictObjectSchema({
+  type: z.literal(11),
+  media: DiscordUnfurledMediaItemSchema,
+  description: AttachmentDescriptionSchema.optional(),
+  spoiler: z.boolean().optional(),
+});
+export type DiscordThumbnail = z.infer<typeof DiscordThumbnailSchema>;
 
-export type DiscordMediaGalleryItem = {
-  media: DiscordUnfurledMediaItem;
-  description?: string;
-  spoiler?: boolean;
-};
+const DiscordSectionSchema = strictObjectSchema({
+  type: z.literal(9),
+  components: z.array(DiscordTextDisplaySchema).min(1).max(3),
+  accessory: z.union([DiscordButtonSchema, DiscordThumbnailSchema]),
+});
+export type DiscordSection = z.infer<typeof DiscordSectionSchema>;
 
-export type DiscordMediaGallery = {
-  type: 12;
-  items: DiscordMediaGalleryItem[];
-};
+const DiscordMediaGalleryItemSchema = strictObjectSchema({
+  media: DiscordUnfurledMediaItemSchema,
+  description: AttachmentDescriptionSchema.optional(),
+  spoiler: z.boolean().optional(),
+});
+export type DiscordMediaGalleryItem = z.infer<
+  typeof DiscordMediaGalleryItemSchema
+>;
 
-export type DiscordFile = {
-  type: 13;
-  file: DiscordUnfurledMediaItem;
-  spoiler?: boolean;
-};
+const DiscordMediaGallerySchema = strictObjectSchema({
+  type: z.literal(12),
+  items: z.array(DiscordMediaGalleryItemSchema).min(1).max(10),
+});
+export type DiscordMediaGallery = z.infer<
+  typeof DiscordMediaGallerySchema
+>;
 
-export type DiscordSeparator = {
-  type: 14;
-  divider?: boolean;
-  spacing?: 1 | 2;
-};
+const DiscordFileSchema = strictObjectSchema({
+  type: z.literal(13),
+  file: strictObjectSchema({ url: AttachmentUrlSchema }),
+  spoiler: z.boolean().optional(),
+});
+export type DiscordFile = z.infer<typeof DiscordFileSchema>;
 
-export type DiscordContainerChild =
-  | DiscordActionRow
-  | DiscordSection
-  | DiscordTextDisplay
-  | DiscordMediaGallery
-  | DiscordFile
-  | DiscordSeparator;
+const DiscordSeparatorSchema = strictObjectSchema({
+  type: z.literal(14),
+  divider: z.boolean().optional(),
+  spacing: z.union([z.literal(1), z.literal(2)]).optional(),
+});
+export type DiscordSeparator = z.infer<typeof DiscordSeparatorSchema>;
 
-export type DiscordContainer = {
-  type: 17;
-  components: DiscordContainerChild[];
-  accent_color?: number;
-  spoiler?: boolean;
-};
+const DiscordContainerChildSchema = z.discriminatedUnion("type", [
+  DiscordActionRowSchema,
+  DiscordSectionSchema,
+  DiscordTextDisplaySchema,
+  DiscordMediaGallerySchema,
+  DiscordFileSchema,
+  DiscordSeparatorSchema,
+]);
+export type DiscordContainerChild = z.infer<
+  typeof DiscordContainerChildSchema
+>;
 
-export type DiscordTopLevelComponent = DiscordContainerChild | DiscordContainer;
+const DiscordContainerSchema = strictObjectSchema({
+  type: z.literal(17),
+  components: z.array(DiscordContainerChildSchema).min(1).max(10),
+  accent_color: ColorSchema.optional(),
+  spoiler: z.boolean().optional(),
+});
+export type DiscordContainer = z.infer<typeof DiscordContainerSchema>;
+
+const DiscordTopLevelComponentSchema = z.discriminatedUnion("type", [
+  DiscordActionRowSchema,
+  DiscordSectionSchema,
+  DiscordTextDisplaySchema,
+  DiscordMediaGallerySchema,
+  DiscordFileSchema,
+  DiscordSeparatorSchema,
+  DiscordContainerSchema,
+]);
+export type DiscordTopLevelComponent = z.infer<
+  typeof DiscordTopLevelComponentSchema
+>;
 
 export type DiscordLegacyMessage = {
   content?: string;
@@ -138,447 +236,308 @@ export type DiscordLegacyMessage = {
   flags?: never;
 };
 
+const ComponentsV2FlagsSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .refine((flags) => (flags & DISCORD_COMPONENTS_V2_FLAG) !== 0);
 export type DiscordComponentsV2Message = {
-  flags: number;
+  flags: z.infer<typeof ComponentsV2FlagsSchema>;
   components: DiscordTopLevelComponent[];
   content?: never;
   embeds?: never;
 };
+export type DiscordMessage =
+  | DiscordLegacyMessage
+  | DiscordComponentsV2Message;
 
-export type DiscordMessage = DiscordLegacyMessage | DiscordComponentsV2Message;
+const DiscordPngAttachmentSchema = strictObjectSchema({
+  filename: z.string().regex(PNG_FILENAME),
+  contentType: z.literal("image/png"),
+  bytes: z.custom<Uint8Array>((value) => value instanceof Uint8Array).refine(
+    (bytes) => bytes.byteLength > 0 && bytes.byteLength <= MAX_ATTACHMENT_BYTES,
+  ),
+  description: AttachmentDescriptionSchema.optional(),
+});
+export type DiscordPngAttachment = z.infer<
+  typeof DiscordPngAttachmentSchema
+>;
 
-export type DiscordPngAttachment = {
+const ComponentsV2DiscriminatorSchema = z.looseObject({
+  flags: z
+    .number()
+    .refine((flags) => (flags & DISCORD_COMPONENTS_V2_FLAG) !== 0),
+});
+const ComponentsV2LegacyFieldsSchema = z.looseObject({
+  content: z.undefined().optional(),
+  embeds: z.undefined().optional(),
+});
+const ComponentDiscriminatorSchema = z.looseObject({ type: z.number() });
+const LegacyMessageEnvelopeSchema = strictObjectSchema({
+  content: LegacyContentSchema.optional(),
+  embeds: EmbedInputsSchema.optional(),
+  components: ActionRowInputsSchema.optional(),
+}).refine(
+  (message) =>
+    message.content !== undefined ||
+    message.embeds !== undefined ||
+    message.components !== undefined,
+);
+const ComponentsV2MessageEnvelopeSchema = strictObjectSchema({
+  flags: z.number().int().nonnegative(),
+  components: ComponentInputsSchema.min(1),
+});
+const ComponentsV2PayloadEnvelopeSchema = z.looseObject({
+  flags: z.number().int().nonnegative(),
+  components: ComponentInputsSchema.min(1),
+  content: z.undefined().optional(),
+  embeds: z.undefined().optional(),
+});
+const SectionEnvelopeSchema = strictObjectSchema({
+  type: z.literal(9),
+  components: ComponentInputsSchema.min(1).max(3),
+  accessory: z.unknown(),
+});
+const ContainerEnvelopeSchema = strictObjectSchema({
+  type: z.literal(17),
+  components: ComponentInputsSchema.min(1).max(10),
+  accent_color: ColorSchema.optional(),
+  spoiler: z.boolean().optional(),
+});
+
+type AllowedMentions = { parse: [] };
+type LegacyMessagePayload = {
+  content?: string;
+  embeds?: DiscordEmbed[];
+  components?: DiscordActionRow[];
+  flags?: number;
+  allowed_mentions: AllowedMentions;
+};
+type LegacyMessageFields = Omit<LegacyMessagePayload, "allowed_mentions">;
+type ComponentsV2MessagePayload = DiscordComponentsV2Message & {
+  allowed_mentions: AllowedMentions;
+};
+type MessagePayload = LegacyMessagePayload | ComponentsV2MessagePayload;
+type DiscordRequestBody = {
+  type?: 5;
+  data?: { flags: number };
+  content?: string | null;
+  embeds?: DiscordEmbed[];
+  components?: DiscordTopLevelComponent[];
+  flags?: number;
+  allowed_mentions?: AllowedMentions;
+  nonce?: string;
+  enforce_nonce?: boolean;
+};
+type AttachmentMetadata = {
+  id: 0;
   filename: string;
-  contentType: string;
-  bytes: Uint8Array;
   description?: string;
 };
+type MultipartPayload = DiscordRequestBody & {
+  attachments: AttachmentMetadata[];
+};
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasOnlyKeys(value: object, allowed: readonly string[]): boolean {
-  const keys = Object.keys(value);
-  return keys.length === allowed.length && keys.every((key) => allowed.includes(key));
-}
-
-function hasAllowedKeys(value: object, allowed: readonly string[]): boolean {
-  return Object.keys(value).every((key) => allowed.includes(key));
-}
-
-function validateTarget(target: InteractionResponseTarget): void {
-  if (
-    !SNOWFLAKE.test(target.id) ||
-    !SNOWFLAKE.test(target.applicationId) ||
-    !INTERACTION_TOKEN.test(target.token)
-  ) {
-    throw new Error("Discord interaction response target is invalid");
+function componentCount(component: DiscordTopLevelComponent): number {
+  switch (component.type) {
+    case 17:
+      return 1 + component.components.reduce(
+        (total, child) => total + componentCount(child),
+        0,
+      );
+    case 9:
+      return 2 + component.components.length;
+    case 1:
+      return 1 + component.components.length;
+    default:
+      return 1;
   }
 }
 
-function validateEmbed(embed: DiscordEmbed): void {
-  if (
-    (embed.title === undefined &&
-      embed.description === undefined &&
-      embed.footer === undefined &&
-      embed.image === undefined) ||
-    (embed.title !== undefined &&
-      (embed.title.length === 0 || embed.title.length > MAX_TITLE_LENGTH)) ||
-    (embed.description !== undefined &&
-      (embed.description.length === 0 ||
-        embed.description.length > MAX_DESCRIPTION_LENGTH)) ||
-    (embed.color !== undefined &&
-      (!Number.isInteger(embed.color) || embed.color < 0 || embed.color > 0xff_ffff)) ||
-    (embed.footer !== undefined &&
-      (embed.footer.text.length === 0 ||
-        embed.footer.text.length > MAX_FOOTER_LENGTH)) ||
-    (embed.image !== undefined && !ATTACHMENT_URL.test(embed.image.url))
-  ) {
-    throw new Error("Discord embed is invalid");
-  }
+function requireTextDisplay(value: SchemaInput): DiscordTextDisplay {
+  const result = DiscordTextDisplaySchema.safeParse(value);
+  if (!result.success) throw new Error("Discord text display is invalid");
+  return result.data;
 }
 
-function isValidHttpsUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && url.username === "" && url.password === "";
-  } catch {
-    return false;
-  }
+function requireActionRow(value: SchemaInput): DiscordActionRow {
+  const result = DiscordActionRowSchema.safeParse(value);
+  if (!result.success) throw new Error("Discord action row is invalid");
+  return result.data;
 }
 
-function isValidMediaUrl(value: string): boolean {
-  return ATTACHMENT_URL.test(value) || isValidHttpsUrl(value);
-}
-
-function hasComponentType(component: { type: number }, type: number): boolean {
-  return component.type === type;
-}
-
-function isSeparatorSpacing(value: unknown): value is 1 | 2 {
-  return value === 1 || value === 2;
-}
-
-function isValidButton(component: DiscordButton): boolean {
-  if (
-    !hasAllowedKeys(component, ["type", "style", "label", "custom_id", "url", "disabled"]) ||
-    !hasComponentType(component, 2) ||
-    component.label.length < 1 ||
-    component.label.length > 80 ||
-    (component.disabled !== undefined && typeof component.disabled !== "boolean")
-  ) {
-    return false;
-  }
-  if (component.style === 5) {
-    return (
-      hasOnlyKeys(
-        component,
-        component.disabled === undefined
-          ? ["type", "style", "label", "url"]
-          : ["type", "style", "label", "url", "disabled"],
-      ) && isValidHttpsUrl(component.url)
-    );
-  }
-  return (
-    [1, 2, 3, 4].includes(component.style) &&
-    hasOnlyKeys(
-      component,
-      component.disabled === undefined
-        ? ["type", "style", "label", "custom_id"]
-        : ["type", "style", "label", "custom_id", "disabled"],
-    ) &&
-    component.custom_id.length >= 1 &&
-    component.custom_id.length <= 100
-  );
-}
-
-function isValidSelectOption(option: DiscordStringSelectOption): boolean {
-  return (
-    hasAllowedKeys(option, ["label", "value", "description", "default"]) &&
-    option.label.length >= 1 &&
-    option.label.length <= 100 &&
-    option.value.length >= 1 &&
-    option.value.length <= 100 &&
-    (option.description === undefined ||
-      (option.description.length >= 1 && option.description.length <= 100)) &&
-    (option.default === undefined || typeof option.default === "boolean")
-  );
-}
-
-function isValidStringSelect(component: DiscordStringSelect): boolean {
-  const min = component.min_values ?? 1;
-  const max = component.max_values ?? 1;
-  return (
-    hasAllowedKeys(component, [
-      "type",
-      "custom_id",
-      "options",
-      "placeholder",
-      "min_values",
-      "max_values",
-      "disabled",
-    ]) &&
-    hasComponentType(component, 3) &&
-    component.custom_id.length >= 1 &&
-    component.custom_id.length <= 100 &&
-    component.options.length >= 1 &&
-    component.options.length <= 25 &&
-    component.options.every(isValidSelectOption) &&
-    (component.placeholder === undefined ||
-      (component.placeholder.length >= 1 && component.placeholder.length <= 150)) &&
-    Number.isInteger(min) &&
-    min >= 0 &&
-    Number.isInteger(max) &&
-    max >= 1 &&
-    max <= component.options.length &&
-    min <= max &&
-    (component.disabled === undefined || typeof component.disabled === "boolean")
-  );
-}
-
-function validateActionRow(row: DiscordActionRow): void {
-  if (
-    !hasOnlyKeys(row, ["type", "components"]) ||
-    !hasComponentType(row, 1) ||
-    row.components.length < 1 ||
-    row.components.length > 5
-  ) {
-    throw new Error("Discord action row is invalid");
-  }
-  const selects = row.components.filter((component) => component.type === 3);
-  if (
-    (selects.length > 0 &&
-      (row.components.length !== 1 || !isValidStringSelect(selects[0] as DiscordStringSelect))) ||
-    (selects.length === 0 &&
-      row.components.some((component) => !isValidButton(component as DiscordButton)))
-  ) {
-    throw new Error("Discord action row is invalid");
-  }
-}
-
-function validateDescription(value: string | undefined): boolean {
-  return (
-    value === undefined ||
-    (value.length >= 1 && value.length <= MAX_ATTACHMENT_DESCRIPTION_LENGTH)
-  );
-}
-
-function validateTextDisplay(component: DiscordTextDisplay): void {
-  if (
-    !hasOnlyKeys(component, ["type", "content"]) ||
-    !hasComponentType(component, 10) ||
-    component.content.length < 1 ||
-    component.content.length > MAX_TEXT_DISPLAY_LENGTH
-  ) {
-    throw new Error("Discord text display is invalid");
-  }
-}
-
-function validateThumbnail(component: DiscordThumbnail): void {
-  if (
-    !hasAllowedKeys(component, ["type", "media", "description", "spoiler"]) ||
-    !hasComponentType(component, 11) ||
-    !hasOnlyKeys(component.media, ["url"]) ||
-    !isValidMediaUrl(component.media.url) ||
-    !validateDescription(component.description) ||
-    (component.spoiler !== undefined && typeof component.spoiler !== "boolean")
-  ) {
-    throw new Error("Discord thumbnail is invalid");
-  }
-}
-
-function validateSection(component: DiscordSection): void {
-  if (
-    !hasOnlyKeys(component, ["type", "components", "accessory"]) ||
-    !hasComponentType(component, 9) ||
-    component.components.length < 1 ||
-    component.components.length > 3
-  ) {
-    throw new Error("Discord section is invalid");
-  }
-  component.components.forEach(validateTextDisplay);
-  if (component.accessory.type === 11) validateThumbnail(component.accessory);
-  else if (!isValidButton(component.accessory)) {
+function requireSection(value: SchemaInput): DiscordSection {
+  const section = SectionEnvelopeSchema.safeParse(value);
+  if (!section.success) throw new Error("Discord section is invalid");
+  const components = section.data.components.map(requireTextDisplay);
+  const accessory = ComponentDiscriminatorSchema.safeParse(section.data.accessory);
+  if (!accessory.success) {
     throw new Error("Discord section accessory is invalid");
   }
-}
-
-function validateMediaGallery(component: DiscordMediaGallery): void {
-  if (
-    !hasOnlyKeys(component, ["type", "items"]) ||
-    !hasComponentType(component, 12) ||
-    component.items.length < 1 ||
-    component.items.length > 10 ||
-    component.items.some(
-      (item) =>
-        !hasAllowedKeys(item, ["media", "description", "spoiler"]) ||
-        !hasOnlyKeys(item.media, ["url"]) ||
-        !isValidMediaUrl(item.media.url) ||
-        !validateDescription(item.description) ||
-        (item.spoiler !== undefined && typeof item.spoiler !== "boolean"),
-    )
-  ) {
-    throw new Error("Discord media gallery is invalid");
+  if (accessory.data.type === 11) {
+    const thumbnail = DiscordThumbnailSchema.safeParse(section.data.accessory);
+    if (!thumbnail.success) throw new Error("Discord thumbnail is invalid");
+    return { type: 9, components, accessory: thumbnail.data };
   }
+  const button = DiscordButtonSchema.safeParse(section.data.accessory);
+  if (!button.success) throw new Error("Discord section accessory is invalid");
+  return { type: 9, components, accessory: button.data };
 }
 
-function validateFile(component: DiscordFile): void {
-  if (
-    !hasAllowedKeys(component, ["type", "file", "spoiler"]) ||
-    !hasComponentType(component, 13) ||
-    !hasOnlyKeys(component.file, ["url"]) ||
-    !ATTACHMENT_URL.test(component.file.url) ||
-    (component.spoiler !== undefined && typeof component.spoiler !== "boolean")
-  ) {
-    throw new Error("Discord file component is invalid");
-  }
-}
-
-function validateSeparator(component: DiscordSeparator): void {
-  if (
-    !hasAllowedKeys(component, ["type", "divider", "spacing"]) ||
-    !hasComponentType(component, 14) ||
-    (component.divider !== undefined && typeof component.divider !== "boolean") ||
-    (component.spacing !== undefined && !isSeparatorSpacing(component.spacing))
-  ) {
-    throw new Error("Discord separator is invalid");
-  }
-}
-
-function validateContainerChild(component: DiscordContainerChild): void {
-  switch (component.type) {
+function requireContainerChild(value: SchemaInput): DiscordContainerChild {
+  const component = ComponentDiscriminatorSchema.safeParse(value);
+  if (!component.success) throw new Error("Discord Container child is invalid");
+  switch (component.data.type) {
     case 1:
-      validateActionRow(component);
-      return;
+      return requireActionRow(value);
     case 9:
-      validateSection(component);
-      return;
+      return requireSection(value);
     case 10:
-      validateTextDisplay(component);
-      return;
-    case 12:
-      validateMediaGallery(component);
-      return;
-    case 13:
-      validateFile(component);
-      return;
-    case 14:
-      validateSeparator(component);
-      return;
+      return requireTextDisplay(value);
+    case 12: {
+      const gallery = DiscordMediaGallerySchema.safeParse(value);
+      if (!gallery.success) throw new Error("Discord media gallery is invalid");
+      return gallery.data;
+    }
+    case 13: {
+      const file = DiscordFileSchema.safeParse(value);
+      if (!file.success) throw new Error("Discord file component is invalid");
+      return file.data;
+    }
+    case 14: {
+      const separator = DiscordSeparatorSchema.safeParse(value);
+      if (!separator.success) throw new Error("Discord separator is invalid");
+      return separator.data;
+    }
     default:
       throw new Error("Discord Container child is invalid");
   }
 }
 
-function validateContainer(component: DiscordContainer): void {
-  if (
-    !hasAllowedKeys(component, ["type", "components", "accent_color", "spoiler"]) ||
-    !hasComponentType(component, 17) ||
-    component.components.length < 1 ||
-    component.components.length > 10 ||
-    (component.accent_color !== undefined &&
-      (!Number.isInteger(component.accent_color) ||
-        component.accent_color < 0 ||
-        component.accent_color > 0xff_ffff)) ||
-    (component.spoiler !== undefined && typeof component.spoiler !== "boolean")
-  ) {
-    throw new Error("Discord Container is invalid");
+function requireContainer(value: SchemaInput): DiscordContainer {
+  const container = ContainerEnvelopeSchema.safeParse(value);
+  if (!container.success) throw new Error("Discord Container is invalid");
+  const result: DiscordContainer = {
+    type: 17,
+    components: container.data.components.map(requireContainerChild),
+  };
+  if (container.data.accent_color !== undefined) {
+    result.accent_color = container.data.accent_color;
   }
-  component.components.forEach(validateContainerChild);
+  if (container.data.spoiler !== undefined) result.spoiler = container.data.spoiler;
+  return result;
 }
 
-function componentCount(component: DiscordTopLevelComponent): number {
-  if (component.type === 17) {
-    return 1 + component.components.reduce(
-      (total, child) => total + componentCount(child),
-      0,
-    );
+function requireTopLevelComponent(
+  value: SchemaInput,
+): DiscordTopLevelComponent {
+  const result = DiscordTopLevelComponentSchema.safeParse(value);
+  if (result.success) return result.data;
+  const component = ComponentDiscriminatorSchema.safeParse(value);
+  if (component.success && component.data.type === 17) {
+    return requireContainer(value);
   }
-  if (component.type === 9) {
-    return (
-      2 +
-      component.components.reduce(
-        (total, child) => total + componentCount(child),
-        0,
-      )
-    );
-  }
-  if (component.type === 1) return 1 + component.components.length;
-  return 1;
+  return requireContainerChild(value);
 }
 
-function validateV2Components(components: DiscordTopLevelComponent[]): void {
-  if (
-    components.length < 1 ||
-    components.reduce((total, component) => total + componentCount(component), 0) >
-      MAX_TOTAL_COMPONENTS
-  ) {
+function requireV2Components(
+  values: SchemaInput[],
+): DiscordTopLevelComponent[] {
+  const components = values.map(requireTopLevelComponent);
+  const count = components.reduce(
+    (total, component) => total + componentCount(component),
+    0,
+  );
+  if (count > MAX_TOTAL_COMPONENTS) {
     throw new Error("Discord Components V2 message components are invalid");
   }
-  for (const component of components) {
-    if (component.type === 17) validateContainer(component);
-    else validateContainerChild(component);
-  }
+  return components;
 }
 
-function validateLegacyComponents(rows: DiscordActionRow[]): void {
-  if (rows.length < 1 || rows.length > 5) {
-    throw new Error("Discord message components are invalid");
+function validateTarget(target: InteractionResponseTarget): void {
+  if (!InteractionResponseTargetSchema.safeParse(target).success) {
+    throw new Error("Discord interaction response target is invalid");
   }
-  rows.forEach(validateActionRow);
 }
 
 export function isComponentsV2Message(
   message: DiscordMessage,
 ): message is DiscordComponentsV2Message {
-  return (
-    typeof (message as { flags?: unknown }).flags === "number" &&
-    (((message as { flags: number }).flags & DISCORD_COMPONENTS_V2_FLAG) !== 0)
-  );
+  return ComponentsV2DiscriminatorSchema.safeParse(message).success;
 }
 
-export function validateDiscordMessage(value: unknown): DiscordMessage {
-  if (!isRecord(value)) throw new Error("Discord message is invalid");
-  if (
-    typeof value.flags === "number" &&
-    (value.flags & DISCORD_COMPONENTS_V2_FLAG) !== 0
-  ) {
-    if (
-      !hasOnlyKeys(value, ["components", "flags"]) ||
-      !Number.isInteger(value.flags) ||
-      value.flags < 0 ||
-      !Array.isArray(value.components)
-    ) {
+export function validateDiscordMessage(value: SchemaInput): DiscordMessage {
+  const boundary = boundaryObjectSchema.safeParse(value);
+  if (!boundary.success) throw new Error("Discord message is invalid");
+
+  if (ComponentsV2DiscriminatorSchema.safeParse(boundary.data).success) {
+    const message = ComponentsV2MessageEnvelopeSchema.safeParse(boundary.data);
+    if (!message.success) {
       throw new Error("Discord Components V2 message is invalid");
     }
-    validateV2Components(value.components as DiscordTopLevelComponent[]);
-    return value;
+    return {
+      flags: message.data.flags,
+      components: requireV2Components(message.data.components),
+    };
   }
-  if (
-    !hasAllowedKeys(value, ["components", "content", "embeds"]) ||
-    (value.content !== undefined &&
-      (typeof value.content !== "string" ||
-        value.content.length < 1 ||
-        value.content.length > MAX_CONTENT_LENGTH)) ||
-    (value.embeds !== undefined &&
-      (!Array.isArray(value.embeds) ||
-        value.embeds.length < 1 ||
-        value.embeds.length > MAX_EMBEDS)) ||
-    (value.components !== undefined && !Array.isArray(value.components)) ||
-    (value.content === undefined &&
-      value.embeds === undefined &&
-      value.components === undefined)
-  ) {
-    throw new Error("Discord legacy message is invalid");
+
+  const message = LegacyMessageEnvelopeSchema.safeParse(boundary.data);
+  if (!message.success) throw new Error("Discord legacy message is invalid");
+  const result: DiscordLegacyMessage = {};
+  if (message.data.content !== undefined) result.content = message.data.content;
+  if (message.data.embeds !== undefined) {
+    result.embeds = message.data.embeds.map((embed) => {
+      const parsed = DiscordEmbedSchema.safeParse(embed);
+      if (!parsed.success) throw new Error("Discord embed is invalid");
+      return parsed.data;
+    });
   }
-  (value.embeds as DiscordEmbed[] | undefined)?.forEach(validateEmbed);
-  if (value.components !== undefined) {
-    validateLegacyComponents(value.components as DiscordActionRow[]);
+  if (message.data.components !== undefined) {
+    result.components = message.data.components.map(requireActionRow);
   }
-  return value;
+  return result;
 }
 
 function messagePayload(
   message: DiscordMessage,
   ephemeral: boolean | null,
-): Record<string, unknown> {
+): MessagePayload {
   if (isComponentsV2Message(message)) {
-    if (
-      (message as { content?: unknown }).content !== undefined ||
-      (message as { embeds?: unknown }).embeds !== undefined
-    ) {
+    if (!ComponentsV2LegacyFieldsSchema.safeParse(message).success) {
       throw new Error("Components V2 messages cannot contain content or embeds");
     }
-    if (!Number.isInteger(message.flags) || message.flags < 0) {
+    if (!ComponentsV2FlagsSchema.safeParse(message.flags).success) {
       throw new Error("Discord message flags are invalid");
     }
-    validateV2Components(message.components);
-    const flags =
-      ephemeral === true
-        ? message.flags | DISCORD_EPHEMERAL_FLAG
-        : message.flags;
+    const parsed = ComponentsV2PayloadEnvelopeSchema.safeParse(message);
+    if (!parsed.success) {
+      throw new Error("Discord Components V2 message components are invalid");
+    }
+    const components = requireV2Components(parsed.data.components);
+    const flags = ephemeral === true
+      ? parsed.data.flags | DISCORD_EPHEMERAL_FLAG
+      : parsed.data.flags;
     if (ephemeral === false && (flags & DISCORD_EPHEMERAL_FLAG) !== 0) {
       throw new Error("Public Discord followups cannot be ephemeral");
     }
     return {
       flags,
-      components: message.components,
+      components,
       allowed_mentions: { parse: [] },
     };
   }
 
-  if (
-    message.content !== undefined &&
-    (message.content.length === 0 || message.content.length > MAX_CONTENT_LENGTH)
-  ) {
+  const content = LegacyContentSchema.safeParse(message.content);
+  if (message.content !== undefined && !content.success) {
     throw new Error("Discord message content is invalid");
   }
-  if (
-    message.embeds !== undefined &&
-    (message.embeds.length === 0 || message.embeds.length > MAX_EMBEDS)
-  ) {
+  const embeds = EmbedInputsSchema.safeParse(message.embeds);
+  if (message.embeds !== undefined && !embeds.success) {
     throw new Error("Discord message embeds are invalid");
+  }
+  const rows = ActionRowInputsSchema.safeParse(message.components);
+  if (message.components !== undefined && !rows.success) {
+    throw new Error("Discord message components are invalid");
   }
   if (
     message.content === undefined &&
@@ -587,20 +546,28 @@ function messagePayload(
   ) {
     throw new Error("Discord message must contain content, embeds, or components");
   }
-  message.embeds?.forEach(validateEmbed);
-  if (message.components !== undefined) validateLegacyComponents(message.components);
-  return {
-    ...(message.content === undefined ? {} : { content: message.content }),
-    ...(message.embeds === undefined ? {} : { embeds: message.embeds }),
-    ...(message.components === undefined ? {} : { components: message.components }),
-    ...(ephemeral === null
-      ? {}
-      : { flags: ephemeral ? DISCORD_EPHEMERAL_FLAG : 0 }),
-    allowed_mentions: { parse: [] },
-  };
+
+  const fields: LegacyMessageFields = {};
+  if (content.success) fields.content = content.data;
+  if (embeds.success) {
+    fields.embeds = embeds.data.map((embed) => {
+      const parsed = DiscordEmbedSchema.safeParse(embed);
+      if (!parsed.success) throw new Error("Discord embed is invalid");
+      return parsed.data;
+    });
+  }
+  if (rows.success) fields.components = rows.data.map(requireActionRow);
+  if (ephemeral !== null) {
+    fields.flags = ephemeral ? DISCORD_EPHEMERAL_FLAG : 0;
+  }
+  return { ...fields, allowed_mentions: { parse: [] } };
 }
 
-function jsonRequest(url: string, method: string, body: unknown): Request {
+function jsonRequest(
+  url: string,
+  method: string,
+  body: DiscordRequestBody,
+): Request {
   return new Request(url, {
     method,
     headers: { "content-type": "application/json" },
@@ -654,14 +621,17 @@ export function buildEditOriginalResponse(
 ): Request {
   validateTarget(target);
   const payload = messagePayload(message, null);
-  // API v10 requires edit-only empty resets when an existing legacy message
-  // first receives IS_COMPONENTS_V2; these fields do not become message content.
+  if (!isComponentsV2Message(message)) {
+    return jsonRequest(
+      `${interactionWebhookUrl(target)}/messages/@original`,
+      "PATCH",
+      payload,
+    );
+  }
   return jsonRequest(
     `${interactionWebhookUrl(target)}/messages/@original`,
     "PATCH",
-    isComponentsV2Message(message)
-      ? { ...payload, content: null, embeds: [] }
-      : payload,
+    { ...payload, content: null, embeds: [] },
   );
 }
 
@@ -694,16 +664,14 @@ export function buildPublicFollowupResponse(
   );
 }
 
-function validateAttachment(attachment: DiscordPngAttachment): void {
-  if (
-    !PNG_FILENAME.test(attachment.filename) ||
-    attachment.contentType !== "image/png" ||
-    attachment.bytes.byteLength === 0 ||
-    attachment.bytes.byteLength > MAX_ATTACHMENT_BYTES ||
-    !validateDescription(attachment.description)
-  ) {
+function validateAttachment(
+  attachment: DiscordPngAttachment,
+): DiscordPngAttachment {
+  const parsed = DiscordPngAttachmentSchema.safeParse(attachment);
+  if (!parsed.success) {
     throw new Error("Discord PNG attachment is invalid");
   }
+  return parsed.data;
 }
 
 function collectAttachmentUrls(component: DiscordTopLevelComponent): string[] {
@@ -712,7 +680,7 @@ function collectAttachmentUrls(component: DiscordTopLevelComponent): string[] {
       return component.components.flatMap(collectAttachmentUrls);
     case 9:
       return component.accessory.type === 11 &&
-        ATTACHMENT_URL.test(component.accessory.media.url)
+          ATTACHMENT_URL.test(component.accessory.media.url)
         ? [component.accessory.media.url]
         : [];
     case 12:
@@ -757,41 +725,50 @@ function responseWithFile(
   followupMessageId?: string,
 ): Request {
   validateTarget(target);
-  validateAttachment(attachment);
-  if (mode === "edit-followup" && !SNOWFLAKE.test(followupMessageId ?? "")) {
+  const payload = messagePayload(message, null);
+  const parsedAttachment = validateAttachment(attachment);
+  if (mode === "edit-followup" && !snowflakeSchema.safeParse(followupMessageId).success) {
     throw new Error("Discord followup message id is invalid");
   }
-  const payload = messagePayload(message, null);
-  validateSingleAttachmentReference(message, attachment.filename);
-  const metadata = {
+  validateSingleAttachmentReference(message, parsedAttachment.filename);
+
+  const metadata: AttachmentMetadata = {
     id: 0,
-    filename: attachment.filename,
-    ...(attachment.description === undefined
-      ? {}
-      : { description: attachment.description }),
+    filename: parsedAttachment.filename,
   };
-  let deliveryMetadata: Record<string, unknown> = {};
-  if (mode === "followup") {
-    deliveryMetadata = { nonce: target.id, enforce_nonce: true };
-  } else if (isComponentsV2Message(message)) {
-    deliveryMetadata = { content: null, embeds: [] };
+  if (parsedAttachment.description !== undefined) {
+    metadata.description = parsedAttachment.description;
   }
-  const form = new FormData();
-  form.set(
-    "payload_json",
-    JSON.stringify({
+
+  let multipartPayload: MultipartPayload;
+  if (mode === "followup") {
+    multipartPayload = {
       ...payload,
-      ...deliveryMetadata,
+      nonce: target.id,
+      enforce_nonce: true,
       attachments: [metadata],
-    }),
-  );
+    };
+  } else if (isComponentsV2Message(message)) {
+    multipartPayload = {
+      ...payload,
+      content: null,
+      embeds: [],
+      attachments: [metadata],
+    };
+  } else {
+    multipartPayload = { ...payload, attachments: [metadata] };
+  }
+
+  const form = new FormData();
+  form.set("payload_json", JSON.stringify(multipartPayload));
   form.set(
     "files[0]",
-    new Blob([attachment.bytes.slice().buffer], {
-      type: attachment.contentType,
+    new Blob([parsedAttachment.bytes.slice().buffer], {
+      type: parsedAttachment.contentType,
     }),
-    attachment.filename,
+    parsedAttachment.filename,
   );
+
   let url = `${interactionWebhookUrl(target)}/messages/@original`;
   if (mode === "followup") url = `${interactionWebhookUrl(target)}?wait=true`;
   else if (mode === "edit-followup") {

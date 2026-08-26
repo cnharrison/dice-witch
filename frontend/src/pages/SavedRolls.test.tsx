@@ -4,58 +4,62 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import {
+  SavedRollsView,
+  type SavedRollsDependencies,
+} from "./SavedRolls";
 
-const {
-  copySavedRoll,
-  createSavedRoll,
-  customFetch,
-  deleteSavedRollBatch,
-  listSavedRollLibraries,
-  listSavedRolls,
-  searchSavedRolls,
-  updateSavedRoll,
-} = vi.hoisted(() => ({
-  copySavedRoll: vi.fn(),
-  createSavedRoll: vi.fn(),
-  customFetch: vi.fn(),
-  deleteSavedRollBatch: vi.fn(),
-  listSavedRollLibraries: vi.fn(),
-  listSavedRolls: vi.fn(),
-  searchSavedRolls: vi.fn(),
-  updateSavedRoll: vi.fn(),
-}));
-vi.mock("@/lib/api", () => ({ customFetch }));
-vi.mock("@/lib/AuthProvider", () => ({
-  useUser: () => ({ user: { id: "100000000000000003" } }),
-}));
-vi.mock("@/lib/saved-rolls", async (loadOriginal) => {
-  const original = await loadOriginal<typeof import("@/lib/saved-rolls")>();
-  return {
-    ...original,
+const copySavedRoll = vi.fn<SavedRollsDependencies["api"]["copySavedRoll"]>();
+const createSavedRoll = vi.fn<SavedRollsDependencies["api"]["createSavedRoll"]>();
+const customFetch = vi.fn<SavedRollsDependencies["fetchResponse"]>();
+const deleteSavedRoll = vi.fn<SavedRollsDependencies["api"]["deleteSavedRoll"]>();
+const deleteSavedRollBatch = vi.fn<
+  SavedRollsDependencies["api"]["deleteSavedRollBatch"]
+>();
+const listSavedRollLibraries = vi.fn<
+  SavedRollsDependencies["api"]["listSavedRollLibraries"]
+>();
+const listSavedRolls = vi.fn<SavedRollsDependencies["api"]["listSavedRolls"]>();
+const reorderSavedRolls = vi.fn<
+  SavedRollsDependencies["api"]["reorderSavedRolls"]
+>();
+const searchSavedRolls = vi.fn<
+  SavedRollsDependencies["api"]["searchSavedRolls"]
+>();
+const updateSavedRoll = vi.fn<SavedRollsDependencies["api"]["updateSavedRoll"]>();
+
+const dependencies: SavedRollsDependencies = {
+  useUserId: () => "100000000000000003",
+  fetchResponse: customFetch,
+  api: {
     copySavedRoll,
     createSavedRoll,
+    deleteSavedRoll,
     deleteSavedRollBatch,
     listSavedRollLibraries,
     listSavedRolls,
+    reorderSavedRolls,
     searchSavedRolls,
     updateSavedRoll,
-  };
-});
-
-import SavedRolls from "./SavedRolls";
+  },
+};
 
 beforeEach(() => {
   copySavedRoll.mockReset();
   createSavedRoll.mockReset();
   customFetch.mockReset();
+  deleteSavedRoll.mockReset();
   deleteSavedRollBatch.mockReset();
   listSavedRollLibraries.mockReset();
   listSavedRolls.mockReset();
+  reorderSavedRolls.mockReset();
   searchSavedRolls.mockReset();
   updateSavedRoll.mockReset();
   copySavedRoll.mockResolvedValue({ status: "applied", listRevision: 1, recordRevision: 1 });
   createSavedRoll.mockResolvedValue({ status: "applied", listRevision: 1, recordRevision: 1 });
+  deleteSavedRoll.mockResolvedValue({ status: "applied", listRevision: 2 });
   deleteSavedRollBatch.mockResolvedValue({ status: "applied", listRevision: 2 });
+  reorderSavedRolls.mockResolvedValue({ status: "applied", listRevision: 2 });
   customFetch.mockResolvedValue(Response.json({ guilds: [] }));
   listSavedRollLibraries.mockResolvedValue([]);
   listSavedRolls.mockResolvedValue({ listRevision: 0, savedRolls: [] });
@@ -71,7 +75,7 @@ it("keeps personal management available without an administrable guild", async (
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={queryClient}>
-      <SavedRolls />
+      <SavedRollsView dependencies={dependencies} />
     </QueryClientProvider>,
   );
 
@@ -125,6 +129,7 @@ it("keeps personal management available without an administrable guild", async (
   await user.click(
     screen.getByRole("button", { name: "Use library name as roll title" }),
   );
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   expect((screen.getByLabelText("Roll title (optional)") as HTMLInputElement).value).toBe(
     "Initiative",
   );
@@ -158,7 +163,7 @@ it("selects all visible rolls and confirms one atomic bulk delete", async () => 
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={queryClient}>
-      <SavedRolls />
+      <SavedRollsView dependencies={dependencies} />
     </QueryClientProvider>,
   );
 
@@ -223,7 +228,7 @@ it("suggests Library Name (Server Name) after a copy-name conflict", async () =>
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={queryClient}>
-      <SavedRolls />
+      <SavedRollsView dependencies={dependencies} />
     </QueryClientProvider>,
   );
 
@@ -251,6 +256,7 @@ it("suggests Library Name (Server Name) after a copy-name conflict", async () =>
   await user.click(copyButton);
   await user.click(screen.getByRole("button", { name: "Copy" }));
 
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   expect(
     (await screen.findByLabelText("New name") as HTMLInputElement).value,
   ).toBe("Fireball (Friday Game)");
@@ -269,7 +275,7 @@ it("offers only managed server libraries in the Library tab", async () => {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <SavedRolls />
+      <SavedRollsView dependencies={dependencies} />
     </QueryClientProvider>,
   );
 
@@ -289,7 +295,7 @@ it("offers only managed server libraries in the Library tab", async () => {
   });
   render(
     <QueryClientProvider client={adminQueryClient}>
-      <SavedRolls />
+      <SavedRollsView dependencies={dependencies} />
     </QueryClientProvider>,
   );
 
@@ -304,7 +310,7 @@ it("uses the sparkle state without visible loading copy", () => {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <SavedRolls />
+      <SavedRollsView dependencies={dependencies} />
     </QueryClientProvider>,
   );
 
@@ -342,7 +348,7 @@ it("retries an edit against refreshed optimistic revisions without losing the dr
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={queryClient}>
-      <SavedRolls />
+      <SavedRollsView dependencies={dependencies} />
     </QueryClientProvider>,
   );
 
@@ -354,6 +360,7 @@ it("retries an edit against refreshed optimistic revisions without losing the dr
   expect(await screen.findByText(/changed in another session/)).toBeTruthy();
   await waitFor(() => expect(listSavedRolls).toHaveBeenCalledTimes(2));
 
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   expect((screen.getByLabelText("Dice notation") as HTMLInputElement).value).toBe("10d6");
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(updateSavedRoll).toHaveBeenCalledTimes(2));

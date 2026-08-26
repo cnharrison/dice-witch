@@ -1,3 +1,5 @@
+import type { SchemaInput } from "../../../packages/discord-contracts/src/schema-primitives";
+
 export const securityHeaders = {
   "cache-control": "no-store",
   "content-security-policy": "frame-ancestors 'none'",
@@ -7,7 +9,7 @@ export const securityHeaders = {
   "x-frame-options": "DENY",
 };
 
-export function json(body: unknown, status = 200): Response {
+export function json(body: SchemaInput, status = 200): Response {
   return Response.json(body, { status, headers: securityHeaders });
 }
 

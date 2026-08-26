@@ -12,15 +12,29 @@ const links = {
   supportUrl: "https://discord.gg/example",
 };
 
-function interaction(name: string, inGuild = true): Record<string, unknown> {
-  return {
+type StaticCommandFixture = {
+  id: string;
+  application_id: string;
+  type: number;
+  token: string;
+  guild_id?: string;
+  data: {
+    name: string;
+    type: number;
+    options?: Array<{ name: string }>;
+  };
+};
+
+function interaction(name: string, inGuild = true): StaticCommandFixture {
+  const value: StaticCommandFixture = {
     id: "100000000000000001",
     application_id: applicationId,
     type: 2,
     token: "fixture.interaction.token",
-    ...(inGuild ? { guild_id: guildId } : {}),
     data: { name, type: 1 },
   };
+  if (inGuild) value.guild_id = guildId;
+  return value;
 }
 
 describe("static Discord command contract", () => {
@@ -91,6 +105,23 @@ describe("static Discord command contract", () => {
     expect(JSON.stringify(response)).toContain(
       "Set user preferences and control Dice Witch from the web: https://example.com/app/preferences",
     );
+  });
+
+  it("routes unrelated applications before recognized-payload validation", () => {
+    expect(
+      parseStaticInteractionCommand(
+        { application_id: "100000000000000099", type: 2 },
+        applicationId,
+        guildId,
+      ),
+    ).toBeNull();
+    expect(() =>
+      parseStaticInteractionCommand(
+        { application_id: applicationId, type: 2, data: { name: "web" } },
+        applicationId,
+        guildId,
+      )
+    ).toThrow("Static command interaction is invalid");
   });
 
   it("rejects options and ignores unrelated commands", () => {

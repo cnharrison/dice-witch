@@ -1,10 +1,16 @@
+import { z } from "zod";
 import {
   buildFooterComponents,
   type DiscordFooterLinks,
 } from "./footer-links";
+import {
+  boundaryObjectSchema,
+  interactionTokenSchema,
+  type BoundaryObject,
+  type SchemaInput,
+  snowflakeSchema,
+} from "./schema-primitives";
 
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
-const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
 const INFO_COLOR = 0x1e_90_ff;
 const TITLE = "👩‍🎓 Knowledge base";
 export const KNOWLEDGE_BASE_SELECT_CUSTOM_ID = "knowledgebase-topic";
@@ -21,7 +27,7 @@ type KnowledgeBaseField = {
   inline: false;
 };
 
-const ARTICLES: Record<string, KnowledgeBaseField[]> = {
+const ARTICLES = {
   minmax: [
     {
       name: "Minimum and maximum",
@@ -128,7 +134,7 @@ const ARTICLES: Record<string, KnowledgeBaseField[]> = {
       inline: false,
     },
   ],
-};
+} as const satisfies Readonly<Record<string, readonly KnowledgeBaseField[]>>;
 
 export const KNOWLEDGE_BASE_TOPIC_OPTIONS = [
   ["exploding", "Exploding dice"],
@@ -143,7 +149,7 @@ export const KNOWLEDGE_BASE_TOPIC_OPTIONS = [
   ["fudge", "Fate or Fudge dice"],
 ] as const;
 
-const BUTTON_TOPICS = new Set([
+const ButtonTopicSchema = z.enum([
   "exploding",
   "reroll",
   "keepdrop",
@@ -155,103 +161,131 @@ const BUTTON_TOPICS = new Set([
   "unique",
   "fudge",
 ]);
+const ArticleTopicSchema = z.enum([
+  "minmax",
+  "exploding",
+  "unique",
+  "reroll",
+  "keepdrop",
+  "target",
+  "crit",
+  "sort",
+  "math",
+  "repeating",
+  "fudge",
+]);
+const InteractionIdentitySchema = z.looseObject({
+  id: snowflakeSchema,
+  token: interactionTokenSchema,
+  data: boundaryObjectSchema,
+});
+const CommandOptionSchema = z.looseObject({
+  name: z.literal("topic"),
+  type: z.literal(3),
+  value: z.string().min(1).max(100),
+});
+const CommandOptionsSchema = z.array(z.unknown()).length(1);
+const SelectedTopicSchema = z.tuple([ButtonTopicSchema]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function validIdentity(value: Record<string, unknown>, applicationId: string): boolean {
-  return (
-    typeof value.id === "string" &&
-    SNOWFLAKE.test(value.id) &&
-    value.application_id === applicationId &&
-    typeof value.token === "string" &&
-    INTERACTION_TOKEN.test(value.token)
-  );
-}
-
-function parseCommandTopic(data: Record<string, unknown>): string {
-  if (!Array.isArray(data.options) || data.options.length !== 1) {
+function parseCommandTopic(data: BoundaryObject): string {
+  const options = CommandOptionsSchema.safeParse(data.options);
+  if (!options.success) {
     throw new Error("Knowledgebase options are invalid");
   }
-  const option: unknown = data.options[0];
-  if (
-    !isRecord(option) ||
-    option.name !== "topic" ||
-    option.type !== 3 ||
-    typeof option.value !== "string"
-  ) {
+  const option = CommandOptionSchema.safeParse(options.data[0]);
+  if (!option.success) {
     throw new Error("Knowledgebase topic is invalid");
   }
-  const topic = option.value.trim().toLowerCase();
-  if (topic.length < 1 || topic.length > 100) {
+  const topic = option.data.value.trim().toLowerCase();
+  if (topic.length < 1) {
     throw new Error("Knowledgebase topic is invalid");
   }
   return topic;
 }
 
 export function parseKnowledgeBaseInteraction(
-  value: unknown,
+  value: SchemaInput,
   applicationId: string,
   allowedGuildId?: string,
 ): KnowledgeBaseInteraction | null {
-  if (!isRecord(value)) throw new Error("Interaction must be an object");
-  if (value.application_id !== applicationId) return null;
-  const guildId = value.guild_id;
-  if (
-    guildId !== undefined &&
-    (typeof guildId !== "string" ||
-      !SNOWFLAKE.test(guildId) ||
-      (allowedGuildId !== undefined && guildId !== allowedGuildId))
-  ) {
-    return null;
+  const interaction = boundaryObjectSchema.safeParse(value);
+  if (!interaction.success) throw new Error("Interaction must be an object");
+  if (interaction.data.application_id !== applicationId) return null;
+
+  const guildId = interaction.data.guild_id;
+  if (guildId !== undefined) {
+    const guild = snowflakeSchema.safeParse(guildId);
+    if (
+      !guild.success ||
+      (allowedGuildId !== undefined && guild.data !== allowedGuildId)
+    ) {
+      return null;
+    }
   }
-  if (!validIdentity(value, applicationId) || !isRecord(value.data)) {
+
+  const identity = InteractionIdentitySchema.safeParse(interaction.data);
+  if (!identity.success) {
     throw new Error("Knowledgebase interaction is invalid");
   }
-  if (value.type === 2) {
-    if (value.data.name !== "knowledgebase" || value.data.type !== 1) return null;
-    return { topic: parseCommandTopic(value.data) };
+  const data = identity.data.data;
+  if (interaction.data.type === 2) {
+    if (data.name !== "knowledgebase" || data.type !== 1) return null;
+    return { topic: parseCommandTopic(data) };
   }
-  if (value.type === 3) {
-    if (typeof value.data.custom_id !== "string") {
-      throw new Error("Knowledgebase component is invalid");
-    }
-    if (value.data.component_type === 3) {
-      if (
-        value.data.custom_id !== KNOWLEDGE_BASE_SELECT_CUSTOM_ID ||
-        !Array.isArray(value.data.values) ||
-        value.data.values.length !== 1 ||
-        typeof value.data.values[0] !== "string" ||
-        !BUTTON_TOPICS.has(value.data.values[0])
-      ) {
-        throw new Error("Knowledgebase select is invalid");
-      }
-      return { topic: value.data.values[0] };
-    }
-    if (value.data.component_type !== 2) {
-      throw new Error("Knowledgebase component is invalid");
-    }
-    const match = /^knowledgebase-([a-z]+)$/.exec(value.data.custom_id);
-    if (match === null) return null;
-    const topic = match[1];
-    if (topic === undefined || !BUTTON_TOPICS.has(topic)) return null;
-    return { topic };
+  if (interaction.data.type !== 3) return null;
+
+  const customId = z.string().safeParse(data.custom_id);
+  if (!customId.success) {
+    throw new Error("Knowledgebase component is invalid");
   }
-  return null;
+  if (data.component_type === 3) {
+    const selectedTopic = SelectedTopicSchema.safeParse(data.values);
+    if (
+      customId.data !== KNOWLEDGE_BASE_SELECT_CUSTOM_ID ||
+      !selectedTopic.success
+    ) {
+      throw new Error("Knowledgebase select is invalid");
+    }
+    return { topic: selectedTopic.data[0] };
+  }
+  if (data.component_type !== 2) {
+    throw new Error("Knowledgebase component is invalid");
+  }
+  if (!/^knowledgebase-[a-z]+$/u.test(customId.data)) return null;
+  const topic = ButtonTopicSchema.safeParse(
+    customId.data.slice("knowledgebase-".length),
+  );
+  return topic.success ? { topic: topic.data } : null;
+}
+
+type KnowledgeBaseTopicOption = {
+  value: string;
+  label: string;
+  default?: true;
+};
+
+function buildTopicOptions(topic: string): KnowledgeBaseTopicOption[] {
+  return KNOWLEDGE_BASE_TOPIC_OPTIONS.map(([value, label]) => {
+    const option: KnowledgeBaseTopicOption = { value, label };
+    if (value === topic) option.default = true;
+    return option;
+  });
 }
 
 export function buildKnowledgeBaseResponse(
   topic: string,
   links: KnowledgeBaseLinks,
-): Record<string, unknown> {
-  const fields = ARTICLES[topic] ?? [
-    {
-      name: "Available topics",
-      value: `Type \`/knowledgebase <topic>\` to learn more\n\n\`${Object.keys(ARTICLES).join("\n")}\``,
-      inline: false as const,
-    },
-  ];
+) {
+  const articleTopic = ArticleTopicSchema.safeParse(topic);
+  const fields: readonly KnowledgeBaseField[] = articleTopic.success
+    ? ARTICLES[articleTopic.data]
+    : [
+        {
+          name: "Available topics",
+          value: `Type \`/knowledgebase <topic>\` to learn more\n\n\`${Object.keys(ARTICLES).join("\n")}\``,
+          inline: false,
+        },
+      ];
   return {
     type: 4,
     data: {
@@ -275,11 +309,7 @@ export function buildKnowledgeBaseResponse(
                   placeholder: "Choose a knowledge-base topic",
                   min_values: 1,
                   max_values: 1,
-                  options: KNOWLEDGE_BASE_TOPIC_OPTIONS.map(([value, label]) => ({
-                    value,
-                    label,
-                    ...(value === topic ? { default: true } : {}),
-                  })),
+                  options: buildTopicOptions(topic),
                 },
               ],
             },

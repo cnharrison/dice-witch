@@ -7,7 +7,6 @@ interface LoadingMediaProps {
   alt: string;
   className?: string;
   blendMode?: 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';
-  filter?: string;
   hideText?: boolean;
 }
 
@@ -18,7 +17,6 @@ export const LoadingMedia: React.FC<LoadingMediaProps> = ({
   alt,
   className = "",
   blendMode = "normal",
-  filter = "",
   hideText = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -54,14 +52,7 @@ export const LoadingMedia: React.FC<LoadingMediaProps> = ({
 
   const bwImageStyle: React.CSSProperties = {
     filter: 'grayscale(100%)',
-    mixBlendMode: blendMode as React.CSSProperties['mixBlendMode'],
-  };
-
-  const bwOverlayStyle: React.CSSProperties = {
-    position: 'absolute',
-    inset: 0,
-    backgroundColor: 'transparent',
-    zIndex: 15,
+    mixBlendMode: blendMode,
   };
 
   return (

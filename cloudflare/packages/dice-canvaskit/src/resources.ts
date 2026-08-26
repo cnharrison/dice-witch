@@ -83,14 +83,10 @@ export class CanvasKitResourceScopeV4 {
   }
 }
 
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  if (
-    value === null ||
-    (typeof value !== "object" && typeof value !== "function")
-  ) {
-    return false;
-  }
-  return typeof (value as { then?: unknown }).then === "function";
+type PromiseCandidateV4 = object & { then?: unknown };
+
+function isPromiseLike(value: PromiseCandidateV4): boolean {
+  return value.then instanceof Function;
 }
 
 type SynchronousCallbackGuardV4<Result> = [Result] extends [never]
@@ -111,7 +107,7 @@ export function withCanvasKitResourcesSyncV4<Result>(
   const scope = new CanvasKitResourceScopeV4();
   try {
     const result = operation(scope);
-    if (isPromiseLike(result)) {
+    if (result instanceof Object && isPromiseLike(result)) {
       throw new Error(
         "CanvasKit synchronous resource callback returned a promise",
       );

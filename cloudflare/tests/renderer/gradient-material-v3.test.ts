@@ -9,7 +9,18 @@ import type {
   RenderSurfaceV3,
 } from "../../packages/dice-svg/src/types";
 
-const REPEATED_VECTORS: Record<RenderLinearDirectionV3, string> = {
+const DIRECTIONS = [
+  "top-to-bottom",
+  "upper-right-to-lower-left",
+  "right-to-left",
+  "lower-right-to-upper-left",
+  "bottom-to-top",
+  "lower-left-to-upper-right",
+  "left-to-right",
+  "upper-left-to-lower-right",
+] as const satisfies readonly RenderLinearDirectionV3[];
+
+const REPEATED_VECTORS = {
   "top-to-bottom": 'x1=".5" y1="0" x2=".5" y2="1"',
   "upper-right-to-lower-left": 'x1="1" y1="0" x2="0" y2="1"',
   "right-to-left": 'x1="1" y1=".5" x2="0" y2=".5"',
@@ -18,9 +29,9 @@ const REPEATED_VECTORS: Record<RenderLinearDirectionV3, string> = {
   "lower-left-to-upper-right": 'x1="0" y1="1" x2="1" y2="0"',
   "left-to-right": 'x1="0" y1=".5" x2="1" y2=".5"',
   "upper-left-to-lower-right": 'x1="0" y1="0" x2="1" y2="1"',
-};
+} satisfies Record<RenderLinearDirectionV3, string>;
 
-const WHOLE_DIE_VECTORS: Record<RenderLinearDirectionV3, string> = {
+const WHOLE_DIE_VECTORS = {
   "top-to-bottom": 'x1="300" y1="45" x2="300" y2="555"',
   "upper-right-to-lower-left": 'x1="530" y1="60" x2="70" y2="540"',
   "right-to-left": 'x1="555" y1="300" x2="45" y2="300"',
@@ -29,7 +40,7 @@ const WHOLE_DIE_VECTORS: Record<RenderLinearDirectionV3, string> = {
   "lower-left-to-upper-right": 'x1="70" y1="540" x2="530" y2="60"',
   "left-to-right": 'x1="45" y1="300" x2="555" y2="300"',
   "upper-left-to-lower-right": 'x1="70" y1="60" x2="530" y2="540"',
-};
+} satisfies Record<RenderLinearDirectionV3, string>;
 
 function gradient(
   scope: "repeated" | "die-wide",
@@ -41,9 +52,10 @@ function gradient(
 
 describe("V3 gradient materials", () => {
   it("uses approved object-bounding-box vectors for every repeated direction", () => {
-    for (const [direction, vector] of Object.entries(REPEATED_VECTORS)) {
+    for (const direction of DIRECTIONS) {
+      const vector = REPEATED_VECTORS[direction];
       const definition = generateAppearanceGradientV3(
-        gradient("repeated", direction as RenderLinearDirectionV3),
+        gradient("repeated", direction),
       );
       expect(definition.string).toContain(
         `gradientUnits="objectBoundingBox" ${vector}`,
@@ -52,9 +64,10 @@ describe("V3 gradient materials", () => {
   });
 
   it("uses approved 600-unit vectors for every whole-die direction", () => {
-    for (const [direction, vector] of Object.entries(WHOLE_DIE_VECTORS)) {
+    for (const direction of DIRECTIONS) {
+      const vector = WHOLE_DIE_VECTORS[direction];
       const definition = generateAppearanceGradientV3(
-        gradient("die-wide", direction as RenderLinearDirectionV3),
+        gradient("die-wide", direction),
       );
       expect(definition.string).toContain(
         `gradientUnits="userSpaceOnUse" ${vector}`,

@@ -1,9 +1,12 @@
 import { exports } from "cloudflare:workers";
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import {
   DISCORD_GLOBAL_COMMANDS,
+  isComponentsV2Message,
   rollLogContextDescription,
   validateDiscordMessage,
+  type DiscordTopLevelComponent,
   type RollLogArtifactV1,
 } from "../../packages/discord-contracts/src";
 import {
@@ -38,14 +41,236 @@ const guildId = "100000000000000001";
 const audienceCapturedAt = 1_767_225_600_123;
 const userId = "100000000000000003";
 const adminRoleId = "100000000000000005";
-function componentText(value: unknown): string {
-  if (Array.isArray(value)) return value.map(componentText).join("\n");
-  if (typeof value !== "object" || value === null) return "";
-  const record = value as Record<string, unknown>;
-  return [
-    typeof record.content === "string" ? record.content : "",
-    componentText(record.components),
-  ].filter(Boolean).join("\n");
+const SnowflakeSchema = z.string().regex(/^[1-9]\d{16,19}$/u);
+const AllowedMentionsSchema = z.strictObject({ parse: z.tuple([]) });
+const AttachmentMetadataSchema = z.strictObject({
+  id: z.union([z.literal(0), z.literal("0")]),
+  filename: z.string(),
+  description: z.string(),
+});
+const ComponentsV2RequestEnvelopeSchema = z.strictObject({
+  flags: z.number().int().nonnegative(),
+  components: z.array(z.json()).min(1),
+  allowed_mentions: AllowedMentionsSchema,
+  nonce: z.string().optional(),
+  enforce_nonce: z.boolean().optional(),
+  content: z.null().optional(),
+  embeds: z.tuple([]).optional(),
+  attachments: z.array(AttachmentMetadataSchema).optional(),
+});
+const MultipartRequestSchema = z.strictObject({
+  payloadJson: z.string(),
+  file: z.instanceof(File),
+});
+const LegacyWebRollRequestSchema = z.strictObject({
+  embeds: z.tuple([]),
+  content: z.null().optional(),
+  nonce: SnowflakeSchema.optional(),
+  enforce_nonce: z.literal(true).optional(),
+  allowed_mentions: AllowedMentionsSchema,
+  attachments: z.array(AttachmentMetadataSchema).length(1),
+});
+const JsonErrorResponseSchema = z.strictObject({ error: z.string() });
+const DmChannelRequestSchema = z.strictObject({ recipient_id: SnowflakeSchema });
+const BotListStatsSchema = z.union([
+  z.strictObject({ server_count: z.number().int().nonnegative() }),
+  z.strictObject({ guilds: z.number().int().nonnegative() }),
+]);
+const RollLogContextSchema = z.strictObject({
+  kind: z.literal("guild-partial"),
+  guildId: SnowflakeSchema,
+  guildName: z.string().nullable(),
+  channelId: SnowflakeSchema,
+  channelName: z.string().nullable(),
+  channelType: z.number().int().nullable(),
+});
+const RollLogTelemetryFields = {
+  telemetryVersion: z.literal(2),
+  subsystem: z.literal("private-roll-log"),
+  rollId: SnowflakeSchema,
+  interactionId: SnowflakeSchema,
+  source: z.literal("discord"),
+  notation: z.string(),
+  userId: SnowflakeSchema,
+  username: z.string(),
+  guildId: SnowflakeSchema,
+  channelId: SnowflakeSchema,
+  context: RollLogContextSchema,
+  guildName: z.string().nullable(),
+  channelName: z.string().nullable(),
+  channelType: z.number().int().nullable(),
+  title: z.string().nullable(),
+  destinationPayload: z.json(),
+  destinationDeliveredAt: z.number().int().nonnegative(),
+  imageStatus: z.literal("available"),
+  imageFilename: z.string(),
+  imageUnavailableReason: z.null(),
+};
+const InaccessibleRollLogTelemetrySchema = z.strictObject({
+  ...RollLogTelemetryFields,
+  logicalShard: z.null(),
+  level: z.literal("warn"),
+  message: z.literal("Discord roll log context is inaccessible"),
+  userImpact: z.literal("none"),
+  failureKind: z.literal("context-inaccessible"),
+  channelHttpStatus: z.literal(403),
+  guildHttpStatus: z.literal(200),
+});
+const DeliveredRollLogTelemetrySchema = z.strictObject({
+  ...RollLogTelemetryFields,
+  logicalShard: z.strictObject({ status: z.literal("unavailable") }),
+  level: z.literal("info"),
+  message: z.literal("Private roll log delivered"),
+  logMessageId: SnowflakeSchema,
+  userImpact: z.literal("none"),
+  httpStatus: z.literal(200),
+});
+
+type ComponentsV2Request = Omit<
+  z.output<typeof ComponentsV2RequestEnvelopeSchema>,
+  "components"
+> & { components: DiscordTopLevelComponent[] };
+type RequestFetch = NonNullable<Parameters<typeof registerGlobalCommands>[1]>;
+
+function controlText(
+  control: Extract<DiscordTopLevelComponent, { type: 1 }>["components"][number],
+): string {
+  return control.type === 2
+    ? control.label
+    : control.options.map((option) => option.label).join("\n");
+}
+
+function discordComponentText(component: DiscordTopLevelComponent): string {
+  switch (component.type) {
+    case 1:
+      return component.components.map(controlText).join("\n");
+    case 9:
+      return [
+        componentText(component.components),
+        component.accessory.type === 2
+          ? component.accessory.label
+          : component.accessory.description ?? "",
+      ].filter(Boolean).join("\n");
+    case 10:
+      return component.content;
+    case 12:
+      return component.items.map((item) => item.description ?? "").join("\n");
+    case 13:
+    case 14:
+      return "";
+    case 17:
+      return componentText(component.components);
+  }
+}
+
+function componentText(components: readonly DiscordTopLevelComponent[]): string {
+  return components.map(discordComponentText).filter(Boolean).join("\n");
+}
+
+function sectionAccessoryUrl(
+  accessory: Extract<DiscordTopLevelComponent, { type: 9 }>["accessory"],
+): string | null {
+  if (accessory.type === 11) return accessory.media.url;
+  return accessory.style === 5 ? accessory.url : null;
+}
+
+function discordComponentUrls(component: DiscordTopLevelComponent): string[] {
+  switch (component.type) {
+    case 1:
+      return component.components.flatMap((control) =>
+        control.type === 2 && control.style === 5 ? [control.url] : []
+      );
+    case 9:
+      return [
+        ...component.components.flatMap(discordComponentUrls),
+        sectionAccessoryUrl(component.accessory),
+      ].filter((url): url is string => url !== null);
+    case 12:
+      return component.items.map((item) => item.media.url);
+    case 13:
+      return [component.file.url];
+    case 17:
+      return component.components.flatMap(discordComponentUrls);
+    case 10:
+    case 14:
+      return [];
+  }
+}
+
+function componentUrls(components: readonly DiscordTopLevelComponent[]): string[] {
+  return components.flatMap(discordComponentUrls);
+}
+
+function discordComponentCustomIds(
+  component: DiscordTopLevelComponent,
+): string[] {
+  switch (component.type) {
+    case 1:
+      return component.components.flatMap((control) => {
+        if (control.type === 3) return [control.custom_id];
+        return control.style === 5 ? [] : [control.custom_id];
+      });
+    case 9:
+      return [
+        ...component.components.flatMap(discordComponentCustomIds),
+        component.accessory.type === 2 && component.accessory.style !== 5
+          ? component.accessory.custom_id
+          : null,
+      ].filter((customId): customId is string => customId !== null);
+    case 17:
+      return component.components.flatMap(discordComponentCustomIds);
+    case 10:
+    case 12:
+    case 13:
+    case 14:
+      return [];
+  }
+}
+
+function componentCustomIds(
+  components: readonly DiscordTopLevelComponent[],
+): string[] {
+  return components.flatMap(discordComponentCustomIds);
+}
+
+function parseComponentsV2RequestBody(encoded: string): ComponentsV2Request {
+  const envelope = ComponentsV2RequestEnvelopeSchema.safeParse(
+    JSON.parse(encoded),
+  );
+  if (!envelope.success) throw new Error("Discord request payload is invalid");
+  const message = validateDiscordMessage({
+    flags: envelope.data.flags,
+    components: envelope.data.components,
+  });
+  if (!isComponentsV2Message(message)) {
+    throw new Error("Discord request payload must use Components V2");
+  }
+  return { ...envelope.data, components: message.components };
+}
+
+async function parseComponentsV2Request(
+  request: Request,
+): Promise<ComponentsV2Request> {
+  return parseComponentsV2RequestBody(await request.text());
+}
+
+async function parseMultipartRequest(request: Request) {
+  const form = await request.formData();
+  const multipart = MultipartRequestSchema.safeParse({
+    payloadJson: form.get("payload_json"),
+    file: form.get("files[0]"),
+  });
+  if (!multipart.success) throw new Error("Discord multipart request is invalid");
+  return multipart.data;
+}
+
+async function parseJsonRequest<T>(
+  request: Request | Response,
+  schema: z.ZodType<T>,
+): Promise<T> {
+  const parsed = schema.safeParse(await request.json());
+  if (!parsed.success) throw new Error("JSON request fixture is invalid");
+  return parsed.data;
 }
 
 const logPng = Uint8Array.from(
@@ -191,23 +416,18 @@ describe("Discord REST service", () => {
       expect(request.url).toBe(
         "https://discord.com/api/v10/channels/100000000000000097/messages",
       );
-      const payload: {
-        flags: number;
-        nonce: string;
-        enforce_nonce: boolean;
-        allowed_mentions: { parse: string[] };
-        components: unknown[];
-      } = await request.json();
+      const payload = await parseComponentsV2Request(request);
       expect(payload).toMatchObject({
         flags: (1 << 12) | (1 << 15),
         nonce: "g000000010123456789abcdef",
         enforce_nonce: true,
         allowed_mentions: { parse: [] },
       });
-      expect(JSON.stringify(payload.components)).toContain("Game detected");
-      expect(JSON.stringify(payload)).toContain("Dungeons & Dragons");
-      expect(JSON.stringify(payload)).toContain("Fixture Guild");
-      expect(JSON.stringify(payload)).not.toMatch(/Attack|Initiative|fixture-player/);
+      const text = componentText(payload.components);
+      expect(text).toContain("Game detected");
+      expect(text).toContain("Dungeons & Dragons");
+      expect(text).toContain("Fixture Guild");
+      expect(text).not.toMatch(/Attack|Initiative|fixture-player/);
       return Response.json({ id: "100000000000000087" });
     });
 
@@ -227,11 +447,11 @@ describe("Discord REST service", () => {
 
   it("renders a detection with genuinely unavailable display names", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
-      const payload: { components: unknown[] } = await request.json();
-      const serialized = JSON.stringify(payload);
-      expect(serialized).toContain(`Guild ${guildId}`);
-      expect(serialized).toContain("<#100000000000000010>");
-      expect(serialized).not.toContain("Unknown");
+      const payload = await parseComponentsV2Request(request);
+      const text = componentText(payload.components);
+      expect(text).toContain(`Guild ${guildId}`);
+      expect(text).toContain("<#100000000000000010>");
+      expect(text).not.toContain("Unknown");
       return Response.json({ id: "100000000000000086" });
     });
 
@@ -310,29 +530,20 @@ describe("Discord REST service", () => {
       expect(request.url).toBe(
         "https://discord.com/api/v10/channels/100000000000000098/messages",
       );
-      const form = await request.formData();
-      const payloadValue = form.get("payload_json");
-      const file = form.get("files[0]");
-      if (typeof payloadValue !== "string" || !(file instanceof File)) {
-        throw new Error("Lifecycle alert multipart body is invalid");
-      }
-      const payload = JSON.parse(payloadValue) as Record<string, unknown>;
+      const { payloadJson, file } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
       expect(payload).toMatchObject({
         flags: (1 << 12) | (1 << 15),
         allowed_mentions: { parse: [] },
         nonce: "l1400000000000000001",
         enforce_nonce: true,
       });
-      expect(JSON.stringify(payload.components)).toContain(
+      expect(componentUrls(payload.components)).toContain(
         "attachment://roll-lifecycle-1400000000000000001.json",
       );
-      expect(JSON.stringify(payload.components)).toContain(
-        "\\\\*\\\\*\\\\<@140000000000000099\\\\>\\\\*\\\\*",
+      expect(componentText(payload.components)).toContain(
+        "\\*\\*\\<@140000000000000099\\>\\*\\*",
       );
-      expect(() => validateDiscordMessage({
-        flags: payload.flags,
-        components: payload.components,
-      })).not.toThrow();
       expect(file.name).toBe("roll-lifecycle-1400000000000000001.json");
       const diagnostic = await file.text();
       expect(diagnostic).toContain('"notation": "1d20"');
@@ -358,14 +569,12 @@ describe("Discord REST service", () => {
 
   it("uses stable destination identifiers when lifecycle names are unavailable", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
-      const form = await request.formData();
-      const payloadValue = form.get("payload_json");
-      if (typeof payloadValue !== "string") {
-        throw new Error("Lifecycle alert payload is invalid");
-      }
-      expect(payloadValue).toContain(`Guild ${guildId}`);
-      expect(payloadValue).toContain("<#100000000000000010>");
-      expect(payloadValue).not.toContain("Unknown");
+      const { payloadJson } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
+      const text = componentText(payload.components);
+      expect(text).toContain(`Guild ${guildId}`);
+      expect(text).toContain("<#100000000000000010>");
+      expect(text).not.toContain("Unknown");
       return Response.json({ id: "100000000000000088" });
     });
     const alert = lifecycleAlert();
@@ -388,19 +597,15 @@ describe("Discord REST service", () => {
 
   it("creates a V2 alert with safe timing and destination diagnostics", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
-      const form = await request.formData();
-      const payloadValue = form.get("payload_json");
-      const file = form.get("files[0]");
-      if (typeof payloadValue !== "string" || !(file instanceof File)) {
-        throw new Error("Lifecycle alert multipart body is invalid");
-      }
-      expect(payloadValue).toContain("Created → handler 5 ms");
-      const payload = JSON.parse(payloadValue) as Record<string, unknown>;
+      const { payloadJson, file } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
+      const text = componentText(payload.components);
+      expect(text).toContain("Created → handler 5 ms");
       if (request.method === "POST") {
-        expect(payloadValue).toContain("Discord 10015");
-        expect(payloadValue).toContain("original message missing");
+        expect(text).toContain("Discord 10015");
+        expect(text).toContain("original message missing");
       } else {
-        expect(payloadValue).toContain("No Discord error code");
+        expect(text).toContain("No Discord error code");
         expect(payload).toMatchObject({ content: null, embeds: [] });
       }
       expect(await file.text()).not.toMatch(/fixture\.interaction\.token|authorization/i);
@@ -473,14 +678,10 @@ describe("Discord REST service", () => {
       expect(request.url).toBe(
         "https://discord.com/api/v10/channels/100000000000000098/messages/100000000000000088",
       );
-      const form = await request.formData();
-      const payloadValue = form.get("payload_json");
-      if (typeof payloadValue !== "string") {
-        throw new Error("Lifecycle update payload is invalid");
-      }
-      const payload = JSON.parse(payloadValue) as Record<string, unknown>;
-      expect(payload).not.toHaveProperty("nonce");
-      expect(JSON.stringify(payload)).toContain("Recovered");
+      const { payloadJson } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
+      expect(payload.nonce).toBeUndefined();
+      expect(componentText(payload.components)).toContain("Recovered");
       return Response.json({ id: "100000000000000088" });
     });
 
@@ -502,7 +703,9 @@ describe("Discord REST service", () => {
     );
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: "Not found" });
+    expect(await parseJsonRequest(response, JsonErrorResponseSchema)).toEqual({
+      error: "Not found",
+    });
   });
 
   it("delivers one complete multipart roll log with honest shard provenance", async () => {
@@ -510,25 +713,8 @@ describe("Discord REST service", () => {
       expect(new URL(request.url).pathname).toBe(
         `/api/v10/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`,
       );
-      const form = await request.formData();
-      const payloadValue = form.get("payload_json");
-      const file = form.get("files[0]");
-      expect(typeof payloadValue).toBe("string");
-      if (typeof payloadValue !== "string" || !(file instanceof File)) {
-        throw new Error("Multipart log fixture is invalid");
-      }
-      const payload = JSON.parse(payloadValue) as {
-        nonce: string;
-        enforce_nonce: boolean;
-        allowed_mentions: { parse: string[] };
-        attachments: Array<{
-          id: number;
-          filename: string;
-          description: string;
-        }>;
-        flags: number;
-        components: unknown[];
-      };
+      const { payloadJson, file } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
       expect(payload).toMatchObject({
         nonce: "log:1400000000000000001",
         enforce_nonce: true,
@@ -543,13 +729,13 @@ describe("Discord REST service", () => {
         flags: 1 << 15,
       });
       expect(payload.components).toHaveLength(1);
-      const serializedComponents = JSON.stringify(payload.components);
-      expect(serializedComponents).toContain("## receivedCommand: /roll");
-      expect(serializedComponents).toContain(
+      const text = componentText(payload.components);
+      expect(text).toContain("## receivedCommand: /roll");
+      expect(componentUrls(payload.components)).toContain(
         "attachment://dice-1400000000000000001.png",
       );
       expect(payload).not.toHaveProperty("content");
-      expect(JSON.stringify(payload)).not.toContain("[HTTP]");
+      expect(text).not.toContain("[HTTP]");
       expect(new Uint8Array(await file.arrayBuffer())).toEqual(logPng);
       return Response.json({ id: "100000000000000088" });
     });
@@ -576,15 +762,8 @@ describe("Discord REST service", () => {
     const resultEmbed = artifact.payload.embeds?.[0];
     if (resultEmbed === undefined) throw new Error("Result embed fixture is missing");
     const discordFetch = vi.fn(async (request: Request) => {
-      const form = await request.formData();
-      const payloadValue = form.get("payload_json");
-      if (typeof payloadValue !== "string") {
-        throw new Error("Multipart log fixture is invalid");
-      }
-      const payload = JSON.parse(payloadValue) as {
-        flags: number;
-        components: unknown[];
-      };
+      const { payloadJson } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
       expect(payload.flags).toBe(1 << 15);
       expect(payload.components).toHaveLength(1);
       const text = componentText(payload.components);
@@ -633,21 +812,23 @@ describe("Discord REST service", () => {
   it("delivers a durable invalid-roll log without an attachment", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
       expect(request.headers.get("content-type")).toBe("application/json");
-      const payload = await request.json<{
-        attachments?: unknown;
-        flags: number;
-        components: Array<{ components: Array<{ type: number; content?: string }> }>;
-      }>();
+      const payload = await parseComponentsV2Request(request);
       expect(payload.attachments).toBeUndefined();
       expect(payload.flags).toBe(1 << 15);
       expect(payload.components).toHaveLength(1);
-      expect(payload.components[0]).toMatchObject({
+      const container = payload.components[0];
+      if (container?.type !== 17) {
+        throw new Error("Invalid-roll log container is missing");
+      }
+      expect(container).toMatchObject({
         type: 17,
         accent_color: 0xff_00_00,
       });
-      const description = payload.components[0]?.components.find(
-        (component) => component.type === 10 &&
-          component.content !== "## invalidRoll: /roll",
+      const textDisplays = container.components.filter(
+        (component) => component.type === 10,
+      );
+      const description = textDisplays.find(
+        (component) => component.content !== "## invalidRoll: /roll",
       )?.content;
       expect(description).toHaveLength(4_000);
       expect(description).toMatch(/^user: \*\*roller\*\* \[Discord\]\nchannel:/);
@@ -694,12 +875,8 @@ describe("Discord REST service", () => {
       if (pathname.endsWith(`/guilds/${guildId}`)) {
         return Response.json({ id: guildId, name: "Live Guild" });
       }
-      const form = await request.formData();
-      const payloadValue = form.get("payload_json");
-      if (typeof payloadValue !== "string") {
-        throw new Error("Multipart log fixture is invalid");
-      }
-      const payload = JSON.parse(payloadValue) as { components: unknown[] };
+      const { payloadJson } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
       expect(payload.components).toHaveLength(1);
       expect(componentText(payload.components)).toContain(
         "channel: **live\\-rolls**\nguild: **Live Guild** [Shard 1]",
@@ -736,12 +913,8 @@ describe("Discord REST service", () => {
       expect(pathname).toBe(
         `/api/v10/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`,
       );
-      const form = await request.formData();
-      const payloadValue = form.get("payload_json");
-      if (typeof payloadValue !== "string") {
-        throw new Error("Multipart log fixture is invalid");
-      }
-      const payload = JSON.parse(payloadValue) as { components: unknown[] };
+      const { payloadJson } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
       expect(componentText(payload.components)).toContain(
         "channel: **signed\\-rolls**\nguild: **Resolved Guild**",
       );
@@ -812,9 +985,10 @@ describe("Discord REST service", () => {
         ),
       ).resolves.toEqual({ status: "delivered", httpStatus: 200 });
 
-      const inaccessible = consoleWarn.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(({ message }) => message === "Discord roll log context is inaccessible");
+      const inaccessibleText = z.string().parse(consoleWarn.mock.calls[0]?.[0]);
+      const inaccessible = InaccessibleRollLogTelemetrySchema.parse(
+        JSON.parse(inaccessibleText),
+      );
       expect(inaccessible).toMatchObject({
         telemetryVersion: 2,
         subsystem: "private-roll-log",
@@ -839,10 +1013,11 @@ describe("Discord REST service", () => {
         channelHttpStatus: 403,
         guildHttpStatus: 200,
       });
-      expect(inaccessible?.destinationPayload).toEqual(artifact.payload);
-      const delivered = consoleInfo.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(({ message }) => message === "Private roll log delivered");
+      expect(inaccessible.destinationPayload).toEqual(artifact.payload);
+      const deliveredText = z.string().parse(consoleInfo.mock.calls[0]?.[0]);
+      const delivered = DeliveredRollLogTelemetrySchema.parse(
+        JSON.parse(deliveredText),
+      );
       expect(delivered).toMatchObject({
         telemetryVersion: 2,
         subsystem: "private-roll-log",
@@ -872,7 +1047,7 @@ describe("Discord REST service", () => {
         userImpact: "none",
         httpStatus: 200,
       });
-      expect(delivered?.destinationPayload).toEqual(artifact.payload);
+      expect(delivered.destinationPayload).toEqual(artifact.payload);
       expect(JSON.stringify([inaccessible, delivered])).not.toMatch(
         /fixture\.bot\.token|fixture-topgg-token|fixture-discord-bot-list-token|image_bytes/i,
       );
@@ -914,12 +1089,8 @@ describe("Discord REST service", () => {
         if (pathname.endsWith(`/guilds/${guildId}`)) {
           return Response.json({ id: guildId, name: "Fixture Guild" });
         }
-        const form = await request.formData();
-        const payloadValue = form.get("payload_json");
-        if (typeof payloadValue !== "string") {
-          throw new Error("Multipart log fixture is invalid");
-        }
-        const payload = JSON.parse(payloadValue) as { components: unknown[] };
+        const { payloadJson } = await parseMultipartRequest(request);
+        const payload = parseComponentsV2RequestBody(payloadJson);
         expect(componentText(payload.components)).toContain(
           "unknown channel\nguild: **Fixture Guild** [Shard 1]",
         );
@@ -996,7 +1167,7 @@ describe("Discord REST service", () => {
       expect(new URL(request.url).pathname).toBe(
         `/api/v10/applications/${env.DISCORD_APPLICATION_ID}/commands`,
       );
-      const commands = await request.json<unknown>();
+      const commands = await parseJsonRequest(request, z.json());
       expect(commands).toEqual(DISCORD_GLOBAL_COMMANDS);
       return Response.json(
         DISCORD_GLOBAL_COMMANDS.map((command, index) => ({
@@ -1024,7 +1195,9 @@ describe("Discord REST service", () => {
       expect(new URL(request.url).pathname).toBe(
         `/api/v10/applications/${env.DISCORD_APPLICATION_ID}/guilds/${env.DISCORD_TEST_GUILD_ID}/commands`,
       );
-      expect(await request.json<unknown>()).toEqual(DISCORD_GLOBAL_COMMANDS);
+      expect(await parseJsonRequest(request, z.json())).toEqual(
+        DISCORD_GLOBAL_COMMANDS,
+      );
       return Response.json(
         DISCORD_GLOBAL_COMMANDS.map((command, index) => ({
           ...command,
@@ -1122,7 +1295,7 @@ describe("Discord REST service", () => {
   });
 
   it("rejects a shard count above Discord's coordinated maximum", async () => {
-    const discordFetch = vi.fn();
+    const discordFetch = vi.fn<RequestFetch>();
 
     await expect(fetchPublicStats(env, 1_001, discordFetch)).rejects.toThrow(
       "Discord guild stats shard count is invalid",
@@ -1218,20 +1391,25 @@ describe("Discord REST service", () => {
     const discordBotList = requests.find(
       ({ url }) => new URL(url).hostname === "discordbotlist.com",
     );
-    expect(topgg).toBeDefined();
-    expect(new URL(topgg?.url ?? "").pathname).toBe(
+    if (topgg === undefined || discordBotList === undefined) {
+      throw new Error("Bot-list requests are missing");
+    }
+    expect(new URL(topgg.url).pathname).toBe(
       `/api/bots/${env.DISCORD_APPLICATION_ID}/stats`,
     );
-    expect(topgg?.headers.get("authorization")).toBe(env.TOPGG_KEY);
-    await expect(topgg?.json()).resolves.toEqual({ server_count: 2 });
-    expect(discordBotList).toBeDefined();
-    expect(new URL(discordBotList?.url ?? "").pathname).toBe(
+    expect(topgg.headers.get("authorization")).toBe(env.TOPGG_KEY);
+    expect(await parseJsonRequest(topgg, BotListStatsSchema)).toEqual({
+      server_count: 2,
+    });
+    expect(new URL(discordBotList.url).pathname).toBe(
       `/api/v1/bots/${env.DISCORD_APPLICATION_ID}/stats`,
     );
-    expect(discordBotList?.headers.get("authorization")).toBe(
+    expect(discordBotList.headers.get("authorization")).toBe(
       env.DISCORD_BOT_LIST_KEY,
     );
-    await expect(discordBotList?.json()).resolves.toEqual({ guilds: 2 });
+    expect(await parseJsonRequest(discordBotList, BotListStatsSchema)).toEqual({
+      guilds: 2,
+    });
   });
 
   it("preserves the legacy no-guild skip without calling bot listings", async () => {
@@ -1288,7 +1466,7 @@ describe("Discord REST service", () => {
   });
 
   it("requires explicit bot-list credentials before any request", async () => {
-    const externalFetch = vi.fn();
+    const externalFetch = vi.fn<RequestFetch>();
 
     await expect(
       reportBotListStats(
@@ -1507,7 +1685,8 @@ describe("Discord REST service", () => {
       if (attempt === 1) {
         expect(request.method).toBe("POST");
         expect(path).toBe(`/api/v10/channels/${channelId}/messages`);
-        await expect(request.json()).resolves.toEqual({
+        const payload = await parseComponentsV2Request(request);
+        expect(payload).toEqual({
           flags: 1 << 15,
           components: [{ type: 10, content: "_clatter_" }],
           allowed_mentions: { parse: [] },
@@ -1519,12 +1698,9 @@ describe("Discord REST service", () => {
         expect(path).toBe(
           `/api/v10/channels/${channelId}/messages/${messageId}`,
         );
-        const form = await request.formData();
-        const payloadJson = form.get("payload_json");
-        if (typeof payloadJson !== "string") {
-          throw new Error("Discord payload is missing");
-        }
-        expect(JSON.parse(payloadJson)).toEqual({
+        const { payloadJson, file } = await parseMultipartRequest(request);
+        const payload = parseComponentsV2RequestBody(payloadJson);
+        expect(payload).toEqual({
           flags: 1 << 15,
           components: [
             {
@@ -1548,7 +1724,7 @@ describe("Discord REST service", () => {
             },
           ],
         });
-        expect(form.get("files[0]")).toBeInstanceOf(File);
+        expect(file.name).toBe("dice.png");
       }
       return Response.json({ id: messageId });
     });
@@ -1616,18 +1792,15 @@ describe("Discord REST service", () => {
       expect(new URL(request.url).pathname).toBe(
         `/api/v10/channels/${channelId}/messages`,
       );
-      const form = await request.formData();
-      const payloadJson = form.get("payload_json");
-      if (typeof payloadJson !== "string") {
-        throw new Error("Discord payload is missing");
-      }
-      expect(JSON.parse(payloadJson)).toMatchObject({
+      const { payloadJson } = await parseMultipartRequest(request);
+      const payload = parseComponentsV2RequestBody(payloadJson);
+      expect(payload).toMatchObject({
         flags: 1 << 15,
         nonce: rollId,
         enforce_nonce: true,
         allowed_mentions: { parse: [] },
       });
-      expect(JSON.parse(payloadJson)).not.toHaveProperty("message_reference");
+      expect(payload).not.toHaveProperty("message_reference");
       return Response.json({ id: "100000000000000020" });
     });
 
@@ -1742,12 +1915,9 @@ describe("Discord REST service", () => {
         return Response.json([{ id: channelId, name: "general", type: 0 }]);
       }
       expect(path).toBe(`/api/v10/channels/${channelId}/messages`);
-      const form = await request.formData();
-      const payloadJson = form.get("payload_json");
-      if (typeof payloadJson !== "string") {
-        throw new Error("Discord payload is missing");
-      }
-      expect(JSON.parse(payloadJson)).toEqual({
+      const { payloadJson, file } = await parseMultipartRequest(request);
+      const payload = LegacyWebRollRequestSchema.parse(JSON.parse(payloadJson));
+      expect(payload).toEqual({
         embeds: [],
         nonce: "1400000000000000001",
         enforce_nonce: true,
@@ -1760,7 +1930,7 @@ describe("Discord REST service", () => {
           },
         ],
       });
-      expect(form.get("files[0]")).toBeInstanceOf(File);
+      expect(file.name).toBe("dice-witch-roll.png");
       return Response.json({ id: "100000000000000020" });
     });
 
@@ -1829,7 +1999,8 @@ describe("Discord REST service", () => {
       if (deliveryAttempt === 1) {
         expect(request.method).toBe("POST");
         expect(path).toBe(`/api/v10/channels/${channelId}/messages`);
-        await expect(request.json()).resolves.toEqual({
+        const payload = await parseComponentsV2Request(request);
+        expect(payload).toEqual({
           flags: 1 << 15,
           components: [{ type: 10, content: "_clatter_" }],
           allowed_mentions: { parse: [] },
@@ -1842,12 +2013,9 @@ describe("Discord REST service", () => {
       expect(path).toBe(
         `/api/v10/channels/${channelId}/messages/${clatterMessageId}`,
       );
-      const form = await request.formData();
-      const payloadJson = form.get("payload_json");
-      if (typeof payloadJson !== "string") {
-        throw new Error("Discord payload is missing");
-      }
-      expect(JSON.parse(payloadJson)).toEqual({
+      const { payloadJson } = await parseMultipartRequest(request);
+      const payload = LegacyWebRollRequestSchema.parse(JSON.parse(payloadJson));
+      expect(payload).toEqual({
         embeds: [],
         content: null,
         allowed_mentions: { parse: [] },
@@ -1889,7 +2057,7 @@ describe("Discord REST service", () => {
 
   it("logs the exact V2 guild lifecycle container", async () => {
     const discordFetch = vi.fn(async (request: Request) => {
-      const payload = await request.json<Record<string, unknown>>();
+      const payload = await parseComponentsV2Request(request);
       expect(payload).toMatchObject({
         flags: 1 << 15,
         enforce_nonce: true,
@@ -1924,11 +2092,13 @@ describe("Discord REST service", () => {
     const discordFetch = vi.fn(async (request: Request) => {
       const url = new URL(request.url);
       if (url.pathname === "/api/v10/users/@me/channels") {
-        expect(await request.json()).toEqual({ recipient_id: userId });
+        expect(await parseJsonRequest(request, DmChannelRequestSchema)).toEqual({
+          recipient_id: userId,
+        });
         return Response.json({ id: "100000000000000010" });
       }
       expect(url.pathname).toBe("/api/v10/channels/100000000000000010/messages");
-      const payload = await request.json<Record<string, unknown>>();
+      const payload = await parseComponentsV2Request(request);
       expect(payload).toMatchObject({
         flags: 1 << 15,
         nonce: "100000000000000020",
@@ -1937,11 +2107,13 @@ describe("Discord REST service", () => {
           expect.objectContaining({ type: 17, accent_color: 0x00_00_ff }),
         ],
       });
-      expect(JSON.stringify(payload)).toContain(
+      expect(componentText(payload.components)).toContain(
         "https://dicewit.ch/docs/dice-notation",
       );
       expect(payload.components).toHaveLength(1);
-      expect(JSON.stringify(payload.components)).toContain("knowledgebase-topic");
+      expect(componentCustomIds(payload.components)).toContain(
+        "knowledgebase-topic",
+      );
       return Response.json({ id: "100000000000000021" });
     });
 
@@ -1962,7 +2134,7 @@ describe("Discord REST service", () => {
         expect(new URL(request.url).pathname).toBe(
           `/api/v10/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`,
         );
-        const payload: unknown = await request.json();
+        const payload = await parseComponentsV2Request(request);
         expect(payload).toEqual({
           flags: 1 << 15,
           nonce: "log:100000000000000020",
@@ -2017,7 +2189,7 @@ describe("Discord REST service", () => {
       expect(new URL(request.url).pathname).toBe(
         `/api/v10/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`,
       );
-      const payload = await request.json<{ components: unknown[] }>();
+      const payload = await parseComponentsV2Request(request);
       expect(componentText(payload.components)).toContain(
         "1d20 from **alice** [Discord] in thread **rules\\_\\*** on **Guild \\[One\\]** [HTTP]",
       );
@@ -2052,7 +2224,7 @@ describe("Discord REST service", () => {
   it("logs signed DM context without a Discord lookup", async () => {
     const channelId = "100000000000000010";
     const discordFetch = vi.fn(async (request: Request) => {
-      const payload = await request.json<{ components: unknown[] }>();
+      const payload = await parseComponentsV2Request(request);
       expect(componentText(payload.components)).toContain(
         "1d20 from **alice** [Discord] in **DM** [HTTP]",
       );
@@ -2149,7 +2321,7 @@ describe("Discord REST service", () => {
         expect(url.pathname).toBe(
           `/api/v10/channels/${env.LOG_OUTPUT_CHANNEL_ID}/messages`,
         );
-        const payload = await request.json<Record<string, unknown>>();
+        const payload = await parseComponentsV2Request(request);
         expect(payload).toMatchObject({
           flags: 1 << 15,
           nonce: "log:100000000000000020",
@@ -2392,7 +2564,7 @@ describe("Discord REST service", () => {
 
   it("fails closed on malformed Discord responses and identifiers", async () => {
     await expect(
-      inspectMembership(env, "001", userId, vi.fn()),
+      inspectMembership(env, "001", userId, vi.fn<RequestFetch>()),
     ).rejects.toThrow("Membership identifiers are invalid");
     await expect(
       inspectMembership(

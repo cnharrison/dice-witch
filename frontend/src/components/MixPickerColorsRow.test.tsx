@@ -10,43 +10,52 @@ import type {
   AppearanceMaterialV4,
   AppearanceRecipeV3,
 } from "@dice-witch/dice-v4-model";
+import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 
-const materialValue = (family: string) => ({ family }) as AppearanceMaterialV4;
+type MaterialFamilyFixture =
+  | "classic"
+  | "glass"
+  | "fantasy"
+  | "hollow-metal";
+
+function catalogMaterial(family: MaterialFamilyFixture) {
+  const material = APPEARANCE_CATALOG_V3.materials.find(
+    ({ family: candidate }) => candidate === family,
+  );
+  if (material === undefined) throw new Error(`Missing ${family} fixture`);
+  return material;
+}
+
+function materialValue(family: MaterialFamilyFixture): AppearanceMaterialV4 {
+  return structuredClone(catalogMaterial(family).defaultValue);
+}
+
+const rainbowStyle = APPEARANCE_CATALOG_V3.styles.find(
+  ({ id }) => id === "rainbow",
+);
+if (rainbowStyle === undefined) throw new Error("Missing rainbow fixture");
+const prideStyle = APPEARANCE_CATALOG_V3.styles.find(
+  ({ id }) => id === "pride",
+);
+if (prideStyle === undefined) throw new Error("Missing pride fixture");
 
 const catalog = {
-  styles: [
-    {
-      id: "rainbow",
-      name: "Rainbow",
-      recipe: {
-        randomization: "one-palette-color-v1",
-        colors: { mode: "palette", colors: ["#aa0000", "#00aa00", "#0000aa"] },
-      },
-    },
-    {
-      id: "pride",
-      name: "Pride",
-      recipe: {
-        colors: {
-          mode: "palette",
-          colors: ["#e40303", "#ff8c00", "#ffed00", "#008026", "#004dff", "#750787"],
-        },
-      },
-    },
-  ],
+  ...APPEARANCE_CATALOG_V3,
+  styles: [rainbowStyle, prideStyle],
   colorSchemeStyleIds: ["rainbow", "pride"],
   materials: [
-    { family: "classic", name: "Classic", defaultValue: materialValue("classic-default") },
-    { family: "glass", name: "Glass", defaultValue: materialValue("glass-default") },
-    { family: "fantasy", name: "Fantasy", defaultValue: materialValue("fantasy-default") },
-    { family: "hollow-metal", name: "Hollow Metal", defaultValue: materialValue("hollow-metal") },
+    catalogMaterial("classic"),
+    catalogMaterial("glass"),
+    catalogMaterial("fantasy"),
+    catalogMaterial("hollow-metal"),
   ],
   editorDefaults: {
+    ...APPEARANCE_CATALOG_V3.editorDefaults,
     primaryColor: "#101010",
     palette: ["#201040", "#301050", "#401060"],
     patternId: "dots",
   },
-} as never as AppearanceCatalogV3;
+} satisfies AppearanceCatalogV3;
 
 function recipeWith(
   material: AppearanceRecipeV3["material"],
@@ -122,6 +131,7 @@ describe("MixPickerColorsRow", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Pride" }));
+    // SAFETY: The test controls this callback and verifies the emitted recipe below.
     const pride = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
     expect(pride.colors).toEqual(catalog.styles[1]?.recipe.colors);
     expect(pride.colorDistribution).toBe("coordinated");
@@ -130,6 +140,7 @@ describe("MixPickerColorsRow", () => {
     expect(pride.font).toEqual(recipe.font);
 
     fireEvent.click(screen.getByRole("button", { name: "Rainbow" }));
+    // SAFETY: The test controls this callback and verifies the emitted recipe below.
     const rainbow = onChange.mock.calls[1]?.[0] as AppearanceRecipeV3;
     expect(rainbow.colorDistribution).toBe("one-per-die");
     expect(rainbow.material).toEqual(recipe.material);
@@ -348,6 +359,7 @@ describe("MixPickerColorsRow", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Dice color" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const solid = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
     expect(solid.colors).toEqual({
       mode: "solid",
@@ -422,6 +434,7 @@ describe("MixPickerColorsRow", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    // SAFETY: The test controls this callback and verifies the emitted recipe below.
     const next = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
     expect(next.colors.mode).toBe("solid");
     expect(next.colorDistribution).toBeUndefined();
@@ -448,6 +461,7 @@ describe("MixPickerColorsRow", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const first = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
     expect(first.colors).not.toEqual(recipe.colors);
 
@@ -459,6 +473,7 @@ describe("MixPickerColorsRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const second = onChange.mock.calls[1]?.[0] as AppearanceRecipeV3;
     expect(second.colors).not.toEqual(first.colors);
   });
@@ -488,6 +503,7 @@ describe("MixPickerColorsRow", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const oneColor = onChange.mock.calls[0]?.[0] as AppearanceRecipeV3;
     expect(oneColor.colors.mode).toBe("solid");
     expect(oneColor.material).toEqual(recipe.material);
@@ -502,6 +518,7 @@ describe("MixPickerColorsRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Random" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const sixColors = onChange.mock.calls[1]?.[0] as AppearanceRecipeV3;
     expect(sixColors.colors.mode).toBe("palette");
     if (sixColors.colors.mode !== "palette") {

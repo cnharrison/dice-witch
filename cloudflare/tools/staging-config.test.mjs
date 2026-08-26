@@ -21,11 +21,9 @@ function baseConfig(name, main) {
 }
 
 function service(binding, serviceName, entrypoint) {
-  return {
-    binding,
-    service: serviceName,
-    ...(entrypoint === undefined ? {} : { entrypoint }),
-  };
+  const value = { binding, service: serviceName };
+  if (entrypoint !== undefined) value.entrypoint = entrypoint;
+  return value;
 }
 
 function validConfigs() {

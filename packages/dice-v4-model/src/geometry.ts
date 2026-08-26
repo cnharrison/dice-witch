@@ -218,9 +218,12 @@ export function getRenderGeometryIdV4(
     : geometryId;
 }
 
-export function getRenderTexturePlacementV4(
-  die: RenderDieV4,
-): RenderTextureV4 {
+export function getRenderTexturePlacementV4<
+  Texture extends Pick<RenderTextureV4, "rotation">,
+>(die: {
+  appearance: { texture: Texture };
+  view?: RenderDieV4["view"];
+}): Texture {
   const placement = die.appearance.texture;
   if (die.view?.kind !== "sphere-surface") return placement;
   return {
@@ -309,11 +312,8 @@ export function getRenderGeometryDescriptorV4(
       first[1] * firstScale + second[1] * secondScale,
       first[2] * firstScale + second[2] * secondScale,
     ];
-    return {
+    const resolvedDescriptor: SphericalGeometryDescriptorV4 = {
       ...descriptor,
-      ...(revisionPolicy.sphereLabelMapping === "local-frame-r19"
-        ? { labelMapping: "local-frame-r19" as const }
-        : {}),
       labelFrame: {
         ...descriptor.labelFrame,
         origin: normal,
@@ -331,6 +331,10 @@ export function getRenderGeometryDescriptorV4(
         ),
       },
     };
+    if (revisionPolicy.sphereLabelMapping === "local-frame-r19") {
+      resolvedDescriptor.labelMapping = "local-frame-r19";
+    }
+    return resolvedDescriptor;
   }
   if (
     (die.view?.kind !== "camera" && die.view?.kind !== "oriented-camera") ||
@@ -393,18 +397,17 @@ export function getRenderGeometryDescriptorV4(
     0,
     Math.cos(poseRadians / 2),
   ];
+  if (cameraAngles === "presets-r16" && die.target !== "d4") {
+    return { ...descriptor, camera };
+  }
   return {
     ...descriptor,
-    ...((cameraAngles === "presets-r16" ? die.target === "d4" : true)
-      ? {
-          resultOrientations: descriptor.resultOrientations.map(
-            ({ result, rotation }) => ({
-              result,
-              rotation: multiplyQuaternionsV4(poseRotation, rotation),
-            }),
-          ),
-        }
-      : {}),
+    resultOrientations: descriptor.resultOrientations.map(
+      ({ result, rotation }) => ({
+        result,
+        rotation: multiplyQuaternionsV4(poseRotation, rotation),
+      }),
+    ),
     camera,
   };
 }

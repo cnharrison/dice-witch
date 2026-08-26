@@ -1,19 +1,77 @@
 import {
   createDefaultDiceViewPreferencesV4,
+  parseAppearanceProfileV4,
+  parseAppearanceRecipeV3,
+  parseDiceViewPreferencesV4,
+  parseGuildAppearanceProfileV4,
   type AppearanceProfileV4,
   type FontIdV4,
   type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
-import { BUILTIN_APPEARANCE_STYLES_V3 } from "../../packages/dice-appearance/src";
+import {
+  APPEARANCE_VALIDATION_CATALOG_V3,
+  BUILTIN_APPEARANCE_STYLES_V3,
+  type EffectiveAppearanceV4,
+} from "../../packages/dice-appearance/src";
 import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { handleAppearanceRequest } from "../../workers/data/src/appearance-service";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+const TestMigrationsBindingSchema = z.object({
+  TEST_MIGRATIONS: z.array(z.strictObject({
+    name: z.string(),
+    queries: z.array(z.string()),
+  })),
+});
+const RequestBodySchema = z.json();
+type RequestBody = z.output<typeof RequestBodySchema>;
+const MissingResponseSchema = z.strictObject({
+  status: z.literal("missing"),
+});
+const PersonalWriteResponseSchema = z.strictObject({
+  status: z.enum(["applied", "existing"]),
+  revision: z.number().int().positive(),
+  profile: z.json(),
+});
+const PersonalStateWriteResponseSchema = PersonalWriteResponseSchema.extend({
+  canRestorePreviousMix: z.boolean(),
+});
+const GuildWriteResponseSchema = PersonalWriteResponseSchema;
+const GuildReadResponseSchema = z.strictObject({
+  status: z.literal("found"),
+  revision: z.number().int().positive(),
+  profile: z.json(),
+  updatedByUserId: z.string(),
+});
+const MutationConflictResponseSchema = z.strictObject({
+  status: z.literal("mutation_conflict"),
+});
+const RevisionConflictResponseSchema = z.strictObject({
+  status: z.literal("revision_conflict"),
+  revision: z.number().int().positive(),
+});
+const ErrorResponseSchema = z.strictObject({ error: z.string() });
+const EffectiveAppearanceResponseSchema = z.strictObject({
+  version: z.literal(4),
+  recipes: z.strictObject({
+    d4: z.json(),
+    d6: z.json(),
+    d8: z.json(),
+    d10: z.json(),
+    d12: z.json(),
+    d20: z.json(),
+    percentile: z.json(),
+    fudge: z.json(),
+    other: z.json(),
+  }),
+  diceView: z.json(),
+});
+const dataEnv = {
+  DATA: env.DATA,
+  ...TestMigrationsBindingSchema.parse(env),
+} satisfies { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 const userId = "100000000000000003";
 const guildId = "100000000000000002";
 const occurredAt = 1_767_225_600_123;
@@ -64,16 +122,77 @@ function guildProfile(): GuildAppearanceProfileV4 {
   };
 }
 
-function postRequest(path: string, body: unknown): Request {
+function postRequest(path: string, body: RequestBody): Request {
   return new Request(`https://data.internal${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(RequestBodySchema.parse(body)),
   });
 }
 
-function post(path: string, body: unknown): Promise<Response> {
+function post(path: string, body: RequestBody): Promise<Response> {
   return exports.default.fetch(postRequest(path, body));
+}
+
+async function parseResponse<Schema extends z.ZodType>(
+  response: Response,
+  schema: Schema,
+): Promise<z.output<Schema>> {
+  return schema.parse(await response.json());
+}
+
+async function parsePersonalWriteResponse(response: Response) {
+  const result = await parseResponse(response, PersonalWriteResponseSchema);
+  return {
+    ...result,
+    profile: parseAppearanceProfileV4(
+      result.profile,
+      APPEARANCE_VALIDATION_CATALOG_V3,
+    ),
+  };
+}
+
+async function parseGuildWriteResponse(response: Response) {
+  const result = await parseResponse(response, GuildWriteResponseSchema);
+  return {
+    ...result,
+    profile: parseGuildAppearanceProfileV4(
+      result.profile,
+      APPEARANCE_VALIDATION_CATALOG_V3,
+    ),
+  };
+}
+
+async function parseGuildReadResponse(response: Response) {
+  const result = await parseResponse(response, GuildReadResponseSchema);
+  return {
+    ...result,
+    profile: parseGuildAppearanceProfileV4(
+      result.profile,
+      APPEARANCE_VALIDATION_CATALOG_V3,
+    ),
+  };
+}
+
+async function parseEffectiveAppearanceResponse(
+  response: Response,
+): Promise<EffectiveAppearanceV4> {
+  const result = await parseResponse(response, EffectiveAppearanceResponseSchema);
+  return {
+    version: result.version,
+    recipes: {
+      d4: parseAppearanceRecipeV3(result.recipes.d4),
+      d6: parseAppearanceRecipeV3(result.recipes.d6),
+      d8: parseAppearanceRecipeV3(result.recipes.d8),
+      d10: parseAppearanceRecipeV3(result.recipes.d10),
+      d12: parseAppearanceRecipeV3(result.recipes.d12),
+      d20: parseAppearanceRecipeV3(result.recipes.d20),
+      percentile: parseAppearanceRecipeV3(result.recipes.percentile),
+      fudge: parseAppearanceRecipeV3(result.recipes.fudge),
+      other: parseAppearanceRecipeV3(result.recipes.other),
+    },
+    diceView: parseDiceViewPreferencesV4(result.diceView),
+  };
 }
 
 beforeEach(async () => {
@@ -103,9 +222,12 @@ describe("Data Worker V4 appearance service", () => {
     const personal = personalProfile();
     const guild = guildProfile();
 
-    await expect(
-      (await post("/internal/appearance/v4/personal/get", { userId })).json(),
-    ).resolves.toEqual({ status: "missing" });
+    const missing = await post("/internal/appearance/v4/personal/get", {
+      userId,
+    });
+    expect(await parseResponse(missing, MissingResponseSchema)).toEqual({
+      status: "missing",
+    });
     const personalWrite = await post(
       "/internal/appearance/v4/personal/put",
       {
@@ -117,7 +239,7 @@ describe("Data Worker V4 appearance service", () => {
       },
     );
     expect(personalWrite.status).toBe(200);
-    await expect(personalWrite.json()).resolves.toEqual({
+    expect(await parsePersonalWriteResponse(personalWrite)).toEqual({
       status: "applied",
       revision: 1,
       profile: personal,
@@ -132,14 +254,15 @@ describe("Data Worker V4 appearance service", () => {
       occurredAt,
     });
     expect(guildWrite.status).toBe(200);
-    await expect(guildWrite.json()).resolves.toEqual({
+    expect(await parseGuildWriteResponse(guildWrite)).toEqual({
       status: "applied",
       revision: 1,
       profile: guild,
     });
-    await expect(
-      (await post("/internal/appearance/v4/guild/get", { guildId })).json(),
-    ).resolves.toEqual({
+    const guildRead = await post("/internal/appearance/v4/guild/get", {
+      guildId,
+    });
+    expect(await parseGuildReadResponse(guildRead)).toEqual({
       status: "found",
       revision: 1,
       profile: guild,
@@ -165,7 +288,9 @@ describe("Data Worker V4 appearance service", () => {
       occurredAt: occurredAt + 1,
     });
     expect(reset.status).toBe(200);
-    const resetResult = await reset.json();
+    const resetResult = PersonalStateWriteResponseSchema.parse(
+      await reset.json(),
+    );
     expect(resetResult).toMatchObject({
       status: "applied",
       revision: 2,
@@ -176,7 +301,10 @@ describe("Data Worker V4 appearance service", () => {
     const restore = await post("/internal/appearance/v4/personal/state/restore", {
       userId,
       expectedRevision: 2,
-      profile: (resetResult as { profile: AppearanceProfileV4 }).profile,
+      profile: parseAppearanceProfileV4(
+        resetResult.profile,
+        APPEARANCE_VALIDATION_CATALOG_V3,
+      ),
       mutationId: "appearance-v4-restore",
       occurredAt: occurredAt + 2,
     });
@@ -246,9 +374,9 @@ describe("Data Worker V4 appearance service", () => {
       { ...input, profile: personalProfile("rainbow") },
     );
     expect(mutationConflict.status).toBe(409);
-    await expect(mutationConflict.json()).resolves.toEqual({
-      status: "mutation_conflict",
-    });
+    expect(
+      await parseResponse(mutationConflict, MutationConflictResponseSchema),
+    ).toEqual({ status: "mutation_conflict" });
 
     const revisionConflict = await post(
       "/internal/appearance/v4/personal/put",
@@ -260,7 +388,9 @@ describe("Data Worker V4 appearance service", () => {
       },
     );
     expect(revisionConflict.status).toBe(409);
-    await expect(revisionConflict.json()).resolves.toEqual({
+    expect(
+      await parseResponse(revisionConflict, RevisionConflictResponseSchema),
+    ).toEqual({
       status: "revision_conflict",
       revision: 1,
     });
@@ -272,7 +402,7 @@ describe("Data Worker V4 appearance service", () => {
       guildId: null,
     });
     expect(defaults.status).toBe(200);
-    await expect(defaults.json()).resolves.toMatchObject({
+    expect(await parseEffectiveAppearanceResponse(defaults)).toMatchObject({
       version: 4,
       diceView: { mode: "normal" },
     });
@@ -298,7 +428,7 @@ describe("Data Worker V4 appearance service", () => {
       guildId,
     });
     expect(response.status).toBe(200);
-    const value: unknown = await response.json();
+    const value = await parseEffectiveAppearanceResponse(response);
     expect(value).toMatchObject({
       version: 4,
       diceView: { mode: "clear" },
@@ -325,6 +455,9 @@ describe("Data Worker V4 appearance service", () => {
       { userId, extra: true },
     );
     expect(invalidLookup.status).toBe(400);
+    expect(await parseResponse(invalidLookup, ErrorResponseSchema)).toEqual({
+      error: "Personal appearance lookup is invalid",
+    });
 
     const invalidProfile = await post(
       "/internal/appearance/v4/personal/put",
@@ -337,7 +470,7 @@ describe("Data Worker V4 appearance service", () => {
       },
     );
     expect(invalidProfile.status).toBe(400);
-    await expect(invalidProfile.json()).resolves.toEqual({
+    expect(await parseResponse(invalidProfile, ErrorResponseSchema)).toEqual({
       error: "Personal appearance update is invalid",
     });
   });
@@ -352,6 +485,8 @@ describe("Data Worker V4 appearance service", () => {
   ])("returns 404 for removed route %s", async (path) => {
     const response = await post(path, { userId, guildId: null });
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: "Not found" });
+    expect(await parseResponse(response, ErrorResponseSchema)).toEqual({
+      error: "Not found",
+    });
   });
 });

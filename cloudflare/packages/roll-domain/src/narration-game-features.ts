@@ -1,3 +1,4 @@
+import * as z from "zod";
 import {
   MAX_NOTATION_EXPRESSIONS,
   MAX_NOTATION_LENGTH,
@@ -71,20 +72,16 @@ const CATALOGUED_DIE_SIDES = new Set([
   ...DCC_DIE_SIDES,
 ]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactFields(
-  value: Record<string, unknown>,
-  fields: readonly string[],
-): boolean {
-  const actual = Object.keys(value);
-  return (
-    actual.length === fields.length &&
-    actual.every((field) => fields.includes(field))
-  );
-}
+const NarrationGameFeatureRollEnvelopeSchemaV1 = z.strictObject({
+  notation: z.unknown(),
+  repetitions: z.unknown(),
+});
+const NarrationGameFeatureNotationSchemaV1 = z.array(z.string().min(1));
+const NarrationGameFeatureRollListSchemaV1 = z.array(z.unknown());
+const NarrationGameFeatureRequestEnvelopeSchemaV1 = z.strictObject({
+  version: z.unknown(),
+  rolls: z.unknown(),
+});
 
 function normalizeNotation(value: string): string {
   return value.toLowerCase().replace(/\s+/gu, "");
@@ -100,33 +97,32 @@ function isMixedStepDicePool(notation: string): boolean {
   return sides.size >= 2;
 }
 
-function validateRoll(value: unknown): NarrationGameFeatureRollV1 {
-  if (!isRecord(value) || !hasExactFields(value, ["notation", "repetitions"])) {
-    throw new Error("Narration game feature roll contains an unsupported field");
-  }
+function validateRoll(
+  roll: z.output<typeof NarrationGameFeatureRollEnvelopeSchemaV1>,
+): NarrationGameFeatureRollV1 {
+  const notationResult = NarrationGameFeatureNotationSchemaV1.safeParse(
+    roll.notation,
+  );
   if (
-    !Array.isArray(value.notation) ||
-    value.notation.length < 1 ||
-    value.notation.length > MAX_NOTATION_EXPRESSIONS ||
-    !value.notation.every(
-      (notation) => typeof notation === "string" && notation.length > 0,
-    ) ||
-    value.notation.join(" ").length > MAX_NOTATION_LENGTH
+    !notationResult.success ||
+    notationResult.data.length < 1 ||
+    notationResult.data.length > MAX_NOTATION_EXPRESSIONS ||
+    notationResult.data.join(" ").length > MAX_NOTATION_LENGTH
   ) {
     throw new Error("Narration game feature roll notation is invalid");
   }
-  const repetitions = value.repetitions;
+  const repetitionsResult = z.number().safeParse(roll.repetitions);
   if (
-    typeof repetitions !== "number" ||
-    !Number.isSafeInteger(repetitions) ||
-    repetitions < 1 ||
-    repetitions > MAX_REPETITIONS
+    !repetitionsResult.success ||
+    !Number.isSafeInteger(repetitionsResult.data) ||
+    repetitionsResult.data < 1 ||
+    repetitionsResult.data > MAX_REPETITIONS
   ) {
     throw new Error("Narration game feature roll repetitions are invalid");
   }
   return {
-    notation: value.notation.map((notation) => String(notation)),
-    repetitions,
+    notation: notationResult.data,
+    repetitions: repetitionsResult.data,
   };
 }
 
@@ -292,23 +288,26 @@ export function extractNarrationGameFeaturesV1(
   request: NarrationGameFeatureRequestV1,
 ): NarrationGameFeatureResultV1;
 export function extractNarrationGameFeaturesV1(
-  request: unknown,
+  request: z.input<typeof NarrationGameFeatureRequestEnvelopeSchemaV1>,
 ): NarrationGameFeatureResultV1 {
-  if (
-    !isRecord(request) ||
-    !hasExactFields(request, ["version", "rolls"])
-  ) {
+  const requestResult =
+    NarrationGameFeatureRequestEnvelopeSchemaV1.safeParse(request);
+  if (!requestResult.success) {
     throw new Error(
       "Narration game feature request contains an unsupported field",
     );
   }
-  if (request.version !== 1) {
+  const parsedRequest = requestResult.data;
+  if (parsedRequest.version !== 1) {
     throw new Error("Narration game feature request version must be 1");
   }
+  const rollsResult = NarrationGameFeatureRollListSchemaV1.safeParse(
+    parsedRequest.rolls,
+  );
   if (
-    !Array.isArray(request.rolls) ||
-    request.rolls.length < 1 ||
-    request.rolls.length > MAX_SESSION_ROLLS
+    !rollsResult.success ||
+    rollsResult.data.length < 1 ||
+    rollsResult.data.length > MAX_SESSION_ROLLS
   ) {
     throw new Error(
       `Narration game feature request requires 1 through ${String(MAX_SESSION_ROLLS)} rolls`,
@@ -322,8 +321,14 @@ export function extractNarrationGameFeaturesV1(
     uncataloguedSides: new Set(),
     uncataloguedExpressionCount: 0,
   };
-  for (const value of request.rolls) {
-    const roll = validateRoll(value);
+  for (const input of rollsResult.data) {
+    const rollResult = NarrationGameFeatureRollEnvelopeSchemaV1.safeParse(input);
+    if (!rollResult.success) {
+      throw new Error(
+        "Narration game feature roll contains an unsupported field",
+      );
+    }
+    const roll = validateRoll(rollResult.data);
     for (const value of roll.notation) {
       addObservation(
         observations,

@@ -1,11 +1,11 @@
-import { env, exports } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { dataTestEnv as dataEnv } from "./test-bindings";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+type RequestBody = z.output<ReturnType<typeof z.json>>;
+const SessionTokenSchema = z.strictObject({ token: z.string() });
 const userId = "100000000000000003";
 const createdAt = 1_767_225_600_123;
 const expiresAt = createdAt + 30 * 24 * 60 * 60 * 1_000;
@@ -27,19 +27,11 @@ beforeEach(async () => {
   ]);
 });
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 async function responseToken(response: Response): Promise<string> {
-  const value: unknown = await response.json();
-  if (!isRecord(value) || typeof value.token !== "string") {
-    throw new Error("Session service did not return a token");
-  }
-  return value.token;
+  return SessionTokenSchema.parse(await response.json()).token;
 }
 
-function internalRequest(path: string, body: unknown): Promise<Response> {
+function internalRequest(path: string, body: RequestBody): Promise<Response> {
   return exports.default.fetch(
     new Request(`https://data.internal${path}`, {
       method: "POST",

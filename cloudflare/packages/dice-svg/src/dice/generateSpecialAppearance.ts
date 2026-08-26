@@ -39,6 +39,7 @@ import {
   D10_APPEARANCE_GEOMETRY,
   type D10LabelSlot,
 } from "./generatePolyhedralAppearance";
+import type { ValidationInput } from "../validationBoundary";
 
 export type {
   FudgeAppearanceRequest,
@@ -112,7 +113,7 @@ const PERCENTILE_GEOMETRY: FacetedAppearanceGeometry<PercentileLabelSlot> = {
   })),
 };
 
-const PERCENTILE_FONT_WIDTH_SCALE: Record<AppearanceFontId, number> = {
+const PERCENTILE_FONT_WIDTH_SCALE = {
   "liberation-sans": 1,
   "new-rocker": 1,
   "stencil-ops": 0.85,
@@ -121,7 +122,7 @@ const PERCENTILE_FONT_WIDTH_SCALE: Record<AppearanceFontId, number> = {
   "luckiest-guy": 1,
   "fontdiner-swanky": 0.85,
   syncopate: 0.75,
-};
+} satisfies Record<AppearanceFontId, number>;
 
 function createPercentileGeometry(
   fontId: AppearanceFontId,
@@ -184,11 +185,11 @@ const FUDGE_GEOMETRY: FacetedAppearanceGeometry<FudgeLabelSlot> = {
   ],
 };
 
-const FUDGE_LABELS: Record<FudgeResult, FacetedFaceValue> = {
+const FUDGE_LABELS = {
   [-1]: { label: "-", dataValue: "minus" },
   0: { label: "", dataValue: "blank" },
   1: { label: "+", dataValue: "plus" },
-};
+} satisfies Record<FudgeResult, FacetedFaceValue>;
 
 function validatePercentileResult(result: number): asserts result is PercentileResult {
   if (
@@ -209,20 +210,35 @@ function validateFudgeResult(result: number): asserts result is FudgeResult {
   }
 }
 
+const PERCENTILE_RESULTS = [
+  0,
+  10,
+  20,
+  30,
+  40,
+  50,
+  60,
+  70,
+  80,
+  90,
+] as const satisfies readonly PercentileResult[];
+
 function offsetPercentile(
   result: PercentileResult,
   offset: number,
 ): PercentileResult {
-  return (((result / 10 + offset) % 10) * 10) as PercentileResult;
+  const value = PERCENTILE_RESULTS[(result / 10 + offset) % 10];
+  if (value === undefined) {
+    throw new Error("Percentile appearance offset is invalid");
+  }
+  return value;
 }
 
 function formatPercentile(value: PercentileResult): string {
   return value === 0 ? "00" : String(value);
 }
 
-export function getPercentileVisibleFaceValues(
-  result: number,
-): PercentileVisibleFaceValues {
+export function getPercentileVisibleFaceValues(result: number) {
   validatePercentileResult(result);
   return {
     result,
@@ -230,20 +246,22 @@ export function getPercentileVisibleFaceValues(
     "upper-right": offsetPercentile(result, 7),
     "lower-left": offsetPercentile(result, 4),
     "lower-right": offsetPercentile(result, 8),
-  };
+  } satisfies PercentileVisibleFaceValues;
 }
 
-export function getFudgeVisibleFaceValues(
-  result: number,
-): FudgeVisibleFaceValues {
+export function getFudgeVisibleFaceValues(result: number) {
   validateFudgeResult(result);
-  if (result === -1) return { result, top: 0, right: 1 };
-  if (result === 0) return { result, top: 1, right: -1 };
-  return { result, top: -1, right: 0 };
+  if (result === -1) {
+    return { result, top: 0, right: 1 } satisfies FudgeVisibleFaceValues;
+  }
+  if (result === 0) {
+    return { result, top: 1, right: -1 } satisfies FudgeVisibleFaceValues;
+  }
+  return { result, top: -1, right: 0 } satisfies FudgeVisibleFaceValues;
 }
 
 export function composePercentileAppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parsePercentileAppearanceRequest(value);
@@ -262,14 +280,16 @@ export function composePercentileAppearanceSvgWithOptions(
   );
 }
 
-export function composePercentileAppearanceSvg(value: unknown): string {
+export function composePercentileAppearanceSvg(
+  value: ValidationInput,
+): string {
   return composePercentileAppearanceSvgWithOptions(value, {
     localSeparation: false,
   });
 }
 
 export function composeFudgeAppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parseFudgeAppearanceRequest(value);
@@ -286,7 +306,7 @@ export function composeFudgeAppearanceSvgWithOptions(
   );
 }
 
-export function composeFudgeAppearanceSvg(value: unknown): string {
+export function composeFudgeAppearanceSvg(value: ValidationInput): string {
   return composeFudgeAppearanceSvgWithOptions(value, {
     localSeparation: false,
   });
@@ -338,7 +358,7 @@ function composeSphereCriticalGlow(
 }
 
 export function composeOtherAppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parseOtherAppearanceRequest(value);
@@ -377,7 +397,7 @@ export function composeOtherAppearanceSvgWithOptions(
 </svg>`;
 }
 
-export function composeOtherAppearanceSvg(value: unknown): string {
+export function composeOtherAppearanceSvg(value: ValidationInput): string {
   return composeOtherAppearanceSvgWithOptions(value, {
     localSeparation: false,
   });

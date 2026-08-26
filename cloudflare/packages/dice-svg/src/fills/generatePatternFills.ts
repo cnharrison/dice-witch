@@ -4,10 +4,7 @@ const generatePatternId = (patternType: string, color1: string, color2: string):
   return `pattern_${patternType}_${color1.replace('#', '')}_${color2.replace('#', '')}`;
 };
 
-const patternFills: Record<
-  PatternNameV3,
-  (color1: string, color2: string) => PatternFill
-> = {
+const patternFills = {
   checkerboard: (color1: string, color2: string) => {
     const patternType = 'checkerboard';
     const id = generatePatternId(patternType, color1, color2);
@@ -217,6 +214,9 @@ const patternFills: Record<
       </pattern>`
     };
   }
-};
+} satisfies Record<
+  PatternNameV3,
+  (color1: string, color2: string) => PatternFill
+>;
 
 export default patternFills;

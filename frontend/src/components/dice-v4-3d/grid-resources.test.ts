@@ -68,6 +68,7 @@ describe("V4 Three.js grid resource ownership", () => {
       die.appearance.lighting,
       die.appearance.material.family,
     );
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const modifierIcons = createThreeModifierIconResourcesV4(
       layout,
       { width: 660, height: 66 } as HTMLCanvasElement,

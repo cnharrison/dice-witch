@@ -1,11 +1,10 @@
-import { env, exports } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { dataTestEnv as dataEnv } from "./test-bindings";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+type RequestBody = z.output<ReturnType<typeof z.json>>;
 const userId = "100000000000000003";
 const activeGuildId = "100000000000000001";
 const inactiveGuildId = "100000000000000002";
@@ -35,7 +34,7 @@ beforeEach(async () => {
   ]);
 });
 
-function post(path: string, body: unknown): Promise<Response> {
+function post(path: string, body: RequestBody): Promise<Response> {
   return exports.default.fetch(
     new Request(`https://data.internal${path}`, {
       method: "POST",

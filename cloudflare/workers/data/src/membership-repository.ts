@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   matchesMutationReceipt,
   readMutationReceipt,
@@ -44,20 +45,22 @@ type ValidatedInput = UpsertPermissionsInput & {
   receipt: MutationReceipt;
 };
 
+const MembershipPermissionsSchema = z.object({
+  isAdmin: z.boolean(),
+  isDiceWitchAdmin: z.boolean(),
+});
+
 function validateInput(input: UpsertPermissionsInput): ValidatedInput {
   const userId = validateSnowflake(input.userId, "User id");
   const guildId = validateSnowflake(input.guildId, "Guild id");
-  if (
-    typeof input.permissions.isAdmin !== "boolean" ||
-    typeof input.permissions.isDiceWitchAdmin !== "boolean"
-  ) {
+  const permissionsResult = MembershipPermissionsSchema.safeParse(
+    input.permissions,
+  );
+  if (!permissionsResult.success) {
     throw new Error("Membership permissions are invalid");
   }
   validateMutationMetadata(input.mutationId, input.occurredAt);
-  const permissions = {
-    isAdmin: input.permissions.isAdmin,
-    isDiceWitchAdmin: input.permissions.isDiceWitchAdmin,
-  };
+  const permissions = permissionsResult.data;
   const entityKey = `${userId}:${guildId}`;
   return {
     ...input,

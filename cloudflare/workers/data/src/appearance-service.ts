@@ -5,6 +5,12 @@ import {
   type AppearanceProfileV4,
   type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
+import { z } from "zod";
+import {
+  snowflakeSchema,
+  strictObjectSchema,
+  timestampSchema,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   APPEARANCE_VALIDATION_CATALOG_V3,
   appearanceCatalogForPolicyV3,
@@ -21,30 +27,50 @@ import {
   type PutPersonalAppearanceV4Input,
 } from "./appearance-repository";
 
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const MAX_BODY_BYTES = 96 * 1024;
+const jsonValueSchema = z.json();
+const expectedRevisionSchema = z
+  .number()
+  .refine(Number.isSafeInteger)
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER - 1);
+const mutationIdSchema = z.string().min(1).max(255);
 const responseHeaders = {
   "cache-control": "no-store",
   "x-content-type-options": "nosniff",
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const mutationFields = {
+  expectedRevision: expectedRevisionSchema,
+  mutationId: mutationIdSchema,
+  occurredAt: timestampSchema,
+};
+const PersonalProfileLookupSchema = strictObjectSchema({
+  userId: snowflakeSchema,
+});
+const PersonalProfileUpdateSchema = strictObjectSchema({
+  ...mutationFields,
+  profile: jsonValueSchema,
+  userId: snowflakeSchema,
+});
+const GuildProfileLookupSchema = strictObjectSchema({
+  guildId: snowflakeSchema,
+});
+const GuildProfileUpdateSchema = strictObjectSchema({
+  ...mutationFields,
+  guildId: snowflakeSchema,
+  profile: jsonValueSchema,
+  updatedByUserId: snowflakeSchema,
+});
+const EffectiveAppearanceLookupSchema = strictObjectSchema({
+  guildId: z.nullable(snowflakeSchema),
+  userId: snowflakeSchema,
+});
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
-}
-
-async function readBoundedJson(request: Request): Promise<unknown> {
+async function readBoundedRequest<Schema extends z.ZodType>(
+  request: Request,
+  schema: Schema,
+): Promise<z.output<Schema>> {
   if (
     request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
     "application/json"
@@ -59,11 +85,12 @@ async function readBoundedJson(request: Request): Promise<unknown> {
   ) {
     throw new Error("Appearance request body is too large");
   }
-  if (request.body === null) {
+  const body = request.body;
+  if (body === null) {
     throw new Error("Appearance request body is missing");
   }
 
-  const reader = request.body.getReader();
+  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
@@ -82,43 +109,11 @@ async function readBoundedJson(request: Request): Promise<unknown> {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return JSON.parse(
-    new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes),
-  ) as unknown;
-}
-
-async function parseBody(
-  request: Request,
-  keys: readonly string[],
-): Promise<Record<string, unknown>> {
-  const value = await readBoundedJson(request);
-  if (!isRecord(value) || !hasExactKeys(value, keys)) {
-    throw new Error("Appearance request has invalid fields");
-  }
-  return value;
-}
-
-type ValidMutationFields = Record<string, unknown> & {
-  expectedRevision: number;
-  mutationId: string;
-  occurredAt: number;
-};
-
-function validMutationFields(
-  value: Record<string, unknown>,
-): value is ValidMutationFields {
-  return (
-    typeof value.expectedRevision === "number" &&
-    Number.isSafeInteger(value.expectedRevision) &&
-    value.expectedRevision >= 0 &&
-    value.expectedRevision < Number.MAX_SAFE_INTEGER &&
-    typeof value.mutationId === "string" &&
-    value.mutationId.length >= 1 &&
-    value.mutationId.length <= 255 &&
-    typeof value.occurredAt === "number" &&
-    Number.isSafeInteger(value.occurredAt) &&
-    value.occurredAt >= 0
-  );
+  const json = new TextDecoder("utf-8", {
+    fatal: true,
+    ignoreBOM: false,
+  }).decode(bytes);
+  return schema.parse(JSON.parse(json));
 }
 
 function errorResponse(message: string, status: number): Response {
@@ -179,25 +174,31 @@ function appearanceRepository(db: D1Database): D1AppearanceRepository {
   return new D1AppearanceRepository(db, APPEARANCE_VALIDATION_CATALOG_V3);
 }
 
+function validateProfileFonts(
+  profile: AppearanceProfileV4 | GuildAppearanceProfileV4,
+  policy: AppearanceCatalogPolicyV3,
+): void {
+  validateAppearanceProfileFontsV4(
+    profile,
+    appearanceCatalogForPolicyV3(policy).fonts.map(({ id }) => id),
+  );
+}
+
 async function getPersonalProfileV4(
   request: Request,
   db: D1Database,
   includeRestoreState: boolean,
 ): Promise<Response> {
-  let userId: string;
+  let input: z.output<typeof PersonalProfileLookupSchema>;
   try {
-    const value = await parseBody(request, ["userId"]);
-    if (typeof value.userId !== "string" || !SNOWFLAKE.test(value.userId)) {
-      throw new Error("Personal appearance lookup is invalid");
-    }
-    userId = value.userId;
+    input = await readBoundedRequest(request, PersonalProfileLookupSchema);
   } catch {
     return errorResponse("Personal appearance lookup is invalid", 400);
   }
 
   try {
     return readResponse(
-      await appearanceRepository(db).getPersonalV4(userId),
+      await appearanceRepository(db).getPersonalV4(input.userId),
       includeRestoreState,
     );
   } catch {
@@ -214,35 +215,16 @@ async function mutatePersonalProfileV4(
 ): Promise<Response> {
   let input: PutPersonalAppearanceV4Input & { profile: AppearanceProfileV4 };
   try {
-    const value = await parseBody(request, [
-      "expectedRevision",
-      "mutationId",
-      "occurredAt",
-      "profile",
-      "userId",
-    ]);
-    if (
-      typeof value.userId !== "string" ||
-      !SNOWFLAKE.test(value.userId) ||
-      !validMutationFields(value)
-    ) {
-      throw new Error("Personal appearance update is invalid");
-    }
+    const requestInput = await readBoundedRequest(
+      request,
+      PersonalProfileUpdateSchema,
+    );
     const profile = parseAppearanceProfileV4(
-      value.profile,
+      requestInput.profile,
       APPEARANCE_VALIDATION_CATALOG_V3,
     );
-    validateAppearanceProfileFontsV4(
-      profile,
-      appearanceCatalogForPolicyV3(policy).fonts.map(({ id }) => id),
-    );
-    input = {
-      userId: value.userId,
-      expectedRevision: value.expectedRevision,
-      profile,
-      mutationId: value.mutationId,
-      occurredAt: value.occurredAt,
-    };
+    validateProfileFonts(profile, policy);
+    input = { ...requestInput, profile };
   } catch {
     return errorResponse("Personal appearance update is invalid", 400);
   }
@@ -268,20 +250,16 @@ async function getGuildProfileV4(
   db: D1Database,
   includeRestoreState: boolean,
 ): Promise<Response> {
-  let guildId: string;
+  let input: z.output<typeof GuildProfileLookupSchema>;
   try {
-    const value = await parseBody(request, ["guildId"]);
-    if (typeof value.guildId !== "string" || !SNOWFLAKE.test(value.guildId)) {
-      throw new Error("Guild appearance lookup is invalid");
-    }
-    guildId = value.guildId;
+    input = await readBoundedRequest(request, GuildProfileLookupSchema);
   } catch {
     return errorResponse("Guild appearance lookup is invalid", 400);
   }
 
   try {
     return readResponse(
-      await appearanceRepository(db).getGuildV4(guildId),
+      await appearanceRepository(db).getGuildV4(input.guildId),
       includeRestoreState,
     );
   } catch {
@@ -300,39 +278,16 @@ async function mutateGuildProfileV4(
     profile: GuildAppearanceProfileV4;
   };
   try {
-    const value = await parseBody(request, [
-      "expectedRevision",
-      "guildId",
-      "mutationId",
-      "occurredAt",
-      "profile",
-      "updatedByUserId",
-    ]);
-    if (
-      typeof value.guildId !== "string" ||
-      !SNOWFLAKE.test(value.guildId) ||
-      typeof value.updatedByUserId !== "string" ||
-      !SNOWFLAKE.test(value.updatedByUserId) ||
-      !validMutationFields(value)
-    ) {
-      throw new Error("Guild appearance update is invalid");
-    }
+    const requestInput = await readBoundedRequest(
+      request,
+      GuildProfileUpdateSchema,
+    );
     const profile = parseGuildAppearanceProfileV4(
-      value.profile,
+      requestInput.profile,
       APPEARANCE_VALIDATION_CATALOG_V3,
     );
-    validateAppearanceProfileFontsV4(
-      profile,
-      appearanceCatalogForPolicyV3(policy).fonts.map(({ id }) => id),
-    );
-    input = {
-      guildId: value.guildId,
-      updatedByUserId: value.updatedByUserId,
-      expectedRevision: value.expectedRevision,
-      profile,
-      mutationId: value.mutationId,
-      occurredAt: value.occurredAt,
-    };
+    validateProfileFonts(profile, policy);
+    input = { ...requestInput, profile };
   } catch {
     return errorResponse("Guild appearance update is invalid", 400);
   }
@@ -353,34 +308,14 @@ async function mutateGuildProfileV4(
   }
 }
 
-type EffectiveAppearanceLookup = {
-  userId: string;
-  guildId: string | null;
-};
-
-async function parseEffectiveAppearanceLookup(
-  request: Request,
-): Promise<EffectiveAppearanceLookup> {
-  const value = await parseBody(request, ["guildId", "userId"]);
-  if (
-    typeof value.userId !== "string" ||
-    !SNOWFLAKE.test(value.userId) ||
-    (value.guildId !== null &&
-      (typeof value.guildId !== "string" || !SNOWFLAKE.test(value.guildId)))
-  ) {
-    throw new Error("Effective appearance lookup is invalid");
-  }
-  return { userId: value.userId, guildId: value.guildId };
-}
-
 async function getEffectiveAppearanceV4(
   request: Request,
   db: D1Database,
   policy: AppearanceCatalogPolicyV3,
 ): Promise<Response> {
-  let lookup: EffectiveAppearanceLookup;
+  let lookup: z.output<typeof EffectiveAppearanceLookupSchema>;
   try {
-    lookup = await parseEffectiveAppearanceLookup(request);
+    lookup = await readBoundedRequest(request, EffectiveAppearanceLookupSchema);
   } catch {
     return errorResponse("Effective appearance lookup is invalid", 400);
   }
@@ -394,8 +329,7 @@ async function getEffectiveAppearanceV4(
         : repository.getGuildV4(lookup.guildId),
     ]);
     const effective = resolveEffectiveAppearanceV4({
-      personalProfile:
-        personal.status === "found" ? personal.profile : null,
+      personalProfile: personal.status === "found" ? personal.profile : null,
       guildProfile: guild?.status === "found" ? guild.profile : null,
       builtins: builtinAppearanceRecipesForPolicyV3(policy),
     });

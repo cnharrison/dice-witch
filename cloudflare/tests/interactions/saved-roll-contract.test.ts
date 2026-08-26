@@ -9,10 +9,29 @@ const scope = {
   guildId: "100000000000000002",
 };
 
-function interaction(
+type SavedRollFixture<Data extends object> = {
+  id: string;
+  application_id: string;
+  type: 2 | 3 | 4 | 5;
+  token: string;
+  guild_id?: string;
+  guild?: { id: string; name: string };
+  channel_id: string;
+  channel: {
+    id: string;
+    guild_id?: string;
+    name?: string;
+    type: number;
+  };
+  member?: { user: { id: string; username: string } };
+  user?: { id: string; username: string };
+  data: Data;
+};
+
+function interaction<Data extends object>(
   type: 2 | 3 | 4 | 5,
-  data: Record<string, unknown>,
-): Record<string, unknown> {
+  data: Data,
+): SavedRollFixture<Data> {
   return {
     id: "100000000000000010",
     application_id: scope.applicationId,
@@ -103,6 +122,34 @@ describe("saved-roll Discord contract", () => {
     ).toBeNull();
   });
 
+  it("routes unrelated commands before validating their envelopes", () => {
+    const unrelated = interaction(2, { name: "roll", type: 1 });
+    unrelated.application_id = "invalid";
+    expect(parseSavedRollInteraction(unrelated, scope)).toBeNull();
+
+    const recognized = interaction(2, { name: "library", type: 1 });
+    recognized.application_id = "invalid";
+    expect(() => parseSavedRollInteraction(recognized, scope)).toThrow(
+      "Saved roll application id must be a Discord Snowflake",
+    );
+  });
+
+  it("rejects duplicate command options", () => {
+    expect(() =>
+      parseSavedRollInteraction(
+        interaction(2, {
+          name: "library",
+          type: 1,
+          options: [
+            { name: "name", type: 3, value: "first" },
+            { name: "name", type: 3, value: "second" },
+          ],
+        }),
+        scope,
+      )
+    ).toThrow("Saved roll command options are invalid");
+  });
+
   it("preserves channel metadata when Discord omits the optional guild object", () => {
     const value = interaction(2, { name: "library", type: 1 });
     delete value.guild;
@@ -176,6 +223,32 @@ describe("saved-roll Discord contract", () => {
     });
   });
 
+  it("accepts label-component rename modals and rejects duplicate wrappers", () => {
+    const data = {
+      custom_id: "saved-roll:v1:100000000000000020:rename",
+      components: [
+        {
+          type: 18,
+          component: {
+            type: 4,
+            custom_id: "saved-roll-name",
+            value: "Label rename",
+          },
+        },
+      ],
+    };
+    expect(parseSavedRollInteraction(interaction(5, data), scope)).toMatchObject({
+      kind: "modal",
+      name: "Label rename",
+    });
+    expect(() =>
+      parseSavedRollInteraction(
+        interaction(5, { ...data, components: [...data.components, ...data.components] }),
+        scope,
+      )
+    ).toThrow("Saved roll rename modal is invalid");
+  });
+
   it("allows bot-DM Mine access and rejects unrelated private-channel contexts", () => {
     const dm = interaction(2, { name: "library", type: 1 });
     delete dm.guild_id;
@@ -188,7 +261,7 @@ describe("saved-roll Discord contract", () => {
       guildId: null,
     });
 
-    (dm.channel as Record<string, unknown>).type = 3;
+    dm.channel.type = 3;
     expect(() => parseSavedRollInteraction(dm, scope)).toThrow(
       "Saved roll channel is invalid",
     );

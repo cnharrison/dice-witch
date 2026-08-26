@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   APPEARANCE_BORDER_COLOR,
   composeAppearanceTypographyCss,
@@ -12,10 +13,19 @@ import {
   type AppearanceFontId,
 } from "./appearance";
 
-export type FacetedFaceValue =
-  | string
-  | number
-  | { label: string; dataValue: string };
+type FacetedFaceLabel = { label: string; dataValue: string };
+export type FacetedFaceValue = string | number | FacetedFaceLabel;
+
+const facetedFaceLabelSchema = z.strictObject({
+  label: z.string(),
+  dataValue: z.string(),
+});
+
+function isFacetedFaceLabel(
+  value: FacetedFaceValue,
+): value is FacetedFaceLabel {
+  return facetedFaceLabelSchema.safeParse(value).success;
+}
 
 type FacetedFaceMatrix = { a: number; b: number; c: number; d: number };
 
@@ -95,9 +105,15 @@ export function faceLabel<Slot extends string>(
   layout: FacetedFaceLayout<Slot>,
   fontId: AppearanceFontId,
 ): string {
-  const label = typeof value === "object" ? value.label : String(value);
-  const dataValue =
-    typeof value === "object" ? value.dataValue : String(value);
+  let label: string;
+  let dataValue: string;
+  if (isFacetedFaceLabel(value)) {
+    label = value.label;
+    dataValue = value.dataValue;
+  } else {
+    label = String(value);
+    dataValue = String(value);
+  }
   const isDoubleDigit = label.length > 1;
   const fontSize = isDoubleDigit
     ? layout.fontSize.doubleDigit

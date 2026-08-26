@@ -144,20 +144,23 @@ describe("saved-roll picker model", () => {
       server: [],
     });
 
-    const firstContainer = firstPage.data.components[0] as {
-      components: Array<Record<string, unknown>>;
-    };
-    const secondContainer = secondPage.data.components[0] as {
-      components: Array<Record<string, unknown>>;
-    };
-    const firstSelectRow = firstContainer.components[2] as {
-      components: Array<{ options: unknown[] }>;
-    };
-    const secondSelectRow = secondContainer.components[2] as {
-      components: Array<{ options: unknown[] }>;
-    };
-    expect(firstSelectRow.components[0]?.options).toHaveLength(20);
-    expect(secondSelectRow.components[0]?.options).toHaveLength(1);
+    const firstContainer = firstPage.data.components[0];
+    const secondContainer = secondPage.data.components[0];
+    if (firstContainer.type !== 17 || secondContainer.type !== 17) {
+      throw new Error("Saved roll picker container is missing");
+    }
+    const firstSelectRow = firstContainer.components[2];
+    const secondSelectRow = secondContainer.components[2];
+    if (firstSelectRow?.type !== 1 || secondSelectRow?.type !== 1) {
+      throw new Error("Saved roll picker select row is missing");
+    }
+    const firstSelect = firstSelectRow.components[0];
+    const secondSelect = secondSelectRow.components[0];
+    if (firstSelect.type !== 3 || secondSelect.type !== 3) {
+      throw new Error("Saved roll picker select is missing");
+    }
+    expect(firstSelect.options).toHaveLength(20);
+    expect(secondSelect.options).toHaveLength(1);
     expect(secondContainer.components[0]).toEqual({
       type: 10,
       content: "## Personal library\nPage 2 of 2",

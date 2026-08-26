@@ -1,3 +1,9 @@
+import { z } from "zod";
+import {
+  boundedNameSchema,
+  type SchemaInput,
+  timestampSchema,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import { validateSnowflake } from "./mutation-receipt";
 
 export type AccountRollInput = {
@@ -26,50 +32,23 @@ type ValidatedInput = AccountRollInput & {
   requestFingerprint: string;
 };
 
-const INPUT_KEYS = [
-  "interactionId",
-  "guildId",
-  "userId",
-  "username",
-  "receivedAt",
-  "accountedAt",
-] as const;
+const AccountRollInputSchema = z.strictObject({
+  interactionId: z.string(),
+  guildId: z.string(),
+  userId: z.string(),
+  username: z.string(),
+  receivedAt: z.number(),
+  accountedAt: z.number(),
+});
+const accountUsernameSchema = boundedNameSchema(1, 32);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+export function parseAccountRollInput(value: SchemaInput): AccountRollInput {
+  const result = AccountRollInputSchema.safeParse(value);
+  if (!result.success) throw new Error("Roll accounting request is invalid");
+  return result.data;
 }
 
-export function parseAccountRollInput(value: unknown): AccountRollInput {
-  if (!isRecord(value)) throw new Error("Roll accounting request is invalid");
-  const keys = Object.keys(value).sort();
-  const expected = [...INPUT_KEYS].sort();
-  if (
-    keys.length !== expected.length ||
-    keys.some((key, index) => key !== expected[index]) ||
-    typeof value.interactionId !== "string" ||
-    typeof value.guildId !== "string" ||
-    typeof value.userId !== "string" ||
-    typeof value.username !== "string" ||
-    typeof value.receivedAt !== "number" ||
-    typeof value.accountedAt !== "number"
-  ) {
-    throw new Error("Roll accounting request is invalid");
-  }
-  return {
-    interactionId: value.interactionId,
-    guildId: value.guildId,
-    userId: value.userId,
-    username: value.username,
-    receivedAt: value.receivedAt,
-    accountedAt: value.accountedAt,
-  };
-}
-
-function validateTimestamp(value: number): boolean {
-  return Number.isSafeInteger(value) && value >= 0;
-}
-
-function validateInput(value: unknown): AccountRollInput {
+function validateInput(value: AccountRollInput): AccountRollInput {
   const input = parseAccountRollInput(value);
   const interactionId = validateSnowflake(
     input.interactionId,
@@ -77,16 +56,12 @@ function validateInput(value: unknown): AccountRollInput {
   );
   const guildId = validateSnowflake(input.guildId, "Guild id");
   const userId = validateSnowflake(input.userId, "User id");
-  if (
-    typeof input.username !== "string" ||
-    input.username.length === 0 ||
-    input.username.length > 32
-  ) {
+  if (!accountUsernameSchema.safeParse(input.username).success) {
     throw new Error("Roll accounting username is invalid");
   }
   if (
-    !validateTimestamp(input.receivedAt) ||
-    !validateTimestamp(input.accountedAt) ||
+    !timestampSchema.safeParse(input.receivedAt).success ||
+    !timestampSchema.safeParse(input.accountedAt).success ||
     input.accountedAt < input.receivedAt
   ) {
     throw new Error("Roll accounting timestamps are invalid");
@@ -121,7 +96,7 @@ function matchesReceipt(
 export class D1RollAccountingRepository {
   constructor(private readonly db: D1Database) {}
 
-  async account(value: unknown): Promise<AccountRollResult> {
+  async account(value: AccountRollInput): Promise<AccountRollResult> {
     const validated = validateInput(value);
     const input: ValidatedInput = {
       ...validated,

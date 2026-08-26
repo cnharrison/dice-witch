@@ -1,5 +1,9 @@
+import * as z from "zod";
 import { retrieveNarrationGameCandidatesV1 } from "./narration-game-candidates";
-import type { NarrationGameConfidenceV1 } from "./narration-game-catalog";
+import {
+  NARRATION_GAME_CONFIDENCES_V1,
+  type NarrationGameConfidenceV1,
+} from "./narration-game-catalog";
 import type { NarrationGameRankingRequestV1 } from "./narration-game-ranking";
 import {
   validateNarrationGameRankingResponseV1,
@@ -17,9 +21,7 @@ export type NarrationGameRankingEvaluationExpectationV1 = Readonly<{
 }>;
 
 export type NarrationGameRankingTierAlignmentV1 =
-  | "aligned"
-  | "under-target"
-  | "over-target";
+  "aligned" | "under-target" | "over-target";
 
 export type NarrationGameRankingScoreV1 =
   | Readonly<{
@@ -57,46 +59,27 @@ export type NarrationGameRankingScoreSummaryV1 = Readonly<{
   }>;
 }>;
 
-const CONFIDENCE_RANK: Readonly<Record<NarrationGameConfidenceV1, number>> = {
+const CONFIDENCE_RANK = {
   weak: 1,
   plausible: 2,
   strong: 3,
   distinctive: 4,
-};
-const CONFIDENCE_TIERS: ReadonlySet<string> = new Set(
-  Object.keys(CONFIDENCE_RANK),
-);
+} as const satisfies Readonly<Record<NarrationGameConfidenceV1, number>>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    actual.length === sortedExpected.length &&
-    actual.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function isConfidenceTier(
-  value: unknown,
-): value is NarrationGameConfidenceV1 {
-  return typeof value === "string" && CONFIDENCE_TIERS.has(value);
-}
-
-function isUnknownArray(value: unknown): value is unknown[] {
-  return Array.isArray(value);
-}
-
+const NarrationGameRankingTargetTierSchemaV1 = z.strictObject({
+  systemId: z.string(),
+  targetTier: z.enum(NARRATION_GAME_CONFIDENCES_V1),
+});
+const NarrationGameRankingExpectationEnvelopeSchemaV1 = z.strictObject({
+  version: z.literal(1),
+  expectedDisposition: z.enum(["select", "abstain"]),
+  expectedSelectedSystemId: z.string().nullable(),
+  targetTiers: z.array(z.unknown()),
+});
 function validateExpectation(
-  value: unknown,
+  expectation: NarrationGameRankingEvaluationExpectationV1,
   request: NarrationGameRankingRequestV1,
-): asserts value is NarrationGameRankingEvaluationExpectationV1 {
+): NarrationGameRankingEvaluationExpectationV1 {
   const result = retrieveNarrationGameCandidatesV1(request);
   if (result.state !== "candidate-set" || result.truncated) {
     throw new Error(
@@ -104,52 +87,31 @@ function validateExpectation(
     );
   }
 
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "expectedDisposition",
-      "expectedSelectedSystemId",
-      "targetTiers",
-      "version",
-    ]) ||
-    value.version !== 1 ||
-    (value.expectedDisposition !== "select" &&
-      value.expectedDisposition !== "abstain") ||
-    (value.expectedSelectedSystemId !== null &&
-      typeof value.expectedSelectedSystemId !== "string") ||
-    !isUnknownArray(value.targetTiers)
-  ) {
+  const expectationResult =
+    NarrationGameRankingExpectationEnvelopeSchemaV1.safeParse(expectation);
+  if (!expectationResult.success) {
     throw new Error("Narration game-ranking expectation is invalid");
   }
-
+  const value = expectationResult.data;
   const candidateIds = result.candidates.map(({ systemId }) => systemId);
   if (value.targetTiers.length !== candidateIds.length) {
     throw new Error(
       "Narration game-ranking expectation candidates are noncanonical",
     );
   }
-  const targetTiers: Array<{
-    systemId: string;
-    targetTier: NarrationGameConfidenceV1;
-  }> = [];
+  const targetTiers: Array<
+    z.output<typeof NarrationGameRankingTargetTierSchemaV1>
+  > = [];
   for (const target of value.targetTiers) {
-    if (
-      !isRecord(target) ||
-      !hasExactKeys(target, ["systemId", "targetTier"]) ||
-      typeof target.systemId !== "string" ||
-      !isConfidenceTier(target.targetTier)
-    ) {
+    const targetResult =
+      NarrationGameRankingTargetTierSchemaV1.safeParse(target);
+    if (!targetResult.success) {
       throw new Error("Narration game-ranking expectation tier is invalid");
     }
-    targetTiers.push({
-      systemId: target.systemId,
-      targetTier: target.targetTier,
-    });
+    targetTiers.push(targetResult.data);
   }
   if (
-    targetTiers.some(
-      ({ systemId }, index) => systemId !== candidateIds[index],
-    )
+    targetTiers.some(({ systemId }, index) => systemId !== candidateIds[index])
   ) {
     throw new Error(
       "Narration game-ranking expectation candidates are noncanonical",
@@ -178,7 +140,7 @@ function validateExpectation(
         "Narration game-ranking abstention expectation cannot select a system",
       );
     }
-    return;
+    return { ...value, targetTiers };
   }
 
   if (
@@ -198,6 +160,7 @@ function validateExpectation(
   ) {
     throw new Error("Narration game-ranking selection expectation is weak");
   }
+  return { ...value, targetTiers };
 }
 
 function alignTier(
@@ -211,11 +174,11 @@ function alignTier(
 }
 
 export function scoreNarrationGameRankingResponseV1(
-  value: unknown,
+  value: Parameters<typeof validateNarrationGameRankingResponseV1>[0],
   request: NarrationGameRankingRequestV1,
   expectation: NarrationGameRankingEvaluationExpectationV1,
 ): NarrationGameRankingScoreV1 {
-  validateExpectation(expectation, request);
+  const validatedExpectation = validateExpectation(expectation, request);
   const validation = validateNarrationGameRankingResponseV1(value, request);
   if (validation.status === "rejected") {
     return {
@@ -232,11 +195,12 @@ export function scoreNarrationGameRankingResponseV1(
     version: 1,
     status: "scored",
     decision:
-      response.disposition === expectation.expectedDisposition &&
-      response.selectedSystemId === expectation.expectedSelectedSystemId
+      response.disposition === validatedExpectation.expectedDisposition &&
+      response.selectedSystemId ===
+        validatedExpectation.expectedSelectedSystemId
         ? "correct"
         : "incorrect",
-    tierAssessments: expectation.targetTiers.map(
+    tierAssessments: validatedExpectation.targetTiers.map(
       ({ systemId, targetTier }) => {
         const assessment = response.assessments[systemId];
         if (assessment === undefined) {

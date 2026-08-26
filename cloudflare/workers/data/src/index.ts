@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   cleanDiscordChannelDirectory,
   recordDiscordChannelDirectoryMutation,
@@ -33,16 +34,13 @@ export type DataEnv = {
     GameDetectionServiceEnv["DISCORD_REST"];
 };
 
+const DataConfigurationSchema = z.looseObject({
+  APPEARANCE_CATALOG_POLICY: z.enum(["r34", "r37"]),
+  DATA: z.looseObject({ prepare: z.function() }),
+});
+
 function isConfigured(env: DataEnv): boolean {
-  const data: unknown = (env as unknown as Record<string, unknown>).DATA;
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    "prepare" in data &&
-    typeof data.prepare === "function" &&
-    (env.APPEARANCE_CATALOG_POLICY === "r34" ||
-      env.APPEARANCE_CATALOG_POLICY === "r37")
-  );
+  return DataConfigurationSchema.safeParse(env).success;
 }
 
 const responseHeaders = {

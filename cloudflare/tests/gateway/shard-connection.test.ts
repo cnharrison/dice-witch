@@ -4,8 +4,11 @@ import {
   transitionGateway,
   type GatewayMachine,
 } from "../../packages/gateway-protocol/src";
+import {
+  parseDiscordChannelDirectoryMutationV1,
+  type DiscordChannelDirectoryMutationV1,
+} from "../../packages/discord-contracts/src";
 import type { ParsedGatewayMessage } from "../../workers/gateway/src/discord-gateway";
-import type { GatewayEnv } from "../../workers/gateway/src/environment";
 import {
   GatewayEventQueue,
   GatewayShardConnection,
@@ -13,6 +16,7 @@ import {
   gatewayInitialGuildStateKey,
   initialGatewayCheckpoint,
   type GatewayShardIdentity,
+  type GatewayShardStorageValue,
   type InitialGuildTracker,
 } from "../../workers/gateway/src/gateway-shard-connection";
 
@@ -24,10 +28,6 @@ const identity: GatewayShardIdentity = {
   ownerId: "gateway-partition-0",
 };
 const checkpointKey = "gateway-fleet-checkpoint-v1:3:0:23";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function identifyMachine(): GatewayMachine {
   let machine = createGatewayMachine(initialGatewayCheckpoint(identity, 1));
@@ -52,6 +52,20 @@ function readyMessage(): ParsedGatewayMessage {
   };
 }
 
+function guildCreateData() {
+  return {
+    id: guildId,
+    name: "Test Guild",
+    icon: null,
+    owner_id: "100000000000000002",
+    member_count: 42,
+    approximate_member_count: 42,
+    preferred_locale: "en-US",
+    joined_at: "2026-07-14T09:00:00.000Z",
+    unavailable: false,
+  };
+}
+
 function guildCreateMessage(): Extract<
   ParsedGatewayMessage,
   { type: "dispatch" }
@@ -60,18 +74,23 @@ function guildCreateMessage(): Extract<
     type: "dispatch",
     sequence: 2,
     eventType: "GUILD_CREATE",
-    data: {
-      id: guildId,
-      name: "Test Guild",
-      icon: null,
-      owner_id: "100000000000000002",
-      member_count: 42,
-      approximate_member_count: 42,
-      preferred_locale: "en-US",
-      joined_at: "2026-07-14T09:00:00.000Z",
-      unavailable: false,
-    },
+    data: guildCreateData(),
   };
+}
+
+class StorageFixture {
+  put(
+    key: string,
+    value: GatewayShardStorageValue,
+    options?: DurableObjectPutOptions,
+  ): Promise<void>;
+  put(
+    entries: Record<string, GatewayShardStorageValue>,
+    options?: DurableObjectPutOptions,
+  ): Promise<void>;
+  put(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 type TestableConnection = {
@@ -89,13 +108,52 @@ type TestableConnection = {
   apply(event: { type: "start" }): Promise<void>;
 };
 
+function testableConnection(
+  shard: GatewayShardConnection,
+): TestableConnection {
+  return {
+    get machine() {
+      return shard["machine"];
+    },
+    set machine(machine) {
+      shard["machine"] = machine;
+    },
+    get socket() {
+      return shard["socket"];
+    },
+    set socket(socket) {
+      shard["socket"] = socket;
+    },
+    get initialGuilds() {
+      return shard["initialGuilds"];
+    },
+    get socketEventQueue() {
+      return shard["socketEventQueue"];
+    },
+    handleGatewayMessage: (message) => shard["handleGatewayMessage"](message),
+    runSocketEvent: (socket, code, operation) => {
+      shard["runSocketEvent"](socket, code, operation);
+    },
+    get acquireOwnership() {
+      return () => shard["acquireOwnership"]();
+    },
+    set acquireOwnership(acquireOwnership) {
+      shard["acquireOwnership"] = acquireOwnership;
+    },
+    get apply() {
+      return (event: { type: "start" }) => shard["apply"](event);
+    },
+    set apply(apply) {
+      shard["apply"] = apply;
+    },
+  };
+}
+
 function connection(activeGuild: boolean, dispatchActive = false) {
   const background: Promise<unknown>[] = [];
-  const channelMutations: unknown[] = [];
-  const storagePut = vi.fn((entries: Record<string, unknown>) => {
-    void entries;
-    return Promise.resolve();
-  });
+  const channelMutations: DiscordChannelDirectoryMutationV1[] = [];
+  const storage = new StorageFixture();
+  const storagePut = vi.spyOn(storage, "put");
   const waitUntil = vi.fn((promise: Promise<unknown>) => {
     background.push(promise);
   });
@@ -112,25 +170,43 @@ function connection(activeGuild: boolean, dispatchActive = false) {
       );
     }
     if (path === "/internal/discord-channel-context") {
-      return request.json().then((mutation) => {
-        channelMutations.push(mutation);
+      return request.json().then((value) => {
+        channelMutations.push(parseDiscordChannelDirectoryMutationV1(value));
         return Response.json({ status: "applied" });
       });
     }
     return Promise.resolve(new Response(null, { status: 404 }));
   });
   const logGuildLifecycle = vi.fn(() =>
-    Promise.resolve({ status: "delivered" }),
+    Promise.resolve({ status: "delivered" as const }),
   );
+  const coordinator = {
+    acquireOwnership: () =>
+      Promise.resolve({ acquired: true as const, alreadyOwned: false }),
+    releaseOwnership: () => Promise.resolve(true),
+    requestIdentifyPermit: () => Promise.resolve({
+      granted: true as const,
+      rateLimitKey: 0,
+      maxConcurrency: 1,
+      remainingAfterGrant: 999,
+      resetAt: 1_720_086_400_000,
+      grantedAt: 1_720_000_000_000,
+    }),
+    gatewayUrl: () => Promise.resolve("wss://gateway.discord.gg"),
+  };
   const shard = new GatewayShardConnection({
     ctx: {
-      storage: { put: storagePut },
+      storage,
       waitUntil,
-    } as unknown as DurableObjectState,
+    },
     env: {
+      DISCORD_BOT_TOKEN:
+        "development-token-first-part.second.development-token-third-part",
+      GATEWAY_ALLOWED_HOSTNAME: "gateway.discord.gg",
       DATA_SERVICE: { fetch: dataFetch },
       DISCORD_REST: { logGuildLifecycle },
-    } as unknown as GatewayEnv,
+      GATEWAY_COORDINATOR: { getByName: () => coordinator },
+    },
     identity,
     checkpoint: initialGatewayCheckpoint(identity, 1),
     checkpointKey,
@@ -139,13 +215,12 @@ function connection(activeGuild: boolean, dispatchActive = false) {
     onFatal: () => Promise.resolve(),
     isDispatchActive: () => dispatchActive,
   });
-  const testable = shard as unknown as TestableConnection;
-  const socketSend = vi.fn();
+  const testable = testableConnection(shard);
+  const socket = new WebSocketPair()[0];
+  socket.accept();
+  const socketSend = vi.spyOn(socket, "send");
   testable.machine = identifyMachine();
-  testable.socket = {
-    readyState: WebSocket.OPEN,
-    send: socketSend,
-  } as unknown as WebSocket;
+  testable.socket = socket;
   return {
     background,
     channelMutations,
@@ -319,7 +394,6 @@ describe("GatewayShardConnection initial guild inventory", () => {
     await Promise.all(background);
     expect(channelMutations).toHaveLength(1);
     const created = channelMutations[0];
-    if (!isRecord(created)) throw new Error("Channel mutation is invalid");
     expect(created).toMatchObject({
       version: 1,
       operation: "upsert",
@@ -329,7 +403,7 @@ describe("GatewayShardConnection initial guild inventory", () => {
       channelName: "dice-rolls",
       channelType: 0,
     });
-    expect(typeof created.observedAt).toBe("number");
+    expect(created?.observedAt).toBeTypeOf("number");
 
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(
       () => undefined,
@@ -365,7 +439,6 @@ describe("GatewayShardConnection initial guild inventory", () => {
     });
     await Promise.all(background);
     const deleted = channelMutations[1];
-    if (!isRecord(deleted)) throw new Error("Channel deletion is invalid");
     expect(deleted).toMatchObject({
       version: 1,
       operation: "delete",
@@ -373,7 +446,7 @@ describe("GatewayShardConnection initial guild inventory", () => {
       guildId,
       channelId,
     });
-    expect(typeof deleted.observedAt).toBe("number");
+    expect(deleted?.observedAt).toBeTypeOf("number");
   });
 
   it("tracks active guild creates and available deletes after READY", async () => {
@@ -387,7 +460,7 @@ describe("GatewayShardConnection initial guild inventory", () => {
       sequence: 3,
       eventType: "GUILD_CREATE",
       data: {
-        ...(guildCreateMessage().data as Record<string, unknown>),
+        ...guildCreateData(),
         id: joinedGuildId,
       },
     });
@@ -434,7 +507,7 @@ describe("GatewayShardConnection initial guild inventory", () => {
         sequence: 3,
         eventType: "GUILD_CREATE",
         data: {
-          ...(guildCreateMessage().data as Record<string, unknown>),
+          ...guildCreateData(),
           id: joinedGuildId,
         },
       }),
@@ -475,11 +548,9 @@ describe("GatewayShardConnection initial guild inventory", () => {
 
   it("orders heartbeat work behind earlier socket events and skips work after failure", async () => {
     const { testable, waitUntil } = connection(true);
-    const close = vi.fn();
-    const socket = {
-      close,
-      readyState: WebSocket.OPEN,
-    } as unknown as WebSocket;
+    const socket = new WebSocketPair()[0];
+    socket.accept();
+    const close = vi.spyOn(socket, "close");
     testable.socket = socket;
     const order: string[] = [];
     let release!: () => void;
@@ -500,7 +571,7 @@ describe("GatewayShardConnection initial guild inventory", () => {
     expect(order).toEqual(["message-start"]);
     release();
     await Promise.all(
-      waitUntil.mock.calls.map(([promise]) => promise as Promise<void>),
+      waitUntil.mock.calls.map(([promise]) => promise),
     );
     expect(order).toEqual(["message-start", "message-end", "heartbeat"]);
 
@@ -512,7 +583,7 @@ describe("GatewayShardConnection initial guild inventory", () => {
       return Promise.resolve();
     });
     await Promise.all(
-      waitUntil.mock.calls.slice(2).map(([promise]) => promise as Promise<void>),
+      waitUntil.mock.calls.slice(2).map(([promise]) => promise),
     );
     expect(close).toHaveBeenCalledWith(4000, "event-failed");
     expect(order).not.toContain("should-not-run");

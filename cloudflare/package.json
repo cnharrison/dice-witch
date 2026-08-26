@@ -44,11 +44,13 @@
     "@cf-wasm/resvg": "0.3.4",
     "@dice-roller/rpg-dice-roller": "5.5.1",
     "@dice-witch/dice-v4-model": "0.0.0",
-    "unicode-segmenter": "0.14.1"
+    "unicode-segmenter": "0.14.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",
     "@eslint/js": "10.0.1",
+    "@fastify/busboy": "^3.2.2",
     "@types/node": "22.10.2",
     "canvaskit-wasm": "0.41.1",
     "eslint": "10.8.0",

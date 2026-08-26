@@ -1,12 +1,10 @@
-import { env, exports } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { dataTestEnv as dataEnv } from "./test-bindings";
 import { D1AudienceSnapshotRepository } from "../../workers/data/src/audience-snapshot-repository";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
 const capturedAt = 1_767_225_600_123;
 const capture = {
   version: 1 as const,
@@ -31,7 +29,9 @@ beforeEach(async () => {
   ]);
 });
 
-function request(method: "GET" | "POST", body?: unknown): Promise<Response> {
+type RequestBody = z.output<ReturnType<typeof z.json>>;
+
+function request(method: "GET" | "POST", body?: RequestBody): Promise<Response> {
   const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { "content-type": "application/json" };

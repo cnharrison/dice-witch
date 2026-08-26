@@ -2,6 +2,7 @@ import {
   canonicalJsonV4,
   RENDERER_REVISIONS_V4,
   serializeRenderRequestV4,
+  validateRenderRequestV4,
   type PublicRenderModelV4,
   type RenderDieV4,
   type RenderRequestV4,
@@ -9,6 +10,7 @@ import {
 } from "@dice-witch/dice-v4-model";
 import { createDefaultDiceViewPreferencesV4 } from "@dice-witch/dice-v4-model/dice-view-preferences";
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { z } from "zod";
 import {
   createCanvasKitRequestRendererV4,
   renderV4WithSingleRetry,
@@ -25,7 +27,6 @@ import {
   type AppearanceTarget,
   type EffectiveAppearanceRecipesV1,
   type EffectiveAppearanceRecipesV2,
-  type EffectiveAppearanceRecipesV3,
   type EffectiveAppearanceV4,
 } from "../../../packages/dice-appearance/src";
 import {
@@ -41,7 +42,14 @@ import {
   rollClatterText,
   rollErrorText,
   rollResultText,
+  type RollResultMessageOptions,
 } from "../../../packages/discord-contracts/src";
+import {
+  safeIntegerSchema,
+  seedSchema,
+  snowflakeSchema,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   executeRoll,
   parseNotationArgs,
@@ -76,6 +84,7 @@ import {
   buildRollRenderRequestR40V4,
   buildRollRenderRequestR41V4,
 } from "../../../packages/roll-render-model/src";
+import { parseSavedRollNameColorV2 } from "../../../packages/saved-rolls/src";
 import {
   loadEffectiveAppearanceV4,
   type AppearanceDataService,
@@ -86,7 +95,19 @@ import {
   type RollViewPolicy,
 } from "./render-version";
 import type { WebDeliveryExecutionResult } from "./web-delivery-work";
-type WebRollEnv = RollBindings;
+
+type WebDeliveryWorkPort = {
+  execute(value: SchemaInput): Promise<SchemaInput>;
+};
+
+type WebRollEnv = {
+  DATA_SERVICE: AppearanceDataService;
+  ROLL_RENDER_VERSION: SchemaInput;
+  ROLL_VIEW_POLICY: SchemaInput;
+  WEB_DELIVERY_WORK: {
+    getByName(name: string): WebDeliveryWorkPort;
+  };
+};
 
 const ROLL_VIEW_BUILDERS_V4 = {
   r20: buildRollRenderRequestR20V4,
@@ -220,180 +241,142 @@ export type AppearancePreviewResultV3 = {
 
 export type AppearancePreviewResultV4 = AppearancePreviewResultV3;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const WebSavedRollAttributionSchema = z.union([
+  z.strictObject({
+    scope: z.enum(["personal", "guild"]),
+    name: z.string().min(1).max(1_024),
+  }),
+  z.strictObject({
+    scope: z.enum(["personal", "guild"]),
+    name: z.string().min(1).max(1_024),
+    nameColor: z.unknown(),
+  }),
+]);
+const WebRollRequestSchema = z.strictObject({
+  notation: z.string().min(1).max(6_000),
+  repetitions: safeIntegerSchema.min(1).max(50),
+  username: z.string().min(1).max(32),
+  title: z.nullable(z.string().min(1).max(256)),
+  userId: snowflakeSchema,
+  guildId: snowflakeSchema,
+  savedRoll: z.unknown().optional(),
+  saveRollCustomId: z
+    .string()
+    .min(1)
+    .max(100)
+    .startsWith("save-roll:v1:w:")
+    .optional(),
+  textResultCustomId: z
+    .string()
+    .min(1)
+    .max(100)
+    .startsWith("text-result:v1:w:")
+    .optional(),
+  renderSeed: seedSchema.optional(),
+  appearanceDigest: z.string().regex(/^[0-9a-f]{64}$/u).optional(),
+});
+const WebRollPreparationRequestSchema = z.strictObject({
+  notation: z.string().min(1).max(6_000),
+  repetitions: safeIntegerSchema.min(1).max(50),
+  userId: snowflakeSchema,
+  guildId: snowflakeSchema,
+  renderSeed: seedSchema.optional(),
+});
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
+function invalidWebSavedRollAttribution(): Error {
+  return new Error("Web Library roll attribution is invalid");
 }
-
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 
 export function parseWebSavedRollAttribution(
-  value: unknown,
+  value: SchemaInput,
 ): WebSavedRollAttribution {
-  if (!isRecord(value)) {
-    throw new Error("Web Library roll attribution is invalid");
-  }
-  if (
-    (!hasExactKeys(value, ["name", "scope"]) &&
-      !hasExactKeys(value, ["name", "nameColor", "scope"])) ||
-    (value.scope !== "personal" && value.scope !== "guild") ||
-    typeof value.name !== "string" ||
-    value.name.length < 1 ||
-    value.name.length > 1_024 ||
-    (value.nameColor !== undefined &&
-      value.nameColor !== null &&
-      (typeof value.nameColor !== "string" ||
-        !/^#[0-9A-F]{6}$/.test(value.nameColor)))
-  ) {
-    throw new Error("Web Library roll attribution is invalid");
+  const result = WebSavedRollAttributionSchema.safeParse(value);
+  if (!result.success) throw invalidWebSavedRollAttribution();
+
+  let nameColor: string | null = null;
+  if ("nameColor" in result.data && result.data.nameColor !== undefined) {
+    try {
+      nameColor = parseSavedRollNameColorV2(result.data.nameColor);
+    } catch {
+      throw invalidWebSavedRollAttribution();
+    }
   }
   return {
-    scope: value.scope,
-    name: value.name,
-    nameColor: typeof value.nameColor === "string" ? value.nameColor : null,
+    scope: result.data.scope,
+    name: result.data.name,
+    nameColor,
   };
 }
 
-function validateRequest(value: unknown): WebRollRequest {
-  const legacyKeys = [
-    "guildId",
-    "notation",
-    "repetitions",
-    "title",
-    "userId",
-    "username",
-  ] as const;
-  const hasSavedRoll = isRecord(value) && value.savedRoll !== undefined;
-  const hasSaveRollCustomId = isRecord(value) &&
-    value.saveRollCustomId !== undefined;
-  const hasTextResultCustomId = isRecord(value) &&
-    value.textResultCustomId !== undefined;
-  const requestKeys = [
-    ...legacyKeys,
-    ...(hasSavedRoll ? ["savedRoll" as const] : []),
-    ...(hasSaveRollCustomId ? ["saveRollCustomId" as const] : []),
-    ...(hasTextResultCustomId ? ["textResultCustomId" as const] : []),
-  ];
-  const prepared =
-    isRecord(value) &&
-    hasExactKeys(value, [...requestKeys, "appearanceDigest", "renderSeed"]);
+function validateRequest(value: SchemaInput): WebRollRequest {
+  const result = WebRollRequestSchema.safeParse(value);
+  if (!result.success) throw new Error("Web roll request is invalid");
+  const request = result.data;
+  const hasSavedRoll = Object.hasOwn(request, "savedRoll") &&
+    request.savedRoll !== undefined;
+  const hasSaveRollCustomId = Object.hasOwn(request, "saveRollCustomId") &&
+    request.saveRollCustomId !== undefined;
+  const hasTextResultCustomId = Object.hasOwn(request, "textResultCustomId") &&
+    request.textResultCustomId !== undefined;
+  const hasRenderSeed = Object.hasOwn(request, "renderSeed") &&
+    request.renderSeed !== undefined;
+  const hasAppearanceDigest = Object.hasOwn(request, "appearanceDigest") &&
+    request.appearanceDigest !== undefined;
   if (
-    !isRecord(value) ||
-    (!hasExactKeys(value, requestKeys) && !prepared) ||
-    (prepared &&
-      (typeof value.appearanceDigest !== "string" ||
-        !/^[0-9a-f]{64}$/.test(value.appearanceDigest))) ||
-    typeof value.notation !== "string" ||
-    value.notation.length < 1 ||
-    value.notation.length > 6_000 ||
-    (prepared &&
-      (typeof value.renderSeed !== "number" ||
-        !Number.isInteger(value.renderSeed) ||
-        value.renderSeed < 0 ||
-        value.renderSeed > 0xffff_ffff)) ||
-    typeof value.repetitions !== "number" ||
-    !Number.isSafeInteger(value.repetitions) ||
-    value.repetitions < 1 ||
-    value.repetitions > 50 ||
-    typeof value.username !== "string" ||
-    value.username.length < 1 ||
-    value.username.length > 32 ||
-    typeof value.userId !== "string" ||
-    !SNOWFLAKE.test(value.userId) ||
-    typeof value.guildId !== "string" ||
-    !SNOWFLAKE.test(value.guildId) ||
-    (hasSaveRollCustomId &&
-      (typeof value.saveRollCustomId !== "string" ||
-        value.saveRollCustomId.length < 1 ||
-        value.saveRollCustomId.length > 100 ||
-        !value.saveRollCustomId.startsWith("save-roll:v1:w:"))) ||
-    (hasTextResultCustomId &&
-      (typeof value.textResultCustomId !== "string" ||
-        value.textResultCustomId.length < 1 ||
-        value.textResultCustomId.length > 100 ||
-        !value.textResultCustomId.startsWith("text-result:v1:w:"))) ||
-    (value.title !== null &&
-      (typeof value.title !== "string" ||
-        value.title.length < 1 ||
-        value.title.length > 256))
+    Object.hasOwn(request, "savedRoll") !== hasSavedRoll ||
+    Object.hasOwn(request, "saveRollCustomId") !== hasSaveRollCustomId ||
+    Object.hasOwn(request, "textResultCustomId") !== hasTextResultCustomId ||
+    Object.hasOwn(request, "renderSeed") !== hasRenderSeed ||
+    Object.hasOwn(request, "appearanceDigest") !== hasAppearanceDigest ||
+    hasRenderSeed !== hasAppearanceDigest
   ) {
     throw new Error("Web roll request is invalid");
   }
-  return {
-    notation: value.notation,
-    repetitions: value.repetitions,
-    username: value.username,
-    title: value.title,
-    userId: value.userId,
-    guildId: value.guildId,
-    ...(hasSavedRoll
-      ? { savedRoll: parseWebSavedRollAttribution(value.savedRoll) }
-      : {}),
-    ...(hasSaveRollCustomId
-      ? { saveRollCustomId: value.saveRollCustomId as string }
-      : {}),
-    ...(hasTextResultCustomId
-      ? { textResultCustomId: value.textResultCustomId as string }
-      : {}),
-    ...(prepared
-      ? {
-          renderSeed: value.renderSeed as number,
-          appearanceDigest: value.appearanceDigest as string,
-        }
-      : {}),
+
+  const parsed: WebRollRequest = {
+    notation: request.notation,
+    repetitions: request.repetitions,
+    username: request.username,
+    title: request.title,
+    userId: request.userId,
+    guildId: request.guildId,
   };
+  if (request.savedRoll !== undefined) {
+    parsed.savedRoll = parseWebSavedRollAttribution(request.savedRoll);
+  }
+  if (request.saveRollCustomId !== undefined) {
+    parsed.saveRollCustomId = request.saveRollCustomId;
+  }
+  if (request.textResultCustomId !== undefined) {
+    parsed.textResultCustomId = request.textResultCustomId;
+  }
+  if (
+    request.renderSeed !== undefined &&
+    request.appearanceDigest !== undefined
+  ) {
+    parsed.renderSeed = request.renderSeed;
+    parsed.appearanceDigest = request.appearanceDigest;
+  }
+  return parsed;
 }
 
 function validatePreparationRequest(
-  value: unknown,
+  value: SchemaInput,
 ): WebRollPreparationRequest {
-  if (
-    !isRecord(value) ||
-    (!hasExactKeys(value, ["guildId", "notation", "repetitions", "userId"]) &&
-      !hasExactKeys(value, [
-        "guildId",
-        "notation",
-        "renderSeed",
-        "repetitions",
-        "userId",
-      ])) ||
-    typeof value.notation !== "string" ||
-    value.notation.length < 1 ||
-    value.notation.length > 6_000 ||
-    typeof value.repetitions !== "number" ||
-    !Number.isSafeInteger(value.repetitions) ||
-    value.repetitions < 1 ||
-    value.repetitions > 50 ||
-    (value.renderSeed !== undefined &&
-      (typeof value.renderSeed !== "number" ||
-        !Number.isInteger(value.renderSeed) ||
-        value.renderSeed < 0 ||
-        value.renderSeed > 0xffff_ffff)) ||
-    typeof value.userId !== "string" ||
-    !SNOWFLAKE.test(value.userId) ||
-    typeof value.guildId !== "string" ||
-    !SNOWFLAKE.test(value.guildId)
-  ) {
+  const result = WebRollPreparationRequestSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Web roll preparation request is invalid");
   }
-  return {
-    notation: value.notation,
-    repetitions: value.repetitions,
-    userId: value.userId,
-    guildId: value.guildId,
-    ...(value.renderSeed === undefined ? {} : { renderSeed: value.renderSeed }),
+  const request: WebRollPreparationRequest = {
+    notation: result.data.notation,
+    repetitions: result.data.repetitions,
+    userId: result.data.userId,
+    guildId: result.data.guildId,
   };
+  if (result.data.renderSeed !== undefined) {
+    request.renderSeed = result.data.renderSeed;
+  }
+  return request;
 }
 
 function previewDice(
@@ -461,16 +444,34 @@ function previewOutcome(
   };
 }
 
+function completePreviewRecipes<Recipe>(
+  recipe: Recipe,
+  overrides: Readonly<Partial<Record<AppearanceTarget, Recipe>>> | undefined,
+) {
+  return {
+    d4: overrides?.d4 ?? recipe,
+    d6: overrides?.d6 ?? recipe,
+    d8: overrides?.d8 ?? recipe,
+    d10: overrides?.d10 ?? recipe,
+    d12: overrides?.d12 ?? recipe,
+    d20: overrides?.d20 ?? recipe,
+    percentile: overrides?.percentile ?? recipe,
+    fudge: overrides?.fudge ?? recipe,
+    other: overrides?.other ?? recipe,
+  };
+}
+
 export function buildAppearancePreviewRenderRequest(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV2 {
   const request = parseAppearancePreviewRequest(
     value,
     APPEARANCE_VALIDATION_CATALOG,
   );
-  const recipes = Object.fromEntries(
-    APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
-  ) as EffectiveAppearanceRecipesV1;
+  const recipes: EffectiveAppearanceRecipesV1 = completePreviewRecipes(
+    request.recipe,
+    undefined,
+  );
   return buildRollRenderRequestV2(
     previewOutcome(request.target, request.state, request.seed),
     request.seed,
@@ -479,15 +480,16 @@ export function buildAppearancePreviewRenderRequest(
 }
 
 export function buildAppearancePreviewRenderRequestV3(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV3 {
   const request = parseAppearancePreviewRequestV2(
     value,
     APPEARANCE_VALIDATION_CATALOG,
   );
-  const recipes = Object.fromEntries(
-    APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
-  ) as EffectiveAppearanceRecipesV2;
+  const recipes: EffectiveAppearanceRecipesV2 = completePreviewRecipes(
+    request.recipe,
+    undefined,
+  );
   return buildRollRenderRequestV3(
     previewOutcome(request.target, request.state, request.seed),
     request.seed,
@@ -496,14 +498,12 @@ export function buildAppearancePreviewRenderRequestV3(
 }
 
 export function buildAppearancePreviewRenderRequestV4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   const request = parseAppearancePreviewRequestV3(value);
   const effectiveAppearance: EffectiveAppearanceV4 = {
     version: 4,
-    recipes: Object.fromEntries(
-      APPEARANCE_TARGETS.map((target) => [target, request.recipe]),
-    ) as EffectiveAppearanceRecipesV3,
+    recipes: completePreviewRecipes(request.recipe, undefined),
     diceView: createDefaultDiceViewPreferencesV4(),
   };
   return buildRollRenderRequestR34V4(
@@ -514,35 +514,24 @@ export function buildAppearancePreviewRenderRequestV4(
 }
 
 export function buildAppearancePreviewRenderRequestR19V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   const request = parseAppearancePreviewRequestV4(value);
-  const recipes = Object.fromEntries(
-    APPEARANCE_TARGETS.map((target) => [
-      target,
-      request.overrides?.[target] ?? request.recipe,
-    ]),
-  ) as EffectiveAppearanceRecipesV3;
   return buildRollRenderRequestV4(
     previewOutcome(request.target, request.state, request.seed),
     request.seed,
-    recipes,
+    completePreviewRecipes(request.recipe, request.overrides),
   );
 }
 
 function buildResolvedAppearancePreviewRenderRequestV4(
-  value: unknown,
+  value: SchemaInput,
   buildRequest: typeof buildRollRenderRequestR20V4,
 ): RenderRequestV4 {
   const request = parseAppearancePreviewRequestV4(value);
   const effectiveAppearance: EffectiveAppearanceV4 = {
     version: 4,
-    recipes: Object.fromEntries(
-      APPEARANCE_TARGETS.map((target) => [
-        target,
-        request.overrides?.[target] ?? request.recipe,
-      ]),
-    ) as EffectiveAppearanceV4["recipes"],
+    recipes: completePreviewRecipes(request.recipe, request.overrides),
     diceView: request.diceView,
   };
   return buildRequest(
@@ -553,7 +542,7 @@ function buildResolvedAppearancePreviewRenderRequestV4(
 }
 
 export function buildAppearancePreviewRenderRequestR20V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -562,7 +551,7 @@ export function buildAppearancePreviewRenderRequestR20V4(
 }
 
 export function buildAppearancePreviewRenderRequestR21V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -571,7 +560,7 @@ export function buildAppearancePreviewRenderRequestR21V4(
 }
 
 export function buildAppearancePreviewRenderRequestR22V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -580,7 +569,7 @@ export function buildAppearancePreviewRenderRequestR22V4(
 }
 
 export function buildAppearancePreviewRenderRequestR23V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -589,7 +578,7 @@ export function buildAppearancePreviewRenderRequestR23V4(
 }
 
 export function buildAppearancePreviewRenderRequestR24V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -598,7 +587,7 @@ export function buildAppearancePreviewRenderRequestR24V4(
 }
 
 export function buildAppearancePreviewRenderRequestR25V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -607,7 +596,7 @@ export function buildAppearancePreviewRenderRequestR25V4(
 }
 
 export function buildAppearancePreviewRenderRequestR26V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -616,7 +605,7 @@ export function buildAppearancePreviewRenderRequestR26V4(
 }
 
 export function buildAppearancePreviewRenderRequestR27V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -625,7 +614,7 @@ export function buildAppearancePreviewRenderRequestR27V4(
 }
 
 export function buildAppearancePreviewRenderRequestR28V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -634,7 +623,7 @@ export function buildAppearancePreviewRenderRequestR28V4(
 }
 
 export function buildAppearancePreviewRenderRequestR29V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -643,7 +632,7 @@ export function buildAppearancePreviewRenderRequestR29V4(
 }
 
 export function buildAppearancePreviewRenderRequestR30V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -652,7 +641,7 @@ export function buildAppearancePreviewRenderRequestR30V4(
 }
 
 export function buildAppearancePreviewRenderRequestR31V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -661,7 +650,7 @@ export function buildAppearancePreviewRenderRequestR31V4(
 }
 
 export function buildAppearancePreviewRenderRequestR32V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -670,7 +659,7 @@ export function buildAppearancePreviewRenderRequestR32V4(
 }
 
 export function buildAppearancePreviewRenderRequestR33V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -679,7 +668,7 @@ export function buildAppearancePreviewRenderRequestR33V4(
 }
 
 export function buildAppearancePreviewRenderRequestR34V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -688,7 +677,7 @@ export function buildAppearancePreviewRenderRequestR34V4(
 }
 
 export function buildAppearancePreviewRenderRequestR35V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -697,7 +686,7 @@ export function buildAppearancePreviewRenderRequestR35V4(
 }
 
 export function buildAppearancePreviewRenderRequestR36V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -706,7 +695,7 @@ export function buildAppearancePreviewRenderRequestR36V4(
 }
 
 export function buildAppearancePreviewRenderRequestR37V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -715,7 +704,7 @@ export function buildAppearancePreviewRenderRequestR37V4(
 }
 
 export function buildAppearancePreviewRenderRequestR38V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -724,7 +713,7 @@ export function buildAppearancePreviewRenderRequestR38V4(
 }
 
 export function buildAppearancePreviewRenderRequestR39V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -733,7 +722,7 @@ export function buildAppearancePreviewRenderRequestR39V4(
 }
 
 export function buildAppearancePreviewRenderRequestR40V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -742,7 +731,7 @@ export function buildAppearancePreviewRenderRequestR40V4(
 }
 
 export function buildAppearancePreviewRenderRequestR41V4(
-  value: unknown,
+  value: SchemaInput,
 ): RenderRequestV4 {
   return buildResolvedAppearancePreviewRenderRequestV4(
     value,
@@ -751,7 +740,7 @@ export function buildAppearancePreviewRenderRequestR41V4(
 }
 
 export function buildAppearancePreviewRenderRequestForPolicyV4(
-  value: unknown,
+  value: SchemaInput,
   viewPolicy: RollViewPolicy,
 ): RenderRequestV4 {
   switch (viewPolicy) {
@@ -805,7 +794,7 @@ export function buildAppearancePreviewRenderRequestForPolicyV4(
 }
 
 export async function renderAppearancePreview(
-  value: unknown,
+  value: SchemaInput,
 ): Promise<AppearancePreviewResult> {
   return {
     ...(await renderDiceRequestV2ToPng(
@@ -816,7 +805,7 @@ export async function renderAppearancePreview(
 }
 
 export async function renderAppearancePreviewV2(
-  value: unknown,
+  value: SchemaInput,
 ): Promise<AppearancePreviewResultV2> {
   return {
     ...(await renderDiceRequestV3ToPng(
@@ -847,7 +836,7 @@ async function renderAppearancePreviewRequestV4(
 }
 
 export function renderAppearancePreviewV3(
-  value: unknown,
+  value: SchemaInput,
   createRenderer: DiceRequestRendererFactoryV4 =
     createCanvasKitRequestRendererV4,
 ): Promise<AppearancePreviewResultV3> {
@@ -858,7 +847,7 @@ export function renderAppearancePreviewV3(
 }
 
 export function renderAppearancePreviewV4(
-  value: unknown,
+  value: SchemaInput,
   viewPolicy: RollViewPolicy,
   createRenderer: DiceRequestRendererFactoryV4 =
     createCanvasKitRequestRendererV4,
@@ -907,13 +896,16 @@ async function renderAppearanceDigest(
       if (identity === undefined) {
         throw new Error("Web roll appearance identity is missing");
       }
-      return {
+      const digestDie = {
         identity,
         target: die.target,
-        ...("sides" in die ? { sides: die.sides } : {}),
-        ...("form" in die ? { form: die.form } : {}),
+        form: die.form,
         appearance: { ...die.appearance, effect: null },
       };
+      if (die.target === "other") {
+        return { ...digestDie, sides: die.sides };
+      }
+      return digestDie;
     })
     .filter(({ identity }) => !identity.includes(":generated:"))
     .sort((left, right) => left.identity.localeCompare(right.identity));
@@ -1039,10 +1031,10 @@ function webDiceArray(renderRequest: RenderRequestV4): WebRollDie[][] {
 }
 
 export async function prepareWebRoll(
-  value: unknown,
+  value: SchemaInput,
   dataService: AppearanceDataService,
-  configuredRenderVersion: unknown,
-  configuredViewPolicy: unknown,
+  configuredRenderVersion: SchemaInput,
+  configuredViewPolicy: SchemaInput,
 ): Promise<WebRollPreparationResult> {
   const request = validatePreparationRequest(value);
   const renderSeed = request.renderSeed ?? randomSeed();
@@ -1094,10 +1086,10 @@ export async function prepareWebRoll(
 }
 
 export async function executeWebRoll(
-  value: unknown,
+  value: SchemaInput,
   dataService: AppearanceDataService,
-  configuredRenderVersion: unknown,
-  configuredViewPolicy: unknown,
+  configuredRenderVersion: SchemaInput,
+  configuredViewPolicy: SchemaInput,
   createRollSeed: () => number = randomSeed,
   createRenderSeed: () => number = randomSeed,
 ): Promise<WebRollResult> {
@@ -1158,6 +1150,25 @@ export async function executeWebRoll(
   );
   const filename = "dice-witch-roll.png";
   const clatter = rollClatterText(outcome, outcome.seed);
+  const messageOptions: RollResultMessageOptions = {
+    source: "web",
+    title: request.title,
+    repetitions: request.repetitions,
+    username: request.username,
+    filename,
+  };
+  if (request.saveRollCustomId !== undefined) {
+    messageOptions.saveRollCustomId = request.saveRollCustomId;
+  }
+  if (request.textResultCustomId !== undefined) {
+    messageOptions.textResultCustomId = request.textResultCustomId;
+  }
+  if (request.savedRoll !== undefined) {
+    messageOptions.savedRoll = {
+      scope: request.savedRoll.scope === "personal" ? "Mine" : "Server",
+      name: request.savedRoll.name,
+    };
+  }
   return {
     status: "rolled",
     message: "Roll processed successfully",
@@ -1176,27 +1187,7 @@ export async function executeWebRoll(
     appearanceIdentities: appearanceIdentities(outcome),
     rerolledAppearanceIdentities: rerolledAppearanceIdentities(outcome),
     discord: {
-      payload: buildRollResultMessage(outcome, {
-        source: "web",
-        title: request.title,
-        repetitions: request.repetitions,
-        username: request.username,
-        filename,
-        ...(request.saveRollCustomId === undefined
-          ? {}
-          : { saveRollCustomId: request.saveRollCustomId }),
-        ...(request.textResultCustomId === undefined
-          ? {}
-          : { textResultCustomId: request.textResultCustomId }),
-        ...(request.savedRoll === undefined
-          ? {}
-          : {
-              savedRoll: {
-                scope: request.savedRoll.scope === "personal" ? "Mine" : "Server",
-                name: request.savedRoll.name,
-              },
-            }),
-      }),
+      payload: buildRollResultMessage(outcome, messageOptions),
       clatter,
       resultText: rollResultText(outcome),
       filename,
@@ -1205,8 +1196,122 @@ export async function executeWebRoll(
   };
 }
 
+const WebDeliveryRouteSchema = z.object({
+  deliveryId: z.string(),
+  userId: z.unknown().optional(),
+});
+const WebRollDieSchema = z.strictObject({
+  sides: z.union([z.number(), z.literal("%"), z.literal("F")]),
+  rolled: z.number(),
+  value: z.number(),
+  icon: z.array(z.string()),
+  color: z.string(),
+  secondaryColor: z.string(),
+  textColor: z.string(),
+});
+const WebRenderedImageSchema = z.strictObject({
+  contentType: z.literal("image/png"),
+  width: safeIntegerSchema.positive(),
+  height: safeIntegerSchema.positive(),
+  png: z.instanceof(Uint8Array),
+});
+const WebRolledResultSchema = z.strictObject({
+  status: z.literal("rolled"),
+  message: z.string(),
+  diceArray: z.array(z.array(WebRollDieSchema)),
+  resultArray: z.array(
+    z.strictObject({ output: z.string(), results: z.number() }),
+  ),
+  renderedImage: WebRenderedImageSchema,
+  renderModel: z.unknown().optional(),
+  appearanceIdentities: z.array(z.array(z.string())),
+  rerolledAppearanceIdentities: z.array(z.string()),
+  deliveryStatus: z
+    .enum(["delivered", "failed", "pending", "permission_error"])
+    .optional(),
+  discord: z.strictObject({
+    payload: z.unknown(),
+    clatter: z.string(),
+    resultText: z.string(),
+    filename: z.string(),
+    png: z.instanceof(Uint8Array),
+  }),
+});
+const WebDeliveryExecutionResultSchema = z.union([
+  z.strictObject({ status: z.literal("conflict") }),
+  z.strictObject({ status: z.literal("expired") }),
+  z.strictObject({
+    status: z.literal("invalid"),
+    roll: z.strictObject({ status: z.literal("invalid"), message: z.string() }),
+  }),
+  z.strictObject({
+    status: z.literal("stale"),
+    roll: z.strictObject({ status: z.literal("stale"), message: z.string() }),
+  }),
+  z.strictObject({
+    status: z.enum(["delivered", "failed", "pending", "permission_error"]),
+    roll: WebRolledResultSchema,
+  }),
+]);
+
+type RolledWebRollResult = Extract<WebRollResult, { status: "rolled" }>;
+
+function parseRolledWebDeliveryResult(
+  value: z.output<typeof WebRolledResultSchema>,
+): RolledWebRollResult {
+  let result: RolledWebRollResult;
+  if (value.renderModel === undefined) {
+    result = {
+      status: "rolled",
+      message: value.message,
+      diceArray: value.diceArray,
+      resultArray: value.resultArray,
+      renderedImage: value.renderedImage,
+      appearanceIdentities: value.appearanceIdentities,
+      rerolledAppearanceIdentities: value.rerolledAppearanceIdentities,
+      discord: value.discord,
+    };
+  } else {
+    result = {
+      status: "rolled",
+      message: value.message,
+      diceArray: value.diceArray,
+      resultArray: value.resultArray,
+      renderedImage: value.renderedImage,
+      renderModel: validateRenderRequestV4(value.renderModel),
+      appearanceIdentities: value.appearanceIdentities,
+      rerolledAppearanceIdentities: value.rerolledAppearanceIdentities,
+      discord: value.discord,
+    };
+  }
+  if (value.deliveryStatus !== undefined) {
+    result.deliveryStatus = value.deliveryStatus;
+  }
+  return result;
+}
+
+function parseWebDeliveryExecutionResult(
+  value: SchemaInput,
+): WebDeliveryExecutionResult {
+  const result = WebDeliveryExecutionResultSchema.safeParse(value);
+  if (!result.success) throw new Error("Web delivery response is invalid");
+  if (
+    result.data.status === "conflict" ||
+    result.data.status === "expired"
+  ) {
+    return result.data;
+  }
+  if (result.data.status === "invalid" || result.data.status === "stale") {
+    return result.data;
+  }
+  return {
+    status: result.data.status,
+    roll: parseRolledWebDeliveryResult(result.data.roll),
+  };
+}
+
 export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
-  prepare(value: unknown): Promise<WebRollPreparationResult> {
+  prepare(value: SchemaInput): Promise<WebRollPreparationResult> {
     return prepareWebRoll(
       value,
       this.env.DATA_SERVICE,
@@ -1215,14 +1320,18 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
     );
   }
 
-  async execute(value: unknown): Promise<WebRollResult> {
-    if (isRecord(value) && typeof value.deliveryId === "string") {
-      if (typeof value.userId !== "string") {
+  async execute(value: SchemaInput): Promise<WebRollResult> {
+    const route = WebDeliveryRouteSchema.safeParse(value);
+    if (route.success) {
+      const userId = z.string().safeParse(route.data.userId);
+      if (!userId.success) {
         throw new Error("Web delivery user identity is missing");
       }
-      const delivery = (await this.env.WEB_DELIVERY_WORK
-        .getByName(`${value.userId}:${value.deliveryId}`)
-        .execute(value)) as unknown as WebDeliveryExecutionResult;
+      const delivery = parseWebDeliveryExecutionResult(
+        await this.env.WEB_DELIVERY_WORK
+          .getByName(`${userId.data}:${route.data.deliveryId}`)
+          .execute(value),
+      );
       switch (delivery.status) {
         case "conflict":
           return {
@@ -1249,7 +1358,7 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
     );
   }
 
-  previewV4(value: unknown): Promise<AppearancePreviewResultV4> {
+  previewV4(value: SchemaInput): Promise<AppearancePreviewResultV4> {
     return renderAppearancePreviewV4(
       value,
       parseRollViewPolicy(this.env.ROLL_VIEW_POLICY),
@@ -1263,13 +1372,15 @@ export class WebRollService extends WorkerEntrypoint<WebRollEnv> {
   }
 }
 
-// View policies and renderer revisions pair by number (rN ↔ canvaskit-v4-rN);
-// registry membership fails fast if they ever drift apart.
+function isRendererRevisionV4(value: string): value is RendererRevisionV4 {
+  return RENDERER_REVISIONS_V4.some((revision) => revision === value);
+}
+
 function rendererRevisionForViewPolicyV4(
   policy: RollViewPolicy,
 ): RendererRevisionV4 {
-  const revision = `canvaskit-v4-${policy}` as RendererRevisionV4;
-  if (!RENDERER_REVISIONS_V4.includes(revision)) {
+  const revision = `canvaskit-v4-${policy}`;
+  if (!isRendererRevisionV4(revision)) {
     throw new Error(`Roll view policy ${policy} has no renderer revision`);
   }
   return revision;

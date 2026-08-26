@@ -3,6 +3,7 @@ import {
   type CriticalTreatmentV4,
   type RenderCriticalEffectV4,
 } from "@dice-witch/dice-v4-model";
+import * as z from "zod";
 import {
   AdditiveBlending,
   BackSide,
@@ -18,6 +19,15 @@ import {
 } from "three";
 
 const HEX_COLOR_V4 = /^#[0-9a-fA-F]{6}$/;
+const criticalTreatmentSchema = z.enum(CRITICAL_TREATMENTS_V4);
+const criticalStateSchema = z.enum(["critical-success", "critical-failure"]);
+
+export type RenderCriticalEffectInputV4 = {
+  state: string;
+  treatment: string;
+  color: string;
+  intensity: number;
+};
 
 const SURFACE_EFFECT_VERTEX_SHADER_V4 = `
   varying vec3 vLocalPosition;
@@ -120,16 +130,15 @@ export type ThreeCriticalEffectResourcesV4 = {
   objectCount: number;
 };
 
-function validateEffectV4(effect: RenderCriticalEffectV4): number {
-  if (!CRITICAL_TREATMENTS_V4.includes(effect.treatment)) {
+function validateEffectV4(
+  effect: RenderCriticalEffectInputV4,
+): asserts effect is RenderCriticalEffectV4 {
+  if (!criticalTreatmentSchema.safeParse(effect.treatment).success) {
     throw new Error(
       `Three.js V4 critical effect treatment is invalid: ${String(effect.treatment)}`,
     );
   }
-  if (
-    effect.state !== "critical-success" &&
-    effect.state !== "critical-failure"
-  ) {
+  if (!criticalStateSchema.safeParse(effect.state).success) {
     throw new Error("Three.js V4 critical effect state is invalid");
   }
   if (!HEX_COLOR_V4.test(effect.color)) {
@@ -142,7 +151,6 @@ function validateEffectV4(effect: RenderCriticalEffectV4): number {
   ) {
     throw new Error("Three.js V4 critical effect intensity is invalid");
   }
-  return effect.intensity / 100;
 }
 
 function configureOverlayMaterialV4<MaterialType extends Material>(
@@ -286,7 +294,7 @@ function addEngravingBurnV4(
 
 export function createThreeCriticalEffectResourcesV4(
   geometry: ThreeCriticalGeometryV4,
-  effect: RenderCriticalEffectV4 | null,
+  effect: RenderCriticalEffectInputV4 | null,
 ): ThreeCriticalEffectResourcesV4 {
   const resources: ThreeCriticalEffectResourcesV4 = {
     group: new Group(),
@@ -299,7 +307,8 @@ export function createThreeCriticalEffectResourcesV4(
   resources.group.name = "dice-v4-critical-effect";
   if (effect === null) return resources;
 
-  const intensity = validateEffectV4(effect);
+  validateEffectV4(effect);
+  const intensity = effect.intensity / 100;
   resources.intensity = intensity;
   if (intensity === 0) return resources;
 

@@ -1,4 +1,5 @@
 import * as React from "react";
+import * as z from "zod";
 
 const HEADING_CLASSES = {
   1: "scroll-mt-24 font-['UnifrakturMaguntia'] text-5xl leading-tight text-brand sm:text-6xl",
@@ -6,10 +7,11 @@ const HEADING_CLASSES = {
   3: "mt-8 scroll-mt-24 text-xl font-semibold tracking-tight",
 } as const;
 
+const headingValueSchema = z.union([z.string(), z.number()]);
+
 function headingText(node: React.ReactNode): string {
-  if (typeof node === "string" || typeof node === "number") {
-    return String(node);
-  }
+  const value = headingValueSchema.safeParse(node);
+  if (value.success) return String(value.data);
   if (Array.isArray(node)) {
     return node.map(headingText).join("");
   }
@@ -34,6 +36,7 @@ export function MarkdownHeading({
   id,
   ...props
 }: React.ComponentProps<"h1"> & { level: keyof typeof HEADING_CLASSES }) {
+  // SAFETY: The surrounding validation establishes the "h1" | "h2" | "h3" invariant used below.
   const Heading = `h${level}` as "h1" | "h2" | "h3";
   const headingId = id || headingSlug(children);
   const headingRef = React.useRef<HTMLHeadingElement>(null);

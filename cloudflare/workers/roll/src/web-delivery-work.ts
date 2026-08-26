@@ -1,20 +1,32 @@
 import { DurableObject } from "cloudflare:workers";
+import { validateRenderRequestV4 } from "@dice-witch/dice-v4-model";
+import { z } from "zod";
 import {
   LOG_WORK_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   MAX_LOG_ARTIFACT_PNG_BYTES,
   buildSaveRollCustomId,
+  isComponentsV2Message,
   buildTextResultCustomId,
   parseSaveRollIntent,
   parseTextResultIntent,
   saveRollIntentIdentity,
   textResultIntentIdentity,
   ROLL_SAVE_INTENT_RETENTION_MS,
+  validateDiscordMessage,
   validateRollLogArtifact,
+  type DiscordComponentsV2Message,
   type RollLogArtifactV2,
   type SaveRollIntent,
   type TextResultIntentV1,
 } from "../../../packages/discord-contracts/src";
+import {
+  nonNegativeSafeIntegerSchema,
+  safeIntegerSchema,
+  seedSchema,
+  snowflakeSchema,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import { selectRollDelayMs } from "../../../packages/roll-domain/src/random";
 import {
   executeWebRoll,
@@ -37,8 +49,6 @@ type WebDeliveryState =
   | "failed"
   | "pending"
   | "permission_error";
-type StoredWebDeliveryState = WebDeliveryState | "preparing";
-
 type WebDeliveryInput = {
   deliveryId: string;
   applicationId: string | null;
@@ -56,36 +66,21 @@ type WebDeliveryInput = {
   appearanceDigest?: string;
 };
 
-type StoredWebDeliveryRow = {
-  identity_sha256: string;
-  request_json: string;
-  result_json: string | null;
-  image_bytes: ArrayBuffer | null;
-  image_sha256: string;
-  roll_id: string;
-  state: StoredWebDeliveryState;
-  render_seed: number;
-  roll_seed: number;
-  accepted_at: number;
-  retry_until: number;
-  artifact_cleanup_at: number;
-  expires_at: number;
-  destination_delivered_at: number | null;
-  completed_at: number | null;
-  attempts: number;
-  last_http_status: number | null;
-  logging_state: "accepted" | "failed" | "pending";
-  logging_attempts: number;
+type StoredWebDeliveryRow = z.output<typeof StoredWebDeliveryRowSchema>;
+
+type RolledWebResult = WebRollResult & { status: "rolled" };
+type ParsedRolledWebResult = Omit<RolledWebResult, "discord"> & {
+  discord: Omit<RolledWebResult["discord"], "payload"> & {
+    payload: DiscordComponentsV2Message;
+  };
 };
 
-type StoredRolledResult = Omit<WebRollResult & { status: "rolled" },
+type StoredRolledResult = Omit<
+  RolledWebResult,
   "discord" | "renderedImage"
 > & {
-  renderedImage: Omit<
-    (WebRollResult & { status: "rolled" })["renderedImage"],
-    "png"
-  >;
-  discord: Omit<(WebRollResult & { status: "rolled" })["discord"], "png">;
+  renderedImage: Omit<RolledWebResult["renderedImage"], "png">;
+  discord: Omit<RolledWebResult["discord"], "png">;
 };
 
 export type WebDeliveryExecutionResult =
@@ -103,155 +98,185 @@ export type WebDeliveryExecutionResult =
       roll: WebRollResult & { status: "rolled" };
     };
 
-type WebDeliveryService = {
-  deliverWebRoll(value: {
-    rollId: string;
-    guildId: string;
-    channelId: string;
-    payload: unknown;
-    clatter: string;
-    filename: string;
-    png: Uint8Array;
-    skipDelay: boolean;
-    delayMs: number;
-  }): Promise<
-    | { status: "delivered"; messageId: string }
-    | { status: "permission_error" }
-    | { status: "failed"; httpStatus: number }
-    | {
-        status: "retryable";
-        httpStatus: number;
-        retryAfterMs: number | null;
-      }
-  >;
+type WebRollExecutionRequest = {
+  notation: string;
+  repetitions: number;
+  username: string;
+  title: string | null;
+  userId: string;
+  guildId: string;
+  savedRoll?: WebSavedRollAttribution;
+  saveRollCustomId?: string;
+  textResultCustomId?: string;
+  renderSeed?: number;
+  appearanceDigest?: string;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+type WebRollDeliveryRequest = {
+  rollId: string;
+  guildId: string;
+  channelId: string;
+  payload: DiscordComponentsV2Message;
+  clatter: string;
+  filename: string;
+  png: Uint8Array;
+  skipDelay: boolean;
+  delayMs: number;
+};
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
+type WebDeliveryServicePort = {
+  deliverWebRoll(value: WebRollDeliveryRequest): Promise<SchemaInput>;
+};
+
+type LogWorkPort = {
+  accept(value: RollLogArtifactV2): Promise<SchemaInput>;
+};
+
+type WebDeliveryEnv = Omit<RollBindings, "DISCORD_REST" | "LOG_WORK"> & {
+  DISCORD_REST: WebDeliveryServicePort;
+  LOG_WORK: { getByName(name: string): LogWorkPort };
+};
+
+const WebRollDeliveryResultSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    status: z.literal("delivered"),
+    messageId: snowflakeSchema,
+  }),
+  z.strictObject({ status: z.literal("permission_error") }),
+  z.strictObject({
+    status: z.literal("failed"),
+    httpStatus: safeIntegerSchema,
+  }),
+  z.strictObject({
+    status: z.literal("retryable"),
+    httpStatus: safeIntegerSchema,
+    retryAfterMs: nonNegativeSafeIntegerSchema.nullable(),
+  }),
+]);
+const LogAcceptanceSchema = z.looseObject({
+  status: z.enum(["created", "existing", "conflict"]),
+});
+const TextResultBindingSchema = z.strictObject({
+  applicationId: snowflakeSchema,
+  channelId: snowflakeSchema,
+  guildId: snowflakeSchema,
+  messageId: snowflakeSchema,
+});
+const IntentJsonRowSchema = z.strictObject({ intent_json: z.string() });
+const StoredWebDeliveryRowSchema = z.strictObject({
+  identity_sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+  request_json: z.string(),
+  result_json: z.string().nullable(),
+  image_bytes: z.instanceof(ArrayBuffer).nullable(),
+  image_sha256: z.union([
+    z.literal(""),
+    z.string().regex(/^[0-9a-f]{64}$/u),
+  ]),
+  roll_id: snowflakeSchema,
+  state: z.enum([
+    "preparing",
+    "pending",
+    "delivered",
+    "permission_error",
+    "failed",
+  ]),
+  render_seed: seedSchema,
+  roll_seed: seedSchema,
+  accepted_at: nonNegativeSafeIntegerSchema,
+  retry_until: nonNegativeSafeIntegerSchema,
+  artifact_cleanup_at: nonNegativeSafeIntegerSchema,
+  expires_at: nonNegativeSafeIntegerSchema,
+  destination_delivered_at: nonNegativeSafeIntegerSchema.nullable(),
+  completed_at: nonNegativeSafeIntegerSchema.nullable(),
+  attempts: nonNegativeSafeIntegerSchema,
+  last_http_status: safeIntegerSchema.nullable(),
+  logging_state: z.enum(["accepted", "failed", "pending"]),
+  logging_attempts: nonNegativeSafeIntegerSchema,
+});
+
+const WebDeliveryFields = {
+  deliveryId: z.string().regex(DELIVERY_ID),
+  notation: z.string().min(1).max(1_000),
+  repetitions: safeIntegerSchema.min(1).max(50),
+  username: z.string().min(1).max(32),
+  title: z.string().min(1).max(256).nullable(),
+  userId: snowflakeSchema,
+  guildId: snowflakeSchema,
+  channelId: snowflakeSchema,
+  skipDelay: z.boolean(),
+  savedRoll: z.unknown().optional(),
+  renderSeed: seedSchema.optional(),
+  appearanceDigest: z.string().regex(/^[0-9a-f]{64}$/iu).optional(),
+};
+const CurrentWebDeliveryInputSchema = z.strictObject({
+  ...WebDeliveryFields,
+  applicationId: snowflakeSchema,
+  hideRollResultText: z.boolean(),
+});
+const LegacyWebDeliveryInputSchema = z.strictObject(WebDeliveryFields);
+
+type ParsedWebDeliveryInput = z.output<
+  typeof CurrentWebDeliveryInputSchema
+> | z.output<typeof LegacyWebDeliveryInputSchema>;
+
+function completeOptionalInput(
+  value: ParsedWebDeliveryInput,
 ): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
+  const hasSavedRoll = value.savedRoll !== undefined;
+  const hasRenderSeed = value.renderSeed !== undefined;
+  const hasAppearanceDigest = value.appearanceDigest !== undefined;
+  return Object.hasOwn(value, "savedRoll") === hasSavedRoll &&
+    Object.hasOwn(value, "renderSeed") === hasRenderSeed &&
+    Object.hasOwn(value, "appearanceDigest") === hasAppearanceDigest &&
+    hasRenderSeed === hasAppearanceDigest;
 }
-
-const LEGACY_INPUT_KEYS = [
-  "channelId",
-  "deliveryId",
-  "guildId",
-  "notation",
-  "repetitions",
-  "skipDelay",
-  "title",
-  "userId",
-  "username",
-] as const;
 
 function parseInput(
-  value: unknown,
+  value: SchemaInput,
   acceptPersistedLegacy: boolean,
 ): WebDeliveryInput {
-  if (!isRecord(value)) throw new Error("Web delivery request is invalid");
-  const hasSavedRoll = value.savedRoll !== undefined;
-  const legacyKeys = hasSavedRoll
-    ? [...LEGACY_INPUT_KEYS, "savedRoll"]
-    : LEGACY_INPUT_KEYS;
-  const currentKeys = [
-    ...legacyKeys,
-    "applicationId",
-    "hideRollResultText",
-  ];
-  const currentPrepared = hasExactKeys(value, [
-    ...currentKeys,
-    "appearanceDigest",
-    "renderSeed",
-  ]);
-  const current = hasExactKeys(value, currentKeys) || currentPrepared;
-  const legacyPrepared = acceptPersistedLegacy && hasExactKeys(value, [
-    ...legacyKeys,
-    "appearanceDigest",
-    "renderSeed",
-  ]);
-  const legacy = acceptPersistedLegacy &&
-    (hasExactKeys(value, legacyKeys) || legacyPrepared);
-  const prepared = currentPrepared || legacyPrepared;
-  if (
-    (!current && !legacy) ||
-    typeof value.deliveryId !== "string" ||
-    !DELIVERY_ID.test(value.deliveryId) ||
-    (current &&
-      (typeof value.applicationId !== "string" ||
-        !SNOWFLAKE.test(value.applicationId) ||
-        typeof value.hideRollResultText !== "boolean")) ||
-    typeof value.guildId !== "string" ||
-    !SNOWFLAKE.test(value.guildId) ||
-    typeof value.channelId !== "string" ||
-    !SNOWFLAKE.test(value.channelId) ||
-    typeof value.userId !== "string" ||
-    !SNOWFLAKE.test(value.userId) ||
-    typeof value.username !== "string" ||
-    value.username.length < 1 ||
-    value.username.length > 32 ||
-    typeof value.notation !== "string" ||
-    value.notation.length < 1 ||
-    value.notation.length > 1_000 ||
-    !Number.isSafeInteger(value.repetitions) ||
-    Number(value.repetitions) < 1 ||
-    Number(value.repetitions) > 50 ||
-    (value.title !== null &&
-      (typeof value.title !== "string" ||
-        value.title.length < 1 ||
-        value.title.length > 256)) ||
-    typeof value.skipDelay !== "boolean" ||
-    (prepared &&
-      (typeof value.renderSeed !== "number" ||
-        !Number.isInteger(value.renderSeed) ||
-        value.renderSeed < 0 ||
-        value.renderSeed > 0xffff_ffff ||
-        typeof value.appearanceDigest !== "string" ||
-        !/^[0-9a-f]{64}$/i.test(value.appearanceDigest)))
-  ) {
+  const current = CurrentWebDeliveryInputSchema.safeParse(value);
+  const legacy = acceptPersistedLegacy
+    ? LegacyWebDeliveryInputSchema.safeParse(value)
+    : null;
+  let parsed: ParsedWebDeliveryInput | null = null;
+  if (current.success) parsed = current.data;
+  else if (legacy?.success === true) parsed = legacy.data;
+  if (parsed === null || !completeOptionalInput(parsed)) {
     throw new Error("Web delivery request is invalid");
   }
-  return {
-    deliveryId: value.deliveryId,
-    applicationId:
-      current && typeof value.applicationId === "string"
-        ? value.applicationId
-        : null,
-    notation: value.notation,
-    repetitions: Number(value.repetitions),
-    username: value.username,
-    title: value.title,
-    userId: value.userId,
-    guildId: value.guildId,
-    channelId: value.channelId,
-    skipDelay: value.skipDelay,
-    hideRollResultText: current && value.hideRollResultText === true,
-    ...(hasSavedRoll
-      ? { savedRoll: parseWebSavedRollAttribution(value.savedRoll) }
-      : {}),
-    ...(prepared
-      ? {
-          renderSeed: Number(value.renderSeed),
-          appearanceDigest: String(value.appearanceDigest),
-        }
-      : {}),
+
+  const input: WebDeliveryInput = {
+    deliveryId: parsed.deliveryId,
+    applicationId: current.success ? current.data.applicationId : null,
+    notation: parsed.notation,
+    repetitions: parsed.repetitions,
+    username: parsed.username,
+    title: parsed.title,
+    userId: parsed.userId,
+    guildId: parsed.guildId,
+    channelId: parsed.channelId,
+    skipDelay: parsed.skipDelay,
+    hideRollResultText: current.success && current.data.hideRollResultText,
   };
+  if (parsed.savedRoll !== undefined) {
+    input.savedRoll = parseWebSavedRollAttribution(parsed.savedRoll);
+  }
+  if (
+    parsed.renderSeed !== undefined &&
+    parsed.appearanceDigest !== undefined
+  ) {
+    input.renderSeed = parsed.renderSeed;
+    input.appearanceDigest = parsed.appearanceDigest;
+  }
+  return input;
 }
 
-function validateInput(value: unknown): WebDeliveryInput {
+function validateInput(value: SchemaInput): WebDeliveryInput {
   return parseInput(value, false);
 }
 
-function validateStoredInput(value: unknown): WebDeliveryInput {
+function validateStoredInput(value: SchemaInput): WebDeliveryInput {
   return parseInput(value, true);
 }
 
@@ -342,40 +367,102 @@ function serializeResult(result: WebRollResult & { status: "rolled" }): string {
   return json;
 }
 
+const StoredWebRollDieSchema = z.strictObject({
+  sides: z.union([z.number(), z.literal("%"), z.literal("F")]),
+  rolled: z.number(),
+  value: z.number(),
+  icon: z.array(z.string()),
+  color: z.string(),
+  secondaryColor: z.string(),
+  textColor: z.string(),
+});
+const StoredRolledResultSchema = z.strictObject({
+  status: z.literal("rolled"),
+  message: z.string(),
+  diceArray: z.array(z.array(StoredWebRollDieSchema)),
+  resultArray: z.array(
+    z.strictObject({ output: z.string(), results: z.number() }),
+  ),
+  renderedImage: z.strictObject({
+    contentType: z.literal("image/png"),
+    width: safeIntegerSchema.positive(),
+    height: safeIntegerSchema.positive(),
+  }),
+  renderModel: z.unknown().optional(),
+  appearanceIdentities: z.array(z.array(z.string())),
+  rerolledAppearanceIdentities: z.array(z.string()),
+  deliveryStatus: z
+    .enum(["delivered", "failed", "pending", "permission_error"])
+    .optional(),
+  discord: z.strictObject({
+    payload: z.unknown(),
+    clatter: z.string(),
+    resultText: z.string().min(1).max(4_000),
+    filename: z.string(),
+  }),
+});
+
+function parseStoredWebPayload(
+  value: SchemaInput,
+): DiscordComponentsV2Message {
+  try {
+    const payload = validateDiscordMessage(value);
+    if (isComponentsV2Message(payload)) return payload;
+  } catch {
+    // Report the durable boundary rather than the nested message parser.
+  }
+  throw new Error("Stored web delivery result is invalid");
+}
+
 function restoreResult(
   resultJson: string,
   png: ArrayBuffer,
-): WebRollResult & { status: "rolled" } {
-  const parsed: unknown = JSON.parse(resultJson);
-  if (
-    !isRecord(parsed) ||
-    parsed.status !== "rolled" ||
-    !isRecord(parsed.renderedImage) ||
-    parsed.renderedImage.contentType !== "image/png" ||
-    !isRecord(parsed.discord) ||
-    typeof parsed.discord.filename !== "string" ||
-    typeof parsed.discord.clatter !== "string" ||
-    typeof parsed.discord.resultText !== "string" ||
-    parsed.discord.resultText.length < 1 ||
-    parsed.discord.resultText.length > 4_000 ||
-    !Number.isSafeInteger(parsed.renderedImage.width) ||
-    Number(parsed.renderedImage.width) < 1 ||
-    !Number.isSafeInteger(parsed.renderedImage.height) ||
-    Number(parsed.renderedImage.height) < 1 ||
-    !Array.isArray(parsed.diceArray) ||
-    !Array.isArray(parsed.resultArray) ||
-    !Array.isArray(parsed.appearanceIdentities) ||
-    !Array.isArray(parsed.rerolledAppearanceIdentities)
-  ) {
+): ParsedRolledWebResult {
+  const input: SchemaInput = JSON.parse(resultJson);
+  const parsed = StoredRolledResultSchema.safeParse(input);
+  if (!parsed.success) {
     throw new Error("Stored web delivery result is invalid");
   }
-  const stored = parsed as unknown as StoredRolledResult;
+  const stored = parsed.data;
+  const payload = parseStoredWebPayload(stored.discord.payload);
   const bytes = new Uint8Array(png);
-  return {
-    ...stored,
+  const prefix: Pick<
+    ParsedRolledWebResult,
+    "diceArray" | "message" | "renderedImage" | "resultArray" | "status"
+  > = {
+    status: "rolled",
+    message: stored.message,
+    diceArray: stored.diceArray,
+    resultArray: stored.resultArray,
     renderedImage: { ...stored.renderedImage, png: bytes.slice() },
-    discord: { ...stored.discord, png: bytes.slice() },
   };
+  const suffix = {
+    appearanceIdentities: stored.appearanceIdentities,
+    rerolledAppearanceIdentities: stored.rerolledAppearanceIdentities,
+    discord: {
+      payload,
+      clatter: stored.discord.clatter,
+      resultText: stored.discord.resultText,
+      filename: stored.discord.filename,
+      png: bytes.slice(),
+    },
+  };
+  let result: ParsedRolledWebResult;
+  try {
+    result = stored.renderModel === undefined
+      ? { ...prefix, ...suffix }
+      : {
+          ...prefix,
+          renderModel: validateRenderRequestV4(stored.renderModel),
+          ...suffix,
+        };
+  } catch {
+    throw new Error("Stored web delivery result is invalid");
+  }
+  if (stored.deliveryStatus !== undefined) {
+    result.deliveryStatus = stored.deliveryStatus;
+  }
+  return result;
 }
 
 function sourceLogArtifact(
@@ -432,10 +519,10 @@ function sourceLogArtifact(
   };
 }
 
-export class WebDeliveryWork extends DurableObject<RollBindings> {
+export class WebDeliveryWork extends DurableObject<WebDeliveryEnv> {
   private operationTail: Promise<void> = Promise.resolve();
 
-  constructor(ctx: DurableObjectState, env: RollBindings) {
+  constructor(ctx: DurableObjectState, env: WebDeliveryEnv) {
     super(ctx, env);
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS save_roll_intent (
@@ -476,12 +563,12 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     `);
   }
 
-  execute(value: unknown): Promise<WebDeliveryExecutionResult> {
+  execute(value: SchemaInput): Promise<WebDeliveryExecutionResult> {
     return this.serialize(() => this.executeSerialized(value));
   }
 
   private async executeSerialized(
-    value: unknown,
+    value: SchemaInput,
   ): Promise<WebDeliveryExecutionResult> {
     const input = validateInput(value);
     const objectName = `${input.userId}:${input.deliveryId}`;
@@ -536,40 +623,35 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     const saveRollEligible = input.savedRoll !== undefined ||
       input.title !== null ||
       input.repetitions > 1;
-    const roll = await executeWebRoll(
-      {
-        notation: input.notation,
-        repetitions: input.repetitions,
-        username: input.username,
-        title: input.title,
+    const request: WebRollExecutionRequest = {
+      notation: input.notation,
+      repetitions: input.repetitions,
+      username: input.username,
+      title: input.title,
+      userId: input.userId,
+      guildId: input.guildId,
+    };
+    if (saveRollEligible) {
+      request.saveRollCustomId = buildSaveRollCustomId({
+        kind: "web",
+        id: input.deliveryId,
         userId: input.userId,
-        guildId: input.guildId,
-        ...(saveRollEligible
-          ? {
-              saveRollCustomId: buildSaveRollCustomId({
-                kind: "web",
-                id: input.deliveryId,
-                userId: input.userId,
-              }),
-            }
-          : {}),
-        ...(input.hideRollResultText
-          ? {
-              textResultCustomId: buildTextResultCustomId({
-                kind: "web",
-                id: input.deliveryId,
-                userId: input.userId,
-              }),
-            }
-          : {}),
-        ...(input.savedRoll === undefined ? {} : { savedRoll: input.savedRoll }),
-        ...(input.appearanceDigest === undefined
-          ? {}
-          : {
-              renderSeed: row.render_seed,
-              appearanceDigest: input.appearanceDigest,
-            }),
-      },
+      });
+    }
+    if (input.hideRollResultText) {
+      request.textResultCustomId = buildTextResultCustomId({
+        kind: "web",
+        id: input.deliveryId,
+        userId: input.userId,
+      });
+    }
+    if (input.savedRoll !== undefined) request.savedRoll = input.savedRoll;
+    if (input.appearanceDigest !== undefined) {
+      request.renderSeed = row.render_seed;
+      request.appearanceDigest = input.appearanceDigest;
+    }
+    const roll = await executeWebRoll(
+      request,
       this.env.DATA_SERVICE,
       this.env.ROLL_RENDER_VERSION,
       this.env.ROLL_VIEW_POLICY,
@@ -653,7 +735,7 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
       return;
     }
     if (row.state === "pending") {
-      await this.attemptDestination();
+      await this.attemptDestination(row);
       return;
     }
     if (row.state === "delivered" && row.logging_state === "pending") {
@@ -674,16 +756,18 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     if (row.result_json === null || row.image_bytes === null) {
       return { status: "expired" };
     }
+    if (row.state === "pending") return this.attemptDestination(row);
     await this.verifyImage(row);
-    if (row.state === "pending") return this.attemptDestination();
     return {
       status: row.state,
       roll: restoreResult(row.result_json, row.image_bytes),
     };
   }
 
-  private async attemptDestination(): Promise<WebDeliveryExecutionResult> {
-    const row = this.readRow();
+  private async attemptDestination(
+    storedRow?: StoredWebDeliveryRow,
+  ): Promise<WebDeliveryExecutionResult> {
+    const row = storedRow ?? this.readRow();
     if (row === undefined) return { status: "expired" };
     if (row.state !== "pending") return this.resume(row);
     if (row.result_json === null || row.image_bytes === null) {
@@ -715,10 +799,9 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     await this.ctx.storage.setAlarm(
       Math.min(row.retry_until, now + retryDelayMs(attempts)),
     );
-    let delivery: Awaited<ReturnType<WebDeliveryService["deliverWebRoll"]>>;
+    let delivery: z.output<typeof WebRollDeliveryResultSchema>;
     try {
-      const service = this.env.DISCORD_REST as unknown as WebDeliveryService;
-      delivery = await service.deliverWebRoll({
+      const response = await this.env.DISCORD_REST.deliverWebRoll({
         rollId: row.roll_id,
         guildId: input.guildId,
         channelId: input.channelId,
@@ -731,6 +814,11 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
           ? 0
           : selectRollDelayMs(row.roll_seed / 2 ** 32),
       });
+      const parsed = WebRollDeliveryResultSchema.safeParse(response);
+      if (!parsed.success) {
+        throw new Error("Web roll delivery response is invalid");
+      }
+      delivery = parsed.data;
     } catch {
       await this.scheduleRetry(row.retry_until, attempts, null, null);
       return { status: "pending", roll: result };
@@ -785,11 +873,11 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
       "UPDATE web_delivery SET logging_attempts = ? WHERE singleton = 1",
       attempts,
     );
-    let accepted: unknown;
+    let accepted: z.output<typeof LogAcceptanceSchema>;
     try {
       const input = validateStoredInput(JSON.parse(row.request_json));
       const result = restoreResult(row.result_json, row.image_bytes);
-      accepted = await this.env.LOG_WORK.getByName(row.roll_id).accept(
+      const response = await this.env.LOG_WORK.getByName(row.roll_id).accept(
         sourceLogArtifact(
           input,
           row.roll_id,
@@ -797,23 +885,23 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
           row.destination_delivered_at,
         ),
       );
+      const parsed = LogAcceptanceSchema.safeParse(response);
+      if (!parsed.success) {
+        throw new Error("Log artifact acceptance response is invalid");
+      }
+      accepted = parsed.data;
     } catch {
       return;
     }
-    if (
-      isRecord(accepted) &&
-      (accepted.status === "created" || accepted.status === "existing")
-    ) {
+    if (accepted.status === "created" || accepted.status === "existing") {
       this.ctx.storage.sql.exec(
         "UPDATE web_delivery SET logging_state = 'accepted' WHERE singleton = 1",
       );
       return;
     }
-    if (isRecord(accepted) && accepted.status === "conflict") {
-      this.ctx.storage.sql.exec(
-        "UPDATE web_delivery SET logging_state = 'failed' WHERE singleton = 1",
-      );
-    }
+    this.ctx.storage.sql.exec(
+      "UPDATE web_delivery SET logging_state = 'failed' WHERE singleton = 1",
+    );
   }
 
   private async scheduleRetry(
@@ -962,14 +1050,16 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
   }
 
   private readTextResultIntent(): TextResultIntentV1 | undefined {
-    const row = this.ctx.storage.sql
-      .exec<{ intent_json: string }>(
-        "SELECT intent_json FROM text_result_intent WHERE singleton = 1",
-      )
+    const value: SchemaInput = this.ctx.storage.sql
+      .exec("SELECT intent_json FROM text_result_intent WHERE singleton = 1")
       .toArray()[0];
-    return row === undefined
-      ? undefined
-      : parseTextResultIntent(JSON.parse(row.intent_json));
+    if (value === undefined) return undefined;
+    const row = IntentJsonRowSchema.safeParse(value);
+    if (!row.success) {
+      throw new Error("Stored text result intent row is invalid");
+    }
+    const intent: SchemaInput = JSON.parse(row.data.intent_json);
+    return parseTextResultIntent(intent);
   }
 
   private bindTextResultMessage(messageId: string): void {
@@ -991,26 +1081,17 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
     }
   }
 
-  getTextResult(value: unknown) {
+  getTextResult(value: SchemaInput) {
     const intent = this.readTextResultIntent();
     if (intent === undefined) return { status: "missing" as const };
     if (intent.expiresAt <= Date.now()) return { status: "expired" as const };
+    const binding = TextResultBindingSchema.safeParse(value);
     if (
-      !isRecord(value) ||
-      !hasExactKeys(value, [
-        "applicationId",
-        "channelId",
-        "guildId",
-        "messageId",
-      ]) ||
-      typeof value.applicationId !== "string" ||
-      typeof value.guildId !== "string" ||
-      typeof value.channelId !== "string" ||
-      typeof value.messageId !== "string" ||
-      intent.applicationId !== value.applicationId ||
-      intent.guildId !== value.guildId ||
-      intent.channelId !== value.channelId ||
-      intent.messageId !== value.messageId
+      !binding.success ||
+      intent.applicationId !== binding.data.applicationId ||
+      intent.guildId !== binding.data.guildId ||
+      intent.channelId !== binding.data.channelId ||
+      intent.messageId !== binding.data.messageId
     ) {
       return { status: "missing" as const };
     }
@@ -1018,14 +1099,16 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
   }
 
   private readSaveRollIntent(): SaveRollIntent | undefined {
-    const row = this.ctx.storage.sql
-      .exec<{ intent_json: string }>(
-        "SELECT intent_json FROM save_roll_intent WHERE singleton = 1",
-      )
+    const value: SchemaInput = this.ctx.storage.sql
+      .exec("SELECT intent_json FROM save_roll_intent WHERE singleton = 1")
       .toArray()[0];
-    return row === undefined
-      ? undefined
-      : parseSaveRollIntent(JSON.parse(row.intent_json));
+    if (value === undefined) return undefined;
+    const row = IntentJsonRowSchema.safeParse(value);
+    if (!row.success) {
+      throw new Error("Stored save roll intent row is invalid");
+    }
+    const intent: SchemaInput = JSON.parse(row.data.intent_json);
+    return parseSaveRollIntent(intent);
   }
 
   getSaveRollIntent() {
@@ -1093,8 +1176,8 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
   }
 
   private readRow(): StoredWebDeliveryRow | undefined {
-    return this.ctx.storage.sql
-      .exec<StoredWebDeliveryRow>(
+    const value: SchemaInput = this.ctx.storage.sql
+      .exec(
         `SELECT identity_sha256, request_json, result_json, image_bytes,
                 image_sha256, roll_id,
                 state, render_seed, roll_seed, accepted_at, retry_until,
@@ -1105,5 +1188,11 @@ export class WebDeliveryWork extends DurableObject<RollBindings> {
          WHERE singleton = 1`,
       )
       .toArray()[0];
+    if (value === undefined) return undefined;
+    const row = StoredWebDeliveryRowSchema.safeParse(value);
+    if (!row.success) {
+      throw new Error("Stored web delivery row is invalid");
+    }
+    return row.data;
   }
 }

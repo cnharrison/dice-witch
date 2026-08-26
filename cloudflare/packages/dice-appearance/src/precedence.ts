@@ -49,6 +49,10 @@ type BuiltinRecipeResolver<Recipe, Target extends string, Builtins> = (
   builtins: Builtins,
 ) => Recipe;
 
+type ResolvedRecipeMap<Recipe, Target extends string> = Partial<
+  Record<Target, Recipe>
+>;
+
 function assignedReference<Recipe, Target extends string>(
   profile: AppearanceProfile<Recipe, Target>,
   target: Target,
@@ -145,45 +149,63 @@ function resolveEffectiveRecipes<Recipe, Target extends string, Builtins>(
   targets: readonly Target[],
   input: EffectiveAppearanceInput<Recipe, Target, Builtins>,
   resolveBuiltin: BuiltinRecipeResolver<Recipe, Target, Builtins>,
-): Record<Target, Recipe> {
-  return Object.fromEntries(
-    targets.map((target) => {
-      const chaotic = resolveBuiltin("chaotic", target, input.builtins);
-      return [
-        target,
-        effectiveRecipe(input, target, chaotic, resolveBuiltin),
-      ];
-    }),
-  ) as Record<Target, Recipe>;
+) {
+  const recipes: ResolvedRecipeMap<Recipe, Target> = {};
+  for (const target of targets) {
+    const chaotic = resolveBuiltin("chaotic", target, input.builtins);
+    recipes[target] = effectiveRecipe(input, target, chaotic, resolveBuiltin);
+  }
+  return recipes;
+}
+
+function requireEffectiveRecipe<Recipe>(
+  recipes: ResolvedRecipeMap<Recipe, AppearanceTargetV4>,
+  target: AppearanceTargetV4,
+): Recipe {
+  const recipe = recipes[target];
+  if (recipe === undefined) {
+    throw new Error(`Effective appearance recipe ${target} is required`);
+  }
+  return recipe;
+}
+
+function completeEffectiveRecipes<Recipe>(
+  recipes: ResolvedRecipeMap<Recipe, AppearanceTargetV4>,
+) {
+  return {
+    d4: requireEffectiveRecipe(recipes, "d4"),
+    d6: requireEffectiveRecipe(recipes, "d6"),
+    d8: requireEffectiveRecipe(recipes, "d8"),
+    d10: requireEffectiveRecipe(recipes, "d10"),
+    d12: requireEffectiveRecipe(recipes, "d12"),
+    d20: requireEffectiveRecipe(recipes, "d20"),
+    percentile: requireEffectiveRecipe(recipes, "percentile"),
+    fudge: requireEffectiveRecipe(recipes, "fudge"),
+    other: requireEffectiveRecipe(recipes, "other"),
+  };
 }
 
 export function resolveEffectiveAppearanceRecipes(
   input: EffectiveAppearanceRecipeInput,
 ): EffectiveAppearanceRecipesV1 {
-  return resolveEffectiveRecipes(
-    APPEARANCE_TARGETS,
-    input,
-    plainBuiltInRecipe,
+  return completeEffectiveRecipes(
+    resolveEffectiveRecipes(APPEARANCE_TARGETS, input, plainBuiltInRecipe),
   );
 }
 
 export function resolveEffectiveAppearanceRecipesV2(
   input: EffectiveAppearanceRecipeInputV2,
 ): EffectiveAppearanceRecipesV2 {
-  return resolveEffectiveRecipes(
-    APPEARANCE_TARGETS,
-    input,
-    plainBuiltInRecipe,
+  return completeEffectiveRecipes(
+    resolveEffectiveRecipes(APPEARANCE_TARGETS, input, plainBuiltInRecipe),
   );
 }
 
 export function resolveEffectiveAppearanceRecipesV3(
   input: EffectiveAppearanceRecipeInputV3,
 ): EffectiveAppearanceRecipesV3 {
-  return resolveEffectiveRecipes(
-    APPEARANCE_TARGETS_V4,
-    input,
-    builtInRecipeV3,
+  return completeEffectiveRecipes(
+    resolveEffectiveRecipes(APPEARANCE_TARGETS_V4, input, builtInRecipeV3),
   );
 }
 
@@ -205,10 +227,8 @@ export function resolveEffectiveAppearanceV4(
 ): EffectiveAppearanceV4 {
   return {
     version: 4,
-    recipes: resolveEffectiveRecipes(
-      APPEARANCE_TARGETS_V4,
-      input,
-      builtInRecipeV3,
+    recipes: completeEffectiveRecipes(
+      resolveEffectiveRecipes(APPEARANCE_TARGETS_V4, input, builtInRecipeV3),
     ),
     diceView: effectiveDiceViewPreferencesV4(input),
   };

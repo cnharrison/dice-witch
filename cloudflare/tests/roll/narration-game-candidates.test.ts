@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   MAX_NARRATION_GAME_CANDIDATES_V1,
   NARRATION_GAME_CATALOG_V1,
@@ -13,6 +14,23 @@ type FeatureRoll = Readonly<{
   notation: readonly string[];
   repetitions: number;
 }>;
+
+const MalformedCandidateRequestSchema = z.strictObject({
+  version: z.number(),
+  features: z.array(z.strictObject({
+    kind: z.string(),
+    occurrences: z.number(),
+  })).readonly(),
+  guildId: z.string().optional(),
+});
+
+function malformedCandidateRequest(
+  value: z.input<typeof MalformedCandidateRequestSchema>,
+): NarrationGameCandidateRequestV1 {
+  const parsed = MalformedCandidateRequestSchema.parse(value);
+  // SAFETY: This parsed fixture intentionally violates the narrower domain type to exercise its runtime boundary validation.
+  return parsed as NarrationGameCandidateRequestV1;
+}
 
 const ARBITRARY_DIE_EXPLORATION_WITH_DCC_ROLLS = [
   { notation: ["d7"], repetitions: 1 },
@@ -691,10 +709,10 @@ describe("narration game candidate retrieval", () => {
     if (feature === undefined) throw new Error("Missing valid game feature");
 
     expect(() =>
-      retrieveNarrationGameCandidatesV1({
+      retrieveNarrationGameCandidatesV1(malformedCandidateRequest({
         ...valid,
         guildId: "123",
-      } as unknown as NarrationGameCandidateRequestV1),
+      })),
     ).toThrow("Narration game candidate request contains an unsupported field");
     expect(() =>
       retrieveNarrationGameCandidatesV1({
@@ -703,10 +721,10 @@ describe("narration game candidate retrieval", () => {
       }),
     ).toThrow("Narration game candidate features must be unique");
     expect(() =>
-      retrieveNarrationGameCandidatesV1({
+      retrieveNarrationGameCandidatesV1(malformedCandidateRequest({
         version: 1,
         features: [{ kind: "invented-mechanic", occurrences: 1 }],
-      } as unknown as NarrationGameCandidateRequestV1),
+      })),
     ).toThrow("Narration game candidate feature kind is unsupported");
     expect(() =>
       retrieveNarrationGameCandidatesV1({

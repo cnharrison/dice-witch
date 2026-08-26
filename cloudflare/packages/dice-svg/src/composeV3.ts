@@ -19,6 +19,7 @@ import type {
   RenderDieV3,
 } from "./types";
 import { validateRenderRequestV3 } from "./validateV3";
+import type { ValidationInput } from "./validationBoundary";
 
 type AppearanceRequestV3 = RenderAppearanceV3 & { result: number };
 
@@ -65,7 +66,7 @@ function withoutEngravedLabelsV3(svg: string): string {
 }
 
 function composeDiceSvgV3WithFaces(
-  input: unknown,
+  input: ValidationInput,
   blankFaces: boolean,
 ): ComposedSvg {
   const request = validateRenderRequestV3(input);
@@ -83,10 +84,10 @@ function composeDiceSvgV3WithFaces(
   );
 }
 
-export function composeDiceSvgV3(input: unknown): ComposedSvg {
+export function composeDiceSvgV3(input: ValidationInput): ComposedSvg {
   return composeDiceSvgV3WithFaces(input, false);
 }
 
-export function composeBlankDiceSvgV3(input: unknown): ComposedSvg {
+export function composeBlankDiceSvgV3(input: ValidationInput): ComposedSvg {
   return composeDiceSvgV3WithFaces(input, true);
 }

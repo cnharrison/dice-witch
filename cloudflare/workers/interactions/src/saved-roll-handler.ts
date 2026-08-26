@@ -5,6 +5,13 @@ import {
   type DiscordComponentsV2Message,
   type SavedRollInteraction,
 } from "../../../packages/discord-contracts/src";
+import type {
+  DurableObjectNamespacePort,
+  FetchPort,
+  PickerContext,
+  RollWorkPort,
+  SavedRollDeliveryRequest,
+} from "./ports";
 import {
   buildSavedRollAutocompleteResponse,
   buildSavedRollPickerResponse,
@@ -13,34 +20,24 @@ import {
   type SavedRollScope,
   type VisibleSavedRollV1,
 } from "./saved-roll-picker";
+import {
+  parseCopyResult,
+  parsePickerState,
+  parseSavedRollAcceptanceStatus,
+  parseSavedRollReservation,
+  type CopyResult,
+} from "./service-results";
 
 export type SavedRollHandlerEnv = {
-  DATA_SERVICE: Fetcher;
-  ROLL_WORK: DurableObjectNamespace;
+  DATA_SERVICE: FetchPort;
+  ROLL_WORK: DurableObjectNamespacePort<RollWorkPort>;
   WEB_APP_URL: string;
 };
 
-type PickerState = {
-  status: string;
-  scope?: SavedRollScope;
-  page?: number;
-  selectedId?: string | null;
-  selectedRevision?: number | null;
-  selection?: {
-    scope: SavedRollScope;
-    id: string;
-    revision: number;
-  };
-};
-
-type SavedRollWorkStub = {
-  openSavedRollPicker(value: unknown): Promise<PickerState>;
-  updateSavedRollPicker(value: unknown): Promise<PickerState>;
-  reserveSavedRollRun(value: unknown): Promise<PickerState>;
-  reserveDirectSavedRoll(value: unknown): Promise<PickerState>;
-  acceptSavedRollDelivery(value: unknown): Promise<unknown>;
-  copySavedRollToMine(value: unknown): Promise<unknown>;
-};
+type RunnableSavedRollInteraction = Extract<
+  SavedRollInteraction,
+  { kind: "command" | "component" }
+>;
 
 function escapeDiscordMarkdown(value: string): string {
   return value
@@ -51,31 +48,38 @@ function escapeDiscordMarkdown(value: string): string {
     .replaceAll(">", "\\>");
 }
 
-function messageResponse(content: string, color = 0xe7_4c_3c): {
-  type: 4;
-  data: DiscordComponentsV2Message & { allowed_mentions: { parse: string[] } };
-} {
-  return {
-    type: 4,
-    data: {
-      flags: DISCORD_COMPONENTS_V2_FLAG | 64,
-      components: [
-        {
-          type: 17,
-          accent_color: color,
-          components: [{ type: 10, content: escapeDiscordMarkdown(content) }],
-        },
-      ],
-      allowed_mentions: { parse: [] },
-    },
+function messageResponse(content: string, color = 0xe7_4c_3c) {
+  const parse: string[] = [];
+  const data = {
+    flags: DISCORD_COMPONENTS_V2_FLAG | 64,
+    components: [
+      {
+        type: 17 as const,
+        accent_color: color,
+        components: [
+          { type: 10 as const, content: escapeDiscordMarkdown(content) },
+        ],
+      },
+    ],
+    allowed_mentions: { parse },
+  } satisfies DiscordComponentsV2Message & {
+    allowed_mentions: { parse: string[] };
   };
+  return { type: 4 as const, data };
 }
+
+export type SavedRollInteractionResponse =
+  | ReturnType<typeof buildSavedRollAutocompleteResponse>
+  | ReturnType<typeof buildSavedRollPickerResponse>
+  | ReturnType<typeof messageResponse>
+  | ReturnType<typeof savedRollRunDefer>
+  | ReturnType<typeof copyResponse>;
 
 function errorResponse(content: string) {
   return messageResponse(content);
 }
 
-function pickerContext(interaction: SavedRollInteraction) {
+function pickerContext(interaction: SavedRollInteraction): PickerContext {
   return {
     version: 1 as const,
     interactionId: interaction.id,
@@ -115,15 +119,8 @@ function selectedRecord(
     : resolved;
 }
 
-function copyResponse(result: unknown, sessionId: string) {
-  if (
-    typeof result === "object" &&
-    result !== null &&
-    "status" in result &&
-    result.status === "name_conflict" &&
-    "name" in result &&
-    typeof result.name === "string"
-  ) {
+function copyResponse(result: CopyResult, sessionId: string) {
+  if (result.status === "name_conflict") {
     return {
       type: 9,
       data: {
@@ -148,38 +145,32 @@ function copyResponse(result: unknown, sessionId: string) {
       },
     };
   }
-  const status =
-    typeof result === "object" &&
-    result !== null &&
-    "status" in result &&
-    typeof result.status === "string"
-      ? result.status
-      : "unavailable";
-  if (status === "copied") {
-    const name =
-      typeof result === "object" &&
-      result !== null &&
-      "name" in result &&
-      typeof result.name === "string"
-        ? result.name
-        : "Library roll";
+  if (result.status === "copied") {
     return messageResponse(
-      `Copied “${name}” to your personal library.`,
+      `Copied “${result.name}” to your personal library.`,
       0x2e_cc_71,
     );
   }
-  const messages: Record<string, string> = {
-    cap_reached: "Your personal library already has the maximum of 50 rolls.",
-    conflict: "Your personal library changed. Try Copy to Personal again.",
-    expired: "This library picker expired. Run /library again.",
-    invalid_name: "Choose a valid library roll name.",
-    invalid_selection: "Choose a server library roll before copying.",
-    missing: "That server library roll no longer exists.",
-    stale: "That server library roll changed. Reopen the picker.",
-    unauthorized: "This library action belongs to another user.",
-    unavailable: "This library roll could not be copied. Please try again.",
-  };
-  return errorResponse(messages[status] ?? messages.unavailable ?? "Copy failed.");
+  switch (result.status) {
+    case "cap_reached":
+      return errorResponse("Your personal library already has the maximum of 50 rolls.");
+    case "conflict":
+      return errorResponse("Your personal library changed. Try Copy to Personal again.");
+    case "expired":
+      return errorResponse("This library picker expired. Run /library again.");
+    case "invalid_name":
+      return errorResponse("Choose a valid library roll name.");
+    case "invalid_selection":
+      return errorResponse("Choose a server library roll before copying.");
+    case "missing":
+      return errorResponse("That server library roll no longer exists.");
+    case "stale":
+      return errorResponse("That server library roll changed. Reopen the picker.");
+    case "unauthorized":
+      return errorResponse("This library action belongs to another user.");
+    case "unavailable":
+      return errorResponse("This library roll could not be copied. Please try again.");
+  }
 }
 
 function runError(status: string): string {
@@ -200,15 +191,15 @@ function runError(status: string): string {
 }
 
 async function acceptDeferredSavedRoll(
-  stub: SavedRollWorkStub,
-  interaction: SavedRollInteraction,
+  stub: RollWorkPort,
+  interaction: RunnableSavedRollInteraction,
   sessionId: string,
   selection: { scope: SavedRollScope; id: string; revision: number },
   deferredAt: number,
 ): Promise<void> {
   let status = "unavailable";
   try {
-    const result: unknown = await stub.acceptSavedRollDelivery({
+    const request: SavedRollDeliveryRequest = {
       version: 1,
       sessionId,
       selection,
@@ -228,31 +219,26 @@ async function acceptDeferredSavedRoll(
       },
       sourceInteraction: interaction.kind,
       responseMode: savedRollResponseMode(interaction),
-    });
-    if (
-      typeof result === "object" &&
-      result !== null &&
-      "status" in result &&
-      typeof result.status === "string"
-    ) {
-      status = result.status;
-      if (status === "created" || status === "existing") {
-        console.info(
-          JSON.stringify({
-            telemetryVersion: 1,
-            level: "info",
-            message: "Discord roll lifecycle advanced",
-            interactionId: interaction.id,
-            stage: "accepted",
-            status,
-            commandName: "library",
-          }),
-        );
-        return;
-      }
+    };
+    status = parseSavedRollAcceptanceStatus(
+      await stub.acceptSavedRollDelivery(request),
+    );
+    if (status === "created" || status === "existing") {
+      console.info(
+        JSON.stringify({
+          telemetryVersion: 1,
+          level: "info",
+          message: "Discord roll lifecycle advanced",
+          interactionId: interaction.id,
+          stage: "accepted",
+          status,
+          commandName: "library",
+        }),
+      );
+      return;
     }
   } catch {
-    status = "unavailable";
+    // Invalid or unavailable acceptance is reported below.
   }
   try {
     await fetch(
@@ -276,7 +262,7 @@ async function prepareDeferredSavedRoll(
   env: SavedRollHandlerEnv,
   deferredAt: number,
 ): Promise<void> {
-  let content = "This library roll could not be run. Please try again.";
+  const content = "This library roll could not be run. Please try again.";
   try {
     const result = await handleSavedRollInteraction(
       interaction,
@@ -284,25 +270,7 @@ async function prepareDeferredSavedRoll(
       undefined,
       deferredAt,
     );
-    if (
-      typeof result === "object" &&
-      result !== null &&
-      "type" in result &&
-      (result.type === 5 || result.type === 6)
-    ) {
-      return;
-    }
-    if (
-      typeof result === "object" &&
-      result !== null &&
-      "data" in result &&
-      typeof result.data === "object" &&
-      result.data !== null &&
-      "content" in result.data &&
-      typeof result.data.content === "string"
-    ) {
-      content = result.data.content;
-    }
+    if (result.type === 5 || result.type === 6) return;
   } catch {
     // The private original response below is the terminal user-facing failure.
   }
@@ -325,7 +293,7 @@ export async function handleSavedRollInteraction(
   env: SavedRollHandlerEnv,
   ctx?: ExecutionContext,
   deferredAt?: number,
-): Promise<unknown> {
+): Promise<SavedRollInteractionResponse> {
   let lists;
   if (interaction.kind === "autocomplete") {
     try {
@@ -371,17 +339,19 @@ export async function handleSavedRollInteraction(
     interaction.kind === "component" || interaction.kind === "modal"
       ? interaction.sessionId
       : interaction.id;
-  const stub = env.ROLL_WORK.getByName(
-    sessionId,
-  ) as unknown as SavedRollWorkStub;
+  const stub = env.ROLL_WORK.getByName(sessionId);
 
   if (interaction.kind === "modal") {
-    const result = await stub.copySavedRollToMine({
-      ...pickerContext(interaction),
-      username: interaction.username,
-      name: interaction.name,
-    });
-    return copyResponse(result, sessionId);
+    try {
+      const result = parseCopyResult(await stub.copySavedRollToMine({
+        ...pickerContext(interaction),
+        username: interaction.username,
+        name: interaction.name,
+      }));
+      return copyResponse(result, sessionId);
+    } catch {
+      return copyResponse({ status: "unavailable" }, sessionId);
+    }
   }
 
   if (interaction.kind === "command") {
@@ -395,25 +365,25 @@ export async function handleSavedRollInteraction(
       return errorResponse("The library is unavailable. Please try again.");
     }
     if (interaction.selection === null) {
-      let state = await stub.openSavedRollPicker(pickerContext(interaction));
+      let state = parsePickerState(
+        await stub.openSavedRollPicker(pickerContext(interaction)),
+      );
       if (
         lists.mine.savedRolls.length === 0 &&
         lists.server.savedRolls.length > 0 &&
         state.status !== "conflict" &&
         state.status !== "expired"
       ) {
-        state = await stub.updateSavedRollPicker({
+        state = parsePickerState(await stub.updateSavedRollPicker({
           ...pickerContext(interaction),
           action: "server",
           selection: null,
-        });
+        }));
       }
       if (
-        (state.status !== "created" &&
-          state.status !== "existing" &&
-          state.status !== "updated") ||
-        state.scope === undefined ||
-        state.page === undefined
+        state.status !== "created" &&
+        state.status !== "existing" &&
+        state.status !== "updated"
       ) {
         return errorResponse(runError(state.status));
       }
@@ -438,10 +408,12 @@ export async function handleSavedRollInteraction(
           : "No visible library roll has that name.",
       );
     }
-    const reserved = await stub.reserveDirectSavedRoll({
-      ...pickerContext(interaction),
-      selection,
-    });
+    const reserved = parseSavedRollReservation(
+      await stub.reserveDirectSavedRoll({
+        ...pickerContext(interaction),
+        selection,
+      }),
+    );
     if (reserved.status !== "reserved" && reserved.status !== "existing") {
       return errorResponse(runError(reserved.status));
     }
@@ -474,20 +446,19 @@ export async function handleSavedRollInteraction(
       if ("status" in selection) {
         return errorResponse("That library roll is no longer available.");
       }
-      const selected = await stub.updateSavedRollPicker({
+      const selected = parsePickerState(await stub.updateSavedRollPicker({
         ...pickerContext(interaction),
         action: "select",
         selection,
-      });
+      }));
       if (selected.status !== "updated") {
         return errorResponse(runError(selected.status));
       }
     }
-    const reserved = await stub.reserveSavedRollRun(pickerContext(interaction));
-    if (
-      (reserved.status !== "reserved" && reserved.status !== "existing") ||
-      reserved.selection === undefined
-    ) {
+    const reserved = parseSavedRollReservation(
+      await stub.reserveSavedRollRun(pickerContext(interaction)),
+    );
+    if (reserved.status !== "reserved" && reserved.status !== "existing") {
       return errorResponse(runError(reserved.status));
     }
     await acceptDeferredSavedRoll(
@@ -500,12 +471,16 @@ export async function handleSavedRollInteraction(
     return savedRollRunDefer(interaction);
   }
   if (interaction.action === "copy") {
-    const result = await stub.copySavedRollToMine({
-      ...pickerContext(interaction),
-      username: interaction.username,
-      name: null,
-    });
-    return copyResponse(result, sessionId);
+    try {
+      const result = parseCopyResult(await stub.copySavedRollToMine({
+        ...pickerContext(interaction),
+        username: interaction.username,
+        name: null,
+      }));
+      return copyResponse(result, sessionId);
+    } catch {
+      return copyResponse({ status: "unavailable" }, sessionId);
+    }
   }
 
   try {
@@ -517,16 +492,12 @@ export async function handleSavedRollInteraction(
   } catch {
     return errorResponse("The library is unavailable. Please try again.");
   }
-  const state = await stub.updateSavedRollPicker({
+  const state = parsePickerState(await stub.updateSavedRollPicker({
     ...pickerContext(interaction),
     action: interaction.action,
     selection: null,
-  });
-  if (
-    state.status !== "updated" ||
-    state.scope === undefined ||
-    state.page === undefined
-  ) {
+  }));
+  if (state.status !== "updated") {
     return errorResponse(runError(state.status));
   }
   return buildSavedRollPickerResponse({

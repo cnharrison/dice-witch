@@ -69,25 +69,25 @@ describe("CanvasKit V4 spherical material raster", () => {
   });
 
   it("rejects a malformed source texture", () => {
-    const malformed = {
+    const malformed: TextureRasterV4 = {
       version: 1,
       width: 192,
       height: 192,
       colorSpace: "srgb",
       alphaMode: "opaque",
       pixels: new Uint8Array(4),
-    } as TextureRasterV4;
+    };
 
     expect(() => createSphericalMaterialRasterV4(malformed)).toThrow(
       "CanvasKit V4 spherical source texture is invalid",
     );
+    const malformedDimensions = {
+      ...malformed,
+      pixels: new Uint8Array(4),
+    };
+    Object.assign(malformedDimensions, { width: 1, height: 1 });
     expect(() =>
-      createSphericalMaterialRasterV4({
-        ...malformed,
-        width: 1,
-        height: 1,
-        pixels: new Uint8Array(4),
-      } as unknown as TextureRasterV4),
+      createSphericalMaterialRasterV4(malformedDimensions),
     ).toThrow("CanvasKit V4 spherical source texture is invalid");
   });
 });

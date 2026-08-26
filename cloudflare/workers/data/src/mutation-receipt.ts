@@ -1,4 +1,7 @@
+import { z } from "zod";
+
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const mutationIdSchema = z.string().min(1).max(255);
 
 export type MutationReceipt = {
   entityType: "guild" | "user" | "membership";
@@ -25,11 +28,7 @@ export function validateMutationMetadata(
   mutationId: string,
   occurredAt: number,
 ): void {
-  if (
-    typeof mutationId !== "string" ||
-    mutationId.length === 0 ||
-    mutationId.length > 255
-  ) {
+  if (!mutationIdSchema.safeParse(mutationId).success) {
     throw new Error("Mutation id is invalid");
   }
   if (!Number.isSafeInteger(occurredAt) || occurredAt < 0) {

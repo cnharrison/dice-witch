@@ -15,15 +15,27 @@ import {
 } from "./docs";
 import { markdownComponents } from "./markdown-components";
 
-function PublicDocsHeader() {
+interface PublicDocsHeaderViewProps {
+  authenticateWithRedirect: (options: {
+    strategy: string;
+    returnTo?: string;
+  }) => void;
+  isLoaded: boolean;
+  ThemeToggleSlot: React.ComponentType;
+}
+
+export function PublicDocsHeaderView({
+  authenticateWithRedirect,
+  isLoaded,
+  ThemeToggleSlot,
+}: PublicDocsHeaderViewProps) {
   const location = useLocation();
-  const { signIn, isLoaded } = useSignIn();
   const returnTo = `${location.pathname}${location.search}${location.hash}`;
 
   const login = () => {
     if (!isLoaded) return;
     try {
-      signIn.authenticateWithRedirect({
+      authenticateWithRedirect({
         strategy: "oauth_discord",
         returnTo,
       });
@@ -85,10 +97,22 @@ function PublicDocsHeader() {
               You must have already added Dice Witch to your server to log in with Discord.
             </div>
           </div>
-          <ThemeToggle />
+          <ThemeToggleSlot />
         </nav>
       </div>
     </header>
+  );
+}
+
+function PublicDocsHeader() {
+  const { signIn, isLoaded } = useSignIn();
+
+  return (
+    <PublicDocsHeaderView
+      authenticateWithRedirect={signIn.authenticateWithRedirect}
+      isLoaded={isLoaded}
+      ThemeToggleSlot={ThemeToggle}
+    />
   );
 }
 
@@ -194,8 +218,17 @@ function MissingDocsArticle() {
   );
 }
 
-export default function DocsApp() {
-  const { isSignedIn } = useAuth();
+interface DocsAppViewProps {
+  isSignedIn: boolean;
+  NavbarSlot: React.ComponentType;
+  PublicHeaderSlot: React.ComponentType;
+}
+
+export function DocsAppView({
+  isSignedIn,
+  NavbarSlot,
+  PublicHeaderSlot,
+}: DocsAppViewProps) {
   const location = useLocation();
   const wildcard = useParams()["*"] ?? "";
   const slug = wildcard.replace(/^\/+|\/+$/g, "");
@@ -224,7 +257,7 @@ export default function DocsApp() {
       >
         Skip to guide
       </a>
-      {isSignedIn ? <Navbar /> : <PublicDocsHeader />}
+      {isSignedIn ? <NavbarSlot /> : <PublicHeaderSlot />}
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-8 px-4 py-6 sm:px-6 lg:grid-cols-[17rem_minmax(0,1fr)] lg:px-8 lg:py-10">
         <DocsNavigation />
         <main
@@ -237,5 +270,17 @@ export default function DocsApp() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function DocsApp() {
+  const { isSignedIn } = useAuth();
+
+  return (
+    <DocsAppView
+      isSignedIn={isSignedIn}
+      NavbarSlot={Navbar}
+      PublicHeaderSlot={PublicDocsHeader}
+    />
   );
 }

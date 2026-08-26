@@ -38,12 +38,13 @@ function materialAccentStyle(
   color: string,
   includeBorder = false,
 ): MaterialAccentStyle {
-  return {
+  const style: MaterialAccentStyle = {
     "--material-accent": color,
     backgroundColor:
       "color-mix(in srgb, var(--material-accent) 24%, hsl(var(--background)))",
-    ...(includeBorder ? { borderColor: color } : {}),
   };
+  if (includeBorder) style.borderColor = color;
+  return style;
 }
 
 function assignMaterialAccents(
@@ -389,16 +390,17 @@ export function MixBar({
           } else if (percent >= MIN_LABELED_PERCENT) {
             label = `${percent}%`;
           }
+          const segmentStyle: React.CSSProperties = {
+            flexBasis: 0,
+            flexGrow: weight,
+          };
+          if (segmentColor !== undefined) {
+            Object.assign(segmentStyle, materialAccentStyle(segmentColor));
+          }
           return (
             <div
               key={`${names[index]}-${index}`}
-              style={{
-                flexBasis: 0,
-                flexGrow: weight,
-                ...(segmentColor === undefined
-                  ? {}
-                  : materialAccentStyle(segmentColor)),
-              }}
+              style={segmentStyle}
               title={`${names[index]}: ${percent}%`}
               className={`grid min-w-0 place-items-center overflow-hidden whitespace-nowrap text-[0.65rem] font-semibold ${backgroundClass}`}
             >

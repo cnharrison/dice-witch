@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { routeInteractionRequest } from "../../workers/web-api/src/index";
 
+function unexpectedConnect(): never {
+  throw new Error("Unexpected socket connection");
+}
+
 describe("same-origin interaction ingress", () => {
   it("forwards the exact interaction path without consuming its signed body", async () => {
     const interactionFetch = vi.fn(async (request: Request) => {
@@ -21,10 +25,10 @@ describe("same-origin interaction ingress", () => {
       body: '{"type":1}',
     });
 
-    const response = routeInteractionRequest(
-      request,
-      { fetch: interactionFetch } as unknown as Fetcher,
-    );
+    const response = routeInteractionRequest(request, {
+      fetch: interactionFetch,
+      connect: unexpectedConnect,
+    });
 
     await expect(response).resolves.toMatchObject({ status: 200 });
     expect(interactionFetch).toHaveBeenCalledOnce();
@@ -32,7 +36,10 @@ describe("same-origin interaction ingress", () => {
 
   it("does not forward lookalike or ordinary web/API paths", () => {
     const interactionFetch = vi.fn();
-    const interactions = { fetch: interactionFetch } as unknown as Fetcher;
+    const interactions = {
+      fetch: interactionFetch,
+      connect: unexpectedConnect,
+    };
 
     expect(
       routeInteractionRequest(

@@ -112,10 +112,16 @@ describe("CanvasKit V4 resource ownership", () => {
 
   it("rejects promise-like synchronous callbacks and still cleans up", () => {
     const events: string[] = [];
-    const asynchronousOperation = ((scope: CanvasKitResourceScopeV4) => {
+    const synchronousOperation = (scope: CanvasKitResourceScopeV4) => {
       scope.own(resource("async", events), "async");
-      return Promise.resolve("complete");
-    }) as unknown as (scope: CanvasKitResourceScopeV4) => string;
+      return "complete";
+    };
+    const asynchronousOperation = new Proxy(synchronousOperation, {
+      apply(target, thisArgument, argumentsList) {
+        target.call(thisArgument, argumentsList[0]);
+        return Promise.resolve("complete");
+      },
+    });
 
     expect(() =>
       withCanvasKitResourcesSyncV4(asynchronousOperation),

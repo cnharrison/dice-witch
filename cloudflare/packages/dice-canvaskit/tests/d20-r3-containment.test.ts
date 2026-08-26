@@ -75,12 +75,18 @@ async function resultLabelInkHeight(
 
   const heights: number[] = [];
   while (candidates.size > 0) {
-    const start = candidates.values().next().value as number;
+    const start = candidates.values().next().value;
+    if (start === undefined) {
+      throw new Error("D20 result label candidate is missing");
+    }
     candidates.delete(start);
     const pending = [start];
     const component = [start];
     while (pending.length > 0) {
-      const point = pending.pop() as number;
+      const point = pending.pop();
+      if (point === undefined) {
+        throw new Error("D20 result label candidate is missing");
+      }
       const x = point % decoded.width;
       const y = Math.floor(point / decoded.width);
       for (let nextY = y - 1; nextY <= y + 1; nextY += 1) {
@@ -186,13 +192,15 @@ describe("CanvasKit V4 r3 d20 containment", () => {
       ).rejects.toThrow(
         "CanvasKit V4 d20 r3 render policy requires d20-standard-r2",
       );
+      const invalidPolicyOptions = {
+        geometry: D20_STANDARD_GEOMETRY_V4,
+        result: 20,
+        size: 150,
+        renderPolicy: "legacy",
+      } as const;
+      Object.assign(invalidPolicyOptions, { renderPolicy: "invalid" });
       await expect(
-        renderer.render({
-          geometry: D20_STANDARD_GEOMETRY_V4,
-          result: 20,
-          size: 150,
-          renderPolicy: "invalid" as "legacy",
-        }),
+        renderer.render(invalidPolicyOptions),
       ).rejects.toThrow("CanvasKit V4 polyhedral render policy is invalid");
     } finally {
       renderer.dispose();
@@ -295,9 +303,9 @@ describe("CanvasKit V4 r3 d20 containment", () => {
       for (let result = 1; result <= 20; result += 1) {
         await renderer
           .render({ geometry, result, size: 150, renderPolicy: "standard-r7" })
-          .catch((error: unknown) => {
-            expect(error).toBeInstanceOf(Error);
-            expect((error as Error).message).toBe(
+          .catch((cause: unknown) => {
+            if (!(cause instanceof Error)) throw cause;
+            expect(cause.message).toBe(
               "CanvasKit V4 d20 label cannot preserve edge clearance",
             );
             refusalCount += 1;
@@ -343,7 +351,7 @@ describe("CanvasKit V4 r3 d20 containment", () => {
             diceCount: 20,
             rowCount: 2,
           });
-          expect([...rendered.png.slice(0, 8)]).toEqual([
+          expect(Array.from(rendered.png.slice(0, 8))).toEqual([
             137, 80, 78, 71, 13, 10, 26, 10,
           ]);
         }

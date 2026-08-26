@@ -3,16 +3,14 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AuthWrapper } from "./AuthWrapper";
+import { AuthWrapperView } from "./AuthWrapper";
 
-const auth = vi.hoisted(() => ({
+const auth = {
   isLoading: false,
   isSignedIn: false,
-}));
+};
 
-vi.mock("../lib/AuthProvider", () => ({
-  useAuth: () => auth,
-}));
+const useAuthState = () => auth;
 
 afterEach(() => {
   cleanup();
@@ -35,9 +33,9 @@ describe("AuthWrapper", () => {
           <Route
             path="/app/library"
             element={
-              <AuthWrapper>
+              <AuthWrapperView useAuthState={useAuthState}>
                 <p>Private app</p>
-              </AuthWrapper>
+              </AuthWrapperView>
             }
           />
         </Routes>
@@ -57,9 +55,9 @@ describe("AuthWrapper", () => {
 
     render(
       <MemoryRouter>
-        <AuthWrapper>
+        <AuthWrapperView useAuthState={useAuthState}>
           <p>Private app</p>
-        </AuthWrapper>
+        </AuthWrapperView>
       </MemoryRouter>,
     );
 

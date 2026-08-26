@@ -110,6 +110,7 @@ describe("V4 Three.js critical-effect resources", () => {
           toneMapped: false,
         });
       }
+      // SAFETY: The test controls this fixture and verifies its use in the scenario below.
       const stateMaterial = resources.materials.at(-1) as ShaderMaterial;
       expect(stateMaterial).toBeInstanceOf(ShaderMaterial);
       expect(stateMaterial.name).toBe(
@@ -152,7 +153,9 @@ describe("V4 Three.js critical-effect resources", () => {
         ...effect(treatment),
         state: "critical-failure",
       });
+      // SAFETY: The test controls this fixture and verifies its use in the scenario below.
       const successState = success.materials.at(-1) as ShaderMaterial;
+      // SAFETY: The test controls this fixture and verifies its use in the scenario below.
       const failureState = failure.materials.at(-1) as ShaderMaterial;
 
       expect(successState.uniforms.effectState?.value).toBe(1);
@@ -197,13 +200,13 @@ describe("V4 Three.js critical-effect resources", () => {
       createThreeCriticalEffectResourcesV4(input, {
         ...effect("classic-glow"),
         treatment: "unknown",
-      } as unknown as RenderCriticalEffectV4),
+      }),
     ).toThrow("Three.js V4 critical effect treatment is invalid: unknown");
     expect(() =>
       createThreeCriticalEffectResourcesV4(input, {
         ...effect("classic-glow"),
         state: "normal",
-      } as unknown as RenderCriticalEffectV4),
+      }),
     ).toThrow("Three.js V4 critical effect state is invalid");
     expect(() =>
       createThreeCriticalEffectResourcesV4(input, {

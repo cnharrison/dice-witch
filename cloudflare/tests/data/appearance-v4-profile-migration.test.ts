@@ -1,6 +1,11 @@
 import {
   parseAppearanceProfileV4,
   parseGuildAppearanceProfileV4,
+  type AppearanceAssignmentsV3,
+  type AppearanceProfileV3,
+  type AppearanceProfileV4,
+  type DiceViewPreferencesV4,
+  type GuildAppearanceProfileV3,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_VALIDATION_CATALOG_V3,
@@ -9,11 +14,27 @@ import {
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { expect, it } from "vitest";
+import { z } from "zod";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+const TestMigrationsBindingSchema = z.object({
+  TEST_MIGRATIONS: z.array(z.strictObject({
+    name: z.string(),
+    queries: z.array(z.string()),
+  })),
+});
+const PersonalProfileRowSchema = z.strictObject({
+  revision: z.number().int(),
+  profile_json: z.string(),
+  updated_at: z.number().int(),
+});
+const GuildProfileRowSchema = PersonalProfileRowSchema.extend({
+  updated_by_user_id: z.string(),
+});
+const JsonDocumentSchema = z.json();
+const dataEnv = {
+  DATA: env.DATA,
+  ...TestMigrationsBindingSchema.parse(env),
+} satisfies { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 
 const timestamp = 1_767_225_600_000;
 const userId = "100000000000000003";
@@ -30,7 +51,7 @@ const design = {
 const assignments = {
   all: { source: "custom", id: design.id },
   overrides: { d20: { source: "builtin", id: "glass-cannon" } },
-};
+} satisfies AppearanceAssignmentsV3;
 const diceView = {
   elevationDegrees: 40,
   mode: "normal",
@@ -38,7 +59,7 @@ const diceView = {
     all: { mode: "random", customDegrees: 0 },
     overrides: {},
   },
-};
+} satisfies DiceViewPreferencesV4;
 
 it("upgrades stored Personal and Server V3 profiles to V4 without changing profile metadata", async () => {
   const migration = dataEnv.TEST_MIGRATIONS.find(
@@ -50,13 +71,20 @@ it("upgrades stored Personal and Server V3 profiles to V4 without changing profi
     dataEnv.TEST_MIGRATIONS.filter(({ name }) => name < migration.name),
   );
 
-  const personalV3 = { version: 3, designs: [design], assignments };
-  const guildV3 = { ...personalV3, mode: "enforced" };
+  const personalV3 = {
+    version: 3,
+    designs: [design],
+    assignments,
+  } satisfies AppearanceProfileV3;
+  const guildV3 = {
+    ...personalV3,
+    mode: "enforced",
+  } satisfies GuildAppearanceProfileV3;
   const existingV4 = {
     ...personalV3,
     version: 4,
     diceView: { ...diceView, mode: "clear" },
-  };
+  } satisfies AppearanceProfileV4;
   await dataEnv.DATA.batch([
     dataEnv.DATA.prepare(
       "INSERT INTO users (id, created_at, updated_at) VALUES (?, ?, ?)",
@@ -88,17 +116,15 @@ it("upgrades stored Personal and Server V3 profiles to V4 without changing profi
     migration.queries.map((query) => dataEnv.DATA.prepare(query)),
   );
 
-  const personal = await dataEnv.DATA.prepare(
-    `SELECT revision, profile_json, updated_at
-     FROM user_appearance_profiles WHERE user_id = ?`,
-  ).bind(userId).first<{
-    revision: number;
-    profile_json: string;
-    updated_at: number;
-  }>();
+  const personal = PersonalProfileRowSchema.parse(
+    await dataEnv.DATA.prepare(
+      `SELECT revision, profile_json, updated_at
+       FROM user_appearance_profiles WHERE user_id = ?`,
+    ).bind(userId).first(),
+  );
   expect(personal).toMatchObject({ revision: 7, updated_at: timestamp });
-  const migratedPersonal: unknown = JSON.parse(
-    personal?.profile_json ?? "null",
+  const migratedPersonal = JsonDocumentSchema.parse(
+    JSON.parse(personal.profile_json),
   );
   expect(
     parseAppearanceProfileV4(
@@ -112,21 +138,20 @@ it("upgrades stored Personal and Server V3 profiles to V4 without changing profi
     diceView,
   });
 
-  const guild = await dataEnv.DATA.prepare(
-    `SELECT revision, profile_json, updated_by_user_id, updated_at
-     FROM guild_appearance_profiles WHERE guild_id = ?`,
-  ).bind(guildId).first<{
-    revision: number;
-    profile_json: string;
-    updated_by_user_id: string;
-    updated_at: number;
-  }>();
+  const guild = GuildProfileRowSchema.parse(
+    await dataEnv.DATA.prepare(
+      `SELECT revision, profile_json, updated_by_user_id, updated_at
+       FROM guild_appearance_profiles WHERE guild_id = ?`,
+    ).bind(guildId).first(),
+  );
   expect(guild).toMatchObject({
     revision: 5,
     updated_by_user_id: userId,
     updated_at: timestamp,
   });
-  const migratedGuild: unknown = JSON.parse(guild?.profile_json ?? "null");
+  const migratedGuild = JsonDocumentSchema.parse(
+    JSON.parse(guild.profile_json),
+  );
   expect(
     parseGuildAppearanceProfileV4(
       migratedGuild,

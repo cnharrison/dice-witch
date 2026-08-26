@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import {
   D10_STANDARD_GEOMETRY_V4,
   D20_STANDARD_GEOMETRY_R2_V4,
@@ -17,42 +19,57 @@ import {
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import fixture from "./fixtures/d20-r3.json";
-
-const createPhysicalLabelAtlasSourceV4 = vi.hoisted(() =>
-  vi.fn(
-    (physical: {
-      geometryId: string;
-      result: number;
-      labels: readonly unknown[];
-    }) => ({
-      canvas: {} as HTMLCanvasElement,
-      geometryId: physical.geometryId,
-      result: physical.result,
-      labelCount: physical.labels.length,
-      minimumVisibleLabelGapPixelsAt150: 1,
-      minimumVisibleLabelFontScale: 1,
-      resultLabelFontScale: 1,
-    }),
-  ),
-);
-
-vi.mock("./face-atlas", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./face-atlas")>()),
+import {
+  createFaceAtlasLayoutV4,
   createPhysicalLabelAtlasSourceV4,
-}));
-
-import { createFaceAtlasLayoutV4 } from "./face-atlas";
+  createSphericalLabelAtlasSourceV4,
+  createTileClippedPhysicalLabelAtlasSourceV4,
+} from "./face-atlas";
 import {
   cloneThreeDiceGroupV4,
   createThreeDiceResourcesV4,
   disposeThreeDiceResourcesV4,
   measureThreeDiceResourceOwnershipV4,
   prepareThreeDiceV4,
+  prepareThreeDiceWithLabelAtlasPortV4,
+  type ThreeDiceLabelAtlasSourcePortV4,
   type ThreeDiceResourcesV4,
 } from "./dice-resources";
 
 const sourceDie = parsePublicRenderModelV4(fixture).groups[0]?.[0];
 if (sourceDie === undefined) throw new Error("Dice-resource fixture is empty");
+
+const createPhysicalLabelAtlas = vi.fn<typeof createPhysicalLabelAtlasSourceV4>(
+  (physical) => ({
+    canvas: document.createElement("canvas"),
+    geometryId: physical.geometryId,
+    result: physical.result,
+    labelCount: physical.labels.length,
+    minimumVisibleLabelGapPixelsAt150: 1,
+    minimumVisibleLabelFontScale: 1,
+    resultLabelFontScale: 1,
+  }),
+);
+const labelAtlas = {
+  createPhysical: createPhysicalLabelAtlas,
+  createTileClippedPhysical: createTileClippedPhysicalLabelAtlasSourceV4,
+  createSpherical: createSphericalLabelAtlasSourceV4,
+} satisfies ThreeDiceLabelAtlasSourcePortV4;
+
+function prepareWithLabelAtlas(
+  ...args: Parameters<typeof prepareThreeDiceV4>
+) {
+  const [descriptor, die, fontFamily, policy, revision, raster] = args;
+  return prepareThreeDiceWithLabelAtlasPortV4(
+    descriptor,
+    die,
+    fontFamily,
+    policy,
+    labelAtlas,
+    revision,
+    raster,
+  );
+}
 
 function createResources(): ThreeDiceResourcesV4 {
   const geometry = new BufferGeometry();
@@ -95,25 +112,25 @@ describe("V4 Three.js dice resource ownership", () => {
       faceLabelSet: "percentile-ones",
     };
 
-    prepareThreeDiceV4(
+    prepareWithLabelAtlas(
       D10_STANDARD_GEOMETRY_V4,
       percentileOnes,
       "Liberation Sans",
       "full-atlas",
       "canvaskit-v4-r19",
     );
-    expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[7]).toBe(
+    expect(createPhysicalLabelAtlas.mock.calls.at(-1)?.[7]).toBe(
       "percentile-ones",
     );
 
-    prepareThreeDiceV4(
+    prepareWithLabelAtlas(
       D10_STANDARD_GEOMETRY_V4,
       native,
       "Liberation Sans",
       "full-atlas",
       "canvaskit-v4-r19",
     );
-    expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[7]).toBeUndefined();
+    expect(createPhysicalLabelAtlas.mock.calls.at(-1)?.[7]).toBeUndefined();
   });
 
   it("protects a single locally low-contrast texel only in r31", () => {
@@ -138,7 +155,7 @@ describe("V4 Three.js dice resource ownership", () => {
       pixels,
     };
 
-    prepareThreeDiceV4(
+    prepareWithLabelAtlas(
       D10_STANDARD_GEOMETRY_V4,
       { ...sourceDie, target: "d10", result: 10 },
       "Liberation Sans",
@@ -146,9 +163,9 @@ describe("V4 Three.js dice resource ownership", () => {
       "canvaskit-v4-r30",
       contrastRaster,
     );
-    expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[6]).toBeNull();
+    expect(createPhysicalLabelAtlas.mock.calls.at(-1)?.[6]).toBeNull();
 
-    prepareThreeDiceV4(
+    prepareWithLabelAtlas(
       D10_STANDARD_GEOMETRY_V4,
       { ...sourceDie, target: "d10", result: 10 },
       "Liberation Sans",
@@ -156,7 +173,7 @@ describe("V4 Three.js dice resource ownership", () => {
       "canvaskit-v4-r31",
       contrastRaster,
     );
-    expect(createPhysicalLabelAtlasSourceV4.mock.calls.at(-1)?.[6]).toEqual({
+    expect(createPhysicalLabelAtlas.mock.calls.at(-1)?.[6]).toEqual({
       color: "#ffffff",
       opacity: 0.92,
       widthRatio: 0.05,
@@ -180,7 +197,7 @@ describe("V4 Three.js dice resource ownership", () => {
       ...sourceDie,
       appearance: { ...sourceDie.appearance, outlineColor: "#ffffff" },
     };
-    const prepared = prepareThreeDiceV4(
+    const prepared = prepareWithLabelAtlas(
       D20_STANDARD_GEOMETRY_R2_V4,
       die,
       "Liberation Sans",

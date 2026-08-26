@@ -10,26 +10,27 @@ import {
   type SaveRollTitleMode,
 } from "../../../packages/discord-contracts/src";
 import { parseSavedRollNameV1 } from "../../../packages/saved-rolls/src/name";
+import type {
+  FetchPort,
+  SaveRollIntentNamespace,
+} from "./ports";
 import {
   fetchVisibleSavedRolls,
   type VisibleSavedRollList,
   type VisibleSavedRollV1,
 } from "./saved-roll-picker";
+import {
+  parseSaveMutationStatus,
+  parseSaveRollIntentResult,
+  type SaveRollIntentResult,
+} from "./service-results";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 
-type SaveRollIntentResult =
-  | { status: "available"; intent: SaveRollIntent }
-  | { status: "expired" | "missing" };
-
-type SaveRollIntentStub = {
-  getSaveRollIntent(): Promise<SaveRollIntentResult>;
-};
-
 type SaveRollHandlerEnv = {
-  DATA_SERVICE: Fetcher;
-  ROLL_WORK: DurableObjectNamespace;
-  WEB_DELIVERY_WORK: DurableObjectNamespace;
+  DATA_SERVICE: FetchPort;
+  ROLL_WORK: SaveRollIntentNamespace;
+  WEB_DELIVERY_WORK: SaveRollIntentNamespace;
   WEB_APP_URL: string;
 };
 
@@ -39,10 +40,6 @@ type PersonalLibraryState = {
   defaultTitleMode: SaveRollTitleMode;
   nameConflict: boolean;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function matchingRoll(
   savedRoll: VisibleSavedRollV1,
@@ -125,8 +122,9 @@ async function resolveIntent(
   const objectName = source.kind === "discord"
     ? source.id
     : `${source.userId}:${source.id}`;
-  const stub = namespace.getByName(objectName) as unknown as SaveRollIntentStub;
-  return stub.getSaveRollIntent();
+  return parseSaveRollIntentResult(
+    await namespace.getByName(objectName).getSaveRollIntent(),
+  );
 }
 
 async function fetchPersonalLibrary(
@@ -184,7 +182,7 @@ function selectedTitle(
 export async function openSaveRollModal(
   interaction: ParsedSaveRollInteractionV1,
   env: SaveRollHandlerEnv,
-): Promise<Record<string, unknown>> {
+) {
   let resolved: SaveRollIntentResult;
   try {
     resolved = await resolveIntent(env, interaction.source);
@@ -225,13 +223,13 @@ async function deterministicUuidV4(value: string): Promise<string> {
 async function postData(
   env: SaveRollHandlerEnv,
   path: string,
-  body: unknown,
+  body: string,
 ): Promise<Response> {
   return env.DATA_SERVICE.fetch(
     new Request(`https://data.internal${path}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      body,
     }),
   );
 }
@@ -242,11 +240,15 @@ async function ensureUser(
   occurredAt: number,
 ): Promise<boolean> {
   try {
-    const response = await postData(env, "/internal/saved-rolls/v1/ensure-user", {
-      userId: interaction.userId,
-      username: interaction.username,
-      occurredAt,
-    });
+    const response = await postData(
+      env,
+      "/internal/saved-rolls/v1/ensure-user",
+      JSON.stringify({
+        userId: interaction.userId,
+        username: interaction.username,
+        occurredAt,
+      }),
+    );
     return response.ok;
   } catch {
     return false;
@@ -341,7 +343,7 @@ async function submitSaveRoll(
       intent.source === "library"
         ? "/internal/saved-rolls/v2/copy"
         : "/internal/saved-rolls/v2/create",
-      {
+      JSON.stringify({
         owner: { type: "user", userId: interaction.userId },
         actorUserId: interaction.userId,
         authorizationUpdatedAt: null,
@@ -358,32 +360,32 @@ async function submitSaveRoll(
         pinned: false,
         mutationId: `discord-save-roll:${interaction.interactionId}`,
         occurredAt,
-      },
+      }),
     );
   } catch {
     return buildSaveRollErrorResponse("Save roll is temporarily unavailable.");
   }
-  let result: unknown;
+  let status;
   try {
-    result = await response.json();
+    status = parseSaveMutationStatus(await response.json());
   } catch {
     return buildSaveRollErrorResponse("Save roll is temporarily unavailable.");
   }
-  if (isRecord(result) && (result.status === "applied" || result.status === "existing")) {
+  if (status === "applied" || status === "existing") {
     return buildSaveRollSuccessResponse(
       name.displayName,
       libraryUrl(env),
     );
   }
-  if (isRecord(result) && result.status === "name_conflict") {
+  if (status === "name_conflict") {
     return nameConflictResponse(interaction);
   }
-  if (isRecord(result) && result.status === "cap_reached") {
+  if (status === "cap_reached") {
     return buildSaveRollErrorResponse(
       "Your personal library is full. Remove a roll before saving another.",
     );
   }
-  if (isRecord(result) && result.status === "list_revision_conflict") {
+  if (status === "list_revision_conflict") {
     try {
       const latest = await fetchPersonalLibrary(env, interaction.userId);
       const duplicate = personalLibraryState(

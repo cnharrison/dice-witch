@@ -1,3 +1,4 @@
+import * as z from "zod";
 import {
   isMaterialFormCompatibleV4,
   isPolyhedralFormImplementedForTargetV4,
@@ -44,7 +45,6 @@ import type {
   AppearanceProfileV4,
   AppearanceRecipeV3,
   AppearanceSelection,
-  AppearanceTargetV4,
   PolyhedralFormV4,
   AppearanceValidationCatalogV3,
   CustomAppearanceDesignV3,
@@ -56,28 +56,33 @@ import type {
 } from "./types";
 import { parseAppearanceMaterialV4 } from "./validate-render-request";
 import {
+  boundedInteger,
   hasExactKeys,
   hexColor,
   isRecord,
   requireExactRecord,
   supportedValue,
+  type BoundaryRecord,
+  type ValidationInput,
 } from "./validation";
 
-const UUID_V4 =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const CATALOG_ID = /^[a-z][a-z0-9-]{0,63}$/;
-type SelectionParser<Value> = (value: unknown, path: string) => Value;
+const uuidV4Schema = z
+  .string()
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  )
+  .transform((value) => value.toLowerCase());
+const catalogIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
+const stringSchema = z.string();
+type SelectionParser<Value> = (value: ValidationInput, path: string) => Value;
 
-function parseWeight(value: unknown): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < APPEARANCE_SELECTION_WEIGHT_RANGE_V3.minimum ||
-    value > APPEARANCE_SELECTION_WEIGHT_RANGE_V3.maximum
-  ) {
-    throw new Error("Appearance selection weight must be from 1 through 1000");
-  }
-  return value;
+function parseWeight(value: ValidationInput): number {
+  return boundedInteger(
+    value,
+    APPEARANCE_SELECTION_WEIGHT_RANGE_V3.minimum,
+    APPEARANCE_SELECTION_WEIGHT_RANGE_V3.maximum,
+    "Appearance selection weight",
+  );
 }
 
 function validateTotalWeight(options: readonly { weight: number }[]): void {
@@ -90,12 +95,12 @@ function validateTotalWeight(options: readonly { weight: number }[]): void {
 }
 
 function parseSelection<Value>(
-  value: unknown,
+  value: ValidationInput,
   parseValue: SelectionParser<Value>,
   maximumOptions: number,
   label: string,
 ): AppearanceSelection<Value> {
-  if (!isRecord(value) || typeof value.mode !== "string") {
+  if (!isRecord(value)) {
     throw new Error(`${label} selection is invalid`);
   }
   if (value.mode === "fixed") {
@@ -150,7 +155,7 @@ function parseSelection<Value>(
 }
 
 function parseStringSelection<Value extends string>(
-  value: unknown,
+  value: ValidationInput,
   supported: readonly Value[],
   label: string,
 ): AppearanceSelection<Value> {
@@ -163,8 +168,8 @@ function parseStringSelection<Value extends string>(
   );
 }
 
-function parseColors(value: unknown): AppearanceColorsV3 {
-  if (!isRecord(value) || typeof value.mode !== "string") {
+function parseColors(value: ValidationInput): AppearanceColorsV3 {
+  if (!isRecord(value)) {
     throw new Error("Appearance colors are invalid");
   }
   if (
@@ -212,7 +217,7 @@ function parseColors(value: unknown): AppearanceColorsV3 {
 }
 
 function parseMaterialSelection(
-  value: unknown,
+  value: ValidationInput,
 ): AppearanceSelection<AppearanceMaterialV4> {
   return parseSelection(
     value,
@@ -283,7 +288,9 @@ function validateMaterialForms(
   }
 }
 
-export function parseAppearanceRecipeV3(value: unknown): AppearanceRecipeV3 {
+export function parseAppearanceRecipeV3(
+  value: ValidationInput,
+): AppearanceRecipeV3 {
   const recipe = requireExactRecord(
     value,
     [
@@ -333,91 +340,103 @@ export function parseAppearanceRecipeV3(value: unknown): AppearanceRecipeV3 {
     ["direction", "mode", "strength"],
     "Appearance lighting has invalid fields",
   );
+  const variation = supportedValue(
+    recipe.variation,
+    APPEARANCE_VARIATIONS_V3,
+    "Appearance variation is not supported",
+  );
+  const varyBy = supportedValue(
+    recipe.varyBy,
+    APPEARANCE_VARIATION_SCOPES_V3,
+    "Appearance variation scope is not supported",
+  );
+  let randomization: AppearanceRecipeV3["randomization"];
+  if (Object.hasOwn(recipe, "randomization")) {
+    randomization = supportedValue(
+      recipe.randomization,
+      APPEARANCE_RANDOMIZATION_POLICIES_V3,
+      "Appearance randomization policy is not supported",
+    );
+  }
+  let colorDistribution: AppearanceRecipeV3["colorDistribution"];
+  if (Object.hasOwn(recipe, "colorDistribution")) {
+    colorDistribution = supportedValue(
+      recipe.colorDistribution,
+      APPEARANCE_COLOR_DISTRIBUTIONS_V3,
+      "Appearance color distribution is not supported",
+    );
+  }
+  const colors = parseColors(recipe.colors);
+  const material = parseMaterialSelection(recipe.material);
+  let policy: AppearanceRecipeV3["form"]["policy"];
+  if (Object.hasOwn(form, "policy")) {
+    policy = supportedValue(
+      form.policy,
+      APPEARANCE_FORM_POLICIES_V3,
+      "Appearance form policy is not supported",
+    );
+  }
+  const polyhedral = parseStringSelection(
+    form.polyhedral,
+    POLYHEDRAL_FORMS_V4,
+    "Appearance form",
+  );
+  const font = parseStringSelection(recipe.font, FONT_IDS_V4, "Appearance font");
+  const engraving = parseStringSelection(
+    recipe.engraving,
+    ENGRAVING_FINISHES_V4,
+    "Appearance engraving",
+  );
+  const gradientScope = parseStringSelection(
+    gradient.scope,
+    GRADIENT_SCOPES_V4,
+    "Appearance gradient scope",
+  );
+  const gradientDirection = parseStringSelection(
+    gradient.direction,
+    LINEAR_DIRECTIONS_V4,
+    "Appearance gradient direction",
+  );
+  const lightingMode = parseStringSelection(
+    lighting.mode,
+    LIGHTING_MODES_V4,
+    "Appearance lighting mode",
+  );
+  const lightingStrength = parseStringSelection(
+    lighting.strength,
+    LIGHTING_STRENGTHS_V4,
+    "Appearance lighting strength",
+  );
+  const lightingDirection = parseStringSelection(
+    lighting.direction,
+    LIGHTING_DIRECTIONS_V4,
+    "Appearance lighting direction",
+  );
+  const parsedForm: AppearanceRecipeV3["form"] = {
+    polyhedral,
+    other: "sphere",
+  };
+  if (policy !== undefined) parsedForm.policy = policy;
   const parsed: AppearanceRecipeV3 = {
     version: 3,
-    variation: supportedValue(
-      recipe.variation,
-      APPEARANCE_VARIATIONS_V3,
-      "Appearance variation is not supported",
-    ),
-    varyBy: supportedValue(
-      recipe.varyBy,
-      APPEARANCE_VARIATION_SCOPES_V3,
-      "Appearance variation scope is not supported",
-    ),
-    ...(Object.hasOwn(recipe, "randomization")
-      ? {
-          randomization: supportedValue(
-            recipe.randomization,
-            APPEARANCE_RANDOMIZATION_POLICIES_V3,
-            "Appearance randomization policy is not supported",
-          ),
-        }
-      : {}),
-    ...(Object.hasOwn(recipe, "colorDistribution")
-      ? {
-          colorDistribution: supportedValue(
-            recipe.colorDistribution,
-            APPEARANCE_COLOR_DISTRIBUTIONS_V3,
-            "Appearance color distribution is not supported",
-          ),
-        }
-      : {}),
-    colors: parseColors(recipe.colors),
-    material: parseMaterialSelection(recipe.material),
-    form: {
-      ...(Object.hasOwn(form, "policy")
-        ? {
-            policy: supportedValue(
-              form.policy,
-              APPEARANCE_FORM_POLICIES_V3,
-              "Appearance form policy is not supported",
-            ),
-          }
-        : {}),
-      polyhedral: parseStringSelection(
-        form.polyhedral,
-        POLYHEDRAL_FORMS_V4,
-        "Appearance form",
-      ),
-      other: "sphere",
-    },
-    font: parseStringSelection(recipe.font, FONT_IDS_V4, "Appearance font"),
-    engraving: parseStringSelection(
-      recipe.engraving,
-      ENGRAVING_FINISHES_V4,
-      "Appearance engraving",
-    ),
-    gradient: {
-      scope: parseStringSelection(
-        gradient.scope,
-        GRADIENT_SCOPES_V4,
-        "Appearance gradient scope",
-      ),
-      direction: parseStringSelection(
-        gradient.direction,
-        LINEAR_DIRECTIONS_V4,
-        "Appearance gradient direction",
-      ),
-    },
+    variation,
+    varyBy,
+    colors,
+    material,
+    form: parsedForm,
+    font,
+    engraving,
+    gradient: { scope: gradientScope, direction: gradientDirection },
     lighting: {
-      mode: parseStringSelection(
-        lighting.mode,
-        LIGHTING_MODES_V4,
-        "Appearance lighting mode",
-      ),
-      strength: parseStringSelection(
-        lighting.strength,
-        LIGHTING_STRENGTHS_V4,
-        "Appearance lighting strength",
-      ),
-      direction: parseStringSelection(
-        lighting.direction,
-        LIGHTING_DIRECTIONS_V4,
-        "Appearance lighting direction",
-      ),
+      mode: lightingMode,
+      strength: lightingStrength,
+      direction: lightingDirection,
     },
   };
+  if (randomization !== undefined) parsed.randomization = randomization;
+  if (colorDistribution !== undefined) {
+    parsed.colorDistribution = colorDistribution;
+  }
   if (
     parsed.randomization === "one-palette-color-v1" &&
     parsed.colors.mode !== "palette"
@@ -449,19 +468,21 @@ function containsControlCharacter(value: string): boolean {
   return false;
 }
 
-function parseDesign(value: unknown): CustomAppearanceDesignV3 {
+function parseDesign(value: ValidationInput): CustomAppearanceDesignV3 {
   const design = requireExactRecord(
     value,
     ["id", "name", "recipe"],
     "Appearance design has invalid fields",
   );
-  if (typeof design.id !== "string" || !UUID_V4.test(design.id)) {
+  const id = uuidV4Schema.safeParse(design.id);
+  if (!id.success) {
     throw new Error("Appearance design id must be a UUID v4");
   }
-  if (typeof design.name !== "string") {
+  const parsedName = stringSchema.safeParse(design.name);
+  if (!parsedName.success) {
     throw new Error("Appearance design name is invalid");
   }
-  const name = design.name.trim();
+  const name = parsedName.data.trim();
   if (
     name.length < 1 ||
     name.length > MAX_APPEARANCE_DESIGN_NAME_CHARACTERS_V3 ||
@@ -470,7 +491,7 @@ function parseDesign(value: unknown): CustomAppearanceDesignV3 {
     throw new Error("Appearance design name is invalid");
   }
   return {
-    id: design.id.toLowerCase(),
+    id: id.data,
     name,
     recipe: parseAppearanceRecipeV3(design.recipe),
   };
@@ -482,7 +503,7 @@ function builtinIds(catalog: AppearanceValidationCatalogV3): ReadonlySet<string>
     catalog.builtinStyleIds.length < 1 ||
     catalog.builtinStyleIds.length > MAX_BUILTIN_APPEARANCE_STYLES_V3 ||
     catalog.builtinStyleIds.some(
-      (id) => typeof id !== "string" || !CATALOG_ID.test(id),
+      (id) => !catalogIdSchema.safeParse(id).success,
     ) ||
     new Set(catalog.builtinStyleIds).size !== catalog.builtinStyleIds.length
   ) {
@@ -492,7 +513,7 @@ function builtinIds(catalog: AppearanceValidationCatalogV3): ReadonlySet<string>
 }
 
 function parseReference(
-  value: unknown,
+  value: ValidationInput,
   supportedBuiltins: ReadonlySet<string>,
 ): AppearanceDesignReferenceV3 {
   const reference = requireExactRecord(
@@ -501,22 +522,20 @@ function parseReference(
     "Appearance design reference is invalid",
   );
   if (reference.source === "builtin") {
-    if (
-      typeof reference.id !== "string" ||
-      !supportedBuiltins.has(reference.id)
-    ) {
+    const id = stringSchema.safeParse(reference.id);
+    if (!id.success || !supportedBuiltins.has(id.data)) {
       throw new Error("Appearance built-in style id is not supported");
     }
-    return { source: "builtin", id: reference.id };
+    return { source: "builtin", id: id.data };
   }
-  if (
-    reference.source !== "custom" ||
-    typeof reference.id !== "string" ||
-    !UUID_V4.test(reference.id)
-  ) {
+  if (reference.source !== "custom") {
     throw new Error("Appearance design reference is invalid");
   }
-  return { source: "custom", id: reference.id.toLowerCase() };
+  const id = uuidV4Schema.safeParse(reference.id);
+  if (!id.success) {
+    throw new Error("Appearance design reference is invalid");
+  }
+  return { source: "custom", id: id.data };
 }
 
 function requireOwnedReference(
@@ -529,7 +548,7 @@ function requireOwnedReference(
 }
 
 function parseAssignments(
-  value: unknown,
+  value: ValidationInput,
   supportedBuiltins: ReadonlySet<string>,
   designIds: ReadonlySet<string>,
 ): AppearanceAssignmentsV3 {
@@ -547,13 +566,12 @@ function parseAssignments(
   }
   const overrides: AppearanceAssignmentsV3["overrides"] = {};
   for (const [target, reference] of Object.entries(assignments.overrides)) {
-    if (!APPEARANCE_TARGETS_V4.includes(target as AppearanceTargetV4)) {
-      throw new Error("Appearance override target is not supported");
-    }
-    overrides[target as keyof typeof overrides] = parseReference(
-      reference,
-      supportedBuiltins,
+    const parsedTarget = supportedValue(
+      target,
+      APPEARANCE_TARGETS_V4,
+      "Appearance override target is not supported",
     );
+    overrides[parsedTarget] = parseReference(reference, supportedBuiltins);
   }
   requireOwnedReference(all, designIds);
   for (const reference of Object.values(overrides)) {
@@ -594,7 +612,7 @@ function validateAssignedCustomForms(
 }
 
 function parseDiceViewAzimuthV4(
-  value: unknown,
+  value: ValidationInput,
   path: string,
 ): DiceViewAzimuthV4 {
   const azimuth = requireExactRecord(
@@ -602,51 +620,47 @@ function parseDiceViewAzimuthV4(
     ["customDegrees", "mode"],
     `${path} has invalid fields`,
   );
-  if (
-    !DICE_VIEW_AZIMUTH_MODES_V4.includes(
-      azimuth.mode as (typeof DICE_VIEW_AZIMUTH_MODES_V4)[number],
-    )
-  ) {
-    throw new Error(`${path}.mode is invalid`);
-  }
-  if (
-    typeof azimuth.customDegrees !== "number" ||
-    !Number.isSafeInteger(azimuth.customDegrees) ||
-    azimuth.customDegrees < DICE_VIEW_AZIMUTH_RANGE_V4.minimum ||
-    azimuth.customDegrees > DICE_VIEW_AZIMUTH_RANGE_V4.maximum ||
-    azimuth.customDegrees % DICE_VIEW_AZIMUTH_RANGE_V4.step !== 0
-  ) {
+  const mode = supportedValue(
+    azimuth.mode,
+    DICE_VIEW_AZIMUTH_MODES_V4,
+    `${path}.mode is invalid`,
+  );
+  let customDegrees: number;
+  try {
+    customDegrees = boundedInteger(
+      azimuth.customDegrees,
+      DICE_VIEW_AZIMUTH_RANGE_V4.minimum,
+      DICE_VIEW_AZIMUTH_RANGE_V4.maximum,
+      `${path}.customDegrees`,
+    );
+  } catch {
     throw new Error(`${path}.customDegrees must be from -45 through 45 by 5`);
   }
-  return {
-    mode: azimuth.mode as DiceViewAzimuthV4["mode"],
-    customDegrees: azimuth.customDegrees,
-  };
+  if (customDegrees % DICE_VIEW_AZIMUTH_RANGE_V4.step !== 0) {
+    throw new Error(`${path}.customDegrees must be from -45 through 45 by 5`);
+  }
+  return { mode, customDegrees };
 }
 
 export function parseDiceViewPreferencesV4(
-  value: unknown,
+  value: ValidationInput,
 ): DiceViewPreferencesV4 {
   const diceView = requireExactRecord(
     value,
     ["azimuth", "elevationDegrees", "mode"],
     "Dice view preferences V4 have invalid fields",
   );
-  if (
-    typeof diceView.elevationDegrees !== "number" ||
-    !Number.isSafeInteger(diceView.elevationDegrees) ||
-    diceView.elevationDegrees < DICE_VIEW_ELEVATION_RANGE_V4.minimum ||
-    diceView.elevationDegrees > DICE_VIEW_ELEVATION_RANGE_V4.maximum
-  ) {
-    throw new Error("Dice view elevationDegrees must be from 30 through 55");
-  }
-  if (
-    !DICE_VIEW_MODES_V4.includes(
-      diceView.mode as (typeof DICE_VIEW_MODES_V4)[number],
-    )
-  ) {
-    throw new Error("Dice view mode is invalid");
-  }
+  const elevationDegrees = boundedInteger(
+    diceView.elevationDegrees,
+    DICE_VIEW_ELEVATION_RANGE_V4.minimum,
+    DICE_VIEW_ELEVATION_RANGE_V4.maximum,
+    "Dice view elevationDegrees",
+  );
+  const mode = supportedValue(
+    diceView.mode,
+    DICE_VIEW_MODES_V4,
+    "Dice view mode is invalid",
+  );
   const azimuth = requireExactRecord(
     diceView.azimuth,
     ["all", "overrides"],
@@ -657,17 +671,19 @@ export function parseDiceViewPreferencesV4(
   }
   const overrides: DiceViewPreferencesV4["azimuth"]["overrides"] = {};
   for (const [target, override] of Object.entries(azimuth.overrides)) {
-    if (!APPEARANCE_TARGETS_V4.includes(target as AppearanceTargetV4)) {
-      throw new Error("Dice view azimuth override target is not supported");
-    }
-    overrides[target as AppearanceTargetV4] = parseDiceViewAzimuthV4(
+    const parsedTarget = supportedValue(
+      target,
+      APPEARANCE_TARGETS_V4,
+      "Dice view azimuth override target is not supported",
+    );
+    overrides[parsedTarget] = parseDiceViewAzimuthV4(
       override,
       `Dice view azimuth override ${target}`,
     );
   }
   return {
-    elevationDegrees: diceView.elevationDegrees,
-    mode: diceView.mode as DiceViewPreferencesV4["mode"],
+    elevationDegrees,
+    mode,
     azimuth: {
       all: parseDiceViewAzimuthV4(azimuth.all, "Dice view azimuth all"),
       overrides,
@@ -676,7 +692,7 @@ export function parseDiceViewPreferencesV4(
 }
 
 function parseProfileContents(
-  profile: Record<string, unknown>,
+  profile: BoundaryRecord,
   catalog: AppearanceValidationCatalogV3,
 ): Pick<AppearanceProfileV3, "assignments" | "designs"> {
   if (!Array.isArray(profile.designs)) {
@@ -708,7 +724,7 @@ function validateProfileSize(
 }
 
 export function parseAppearanceProfileV3(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceValidationCatalogV3,
 ): AppearanceProfileV3 {
   const profile = requireExactRecord(
@@ -740,7 +756,7 @@ export function validateAppearanceProfileFontsV4(
 }
 
 export function parseAppearanceProfileV4(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceValidationCatalogV3,
 ): AppearanceProfileV4 {
   const profile = requireExactRecord(
@@ -760,15 +776,18 @@ export function parseAppearanceProfileV4(
   return parsed;
 }
 
-function parseGuildMode(value: unknown): GuildAppearanceProfileV3["mode"] {
-  if (value !== "off" && value !== "default" && value !== "enforced") {
-    throw new Error("Guild appearance mode is invalid");
-  }
-  return value;
+function parseGuildMode(
+  value: ValidationInput,
+): GuildAppearanceProfileV3["mode"] {
+  return supportedValue(
+    value,
+    ["off", "default", "enforced"],
+    "Guild appearance mode is invalid",
+  );
 }
 
 export function parseGuildAppearanceProfileV3(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceValidationCatalogV3,
 ): GuildAppearanceProfileV3 {
   const guild = requireExactRecord(
@@ -793,7 +812,7 @@ export function parseGuildAppearanceProfileV3(
 }
 
 export function parseGuildAppearanceProfileV4(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceValidationCatalogV3,
 ): GuildAppearanceProfileV4 {
   const guild = requireExactRecord(

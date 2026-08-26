@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   Dice,
   Modifiers,
@@ -7,6 +8,36 @@ import {
 
 export const MAX_RENDERED_DICE = 50;
 export const MAX_DIE_SIDES = 999;
+
+type NumericStandardDice = Dice.StandardDice & { readonly sides: number };
+type ParsedDiceDefinition =
+  | Dice.FudgeDice
+  | Dice.PercentileDice
+  | NumericStandardDice;
+type ParsedRollExpression =
+  | ParsedDiceDefinition
+  | RollGroup
+  | string
+  | number
+  | readonly ParsedRollExpression[];
+type ParserBoundaryInput = z.input<z.ZodUnknown>;
+
+const ParserPrimitiveSchema = z.union([z.string(), z.number()]);
+
+function parseRollExpression(value: ParserBoundaryInput): ParsedRollExpression {
+  if (
+    value instanceof Dice.FudgeDice ||
+    value instanceof Dice.PercentileDice ||
+    value instanceof Dice.StandardDice ||
+    value instanceof RollGroup
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(parseRollExpression);
+  const primitive = ParserPrimitiveSchema.safeParse(value);
+  if (primitive.success) return primitive.data;
+  throw new Error("Roll parser returned an invalid expression");
+}
 
 export type RollLimitResult =
   | { allowed: true; containsDice: boolean }
@@ -23,26 +54,35 @@ function repetitionCount(repetitions: number): number {
 }
 
 function collectDice(
-  value: unknown,
-  dice: Dice.StandardDice[],
+  expression: ParsedRollExpression,
+  dice: ParsedDiceDefinition[],
 ): void {
-  if (value instanceof Dice.StandardDice) {
-    dice.push(value);
+  if (
+    expression instanceof Dice.FudgeDice ||
+    expression instanceof Dice.PercentileDice
+  ) {
+    dice.push(expression);
     return;
   }
-  if (value instanceof RollGroup) {
-    collectDice(value.expressions, dice);
+  if (expression instanceof Dice.StandardDice) {
+    dice.push(expression);
     return;
   }
-  if (Array.isArray(value)) {
-    for (const item of value) collectDice(item, dice);
+  if (expression instanceof RollGroup) {
+    collectDice(parseRollExpression(expression.expressions), dice);
+    return;
+  }
+  if (Array.isArray(expression)) {
+    for (const item of expression) {
+      collectDice(parseRollExpression(item), dice);
+    }
   }
 }
 
-function sidesForLimit(die: Dice.StandardDice): number {
+function sidesForLimit(die: ParsedDiceDefinition): number {
   if (die instanceof Dice.PercentileDice) return 100;
   if (die instanceof Dice.FudgeDice) return 6;
-  return typeof die.sides === "number" ? die.sides : die.max;
+  return die.sides;
 }
 
 function compare(value: number, operator: string, expected: number): boolean {
@@ -68,7 +108,7 @@ function compare(value: number, operator: string, expected: number): boolean {
 }
 
 function comparisonProbability(
-  die: Dice.StandardDice,
+  die: ParsedDiceDefinition,
   modifier: Modifiers.ExplodeModifier,
 ): number {
   const operator = modifier.comparePoint?.operator ?? "=";
@@ -81,7 +121,7 @@ function comparisonProbability(
 }
 
 function unsafeExplosion(
-  dice: Dice.StandardDice[],
+  dice: ParsedDiceDefinition[],
   repetitions: number,
 ): boolean {
   let hasExplosions = false;
@@ -120,11 +160,11 @@ export function checkRollLimits(
   );
   if (!containsDice) return { allowed: true, containsDice: false };
 
-  const dice: Dice.StandardDice[] = [];
+  const dice: ParsedDiceDefinition[] = [];
   for (const value of notation) {
     if (value.trim().length === 0) continue;
     try {
-      collectDice(Parser.parse(value.trim()) as unknown, dice);
+      collectDice(Parser.parse(value.trim()), dice);
     } catch {
       return { allowed: true, containsDice: true };
     }

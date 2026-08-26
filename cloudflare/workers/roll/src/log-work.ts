@@ -1,10 +1,14 @@
 import { DurableObject } from "cloudflare:workers";
+import { z } from "zod";
 import {
   LOG_WORK_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   imageUnavailableLogArtifact,
+  isComponentsV2Message,
+  parseRollLoggingContext,
   rollLogTelemetryContext,
   storedLogArtifact,
+  validateDiscordMessage,
   validateRollLogArtifact,
   type DeliverRollLogInputV1,
   type DeliverRollLogResultV1,
@@ -12,6 +16,14 @@ import {
   type RollLogShardV1,
   type StoredLogArtifact,
 } from "../../../packages/discord-contracts/src";
+import { RollLogShardSchema } from "../../../packages/discord-contracts/src/roll-log";
+import {
+  nonNegativeSafeIntegerSchema,
+  safeIntegerSchema,
+  snowflakeSchema,
+  timestampSchema,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 
 const INITIAL_DELIVERY_DELAY_MS = 1_000;
 const MAX_PRIMARY_DELIVERY_ATTEMPTS = 12;
@@ -49,38 +61,104 @@ export type LogArtifactStatus =
       imageSha256: string | null;
     };
 
-type StoredLogRow = {
-  identity_json: string;
-  artifact_identity_json: string;
-  artifact_json: string;
-  image_bytes: ArrayBuffer | null;
-  state: "pending" | "delivered" | "failed";
-  accepted_at: number;
-  retry_until: number;
-  expires_at: number;
-  completed_at: number | null;
-  attempts: number;
-  last_http_status: number | null;
+type StoredLogRow = z.output<typeof StoredLogRowSchema>;
+
+type RollLogDeliveryServicePort = {
+  deliverRollLogV1(input: DeliverRollLogInputV1): Promise<SchemaInput>;
 };
 
-type RollLogDeliveryService = {
-  deliverRollLogV1(input: DeliverRollLogInputV1): Promise<DeliverRollLogResultV1>;
+type LogicalGuildShardServicePort = {
+  getLogicalGuildShard(guildId: string): Promise<SchemaInput>;
 };
 
-type LogicalGuildShardService = {
-  getLogicalGuildShard(guildId: string): Promise<
-    | { status: "unavailable" }
-    | {
-        status: "available";
-        shardId: number;
-        shardCount: number;
-        generation: number;
-      }
-  >;
+type LogWorkEnv = Omit<RollBindings, "DISCORD_REST" | "GATEWAY_STATUS"> & {
+  DISCORD_REST: RollLogDeliveryServicePort;
+  GATEWAY_STATUS: LogicalGuildShardServicePort;
 };
 
-export class LogWork extends DurableObject<RollBindings> {
-  constructor(ctx: DurableObjectState, env: RollBindings) {
+const StoredLogRowSchema = z.strictObject({
+  identity_json: z.string(),
+  artifact_identity_json: z.string(),
+  artifact_json: z.string(),
+  image_bytes: z.instanceof(ArrayBuffer).nullable(),
+  state: z.enum(["pending", "delivered", "failed"]),
+  accepted_at: nonNegativeSafeIntegerSchema,
+  retry_until: nonNegativeSafeIntegerSchema,
+  expires_at: nonNegativeSafeIntegerSchema,
+  completed_at: nonNegativeSafeIntegerSchema.nullable(),
+  attempts: nonNegativeSafeIntegerSchema,
+  last_http_status: safeIntegerSchema.nullable(),
+});
+const StoredLogImageSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    status: z.literal("available"),
+    filename: z.string(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+    bytes: nonNegativeSafeIntegerSchema,
+  }),
+  z.strictObject({
+    status: z.literal("unavailable"),
+    reason: z.enum([
+      "corrupt",
+      "discord-rejected",
+      "missing",
+      "not-applicable",
+      "oversized",
+    ]),
+  }),
+]);
+const StoredLogArtifactFields = {
+  rollId: snowflakeSchema,
+  source: z.enum(["discord", "web"]),
+  notation: z.string(),
+  user: z.strictObject({
+    id: snowflakeSchema,
+    username: z.string().min(1).max(32),
+  }),
+  guildId: snowflakeSchema.nullable(),
+  channelId: snowflakeSchema,
+  context: z.unknown().nullable(),
+  destinationDeliveredAt: timestampSchema,
+  payload: z.unknown(),
+  image: StoredLogImageSchema,
+};
+const StoredLogArtifactSchema = z.union([
+  z.strictObject({ version: z.literal(1), ...StoredLogArtifactFields }),
+  z.strictObject({
+    version: z.literal(2),
+    ...StoredLogArtifactFields,
+    presentation: z.strictObject({
+      title: z.string().min(1).max(256).nullable(),
+      result: z.string().min(1).max(4_096).nullable(),
+      savedRoll: z.strictObject({
+        scope: z.enum(["personal", "server"]),
+        name: z.string().min(1).max(1_024),
+      }).nullable(),
+    }),
+  }),
+]);
+const DeliverRollLogResultSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    status: z.literal("delivered"),
+    httpStatus: safeIntegerSchema,
+  }),
+  z.strictObject({
+    status: z.literal("retryable"),
+    httpStatus: safeIntegerSchema,
+    retryAfterMs: nonNegativeSafeIntegerSchema.nullable(),
+  }),
+  z.strictObject({
+    status: z.literal("image-rejected"),
+    httpStatus: safeIntegerSchema,
+  }),
+  z.strictObject({
+    status: z.literal("failed"),
+    httpStatus: safeIntegerSchema,
+  }),
+]);
+
+export class LogWork extends DurableObject<LogWorkEnv> {
+  constructor(ctx: DurableObjectState, env: LogWorkEnv) {
     super(ctx, env);
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS log_artifact (
@@ -100,7 +178,7 @@ export class LogWork extends DurableObject<RollBindings> {
     `);
   }
 
-  async accept(value: unknown): Promise<AcceptLogArtifactResult> {
+  async accept(value: SchemaInput): Promise<AcceptLogArtifactResult> {
     const input = validateRollLogArtifact(value);
     if (this.ctx.id.name !== input.rollId) return { status: "conflict" };
     const stored = await storedLogArtifact(input);
@@ -209,10 +287,17 @@ export class LogWork extends DurableObject<RollBindings> {
     let result: DeliverRollLogResultV1;
     let logicalShard: RollLogShardV1 | null = null;
     try {
-      const artifact = await this.deliveryArtifact(row);
+      const artifact = await this.deliveryArtifact(row, stored);
       logicalShard = await this.resolveLogicalShard(artifact);
-      const service = this.env.DISCORD_REST as unknown as RollLogDeliveryService;
-      result = await service.deliverRollLogV1({ artifact, logicalShard });
+      const response = await this.env.DISCORD_REST.deliverRollLogV1({
+        artifact,
+        logicalShard,
+      });
+      const parsed = DeliverRollLogResultSchema.safeParse(response);
+      if (!parsed.success) {
+        throw new Error("Roll log delivery response is invalid");
+      }
+      result = parsed.data;
     } catch (error) {
       this.ctx.storage.sql.exec(
         "UPDATE log_artifact SET attempts = ? WHERE singleton = 1",
@@ -239,6 +324,7 @@ export class LogWork extends DurableObject<RollBindings> {
     if (result.status === "image-rejected") {
       await this.replaceWithImageUnavailable(
         row,
+        stored,
         result.httpStatus,
         attempts,
       );
@@ -299,8 +385,8 @@ export class LogWork extends DurableObject<RollBindings> {
 
   private async deliveryArtifact(
     row: StoredLogRow,
+    stored: StoredLogArtifact,
   ): Promise<RollLogArtifact> {
-    const stored = this.parseStoredArtifact(row.artifact_json);
     let image: RollLogArtifact["image"];
     if (stored.image.status === "available") {
       if (row.image_bytes === null) {
@@ -332,8 +418,14 @@ export class LogWork extends DurableObject<RollBindings> {
   ): Promise<RollLogShardV1> {
     if (artifact.guildId === null) return { status: "not-applicable" };
     try {
-      const service = this.env.GATEWAY_STATUS as unknown as LogicalGuildShardService;
-      return await service.getLogicalGuildShard(artifact.guildId);
+      const response = await this.env.GATEWAY_STATUS.getLogicalGuildShard(
+        artifact.guildId,
+      );
+      const result = RollLogShardSchema.safeParse(response);
+      if (!result.success || result.data.status === "not-applicable") {
+        throw new Error("Logical guild shard response is invalid");
+      }
+      return result.data;
     } catch {
       console.warn(
         JSON.stringify({
@@ -353,11 +445,12 @@ export class LogWork extends DurableObject<RollBindings> {
 
   private async replaceWithImageUnavailable(
     row: StoredLogRow,
+    artifact: StoredLogArtifact,
     httpStatus: number,
     attempts: number,
   ): Promise<void> {
     const fallback = imageUnavailableLogArtifact(
-      await this.deliveryArtifact(row),
+      await this.deliveryArtifact(row, artifact),
       "discord-rejected",
     );
     const stored = await storedLogArtifact({
@@ -447,30 +540,55 @@ export class LogWork extends DurableObject<RollBindings> {
   }
 
   private readRow(): StoredLogRow | null {
-    return (
-      this.ctx.storage.sql
-        .exec<StoredLogRow>(
-          `SELECT
-            identity_json,
-            artifact_identity_json,
-            artifact_json,
-            image_bytes,
-            state,
-            accepted_at,
-            retry_until,
-            expires_at,
-            completed_at,
-            attempts,
-            last_http_status
-          FROM log_artifact
-          WHERE singleton = 1`,
-        )
-        .toArray()[0] ?? null
-    );
+    const value: SchemaInput = this.ctx.storage.sql
+      .exec(
+        `SELECT
+          identity_json,
+          artifact_identity_json,
+          artifact_json,
+          image_bytes,
+          state,
+          accepted_at,
+          retry_until,
+          expires_at,
+          completed_at,
+          attempts,
+          last_http_status
+        FROM log_artifact
+        WHERE singleton = 1`,
+      )
+      .toArray()[0];
+    if (value === undefined) return null;
+    const row = StoredLogRowSchema.safeParse(value);
+    if (!row.success) throw new Error("Stored roll log row is invalid");
+    return row.data;
   }
 
   private parseStoredArtifact(value: string): StoredLogArtifact {
-    return JSON.parse(value) as StoredLogArtifact;
+    const input: SchemaInput = JSON.parse(value);
+    const result = StoredLogArtifactSchema.safeParse(input);
+    if (!result.success) {
+      throw new Error("Stored roll log artifact is invalid");
+    }
+    const stored = result.data;
+    const context = stored.context === null
+      ? null
+      : parseRollLoggingContext(
+          stored.context,
+          stored.guildId,
+          stored.channelId,
+        );
+    const payload = validateDiscordMessage(stored.payload);
+    if (stored.version === 2) {
+      if (!isComponentsV2Message(payload)) {
+        throw new Error("Stored roll log artifact is invalid");
+      }
+      return { ...stored, context, payload };
+    }
+    if (isComponentsV2Message(payload)) {
+      throw new Error("Stored roll log artifact is invalid");
+    }
+    return { ...stored, context, payload };
   }
 
   private acceptedResult(

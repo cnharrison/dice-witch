@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { z } from "zod";
 import {
   createGenerationMachine,
   routeGenerationDispatch,
@@ -23,6 +24,7 @@ import {
   type GatewayGuildInventoryState,
   type GatewayInitialGuildState,
   type GatewayShardFaultResult,
+  type GatewayShardConnectionOptions,
   type GatewayShardIdentity,
   type GatewayShardStatus,
 } from "./gateway-shard-connection";
@@ -36,6 +38,54 @@ import {
 const LEGACY_CHECKPOINT_KEY = "gateway-checkpoint-v1";
 const PARTITION_STATE_KEY = "gateway-partition-state-v1";
 const FLEET_PARTITION_STATE_KEY = "gateway-fleet-partition-state-v1";
+const SafeIntegerSchema = z.number().refine(Number.isSafeInteger);
+const NonNegativeSafeIntegerSchema = SafeIntegerSchema.nonnegative();
+const PositiveSafeIntegerSchema = SafeIntegerSchema.positive();
+const GenerationPlanSchema = z.looseObject({
+  currentGeneration: NonNegativeSafeIntegerSchema,
+  currentShardCount: PositiveSafeIntegerSchema,
+  targetGeneration: NonNegativeSafeIntegerSchema,
+  targetShardCount: PositiveSafeIntegerSchema,
+  identifyWaves: z.array(z.array(NonNegativeSafeIntegerSchema)),
+});
+const StoredPartitionStateSchema = z.looseObject({
+  version: z.literal(1),
+  generation: z.looseObject({
+    phase: z.string(),
+    activeGeneration: z.number(),
+    activeShardCount: z.number(),
+    target: z.unknown(),
+  }),
+});
+const StoredPartitionTargetSchema = z.looseObject({
+  plan: z.unknown(),
+});
+const GatewayShardIdentitySchema = z.looseObject({
+  generation: NonNegativeSafeIntegerSchema,
+  shardId: NonNegativeSafeIntegerSchema,
+  shardCount: PositiveSafeIntegerSchema,
+  ownerId: z.string().regex(/^gateway-partition-[0-9]+$/),
+});
+const StoredFleetPartitionStateSchema = z.looseObject({
+  version: z.literal(1),
+  activeGeneration: z.nullable(NonNegativeSafeIntegerSchema),
+  activeShardCount: z.nullable(PositiveSafeIntegerSchema),
+  ownerId: z.string().regex(/^gateway-partition-[0-9]+$/),
+  connections: z.array(z.unknown()),
+  suspendedGenerations: z.array(NonNegativeSafeIntegerSchema),
+});
+
+type PartitionStorageInput = Parameters<
+  typeof StoredPartitionStateSchema.safeParse
+>[0];
+type ParsedStoredPartitionState = {
+  state: StoredPartitionState;
+  interruptedReshard: boolean;
+};
+type GenerationCoordinates = {
+  generation: number | null;
+  shardCount: number | null;
+};
 
 export { gatewayRecoveryAlarmAt };
 
@@ -89,33 +139,19 @@ type StoredFleetPartitionState = {
   suspendedGenerations: number[];
 };
 
-function parseStoredPartitionState(value: unknown): {
-  state: StoredPartitionState;
-  interruptedReshard: boolean;
-} {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("version" in value) ||
-    value.version !== 1 ||
-    !("generation" in value) ||
-    typeof value.generation !== "object" ||
-    value.generation === null ||
-    !("phase" in value.generation) ||
-    typeof value.generation.phase !== "string" ||
-    !("target" in value.generation) ||
-    !("activeGeneration" in value.generation) ||
-    typeof value.generation.activeGeneration !== "number" ||
-    !("activeShardCount" in value.generation) ||
-    typeof value.generation.activeShardCount !== "number"
-  ) {
+function parseStoredPartitionState(
+  value: PartitionStorageInput,
+): ParsedStoredPartitionState {
+  const stored = StoredPartitionStateSchema.safeParse(value);
+  if (!stored.success) {
     throw new Error("Gateway partition state is unsupported");
   }
+  const { generation } = stored.data;
   const stable = createGenerationMachine(
-    value.generation.activeGeneration,
-    value.generation.activeShardCount,
+    generation.activeGeneration,
+    generation.activeShardCount,
   );
-  if (value.generation.phase === "idle" && value.generation.target === null) {
+  if (generation.phase === "idle" && generation.target === null) {
     return {
       state: { version: 1, generation: stable },
       interruptedReshard: false,
@@ -123,18 +159,23 @@ function parseStoredPartitionState(value: unknown): {
   }
   if (
     !["suspending-active", "starting-target", "rolling-back"].includes(
-      value.generation.phase,
-    ) ||
-    typeof value.generation.target !== "object" ||
-    value.generation.target === null ||
-    !("plan" in value.generation.target)
+      generation.phase,
+    )
   ) {
     throw new Error("Gateway partition state is unsupported");
+  }
+  const target = StoredPartitionTargetSchema.safeParse(generation.target);
+  if (!target.success) {
+    throw new Error("Gateway partition state is unsupported");
+  }
+  const plan = GenerationPlanSchema.safeParse(target.data.plan);
+  if (!plan.success) {
+    throw new Error("Gateway partition target plan is invalid");
   }
   try {
     transitionGeneration(stable, {
       type: "plan",
-      plan: value.generation.target.plan as GenerationPlan,
+      plan: plan.data,
     });
   } catch {
     throw new Error("Gateway partition target plan is invalid");
@@ -145,31 +186,17 @@ function parseStoredPartitionState(value: unknown): {
   };
 }
 
-function validateFleetIdentity(
-  value: unknown,
-): asserts value is GatewayShardIdentity {
+function parseFleetIdentity(
+  value: PartitionStorageInput,
+): GatewayShardIdentity {
+  const identity = GatewayShardIdentitySchema.safeParse(value);
   if (
-    typeof value !== "object" ||
-    value === null ||
-    !("generation" in value) ||
-    typeof value.generation !== "number" ||
-    !Number.isSafeInteger(value.generation) ||
-    value.generation < 0 ||
-    !("shardId" in value) ||
-    typeof value.shardId !== "number" ||
-    !Number.isSafeInteger(value.shardId) ||
-    value.shardId < 0 ||
-    !("shardCount" in value) ||
-    typeof value.shardCount !== "number" ||
-    !Number.isSafeInteger(value.shardCount) ||
-    value.shardCount <= 0 ||
-    value.shardId >= value.shardCount ||
-    !("ownerId" in value) ||
-    typeof value.ownerId !== "string" ||
-    !/^gateway-partition-[0-9]+$/.test(value.ownerId)
+    !identity.success ||
+    identity.data.shardId >= identity.data.shardCount
   ) {
     throw new Error("Gateway fleet shard identity is invalid");
   }
+  return identity.data;
 }
 
 function connectionKey(identity: GatewayShardIdentity): string {
@@ -180,10 +207,7 @@ function checkpointKey(identity: GatewayShardIdentity): string {
   return `gateway-checkpoint-v1:${connectionKey(identity)}`;
 }
 
-function targetCoordinates(machine: GenerationMachine): {
-  generation: number | null;
-  shardCount: number | null;
-} {
+function targetCoordinates(machine: GenerationMachine): GenerationCoordinates {
   return {
     generation: machine.target?.plan.targetGeneration ?? null,
     shardCount: machine.target?.plan.targetShardCount ?? null,
@@ -625,7 +649,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     initialGuildState?: GatewayInitialGuildState,
     guildInventoryState?: GatewayGuildInventoryState,
   ): GatewayShardConnection {
-    return new GatewayShardConnection({
+    const options: GatewayShardConnectionOptions = {
       ctx: this.ctx,
       env: this.env,
       identity,
@@ -637,15 +661,20 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           allowedGatewayHostname(this.env),
         ),
       checkpointKey: checkpointKey(identity),
-      ...(initialGuildState === undefined ? {} : { initialGuildState }),
-      ...(guildInventoryState === undefined ? {} : { guildInventoryState }),
       scheduleAlarm: (scheduledAt) =>
         this.scheduleConnectionAlarm(connectionKey(identity), scheduledAt),
       onReady: (readyIdentity) => this.handleConnectionReady(readyIdentity),
       onFatal: (failedIdentity, reason) =>
         this.handleConnectionFatal(failedIdentity, reason),
       isDispatchActive: (source) => this.isDispatchActive(source),
-    });
+    };
+    if (initialGuildState !== undefined) {
+      options.initialGuildState = initialGuildState;
+    }
+    if (guildInventoryState !== undefined) {
+      options.guildInventoryState = guildInventoryState;
+    }
+    return new GatewayShardConnection(options);
   }
 
   private identity(
@@ -669,7 +698,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     guildInventoryState?: GatewayGuildInventoryState,
   ): GatewayShardConnection {
     const key = `gateway-fleet-checkpoint-v1:${connectionKey(identity)}`;
-    return new GatewayShardConnection({
+    const options: GatewayShardConnectionOptions = {
       ctx: this.ctx,
       env: this.env,
       identity,
@@ -681,8 +710,6 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           allowedGatewayHostname(this.env),
         ),
       checkpointKey: key,
-      ...(initialGuildState === undefined ? {} : { initialGuildState }),
-      ...(guildInventoryState === undefined ? {} : { guildInventoryState }),
       scheduleAlarm: (scheduledAt) =>
         this.scheduleConnectionAlarm(connectionKey(identity), scheduledAt),
       onReady: async (readyIdentity) => {
@@ -709,7 +736,14 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
       isDispatchActive: (source) =>
         this.fleetActiveGeneration === source.generation &&
         this.fleetActiveShardCount === source.shardCount,
-    });
+    };
+    if (initialGuildState !== undefined) {
+      options.initialGuildState = initialGuildState;
+    }
+    if (guildInventoryState !== undefined) {
+      options.guildInventoryState = guildInventoryState;
+    }
+    return new GatewayShardConnection(options);
   }
 
   private activeConnections(): GatewayShardConnection[] {
@@ -933,56 +967,32 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     this.lastManagerError = reason;
   }
 
-  private parseFleetPartitionState(value: unknown): StoredFleetPartitionState {
+  private parseFleetPartitionState(
+    value: PartitionStorageInput,
+  ): StoredFleetPartitionState {
+    const stored = StoredFleetPartitionStateSchema.safeParse(value);
     if (
-      typeof value !== "object" ||
-      value === null ||
-      !("version" in value) ||
-      value.version !== 1 ||
-      !("activeGeneration" in value) ||
-      !("activeShardCount" in value) ||
-      !("ownerId" in value) ||
-      typeof value.ownerId !== "string" ||
-      !/^gateway-partition-[0-9]+$/.test(value.ownerId) ||
-      !("connections" in value) ||
-      !Array.isArray(value.connections) ||
-      !("suspendedGenerations" in value) ||
-      !Array.isArray(value.suspendedGenerations)
+      !stored.success ||
+      (stored.data.activeGeneration === null) !==
+        (stored.data.activeShardCount === null)
     ) {
       throw new Error("Stored Gateway fleet partition state is invalid");
     }
-    const activeGeneration = value.activeGeneration;
-    const activeShardCount = value.activeShardCount;
-    if (
-      (activeGeneration !== null &&
-        (typeof activeGeneration !== "number" ||
-          !Number.isSafeInteger(activeGeneration) ||
-          activeGeneration < 0)) ||
-      (activeShardCount !== null &&
-        (typeof activeShardCount !== "number" ||
-          !Number.isSafeInteger(activeShardCount) ||
-          activeShardCount <= 0)) ||
-      (activeGeneration === null) !== (activeShardCount === null) ||
-      !value.suspendedGenerations.every(
-        (generation) => Number.isSafeInteger(generation) && generation >= 0,
-      )
-    ) {
-      throw new Error("Stored Gateway fleet partition state is invalid");
-    }
-    const connections = value.connections as GatewayShardIdentity[];
+    const connections = stored.data.connections.map((connection) =>
+      parseFleetIdentity(connection),
+    );
     for (const identity of connections) {
-      validateFleetIdentity(identity);
-      if (identity.ownerId !== value.ownerId) {
+      if (identity.ownerId !== stored.data.ownerId) {
         throw new Error("Stored Gateway fleet partition owner is invalid");
       }
     }
     return {
       version: 1,
-      activeGeneration,
-      activeShardCount,
-      ownerId: value.ownerId,
+      activeGeneration: stored.data.activeGeneration,
+      activeShardCount: stored.data.activeShardCount,
+      ownerId: stored.data.ownerId,
       connections,
-      suspendedGenerations: value.suspendedGenerations as number[],
+      suspendedGenerations: stored.data.suspendedGenerations,
     };
   }
 
@@ -1000,8 +1010,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
         shardCount,
         ownerId: this.fleetOwnerId,
       };
-      validateFleetIdentity(identity);
-      return identity;
+      return parseFleetIdentity(identity);
     });
     await this.ctx.storage.put(FLEET_PARTITION_STATE_KEY, {
       version: 1,

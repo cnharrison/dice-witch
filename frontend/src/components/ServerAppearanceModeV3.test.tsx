@@ -58,6 +58,7 @@ describe("ServerAppearanceModeV3", () => {
     await user.click(screen.getByRole("radio", { name: "Enforced" }));
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("enforced"));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(
       (screen.getByRole("radio", { name: "Enforced" }) as HTMLInputElement)
         .checked,
@@ -83,6 +84,7 @@ describe("ServerAppearanceModeV3", () => {
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Server styling mode could not be saved.",
     );
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(
       (screen.getByRole("radio", { name: "Default" }) as HTMLInputElement)
         .checked,

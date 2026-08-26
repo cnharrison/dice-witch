@@ -1,38 +1,51 @@
+import { z } from "zod";
 import type {
   GatewaySessionCheckpoint,
   ResumableGatewaySessionCheckpoint,
 } from "./types";
 
-const CHECKPOINT_FIELDS = new Set([
-  "version",
-  "generation",
-  "shardId",
-  "shardCount",
-  "allowedGatewayHostname",
-  "sessionId",
-  "resumeGatewayUrl",
-  "sequence",
-  "lastDispatchAt",
-  "lastHeartbeatSentAt",
-  "lastHeartbeatAckAt",
-  "updatedAt",
-]);
-
-function isAllowedGatewayHostname(value: unknown): value is string {
-  if (typeof value !== "string" || value.length === 0) return false;
-  try {
-    const url = new URL(`https://${value}`);
-    return (
-      url.hostname === value &&
-      url.port === "" &&
-      url.pathname === "/" &&
-      url.search === "" &&
-      url.hash === ""
-    );
-  } catch {
-    return false;
-  }
-}
+const GatewaySessionCheckpointInputSchema = z.strictObject({
+  version: z.unknown().optional(),
+  generation: z.unknown().optional(),
+  shardId: z.unknown().optional(),
+  shardCount: z.unknown().optional(),
+  allowedGatewayHostname: z.unknown().optional(),
+  sessionId: z.unknown().optional(),
+  resumeGatewayUrl: z.unknown().optional(),
+  sequence: z.unknown().optional(),
+  lastDispatchAt: z.unknown().optional(),
+  lastHeartbeatSentAt: z.unknown().optional(),
+  lastHeartbeatAckAt: z.unknown().optional(),
+  updatedAt: z.unknown().optional(),
+});
+const NonNegativeSafeIntegerSchema = z
+  .number()
+  .refine(Number.isSafeInteger)
+  .nonnegative();
+const NonEmptyStringSchema = z.string().min(1);
+const AllowedGatewayHostnameSchema = z
+  .string()
+  .min(1)
+  .refine((value) => {
+    try {
+      const url = new URL(`https://${value}`);
+      return (
+        url.hostname === value &&
+        url.port === "" &&
+        url.pathname === "/" &&
+        url.search === "" &&
+        url.hash === ""
+      );
+    } catch {
+      return false;
+    }
+  });
+type GatewaySessionCheckpointInput = Parameters<
+  typeof GatewaySessionCheckpointInputSchema.parse
+>[0];
+type NonNegativeSafeIntegerInput = Parameters<
+  typeof NonNegativeSafeIntegerSchema.parse
+>[0];
 
 function isResumeGatewayUrl(
   value: string | null,
@@ -57,51 +70,63 @@ function isResumeGatewayUrl(
   }
 }
 
-function requireNonNegativeInteger(value: unknown, name: string): void {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+function requireNonNegativeInteger(
+  value: NonNegativeSafeIntegerInput,
+  name: string,
+): number {
+  const result = NonNegativeSafeIntegerSchema.safeParse(value);
+  if (!result.success) {
     throw new Error(
       `Gateway checkpoint ${name} must be a non-negative safe integer`,
     );
   }
+  return result.data;
 }
 
-function requireNullableTimestamp(value: unknown, name: string): void {
+function requireNullableTimestamp(
+  value: NonNegativeSafeIntegerInput,
+  name: string,
+): void {
   if (value !== null) requireNonNegativeInteger(value, name);
 }
 
-export function validateGatewaySessionCheckpoint(
-  value: unknown,
-): GatewaySessionCheckpoint {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Gateway checkpoint must be an object");
+function assertGatewaySessionCheckpoint(
+  value: GatewaySessionCheckpointInput,
+): asserts value is GatewaySessionCheckpoint {
+  const result = GatewaySessionCheckpointInputSchema.safeParse(value);
+  if (!result.success) {
+    const hasUnexpectedField = result.error.issues.some(
+      ({ code }) => code === "unrecognized_keys",
+    );
+    throw new Error(
+      hasUnexpectedField
+        ? "Gateway checkpoint contains an unexpected field"
+        : "Gateway checkpoint must be an object",
+    );
   }
-  const checkpoint = value as Record<string, unknown>;
-  const unexpectedField = Object.keys(checkpoint).find(
-    (field) => !CHECKPOINT_FIELDS.has(field),
-  );
-  if (unexpectedField !== undefined) {
-    throw new Error("Gateway checkpoint contains an unexpected field");
-  }
+  const checkpoint = result.data;
   if (checkpoint.version !== 1) {
     throw new Error("Gateway checkpoint version must be 1");
   }
   requireNonNegativeInteger(checkpoint.generation, "generation");
-  requireNonNegativeInteger(checkpoint.shardId, "shardId");
-  requireNonNegativeInteger(checkpoint.shardCount, "shardCount");
+  const shardId = requireNonNegativeInteger(checkpoint.shardId, "shardId");
+  const shardCount = requireNonNegativeInteger(
+    checkpoint.shardCount,
+    "shardCount",
+  );
+  const allowedHostname = AllowedGatewayHostnameSchema.safeParse(
+    checkpoint.allowedGatewayHostname,
+  );
   if (
     checkpoint.allowedGatewayHostname !== undefined &&
-    !isAllowedGatewayHostname(checkpoint.allowedGatewayHostname)
+    !allowedHostname.success
   ) {
     throw new Error("Gateway checkpoint allowedGatewayHostname is invalid");
   }
-  if (checkpoint.shardCount === 0) {
+  if (shardCount === 0) {
     throw new Error("Gateway checkpoint shardCount must be positive");
   }
-  if (
-    typeof checkpoint.shardId === "number" &&
-    typeof checkpoint.shardCount === "number" &&
-    checkpoint.shardId >= checkpoint.shardCount
-  ) {
+  if (shardId >= shardCount) {
     throw new Error("Gateway checkpoint shardId must be below shardCount");
   }
 
@@ -119,19 +144,18 @@ export function validateGatewaySessionCheckpoint(
     );
   }
   if (nullSessionFields === 0) {
-    if (
-      typeof checkpoint.sessionId !== "string" ||
-      checkpoint.sessionId.length === 0
-    ) {
+    const sessionId = NonEmptyStringSchema.safeParse(checkpoint.sessionId);
+    if (!sessionId.success) {
       throw new Error("Gateway checkpoint sessionId must be a non-empty string");
     }
+    const resumeGatewayUrl = NonEmptyStringSchema.safeParse(
+      checkpoint.resumeGatewayUrl,
+    );
     if (
-      typeof checkpoint.resumeGatewayUrl !== "string" ||
+      !resumeGatewayUrl.success ||
       !isResumeGatewayUrl(
-        checkpoint.resumeGatewayUrl,
-        typeof checkpoint.allowedGatewayHostname === "string"
-          ? checkpoint.allowedGatewayHostname
-          : undefined,
+        resumeGatewayUrl.data,
+        allowedHostname.success ? allowedHostname.data : undefined,
       )
     ) {
       throw new Error("Gateway checkpoint resumeGatewayUrl is invalid");
@@ -149,7 +173,13 @@ export function validateGatewaySessionCheckpoint(
     "lastHeartbeatAckAt",
   );
   requireNonNegativeInteger(checkpoint.updatedAt, "updatedAt");
-  return value as GatewaySessionCheckpoint;
+}
+
+export function validateGatewaySessionCheckpoint(
+  value: GatewaySessionCheckpointInput,
+): GatewaySessionCheckpoint {
+  assertGatewaySessionCheckpoint(value);
+  return value;
 }
 
 export function hasResumableGatewaySession(

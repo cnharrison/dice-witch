@@ -1,3 +1,8 @@
+import {
+  parsePublicRenderModelV4,
+  type RenderRequestInputV4,
+} from "@dice-witch/dice-v4-model";
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import {
   handleAuthRequest,
@@ -9,6 +14,49 @@ const now = 1_767_225_600_123;
 const frontendOrigin = "https://app.example.com";
 const sessionToken = "T".repeat(43);
 const png = new Uint8Array([137, 80, 78, 71]);
+
+const PublicRenderModelV4Schema = z.json().transform(parsePublicRenderModelV4);
+const RenderedImageResponseSchema = z.strictObject({
+  contentType: z.literal("image/png"),
+  width: z.number(),
+  height: z.number(),
+  base64: z.string(),
+});
+const RollFieldsSchema = z.strictObject({
+  message: z.string(),
+  diceArray: z.array(z.array(z.strictObject({
+    sides: z.number(),
+    rolled: z.number(),
+    value: z.number(),
+  }))),
+  resultArray: z.array(z.strictObject({
+    output: z.string(),
+    results: z.number(),
+  })),
+  appearanceIdentities: z.array(z.array(z.string())),
+  rerolledAppearanceIdentities: z.array(z.string()),
+  renderedImage: RenderedImageResponseSchema,
+  renderModel: PublicRenderModelV4Schema,
+});
+const RollResponseSchema = RollFieldsSchema.extend({
+  message: z.literal("Message sent to Discord channel"),
+});
+const PermissionErrorResponseSchema = RollFieldsSchema.extend({
+  error: z.literal("PERMISSION_ERROR"),
+});
+const PrepareResponseSchema = z.strictObject({
+  renderSeed: z.number(),
+  appearanceDigest: z.string(),
+  groupSizes: z.array(z.number()),
+  appearanceIdentities: z.array(z.array(z.string())),
+  renderedImage: RenderedImageResponseSchema,
+  renderModel: PublicRenderModelV4Schema,
+});
+const ErrorResponseSchema = z.strictObject({ error: z.string() });
+
+function unexpectedConnect(): never {
+  throw new Error("Unexpected socket connection");
+}
 
 function dataFetch(request: Request): Promise<Response> {
   switch (new URL(request.url).pathname) {
@@ -56,7 +104,7 @@ function dataFetch(request: Request): Promise<Response> {
   }
 }
 
-function rollResult(renderModel: unknown): unknown {
+function rollResult(renderModel: RenderRequestInputV4) {
   return {
     status: "rolled",
     message: "Roll processed successfully",
@@ -81,17 +129,16 @@ function rollResult(renderModel: unknown): unknown {
 }
 
 function bindings(
-  renderModel: unknown,
+  renderModel: RenderRequestInputV4,
   deliveryStatus: "delivered" | "permission_error" = "delivered",
-): { env: WebApiBindings; deliverWebRoll: ReturnType<typeof vi.fn> } {
+) {
   const deliverWebRoll = vi.fn(() => Promise.resolve(
     deliveryStatus === "delivered"
       ? { status: deliveryStatus, messageId: "100000000000000020" }
       : { status: deliveryStatus },
   ));
-  return {
-    env: {
-      DATA_SERVICE: { fetch: dataFetch } as Fetcher,
+  const env: WebApiBindings = {
+      DATA_SERVICE: { fetch: dataFetch, connect: unexpectedConnect },
       DISCORD_REST: {
         deliverWebRoll,
         listTextChannels: vi.fn(() => Promise.resolve([
@@ -107,8 +154,10 @@ function bindings(
       ROLL_WEB: {
         prepare: vi.fn(),
         execute: vi.fn(() => Promise.resolve(rollResult(renderModel))),
-        previewV4: vi.fn(),
-      previewRendererRevisionV4: vi.fn(() => Promise.resolve("canvaskit-v4-r41")),
+          previewV4: vi.fn(),
+        previewRendererRevisionV4: vi.fn(() =>
+          Promise.resolve("canvaskit-v4-r41")
+        ),
       },
       DISCORD_CLIENT_ID: "100000000000000001",
       DISCORD_CLIENT_SECRET: "test-client-secret",
@@ -126,10 +175,9 @@ function bindings(
       delete: vi.fn(),
       list: vi.fn(),
     },
-    APPEARANCE_THUMBS_BAKE_SECRET: "test-bake-secret",
-    },
-    deliverWebRoll,
+      APPEARANCE_THUMBS_BAKE_SECRET: "test-bake-secret",
   };
+  return { env, deliverWebRoll };
 }
 
 function request(): Request {
@@ -192,7 +240,7 @@ describe("authenticated web roll render model", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    expect(PrepareResponseSchema.parse(await response.json())).toMatchObject({
       renderSeed: 321,
       appearanceDigest: "b".repeat(64),
       groupSizes: [1],
@@ -215,7 +263,7 @@ describe("authenticated web roll render model", () => {
     const response = await handleAuthRequest(request(), env, vi.fn(), () => now);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    expect(RollResponseSchema.parse(await response.json())).toMatchObject({
       renderModel: rollWorkV4Fixture.renderRequest,
     });
     expect(deliverWebRoll).toHaveBeenCalledOnce();
@@ -233,7 +281,7 @@ describe("authenticated web roll render model", () => {
     const response = await handleAuthRequest(request(), env, vi.fn(), () => now);
 
     expect(response.status).toBe(409);
-    await expect(response.json()).resolves.toEqual({
+    expect(ErrorResponseSchema.parse(await response.json())).toEqual({
       error: "Prepared appearance has changed; prepare the roll again",
     });
     expect(deliverWebRoll).not.toHaveBeenCalled();
@@ -248,7 +296,9 @@ describe("authenticated web roll render model", () => {
     const response = await handleAuthRequest(request(), env, vi.fn(), () => now);
 
     expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toMatchObject({
+    expect(
+      PermissionErrorResponseSchema.parse(await response.json()),
+    ).toMatchObject({
       error: "PERMISSION_ERROR",
       renderModel: rollWorkV4Fixture.renderRequest,
     });
@@ -263,7 +313,7 @@ describe("authenticated web roll render model", () => {
     const response = await handleAuthRequest(request(), env, vi.fn(), () => now);
 
     expect(response.status).toBe(502);
-    await expect(response.json()).resolves.toEqual({
+    expect(ErrorResponseSchema.parse(await response.json())).toEqual({
       error: "Roll response is invalid",
     });
     expect(deliverWebRoll).not.toHaveBeenCalled();

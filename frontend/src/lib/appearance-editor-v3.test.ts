@@ -430,6 +430,7 @@ describe("appearance editor V3 draft operations", () => {
   });
 
   it("deletes assigned designs explicitly and preserves guild modes", () => {
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const guild = upsertAppearanceDesignV3(
       createEmptyAppearanceProfileV4("guild"),
       "all",
@@ -454,6 +455,7 @@ describe("appearance editor V3 draft operations", () => {
     );
     expect(deleted.designs).toEqual([]);
     expect(deleted.assignments).toEqual({ all: null, overrides: {} });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((deleted as GuildAppearanceProfileV4).mode).toBe("enforced");
   });
 

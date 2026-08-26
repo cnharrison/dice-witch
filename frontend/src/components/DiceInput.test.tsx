@@ -34,6 +34,7 @@ describe("DiceInput roll controls", () => {
 
     const buttons = screen.getAllByRole("button", { name: "Roll dice" });
     expect(buttons).toHaveLength(2);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(buttons.every((button) => (button as HTMLButtonElement).disabled)).toBe(
       true,
     );

@@ -17,10 +17,12 @@ const queryClient = new QueryClient({
       retry: 1,
       refetchOnWindowFocus: false,
       queryFn: async ({ queryKey }) => {
-        const [url] = Array.isArray(queryKey) ? queryKey : [queryKey];
-        if (typeof url !== 'string') return null;
+        const [url] = queryKey;
+        if (Object.prototype.toString.call(url) !== "[object String]") {
+          return null;
+        }
 
-        const response = await customFetch(url);
+        const response = await customFetch(String(url));
         if (!response.ok) {
           throw new Error(`API error: ${response.status}`);
         }

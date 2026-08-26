@@ -31,12 +31,16 @@ describe("AuthoritativeDiceImageGrid", () => {
     const images = container.querySelectorAll("img");
     expect(cells).toHaveLength(5);
     expect(images).toHaveLength(5);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((cells[0] as HTMLElement).style).toMatchObject({
       width: "150px",
       height: "187px",
     });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((images[0] as HTMLElement).style.left).toBe("0px");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((images[1] as HTMLElement).style.left).toBe("-150px");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((images[3] as HTMLElement).style.top).toBe("-187px");
     expect(container.querySelectorAll("[data-dice-group]")).toHaveLength(2);
   });
@@ -58,6 +62,7 @@ describe("AuthoritativeDiceImageGrid", () => {
       expect(container.querySelectorAll("img")).toHaveLength(1);
       const source = container.querySelector("[data-authoritative-image]");
       expect(source).not.toBeNull();
+      // SAFETY: The test controls this fixture and verifies its use in the scenario below.
       expect((source as HTMLElement).style).toMatchObject({
         width: `${String(width)}px`,
         height: `${String(height)}px`,

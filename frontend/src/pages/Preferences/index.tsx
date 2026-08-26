@@ -35,6 +35,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import * as React from "react";
+import * as z from "zod";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 type AppearanceMutationAction = "save" | "reset" | "restore";
@@ -49,74 +50,44 @@ interface GuildMembership {
   isDiceWitchAdmin: boolean;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
-}
+const jsonValueSchema = z.json();
+type JsonValue = z.infer<typeof jsonValueSchema>;
+const guildMembershipsSchema = z.strictObject({
+  guilds: z.array(z.strictObject({
+    guilds: z.strictObject({
+      id: z.string().regex(SNOWFLAKE),
+      name: z.string().min(1).max(255),
+      icon: z.string().nullable(),
+    }),
+    isAdmin: z.boolean(),
+    isDiceWitchAdmin: z.boolean(),
+  })).max(250),
+});
+const guildPreferencesSchema = z.strictObject({
+  preferences: z.strictObject({
+    skipDiceDelay: z.boolean(),
+    hideRollResultText: z.boolean(),
+  }),
+});
+const guildPreferenceMutationResponseSchema = z.strictObject({
+  success: z.literal(true),
+});
 
 async function readJsonResponse(
   response: Response,
   errorMessage: string,
-): Promise<unknown> {
+): Promise<JsonValue> {
   try {
-    return await response.json();
+    return jsonValueSchema.parse(await response.json());
   } catch {
     throw new Error(errorMessage);
   }
 }
 
-function parseGuildMemberships(value: unknown): GuildMembership[] {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["guilds"]) ||
-    !Array.isArray(value.guilds) ||
-    value.guilds.length > 250
-  ) {
-    throw new Error("Guild response is invalid");
-  }
-  return value.guilds.map((membership) => {
-    if (
-      !isRecord(membership) ||
-      !hasExactKeys(membership, [
-        "guilds",
-        "isAdmin",
-        "isDiceWitchAdmin",
-      ]) ||
-      !isRecord(membership.guilds) ||
-      !hasExactKeys(membership.guilds, ["icon", "id", "name"]) ||
-      typeof membership.guilds.id !== "string" ||
-      !SNOWFLAKE.test(membership.guilds.id) ||
-      typeof membership.guilds.name !== "string" ||
-      membership.guilds.name.length < 1 ||
-      membership.guilds.name.length > 255 ||
-      (membership.guilds.icon !== null &&
-        typeof membership.guilds.icon !== "string") ||
-      typeof membership.isAdmin !== "boolean" ||
-      typeof membership.isDiceWitchAdmin !== "boolean"
-    ) {
-      throw new Error("Guild response is invalid");
-    }
-    return {
-      guilds: {
-        id: membership.guilds.id,
-        name: membership.guilds.name,
-        icon: membership.guilds.icon,
-      },
-      isAdmin: membership.isAdmin,
-      isDiceWitchAdmin: membership.isDiceWitchAdmin,
-    };
-  });
+function parseGuildMemberships(value: JsonValue): GuildMembership[] {
+  const parsed = guildMembershipsSchema.safeParse(value);
+  if (!parsed.success) throw new Error("Guild response is invalid");
+  return parsed.data.guilds;
 }
 
 async function getGuildMemberships(): Promise<GuildMembership[]> {
@@ -141,23 +112,9 @@ async function getGuildPreferences(guildId: string): Promise<GuildPreferences> {
     response,
     "Guild preference response is invalid",
   );
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["preferences"]) ||
-    !isRecord(value.preferences) ||
-    !hasExactKeys(value.preferences, [
-      "hideRollResultText",
-      "skipDiceDelay",
-    ]) ||
-    typeof value.preferences.skipDiceDelay !== "boolean" ||
-    typeof value.preferences.hideRollResultText !== "boolean"
-  ) {
-    throw new Error("Guild preferences are unavailable");
-  }
-  return {
-    skipDiceDelay: value.preferences.skipDiceDelay,
-    hideRollResultText: value.preferences.hideRollResultText,
-  };
+  const parsed = guildPreferencesSchema.safeParse(value);
+  if (!parsed.success) throw new Error("Guild preferences are unavailable");
+  return parsed.data.preferences;
 }
 
 function LoadingPanel({ label }: { label: string }) {
@@ -180,7 +137,7 @@ function ErrorPanel({ message }: { message: string }) {
 
 function retryAppearanceQuery(
   failureCount: number,
-  error: unknown,
+  error: Error,
   maximumRetries: number,
 ): boolean {
   if (
@@ -193,7 +150,7 @@ function retryAppearanceQuery(
   return failureCount < maximumRetries;
 }
 
-function appearanceErrorMessage(error: unknown): string {
+function appearanceErrorMessage(error: Error): string {
   if (!(error instanceof AppearanceApiError)) {
     return error instanceof Error ? error.message : "Appearance settings are unavailable";
   }
@@ -408,11 +365,7 @@ export default function Preferences() {
         response,
         "Guild preference response is invalid",
       );
-      if (
-        !isRecord(value) ||
-        !hasExactKeys(value, ["success"]) ||
-        value.success !== true
-      ) {
+      if (!guildPreferenceMutationResponseSchema.safeParse(value).success) {
         throw new Error("Guild preference could not be saved");
       }
       return preferences;

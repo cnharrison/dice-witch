@@ -25,6 +25,7 @@ import {
   type EffectiveAppearanceRecipesV2,
 } from "../../packages/roll-render-model/src";
 import type { RollExecutionResult } from "../../packages/roll-domain/src";
+import type { SchemaInput } from "../../packages/discord-contracts/src/schema-primitives";
 
 const appearance: RenderAppearanceV3 = {
   surface: {
@@ -66,17 +67,19 @@ function allTargetsRequest(): RenderRequestV3 {
   };
 }
 
-function d20(overrides: Partial<RenderDieV3> = {}): RenderDieV3 {
+type D20Die = RenderDieV3 & { target: "d20" };
+
+function d20(overrides: Partial<D20Die> = {}): D20Die {
   return {
     target: "d20",
     result: 20,
     appearance,
     icons: [],
     ...overrides,
-  } as RenderDieV3;
+  };
 }
 
-function requestWithAppearance(value: unknown): unknown {
+function requestWithAppearance(value: SchemaInput): SchemaInput {
   return {
     version: 3,
     groups: [[{ ...d20(), appearance: value }]],
@@ -784,7 +787,7 @@ describe("RenderRequestV3", () => {
     expect(() =>
       validateRenderRequestV3({
         version: 3,
-        groups: [[...Array.from({ length: 51 }, () => d20())]],
+        groups: [Array.from({ length: 51 }, () => d20())],
       }),
     ).toThrow("Render request exceeds 50 dice");
     expect(() =>
@@ -800,7 +803,7 @@ describe("RenderRequestV3", () => {
       }),
     ).toThrow("Render request groups[0][0].icons[0] is not supported");
 
-    const invalidResults: Array<[Record<string, unknown>, string]> = [
+    const invalidResults: Array<[SchemaInput, string]> = [
       [
         { ...d20(), target: "d4", result: 5 },
         "Render request groups[0][0].result must be from 1 through 4",

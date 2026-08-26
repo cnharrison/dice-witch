@@ -38,24 +38,16 @@ import { decodePngRgba8 } from "./png";
 
 const OTHER_RESULTS = [1, 6, 9, 20, 100, 999] as const;
 
-const APPROVED_REPRESENTATIVE_PNG_HASHES_V4: Readonly<Record<string, string>> = {
-  "d4-standard-r1":
-    "d26edd536cf4ae968cc2d883057e25ae610282a41450a37fd907f6194235a667",
-  "d6-standard-r1":
-    "6dccc6e80d0365d65e41cd80aff18cf594afa21afca740e4ae02530ab5b824e3",
-  "d8-standard-r1":
-    "9e449fc29e3f8e467af6134838411ad6d2d6480a509df3a9b71f5a3ea7c020c7",
-  "d10-standard-r1":
-    "a45fc50637b3e1f7d7641ea5e6c2a6213c20dabcf9c4a1f2af3200f2dcdee019",
-  "d12-standard-r1":
-    "45b5457f6cf8697e23e525342dc1d0c24cc6157ba006d59fe4cc801158a27750",
-  "d20-standard-r1":
-    "a10612178dd6fef565f5eb77c31de9003ce021f40231abce02add8bb1464a29b",
-  "percentile-standard-r1":
-    "694feb7d1283b6fb22bdde403e1a3c1712df8545179e5584246ad789e1eaa037",
-  "fudge-standard-r1":
-    "ae58c67ca8dc145d779f214b475aa46b11cf1b382798d6ff322b5b1274303cd7",
-};
+const APPROVED_REPRESENTATIVE_PNG_HASHES_V4 = new Map([
+  ["d4-standard-r1", "d26edd536cf4ae968cc2d883057e25ae610282a41450a37fd907f6194235a667"],
+  ["d6-standard-r1", "6dccc6e80d0365d65e41cd80aff18cf594afa21afca740e4ae02530ab5b824e3"],
+  ["d8-standard-r1", "9e449fc29e3f8e467af6134838411ad6d2d6480a509df3a9b71f5a3ea7c020c7"],
+  ["d10-standard-r1", "a45fc50637b3e1f7d7641ea5e6c2a6213c20dabcf9c4a1f2af3200f2dcdee019"],
+  ["d12-standard-r1", "45b5457f6cf8697e23e525342dc1d0c24cc6157ba006d59fe4cc801158a27750"],
+  ["d20-standard-r1", "a10612178dd6fef565f5eb77c31de9003ce021f40231abce02add8bb1464a29b"],
+  ["percentile-standard-r1", "694feb7d1283b6fb22bdde403e1a3c1712df8545179e5584246ad789e1eaa037"],
+  ["fudge-standard-r1", "ae58c67ca8dc145d779f214b475aa46b11cf1b382798d6ff322b5b1274303cd7"],
+]);
 
 const REPRESENTATIVE_GEOMETRIES = [
   [D4_STANDARD_GEOMETRY_V4, 4],
@@ -88,6 +80,14 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
     .join("");
 }
 
+function requiredByte(bytes: Uint8Array, offset: number): number {
+  const value = bytes[offset];
+  if (value === undefined) {
+    throw new Error("CanvasKit V4 test pixel is missing");
+  }
+  return value;
+}
+
 function visibleVerticalCenter({
   width,
   height,
@@ -97,7 +97,7 @@ function visibleVerticalCenter({
   let bottom = -1;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if ((pixels[(y * width + x) * 4 + 3] as number) !== 0) {
+      if (requiredByte(pixels, (y * width + x) * 4 + 3) !== 0) {
         top = Math.min(top, y);
         bottom = Math.max(bottom, y);
       }
@@ -112,7 +112,7 @@ function rowHasVisibleAlpha(
   y: number,
 ): boolean {
   for (let x = 0; x < width; x += 1) {
-    if ((pixels[(y * width + x) * 4 + 3] as number) !== 0) return true;
+    if (requiredByte(pixels, (y * width + x) * 4 + 3) !== 0) return true;
   }
   return false;
 }
@@ -120,7 +120,7 @@ function rowHasVisibleAlpha(
 function pixelDifference(
   first: Uint8Array,
   second: Uint8Array,
-): { mean: number; maximum: number } {
+) {
   if (first.length !== second.length) {
     throw new Error("CanvasKit V4 test pixel lengths differ");
   }
@@ -128,7 +128,7 @@ function pixelDifference(
   let maximum = 0;
   for (let index = 0; index < first.length; index += 1) {
     const difference = Math.abs(
-      (first[index] as number) - (second[index] as number),
+      requiredByte(first, index) - requiredByte(second, index),
     );
     total += difference;
     maximum = Math.max(maximum, difference);
@@ -148,12 +148,12 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
         expect(rendered.width).toBe(300);
         expect(rendered.height).toBe(300);
         expect(rendered.visibleFaceCount).toBeGreaterThan(0);
-        expect([...rendered.png.slice(0, 8)]).toEqual([
+        expect(Array.from(rendered.png.slice(0, 8))).toEqual([
           137, 80, 78, 71, 13, 10, 26, 10,
         ]);
         expect(repeated.png).toEqual(rendered.png);
         expect(await sha256Hex(rendered.png)).toBe(
-          APPROVED_REPRESENTATIVE_PNG_HASHES_V4[geometry.id],
+          APPROVED_REPRESENTATIVE_PNG_HASHES_V4.get(geometry.id),
         );
       }
       expect(canvasKit.HEAPU8.buffer.byteLength).toBe(
@@ -244,7 +244,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
         size: 300,
       });
       expect(await sha256Hex(canonical.png)).toBe(
-        APPROVED_REPRESENTATIVE_PNG_HASHES_V4["d6-standard-r1"],
+        APPROVED_REPRESENTATIVE_PNG_HASHES_V4.get("d6-standard-r1"),
       );
     } finally {
       renderer.dispose();
@@ -1196,6 +1196,11 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
           }]],
         }),
       ).rejects.toThrow("CanvasKit V4 spherical material raster is invalid");
+      const malformedMaterialRaster = {
+        ...materialRaster,
+        pixels: new Uint8Array(4),
+      };
+      Object.assign(malformedMaterialRaster, { width: 1, height: 1 });
       await expect(
         renderer.renderGeometryGrid({
           rendererRevision: "canvaskit-v4-r1",
@@ -1205,11 +1210,7 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
             sides: 999,
             result: 999,
             fontId: "liberation-sans",
-            materialRaster: {
-              width: 1,
-              height: 1,
-              pixels: new Uint8Array(4),
-            } as unknown as typeof materialRaster,
+            materialRaster: malformedMaterialRaster,
           }]],
         }),
       ).rejects.toThrow("CanvasKit V4 spherical material raster is invalid");
@@ -1316,12 +1317,14 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       ).rejects.toThrow(
         "CanvasKit V4 geometry size must be from 64 through 1200",
       );
+      const invalidEngravingOptions = {
+        geometry: D6_STANDARD_GEOMETRY_V4,
+        result: 6,
+        engravingFinish: "matte-ink",
+      } as const;
+      Object.assign(invalidEngravingOptions, { engravingFinish: "glitter" });
       await expect(
-        renderer.render({
-          geometry: D6_STANDARD_GEOMETRY_V4,
-          result: 6,
-          engravingFinish: "glitter" as never,
-        }),
+        renderer.render(invalidEngravingOptions),
       ).rejects.toThrow(
         "CanvasKit V4 engraving finish is invalid: glitter",
       );
@@ -1363,16 +1366,16 @@ describe("canonical CanvasKit V4 geometry renderer", () => {
       ).rejects.toThrow(
         "CanvasKit V4 material texture pixel length is invalid",
       );
+      const malformedTexture = {
+        ...texture,
+        pixels: new Uint8Array(4),
+      };
+      Object.assign(malformedTexture, { width: 1, height: 1 });
       await expect(
         renderer.renderTextured({
           geometry: D20_STANDARD_GEOMETRY_V4,
           result: 20,
-          texture: {
-            ...texture,
-            width: 1,
-            height: 1,
-            pixels: new Uint8Array(4),
-          } as unknown as typeof texture,
+          texture: malformedTexture,
         }),
       ).rejects.toThrow(
         "CanvasKit V4 material texture pixel length is invalid",

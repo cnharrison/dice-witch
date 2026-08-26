@@ -10,6 +10,7 @@ import type {
   AppearanceCatalogV3,
   AppearanceRecipeV3,
 } from "@/types/appearance";
+import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 
 const appearanceCss = readFileSync(
   resolve(process.cwd(), "src/index.css"),
@@ -17,6 +18,7 @@ const appearanceCss = readFileSync(
 );
 
 const catalog = {
+  ...APPEARANCE_CATALOG_V3,
   fonts: [
     { id: "cinzel", name: "Cinzel" },
     { id: "fraunces", name: "Fraunces" },
@@ -26,12 +28,13 @@ const catalog = {
     { id: "matte-ink", name: "Matte ink" },
     { id: "luminous", name: "Luminous" },
   ],
-} as never as AppearanceCatalogV3;
+} satisfies AppearanceCatalogV3;
 
 function recipeWith(
   font: AppearanceRecipeV3["font"],
   engraving: AppearanceRecipeV3["engraving"],
 ): AppearanceRecipeV3 {
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   return {
     version: 3,
     variation: "curated",

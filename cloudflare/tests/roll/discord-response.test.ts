@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   buildDeferredResponse,
   buildDeleteOriginalResponse,
@@ -8,6 +9,8 @@ import {
   buildFollowupResponse,
   buildFollowupResponseWithFile,
   buildPublicFollowupResponse,
+  DISCORD_COMPONENTS_V2_FLAG,
+  validateDiscordMessage,
 } from "../../packages/discord-contracts/src";
 
 const target = {
@@ -15,6 +18,30 @@ const target = {
   applicationId: "100000000000000001",
   token: "interaction-token-value",
 };
+const MalformedComponentsMessageSchema = z.strictObject({
+  flags: z.number(),
+  content: z.string(),
+  components: z.array(z.strictObject({
+    type: z.number(),
+    content: z.string(),
+  })),
+});
+
+function malformedComponentsMessage(
+  value: z.input<typeof MalformedComponentsMessageSchema>,
+): Parameters<typeof buildEditOriginalResponse>[1] {
+  const parsed = MalformedComponentsMessageSchema.parse(value);
+  // SAFETY: This parsed fixture combines mutually exclusive fields to exercise the message validator boundary.
+  return parsed as Parameters<typeof buildEditOriginalResponse>[1];
+}
+
+function formText(form: FormData, name: string): string {
+  return z.string().parse(form.get(name));
+}
+
+function formFile(form: FormData, name: string): File {
+  return z.instanceof(File).parse(form.get(name));
+}
 
 describe("Discord interaction response requests", () => {
   it("builds an immediate public deferred response", async () => {
@@ -137,13 +164,22 @@ describe("Discord interaction response requests", () => {
     expect(() =>
       buildEditOriginalResponse(
         target,
-        {
+        malformedComponentsMessage({
           flags: 1 << 15,
           content: "legacy content",
           components: [{ type: 10, content: "V2 text" }],
-        } as never,
+        }),
       ),
     ).toThrow("Components V2 messages cannot contain content or embeds");
+  });
+
+  it("rejects an ephemeral Components V2 message as a public followup", () => {
+    expect(() =>
+      buildPublicFollowupResponse(target, {
+        flags: DISCORD_COMPONENTS_V2_FLAG | 64,
+        components: [{ type: 10, content: "Private diagnostic" }],
+      })
+    ).toThrow("Public Discord followups cannot be ephemeral");
   });
 
   it("creates an explicitly ephemeral followup", async () => {
@@ -182,6 +218,7 @@ describe("Discord interaction response requests", () => {
 
   it("builds a multipart original-response edit with attachment metadata", async () => {
     const png = new Uint8Array([137, 80, 78, 71]);
+    const expectedBytes = png.slice().buffer;
     const request = buildEditOriginalResponseWithFile(
       target,
       {
@@ -200,16 +237,14 @@ describe("Discord interaction response requests", () => {
       },
     );
 
+    png.fill(0);
     expect(request.method).toBe("PATCH");
     expect(request.headers.get("content-type")).toMatch(
       /^multipart\/form-data; boundary=/,
     );
     const form = await request.formData();
-    const payload = form.get("payload_json");
-    expect(typeof payload).toBe("string");
-    if (typeof payload !== "string") {
-      throw new Error("Multipart payload_json is missing");
-    }
+    expect([...form.keys()]).toEqual(["payload_json", "files[0]"]);
+    const payload = formText(form, "payload_json");
     expect(JSON.parse(payload)).toEqual({
       embeds: [
         {
@@ -226,14 +261,13 @@ describe("Discord interaction response requests", () => {
         },
       ],
     });
-    const file = form.get("files[0]");
-    expect(file).toBeInstanceOf(File);
+    const file = formFile(form, "files[0]");
     expect(file).toMatchObject({
       name: "dice.png",
       size: 4,
       type: "image/png",
     });
-    await expect((file as File).arrayBuffer()).resolves.toEqual(png.buffer);
+    await expect(file.arrayBuffer()).resolves.toEqual(expectedBytes);
   });
 
   it("builds a V2 media gallery attachment response", async () => {
@@ -262,10 +296,7 @@ describe("Discord interaction response requests", () => {
     );
 
     const form = await request.formData();
-    const payload = form.get("payload_json");
-    if (typeof payload !== "string") {
-      throw new Error("Multipart payload_json is missing");
-    }
+    const payload = formText(form, "payload_json");
     expect(JSON.parse(payload)).toMatchObject({
       flags: 1 << 15,
       content: null,
@@ -308,10 +339,7 @@ describe("Discord interaction response requests", () => {
       "https://discord.com/api/v10/webhooks/100000000000000001/interaction-token-value/messages/1500000000000000000",
     );
     const form = await request.formData();
-    const payload = form.get("payload_json");
-    if (typeof payload !== "string") {
-      throw new Error("Multipart payload_json is missing");
-    }
+    const payload = formText(form, "payload_json");
     expect(JSON.parse(payload)).toMatchObject({
       attachments: [{ id: 0, filename: "dice.png" }],
     });
@@ -341,10 +369,7 @@ describe("Discord interaction response requests", () => {
       "https://discord.com/api/v10/webhooks/100000000000000001/interaction-token-value?wait=true",
     );
     const form = await request.formData();
-    const payload = form.get("payload_json");
-    if (typeof payload !== "string") {
-      throw new Error("Multipart payload_json is missing");
-    }
+    const payload = formText(form, "payload_json");
     expect(JSON.parse(payload)).toMatchObject({
       nonce: target.id,
       enforce_nonce: true,
@@ -364,6 +389,25 @@ describe("Discord interaction response requests", () => {
     },
   ])("rejects unsafe message input %#", ({ message, target: requestTarget }) => {
     expect(() => buildEditOriginalResponse(requestTarget, message)).toThrow();
+  });
+
+  it("requires Components V2 attachment references to match the file", () => {
+    expect(() =>
+      buildEditOriginalResponseWithFile(
+        target,
+        {
+          flags: DISCORD_COMPONENTS_V2_FLAG,
+          components: [{ type: 10, content: "result" }],
+        },
+        {
+          filename: "dice.png",
+          contentType: "image/png",
+          bytes: new Uint8Array([1]),
+        },
+      )
+    ).toThrow(
+      "Discord Components V2 attachment reference does not match the file",
+    );
   });
 
   it("rejects an embed that references a different attachment", () => {
@@ -393,5 +437,94 @@ describe("Discord interaction response requests", () => {
         { filename, contentType: "image/png", bytes },
       ),
     ).toThrow();
+  });
+
+  it("validates strict legacy and Components V2 message trees", () => {
+    expect(() =>
+      validateDiscordMessage({ content: "result", extra: true })
+    ).toThrow("Discord legacy message is invalid");
+    expect(() =>
+      validateDiscordMessage({
+        flags: DISCORD_COMPONENTS_V2_FLAG,
+        components: [{ type: 10, content: "result", extra: true }],
+      })
+    ).toThrow("Discord text display is invalid");
+    expect(() =>
+      validateDiscordMessage({
+        flags: DISCORD_COMPONENTS_V2_FLAG,
+        components: [{
+          type: 1,
+          components: [
+            {
+              type: 3,
+              custom_id: "select",
+              options: [{ label: "One", value: "one" }],
+            },
+            { type: 2, style: 2, label: "Other", custom_id: "other" },
+          ],
+        }],
+      })
+    ).toThrow("Discord action row is invalid");
+  });
+
+  it("enforces the aggregate Components V2 component limit", () => {
+    const component = { type: 10 as const, content: "result" };
+    expect(
+      validateDiscordMessage({
+        flags: DISCORD_COMPONENTS_V2_FLAG,
+        components: Array.from({ length: 40 }, () => component),
+      }),
+    ).toBeTruthy();
+    expect(() =>
+      validateDiscordMessage({
+        flags: DISCORD_COMPONENTS_V2_FLAG,
+        components: Array.from({ length: 41 }, () => component),
+      })
+    ).toThrow("Discord Components V2 message components are invalid");
+  });
+
+  it("preserves target, message, attachment, then followup-id validation order", () => {
+    const invalidTarget = { ...target, token: "../unsafe" };
+    const invalidAttachment = {
+      filename: "dice.txt",
+      contentType: "image/png" as const,
+      bytes: new Uint8Array(),
+    };
+    expect(() =>
+      buildEditFollowupResponseWithFile(
+        invalidTarget,
+        "bad-id",
+        {},
+        invalidAttachment,
+      )
+    ).toThrow("Discord interaction response target is invalid");
+    expect(() =>
+      buildEditFollowupResponseWithFile(
+        target,
+        "bad-id",
+        {},
+        invalidAttachment,
+      )
+    ).toThrow("Discord message must contain content, embeds, or components");
+    expect(() =>
+      buildEditFollowupResponseWithFile(
+        target,
+        "bad-id",
+        { content: "result" },
+        invalidAttachment,
+      )
+    ).toThrow("Discord PNG attachment is invalid");
+    expect(() =>
+      buildEditFollowupResponseWithFile(
+        target,
+        "bad-id",
+        { content: "result" },
+        {
+          filename: "dice.png",
+          contentType: "image/png",
+          bytes: new Uint8Array([1]),
+        },
+      )
+    ).toThrow("Discord followup message id is invalid");
   });
 });

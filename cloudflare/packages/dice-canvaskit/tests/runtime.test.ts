@@ -70,7 +70,7 @@ describe("source-built CanvasKit V4 runtime", () => {
   });
 
   it("retries a rejected singleton initialization without duplicating in-flight work", async () => {
-    const runtime = {} as CanvasKitRuntimeV4;
+    const runtime = await loadCanvasKitV4();
     let initializationCount = 0;
     const load = createCanvasKitRuntimeLoaderV4(() => {
       initializationCount += 1;
@@ -153,17 +153,18 @@ describe("source-built CanvasKit V4 runtime", () => {
           },
         }),
       ).rejects.toThrow("CanvasKit V4 initialization failed");
+      const invalidRuntime = new Proxy(await loadCanvasKitV4(), {
+        has(target, property) {
+          return property === "HEAPU8" ? false : property in target;
+        },
+      });
       await expect(
         initializeCanvasKitRuntimeV4({
-          loader: () => Promise.resolve({} as CanvasKitRuntimeV4),
+          loader: () => Promise.resolve(invalidRuntime),
         }),
       ).rejects.toThrow("CanvasKit V4 initialization failed");
 
-      expect(
-        consoleError.mock.calls.map(
-          ([entry]): unknown => JSON.parse(String(entry)) as unknown,
-        ),
-      ).toEqual([
+      const expectedDiagnostics = [
         {
           level: "error",
           message: "CanvasKit V4 initialization failed",
@@ -199,7 +200,10 @@ describe("source-built CanvasKit V4 runtime", () => {
           errorName: "Error",
           expectedHeapBytes: CANVASKIT_INITIAL_MEMORY_BYTES_V4,
         },
-      ]);
+      ];
+      expect(
+        consoleError.mock.calls.map(([entry]) => String(entry)),
+      ).toEqual(expectedDiagnostics.map((entry) => JSON.stringify(entry)));
       expect(JSON.stringify(consoleError.mock.calls)).not.toContain(secret);
     } finally {
       consoleError.mockRestore();

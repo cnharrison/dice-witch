@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildSaveRollCustomId,
@@ -5,31 +6,127 @@ import {
   buildSaveRollErrorResponse,
   buildSaveRollModalResponse,
   buildSaveRollSuccessResponse,
+  isComponentsV2Message,
   parseSaveRollInteraction,
   parseSaveRollIntent,
   parseSaveRollIntentV1,
   ROLL_SAVE_INTENT_RETENTION_MS,
+  validateDiscordMessage,
+  type DiscordTopLevelComponent,
 } from "../../packages/discord-contracts/src";
 import {
   completeSaveRollSubmit,
   openSaveRollModal,
   personalLibraryState,
 } from "../../workers/interactions/src/save-roll-handler";
+import type {
+  FetchPort,
+  SaveRollIntentNamespace,
+} from "../../workers/interactions/src/ports";
+import type { SaveRollIntentResult } from "../../workers/interactions/src/service-results";
+import type { VisibleSavedRollV1 } from "../../workers/interactions/src/saved-roll-picker";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const source = { kind: "discord" as const, id: "1400000000000000000" };
-function jsonRequestBody(init: RequestInit | undefined): unknown {
-  if (typeof init?.body !== "string") throw new Error("JSON request body is missing");
-  return JSON.parse(init.body) as unknown;
+const DiscordEditEnvelopeSchema = z.strictObject({
+  flags: z.number().int().nonnegative(),
+  allowed_mentions: z.strictObject({ parse: z.tuple([]) }),
+  components: z.array(z.json()),
+  content: z.null(),
+  embeds: z.tuple([]),
+});
+const SavedRollWriteRequestSchema = z.strictObject({
+  owner: z.strictObject({
+    type: z.literal("user"),
+    userId: z.string(),
+  }),
+  actorUserId: z.string(),
+  authorizationUpdatedAt: z.null(),
+  id: z.string().regex(UUID_V4),
+  expectedListRevision: z.number().int().nonnegative(),
+  draft: z.strictObject({
+    version: z.literal(2),
+    name: z.string(),
+    notation: z.string(),
+    title: z.string().nullable(),
+    repetitions: z.number().int().positive(),
+    nameColor: z.string().nullable(),
+  }),
+  pinned: z.boolean(),
+  mutationId: z.string(),
+  occurredAt: z.number().int().nonnegative(),
+});
+
+type DiscordEditBody = Omit<
+  z.output<typeof DiscordEditEnvelopeSchema>,
+  "components"
+> & { components: DiscordTopLevelComponent[] };
+type SavedRollWriteRequest = z.output<typeof SavedRollWriteRequestSchema>;
+type SaveRollHandlerEnv = Parameters<typeof openSaveRollModal>[1];
+
+function parseDiscordEditBody(init: RequestInit | undefined): DiscordEditBody {
+  const encoded = z.string().safeParse(init?.body);
+  if (!encoded.success) throw new Error("JSON request body is missing");
+  const envelope = DiscordEditEnvelopeSchema.safeParse(JSON.parse(encoded.data));
+  if (!envelope.success) throw new Error("Discord edit body is invalid");
+  const message = validateDiscordMessage({
+    flags: envelope.data.flags,
+    components: envelope.data.components,
+  });
+  if (!isComponentsV2Message(message)) {
+    throw new Error("Discord edit body must use Components V2");
+  }
+  return { ...envelope.data, components: message.components };
 }
 
-function componentText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(componentText).join("\n");
-  if (typeof value !== "object" || value === null) return "";
-  const record = value as Record<string, unknown>;
-  return Object.values(record).map(componentText).filter(Boolean).join("\n");
+function controlText(
+  control: Extract<DiscordTopLevelComponent, { type: 1 }>["components"][number],
+): string {
+  return control.type === 2
+    ? control.label
+    : control.options.map((option) => option.label).join("\n");
 }
+
+function discordComponentText(component: DiscordTopLevelComponent): string {
+  switch (component.type) {
+    case 1:
+      return component.components.map(controlText).join("\n");
+    case 9:
+      return [
+        componentText(component.components),
+        component.accessory.type === 2
+          ? component.accessory.label
+          : component.accessory.description ?? "",
+      ].filter(Boolean).join("\n");
+    case 10:
+      return component.content;
+    case 12:
+      return component.items.map((item) => item.description ?? "").join("\n");
+    case 13:
+    case 14:
+      return "";
+    case 17:
+      return componentText(component.components);
+  }
+}
+
+function componentText(components: readonly DiscordTopLevelComponent[]): string {
+  return components.map(discordComponentText).filter(Boolean).join("\n");
+}
+
+function intentNamespace(result: SaveRollIntentResult): SaveRollIntentNamespace {
+  return {
+    getByName: () => ({
+      getSaveRollIntent: () => Promise.resolve(result),
+    }),
+  };
+}
+
+const unusedDataService: FetchPort = {
+  fetch: () => {
+    throw new Error("Unexpected data service request");
+  },
+};
 
 const baseInteraction = {
   id: "1400000000000000001",
@@ -42,8 +139,8 @@ const baseInteraction = {
 
 function visibleSavedRoll(
   createdAt: number,
-  overrides: Record<string, unknown> = {},
-) {
+  overrides: Partial<VisibleSavedRollV1> = {},
+): VisibleSavedRollV1 {
   return {
     version: 1 as const,
     id: "123e4567-e89b-42d3-a456-426614174000",
@@ -62,6 +159,30 @@ function visibleSavedRoll(
     updatedAt: createdAt,
     ...overrides,
   };
+}
+
+function appliedSaveResponse(
+  body: SavedRollWriteRequest,
+  listRevision: number,
+  comparisonKey: string,
+): Response {
+  const savedRoll = visibleSavedRoll(body.occurredAt, {
+    id: body.id,
+    displayName: body.draft.name,
+    comparisonKey,
+    notation: body.draft.notation,
+    title: body.draft.title,
+    repetitions: body.draft.repetitions,
+  });
+  return Response.json({
+    status: "applied",
+    listRevision,
+    savedRoll: {
+      ...savedRoll,
+      version: 2,
+      nameColor: body.draft.nameColor,
+    },
+  });
 }
 
 describe("Save roll interaction contract", () => {
@@ -228,6 +349,41 @@ describe("Save roll interaction contract", () => {
     });
   });
 
+  it("accepts either V2 modal field order and rejects duplicate fields", () => {
+    const name = {
+      type: 18,
+      component: {
+        type: 4,
+        custom_id: "save-roll-name",
+        value: "Reordered save",
+      },
+    };
+    const titleMode = {
+      type: 18,
+      component: {
+        type: 3,
+        custom_id: "save-roll-title-mode",
+        values: ["none"],
+      },
+    };
+    const modal = {
+      ...baseInteraction,
+      type: 5,
+      data: {
+        custom_id: "save-roll:v2:d:1400000000000000000:submit",
+        components: [titleMode, name],
+      },
+    };
+
+    expect(parseSaveRollInteraction(modal, {
+      applicationId: baseInteraction.application_id,
+    })).toMatchObject({ name: "Reordered save", titleMode: "none" });
+    expect(parseSaveRollInteraction({
+      ...modal,
+      data: { ...modal.data, components: [name, name] },
+    }, { applicationId: baseInteraction.application_id })).toBeNull();
+  });
+
   it("keeps one-field V1 modal submissions readable", () => {
     expect(parseSaveRollInteraction({
       ...baseInteraction,
@@ -278,7 +434,7 @@ describe("Save roll interaction contract", () => {
     const response = buildSaveRollErrorResponse(
       "Already saved as **<@1400000000000000004>**.",
     );
-    expect(componentText(response)).toContain(
+    expect(componentText(response.data.components)).toContain(
       "Already saved as \\*\\*\\<@1400000000000000004\\>\\*\\*.",
     );
     expect(response.data.allowed_mentions).toEqual({ parse: [] });
@@ -290,7 +446,7 @@ describe("Save roll interaction contract", () => {
       "https://dicewit.ch/app/library",
     );
 
-    expect(componentText(response)).toContain(
+    expect(componentText(response.data.components)).toContain(
       "A copy of this roll already exists in your personal library as “Existing attack”.",
     );
     expect(response.data.allowed_mentions).toEqual({ parse: [] });
@@ -397,22 +553,16 @@ describe("Save roll interaction contract", () => {
       createdAt,
       expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
     });
-    const env = {
-      ROLL_WORK: {
-        getByName: () => ({
-          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
-        }),
-      } as unknown as DurableObjectNamespace,
-      WEB_DELIVERY_WORK: {
-        getByName: () => ({}),
-      } as unknown as DurableObjectNamespace,
+    const env: SaveRollHandlerEnv = {
+      ROLL_WORK: intentNamespace({ status: "available", intent }),
+      WEB_DELIVERY_WORK: intentNamespace({ status: "missing" }),
       DATA_SERVICE: {
         fetch: () => Promise.resolve(Response.json({
           status: "found",
           listRevision: 4,
           savedRolls: [],
         })),
-      } as unknown as Fetcher,
+      },
       WEB_APP_URL: "https://dicewit.ch",
     };
     const interaction = parseSaveRollInteraction({
@@ -422,10 +572,9 @@ describe("Save roll interaction contract", () => {
     }, { applicationId: baseInteraction.application_id });
     if (interaction === null) throw new Error("Expected Save roll interaction");
 
-    const response = await openSaveRollModal(interaction, env) as ReturnType<
-      typeof buildSaveRollModalResponse
-    >;
+    const response = await openSaveRollModal(interaction, env);
     expect(response).toMatchObject({ type: 9, data: { title: "Save roll" } });
+    if (response.type !== 9) throw new Error("Expected Save roll modal");
     expect(response.data.components[0]).toMatchObject({
       component: { value: "Initiative" },
     });
@@ -450,13 +599,9 @@ describe("Save roll interaction contract", () => {
       createdAt,
       expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
     });
-    const env = {
-      ROLL_WORK: {
-        getByName: () => ({
-          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
-        }),
-      } as unknown as DurableObjectNamespace,
-      WEB_DELIVERY_WORK: { getByName: () => ({}) } as unknown as DurableObjectNamespace,
+    const env: SaveRollHandlerEnv = {
+      ROLL_WORK: intentNamespace({ status: "available", intent }),
+      WEB_DELIVERY_WORK: intentNamespace({ status: "missing" }),
       DATA_SERVICE: {
         fetch: () => Promise.resolve(Response.json({
           status: "found",
@@ -468,7 +613,7 @@ describe("Save roll interaction contract", () => {
             title: null,
           })],
         })),
-      } as unknown as Fetcher,
+      },
       WEB_APP_URL: "https://dicewit.ch",
     };
     const interaction = parseSaveRollInteraction({
@@ -478,9 +623,8 @@ describe("Save roll interaction contract", () => {
     }, { applicationId: baseInteraction.application_id });
     if (interaction === null) throw new Error("Expected Save roll interaction");
 
-    const response = await openSaveRollModal(interaction, env) as ReturnType<
-      typeof buildSaveRollModalResponse
-    >;
+    const response = await openSaveRollModal(interaction, env);
+    if (response.type !== 9) throw new Error("Expected Save roll modal");
 
     expect(response.data.components[0]).toMatchObject({
       component: { value: "Initiative" },
@@ -506,13 +650,9 @@ describe("Save roll interaction contract", () => {
       createdAt,
       expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
     });
-    const env = {
-      ROLL_WORK: {
-        getByName: () => ({
-          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
-        }),
-      } as unknown as DurableObjectNamespace,
-      WEB_DELIVERY_WORK: { getByName: () => ({}) } as unknown as DurableObjectNamespace,
+    const env: SaveRollHandlerEnv = {
+      ROLL_WORK: intentNamespace({ status: "available", intent }),
+      WEB_DELIVERY_WORK: intentNamespace({ status: "missing" }),
       DATA_SERVICE: {
         fetch: () => Promise.resolve(Response.json({
           status: "found",
@@ -525,7 +665,7 @@ describe("Save roll interaction contract", () => {
             repetitions: 2,
           })],
         })),
-      } as unknown as Fetcher,
+      },
       WEB_APP_URL: "https://dicewit.ch/app",
     };
     const interaction = parseSaveRollInteraction({
@@ -536,7 +676,8 @@ describe("Save roll interaction contract", () => {
     if (interaction === null) throw new Error("Expected Save roll interaction");
 
     const response = await openSaveRollModal(interaction, env);
-    expect(componentText(response)).toContain(
+    if (response.type !== 4) throw new Error("Expected duplicate response");
+    expect(componentText(response.data.components)).toContain(
       "A copy of this roll already exists in your personal library as “Existing attack”.",
     );
     expect(JSON.stringify(response)).toContain("https://dicewit.ch/app/library");
@@ -545,16 +686,10 @@ describe("Save roll interaction contract", () => {
   it.each(["missing", "expired"] as const)(
     "returns a private error when the source intent is %s",
     async (status) => {
-      const env = {
-        ROLL_WORK: {
-          getByName: () => ({
-            getSaveRollIntent: () => Promise.resolve({ status }),
-          }),
-        } as unknown as DurableObjectNamespace,
-        WEB_DELIVERY_WORK: {
-          getByName: () => ({}),
-        } as unknown as DurableObjectNamespace,
-        DATA_SERVICE: {} as Fetcher,
+      const env: SaveRollHandlerEnv = {
+        ROLL_WORK: intentNamespace({ status }),
+        WEB_DELIVERY_WORK: intentNamespace({ status: "missing" }),
+        DATA_SERVICE: unusedDataService,
         WEB_APP_URL: "https://dicewit.ch",
       };
       const interaction = parseSaveRollInteraction({
@@ -569,7 +704,8 @@ describe("Save roll interaction contract", () => {
         type: 4,
         data: { flags: (1 << 15) | 64 },
       });
-      expect(componentText(response)).toContain(
+      if (response.type !== 4) throw new Error("Expected unavailable response");
+      expect(componentText(response.data.components)).toContain(
         status === "expired" ? "expired" : "no longer available",
       );
     },
@@ -588,21 +724,16 @@ describe("Save roll interaction contract", () => {
       createdAt,
       expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
     });
-    const dataRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
-    const env = {
-      ROLL_WORK: {
-        getByName: () => ({
-          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
-        }),
-      } as unknown as DurableObjectNamespace,
-      WEB_DELIVERY_WORK: {
-        getByName: () => ({}),
-      } as unknown as DurableObjectNamespace,
+    const dataRequests: Array<{
+      path: string;
+      body: SavedRollWriteRequest;
+    }> = [];
+    const env: SaveRollHandlerEnv = {
+      ROLL_WORK: intentNamespace({ status: "available", intent }),
+      WEB_DELIVERY_WORK: intentNamespace({ status: "missing" }),
       DATA_SERVICE: {
         fetch: async (request: Request) => {
           const path = new URL(request.url).pathname;
-          const body = await request.json<Record<string, unknown>>();
-          dataRequests.push({ path, body });
           if (path.endsWith("/list")) {
             return Response.json({
               status: "found",
@@ -613,9 +744,11 @@ describe("Save roll interaction contract", () => {
           if (path.endsWith("/ensure-user")) {
             return Response.json({ status: "existing" });
           }
-          return Response.json({ status: "applied", listRevision: 5 });
+          const body = SavedRollWriteRequestSchema.parse(await request.json());
+          dataRequests.push({ path, body });
+          return appliedSaveResponse(body, 5, "my attack");
         },
-      } as unknown as Fetcher,
+      },
       WEB_APP_URL: "https://dicewit.ch/app",
     };
     const interaction = parseSaveRollInteraction({
@@ -640,45 +773,48 @@ describe("Save roll interaction contract", () => {
       new Response(null, { status: 200 }),
     );
 
-    await completeSaveRollSubmit(interaction, env);
+    try {
+      await completeSaveRollSubmit(interaction, env);
 
-    const create = dataRequests.find(({ path }) => path.endsWith("/v2/copy"));
-    expect(create?.body).toMatchObject({
-      owner: { type: "user", userId: baseInteraction.member.user.id },
-      actorUserId: baseInteraction.member.user.id,
-      expectedListRevision: 4,
-      draft: {
-        version: 2,
-        name: "My attack",
-        notation: "2d20+5",
-        title: "Attack",
-        repetitions: 2,
-        nameColor: "#A1B2C3",
-      },
-      pinned: false,
-      mutationId: `discord-save-roll:${baseInteraction.id}`,
-    });
-    expect(create?.body.id).toMatch(UUID_V4);
-    expect(discordFetch).toHaveBeenCalledTimes(1);
-    expect(discordFetch.mock.calls[0]?.[0]).toBe(
-      `https://discord.com/api/v10/webhooks/${baseInteraction.application_id}/${baseInteraction.token}/messages/@original`,
-    );
-    const editBody = jsonRequestBody(discordFetch.mock.calls[0]?.[1]);
-    expect(editBody).toMatchObject({
-      flags: (1 << 15) | 64,
-      content: null,
-      embeds: [],
-      components: [{ accent_color: 0x2e_cc_71 }],
-    });
-    expect(JSON.stringify(editBody)).toContain("https://dicewit.ch/app/library");
-    discordFetch.mockRestore();
+      const create = dataRequests.find(({ path }) => path.endsWith("/v2/copy"));
+      expect(create?.body).toMatchObject({
+        owner: { type: "user", userId: baseInteraction.member.user.id },
+        actorUserId: baseInteraction.member.user.id,
+        expectedListRevision: 4,
+        draft: {
+          version: 2,
+          name: "My attack",
+          notation: "2d20+5",
+          title: "Attack",
+          repetitions: 2,
+          nameColor: "#A1B2C3",
+        },
+        pinned: false,
+        mutationId: `discord-save-roll:${baseInteraction.id}`,
+      });
+      expect(create?.body.id).toMatch(UUID_V4);
+      expect(discordFetch).toHaveBeenCalledTimes(1);
+      expect(discordFetch.mock.calls[0]?.[0]).toBe(
+        `https://discord.com/api/v10/webhooks/${baseInteraction.application_id}/${baseInteraction.token}/messages/@original`,
+      );
+      const editBody = parseDiscordEditBody(discordFetch.mock.calls[0]?.[1]);
+      expect(editBody).toMatchObject({
+        flags: (1 << 15) | 64,
+        content: null,
+        embeds: [],
+        components: [{ accent_color: 0x2e_cc_71 }],
+      });
+      expect(JSON.stringify(editBody)).toContain("https://dicewit.ch/app/library");
+    } finally {
+      discordFetch.mockRestore();
+    }
   });
 
   it("uses the saved-roll name as the title for an untitled repeated roll", async () => {
     const createdAt = Date.now();
-    const intent = {
-      version: 2 as const,
-      source: "fresh" as const,
+    const intent = parseSaveRollIntent({
+      version: 2,
+      source: "fresh",
       notation: "4d6kh3",
       title: null,
       repetitions: 3,
@@ -686,15 +822,11 @@ describe("Save roll interaction contract", () => {
       nameColor: null,
       createdAt,
       expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
-    };
-    let createdDraft: unknown;
-    const env = {
-      ROLL_WORK: {
-        getByName: () => ({
-          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
-        }),
-      } as unknown as DurableObjectNamespace,
-      WEB_DELIVERY_WORK: { getByName: () => ({}) } as unknown as DurableObjectNamespace,
+    });
+    let createdDraft: SavedRollWriteRequest["draft"] | undefined;
+    const env: SaveRollHandlerEnv = {
+      ROLL_WORK: intentNamespace({ status: "available", intent }),
+      WEB_DELIVERY_WORK: intentNamespace({ status: "missing" }),
       DATA_SERVICE: {
         fetch: async (request: Request) => {
           const path = new URL(request.url).pathname;
@@ -704,11 +836,11 @@ describe("Save roll interaction contract", () => {
           if (path.endsWith("/ensure-user")) {
             return Response.json({ status: "existing" });
           }
-          const body = await request.json<{ draft: unknown }>();
+          const body = SavedRollWriteRequestSchema.parse(await request.json());
           createdDraft = body.draft;
-          return Response.json({ status: "applied", listRevision: 2 });
+          return appliedSaveResponse(body, 2, "repeated attack");
         },
-      } as unknown as Fetcher,
+      },
       WEB_APP_URL: "https://dicewit.ch/app",
     };
     const interaction = parseSaveRollInteraction({
@@ -767,23 +899,7 @@ describe("Save roll interaction contract", () => {
       createdAt,
       expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
     });
-    const savedRoll = {
-      version: 1,
-      id: "123e4567-e89b-42d3-a456-426614174000",
-      owner: { type: "user", userId: baseInteraction.member.user.id },
-      displayName: "Existing",
-      comparisonKey: "existing",
-      notation: "2d20",
-      title: null,
-      repetitions: 1,
-      pinned: false,
-      manualOrder: 0,
-      revision: 1,
-      createdByUserId: baseInteraction.member.user.id,
-      updatedByUserId: baseInteraction.member.user.id,
-      createdAt,
-      updatedAt: createdAt,
-    };
+    const savedRoll = visibleSavedRoll(createdAt, { notation: "2d20" });
     const dataFetch = vi.fn((request: Request) => {
       const path = new URL(request.url).pathname;
       if (path.endsWith("/list")) {
@@ -802,14 +918,10 @@ describe("Save roll interaction contract", () => {
         limit: 50,
       }, { status: 409 }));
     });
-    const env = {
-      ROLL_WORK: {
-        getByName: () => ({
-          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
-        }),
-      } as unknown as DurableObjectNamespace,
-      WEB_DELIVERY_WORK: { getByName: () => ({}) } as unknown as DurableObjectNamespace,
-      DATA_SERVICE: { fetch: dataFetch } as unknown as Fetcher,
+    const env: SaveRollHandlerEnv = {
+      ROLL_WORK: intentNamespace({ status: "available", intent }),
+      WEB_DELIVERY_WORK: intentNamespace({ status: "missing" }),
+      DATA_SERVICE: { fetch: dataFetch },
       WEB_APP_URL: "https://dicewit.ch",
     };
     const interaction = parseSaveRollInteraction({
@@ -835,8 +947,8 @@ describe("Save roll interaction contract", () => {
     try {
       await completeSaveRollSubmit(interaction, env);
       expect(dataFetch).toHaveBeenCalledTimes(3);
-      const editBody = jsonRequestBody(discordFetch.mock.calls[0]?.[1]);
-      expect(componentText(editBody)).toContain("personal library is full");
+      const editBody = parseDiscordEditBody(discordFetch.mock.calls[0]?.[1]);
+      expect(componentText(editBody.components)).toContain("personal library is full");
     } finally {
       discordFetch.mockRestore();
     }
@@ -865,13 +977,9 @@ describe("Save roll interaction contract", () => {
       expiresAt: createdAt + ROLL_SAVE_INTENT_RETENTION_MS,
     });
     let listCalls = 0;
-    const env = {
-      ROLL_WORK: {
-        getByName: () => ({
-          getSaveRollIntent: () => Promise.resolve({ status: "available", intent }),
-        }),
-      } as unknown as DurableObjectNamespace,
-      WEB_DELIVERY_WORK: { getByName: () => ({}) } as unknown as DurableObjectNamespace,
+    const env: SaveRollHandlerEnv = {
+      ROLL_WORK: intentNamespace({ status: "available", intent }),
+      WEB_DELIVERY_WORK: intentNamespace({ status: "missing" }),
       DATA_SERVICE: {
         fetch: (request: Request) => {
           const path = new URL(request.url).pathname;
@@ -898,7 +1006,7 @@ describe("Save roll interaction contract", () => {
             listRevision: 5,
           }, { status: 409 }));
         },
-      } as unknown as Fetcher,
+      },
       WEB_APP_URL: "https://dicewit.ch",
     };
     const interaction = parseSaveRollInteraction({
@@ -923,9 +1031,9 @@ describe("Save roll interaction contract", () => {
 
     try {
       await completeSaveRollSubmit(interaction, env);
-      const editBody = jsonRequestBody(discordFetch.mock.calls[0]?.[1]);
+      const editBody = parseDiscordEditBody(discordFetch.mock.calls[0]?.[1]);
       expect(editBody).toMatchObject({ flags: (1 << 15) | 64 });
-      expect(componentText(editBody)).toContain(expectedText);
+      expect(componentText(editBody.components)).toContain(expectedText);
       if (duplicateAfterRace) {
         expect(JSON.stringify(editBody)).toContain("https://dicewit.ch/library");
       } else {
@@ -977,5 +1085,8 @@ describe("Save roll interaction contract", () => {
       repetitions: 1,
       defaultName: null,
     })).toThrow("Save roll intent is invalid");
+    expect(() => parseSaveRollIntent({ ...intent, extra: true })).toThrow(
+      "Save roll intent is invalid",
+    );
   });
 });

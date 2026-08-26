@@ -5,6 +5,7 @@ import {
   type AppearanceProfileV4,
   type GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
+import { z } from "zod";
 import {
   APPEARANCE_VALIDATION_CATALOG_V3,
   appearanceCatalogForPolicyV3,
@@ -12,26 +13,86 @@ import {
   type AppearanceCatalogPolicyV3,
   type AppearancePreviewRequestV4,
 } from "../../../packages/dice-appearance/src";
+import {
+  safeIntegerSchema,
+  snowflakeSchema,
+  strictObjectSchema,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import { bytesToBase64, json } from "./responses";
 
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const UUID_V4 =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MAX_BODY_BYTES = 96 * 1024;
+const jsonValueSchema = z.json();
+const expectedRevisionSchema = safeIntegerSchema
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER - 1);
+const positiveRevisionSchema = safeIntegerSchema.positive();
+const AppearanceWriteRequestSchema = strictObjectSchema({
+  expectedRevision: expectedRevisionSchema,
+  profile: jsonValueSchema,
+});
+const MissingLookupSchema = strictObjectSchema({ status: z.literal("missing") });
+const PersonalLookupSchema = strictObjectSchema({
+  status: z.literal("found"),
+  revision: positiveRevisionSchema,
+  profile: jsonValueSchema,
+});
+const GuildLookupSchema = strictObjectSchema({
+  status: z.literal("found"),
+  revision: positiveRevisionSchema,
+  profile: jsonValueSchema,
+  updatedByUserId: snowflakeSchema,
+});
+const RestoreMissingSchema = strictObjectSchema({
+  status: z.literal("restore_missing"),
+});
+const WriteConflictSchema = z.union([
+  strictObjectSchema({ status: z.literal("mutation_conflict") }),
+  strictObjectSchema({
+    status: z.literal("revision_conflict"),
+    revision: expectedRevisionSchema,
+  }),
+  RestoreMissingSchema,
+]);
+const PersonalStateLookupSchema = PersonalLookupSchema.extend({
+  canRestorePreviousMix: z.boolean(),
+});
+const GuildStateLookupSchema = GuildLookupSchema.extend({
+  canRestorePreviousMix: z.boolean(),
+});
+const WriteSuccessSchema = strictObjectSchema({
+  status: z.enum(["applied", "existing"]),
+  revision: positiveRevisionSchema,
+  profile: jsonValueSchema,
+});
+const WriteStateSuccessSchema = WriteSuccessSchema.extend({
+  canRestorePreviousMix: z.boolean(),
+});
+const AppearancePreviewResultSchema = strictObjectSchema({
+  version: z.literal(4),
+  contentType: z.literal("image/png"),
+  width: safeIntegerSchema.min(1).max(4_096),
+  height: safeIntegerSchema.min(1).max(4_096),
+  diceCount: safeIntegerSchema.min(1).max(10),
+  rowCount: safeIntegerSchema.min(1).max(10),
+  png: z.instanceof(Uint8Array).refine(
+    (png) => png.byteLength >= 8 && png.byteLength <= 8 * 1024 * 1024,
+  ),
+});
 
 export type AppearanceApiDataService = {
   fetch(request: Request): Promise<Response>;
 };
 
 export type AppearancePreviewService = {
-  previewV4(value: unknown): Promise<unknown>;
+  previewV4(value: AppearancePreviewRequestV4): Promise<SchemaInput>;
 };
 
 type AppearanceProfileKind = "personal" | "guild";
 type AppearanceMutationAction = "put" | "reset" | "restore";
-type AppearanceProfile =
-  | AppearanceProfileV4
-  | GuildAppearanceProfileV4;
+type AppearanceProfile = AppearanceProfileV4 | GuildAppearanceProfileV4;
 
 type AppearanceWriteInput = {
   expectedRevision: number;
@@ -40,8 +101,7 @@ type AppearanceWriteInput = {
 };
 
 type AppearanceWriteResult =
-  | { status: "mutation_conflict" | "restore_missing" }
-  | { status: "revision_conflict"; revision: number }
+  | z.output<typeof WriteConflictSchema>
   | {
       status: "applied" | "existing";
       revision: number;
@@ -49,24 +109,47 @@ type AppearanceWriteResult =
       canRestorePreviousMix?: boolean;
     };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
-}
+type AppearanceLookup = {
+  revision: number;
+  profile: AppearanceProfile | null;
+  canRestorePreviousMix?: boolean;
+};
+type PersonalAppearanceMutationRequest = {
+  userId: string;
+  expectedRevision: number;
+  profile: AppearanceProfile;
+  mutationId: string;
+  occurredAt: number;
+};
+type GuildAppearanceMutationRequest = {
+  guildId: string;
+  updatedByUserId: string;
+  expectedRevision: number;
+  profile: AppearanceProfile;
+  mutationId: string;
+  occurredAt: number;
+};
+type AppearanceDataRequestByPath = {
+  "/internal/appearance/v4/personal/get": { userId: string };
+  "/internal/appearance/v4/personal/put": PersonalAppearanceMutationRequest;
+  "/internal/appearance/v4/personal/reset": PersonalAppearanceMutationRequest;
+  "/internal/appearance/v4/personal/restore": PersonalAppearanceMutationRequest;
+  "/internal/appearance/v4/personal/state/get": { userId: string };
+  "/internal/appearance/v4/personal/state/put": PersonalAppearanceMutationRequest;
+  "/internal/appearance/v4/personal/state/reset": PersonalAppearanceMutationRequest;
+  "/internal/appearance/v4/personal/state/restore": PersonalAppearanceMutationRequest;
+  "/internal/appearance/v4/guild/get": { guildId: string };
+  "/internal/appearance/v4/guild/put": GuildAppearanceMutationRequest;
+  "/internal/appearance/v4/guild/reset": GuildAppearanceMutationRequest;
+  "/internal/appearance/v4/guild/restore": GuildAppearanceMutationRequest;
+  "/internal/appearance/v4/guild/state/get": { guildId: string };
+  "/internal/appearance/v4/guild/state/put": GuildAppearanceMutationRequest;
+  "/internal/appearance/v4/guild/state/reset": GuildAppearanceMutationRequest;
+  "/internal/appearance/v4/guild/state/restore": GuildAppearanceMutationRequest;
+};
 
 function parseProfile(
-  value: unknown,
+  value: SchemaInput,
   kind: AppearanceProfileKind,
   policy: AppearanceCatalogPolicyV3,
 ): AppearanceProfile {
@@ -80,10 +163,10 @@ function parseProfile(
   return profile;
 }
 
-async function postData(
+async function postData<Path extends keyof AppearanceDataRequestByPath>(
   dataService: AppearanceApiDataService,
-  path: string,
-  body: unknown,
+  path: Path,
+  body: AppearanceDataRequestByPath[Path],
 ): Promise<Response> {
   return dataService.fetch(
     new Request(`https://data.internal${path}`, {
@@ -94,7 +177,10 @@ async function postData(
   );
 }
 
-async function readJson(request: Request): Promise<unknown> {
+async function readBoundedJson<Schema extends z.ZodType>(
+  request: Request,
+  schema: Schema,
+): Promise<z.output<Schema>> {
   if (
     request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
     "application/json"
@@ -109,11 +195,12 @@ async function readJson(request: Request): Promise<unknown> {
   ) {
     throw new Error("Appearance request body is too large");
   }
-  if (request.body === null) {
+  const body = request.body;
+  if (body === null) {
     throw new Error("Appearance request body is missing");
   }
 
-  const reader = request.body.getReader();
+  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
@@ -132,108 +219,66 @@ async function readJson(request: Request): Promise<unknown> {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return JSON.parse(
+  const value: SchemaInput = JSON.parse(
     new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes),
-  ) as unknown;
+  );
+  return schema.parse(value);
 }
 
 function parseLookup(
-  value: unknown,
+  value: SchemaInput,
   kind: AppearanceProfileKind,
   policy: AppearanceCatalogPolicyV3,
   includeRestoreState: boolean,
-): {
-  revision: number;
-  profile: AppearanceProfile | null;
-  canRestorePreviousMix?: boolean;
-} {
-  if (
-    isRecord(value) &&
-    hasExactKeys(value, ["status"]) &&
-    value.status === "missing"
-  ) {
+): AppearanceLookup {
+  const missing = MissingLookupSchema.safeParse(value);
+  if (missing.success) {
     return includeRestoreState
       ? { revision: 0, profile: null, canRestorePreviousMix: false }
       : { revision: 0, profile: null };
   }
-  const expectedKeys = [
-    ...(includeRestoreState ? ["canRestorePreviousMix"] : []),
-    "profile",
-    "revision",
-    "status",
-    ...(kind === "guild" ? ["updatedByUserId"] : []),
-  ];
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, expectedKeys) ||
-    value.status !== "found" ||
-    !Number.isSafeInteger(value.revision) ||
-    Number(value.revision) < 1 ||
-    (kind === "guild" &&
-      (typeof value.updatedByUserId !== "string" ||
-        !SNOWFLAKE.test(value.updatedByUserId)))
-  ) {
-    throw new Error("Appearance lookup response is invalid");
+  if (includeRestoreState) {
+    const result = kind === "personal"
+      ? PersonalStateLookupSchema.parse(value)
+      : GuildStateLookupSchema.parse(value);
+    return {
+      revision: result.revision,
+      profile: parseProfile(result.profile, kind, policy),
+      canRestorePreviousMix: z.boolean().parse(result.canRestorePreviousMix),
+    };
   }
-  const result = {
-    revision: Number(value.revision),
-    profile: parseProfile(value.profile, kind, policy),
+  const result = kind === "personal"
+    ? PersonalLookupSchema.parse(value)
+    : GuildLookupSchema.parse(value);
+  return {
+    revision: result.revision,
+    profile: parseProfile(result.profile, kind, policy),
   };
-  if (!includeRestoreState) return result;
-  if (typeof value.canRestorePreviousMix !== "boolean") {
-    throw new Error("Appearance lookup response is invalid");
-  }
-  return { ...result, canRestorePreviousMix: value.canRestorePreviousMix };
 }
 
 function parseWriteResult(
-  value: unknown,
+  value: SchemaInput,
   kind: AppearanceProfileKind,
   policy: AppearanceCatalogPolicyV3,
   includeRestoreState: boolean,
 ): AppearanceWriteResult {
-  if (!isRecord(value) || typeof value.status !== "string") {
-    throw new Error("Appearance update response is invalid");
+  const conflict = WriteConflictSchema.safeParse(value);
+  if (conflict.success) return conflict.data;
+  if (includeRestoreState) {
+    const result = WriteStateSuccessSchema.parse(value);
+    return {
+      status: result.status,
+      revision: result.revision,
+      profile: parseProfile(result.profile, kind, policy),
+      canRestorePreviousMix: z.boolean().parse(result.canRestorePreviousMix),
+    };
   }
-  if (
-    (value.status === "mutation_conflict" ||
-      value.status === "restore_missing") &&
-    hasExactKeys(value, ["status"])
-  ) {
-    return { status: value.status };
-  }
-  if (
-    value.status === "revision_conflict" &&
-    hasExactKeys(value, ["revision", "status"]) &&
-    Number.isSafeInteger(value.revision) &&
-    Number(value.revision) >= 0
-  ) {
-    return { status: "revision_conflict", revision: Number(value.revision) };
-  }
-  if (
-    (value.status !== "applied" && value.status !== "existing") ||
-    !hasExactKeys(value, [
-      ...(includeRestoreState ? ["canRestorePreviousMix"] : []),
-      "profile",
-      "revision",
-      "status",
-    ]) ||
-    !Number.isSafeInteger(value.revision) ||
-    Number(value.revision) < 1
-  ) {
-    throw new Error("Appearance update response is invalid");
-  }
-  const status: "applied" | "existing" = value.status;
-  const result = {
-    status,
-    revision: Number(value.revision),
-    profile: parseProfile(value.profile, kind, policy),
+  const result = WriteSuccessSchema.parse(value);
+  return {
+    status: result.status,
+    revision: result.revision,
+    profile: parseProfile(result.profile, kind, policy),
   };
-  if (!includeRestoreState) return result;
-  if (typeof value.canRestorePreviousMix !== "boolean") {
-    throw new Error("Appearance update response is invalid");
-  }
-  return { ...result, canRestorePreviousMix: value.canRestorePreviousMix };
 }
 
 async function parseWrite(
@@ -245,18 +290,9 @@ async function parseWrite(
   if (idempotencyKey === null || !UUID_V4.test(idempotencyKey)) {
     throw new Error("Appearance idempotency key is invalid");
   }
-  const value = await readJson(request);
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["expectedRevision", "profile"]) ||
-    !Number.isSafeInteger(value.expectedRevision) ||
-    Number(value.expectedRevision) < 0 ||
-    Number(value.expectedRevision) >= Number.MAX_SAFE_INTEGER
-  ) {
-    throw new Error("Appearance update request is invalid");
-  }
+  const value = await readBoundedJson(request, AppearanceWriteRequestSchema);
   return {
-    expectedRevision: Number(value.expectedRevision),
+    expectedRevision: value.expectedRevision,
     profile: parseProfile(value.profile, kind, policy),
     idempotencyKey: idempotencyKey.toLowerCase(),
   };
@@ -290,23 +326,17 @@ async function writeResponse(
   policy: AppearanceCatalogPolicyV3,
   includeRestoreState: boolean,
 ): Promise<Response> {
-  let value: unknown;
+  let value: z.output<typeof jsonValueSchema>;
   try {
-    value = await response.json();
+    value = jsonValueSchema.parse(await response.json());
   } catch {
     return invalidProfileResponse();
   }
   if (response.status === 404) {
-    if (
-      isRecord(value) &&
-      hasExactKeys(value, ["status"]) &&
-      value.status === "missing"
-    ) {
+    if (MissingLookupSchema.safeParse(value).success) {
       return json({ error: "appearance_profile_owner_missing" }, 502);
     }
-    return isRecord(value) &&
-      hasExactKeys(value, ["status"]) &&
-      value.status === "restore_missing"
+    return RestoreMissingSchema.safeParse(value).success
       ? json({ error: "appearance_restore_missing" }, 409)
       : invalidProfileResponse();
   }
@@ -642,51 +672,22 @@ async function previewResponse(
   input: AppearancePreviewRequestV4,
   previewService: AppearancePreviewService,
 ): Promise<Response> {
-  let result: unknown;
+  let rpcResult: SchemaInput;
   try {
-    result = await previewService.previewV4(input);
+    rpcResult = await previewService.previewV4(input);
   } catch {
     return json({ error: "appearance_renderer_failed" }, 502);
   }
-  const resultKeys = [
-    "contentType",
-    "diceCount",
-    "height",
-    "png",
-    "rowCount",
-    "version",
-    "width",
-  ];
-  if (
-    !isRecord(result) ||
-    !hasExactKeys(result, resultKeys) ||
-    result.version !== 4 ||
-    result.contentType !== "image/png" ||
-    !(result.png instanceof Uint8Array) ||
-    result.png.byteLength < 8 ||
-    result.png.byteLength > 8 * 1024 * 1024 ||
-    !isPng(result.png) ||
-    !Number.isSafeInteger(result.width) ||
-    Number(result.width) < 1 ||
-    Number(result.width) > 4_096 ||
-    !Number.isSafeInteger(result.height) ||
-    Number(result.height) < 1 ||
-    Number(result.height) > 4_096 ||
-    !Number.isSafeInteger(result.diceCount) ||
-    Number(result.diceCount) < 1 ||
-    Number(result.diceCount) > 10 ||
-    !Number.isSafeInteger(result.rowCount) ||
-    Number(result.rowCount) < 1 ||
-    Number(result.rowCount) > 10
-  ) {
+  const parsed = AppearancePreviewResultSchema.safeParse(rpcResult);
+  if (!parsed.success || !isPng(parsed.data.png)) {
     return json({ error: "appearance_preview_response_invalid" }, 502);
   }
   return json({
     version: 4,
     contentType: "image/png",
-    width: Number(result.width),
-    height: Number(result.height),
-    base64: bytesToBase64(result.png),
+    width: parsed.data.width,
+    height: parsed.data.height,
+    base64: bytesToBase64(parsed.data.png),
   });
 }
 
@@ -696,7 +697,9 @@ export async function previewAppearanceV4(
 ): Promise<Response> {
   let input: AppearancePreviewRequestV4;
   try {
-    input = parseAppearancePreviewRequestV4(await readJson(request));
+    input = parseAppearancePreviewRequestV4(
+      await readBoundedJson(request, jsonValueSchema),
+    );
   } catch {
     return json({ error: "appearance_preview_invalid" }, 400);
   }

@@ -63,6 +63,7 @@ function upgradeToWeighted(
   }
   const values = [...selection.values];
   const weights = equalShares(values.length);
+  // SAFETY: The surrounding validation establishes the number invariant used below.
   return {
     mode: "weighted",
     options: values.map((value, index) => ({
@@ -126,6 +127,7 @@ export function MixPickerFineTune({
   const inkWeighted = recipe.engraving.mode === "weighted";
   const weighAnyRow = fontWeighted || inkWeighted;
   const chance = colorChanceOf(recipe);
+  // SAFETY: The surrounding validation establishes the number invariant used below.
 
   return (
     <div

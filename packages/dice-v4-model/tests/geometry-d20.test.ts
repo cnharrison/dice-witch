@@ -249,15 +249,18 @@ describe("canonical V4 d20 geometry", () => {
         0.95,
       );
       const resultVertexHeights = resultProjection.vertexIndices.map(
-        (vertexIndex) => projection.vertices[vertexIndex]?.position[1],
+        (vertexIndex) => {
+          const position = projection.vertices[vertexIndex]?.position;
+          if (position === undefined) {
+            throw new Error("D20 result projection is missing a vertex");
+          }
+          return position[1];
+        },
       );
-      if (resultVertexHeights.some((height) => height === undefined)) {
-        throw new Error("D20 result projection is missing a vertex");
-      }
-      const minimum = Math.min(...(resultVertexHeights as number[]));
+      const minimum = Math.min(...resultVertexHeights);
       expect(
         resultVertexHeights.filter(
-          (height) => height !== undefined && Math.abs(height - minimum) < 1e-12,
+          (height) => Math.abs(height - minimum) < 1e-12,
         ),
       ).toHaveLength(1);
     }

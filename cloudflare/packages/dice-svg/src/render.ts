@@ -41,6 +41,7 @@ import type {
   RenderResultV2,
   RenderResultV3,
 } from "./types";
+import type { ValidationInput } from "./validationBoundary";
 
 const EMBEDDED_FONT_BUFFERS = [
   liberationSansBold,
@@ -119,7 +120,7 @@ export function renderPercentileAppearanceToPng(
 }
 
 export async function renderDiceRequestV2ToPng(
-  input: unknown,
+  input: ValidationInput,
 ): Promise<RenderResultV2> {
   const composed = composeDiceSvgV2(input);
   const png = await renderComposedSvgToPng(composed.svg);
@@ -148,18 +149,20 @@ async function renderComposedDiceV3ToPng(
 }
 
 export async function renderDiceRequestV3ToPng(
-  input: unknown,
+  input: ValidationInput,
 ): Promise<RenderResultV3> {
   return renderComposedDiceV3ToPng(composeDiceSvgV3(input));
 }
 
 export async function renderBlankDiceRequestV3ToPng(
-  input: unknown,
+  input: ValidationInput,
 ): Promise<RenderResultV3> {
   return renderComposedDiceV3ToPng(composeBlankDiceSvgV3(input));
 }
 
-export async function renderDiceToPng(input: unknown): Promise<RenderResult> {
+export async function renderDiceToPng(
+  input: ValidationInput,
+): Promise<RenderResult> {
   const composed = composeDiceSvg(input);
   const png = await renderComposedSvgToPng(composed.svg);
 

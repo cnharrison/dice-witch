@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   parseDiscordAudienceSnapshotV1,
   type DiscordAudienceCaptureV1,
@@ -30,14 +31,40 @@ export const BOT_LIST_STATS_CRON = "30 */4 * * *";
 export const AUDIENCE_SNAPSHOT_CRON = "*/5 * * * *";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const GatewayModeSchema = z.enum(["single", "fleet"]);
+const GatewayModeOperationSchema = z.enum(["start", "stop"]);
+const DiscordRestBindingSchema = z.looseObject({
+  listCurrentGuildIdsPage: z.function(),
+  logGuildLifecycle: z.function(),
+  reportBotListStats: z.function(),
+  reportBotListStatsV1: z.function(),
+  captureAudienceSnapshotV1: z.function(),
+});
+const AudiencePersistenceResponseSchema = z.looseObject({
+  status: z.enum(["applied", "existing", "stale"]),
+  snapshot: z.looseObject({}),
+});
+const NonNegativeSafeIntegerSchema = z
+  .number()
+  .refine(Number.isSafeInteger)
+  .nonnegative();
+const GuildReconciliationConfirmationSchema = z.strictObject({
+  generation: NonNegativeSafeIntegerSchema,
+  shardCount: NonNegativeSafeIntegerSchema,
+  minimumCapturedAt: NonNegativeSafeIntegerSchema,
+  expectedGuildCount: NonNegativeSafeIntegerSchema,
+});
+
+type GatewayBoundaryInput = Parameters<
+  typeof AudiencePersistenceResponseSchema.safeParse
+>[0];
+type GuildReconciliationConfirmation = z.output<
+  typeof GuildReconciliationConfirmationSchema
+>;
 
 class GatewayControlInputError extends Error {}
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function classifyGatewayControlError(value: unknown): string {
+export function classifyGatewayControlError(value: GatewayBoundaryInput): string {
   if (!(value instanceof Error)) return "non-error";
   if (value.message.includes("listCurrentGuildIdsPage")) {
     return "discord-guild-page-rpc";
@@ -64,7 +91,7 @@ export function classifyGatewayControlError(value: unknown): string {
 export { GatewayCoordinator, GatewayPartition, GatewayStatusService };
 export type { GatewayEnv, GatewayFaultResult, GatewayStatus };
 
-function jsonResponse(value: unknown, status = 200): Response {
+function jsonResponse(value: GatewayBoundaryInput, status = 200): Response {
   return Response.json(value, {
     status,
     headers: {
@@ -75,11 +102,11 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 function gatewayMode(env: GatewayEnv): "single" | "fleet" {
-  const mode: unknown = env.GATEWAY_MODE;
-  if (mode !== "single" && mode !== "fleet") {
+  const mode = GatewayModeSchema.safeParse(env.GATEWAY_MODE);
+  if (!mode.success) {
     throw new Error("Gateway mode is invalid");
   }
-  return mode;
+  return mode.data;
 }
 
 function fleetConnectionCapacity(env: GatewayEnv): number {
@@ -149,23 +176,11 @@ function isValidEnvironment(env: GatewayEnv): boolean {
   } catch {
     return false;
   }
-  const discordRest: unknown = env.DISCORD_REST;
   return (
     SNOWFLAKE.test(env.DISCORD_APPLICATION_ID) &&
     isWorkerSecretSource(env.DISCORD_BOT_TOKEN) &&
     isWorkerSecretSource(env.GATEWAY_CONTROL_TOKEN) &&
-    typeof discordRest === "object" &&
-    discordRest !== null &&
-    "listCurrentGuildIdsPage" in discordRest &&
-    typeof discordRest.listCurrentGuildIdsPage === "function" &&
-    "logGuildLifecycle" in discordRest &&
-    typeof discordRest.logGuildLifecycle === "function" &&
-    "reportBotListStats" in discordRest &&
-    typeof discordRest.reportBotListStats === "function" &&
-    "reportBotListStatsV1" in discordRest &&
-    typeof discordRest.reportBotListStatsV1 === "function" &&
-    "captureAudienceSnapshotV1" in discordRest &&
-    typeof discordRest.captureAudienceSnapshotV1 === "function"
+    DiscordRestBindingSchema.safeParse(env.DISCORD_REST).success
   );
 }
 
@@ -180,17 +195,13 @@ async function persistAudienceSnapshot(
       body: JSON.stringify(capture),
     }),
   );
-  const value: unknown = await response.json();
-  if (
-    !isRecord(value) ||
-    (value.status !== "applied" &&
-      value.status !== "existing" &&
-      value.status !== "stale") ||
-    !isRecord(value.snapshot)
-  ) {
+  const value = AudiencePersistenceResponseSchema.safeParse(
+    await response.json(),
+  );
+  if (!value.success) {
     throw new Error("Audience snapshot persistence failed");
   }
-  parseDiscordAudienceSnapshotV1(value.snapshot);
+  parseDiscordAudienceSnapshotV1(value.data.snapshot);
 }
 
 async function captureAudienceSnapshot(env: GatewayEnv): Promise<void> {
@@ -360,78 +371,45 @@ async function integerControlInput(
   maximum: number,
   errorMessage: string,
 ): Promise<number> {
-  let value: unknown;
+  let value: GatewayBoundaryInput;
   try {
     value = await request.json();
   } catch {
     throw new GatewayControlInputError(errorMessage);
   }
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value) ||
-    Object.keys(value).length !== 1 ||
-    !(field in value)
-  ) {
+  const schema = z.strictObject({
+    [field]: NonNegativeSafeIntegerSchema.min(minimum).max(maximum),
+  });
+  const result = schema.safeParse(value);
+  if (!result.success) {
     throw new GatewayControlInputError(errorMessage);
   }
-  const input = (value as Record<string, unknown>)[field];
-  if (
-    typeof input !== "number" ||
-    !Number.isSafeInteger(input) ||
-    input < minimum ||
-    input > maximum
-  ) {
+  const input = Object.values(result.data)[0];
+  if (input === undefined) {
     throw new GatewayControlInputError(errorMessage);
   }
   return input;
 }
 
-type GuildReconciliationConfirmation = {
-  generation: number;
-  shardCount: number;
-  minimumCapturedAt: number;
-  expectedGuildCount: number;
-};
-
 async function guildReconciliationConfirmation(
   request: Request,
 ): Promise<GuildReconciliationConfirmation> {
-  let value: unknown;
+  let value: GatewayBoundaryInput;
   try {
     value = await request.json();
   } catch {
     throw new GatewayControlInputError("Guild reconciliation confirmation is invalid");
   }
+  const result = GuildReconciliationConfirmationSchema.safeParse(value);
   if (
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value) ||
-    Object.keys(value).sort().join(",") !==
-      "expectedGuildCount,generation,minimumCapturedAt,shardCount"
+    !result.success ||
+    result.data.generation < 1 ||
+    result.data.shardCount < 1 ||
+    result.data.expectedGuildCount < 1
   ) {
     throw new GatewayControlInputError("Guild reconciliation confirmation is invalid");
   }
-  const confirmation = value as Record<string, unknown>;
-  for (const field of [
-    "generation",
-    "shardCount",
-    "minimumCapturedAt",
-    "expectedGuildCount",
-  ] as const) {
-    const input = confirmation[field];
-    if (typeof input !== "number" || !Number.isSafeInteger(input) || input < 0) {
-      throw new GatewayControlInputError("Guild reconciliation confirmation is invalid");
-    }
-  }
-  if (
-    Number(confirmation.generation) < 1 ||
-    Number(confirmation.shardCount) < 1 ||
-    Number(confirmation.expectedGuildCount) < 1
-  ) {
-    throw new GatewayControlInputError("Guild reconciliation confirmation is invalid");
-  }
-  return confirmation as GuildReconciliationConfirmation;
+  return result.data;
 }
 
 function forcedRecommendation(
@@ -608,8 +586,13 @@ const gatewayWorker = {
       url.pathname,
     );
     if (request.method === "POST" && modeControl !== null) {
-      requestedMode = modeControl[1] as "single" | "fleet";
-      operation = modeControl[2] as "start" | "stop";
+      const mode = GatewayModeSchema.safeParse(modeControl[1]);
+      const modeOperation = GatewayModeOperationSchema.safeParse(modeControl[2]);
+      if (!mode.success || !modeOperation.success) {
+        throw new Error("Gateway mode control route is invalid");
+      }
+      requestedMode = mode.data;
+      operation = modeOperation.data;
     } else if (request.method === "POST" && url.pathname === "/gateway/start") {
       operation = "start";
     } else if (

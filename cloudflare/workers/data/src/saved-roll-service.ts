@@ -1,3 +1,9 @@
+import { z } from "zod";
+import {
+  nonNegativeSafeIntegerSchema,
+  snowflakeSchema,
+  strictObjectSchema,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   parseSavedRollDraftV1,
   parseSavedRollDraftV2,
@@ -13,8 +19,138 @@ import {
 } from "./saved-roll-repository";
 
 const MAX_BODY_BYTES = 64 * 1024;
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const uuidV4Schema = z.string().regex(UUID_V4);
+const DraftV1RequestSchema = strictObjectSchema({
+  name: z.string(),
+  notation: z.string(),
+  repetitions: z.number(),
+  title: z.union([z.null(), z.string()]),
+  version: z.literal(1),
+});
+const DraftV2RequestSchema = strictObjectSchema({
+  name: z.string(),
+  nameColor: z.union([z.null(), z.string()]),
+  notation: z.string(),
+  repetitions: z.number(),
+  title: z.union([z.null(), z.string()]),
+  version: z.literal(2),
+});
+const SavedRollDraftRequestSchema = z.union([
+  DraftV1RequestSchema,
+  DraftV2RequestSchema,
+]);
+const boundedIntegerSchema = nonNegativeSafeIntegerSchema.max(
+  Number.MAX_SAFE_INTEGER - 1,
+);
+const mutationIdSchema = z.string().min(1).max(255);
+const jsonValueSchema = z.json();
+const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
+const responseHeaders = {
+  "cache-control": "no-store",
+  "x-content-type-options": "nosniff",
+};
+
+const SavedRollOwnerSchema = z.discriminatedUnion("type", [
+  strictObjectSchema({ type: z.literal("user"), userId: snowflakeSchema }),
+  strictObjectSchema({ guildId: snowflakeSchema, type: z.literal("guild") }),
+]);
+const mutationFields = {
+  actorUserId: snowflakeSchema,
+  authorizationUpdatedAt: z.nullable(boundedIntegerSchema),
+  expectedListRevision: boundedIntegerSchema,
+  mutationId: mutationIdSchema,
+  occurredAt: boundedIntegerSchema,
+  owner: SavedRollOwnerSchema,
+};
+const EnsureUserRequestSchema = strictObjectSchema({
+  occurredAt: boundedIntegerSchema,
+  userId: snowflakeSchema,
+  username: z.string().min(1).max(32),
+});
+const LibrariesRequestSchema = strictObjectSchema({ userId: snowflakeSchema });
+const SearchRequestSchema = strictObjectSchema({
+  direction: z.enum(["asc", "desc"]),
+  guildIds: z
+    .array(snowflakeSchema)
+    .max(200)
+    .refine((guildIds) => new Set(guildIds).size === guildIds.length),
+  offset: boundedIntegerSchema.max(20_000),
+  query: z.string().min(2).max(128),
+  sort: z.enum(["name", "roll", "created", "updated"]),
+  userId: snowflakeSchema,
+});
+const ListRequestSchema = strictObjectSchema({ owner: SavedRollOwnerSchema });
+const GetRequestSchema = strictObjectSchema({
+  id: uuidV4Schema,
+  owner: SavedRollOwnerSchema,
+});
+const CreateRequestSchema = strictObjectSchema({
+  ...mutationFields,
+  draft: SavedRollDraftRequestSchema,
+  id: uuidV4Schema,
+  pinned: z.boolean(),
+});
+const positiveRevisionSchema = boundedIntegerSchema.min(1);
+const UpdateRequestSchema = strictObjectSchema({
+  ...mutationFields,
+  draft: SavedRollDraftRequestSchema,
+  expectedRecordRevision: positiveRevisionSchema,
+  id: uuidV4Schema,
+  pinned: z.boolean(),
+});
+const DeleteRequestSchema = strictObjectSchema({
+  ...mutationFields,
+  expectedRecordRevision: positiveRevisionSchema,
+  id: uuidV4Schema,
+});
+const DeleteBatchRequestSchema = strictObjectSchema({
+  ...mutationFields,
+  records: z
+    .array(
+      strictObjectSchema({
+        id: uuidV4Schema,
+        revision: positiveRevisionSchema,
+      }),
+    )
+    .min(1)
+    .max(100)
+    .refine(
+      (records) => new Set(records.map(({ id }) => id)).size === records.length,
+    ),
+});
+const ReorderRequestSchema = strictObjectSchema({
+  ...mutationFields,
+  orderedIds: z
+    .array(uuidV4Schema)
+    .max(100)
+    .refine((ids) => new Set(ids).size === ids.length),
+});
+const LegacySavedRollSchema = z.looseObject({
+  displayName: z.string(),
+  id: z.string(),
+  nameColor: jsonValueSchema,
+  notation: z.string(),
+  version: z.literal(1),
+});
+
+type SavedRollContractVersion = 1 | 2;
+type JsonValue = z.output<typeof jsonValueSchema>;
+type SavedRollDraftRequest = z.output<typeof SavedRollDraftRequestSchema>;
+type SavedRollMutationFields = {
+  actorUserId: string;
+  authorizationUpdatedAt: number | null;
+  expectedListRevision: number;
+  mutationId: string;
+  occurredAt: number;
+  owner: SavedRollOwner;
+};
+type SavedRollServiceResult = { status: string };
+type SavedRollHandler = (
+  request: Request,
+  repository: D1SavedRollRepository,
+) => Promise<Response>;
 
 class InvalidSavedRollRequest extends Error {}
 
@@ -22,28 +158,10 @@ function invalidRequest(message: string): never {
   throw new InvalidSavedRollRequest(message);
 }
 
-const responseHeaders = {
-  "cache-control": "no-store",
-  "x-content-type-options": "nosniff",
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
-}
-
-async function readBoundedJson(request: Request): Promise<unknown> {
+async function readBoundedRequest<Schema extends z.ZodType>(
+  request: Request,
+  schema: Schema,
+): Promise<z.output<Schema>> {
   if (
     request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
     "application/json"
@@ -58,13 +176,14 @@ async function readBoundedJson(request: Request): Promise<unknown> {
   ) {
     invalidRequest("Saved roll request body is too large");
   }
-  if (request.body === null) invalidRequest("Saved roll request body is missing");
+  const body = request.body;
+  if (body === null) invalidRequest("Saved roll request body is missing");
 
-  const reader = (request.body as ReadableStream<Uint8Array>).getReader();
+  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
-    const chunk = await reader.read();
+    const chunk: ReadableStreamReadResult<Uint8Array> = await reader.read();
     if (chunk.done) break;
     size += chunk.value.byteLength;
     if (size > MAX_BODY_BYTES) {
@@ -80,75 +199,38 @@ async function readBoundedJson(request: Request): Promise<unknown> {
     offset += chunk.byteLength;
   }
   try {
-    return JSON.parse(
-      new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes),
-    ) as unknown;
-  } catch {
+    const json = new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: false,
+    }).decode(bytes);
+    const result = schema.safeParse(JSON.parse(json));
+    if (!result.success) {
+      invalidRequest("Saved roll request has invalid fields");
+    }
+    return result.data;
+  } catch (error) {
+    if (error instanceof InvalidSavedRollRequest) throw error;
     invalidRequest("Saved roll request body is invalid");
   }
 }
 
-async function parseBody(
-  request: Request,
-  keys: readonly string[],
-): Promise<Record<string, unknown>> {
-  const value = await readBoundedJson(request);
-  if (!isRecord(value) || !hasExactKeys(value, keys)) {
-    invalidRequest("Saved roll request has invalid fields");
+function parseMutationFields(
+  value: SavedRollMutationFields,
+): SavedRollMutationFields {
+  const owner = value.owner;
+  if (
+    (owner.type === "user" &&
+      (value.actorUserId !== owner.userId ||
+        value.authorizationUpdatedAt !== null)) ||
+    (owner.type === "guild" && value.authorizationUpdatedAt === null)
+  ) {
+    invalidRequest("Saved roll mutation authorization is invalid");
   }
   return value;
 }
-
-function parseOwner(value: unknown): SavedRollOwner {
-  if (!isRecord(value)) invalidRequest("Saved roll owner is invalid");
-  if (
-    hasExactKeys(value, ["type", "userId"]) &&
-    value.type === "user" &&
-    typeof value.userId === "string" &&
-    SNOWFLAKE.test(value.userId)
-  ) {
-    return { type: "user", userId: value.userId };
-  }
-  if (
-    hasExactKeys(value, ["guildId", "type"]) &&
-    value.type === "guild" &&
-    typeof value.guildId === "string" &&
-    SNOWFLAKE.test(value.guildId)
-  ) {
-    return { type: "guild", guildId: value.guildId };
-  }
-  invalidRequest("Saved roll owner is invalid");
-}
-
-function parseNonNegativeInteger(value: unknown, name: string): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 0 ||
-    value >= Number.MAX_SAFE_INTEGER
-  ) {
-    invalidRequest(`${name} is invalid`);
-  }
-  return value;
-}
-
-function parseAuthorizationUpdatedAt(value: unknown): number | null {
-  return value === null
-    ? null
-    : parseNonNegativeInteger(value, "Saved roll authorization timestamp");
-}
-
-function parseId(value: unknown): string {
-  if (typeof value !== "string" || !UUID_V4.test(value)) {
-    invalidRequest("Saved roll id is invalid");
-  }
-  return value;
-}
-
-type SavedRollContractVersion = 1 | 2;
 
 function validateDraft(
-  value: unknown,
+  value: SavedRollDraftRequest,
   contractVersion: SavedRollContractVersion,
 ): void {
   try {
@@ -159,71 +241,22 @@ function validateDraft(
   }
 }
 
-function parseMutationFields(value: Record<string, unknown>): {
-  actorUserId: string;
-  authorizationUpdatedAt: number | null;
-  expectedListRevision: number;
-  mutationId: string;
-  occurredAt: number;
-  owner: SavedRollOwner;
-} {
-  if (
-    typeof value.actorUserId !== "string" ||
-    !SNOWFLAKE.test(value.actorUserId) ||
-    typeof value.mutationId !== "string" ||
-    value.mutationId.length < 1 ||
-    value.mutationId.length > 255
-  ) {
-    invalidRequest("Saved roll mutation fields are invalid");
-  }
-  const owner = parseOwner(value.owner);
-  const authorizationUpdatedAt = parseAuthorizationUpdatedAt(
-    value.authorizationUpdatedAt,
-  );
-  if (
-    (owner.type === "user" &&
-      (value.actorUserId !== owner.userId || authorizationUpdatedAt !== null)) ||
-    (owner.type === "guild" && authorizationUpdatedAt === null)
-  ) {
-    invalidRequest("Saved roll mutation authorization is invalid");
-  }
-  return {
-    actorUserId: value.actorUserId,
-    authorizationUpdatedAt,
-    expectedListRevision: parseNonNegativeInteger(
-      value.expectedListRevision,
-      "Expected saved roll list revision",
-    ),
-    mutationId: value.mutationId,
-    occurredAt: parseNonNegativeInteger(
-      value.occurredAt,
-      "Saved roll mutation timestamp",
-    ),
-    owner,
-  };
-}
-
 function projectSavedRollContract(
-  value: unknown,
+  value: JsonValue,
   contractVersion: SavedRollContractVersion,
-): unknown {
+): JsonValue {
   if (Array.isArray(value)) {
     return value.map((entry) => projectSavedRollContract(entry, contractVersion));
   }
-  if (!isRecord(value)) return value;
+  const object = jsonObjectSchema.safeParse(value);
+  if (!object.success) return value;
   const projected = Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
+    Object.entries(object.data).map(([key, entry]) => [
       key,
       projectSavedRollContract(entry, contractVersion),
     ]),
   );
-  if (
-    value.version === 1 &&
-    typeof value.id === "string" &&
-    typeof value.displayName === "string" &&
-    typeof value.notation === "string" &&
-    "nameColor" in value
-  ) {
+  if (LegacySavedRollSchema.safeParse(object.data).success) {
     if (contractVersion === 1) delete projected.nameColor;
     else projected.version = 2;
   }
@@ -231,7 +264,7 @@ function projectSavedRollContract(
 }
 
 function resultResponse(
-  result: { status: string },
+  result: SavedRollServiceResult,
   contractVersion: SavedRollContractVersion = 1,
 ): Response {
   let status = 200;
@@ -243,7 +276,8 @@ function resultResponse(
   ) {
     status = 409;
   }
-  return Response.json(projectSavedRollContract(result, contractVersion), {
+  const value = jsonValueSchema.parse(result);
+  return Response.json(projectSavedRollContract(value, contractVersion), {
     status,
     headers: responseHeaders,
   });
@@ -257,13 +291,10 @@ async function libraries(
   request: Request,
   repository: D1SavedRollRepository,
 ): Promise<Response> {
-  const value = await parseBody(request, ["userId"]);
-  if (typeof value.userId !== "string" || !SNOWFLAKE.test(value.userId)) {
-    invalidRequest("Saved roll library user is invalid");
-  }
+  const input = await readBoundedRequest(request, LibrariesRequestSchema);
   const result = {
     status: "found",
-    libraries: await repository.listLibraryCandidates(value.userId),
+    libraries: await repository.listLibraryCandidates(input.userId),
   };
   return resultResponse(result);
 }
@@ -273,48 +304,8 @@ async function search(
   repository: D1SavedRollRepository,
   contractVersion: SavedRollContractVersion = 1,
 ): Promise<Response> {
-  const value = await parseBody(request, [
-    "direction",
-    "guildIds",
-    "offset",
-    "query",
-    "sort",
-    "userId",
-  ]);
-  if (
-    typeof value.userId !== "string" ||
-    !SNOWFLAKE.test(value.userId) ||
-    !Array.isArray(value.guildIds) ||
-    value.guildIds.length > 200 ||
-    !value.guildIds.every(
-      (guildId) => typeof guildId === "string" && SNOWFLAKE.test(guildId),
-    ) ||
-    new Set(value.guildIds).size !== value.guildIds.length ||
-    typeof value.query !== "string" ||
-    value.query.length < 2 ||
-    value.query.length > 128 ||
-    !Number.isSafeInteger(value.offset) ||
-    Number(value.offset) < 0 ||
-    Number(value.offset) > 20_000 ||
-    (value.sort !== "name" &&
-      value.sort !== "roll" &&
-      value.sort !== "created" &&
-      value.sort !== "updated") ||
-    (value.direction !== "asc" && value.direction !== "desc")
-  ) {
-    invalidRequest("Saved roll search is invalid");
-  }
-  return resultResponse(
-    await repository.search({
-      userId: value.userId,
-      guildIds: value.guildIds as string[],
-      query: value.query,
-      offset: Number(value.offset),
-      sort: value.sort,
-      direction: value.direction,
-    }),
-    contractVersion,
-  );
+  const input = await readBoundedRequest(request, SearchRequestSchema);
+  return resultResponse(await repository.search(input), contractVersion);
 }
 
 async function list(
@@ -322,9 +313,9 @@ async function list(
   repository: D1SavedRollRepository,
   contractVersion: SavedRollContractVersion = 1,
 ): Promise<Response> {
-  const value = await parseBody(request, ["owner"]);
+  const input = await readBoundedRequest(request, ListRequestSchema);
   return resultResponse(
-    await repository.list(parseOwner(value.owner)),
+    await repository.list(input.owner),
     contractVersion,
   );
 }
@@ -334,9 +325,9 @@ async function get(
   repository: D1SavedRollRepository,
   contractVersion: SavedRollContractVersion = 1,
 ): Promise<Response> {
-  const value = await parseBody(request, ["id", "owner"]);
+  const input = await readBoundedRequest(request, GetRequestSchema);
   return resultResponse(
-    await repository.get(parseOwner(value.owner), parseId(value.id)),
+    await repository.get(input.owner, input.id),
     contractVersion,
   );
 }
@@ -347,27 +338,14 @@ async function createWithOperation(
   operation: "create" | "copy",
   contractVersion: SavedRollContractVersion = 1,
 ): Promise<Response> {
-  const value = await parseBody(request, [
-    "actorUserId",
-    "authorizationUpdatedAt",
-    "draft",
-    "expectedListRevision",
-    "id",
-    "mutationId",
-    "occurredAt",
-    "owner",
-    "pinned",
-  ]);
-  if (typeof value.pinned !== "boolean") {
-    invalidRequest("Saved roll create request is invalid");
-  }
-  validateDraft(value.draft, contractVersion);
+  const requestInput = await readBoundedRequest(request, CreateRequestSchema);
+  validateDraft(requestInput.draft, contractVersion);
   const input: CreateSavedRollInputV1 = {
-    ...parseMutationFields(value),
-    draft: value.draft,
-    id: parseId(value.id),
+    ...parseMutationFields(requestInput),
+    draft: requestInput.draft,
+    id: requestInput.id,
     operation,
-    pinned: value.pinned,
+    pinned: requestInput.pinned,
   };
   return resultResponse(await repository.create(input), contractVersion);
 }
@@ -376,19 +354,9 @@ async function ensureUser(
   request: Request,
   repository: D1SavedRollRepository,
 ): Promise<Response> {
-  const value = await parseBody(request, ["occurredAt", "userId", "username"]);
-  if (
-    typeof value.userId !== "string" ||
-    !SNOWFLAKE.test(value.userId) ||
-    typeof value.username !== "string" ||
-    value.username.length < 1 ||
-    value.username.length > 32
-  ) {
-    invalidRequest("Saved roll user is invalid");
-  }
-  const occurredAt = parseNonNegativeInteger(value.occurredAt, "Occurred at");
+  const input = await readBoundedRequest(request, EnsureUserRequestSchema);
   return resultResponse(
-    await repository.ensureUser(value.userId, value.username, occurredAt),
+    await repository.ensureUser(input.userId, input.username, input.occurredAt),
   );
 }
 
@@ -411,61 +379,27 @@ async function update(
   repository: D1SavedRollRepository,
   contractVersion: SavedRollContractVersion = 1,
 ): Promise<Response> {
-  const value = await parseBody(request, [
-    "actorUserId",
-    "authorizationUpdatedAt",
-    "draft",
-    "expectedListRevision",
-    "expectedRecordRevision",
-    "id",
-    "mutationId",
-    "occurredAt",
-    "owner",
-    "pinned",
-  ]);
-  if (typeof value.pinned !== "boolean") {
-    invalidRequest("Saved roll update request is invalid");
-  }
-  validateDraft(value.draft, contractVersion);
-  const expectedRecordRevision = parseNonNegativeInteger(
-    value.expectedRecordRevision,
-    "Expected saved roll record revision",
-  );
-  if (expectedRecordRevision < 1) {
-    invalidRequest("Expected saved roll record revision is invalid");
-  }
+  const requestInput = await readBoundedRequest(request, UpdateRequestSchema);
+  validateDraft(requestInput.draft, contractVersion);
   const input: UpdateSavedRollInputV1 = {
-    ...parseMutationFields(value),
-    draft: value.draft,
-    expectedRecordRevision,
-    id: parseId(value.id),
-    pinned: value.pinned,
+    ...parseMutationFields(requestInput),
+    draft: requestInput.draft,
+    expectedRecordRevision: requestInput.expectedRecordRevision,
+    id: requestInput.id,
+    pinned: requestInput.pinned,
   };
   return resultResponse(await repository.update(input), contractVersion);
 }
 
-async function remove(request: Request, repository: D1SavedRollRepository): Promise<Response> {
-  const value = await parseBody(request, [
-    "actorUserId",
-    "authorizationUpdatedAt",
-    "expectedListRevision",
-    "expectedRecordRevision",
-    "id",
-    "mutationId",
-    "occurredAt",
-    "owner",
-  ]);
-  const expectedRecordRevision = parseNonNegativeInteger(
-    value.expectedRecordRevision,
-    "Expected saved roll record revision",
-  );
-  if (expectedRecordRevision < 1) {
-    invalidRequest("Expected saved roll record revision is invalid");
-  }
+async function remove(
+  request: Request,
+  repository: D1SavedRollRepository,
+): Promise<Response> {
+  const requestInput = await readBoundedRequest(request, DeleteRequestSchema);
   const input: DeleteSavedRollInputV1 = {
-    ...parseMutationFields(value),
-    expectedRecordRevision,
-    id: parseId(value.id),
+    ...parseMutationFields(requestInput),
+    expectedRecordRevision: requestInput.expectedRecordRevision,
+    id: requestInput.id,
   };
   return resultResponse(await repository.delete(input));
 }
@@ -474,67 +408,41 @@ async function removeBatch(
   request: Request,
   repository: D1SavedRollRepository,
 ): Promise<Response> {
-  const value = await parseBody(request, [
-    "actorUserId",
-    "authorizationUpdatedAt",
-    "expectedListRevision",
-    "mutationId",
-    "occurredAt",
-    "owner",
-    "records",
-  ]);
-  if (
-    !Array.isArray(value.records) ||
-    value.records.length < 1 ||
-    value.records.length > 100
-  ) {
-    invalidRequest("Library roll batch delete records are invalid");
-  }
-  const records = value.records.map((record) => {
-    if (!isRecord(record) || !hasExactKeys(record, ["id", "revision"])) {
-      invalidRequest("Library roll batch delete record is invalid");
-    }
-    const revision = parseNonNegativeInteger(
-      record.revision,
-      "Expected saved roll record revision",
-    );
-    if (revision < 1) {
-      invalidRequest("Expected saved roll record revision is invalid");
-    }
-    return { id: parseId(record.id), revision };
-  });
-  if (new Set(records.map(({ id }) => id)).size !== records.length) {
-    invalidRequest("Library roll batch delete ids must be unique");
-  }
+  const requestInput = await readBoundedRequest(
+    request,
+    DeleteBatchRequestSchema,
+  );
   const input: DeleteSavedRollBatchInputV2 = {
-    ...parseMutationFields(value),
-    records,
+    ...parseMutationFields(requestInput),
+    records: requestInput.records,
   };
   return resultResponse(await repository.deleteBatch(input));
 }
 
-async function reorder(request: Request, repository: D1SavedRollRepository): Promise<Response> {
-  const value = await parseBody(request, [
-    "actorUserId",
-    "authorizationUpdatedAt",
-    "expectedListRevision",
-    "mutationId",
-    "occurredAt",
-    "orderedIds",
-    "owner",
-  ]);
-  if (!Array.isArray(value.orderedIds) || value.orderedIds.length > 100) {
-    invalidRequest("Saved roll reorder request is invalid");
-  }
-  const orderedIds = value.orderedIds.map(parseId);
-  if (new Set(orderedIds).size !== orderedIds.length) {
-    invalidRequest("Saved roll reorder ids must be unique");
-  }
+async function reorder(
+  request: Request,
+  repository: D1SavedRollRepository,
+): Promise<Response> {
+  const requestInput = await readBoundedRequest(request, ReorderRequestSchema);
   const input: ReorderSavedRollsInputV1 = {
-    ...parseMutationFields(value),
-    orderedIds,
+    ...parseMutationFields(requestInput),
+    orderedIds: requestInput.orderedIds,
   };
   return resultResponse(await repository.reorder(input));
+}
+
+async function runHandler(
+  handler: SavedRollHandler,
+  request: Request,
+  repository: D1SavedRollRepository,
+): Promise<Response> {
+  try {
+    return await handler(request, repository);
+  } catch (error) {
+    return error instanceof InvalidSavedRollRequest
+      ? errorResponse("Saved roll request is invalid", 400)
+      : errorResponse("Saved roll request failed", 500);
+  }
 }
 
 export function handleSavedRollRequest(
@@ -543,19 +451,30 @@ export function handleSavedRollRequest(
 ): Promise<Response> | null {
   if (request.method !== "POST") return null;
   const repository = new D1SavedRollRepository(db);
-  const handler = (() => {
+  const handler: SavedRollHandler | null = (() => {
     switch (new URL(request.url).pathname) {
-      case "/internal/saved-rolls/v1/ensure-user": return ensureUser;
-      case "/internal/saved-rolls/v1/libraries": return libraries;
-      case "/internal/saved-rolls/v1/search": return search;
-      case "/internal/saved-rolls/v1/list": return list;
-      case "/internal/saved-rolls/v1/get": return get;
-      case "/internal/saved-rolls/v1/create": return create;
-      case "/internal/saved-rolls/v1/copy": return copy;
-      case "/internal/saved-rolls/v1/update": return update;
-      case "/internal/saved-rolls/v1/delete": return remove;
-      case "/internal/saved-rolls/v1/reorder": return reorder;
-      case "/internal/saved-rolls/v2/libraries": return libraries;
+      case "/internal/saved-rolls/v1/ensure-user":
+        return ensureUser;
+      case "/internal/saved-rolls/v1/libraries":
+        return libraries;
+      case "/internal/saved-rolls/v1/search":
+        return search;
+      case "/internal/saved-rolls/v1/list":
+        return list;
+      case "/internal/saved-rolls/v1/get":
+        return get;
+      case "/internal/saved-rolls/v1/create":
+        return create;
+      case "/internal/saved-rolls/v1/copy":
+        return copy;
+      case "/internal/saved-rolls/v1/update":
+        return update;
+      case "/internal/saved-rolls/v1/delete":
+        return remove;
+      case "/internal/saved-rolls/v1/reorder":
+        return reorder;
+      case "/internal/saved-rolls/v2/libraries":
+        return libraries;
       case "/internal/saved-rolls/v2/search":
         return (
           nextRequest: Request,
@@ -586,16 +505,16 @@ export function handleSavedRollRequest(
           nextRequest: Request,
           nextRepository: D1SavedRollRepository,
         ) => update(nextRequest, nextRepository, 2);
-      case "/internal/saved-rolls/v2/delete": return remove;
-      case "/internal/saved-rolls/v2/delete-batch": return removeBatch;
-      case "/internal/saved-rolls/v2/reorder": return reorder;
-      default: return null;
+      case "/internal/saved-rolls/v2/delete":
+        return remove;
+      case "/internal/saved-rolls/v2/delete-batch":
+        return removeBatch;
+      case "/internal/saved-rolls/v2/reorder":
+        return reorder;
+      default:
+        return null;
     }
   })();
   if (handler === null) return null;
-  return handler(request, repository).catch((error: unknown) =>
-    error instanceof InvalidSavedRollRequest
-      ? errorResponse("Saved roll request is invalid", 400)
-      : errorResponse("Saved roll request failed", 500),
-  );
+  return runHandler(handler, request, repository);
 }

@@ -1,4 +1,6 @@
 import type { RenderRequestV4 } from "@dice-witch/dice-v4-model";
+import { z } from "zod";
+import type { SchemaInput } from "../../../packages/discord-contracts/src/schema-primitives";
 import type { RollExecutionResult } from "../../../packages/roll-domain/src";
 import {
   buildRollRenderRequestV4,
@@ -31,31 +33,36 @@ import {
   type AppearanceDataService,
 } from "./appearance";
 
+const ROLL_VIEW_POLICIES = [
+  "r19",
+  "r20",
+  "r21",
+  "r22",
+  "r23",
+  "r24",
+  "r25",
+  "r26",
+  "r27",
+  "r28",
+  "r29",
+  "r30",
+  "r31",
+  "r32",
+  "r33",
+  "r34",
+  "r35",
+  "r36",
+  "r37",
+  "r38",
+  "r39",
+  "r40",
+  "r41",
+] as const;
+const RollRenderVersionSchema = z.literal("4");
+const RollViewPolicySchema = z.enum(ROLL_VIEW_POLICIES);
+
 export type RollRenderVersion = 3 | 4;
-export type RollViewPolicy =
-  | "r19"
-  | "r20"
-  | "r21"
-  | "r22"
-  | "r23"
-  | "r24"
-  | "r25"
-  | "r26"
-  | "r27"
-  | "r28"
-  | "r29"
-  | "r30"
-  | "r31"
-  | "r32"
-  | "r33"
-  | "r34"
-  | "r35"
-  | "r36"
-  | "r37"
-  | "r38"
-  | "r39"
-  | "r40"
-  | "r41";
+export type RollViewPolicy = z.infer<typeof RollViewPolicySchema>;
 export type EmittedRollRenderRequest = RenderRequestV3 | RenderRequestV4;
 
 const ROLL_VIEW_BUILDERS_V4 = {
@@ -86,39 +93,15 @@ const ROLL_VIEW_BUILDERS_V4 = {
   typeof buildRollRenderRequestR20V4
 >;
 
-export function parseRollRenderVersion(value: unknown): 4 {
-  if (value === "4") return 4;
+export function parseRollRenderVersion(value: SchemaInput): 4 {
+  const result = RollRenderVersionSchema.safeParse(value);
+  if (result.success) return 4;
   throw new Error("ROLL_RENDER_VERSION must equal 4");
 }
 
-export function parseRollViewPolicy(value: unknown): RollViewPolicy {
-  if (
-    value === "r19" ||
-    value === "r20" ||
-    value === "r21" ||
-    value === "r22" ||
-    value === "r23" ||
-    value === "r24" ||
-    value === "r25" ||
-    value === "r26" ||
-    value === "r27" ||
-    value === "r28" ||
-    value === "r29" ||
-    value === "r30" ||
-    value === "r31" ||
-    value === "r32" ||
-    value === "r33" ||
-    value === "r34" ||
-    value === "r35" ||
-    value === "r36" ||
-    value === "r37" ||
-    value === "r38" ||
-    value === "r39" ||
-    value === "r40" ||
-    value === "r41"
-  ) {
-    return value;
-  }
+export function parseRollViewPolicy(value: SchemaInput): RollViewPolicy {
+  const result = RollViewPolicySchema.safeParse(value);
+  if (result.success) return result.data;
   throw new Error(
     "ROLL_VIEW_POLICY must be r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, r32, r33, r34, r35, r36, r37, r38, r39, r40, or r41",
   );

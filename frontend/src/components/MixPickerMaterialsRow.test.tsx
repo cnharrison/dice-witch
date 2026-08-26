@@ -14,23 +14,36 @@ import type {
   AppearanceRecipeV3,
 } from "@dice-witch/dice-v4-model";
 import { MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
+import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 
-// Material values are opaque to this component; fixtures carry only the
-// family discriminator.
-const materialValue = (family: string) => ({ family }) as AppearanceMaterialV4;
-const defaultMaterial = (family: string) =>
-  ({ family, testVariant: "default" }) as AppearanceMaterialV4;
+type MaterialFamilyFixture = "classic" | "glass" | "metal";
+
+function catalogMaterial(family: MaterialFamilyFixture) {
+  const material = APPEARANCE_CATALOG_V3.materials.find(
+    ({ family: candidate }) => candidate === family,
+  );
+  if (material === undefined) throw new Error(`Missing ${family} fixture`);
+  return material;
+}
+
+function materialValue(family: MaterialFamilyFixture): AppearanceMaterialV4 {
+  return structuredClone(catalogMaterial(family).defaultValue);
+}
+
+const defaultMaterial = materialValue;
 
 const catalog = {
+  ...APPEARANCE_CATALOG_V3,
   editorDefaults: {
+    ...APPEARANCE_CATALOG_V3.editorDefaults,
     palette: ["#8a1f82", "#8A1F82", "#04c9df"],
   },
   materials: [
-    { family: "classic", name: "Classic", defaultValue: defaultMaterial("classic") },
-    { family: "glass", name: "Glass", defaultValue: defaultMaterial("glass") },
-    { family: "metal", name: "Metal", defaultValue: defaultMaterial("metal") },
+    catalogMaterial("classic"),
+    catalogMaterial("glass"),
+    catalogMaterial("metal"),
   ],
-} as never as AppearanceCatalogV3;
+} satisfies AppearanceCatalogV3;
 
 function recipeWithMaterial(
   material: AppearanceRecipeV3["material"],
@@ -105,6 +118,7 @@ describe("MixPickerMaterialsRow", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Glass/ }));
     expect(onChange).toHaveBeenCalledTimes(1);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     expect(next.material).toEqual({
       mode: "weighted",
@@ -143,6 +157,7 @@ describe("MixPickerMaterialsRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Classic/ }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     expect(next.material).toEqual({ mode: "fixed", value: tuned });
   });
@@ -166,6 +181,7 @@ describe("MixPickerMaterialsRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Glass/ }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
     // Proportional rebalance of the remaining shares onto the shared total.
@@ -210,6 +226,7 @@ describe("MixPickerMaterialsRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Metal/ }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
     const total = next.material.options.reduce(
@@ -243,6 +260,7 @@ describe("MixPickerMaterialsRow", () => {
     const classic = screen.getByRole("button", { name: /Classic/ });
     const glass = screen.getByRole("button", { name: /Glass/ });
     const metal = screen.getByRole("button", { name: /Metal/ });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const segments = Array.from(
       screen.getByRole("group", { name: "Material mix balance" }).children,
     ) as HTMLElement[];
@@ -291,6 +309,7 @@ describe("MixPickerMaterialsRow", () => {
         .getPropertyValue("--material-accent"),
     ];
     expect(survivingAccents).toEqual([glassAccent, metalAccent]);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(Array.from(
       screen.getByRole("group", { name: "Material mix balance" }).children,
     ).map((segment) =>
@@ -370,10 +389,12 @@ describe("MixPickerMaterialsRow", () => {
   });
 
   it("combines hidden material variants into one family segment", () => {
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const solid = {
       family: "classic",
       treatment: "solid",
     } as AppearanceMaterialV4;
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const gradient = {
       family: "classic",
       treatment: "gradient",
@@ -428,6 +449,7 @@ describe("MixPickerMaterialsRow", () => {
       "Glass: 14%",
       "Metal: 3%",
     ]);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(
       segments.every(
         (segment) => (segment as HTMLElement).style.flexBasis === "0px",
@@ -458,9 +480,11 @@ describe("MixPickerMaterialsRow", () => {
         onChange={onChange}
       />,
     );
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     fireEvent.keyDown(screen.getAllByRole("slider")[1] as HTMLElement, {
       key: "ArrowRight",
     });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
     expect(next.material.options.map(({ weight }) => weight)).toEqual([
@@ -470,6 +494,7 @@ describe("MixPickerMaterialsRow", () => {
 
   it("uses catalog defaults when an edit collapses hidden family variants", () => {
     const onChange = vi.fn();
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     render(
       <MixPickerMaterialsRow
         recipe={recipeWithMaterial({
@@ -498,6 +523,7 @@ describe("MixPickerMaterialsRow", () => {
     );
     expect(screen.queryByRole("slider")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Glass/ }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
     expect(next.material.options).toEqual([
@@ -542,6 +568,7 @@ describe("MixPickerMaterialsRow", () => {
     );
     const handle = screen.getByRole("slider");
     fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.material.mode !== "weighted") throw new Error("expected weighted");
     expect(next.material.options.map(({ weight }) => weight)).toEqual([

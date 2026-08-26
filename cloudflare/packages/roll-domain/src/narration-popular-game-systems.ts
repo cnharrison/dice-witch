@@ -3,6 +3,7 @@ import type {
   NarrationGameCounterevidenceV1,
   NarrationGameEvidencePolicyV1,
   NarrationGameFeatureV1,
+  NarrationGameFingerprintV1,
   NarrationGameSourceAuthorityV1,
   NarrationGameSystemV1,
 } from "./narration-game-catalog";
@@ -724,43 +725,45 @@ function claimId(claim: string): string {
 
 function toSystem(definition: PopularGameDefinition): NarrationGameSystemV1 {
   const sourceId = `${definition.id}-rules`;
-  const fingerprints = [
-    {
-      id: `${definition.id}-mechanic`,
-      claim: claimId(definition.claim),
-      features: [definition.feature],
-      minimumOccurrences: definition.minimumOccurrences,
-      evidencePolicy: definition.evidencePolicy,
-      evidenceStrength: definition.evidenceStrength,
-      confidenceCeiling: definition.confidenceCeiling,
-      ...(definition.counterevidence === undefined
-        ? {}
-        : { counterevidence: definition.counterevidence }),
+  let fingerprint: NarrationGameFingerprintV1 = {
+    id: `${definition.id}-mechanic`,
+    claim: claimId(definition.claim),
+    features: [definition.feature],
+    minimumOccurrences: definition.minimumOccurrences,
+    evidencePolicy: definition.evidencePolicy,
+    evidenceStrength: definition.evidenceStrength,
+    confidenceCeiling: definition.confidenceCeiling,
+    sourceIds: [sourceId],
+    commentaryTopics: definition.commentaryTopics,
+  };
+  if (definition.counterevidence !== undefined) {
+    fingerprint = {
+      ...fingerprint,
+      counterevidence: definition.counterevidence,
+    };
+  }
+  const fingerprints: NarrationGameFingerprintV1[] = [fingerprint];
+  const additional = definition.additionalFingerprint;
+  if (additional !== undefined) {
+    let additionalFingerprint: NarrationGameFingerprintV1 = {
+      id: `${definition.id}-repeated-mechanic`,
+      claim: claimId(additional.claim),
+      features: [additional.feature ?? definition.feature],
+      minimumOccurrences: additional.minimumOccurrences,
+      evidencePolicy: additional.evidencePolicy,
+      evidenceStrength: additional.evidenceStrength,
+      confidenceCeiling: additional.confidenceCeiling,
       sourceIds: [sourceId],
       commentaryTopics: definition.commentaryTopics,
-    },
-    ...(definition.additionalFingerprint === undefined
-      ? []
-      : [{
-          id: `${definition.id}-repeated-mechanic`,
-          claim: claimId(definition.additionalFingerprint.claim),
-          features: [
-            definition.additionalFingerprint.feature ?? definition.feature,
-          ],
-          minimumOccurrences: definition.additionalFingerprint.minimumOccurrences,
-          evidencePolicy: definition.additionalFingerprint.evidencePolicy,
-          evidenceStrength: definition.additionalFingerprint.evidenceStrength,
-          confidenceCeiling: definition.additionalFingerprint.confidenceCeiling,
-          ...(definition.additionalFingerprint.counterevidence === undefined
-            ? {}
-            : {
-                counterevidence:
-                  definition.additionalFingerprint.counterevidence,
-              }),
-          sourceIds: [sourceId],
-          commentaryTopics: definition.commentaryTopics,
-        }]),
-  ];
+    };
+    if (additional.counterevidence !== undefined) {
+      additionalFingerprint = {
+        ...additionalFingerprint,
+        counterevidence: additional.counterevidence,
+      };
+    }
+    fingerprints.push(additionalFingerprint);
+  }
   return {
     id: definition.id,
     displayName: definition.displayName,

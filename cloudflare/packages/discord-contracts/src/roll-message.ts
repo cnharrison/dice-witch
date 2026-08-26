@@ -82,11 +82,7 @@ function clatterMessages(single: boolean): string[] {
   ];
 }
 
-function clatterTotals(dice: RollDie[]): {
-  total: number;
-  minimum: number;
-  maximum: number;
-} {
+function clatterTotals(dice: RollDie[]) {
   let total = 0;
   let minimum = 0;
   let maximum = 0;
@@ -105,7 +101,7 @@ function clatterTotals(dice: RollDie[]): {
     }
     total += die.rolled;
     minimum += 1;
-    maximum += typeof die.sides === "number" ? die.sides : 0;
+    maximum += die.sides === "F" ? 0 : die.sides;
   }
   return { total, minimum, maximum };
 }
@@ -132,7 +128,9 @@ export function rollClatterText(
   const first = groups[0]?.[0];
   const extremeSingle =
     single &&
-    typeof first?.sides === "number" &&
+    first !== undefined &&
+    first.sides !== "%" &&
+    first.sides !== "F" &&
     ((first.sides === 4 && total === 4) ||
       (first.sides === 6 && total === 6));
   if (!extremeSingle && percentile < 99 && total !== maximum && percentile > 5) {

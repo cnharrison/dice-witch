@@ -20,21 +20,47 @@ import {
   parseStatusCommandInteraction,
   parseTextResultInteraction,
   verifyDiscordRequestSignature,
+  type DiscordComponentsV2Message,
   type RollDeliveryTelemetryV2,
   type RollHelperDmInteraction,
+  type RollInteractionScope,
   type RollLoggingContext,
-  type StatusGatewaySnapshot,
+  type SavedRollInteractionScope,
 } from "../../../packages/discord-contracts/src";
+import {
+  boundaryObjectSchema,
+  type BoundaryObject,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   executeRoll,
   parseNotationArgs,
 } from "../../../packages/roll-domain/src";
-import { handleSavedRollInteraction } from "./saved-roll-handler";
+import {
+  handleSavedRollInteraction,
+  type SavedRollInteractionResponse,
+} from "./saved-roll-handler";
 import {
   completeSaveRollSubmit,
   openSaveRollModal,
 } from "./save-roll-handler";
 import { handleTextResultInteraction } from "./text-result-handler";
+import type {
+  DiscordRestPort,
+  DurableObjectNamespacePort,
+  FetchPort,
+  GatewayStatusPort,
+  GuildDeliverySettings,
+  RollWorkPort,
+  WebDeliveryWorkPort,
+} from "./ports";
+import {
+  parseAudienceSnapshotResult,
+  parseGatewayStatus,
+  parseGuildDeliverySettingsResult,
+  parseRollAcceptance,
+  parseRollHelperResult,
+} from "./service-results";
 
 export type InteractionEnv = {
   DISCORD_APPLICATION_ID: string;
@@ -44,15 +70,21 @@ export type InteractionEnv = {
   SUPPORT_SERVER_LINK: string;
   WEB_APP_URL: string;
   ROLL_LIFECYCLE_TELEMETRY_VERSION: string;
-  DATA_SERVICE: Fetcher;
-  GATEWAY_STATUS: {
-    getStatusSnapshot(): Promise<unknown>;
-  };
-  DISCORD_REST: {
-    sendRollHelper(value: unknown): Promise<unknown>;
-  };
-  ROLL_WORK: DurableObjectNamespace;
-  WEB_DELIVERY_WORK: DurableObjectNamespace;
+  DATA_SERVICE: FetchPort;
+  GATEWAY_STATUS: GatewayStatusPort;
+  DISCORD_REST: DiscordRestPort;
+  ROLL_WORK: DurableObjectNamespacePort<RollWorkPort>;
+  WEB_DELIVERY_WORK: DurableObjectNamespacePort<WebDeliveryWorkPort>;
+};
+
+export type InteractionHandlerDependencies = {
+  responseFetch: FetchPort;
+};
+
+const productionHandlerDependencies: InteractionHandlerDependencies = {
+  responseFetch: {
+    fetch: (request) => fetch(request),
+  },
 };
 
 const RESPONSE_HEADERS = {
@@ -60,12 +92,15 @@ const RESPONSE_HEADERS = {
   "x-content-type-options": "nosniff",
 } as const;
 
-function json(value: unknown, status = 200): Response {
-  return Response.json(value, { status, headers: RESPONSE_HEADERS });
-}
+type JsonPrimitive = boolean | null | number | string;
+type JsonValue = JsonPrimitive | JsonValue[] | JsonObject;
+type JsonObject = { [key: string]: JsonValue | undefined };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function json(
+  value: JsonObject | SavedRollInteractionResponse,
+  status = 200,
+): Response {
+  return Response.json(value, { status, headers: RESPONSE_HEADERS });
 }
 
 // Deployed Workers clocks advance only after I/O, so these spans do not
@@ -81,17 +116,21 @@ function invalidInteraction(reason: string): Response {
   return json({ error: "Invalid interaction" }, 400);
 }
 
-function componentsV2TextMessage(content: string, color = 0xe7_4c_3c) {
+function componentsV2TextMessage(
+  content: string,
+  color = 0xe7_4c_3c,
+): DiscordComponentsV2Message & { allowed_mentions: { parse: string[] } } {
+  const parse: string[] = [];
   return {
     flags: DISCORD_COMPONENTS_V2_FLAG,
     components: [
       {
-        type: 17 as const,
+        type: 17,
         accent_color: color,
-        components: [{ type: 10 as const, content }],
+        components: [{ type: 10, content }],
       },
     ],
-    allowed_mentions: { parse: [] as string[] },
+    allowed_mentions: { parse },
   };
 }
 
@@ -111,27 +150,48 @@ function randomSeed(): number {
   return seed;
 }
 
-type RollWorkAcceptanceStub = {
-  acceptDelivery(value: unknown): Promise<unknown>;
-};
-
 type DeferredRoll = {
   id: string;
   applicationId: string;
   token: string;
 };
 
-function isAcceptedRollDelivery(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    (value.status === "created" || value.status === "existing") &&
-    (value.delivery === "pending" || value.delivery === "delivered")
-  );
+type AllowedMentions = { parse: string[] };
+type RollAcknowledgement =
+  | {
+      type: 4;
+      data: ReturnType<typeof buildInvalidRollHelpMessage> & {
+        flags: number;
+        allowed_mentions: AllowedMentions;
+      };
+    }
+  | {
+      type: 4;
+      data: ReturnType<typeof buildRollClatterMessage> & {
+        allowed_mentions: AllowedMentions;
+      };
+    };
+
+function noAllowedMentions(): AllowedMentions {
+  return { parse: [] };
+}
+
+function acceptedRollDelivery(value: SchemaInput) {
+  try {
+    const accepted = parseRollAcceptance(value);
+    return (accepted.status === "created" || accepted.status === "existing") &&
+        (accepted.delivery === "pending" || accepted.delivery === "delivered")
+      ? accepted
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function deliverRequestedRollHelper(
   interaction: RollHelperDmInteraction,
   service: InteractionEnv["DISCORD_REST"],
+  responseFetch: FetchPort,
 ): Promise<void> {
   let content = "I couldn't send a DM. Use `/knowledgebase` here instead.";
   try {
@@ -139,9 +199,8 @@ async function deliverRequestedRollHelper(
       rollId: interaction.rollId,
       userId: interaction.userId,
     });
-    if (isRecord(result) && result.status === "delivered") {
-      content = "🧠 Knowledge base sent to your DMs";
-    }
+    parseRollHelperResult(result);
+    content = "🧠 Knowledge base sent to your DMs";
   } catch {
     console.error(
       JSON.stringify({
@@ -151,9 +210,13 @@ async function deliverRequestedRollHelper(
     );
   }
   try {
-    const response = await fetch(
+    const response = await responseFetch.fetch(
       buildEditOriginalResponse(
-        interaction,
+        {
+          id: interaction.id,
+          applicationId: interaction.applicationId,
+          token: interaction.token,
+        },
         componentsV2TextMessage(content, 0x1e_90_ff),
       ),
     );
@@ -179,13 +242,8 @@ async function deliverRequestedRollHelper(
 // Resolve settings in the long-lived Interaction Worker to avoid adding a
 // cross-Worker cold start to each new Roll object. If this lookup is unavailable,
 // Roll must resolve the authoritative settings before delivery.
-type GuildDeliverySettings = {
-  skipDiceDelay: boolean;
-  hideRollResultText: boolean;
-};
-
 async function resolveGuildDeliverySettings(
-  dataService: Fetcher,
+  dataService: FetchPort,
   guildId: string | null,
 ): Promise<GuildDeliverySettings | null> {
   if (guildId === null) return null;
@@ -198,30 +256,18 @@ async function resolveGuildDeliverySettings(
       }),
     );
     if (!response.ok) return null;
-    const value: unknown = await response.json();
-    if (
-      !isRecord(value) ||
-      value.status !== "found" ||
-      !isRecord(value.settings) ||
-      typeof value.settings.skipDiceDelay !== "boolean" ||
-      typeof value.settings.hideRollResultText !== "boolean"
-    ) {
-      return null;
-    }
-    return {
-      skipDiceDelay: value.settings.skipDiceDelay,
-      hideRollResultText: value.settings.hideRollResultText,
-    };
+    const result = parseGuildDeliverySettingsResult(await response.json());
+    return result.status === "found" ? result.settings : null;
   } catch {
     return null;
   }
 }
 
 async function acceptDeferredRoll(
-  stub: RollWorkAcceptanceStub,
+  stub: RollWorkPort,
   payload: ReturnType<typeof buildRollDeliveryPayload>,
   roll: DeferredRoll,
-  dataService: Fetcher,
+  dataService: FetchPort,
 ): Promise<void> {
   const settings = await resolveGuildDeliverySettings(
     dataService,
@@ -229,11 +275,12 @@ async function acceptDeferredRoll(
   );
   const acceptanceStartedAt = Date.now();
   try {
-    const accepted = await stub.acceptDelivery(
+    const acceptance = await stub.acceptDelivery(
       settings === null ? payload : { ...payload, settings },
     );
     const acceptanceCompletedAt = Date.now();
-    if (isAcceptedRollDelivery(accepted)) {
+    const accepted = acceptedRollDelivery(acceptance);
+    if (accepted !== null) {
       const acknowledgementPreparedAt =
         payload.telemetry?.acknowledgementPreparedAt;
       try {
@@ -243,7 +290,7 @@ async function acceptDeferredRoll(
           message: "Discord roll lifecycle advanced",
           interactionId: roll.id,
           stage: "accepted",
-          status: (accepted as { status: string }).status,
+          status: accepted.status,
           timingClock: "workers-io",
           acceptanceRpcMs: elapsedMs(
             acceptanceStartedAt,
@@ -303,7 +350,7 @@ async function acceptDeferredRoll(
 function cacheInteractionDisplayContext(
   context: RollLoggingContext | null,
   observedAt: number,
-  dataService: Fetcher,
+  dataService: FetchPort,
   ctx?: ExecutionContext,
 ): void {
   if (ctx === undefined) return;
@@ -339,7 +386,7 @@ function cacheInteractionDisplayContext(
 }
 
 function warnIncompleteDisplayContext(
-  interaction: Record<string, unknown>,
+  interaction: BoundaryObject,
   guildId: string | null,
   commandName: "library" | "roll",
 ): void {
@@ -356,9 +403,10 @@ function warnIncompleteDisplayContext(
   );
 }
 
-export async function handleInteractionRequest(
+export async function handleInteractionRequestWithDependencies(
   request: Request,
   env: InteractionEnv,
+  dependencies: InteractionHandlerDependencies,
   ctx?: ExecutionContext,
 ): Promise<Response> {
   const handlerStartedAt = Date.now();
@@ -391,15 +439,17 @@ export async function handleInteractionRequest(
   ) {
     return json({ error: "Unauthorized" }, 401);
   }
-  let interaction: unknown;
+  let decodedInteraction: SchemaInput;
   try {
-    interaction = JSON.parse(new TextDecoder().decode(body));
+    decodedInteraction = JSON.parse(new TextDecoder().decode(body));
   } catch {
     return invalidInteraction("invalid-json");
   }
-  if (!isRecord(interaction)) {
+  const parsedInteraction = boundaryObjectSchema.safeParse(decodedInteraction);
+  if (!parsedInteraction.success) {
     return invalidInteraction("invalid-payload");
   }
+  const interaction = parsedInteraction.data;
   if (interaction.type === 1) return json({ type: 1 });
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID) {
     return invalidInteraction("application-mismatch");
@@ -420,6 +470,7 @@ export async function handleInteractionRequest(
     const delivery = deliverRequestedRollHelper(
       requestedRollHelper,
       env.DISCORD_REST,
+      dependencies.responseFetch,
     );
     if (ctx === undefined) await delivery;
     else ctx.waitUntil(delivery);
@@ -447,12 +498,13 @@ export async function handleInteractionRequest(
 
   let savedRoll;
   try {
-    savedRoll = parseSavedRollInteraction(interaction, {
+    const scope: SavedRollInteractionScope = {
       applicationId: env.DISCORD_APPLICATION_ID,
-      ...(env.DISCORD_TEST_GUILD_ID === undefined
-        ? {}
-        : { guildId: env.DISCORD_TEST_GUILD_ID }),
-    });
+    };
+    if (env.DISCORD_TEST_GUILD_ID !== undefined) {
+      scope.guildId = env.DISCORD_TEST_GUILD_ID;
+    }
+    savedRoll = parseSavedRollInteraction(interaction, scope);
   } catch (error) {
     return invalidInteraction(
       error instanceof Error ? error.message : "saved-roll-parse-failed",
@@ -480,12 +532,13 @@ export async function handleInteractionRequest(
   }
   let roll;
   try {
-    roll = parseRollInteraction(interaction, {
+    const scope: RollInteractionScope = {
       applicationId: env.DISCORD_APPLICATION_ID,
-      ...(env.DISCORD_TEST_GUILD_ID === undefined
-        ? {}
-        : { guildId: env.DISCORD_TEST_GUILD_ID }),
-    });
+    };
+    if (env.DISCORD_TEST_GUILD_ID !== undefined) {
+      scope.guildId = env.DISCORD_TEST_GUILD_ID;
+    }
+    roll = parseRollInteraction(interaction, scope);
   } catch (error) {
     return invalidInteraction(
       error instanceof Error ? error.message : "roll-parse-failed",
@@ -544,26 +597,18 @@ export async function handleInteractionRequest(
       return interactionError("This command is not available yet.");
     }
     try {
-      const gateway = await env.GATEWAY_STATUS.getStatusSnapshot();
-      if (!isRecord(gateway) || typeof gateway.shardCount !== "number") {
-        throw new Error("Gateway status response is invalid");
-      }
+      const gateway = parseGatewayStatus(
+        await env.GATEWAY_STATUS.getStatusSnapshot(),
+      );
       const statsResponse = await env.DATA_SERVICE.fetch(
         new Request("https://data.internal/internal/audience-snapshot"),
       );
       if (!statsResponse.ok) throw new Error("Status stats lookup failed");
-      const stats: unknown = await statsResponse.json();
-      if (
-        !isRecord(stats) ||
-        stats.status !== "found" ||
-        !isRecord(stats.snapshot)
-      ) {
-        throw new Error("Status stats response is invalid");
-      }
+      const stats = parseAudienceSnapshotResult(await statsResponse.json());
       return json(
         buildStatusCommandResponse(
           statusInteraction,
-          gateway as unknown as StatusGatewaySnapshot,
+          gateway,
           stats.snapshot,
           links,
         ),
@@ -582,9 +627,7 @@ export async function handleInteractionRequest(
       stage: "received",
     }),
   );
-  const stub = env.ROLL_WORK.getByName(
-    roll.id,
-  ) as unknown as RollWorkAcceptanceStub;
+  const stub = env.ROLL_WORK.getByName(roll.id);
   const deferredAt = Date.now();
   cacheInteractionDisplayContext(
     roll.loggingContext,
@@ -593,7 +636,7 @@ export async function handleInteractionRequest(
     ctx,
   );
   let payload: ReturnType<typeof buildRollDeliveryPayload>;
-  let acknowledgement: Record<string, unknown>;
+  let acknowledgement: RollAcknowledgement;
   let acknowledgementTelemetry: RollDeliveryTelemetryV2;
   try {
     const rollSeed = randomSeed();
@@ -616,7 +659,7 @@ export async function handleInteractionRequest(
         data: {
           ...invalidRoll,
           flags: invalidRoll.flags | 64,
-          allowed_mentions: { parse: [] },
+          allowed_mentions: noAllowedMentions(),
         },
       };
     } else {
@@ -628,7 +671,7 @@ export async function handleInteractionRequest(
         type: acknowledgementType,
         data: {
           ...buildRollClatterMessage(outcome, clatterRenderSeed),
-          allowed_mentions: { parse: [] },
+          allowed_mentions: noAllowedMentions(),
         },
       };
     }
@@ -676,20 +719,38 @@ export async function handleInteractionRequest(
     ctx.waitUntil(acceptDeferredRoll(stub, payload, roll, env.DATA_SERVICE));
     return json(acknowledgement);
   }
-  let accepted: unknown;
+  let accepted;
   try {
-    accepted = await stub.acceptDelivery(payload);
+    accepted = acceptedRollDelivery(await stub.acceptDelivery(payload));
   } catch {
     return interactionError("This roll could not be accepted. Please try again.");
   }
-  if (!isAcceptedRollDelivery(accepted)) {
+  if (accepted === null) {
     return interactionError("This roll could not be accepted. Please try again.");
   }
   return json(acknowledgement);
 }
 
+export function handleInteractionRequest(
+  request: Request,
+  env: InteractionEnv,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  return handleInteractionRequestWithDependencies(
+    request,
+    env,
+    productionHandlerDependencies,
+    ctx,
+  );
+}
+
 export default {
   fetch(request, env, ctx): Promise<Response> {
-    return handleInteractionRequest(request, env, ctx);
+    return handleInteractionRequestWithDependencies(
+      request,
+      env,
+      productionHandlerDependencies,
+      ctx,
+    );
   },
 } satisfies ExportedHandler<InteractionEnv>;

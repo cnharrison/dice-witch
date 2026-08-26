@@ -1,9 +1,14 @@
-import { env, exports } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { handleSavedRollRequest } from "../../workers/data/src/saved-roll-service";
+import { dataTestEnv as dataEnv } from "./test-bindings";
 
-const dataEnv = env as unknown as { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
+type RequestBody = z.output<ReturnType<typeof z.json>>;
+const SavedRollV1ListSchema = z.object({
+  savedRolls: z.array(z.object({ version: z.literal(1) })),
+});
 const userId = "100000000000000003";
 const timestamp = 1_767_225_600_123;
 const savedRollId = "00000000-0000-4000-8000-000000000001";
@@ -27,7 +32,7 @@ beforeEach(async () => {
   ).bind(userId, timestamp, timestamp, timestamp).run();
 });
 
-function post(path: string, body: unknown): Promise<Response> {
+function post(path: string, body: RequestBody): Promise<Response> {
   return exports.default.fetch(
     new Request(`https://data.test${path}`, {
       method: "POST",
@@ -134,7 +139,7 @@ describe("saved-roll Data service", () => {
 
     const owner = { owner: { type: "user", userId } };
     const listedV1 = await post("/internal/saved-rolls/v1/list", owner);
-    const valueV1: { savedRolls: Record<string, unknown>[] } = await listedV1.json();
+    const valueV1 = SavedRollV1ListSchema.parse(await listedV1.json());
     expect(valueV1.savedRolls[0]?.version).toBe(1);
     expect(valueV1.savedRolls[0]).not.toHaveProperty("nameColor");
 
@@ -227,18 +232,27 @@ describe("saved-roll Data service", () => {
   });
 
   it("distinguishes invalid requests from internal storage failures", async () => {
-    const response = await handleSavedRollRequest(
-      new Request("https://data.test/internal/saved-rolls/v1/list", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: { type: "user", userId } }),
-      }),
-      {} as D1Database,
+    await dataEnv.DATA.exec(
+      "ALTER TABLE saved_rolls RENAME TO saved_rolls_unavailable",
     );
-    expect(response?.status).toBe(500);
-    await expect(response?.json()).resolves.toEqual({
-      error: "Saved roll request failed",
-    });
+    try {
+      const response = await handleSavedRollRequest(
+        new Request("https://data.test/internal/saved-rolls/v1/list", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ owner: { type: "user", userId } }),
+        }),
+        dataEnv.DATA,
+      );
+      expect(response?.status).toBe(500);
+      await expect(response?.json()).resolves.toEqual({
+        error: "Saved roll request failed",
+      });
+    } finally {
+      await dataEnv.DATA.exec(
+        "ALTER TABLE saved_rolls_unavailable RENAME TO saved_rolls",
+      );
+    }
   });
 
   it("does not expose saved-roll routes to other methods", async () => {

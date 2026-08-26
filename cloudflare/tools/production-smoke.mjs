@@ -1,11 +1,26 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const CLI_USAGE =
   "Usage: node tools/production-smoke.mjs --web-origin <url> --expected-sha <full-sha>";
 const PROPAGATION_ATTEMPTS = 61;
 const PROPAGATION_RETRY_MS = 5_000;
+const TargetsSchema = z.object({
+  webOrigin: z.string(),
+  expectedSha: z.string().regex(FULL_SHA),
+});
+const MetadataSchema = z.object({
+  environment: z.literal("production"),
+  build: z.object({ sha: z.string(), time: z.string() }),
+});
+const AnonymousSessionSchema = z.strictObject({ user: z.null() });
+const PublicStatsSchema = z.object({
+  liveGuilds: z.number().int().nonnegative(),
+  knownDiceWitchUsers: z.number().int().nonnegative(),
+  shardCount: z.number().int().nonnegative(),
+});
 
 function productionOrigin(value) {
   if (value !== "https://dicewit.ch") {
@@ -32,14 +47,13 @@ function requireStatus(name, response, expected) {
   }
 }
 
-export async function runProductionSmoke(targets, fetchImplementation = fetch) {
-  if (typeof targets !== "object" || targets === null) {
+export async function runProductionSmoke(value, fetchImplementation = fetch) {
+  const parsedTargets = TargetsSchema.safeParse(value);
+  if (!parsedTargets.success) {
     throw new Error("Production smoke targets are required");
   }
+  const targets = parsedTargets.data;
   const webOrigin = productionOrigin(targets.webOrigin);
-  if (!FULL_SHA.test(targets.expectedSha ?? "")) {
-    throw new Error("expectedSha must be a full commit SHA");
-  }
 
   const root = await request(fetchImplementation, "web root", `${webOrigin}/`);
   requireStatus("web root", root, 200);
@@ -56,14 +70,11 @@ export async function runProductionSmoke(targets, fetchImplementation = fetch) {
     `${webOrigin}/api/meta`,
   );
   requireStatus("build metadata", metadata, 200);
-  const metadataBody = await metadata.json();
-  if (metadataBody?.environment !== "production") {
-    throw new Error("metadata environment must be production");
-  }
-  if (metadataBody?.build?.sha !== targets.expectedSha) {
+  const metadataBody = MetadataSchema.parse(await metadata.json());
+  if (metadataBody.build.sha !== targets.expectedSha) {
     throw new Error("metadata SHA does not match the expected source SHA");
   }
-  if (typeof metadataBody.build.time !== "string" || Number.isNaN(Date.parse(metadataBody.build.time))) {
+  if (Number.isNaN(Date.parse(metadataBody.build.time))) {
     throw new Error("metadata build time is invalid");
   }
 
@@ -73,14 +84,8 @@ export async function runProductionSmoke(targets, fetchImplementation = fetch) {
     `${webOrigin}/api/auth/session`,
   );
   requireStatus("anonymous session", session, 401);
-  const sessionBody = await session.json();
-  if (
-    typeof sessionBody !== "object" ||
-    sessionBody === null ||
-    Array.isArray(sessionBody) ||
-    Object.keys(sessionBody).length !== 1 ||
-    sessionBody.user !== null
-  ) {
+  const sessionBody = AnonymousSessionSchema.safeParse(await session.json());
+  if (!sessionBody.success) {
     throw new Error("anonymous session response is invalid");
   }
 
@@ -90,11 +95,8 @@ export async function runProductionSmoke(targets, fetchImplementation = fetch) {
     `${webOrigin}/api/stats/public`,
   );
   requireStatus("public stats", stats, 200);
-  const statsBody = await stats.json();
-  for (const key of ["liveGuilds", "knownDiceWitchUsers", "shardCount"]) {
-    if (!Number.isSafeInteger(statsBody?.[key]) || statsBody[key] < 0) {
-      throw new Error("public stats response is invalid");
-    }
+  if (!PublicStatsSchema.safeParse(await stats.json()).success) {
+    throw new Error("public stats response is invalid");
   }
 
   const interactionGet = await request(

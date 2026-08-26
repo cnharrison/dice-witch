@@ -3,32 +3,42 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import * as React from "react";
 import { MemoryRouter } from "react-router";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
+import {
+  AuthenticatedAppView,
+  createAuthenticatedAppRoutes,
+} from "./AuthenticatedApp";
 
-vi.mock("./AuthWrapper", () => ({
-  AuthWrapper: ({ children }: { children: React.ReactNode }) => children,
-}));
-vi.mock("./Navbar", () => ({ Navbar: () => <nav>Navigation</nav> }));
-vi.mock("./ui/toaster", () => ({ Toaster: () => null }));
-vi.mock("@/context/GuildContext", () => ({
-  GuildProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
-vi.mock("@/pages/Home", () => ({ default: () => <div>Home</div> }));
-vi.mock("@/pages/Preferences", () => ({
-  default: () => <div>Preferences</div>,
-}));
-vi.mock("@/pages/SavedRolls", () => ({
-  default: () => <div>Library page</div>,
-}));
+const AuthenticatedRoutes = createAuthenticatedAppRoutes({
+  loadHomePage: async () => ({ default: () => <div>Home</div> }),
+  loadPreferencesPage: async () => ({
+    default: () => <div>Preferences</div>,
+  }),
+  loadLibraryPage: async () => ({
+    default: () => <div>Library page</div>,
+  }),
+});
 
-import AuthenticatedApp from "./AuthenticatedApp";
+const Boundary = ({ children }: React.PropsWithChildren) => children;
+
+function TestAuthenticatedApp() {
+  return (
+    <AuthenticatedAppView
+      AuthenticatedRoutes={AuthenticatedRoutes}
+      AuthBoundary={Boundary}
+      GuildBoundary={Boundary}
+      NavbarSlot={() => <nav>Navigation</nav>}
+      ToasterSlot={() => null}
+    />
+  );
+}
 
 afterEach(cleanup);
 
 it("keeps the authenticated scroll container at the viewport edge", () => {
   render(
     <MemoryRouter>
-      <AuthenticatedApp />
+      <TestAuthenticatedApp />
     </MemoryRouter>,
   );
 
@@ -41,7 +51,7 @@ it("keeps the authenticated scroll container at the viewport edge", () => {
 it("serves the Library at /library without retaining the old route", async () => {
   const { unmount } = render(
     <MemoryRouter initialEntries={["/library"]}>
-      <AuthenticatedApp />
+      <TestAuthenticatedApp />
     </MemoryRouter>,
   );
 
@@ -50,7 +60,7 @@ it("serves the Library at /library without retaining the old route", async () =>
 
   render(
     <MemoryRouter initialEntries={["/saved-rolls"]}>
-      <AuthenticatedApp />
+      <TestAuthenticatedApp />
     </MemoryRouter>,
   );
   expect(screen.queryByText("Library page")).toBeNull();

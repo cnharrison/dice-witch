@@ -1,3 +1,4 @@
+import * as z from "zod";
 import {
   retrieveNarrationGameCandidatesV1,
   retrieveNarrationGameCandidatesV2,
@@ -7,7 +8,10 @@ import {
   type NarrationGameCandidateResultV1,
   type NarrationGameCandidateV1,
 } from "./narration-game-candidates";
-import type { NarrationGameConfidenceV1 } from "./narration-game-catalog";
+import {
+  NARRATION_GAME_CONFIDENCES_V1,
+  type NarrationGameConfidenceV1,
+} from "./narration-game-catalog";
 import type { NarrationGameRankingRequestV1 } from "./narration-game-ranking";
 
 export type NarrationGameRankingResponseAbstentionReasonV1 =
@@ -61,47 +65,38 @@ type AssessmentValidation =
     }>
   | Extract<NarrationGameRankingResponseValidationV1, { status: "rejected" }>;
 
-const CONFIDENCE_RANK: Readonly<Record<NarrationGameConfidenceV1, number>> = {
+const CONFIDENCE_RANK = {
   weak: 1,
   plausible: 2,
   strong: 3,
   distinctive: 4,
-};
-const CONFIDENCE_TIERS: ReadonlySet<string> = new Set(
-  Object.keys(CONFIDENCE_RANK),
-);
-const ABSTENTION_REASONS: ReadonlySet<string> = new Set([
+} as const satisfies Readonly<Record<NarrationGameConfidenceV1, number>>;
+const ABSTENTION_REASONS = [
   "insufficient-distinguishing-evidence",
   "confusable-mechanics",
   "unsupported-inference-required",
-]);
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+] as const satisfies readonly NarrationGameRankingResponseAbstentionReasonV1[];
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    actual.length === sortedExpected.length &&
-    actual.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function isConfidenceTier(
-  value: unknown,
-): value is NarrationGameConfidenceV1 {
-  return typeof value === "string" && CONFIDENCE_TIERS.has(value);
-}
-
-function isAbstentionReason(
-  value: unknown,
-): value is NarrationGameRankingResponseAbstentionReasonV1 {
-  return typeof value === "string" && ABSTENTION_REASONS.has(value);
-}
+const NarrationGameRankingCitationSchemaV1 = z.strictObject({
+  claimId: z.string(),
+  sourceIds: z.array(z.string()),
+});
+const NarrationGameRankingAssessmentSchemaV1 = z.strictObject({
+  confidenceTier: z.enum(NARRATION_GAME_CONFIDENCES_V1),
+  evidenceCitations: z.array(NarrationGameRankingCitationSchemaV1),
+});
+const NarrationGameRankingAssessmentsSchemaV1 = z.record(
+  z.string(),
+  NarrationGameRankingAssessmentSchemaV1,
+);
+const NarrationGameRankingProviderResponseInputSchemaV1 = z.unknown();
+const NarrationGameRankingResponseSchemaV1 = z.strictObject({
+  version: z.literal(1),
+  disposition: z.enum(["select", "abstain"]),
+  selectedSystemId: z.string().nullable(),
+  assessments: NarrationGameRankingAssessmentsSchemaV1,
+  abstentionReason: z.enum(ABSTENTION_REASONS).nullable(),
+});
 
 function candidateConfidenceBound(
   candidate: NarrationGameCandidateV1,
@@ -119,7 +114,7 @@ function reject(
 }
 
 function validateCitation(
-  value: unknown,
+  citation: z.output<typeof NarrationGameRankingCitationSchemaV1>,
   candidate: NarrationGameCandidateV1,
 ):
   | Readonly<{
@@ -132,55 +127,46 @@ function validateCitation(
     ...candidate.evidence.map(({ sourceIds }) => sourceIds.length),
   );
   if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["claimId", "sourceIds"]) ||
-    typeof value.claimId !== "string" ||
-    !Array.isArray(value.sourceIds) ||
-    value.sourceIds.length < 1 ||
-    value.sourceIds.length > maximumSourceIds ||
-    !value.sourceIds.every((sourceId) => typeof sourceId === "string")
+    citation.sourceIds.length < 1 ||
+    citation.sourceIds.length > maximumSourceIds
   ) {
     return reject("invalid-schema");
   }
 
-  if (new Set(value.sourceIds).size !== value.sourceIds.length) {
+  if (new Set(citation.sourceIds).size !== citation.sourceIds.length) {
     return reject("duplicate-citation");
   }
 
   const evidence = candidate.evidence.find(
-    ({ claim }) => claim === value.claimId,
+    ({ claim }) => claim === citation.claimId,
   );
   if (
     evidence === undefined ||
-    value.sourceIds.length > evidence.sourceIds.length ||
-    value.sourceIds.some((sourceId) => !evidence.sourceIds.includes(sourceId))
+    citation.sourceIds.length > evidence.sourceIds.length ||
+    citation.sourceIds.some((sourceId) => !evidence.sourceIds.includes(sourceId))
   ) {
     return reject("unsupported-citation");
   }
 
   return {
     status: "accepted",
-    value: { claimId: value.claimId, sourceIds: value.sourceIds },
+    value: { claimId: citation.claimId, sourceIds: citation.sourceIds },
     evidenceTier: evidence.evidenceTier,
   };
 }
 
 function validateAssessment(
-  value: unknown,
+  assessment: z.output<typeof NarrationGameRankingAssessmentSchemaV1>,
   candidate: NarrationGameCandidateV1,
 ): AssessmentValidation {
   if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["confidenceTier", "evidenceCitations"]) ||
-    !isConfidenceTier(value.confidenceTier) ||
-    !Array.isArray(value.evidenceCitations) ||
-    value.evidenceCitations.length < 1 ||
-    value.evidenceCitations.length > candidate.evidence.length
+    assessment.evidenceCitations.length < 1 ||
+    assessment.evidenceCitations.length > candidate.evidence.length
   ) {
     return reject("invalid-schema");
   }
 
-  const confidenceTier = value.confidenceTier;
+  const confidenceTier = assessment.confidenceTier;
   if (
     CONFIDENCE_RANK[confidenceTier] >
     CONFIDENCE_RANK[candidateConfidenceBound(candidate)]
@@ -191,12 +177,8 @@ function validateAssessment(
   const citations: NarrationGameRankingEvidenceCitationV1[] = [];
   const citationTiers: NarrationGameConfidenceV1[] = [];
   const seenClaims = new Set<string>();
-  for (const citation of value.evidenceCitations) {
-    if (
-      isRecord(citation) &&
-      typeof citation.claimId === "string" &&
-      seenClaims.has(citation.claimId)
-    ) {
+  for (const citation of assessment.evidenceCitations) {
+    if (seenClaims.has(citation.claimId)) {
       return reject("duplicate-citation");
     }
     const validation = validateCitation(citation, candidate);
@@ -225,11 +207,11 @@ function validateAssessment(
 }
 
 function hasCanonicalAssessmentKeys(
-  value: Record<string, unknown>,
+  assessments: z.output<typeof NarrationGameRankingAssessmentsSchemaV1>,
   candidates: readonly NarrationGameCandidateV1[],
 ): boolean {
   const expected = candidates.map(({ systemId }) => systemId).sort();
-  const actual = Object.keys(value).sort();
+  const actual = Object.keys(assessments).sort();
   return (
     actual.length === expected.length &&
     actual.every((systemId, index) => systemId === expected[index])
@@ -254,7 +236,7 @@ function retrieveValidationCandidates(
 }
 
 export function validateNarrationGameRankingResponseV1(
-  value: unknown,
+  value: z.input<typeof NarrationGameRankingProviderResponseInputSchemaV1>,
   request: NarrationGameRankingValidationRequest,
 ): NarrationGameRankingResponseValidationV1 {
   const candidateResult = retrieveValidationCandidates(request);
@@ -266,55 +248,46 @@ export function validateNarrationGameRankingResponseV1(
   }
   const candidates = candidateResult.candidates;
 
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "abstentionReason",
-      "assessments",
-      "disposition",
-      "selectedSystemId",
-      "version",
-    ]) ||
-    value.version !== 1 ||
-    (value.disposition !== "select" && value.disposition !== "abstain") ||
-    (value.selectedSystemId !== null &&
-      typeof value.selectedSystemId !== "string") ||
-    (value.abstentionReason !== null &&
-      !isAbstentionReason(value.abstentionReason)) ||
-    !isRecord(value.assessments)
-  ) {
+  const providerValue =
+    NarrationGameRankingProviderResponseInputSchemaV1.parse(value);
+  const responseResult = NarrationGameRankingResponseSchemaV1.safeParse(
+    providerValue,
+  );
+  if (!responseResult.success) {
     return reject("invalid-schema");
   }
+  const response = responseResult.data;
 
-  if (!hasCanonicalAssessmentKeys(value.assessments, candidates)) {
+  if (!hasCanonicalAssessmentKeys(response.assessments, candidates)) {
     return reject("candidate-assessments-mismatch");
   }
 
   const assessments: Record<string, NarrationGameRankingAssessmentV1> = {};
   for (const candidate of candidates) {
-    const validation = validateAssessment(
-      value.assessments[candidate.systemId],
-      candidate,
-    );
+    const assessment = response.assessments[candidate.systemId];
+    if (assessment === undefined) {
+      return reject("candidate-assessments-mismatch");
+    }
+    const validation = validateAssessment(assessment, candidate);
     if (validation.status === "rejected") return validation;
     assessments[candidate.systemId] = validation.value;
   }
 
-  if (value.disposition === "abstain") {
-    if (value.selectedSystemId !== null || value.abstentionReason === null) {
+  if (response.disposition === "abstain") {
+    if (response.selectedSystemId !== null || response.abstentionReason === null) {
       return reject("invalid-decision");
     }
   } else {
-    if (value.selectedSystemId === null || value.abstentionReason !== null) {
+    if (response.selectedSystemId === null || response.abstentionReason !== null) {
       return reject("invalid-decision");
     }
     const selectedCandidate = candidates.find(
-      ({ systemId }) => systemId === value.selectedSystemId,
+      ({ systemId }) => systemId === response.selectedSystemId,
     );
     if (selectedCandidate === undefined) {
       return reject("invalid-decision");
     }
-    const selectedAssessment = assessments[value.selectedSystemId];
+    const selectedAssessment = assessments[response.selectedSystemId];
     if (
       CONFIDENCE_RANK[candidateConfidenceBound(selectedCandidate)] <
         CONFIDENCE_RANK.plausible ||
@@ -330,10 +303,10 @@ export function validateNarrationGameRankingResponseV1(
     status: "accepted",
     value: {
       version: 1,
-      disposition: value.disposition,
-      selectedSystemId: value.selectedSystemId,
+      disposition: response.disposition,
+      selectedSystemId: response.selectedSystemId,
       assessments,
-      abstentionReason: value.abstentionReason,
+      abstentionReason: response.abstentionReason,
     },
   };
 }

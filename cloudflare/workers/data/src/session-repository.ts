@@ -1,5 +1,7 @@
+import { z } from "zod";
+import { snowflakeSchema } from "../../../packages/discord-contracts/src/schema-primitives";
+
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 const TOKEN_BYTES = 32;
 
 export type SessionUser = {
@@ -80,6 +82,20 @@ type OAuthStateRow = {
   return_to: string;
 };
 
+const returnToSchema = z.string().min(1).max(2_048);
+const OAuthStateContextSchema = z.discriminatedUnion("purpose", [
+  z.object({
+    purpose: z.literal("sign_in"),
+    expectedUserId: z.null(),
+    returnTo: returnToSchema,
+  }),
+  z.object({
+    purpose: z.literal("refresh"),
+    expectedUserId: snowflakeSchema,
+    returnTo: returnToSchema,
+  }),
+]);
+
 function validateToken(value: string): string {
   if (!OPAQUE_TOKEN.test(value)) throw new Error("Opaque token is invalid");
   return value;
@@ -101,30 +117,19 @@ function validateRange(createdAt: number, expiresAt: number, name: string): void
 function validateOAuthStateContext(
   input: OAuthStateContext,
 ): OAuthStateContext {
-  const expectedUserId = input.expectedUserId;
-  if (
-    (input.purpose === "sign_in" && expectedUserId !== null) ||
-    (input.purpose === "refresh" &&
-      (expectedUserId === null || !SNOWFLAKE.test(expectedUserId))) ||
-    typeof input.returnTo !== "string" ||
-    input.returnTo.length < 1 ||
-    input.returnTo.length > 2_048
-  ) {
-    throw new Error("OAuth state context is invalid");
-  }
-  return {
-    purpose: input.purpose,
-    expectedUserId,
-    returnTo: input.returnTo,
-  };
+  const result = OAuthStateContextSchema.safeParse(input);
+  if (!result.success) throw new Error("OAuth state context is invalid");
+  return result.data;
 }
 
 function oauthStateContext(row: OAuthStateRow): OAuthStateContext {
-  return validateOAuthStateContext({
-    purpose: row.purpose as OAuthStateContext["purpose"],
+  const result = OAuthStateContextSchema.safeParse({
+    purpose: row.purpose,
     expectedUserId: row.expected_user_id,
     returnTo: row.return_to,
   });
+  if (!result.success) throw new Error("OAuth state context is invalid");
+  return result.data;
 }
 
 function encodeBase64Url(bytes: Uint8Array): string {
@@ -157,7 +162,9 @@ export class D1SessionRepository {
   async createSession(
     input: CreateSessionInput,
   ): Promise<CreateSessionResult> {
-    if (!SNOWFLAKE.test(input.userId)) throw new Error("User id is invalid");
+    if (!snowflakeSchema.safeParse(input.userId).success) {
+      throw new Error("User id is invalid");
+    }
     validateRange(input.createdAt, input.expiresAt, "Session");
     const tokenHash = await hashOpaqueToken(input.token);
     const existing = await this.readSessionIdentity(tokenHash);

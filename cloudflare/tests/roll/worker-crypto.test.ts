@@ -2,7 +2,9 @@ import { DiceRoll, NumberGenerator } from "@dice-roller/rpg-dice-roller";
 import { afterEach, describe, expect, it } from "vitest";
 import { randomBytes } from "../../packages/roll-domain/src/worker-crypto";
 
-function fixedEngine(): { next(): number } {
+type NumberGeneratorEngine = { next(): number };
+
+function fixedEngine() {
   return { next: () => 1 };
 }
 
@@ -25,8 +27,10 @@ describe("Worker crypto adapter", () => {
   });
 
   it("satisfies the parser bundle's dormant Node crypto engine", () => {
-    NumberGenerator.generator.engine = NumberGenerator.engines
-      .nodeCrypto as { next(): number };
+    // SAFETY: The package runtime export supplies next(), and this test verifies it by executing DiceRoll.
+    const nodeCryptoEngine = NumberGenerator.engines
+      .nodeCrypto as NumberGeneratorEngine;
+    NumberGenerator.generator.engine = nodeCryptoEngine;
 
     const roll = new DiceRoll("4d6");
 

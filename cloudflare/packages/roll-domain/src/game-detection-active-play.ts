@@ -1,3 +1,7 @@
+import * as z from "zod";
+
+type SchemaInput = z.input<z.ZodUnknown>;
+
 export const GAME_DETECTION_ACTIVE_PLAY_POLICY_REVISION_V1 = "active-play:v1";
 export const GAME_DETECTION_POSSIBLE_WINDOW_MS_V1 = 2 * 60 * 1_000;
 export const GAME_DETECTION_MULTIPLAYER_WINDOW_MS_V1 = 5 * 60 * 1_000;
@@ -63,12 +67,12 @@ const SOLO_REPEATED_FAMILY_MINIMUM = 4;
 const SUSTAIN_MINIMUM_EVENTS = 2;
 const POSSIBLE_MINIMUM_EVENTS = 2;
 
-const ACTIVE_PLAY_STATES = new Set<GameDetectionActivePlayStateV1>([
+const ACTIVE_PLAY_STATES = [
   "isolated",
   "possible",
   "active",
   "inactive",
-]);
+] as const satisfies readonly GameDetectionActivePlayStateV1[];
 const D20_EXPRESSION = /^(?:\d+)?d20(?:[^d]*)$/u;
 const PERCENTILE_EXPRESSION = /^(?:\d+)?d(?:100|%)(?:[^d]*)$/u;
 const FATE_EXPRESSION = /^(?:\d+)?df(?:\.[12])?(?:[^d]*)$/u;
@@ -77,9 +81,27 @@ const MULTIPLE_D6_EXPRESSION = /^(?:[2-9]|[1-9]\d+)d6(?:[^d]*)$/u;
 const STANDARD_EXPRESSION = /d(?:4|6|8|10|12|20)(?!\d)/u;
 const STEP_EXPRESSION = /d(4|6|8|10|12)(?!\d)/gu;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const GameDetectionActivityNotationSchemaV1 = z
+  .array(z.string().min(1).max(MAX_NOTATION_LENGTH))
+  .min(1)
+  .max(MAX_NOTATION_EXPRESSIONS);
+const GameDetectionActivePlayEventSchemaV1 = z.strictObject({
+  atMs: z.number(),
+  participant: z.number(),
+  notation: GameDetectionActivityNotationSchemaV1,
+});
+const GameDetectionActivePlayEventListSchemaV1 = z.array(z.unknown());
+const GameDetectionActivePlayPriorSchemaV1 = z.strictObject({
+  state: z.enum(ACTIVE_PLAY_STATES),
+  episodeStartedAt: z.number(),
+});
+const GameDetectionActivePlayRequestEnvelopeSchemaV1 = z.strictObject({
+  version: z.unknown(),
+  scope: z.unknown(),
+  nowMs: z.unknown(),
+  prior: z.unknown(),
+  events: z.unknown(),
+});
 
 function normalizeNotation(value: string): string {
   return value.toLowerCase().replace(/\s+/gu, "");
@@ -102,22 +124,9 @@ function isStepFamily(notation: readonly string[]): boolean {
   return sides.size > 0 && (exploding || sides.size > 1);
 }
 
-export function classifyGameDetectionActivityFamilyV1(
+function classifyActivityFamily(
   notation: readonly string[],
 ): GameDetectionActivityFamilyV1 {
-  if (
-    !Array.isArray(notation) ||
-    notation.length < 1 ||
-    notation.length > MAX_NOTATION_EXPRESSIONS ||
-    !notation.every(
-      (value) =>
-        typeof value === "string" &&
-        value.length > 0 &&
-        value.length <= MAX_NOTATION_LENGTH,
-    )
-  ) {
-    throw new Error("Game-detection activity notation is invalid");
-  }
   const normalized = notation.map(normalizeNotation);
   if (allMatch(normalized, D20_EXPRESSION)) return "d20";
   if (allMatch(normalized, PERCENTILE_EXPRESSION)) return "percentile";
@@ -134,59 +143,63 @@ export function classifyGameDetectionActivityFamilyV1(
     : "other";
 }
 
+export function classifyGameDetectionActivityFamilyV1(
+  notation: SchemaInput,
+): GameDetectionActivityFamilyV1 {
+  const result = GameDetectionActivityNotationSchemaV1.safeParse(notation);
+  if (!result.success) {
+    throw new Error("Game-detection activity notation is invalid");
+  }
+  return classifyActivityFamily(result.data);
+}
+
 function validateEvents(
-  value: unknown,
+  input: SchemaInput,
   nowMs: number,
 ): readonly GameDetectionActivePlayEventV1[] {
-  if (!Array.isArray(value) || value.length > MAX_ACTIVITY_EVENTS) {
+  const listResult = GameDetectionActivePlayEventListSchemaV1.safeParse(input);
+  if (!listResult.success || listResult.data.length > MAX_ACTIVITY_EVENTS) {
     throw new Error("Game-detection activity events are invalid");
   }
-  const events = value as readonly unknown[];
-  return events.map((event, index) => {
+  const events = listResult.data.map((event) => {
+    const result = GameDetectionActivePlayEventSchemaV1.safeParse(event);
     if (
-      !isRecord(event) ||
-      Object.keys(event).sort().join(",") !== "atMs,notation,participant" ||
-      typeof event.atMs !== "number" ||
-      !Number.isSafeInteger(event.atMs) ||
-      event.atMs < 0 ||
-      event.atMs > nowMs ||
-      typeof event.participant !== "number" ||
-      !Number.isSafeInteger(event.participant) ||
-      event.participant < 0
+      !result.success ||
+      !Number.isSafeInteger(result.data.atMs) ||
+      result.data.atMs < 0 ||
+      result.data.atMs > nowMs ||
+      !Number.isSafeInteger(result.data.participant) ||
+      result.data.participant < 0
     ) {
       throw new Error("Game-detection activity event is invalid");
     }
+    return result.data;
+  });
+  for (let index = 1; index < events.length; index += 1) {
     const prior = events[index - 1];
-    if (
-      isRecord(prior) &&
-      typeof prior.atMs === "number" &&
-      event.atMs < prior.atMs
-    ) {
+    const event = events[index];
+    if (prior !== undefined && event !== undefined && event.atMs < prior.atMs) {
       throw new Error("Game-detection activity events must be chronological");
     }
-    classifyGameDetectionActivityFamilyV1(event.notation as readonly string[]);
-    return event as GameDetectionActivePlayEventV1;
-  });
+  }
+  return events;
 }
 
 function validatePrior(
-  value: unknown,
+  input: SchemaInput,
   nowMs: number,
 ): GameDetectionActivePlayPriorV1 | null {
-  if (value === null) return null;
+  if (input === null) return null;
+  const result = GameDetectionActivePlayPriorSchemaV1.safeParse(input);
   if (
-    !isRecord(value) ||
-    Object.keys(value).sort().join(",") !== "episodeStartedAt,state" ||
-    typeof value.state !== "string" ||
-    !ACTIVE_PLAY_STATES.has(value.state as GameDetectionActivePlayStateV1) ||
-    typeof value.episodeStartedAt !== "number" ||
-    !Number.isSafeInteger(value.episodeStartedAt) ||
-    value.episodeStartedAt < 0 ||
-    value.episodeStartedAt > nowMs
+    !result.success ||
+    !Number.isSafeInteger(result.data.episodeStartedAt) ||
+    result.data.episodeStartedAt < 0 ||
+    result.data.episodeStartedAt > nowMs
   ) {
     throw new Error("Game-detection prior activity state is invalid");
   }
-  return value as unknown as GameDetectionActivePlayPriorV1;
+  return result.data;
 }
 
 function eventsWithin(
@@ -209,7 +222,7 @@ function repeatedFamilyCount(
   const counts = new Map<GameDetectionActivityFamilyV1, number>();
   let maximum = 0;
   for (const event of events) {
-    const family = classifyGameDetectionActivityFamilyV1(event.notation);
+    const family = classifyActivityFamily(event.notation);
     const count = (counts.get(family) ?? 0) + 1;
     counts.set(family, count);
     maximum = Math.max(maximum, count);
@@ -247,21 +260,28 @@ export function assessGameDetectionActivePlayV1(
   request: GameDetectionActivePlayRequestV1,
 ): GameDetectionActivePlayResultV1;
 export function assessGameDetectionActivePlayV1(
-  request: unknown,
+  request: z.input<typeof GameDetectionActivePlayRequestEnvelopeSchemaV1>,
 ): GameDetectionActivePlayResultV1 {
+  const requestResult =
+    GameDetectionActivePlayRequestEnvelopeSchemaV1.safeParse(request);
+  if (!requestResult.success) {
+    throw new Error("Game-detection active-play request is invalid");
+  }
+  const parsedRequest = requestResult.data;
+  const nowResult = z.number().safeParse(parsedRequest.nowMs);
   if (
-    !isRecord(request) ||
-    Object.keys(request).sort().join(",") !== "events,nowMs,prior,scope,version" ||
-    request.version !== 1 ||
-    (request.scope !== "guild" && request.scope !== "dm") ||
-    typeof request.nowMs !== "number" ||
-    !Number.isSafeInteger(request.nowMs) ||
-    request.nowMs < 0
+    parsedRequest.version !== 1 ||
+    (parsedRequest.scope !== "guild" && parsedRequest.scope !== "dm") ||
+    !nowResult.success ||
+    !Number.isSafeInteger(nowResult.data) ||
+    nowResult.data < 0
   ) {
     throw new Error("Game-detection active-play request is invalid");
   }
-  const prior = validatePrior(request.prior, request.nowMs);
-  const events = validateEvents(request.events, request.nowMs);
+  const nowMs = nowResult.data;
+  const scope = parsedRequest.scope;
+  const prior = validatePrior(parsedRequest.prior, nowMs);
+  const events = validateEvents(parsedRequest.events, nowMs);
   if (events.length === 0) return result("isolated", null, null);
 
   const episode = currentEpisode(events);
@@ -284,20 +304,20 @@ export function assessGameDetectionActivePlayV1(
     ? prior.episodeStartedAt
     : derivedStart;
 
-  if (request.nowMs - last.atMs >= GAME_DETECTION_EPISODE_INACTIVITY_MS_V1) {
+  if (nowMs - last.atMs >= GAME_DETECTION_EPISODE_INACTIVITY_MS_V1) {
     return result("inactive", null, episodeStartedAt);
   }
 
   const multiplayerEvents = eventsWithin(
     episode,
-    request.nowMs,
+    nowMs,
     GAME_DETECTION_MULTIPLAYER_WINDOW_MS_V1,
   );
   const participants = new Set(
     multiplayerEvents.map(({ participant }) => participant),
   );
   if (
-    request.scope === "guild" &&
+    scope === "guild" &&
     multiplayerEvents.length >= MULTIPLAYER_MINIMUM_EVENTS &&
     participants.size >= MULTIPLAYER_MINIMUM_PARTICIPANTS &&
     eventSpan(multiplayerEvents) >= MULTIPLAYER_MINIMUM_SPAN_MS
@@ -307,7 +327,7 @@ export function assessGameDetectionActivePlayV1(
 
   const soloEvents = eventsWithin(
     episode,
-    request.nowMs,
+    nowMs,
     GAME_DETECTION_SOLO_WINDOW_MS_V1,
   );
   if (
@@ -321,7 +341,7 @@ export function assessGameDetectionActivePlayV1(
 
   const sustainEvents = eventsWithin(
     episode,
-    request.nowMs,
+    nowMs,
     GAME_DETECTION_SUSTAIN_WINDOW_MS_V1,
   );
   if (
@@ -334,7 +354,7 @@ export function assessGameDetectionActivePlayV1(
 
   const possibleEvents = eventsWithin(
     episode,
-    request.nowMs,
+    nowMs,
     GAME_DETECTION_POSSIBLE_WINDOW_MS_V1,
   );
   return possibleEvents.length >= POSSIBLE_MINIMUM_EVENTS

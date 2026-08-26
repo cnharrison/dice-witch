@@ -14,11 +14,27 @@ import {
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { expect, it } from "vitest";
+import { z } from "zod";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+const TestMigrationsBindingSchema = z.object({
+  TEST_MIGRATIONS: z.array(z.strictObject({
+    name: z.string(),
+    queries: z.array(z.string()),
+  })),
+});
+const PersonalProfileRowSchema = z.strictObject({
+  revision: z.number().int(),
+  profile_json: z.string(),
+  updated_at: z.number().int(),
+});
+const GuildProfileRowSchema = PersonalProfileRowSchema.extend({
+  updated_by_user_id: z.string(),
+});
+const JsonDocumentSchema = z.json();
+const dataEnv = {
+  DATA: env.DATA,
+  ...TestMigrationsBindingSchema.parse(env),
+} satisfies { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 
 const timestamp = 1_767_225_600_000;
 const userId = "100000000000000031";
@@ -140,14 +156,20 @@ it("migrates saved Personal and Server font slots without changing metadata", as
     ],
     assignments: { all: null, overrides: {} },
   };
-  const malformed = structuredClone(personal) as unknown as {
-    designs: Array<{ recipe: Record<string, unknown> }>;
-  };
-  const malformedDesign = malformed.designs[1];
+  const malformedBase = structuredClone(personal);
+  const malformedDesign = malformedBase.designs[1];
   if (malformedDesign === undefined) {
     throw new Error("Malformed design fixture is missing");
   }
-  delete malformedDesign.recipe.font;
+  const { font: omittedFont, ...malformedRecipe } = malformedDesign.recipe;
+  void omittedFont;
+  const malformed = {
+    ...malformedBase,
+    designs: malformedBase.designs.map((candidate) =>
+      candidate.id === malformedDesign.id
+        ? { ...candidate, recipe: malformedRecipe }
+        : candidate),
+  };
 
   const personalJson = JSON.stringify(personal);
   const guildJson = JSON.stringify(guild);
@@ -235,17 +257,15 @@ it("migrates saved Personal and Server font slots without changing metadata", as
 
   await applyD1Migrations(dataEnv.DATA, [target]);
 
-  const personalRow = await dataEnv.DATA.prepare(
-    `SELECT revision, profile_json, updated_at
-     FROM user_appearance_profiles WHERE user_id = ?`,
-  ).bind(userId).first<{
-    revision: number;
-    profile_json: string;
-    updated_at: number;
-  }>();
+  const personalRow = PersonalProfileRowSchema.parse(
+    await dataEnv.DATA.prepare(
+      `SELECT revision, profile_json, updated_at
+       FROM user_appearance_profiles WHERE user_id = ?`,
+    ).bind(userId).first(),
+  );
   expect(personalRow).toMatchObject({ revision: 7, updated_at: timestamp });
   const migratedPersonal = parseAppearanceProfileV4(
-    JSON.parse(personalRow?.profile_json ?? "null") as unknown,
+    JsonDocumentSchema.parse(JSON.parse(personalRow.profile_json)),
     APPEARANCE_VALIDATION_CATALOG_V3,
   );
   expect(migratedPersonal.designs.map(({ recipe }) => recipe.font)).toEqual([
@@ -266,15 +286,12 @@ it("migrates saved Personal and Server font slots without changing metadata", as
   expect(migratedPersonal.assignments).toEqual(personal.assignments);
   expect(migratedPersonal.diceView).toEqual(personal.diceView);
 
-  const guildRow = await dataEnv.DATA.prepare(
-    `SELECT revision, profile_json, updated_by_user_id, updated_at
-     FROM guild_appearance_profiles WHERE guild_id = ?`,
-  ).bind(guildId).first<{
-    revision: number;
-    profile_json: string;
-    updated_by_user_id: string;
-    updated_at: number;
-  }>();
+  const guildRow = GuildProfileRowSchema.parse(
+    await dataEnv.DATA.prepare(
+      `SELECT revision, profile_json, updated_by_user_id, updated_at
+       FROM guild_appearance_profiles WHERE guild_id = ?`,
+    ).bind(guildId).first(),
+  );
   expect(guildRow).toMatchObject({
     revision: 5,
     updated_by_user_id: userId,
@@ -282,7 +299,7 @@ it("migrates saved Personal and Server font slots without changing metadata", as
   });
   expect(
     parseGuildAppearanceProfileV4(
-      JSON.parse(guildRow?.profile_json ?? "null") as unknown,
+      JsonDocumentSchema.parse(JSON.parse(guildRow.profile_json)),
       APPEARANCE_VALIDATION_CATALOG_V3,
     ).designs.map(({ recipe }) => recipe.font),
   ).toEqual(migratedPersonal.designs.map(({ recipe }) => recipe.font));
@@ -293,7 +310,7 @@ it("migrates saved Personal and Server font slots without changing metadata", as
     ).bind(secondUserId).first("profile_json"),
   ).resolves.toBe(unrelatedJson);
 
-  const firstMigratedJson = personalRow?.profile_json;
+  const firstMigratedJson = personalRow.profile_json;
   await applyD1Migrations(dataEnv.DATA, [target]);
   await expect(
     dataEnv.DATA.prepare(

@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { GatewaySessionCheckpoint } from "../../packages/gateway-protocol/src";
@@ -7,16 +6,12 @@ import {
   GATEWAY_PARTITION_NAME,
 } from "../../workers/gateway/src/environment";
 import {
+  GatewayPartition,
   gatewayRecoveryAlarmAt,
-  type GatewayPartition,
 } from "../../workers/gateway/src/gateway-partition";
 import { gatewayInitialGuildStateKey } from "../../workers/gateway/src/gateway-shard-connection";
-import gatewayWorker, {
-  type GatewayEnv,
-  type GatewayStatus,
-} from "../../workers/gateway/src/index";
-
-const gatewayEnv = env as unknown as GatewayEnv;
+import gatewayWorker, { type GatewayStatus } from "../../workers/gateway/src/index";
+import { gatewayTestEnv as gatewayEnv } from "./test-environment";
 
 describe("Gateway recovery alarm", () => {
   it("schedules recovery after two heartbeat intervals", () => {
@@ -178,14 +173,17 @@ describe("GatewayPartition Durable Object", () => {
     await evictDurableObject(partition);
 
     await partition.fleetStatus();
-    await runInDurableObject(partition, async (instance, state) => {
-      const internal = instance as unknown as {
-        recoveryDeadlines: Map<string, number>;
-      };
-      expect([...internal.recoveryDeadlines.keys()]).toEqual(["3:0:23"]);
-      expect(await state.storage.getAlarm()).not.toBeNull();
-      await state.storage.deleteAlarm();
-    });
+    await runInDurableObject(
+      partition,
+      async (instance, state) => {
+        if (!(instance instanceof GatewayPartition)) {
+          throw new Error("Gateway partition fixture is invalid");
+        }
+        expect([...instance["recoveryDeadlines"].keys()]).toEqual(["3:0:23"]);
+        expect(await state.storage.getAlarm()).not.toBeNull();
+        await state.storage.deleteAlarm();
+      },
+    );
   });
 
   it("rolls an interrupted reshard back to the persisted active generation", async () => {
@@ -332,9 +330,12 @@ describe("GatewayPartition Durable Object", () => {
     );
 
     await expect(
-      runInDurableObject(partition, (instance) =>
-        (instance as GatewayPartition).start(),
-      ),
+      runInDurableObject(partition, (instance) => {
+        if (!(instance instanceof GatewayPartition)) {
+          throw new Error("Gateway partition fixture is invalid");
+        }
+        return instance.start();
+      }),
     ).rejects.toThrow("Gateway shard is owned by another partition");
     await expect(partition.status()).resolves.toMatchObject({
       state: "idle",

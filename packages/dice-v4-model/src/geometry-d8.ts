@@ -166,7 +166,7 @@ function faceByValue(value: number): GeometryFaceV4 {
 function resultPoseFrame(
   face: GeometryFaceV4,
   result: number,
-): { right: Point3V4; up: Point3V4 } {
+) {
   const topVertexIndex = D8_RESULT_POSE_TOP_VERTEX_V4.get(result);
   if (
     topVertexIndex === undefined ||

@@ -101,18 +101,20 @@ describe("CanvasKit V4 font rendering", () => {
 
   it("fails initialization when any required font asset is absent", async () => {
     const canvasKit = await loadCanvasKitV4();
-    const incomplete = Object.fromEntries(
-      Object.entries(CANVASKIT_FONT_DATA_V4).filter(
-        ([fontId]) => fontId !== "syncopate",
-      ),
-    );
+    const incomplete = new Proxy({ ...CANVASKIT_FONT_DATA_V4 }, {
+      getOwnPropertyDescriptor(target, property) {
+        return property === "syncopate"
+          ? undefined
+          : Object.getOwnPropertyDescriptor(target, property);
+      },
+    });
 
     expect(
       () =>
         new CanvasKitGeometryRendererV4({
           canvasKit,
           defaultFontId: "liberation-sans",
-          fontDataById: incomplete as typeof CANVASKIT_FONT_DATA_V4,
+          fontDataById: incomplete,
         }),
     ).toThrow("CanvasKit V4 font data is missing: syncopate");
   });

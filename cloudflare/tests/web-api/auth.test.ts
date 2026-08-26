@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import { DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS } from "../../packages/discord-contracts/src";
 import {
@@ -11,9 +12,34 @@ const clientId = "100000000000000001";
 const redirectUri = "https://api.example.com/api/auth/callback/discord";
 const frontendOrigin = "https://app.example.com";
 
+const WebRollResponseSchema = z.strictObject({
+  message: z.literal("Message sent to Discord channel"),
+  diceArray: z.array(z.array(z.strictObject({
+    sides: z.number(),
+    rolled: z.number(),
+    value: z.number(),
+  }))),
+  resultArray: z.array(z.strictObject({
+    output: z.string(),
+    results: z.number(),
+  })),
+  appearanceIdentities: z.array(z.array(z.string())),
+  rerolledAppearanceIdentities: z.array(z.string()),
+  renderedImage: z.strictObject({
+    contentType: z.literal("image/png"),
+    width: z.number(),
+    height: z.number(),
+    base64: z.string(),
+  }),
+});
+
+function unexpectedConnect(): never {
+  throw new Error("Unexpected socket connection");
+}
+
 function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBindings {
   return {
-    DATA_SERVICE: { fetch: dataFetch } as Fetcher,
+    DATA_SERVICE: { fetch: dataFetch, connect: unexpectedConnect },
     DISCORD_REST: {
       deliverWebRoll: vi.fn(() =>
         Promise.resolve({ status: "delivered" as const }),
@@ -1156,17 +1182,14 @@ describe("web API Discord OAuth", () => {
     env.DISCORD_REST.deliverWebRoll = deliverWebRoll;
     const png = new Uint8Array([137, 80, 78, 71]);
     const deliveryId = "11111111-1111-4111-8111-111111111111";
-    const executeWebRoll = vi.fn((input: { deliveryId?: string }) =>
-      Promise.resolve({
+    const executeWebRoll = vi.fn((input: { deliveryId?: string }) => {
+      const roll = {
         status: "rolled",
         message: "Roll processed successfully",
         diceArray: [[{ sides: 20, rolled: 17, value: 17 }]],
         resultArray: [{ output: "1d20: [17] = 17", results: 17 }],
         appearanceIdentities: [["expression:0:repeat:0:definition:20:0:die:0"]],
         rerolledAppearanceIdentities: [],
-        ...(input.deliveryId === deliveryId
-          ? { deliveryStatus: "delivered" }
-          : {}),
         renderedImage: {
           contentType: "image/png",
           width: 150,
@@ -1179,8 +1202,13 @@ describe("web API Discord OAuth", () => {
           filename: "dice-witch-roll.png",
           png,
         },
-      }),
-    );
+      };
+      return Promise.resolve(
+        input.deliveryId === deliveryId
+          ? { ...roll, deliveryStatus: "delivered" }
+          : roll,
+      );
+    });
     env.ROLL_WEB.execute = executeWebRoll;
     const response = await handleAuthRequest(
       new Request("https://api.example.com/api/dice/roll", {
@@ -1211,7 +1239,7 @@ describe("web API Discord OAuth", () => {
     );
 
     expect(response.status).toBe(200);
-    const responseBody: unknown = await response.json();
+    const responseBody = WebRollResponseSchema.parse(await response.json());
     expect(responseBody).toMatchObject({
       message: "Message sent to Discord channel",
       resultArray: [{ results: 17 }],

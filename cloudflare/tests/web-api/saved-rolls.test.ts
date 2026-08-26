@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import {
   handleAuthRequest,
@@ -10,6 +11,135 @@ const guildId = "100000000000000001";
 const recordId = "00000000-0000-4000-8000-000000000001";
 const idempotencyKey = "00000000-0000-4000-8000-000000000010";
 const frontendOrigin = "https://app.example.com";
+
+const OwnerSchema = z.union([
+  z.strictObject({ type: z.literal("user"), userId: z.string() }),
+  z.strictObject({ type: z.literal("guild"), guildId: z.string() }),
+]);
+const DraftV1Schema = z.strictObject({
+  version: z.literal(1),
+  name: z.string(),
+  notation: z.string(),
+  title: z.string().nullable(),
+  repetitions: z.number(),
+});
+const DraftV2Schema = DraftV1Schema.extend({
+  version: z.literal(2),
+  nameColor: z.string(),
+});
+const MutationMetadataSchema = {
+  owner: OwnerSchema,
+  actorUserId: z.string(),
+  authorizationUpdatedAt: z.number().nullable(),
+  mutationId: z.string(),
+  occurredAt: z.number(),
+};
+const CreateV1DataRequestSchema = z.strictObject({
+  ...MutationMetadataSchema,
+  id: z.string(),
+  expectedListRevision: z.number(),
+  draft: DraftV1Schema,
+  pinned: z.boolean(),
+});
+const CreateV2DataRequestSchema = CreateV1DataRequestSchema.extend({
+  draft: DraftV2Schema,
+});
+const UpdateDataRequestSchema = z.strictObject({
+  ...MutationMetadataSchema,
+  id: z.string(),
+  expectedListRevision: z.number(),
+  expectedRecordRevision: z.number(),
+  draft: DraftV1Schema,
+  pinned: z.boolean(),
+});
+const DeleteDataRequestSchema = z.strictObject({
+  ...MutationMetadataSchema,
+  id: z.string(),
+  expectedListRevision: z.number(),
+  expectedRecordRevision: z.number(),
+});
+const ReorderDataRequestSchema = z.strictObject({
+  ...MutationMetadataSchema,
+  expectedListRevision: z.number(),
+  orderedIds: z.array(z.string()),
+});
+const MutationDataRequestSchema = z.union([
+  CreateV1DataRequestSchema,
+  UpdateDataRequestSchema,
+  DeleteDataRequestSchema,
+  ReorderDataRequestSchema,
+]);
+const DeleteBatchDataRequestSchema = z.strictObject({
+  ...MutationMetadataSchema,
+  expectedListRevision: z.number(),
+  records: z.array(z.strictObject({ id: z.string(), revision: z.number() })),
+});
+const SessionDataRequestSchema = z.strictObject({
+  token: z.string(),
+  now: z.number(),
+});
+const MembershipProofRequestSchema = z.strictObject({
+  guildId: z.string(),
+  userId: z.string(),
+  isAdmin: z.boolean(),
+  isDiceWitchAdmin: z.boolean(),
+  mutationId: z.string(),
+  occurredAt: z.number(),
+});
+const GuildCreateFlowRequestSchema = z.union([
+  SessionDataRequestSchema,
+  MembershipProofRequestSchema,
+  CreateV1DataRequestSchema,
+]);
+const ListDataRequestSchema = z.strictObject({ owner: OwnerSchema });
+const SearchDataRequestSchema = z.strictObject({
+  userId: z.string(),
+  guildIds: z.array(z.string()),
+  query: z.string(),
+  offset: z.number(),
+  sort: z.enum(["name", "roll", "created", "updated"]),
+  direction: z.enum(["asc", "desc"]),
+});
+const ListResponseSchema = z.strictObject({
+  status: z.literal("found"),
+  listRevision: z.number(),
+  savedRolls: z.array(z.never()),
+});
+const CreateV2ResponseSchema = z.strictObject({
+  status: z.literal("applied"),
+  listRevision: z.number(),
+  savedRoll: z.strictObject({
+    version: z.literal(2),
+    id: z.string(),
+    nameColor: z.string(),
+  }),
+});
+const EmptySearchResponseSchema = z.strictObject({
+  status: z.literal("found"),
+  entries: z.array(z.never()),
+  hasMore: z.boolean(),
+  total: z.number(),
+});
+const SearchResponseSchema = z.strictObject({
+  status: z.literal("found"),
+  entries: z.array(z.strictObject({
+    savedRoll: z.strictObject({
+      id: z.string(),
+      owner: OwnerSchema,
+    }),
+    listRevision: z.number(),
+    source: z.strictObject({
+      type: z.literal("guild"),
+      guildId: z.string(),
+      guildName: z.string(),
+      guildIcon: z.string().nullable(),
+    }),
+    canManage: z.boolean(),
+  })),
+  hasMore: z.boolean(),
+  total: z.number(),
+});
+const ErrorResponseSchema = z.strictObject({ error: z.string() });
 
 function sessionResponse(): Response {
   return Response.json({
@@ -24,9 +154,13 @@ function sessionResponse(): Response {
   });
 }
 
+function unexpectedConnect(): never {
+  throw new Error("Unexpected socket connection");
+}
+
 function bindings(dataFetch: (request: Request) => Promise<Response>): WebApiBindings {
   return {
-    DATA_SERVICE: { fetch: dataFetch } as Fetcher,
+    DATA_SERVICE: { fetch: dataFetch, connect: unexpectedConnect },
     DISCORD_REST: {
       deliverWebRoll: vi.fn(() =>
         Promise.resolve({ status: "delivered" as const }),
@@ -79,8 +213,11 @@ function request(path: string, init: RequestInit = {}): Request {
   });
 }
 
-async function body(requestValue: Request): Promise<Record<string, unknown>> {
-  return await requestValue.json();
+async function requestBody<Schema extends z.ZodType>(
+  requestValue: Request,
+  schema: Schema,
+): Promise<z.output<Schema>> {
+  return schema.parse(await requestValue.json());
 }
 
 describe("saved-roll Web API", () => {
@@ -89,7 +226,7 @@ describe("saved-roll Web API", () => {
       const path = new URL(dataRequest.url).pathname;
       if (path === "/internal/sessions/current") return sessionResponse();
       expect(path).toBe("/internal/saved-rolls/v1/list");
-      expect(await body(dataRequest)).toEqual({
+      expect(await requestBody(dataRequest, ListDataRequestSchema)).toEqual({
         owner: { type: "user", userId },
       });
       return Response.json({
@@ -108,7 +245,9 @@ describe("saved-roll Web API", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe(
       frontendOrigin,
     );
-    await expect(response.json()).resolves.toMatchObject({ status: "found" });
+    expect(ListResponseSchema.parse(await response.json())).toMatchObject({
+      status: "found",
+    });
   });
 
   it("forwards the V2 color contract without weakening V1 routes", async () => {
@@ -124,7 +263,9 @@ describe("saved-roll Web API", () => {
       const path = new URL(dataRequest.url).pathname;
       if (path === "/internal/sessions/current") return sessionResponse();
       expect(path).toBe("/internal/saved-rolls/v2/create");
-      expect(await body(dataRequest)).toMatchObject({ draft });
+      expect(
+        await requestBody(dataRequest, CreateV2DataRequestSchema),
+      ).toMatchObject({ draft });
       return Response.json({
         status: "applied",
         listRevision: 1,
@@ -151,7 +292,7 @@ describe("saved-roll Web API", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    expect(CreateV2ResponseSchema.parse(await response.json())).toMatchObject({
       savedRoll: { version: 2, nameColor: "#A1B2C3" },
     });
   });
@@ -213,15 +354,19 @@ describe("saved-roll Web API", () => {
       const dataPath = new URL(dataRequest.url).pathname;
       if (dataPath === "/internal/sessions/current") return sessionResponse();
       expect(dataPath).toBe(`/internal/saved-rolls/v1/${operation}`);
-      expect(await body(dataRequest)).toMatchObject({
+      const forwarded = await requestBody(
+        dataRequest,
+        MutationDataRequestSchema,
+      );
+      expect(forwarded).toMatchObject({
         owner: { type: "user", userId },
         actorUserId: userId,
         authorizationUpdatedAt: null,
         mutationId: `web-saved-roll:${operation}:${idempotencyKey}`,
-        ...(operation === "update" || operation === "delete"
-          ? { id: recordId }
-          : {}),
       });
+      if (operation === "update" || operation === "delete") {
+        expect(forwarded).toMatchObject({ id: recordId });
+      }
       return Response.json({ status: "applied", listRevision: 4 });
     });
     const response = await handleAuthRequest(
@@ -245,7 +390,9 @@ describe("saved-roll Web API", () => {
       const path = new URL(dataRequest.url).pathname;
       if (path === "/internal/sessions/current") return sessionResponse();
       expect(path).toBe("/internal/saved-rolls/v2/delete-batch");
-      expect(await body(dataRequest)).toEqual({
+      expect(
+        await requestBody(dataRequest, DeleteBatchDataRequestSchema),
+      ).toEqual({
         owner: { type: "user", userId },
         actorUserId: userId,
         authorizationUpdatedAt: null,
@@ -277,11 +424,14 @@ describe("saved-roll Web API", () => {
   });
 
   it("refreshes guild admin proof before an atomic create", async () => {
-    const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
+    const requests: Array<{
+      path: string;
+      body: z.output<typeof GuildCreateFlowRequestSchema>;
+    }> = [];
     const dataFetch = vi.fn(async (dataRequest: Request) => {
       const path = new URL(dataRequest.url).pathname;
-      const value = await body(dataRequest);
-      requests.push({ path, body: value });
+      const body = await requestBody(dataRequest, GuildCreateFlowRequestSchema);
+      requests.push({ path, body });
       if (path === "/internal/sessions/current") return sessionResponse();
       if (path === "/internal/memberships/permissions") {
         return Response.json({
@@ -368,7 +518,10 @@ describe("saved-roll Web API", () => {
         });
       }
       if (path === "/internal/memberships/permissions") {
-        const proof = await body(dataRequest);
+        const proof = await requestBody(
+          dataRequest,
+          MembershipProofRequestSchema,
+        );
         return Response.json({
           status: "applied",
           permissions: {
@@ -378,7 +531,9 @@ describe("saved-roll Web API", () => {
         });
       }
       if (path === "/internal/saved-rolls/v2/search") {
-        expect(await body(dataRequest)).toMatchObject({
+        expect(
+          await requestBody(dataRequest, SearchDataRequestSchema),
+        ).toMatchObject({
           userId,
           guildIds: [adminGuildId, diceWitchAdminGuildId],
           query: "fire",
@@ -409,7 +564,7 @@ describe("saved-roll Web API", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    expect(EmptySearchResponseSchema.parse(await response.json())).toMatchObject({
       status: "found",
       entries: [],
       total: 0,
@@ -535,7 +690,9 @@ describe("saved-roll Web API", () => {
         });
       }
       if (path === "/internal/saved-rolls/v1/search") {
-        expect(await body(dataRequest)).toEqual({
+        expect(
+          await requestBody(dataRequest, SearchDataRequestSchema),
+        ).toEqual({
           userId,
           guildIds: [guildId],
           query: "fire",
@@ -575,7 +732,7 @@ describe("saved-roll Web API", () => {
       () => now,
     );
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
+    expect(SearchResponseSchema.parse(await response.json())).toEqual({
       status: "found",
       entries: [{
         savedRoll: { id: recordId, owner: { type: "guild", guildId } },
@@ -606,7 +763,9 @@ describe("saved-roll Web API", () => {
       paths.push(path);
       if (path === "/internal/sessions/current") return sessionResponse();
       if (path === "/internal/memberships/permissions") {
-        expect(await body(dataRequest)).toMatchObject({
+        expect(
+          await requestBody(dataRequest, MembershipProofRequestSchema),
+        ).toMatchObject({
           isAdmin: false,
           isDiceWitchAdmin: false,
         });
@@ -674,7 +833,7 @@ describe("saved-roll Web API", () => {
       () => now,
     );
     expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
+    expect(ErrorResponseSchema.parse(await response.json())).toEqual({
       error: "Saved roll request is invalid",
     });
     expect(dataFetch).toHaveBeenCalledTimes(1);

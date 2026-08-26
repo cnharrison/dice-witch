@@ -169,7 +169,7 @@ function normalizeVector(vector: PointV4, label: string): PointV4 {
 function outerGlowMetrics(
   size: number,
   intensity: number,
-): { strokeWidth: number; blurSigma: number } {
+) {
   return {
     strokeWidth: size * (0.02 + intensity * 0.02),
     blurSigma: size * (0.01 + intensity * 0.016),

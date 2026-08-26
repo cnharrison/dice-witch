@@ -2,18 +2,20 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 
-vi.mock("./PixelatedPreviewImage", () => ({
-  PixelatedImageTransition: ({
-    candidate,
-    alt,
-    onError,
-  }: {
-    candidate: { source: string; width: number; height: number };
-    alt: string;
-    onError(error: Error): void;
-  }) => (
+import { MarketingAppearancePreviewView } from "./MarketingAppearancePreview";
+
+function ImageTransition({
+  candidate,
+  alt,
+  onError,
+}: {
+  candidate: { source: string; width: number; height: number };
+  alt: string;
+  onError(error: Error): void;
+}) {
+  return (
     <>
       <img
         src={candidate.source}
@@ -27,16 +29,14 @@ vi.mock("./PixelatedPreviewImage", () => ({
         onClick={() => onError(new Error("decode failed"))}
       />
     </>
-  ),
-}));
-
-import MarketingAppearancePreview from "./MarketingAppearancePreview";
+  );
+}
 
 afterEach(cleanup);
 
 it("shows one control that replaces the random appearance", async () => {
   const user = userEvent.setup();
-  render(<MarketingAppearancePreview />);
+  render(<MarketingAppearancePreviewView ImageTransition={ImageTransition} />);
 
   const preview = screen.getByRole("region", {
     name: "Random appearance preview",
@@ -60,7 +60,7 @@ it("shows one control that replaces the random appearance", async () => {
 
 it("recovers from an image error when rerolled", async () => {
   const user = userEvent.setup();
-  render(<MarketingAppearancePreview />);
+  render(<MarketingAppearancePreviewView ImageTransition={ImageTransition} />);
 
   await user.click(screen.getByTestId("fail-preview"));
   expect(screen.getByRole("alert").textContent).toBe("Preview unavailable.");

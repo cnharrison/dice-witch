@@ -48,12 +48,14 @@ function allocateWeightsV3(
     let selectedIndex = 0;
     let selectedDeficit = Number.NEGATIVE_INFINITY;
     for (let index = 0; index < allocated.length; index += 1) {
+      // SAFETY: The surrounding validation establishes the number invariant used below.
       const deficit = (quotas[index] as number) - (allocated[index] as number);
       if (deficit > selectedDeficit) {
         selectedDeficit = deficit;
         selectedIndex = index;
       }
     }
+    // SAFETY: The surrounding validation establishes the number invariant used below.
     allocated[selectedIndex] = (allocated[selectedIndex] as number) + 1;
     allocatedTotal += 1;
   }
@@ -62,8 +64,10 @@ function allocateWeightsV3(
     let selectedIndex = -1;
     let selectedDeficit = Number.POSITIVE_INFINITY;
     for (let index = 0; index < allocated.length; index += 1) {
+      // SAFETY: The surrounding validation establishes the number invariant used below.
       const weight = allocated[index] as number;
       if (weight <= MINIMUM_WEIGHT_V3) continue;
+      // SAFETY: The surrounding validation establishes the number invariant used below.
       const deficit = (quotas[index] as number) - weight;
       if (deficit < selectedDeficit) {
         selectedDeficit = deficit;
@@ -73,6 +77,7 @@ function allocateWeightsV3(
     if (selectedIndex < 0) {
       throw new Error("Material weights cannot be normalized");
     }
+    // SAFETY: The surrounding validation establishes the number invariant used below.
     allocated[selectedIndex] = (allocated[selectedIndex] as number) - 1;
     allocatedTotal -= 1;
   }

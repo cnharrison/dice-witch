@@ -26,11 +26,7 @@ const AUTHORED_POLYHEDRAL_SUBJECTS = [
 
 function normalized(point: readonly [number, number, number]) {
   const length = Math.hypot(...point);
-  return point.map((component) => component / length) as [
-    number,
-    number,
-    number,
-  ];
+  return [point[0] / length, point[1] / length, point[2] / length] as const;
 }
 
 describe("authored V4 render views", () => {
@@ -213,10 +209,7 @@ describe("authored V4 render views", () => {
         if (descriptor.kind !== "polyhedral") {
           throw new Error("Legacy r22 geometry is not polyhedral");
         }
-        const cameraLength = Math.hypot(...descriptor.camera.position);
-        const cameraDirection = descriptor.camera.position.map(
-          (component) => component / cameraLength,
-        ) as [number, number, number];
+        const cameraDirection = normalized(descriptor.camera.position);
         const resultAlignment = Math.max(
           ...descriptor.faces
             .filter((face) =>

@@ -1,4 +1,5 @@
 import { countGraphemes } from "unicode-segmenter/grapheme";
+import { z } from "zod";
 import {
   UNICODE_ASSIGNED_RANGES,
   UNICODE_NFKC_CASEFOLD_RANGES,
@@ -12,8 +13,14 @@ export type SavedRollNameV1 = {
   comparisonKey: string;
 };
 
-type SearchRange = readonly [number, number, ...unknown[]];
-type MappingRange = readonly [number, number, number | string];
+type SearchRange =
+  | readonly [number, number]
+  | readonly [number, number, number | string];
+
+const SavedRollNameV1Schema = z.string();
+type SavedRollNameV1Input = Parameters<typeof SavedRollNameV1Schema.parse>[0];
+const UnicodeMappingOffsetSchema = z.number();
+const UnicodeMappingStringSchema = z.string();
 
 const FORBIDDEN_FORMAT = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 const WHITE_SPACE = /\p{White_Space}/u;
@@ -62,27 +69,28 @@ function comparisonKey(value: string): string {
     if (codePoint === undefined) {
       throw new Error("Saved roll name contains an invalid character");
     }
-    const range = rangeContaining(
-      codePoint,
-      UNICODE_NFKC_CASEFOLD_RANGES as readonly MappingRange[],
-    );
+    const range = rangeContaining(codePoint, UNICODE_NFKC_CASEFOLD_RANGES);
     if (range === undefined) {
       folded += character;
-    } else if (typeof range[2] === "number") {
-      folded += String.fromCodePoint(codePoint + range[2]);
-    } else {
-      folded += range[2];
+      continue;
     }
+    const offset = UnicodeMappingOffsetSchema.safeParse(range[2]);
+    folded += offset.success
+      ? String.fromCodePoint(codePoint + offset.data)
+      : UnicodeMappingStringSchema.parse(range[2]);
   }
   return folded.normalize("NFC");
 }
 
-export function parseSavedRollNameV1(value: unknown): SavedRollNameV1 {
-  if (typeof value !== "string") {
+export function parseSavedRollNameV1(
+  value: SavedRollNameV1Input,
+): SavedRollNameV1 {
+  const result = SavedRollNameV1Schema.safeParse(value);
+  if (!result.success) {
     throw new Error("Saved roll name must be a string");
   }
-  validateCharacters(value);
-  const displayName = value.normalize("NFC").trim().replace(/ +/g, " ");
+  validateCharacters(result.data);
+  const displayName = result.data.normalize("NFC").trim().replace(/ +/g, " ");
   const length = countGraphemes(displayName);
   if (length < 1 || length > MAX_SAVED_ROLL_NAME_GRAPHEMES) {
     throw new Error(

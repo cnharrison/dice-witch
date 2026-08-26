@@ -34,7 +34,7 @@ function useDebouncedValue<Value>(value: Value, delay: number): Value {
   return debounced;
 }
 
-function previewErrorMessage(error: unknown): string {
+function previewErrorMessage(error: Error): string {
   if (!(error instanceof AppearanceApiError)) return "Error. Try again.";
   switch (error.code) {
     case "appearance_preview_invalid":
@@ -49,17 +49,21 @@ function previewErrorMessage(error: unknown): string {
   }
 }
 
-export function AppearancePreviewPaneV3({
+type AppearancePreviewPaneV3Props = {
+  target: AppearanceEditorTargetV3;
+  recipe: AppearanceRecipeV3;
+  diceView: DiceViewPreferencesV4;
+  overrides?: Readonly<Partial<Record<AppearanceTargetV4, AppearanceRecipeV3>>>;
+};
+
+export function AppearancePreviewPaneV3View({
   target,
   recipe,
   diceView,
   overrides,
-}: {
-  target: AppearanceEditorTargetV3;
-  recipe: AppearanceRecipeV3;
-  diceView: DiceViewPreferencesV4;
-  // Per-die designs shown as-is inside the ALL composite preview.
-  overrides?: Readonly<Partial<Record<AppearanceTargetV4, AppearanceRecipeV3>>>;
+  getPreview,
+}: AppearancePreviewPaneV3Props & {
+  getPreview: typeof getAppearancePreviewV4;
 }) {
   const [seed, setSeed] = React.useState(0x51ce_b00c);
   const [state, setState] = React.useState<PreviewState>("normal");
@@ -90,11 +94,11 @@ export function AppearancePreviewPaneV3({
         seed,
         state,
         diceView: debouncedDraft.diceView,
-        ...(target === "all" && debouncedDraft.overrides !== undefined
-          ? { overrides: debouncedDraft.overrides }
-          : {}),
       };
-      return getAppearancePreviewV4(input, signal);
+      if (target === "all" && debouncedDraft.overrides !== undefined) {
+        Object.assign(input, { overrides: debouncedDraft.overrides });
+      }
+      return getPreview(input, signal);
     },
     placeholderData: keepPreviousData,
     staleTime: Infinity,
@@ -162,6 +166,7 @@ export function AppearancePreviewPaneV3({
     );
   }
 
+  // SAFETY: The surrounding validation establishes the PreviewState invariant used below.
   return (
     <section
       aria-label="Preview"
@@ -200,5 +205,14 @@ export function AppearancePreviewPaneV3({
         {previewContent}
       </div>
     </section>
+  );
+}
+
+export function AppearancePreviewPaneV3(props: AppearancePreviewPaneV3Props) {
+  return (
+    <AppearancePreviewPaneV3View
+      {...props}
+      getPreview={getAppearancePreviewV4}
+    />
   );
 }

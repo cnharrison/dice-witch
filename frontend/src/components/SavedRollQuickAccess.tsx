@@ -43,17 +43,26 @@ export type QuickRollComposition = Readonly<{
   libraryNameColor?: string | null;
 }>;
 
-export function SavedRollQuickAccess({
-  guildScope,
-  recentRolls,
-  stagingReady,
-  destinationReady,
-  onLoad,
-  onRollNow,
-  onClearRecent,
-  onCollapse,
-  className,
-}: Readonly<{
+function recentComposition(roll: RecentRoll): QuickRollComposition {
+  const composition = {
+    notation: roll.notation,
+    title: roll.title,
+    repetitions: roll.repetitions,
+  };
+  if (roll.libraryRoll === undefined) return composition;
+  return {
+    ...composition,
+    libraryRoll: {
+      scope: roll.libraryRoll.scope,
+      id: roll.libraryRoll.id,
+      revision: roll.libraryRoll.revision,
+    },
+    libraryDisplayName: roll.libraryRoll.displayName,
+    libraryNameColor: roll.libraryRoll.nameColor,
+  };
+}
+
+type SavedRollQuickAccessProps = Readonly<{
   guildScope: SavedRollScope | null;
   recentRolls: readonly RecentRoll[];
   stagingReady: boolean;
@@ -63,7 +72,27 @@ export function SavedRollQuickAccess({
   onClearRecent: () => void;
   onCollapse?: () => void;
   className?: string;
-}>) {
+}>;
+
+type SavedRollQuickAccessDependencies = Readonly<{
+  listSavedRolls: typeof listSavedRolls;
+}>;
+
+export function SavedRollQuickAccessView({
+  guildScope,
+  recentRolls,
+  stagingReady,
+  destinationReady,
+  onLoad,
+  onRollNow,
+  onClearRecent,
+  onCollapse,
+  className,
+  dependencies,
+}: SavedRollQuickAccessProps & {
+  dependencies: SavedRollQuickAccessDependencies;
+}) {
+  const { listSavedRolls } = dependencies;
   const personalScope: SavedRollScope = { type: "personal" };
   const personal = useQuery({
     queryKey: savedRollQueryKey(personalScope),
@@ -220,22 +249,7 @@ export function SavedRollQuickAccess({
                 color: roll.libraryRoll?.nameColor ?? null,
                 badge: recentBadge(roll),
                 preserveLibraryOnLoad: roll.libraryRoll !== undefined,
-                composition: {
-                  notation: roll.notation,
-                  title: roll.title,
-                  repetitions: roll.repetitions,
-                  ...(roll.libraryRoll === undefined
-                    ? {}
-                    : {
-                        libraryRoll: {
-                          scope: roll.libraryRoll.scope,
-                          id: roll.libraryRoll.id,
-                          revision: roll.libraryRoll.revision,
-                        },
-                        libraryDisplayName: roll.libraryRoll.displayName,
-                        libraryNameColor: roll.libraryRoll.nameColor,
-                      }),
-                },
+                composition: recentComposition(roll),
               }))}
               stagingReady={stagingReady}
               destinationReady={destinationReady}
@@ -267,6 +281,15 @@ export function SavedRollQuickAccess({
         </div>
       </section>
     </TooltipProvider>
+  );
+}
+
+export function SavedRollQuickAccess(props: SavedRollQuickAccessProps) {
+  return (
+    <SavedRollQuickAccessView
+      {...props}
+      dependencies={{ listSavedRolls }}
+    />
   );
 }
 

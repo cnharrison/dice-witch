@@ -76,7 +76,7 @@ function face(vertexIndices: D4FaceIndicesV4): GeometryFaceV4 {
     throw new Error("D4 face winding must point outward");
   }
   const oppositeVertexIndex = D4_VERTEX_VALUES_V4.findIndex(
-    (_, index) => !vertexIndices.includes(index as D4VertexIndexV4),
+    (_, index) => !vertexIndices.some((vertexIndex) => vertexIndex === index),
   );
   const oppositeValue = D4_VERTEX_VALUES_V4[oppositeVertexIndex];
   if (oppositeValue === undefined) {

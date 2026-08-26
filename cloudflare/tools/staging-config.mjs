@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 
 const WORKERS = [
   "data",
@@ -142,8 +143,11 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
+const ObjectSchema = z.object({}).passthrough();
+const StringSchema = z.string();
+
 function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return ObjectSchema.safeParse(value).success;
 }
 
 function workerName(worker, suffix) {
@@ -175,7 +179,7 @@ function requireService(errors, config, owner, binding, target, entrypoint) {
 
 function parseFrontendOrigin(errors, webConfig) {
   const value = webConfig?.vars?.FRONTEND_ORIGIN;
-  if (typeof value !== "string") {
+  if (!StringSchema.safeParse(value).success) {
     errors.push("Web API FRONTEND_ORIGIN is required");
     return null;
   }
@@ -200,7 +204,7 @@ function parseFrontendOrigin(errors, webConfig) {
 
 function validateDiscordIdentity(errors, configs, frontendOrigin) {
   const applicationId = configs["discord-rest"]?.vars?.DISCORD_APPLICATION_ID;
-  if (typeof applicationId !== "string" || !SNOWFLAKE.test(applicationId)) {
+  if (!StringSchema.safeParse(applicationId).success || !SNOWFLAKE.test(applicationId)) {
     errors.push("Discord REST application id must be a Discord snowflake");
     return;
   }
@@ -227,7 +231,7 @@ function validateDiscordIdentity(errors, configs, frontendOrigin) {
   ];
   if (
     channelIds.some((channelId) =>
-      typeof channelId !== "string" || !SNOWFLAKE.test(channelId)
+      !StringSchema.safeParse(channelId).success || !SNOWFLAKE.test(channelId)
     )
   ) {
     errors.push("Discord telemetry channels must be snowflakes");
@@ -241,7 +245,7 @@ function validateDiscordIdentity(errors, configs, frontendOrigin) {
   }
 
   const guildId = configs["discord-rest"]?.vars?.DISCORD_TEST_GUILD_ID;
-  if (typeof guildId !== "string" || !SNOWFLAKE.test(guildId)) {
+  if (!StringSchema.safeParse(guildId).success || !SNOWFLAKE.test(guildId)) {
     errors.push("Discord staging test guild id must be a Discord snowflake");
   } else {
     for (const worker of ["gateway", "interactions"]) {
@@ -438,7 +442,7 @@ function validateData(errors, config) {
   const database = databases[0];
   if (
     database?.binding !== "DATA" ||
-    typeof database.database_name !== "string" ||
+    !StringSchema.safeParse(database.database_name).success ||
     database.database_name.length === 0 ||
     !UUID.test(database.database_id ?? "") ||
     database.migrations_dir !== "migrations/data"
@@ -709,7 +713,7 @@ export function validateStagingConfigs(configs) {
     if (config.main !== MAIN_MODULES[worker]) {
       errors.push(`${worker} main module must be ${MAIN_MODULES[worker]}`);
     }
-    if (typeof config.workers_dev !== "boolean") {
+    if (!z.boolean().safeParse(config.workers_dev).success) {
       errors.push(`${worker} must set workers_dev explicitly`);
     }
     if (config.preview_urls !== false) {
@@ -724,7 +728,7 @@ export function validateStagingConfigs(configs) {
   const dataName = configs.data?.name;
   const prefix = "dice-witch-data-";
   const suffix =
-    typeof dataName === "string" && dataName.startsWith(prefix)
+    StringSchema.safeParse(dataName).success && dataName.startsWith(prefix)
       ? dataName.slice(prefix.length)
       : "";
   if (suffix !== "staging" && suffix !== "poc") {
@@ -790,16 +794,17 @@ export function validateStagingConfigs(configs) {
   };
 }
 
-export function decodeForbiddenTargets(encodedDenylist) {
+export function decodeForbiddenTargets(value) {
+  const encodedDenylist = StringSchema.safeParse(value);
   if (
-    typeof encodedDenylist !== "string" ||
-    encodedDenylist.length === 0 ||
-    encodedDenylist.length % 4 !== 0 ||
-    !/^[A-Za-z0-9+/]*={0,2}$/.test(encodedDenylist)
+    !encodedDenylist.success ||
+    encodedDenylist.data.length === 0 ||
+    encodedDenylist.data.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(encodedDenylist.data)
   ) {
     throw new Error("Production-target denylist is required and must be base64 JSON");
   }
-  const decoded = Buffer.from(encodedDenylist, "base64");
+  const decoded = Buffer.from(encodedDenylist.data, "base64");
   if (decoded.byteLength > 16 * 1024) {
     throw new Error("Production-target denylist exceeds 16 KiB");
   }
@@ -825,7 +830,7 @@ export function decodeForbiddenTargets(encodedDenylist) {
         denylist[field].length === 0 ||
         new Set(denylist[field]).size !== denylist[field].length ||
         denylist[field].some(
-          (value) => typeof value !== "string" || value.length === 0,
+          (value) => !StringSchema.safeParse(value).success || value.length === 0,
         ),
     ) ||
     denylist.workerNames.length < WORKERS.length ||

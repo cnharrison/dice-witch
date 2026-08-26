@@ -1,10 +1,14 @@
 import { DiceRoll } from '@dice-roller/rpg-dice-roller';
 import { useEffect, useState } from 'react';
+import * as z from "zod";
 
 interface DiceGroup {
   numberOfDice: number;
   diceSize: number | string;
 }
+
+const primitiveRollSchema = z.union([z.string(), z.number()]);
+const positiveSidesSchema = z.number().positive();
 
 export interface DiceInfo {
   diceGroups: DiceGroup[];
@@ -42,7 +46,7 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
 
       let diceGroups: DiceGroup[] = [];
       
-      const diceRegex = /(\d+)d(\d+|\%|F)(?:k|d)?(\d+)?/gi;
+      const diceRegex = /(\d+)d(\d+|%|F)(?:k|d)?(\d+)?/gi;
       let match;
       
       while ((match = diceRegex.exec(roll.notation)) !== null) {
@@ -61,7 +65,7 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
         const processedDice = new Set();
         
         const extractDice = (rollGroup) => {
-          if (typeof rollGroup === 'string' || typeof rollGroup === 'number') {
+          if (primitiveRollSchema.safeParse(rollGroup).success) {
             return;
           }
           
@@ -70,7 +74,7 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
             const count = rollGroup.dice.qty || 0;
 
             const key = `${count}d${sides}`;
-            const isValidSides = sides === 'F' || (typeof sides === 'number' && sides > 0);
+            const isValidSides = sides === 'F' || positiveSidesSchema.safeParse(sides).success;
             if (count > 0 && isValidSides && !processedDice.has(key)) {
               diceGroups.push({
                 numberOfDice: count,
@@ -114,10 +118,10 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
 
       if (roll.rolls) {
         roll.rolls.forEach((rollGroup) => {
-          if (typeof rollGroup !== 'string' && typeof rollGroup !== 'number' && rollGroup.dice) {
+          if (!primitiveRollSchema.safeParse(rollGroup).success && rollGroup.dice) {
             const sides = rollGroup.dice?.sides;
 
-            const isValidSides = sides === 'F' || (typeof sides === 'number' && sides > 0);
+            const isValidSides = sides === 'F' || positiveSidesSchema.safeParse(sides).success;
             if (sides && isValidSides) {
               const count = rollGroup.dice.qty || (rollGroup.rolls?.length || 0);
 
@@ -140,10 +144,10 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
       }
 
       if (diceGroups.length === 0) {
-        const diceMatches = debouncedInput.match(/(\d+)?d(\d+|\%|F)/gi) || [];
+        const diceMatches = debouncedInput.match(/(\d+)?d(\d+|%|F)/gi) || [];
 
         diceGroups = diceMatches.map(match => {
-          const parts = match.match(/(\d+)?d(\d+|\%|F)/i);
+          const parts = match.match(/(\d+)?d(\d+|%|F)/i);
 
           const numDice = parts?.[1] || '1';
           const dSize = parts?.[2]?.toUpperCase();
@@ -164,7 +168,7 @@ export function useDiceValidation(initialValue: string = '', debounceMs: number 
         diceGroups,
         modifier: roll.modifier || 0
       });
-    } catch (error) {
+    } catch {
       setIsValid(false);
       setTotal(null);
       setDiceInfo(null);

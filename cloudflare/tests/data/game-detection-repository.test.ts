@@ -1,17 +1,25 @@
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import type {
-  RollLifecycleSnapshotV1,
+import { z } from "zod";
+import {
+  parseGameDetectionAnnouncementV1,
+  type RollLifecycleSnapshotV1,
 } from "../../packages/discord-contracts/src";
 import type { NarrationGameRankingResponseV1 } from "../../packages/roll-domain/src";
 import { D1GameDetectionRepository } from "../../workers/data/src/game-detection-repository";
 import { D1RollLifecycleRepository } from "../../workers/data/src/roll-lifecycle-repository";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+const TestMigrationsBindingSchema = z.object({
+  TEST_MIGRATIONS: z.array(z.strictObject({
+    name: z.string(),
+    queries: z.array(z.string()),
+  })),
+});
+const dataEnv = {
+  DATA: env.DATA,
+  ...TestMigrationsBindingSchema.parse(env),
+} satisfies { DATA: D1Database; TEST_MIGRATIONS: D1Migration[] };
 const hour = 60 * 60 * 1_000;
 const day = 24 * hour;
 const baseTime = 1_767_225_600_000;
@@ -138,6 +146,43 @@ const dndResponse = {
   },
   abstentionReason: null,
 } as const satisfies NarrationGameRankingResponseV1;
+
+describe("game-detection announcement contract", () => {
+  const announcement = {
+    version: 1,
+    detectionId: "100000000000000031:0123456789abcdef",
+    sessionId: "100000000000000031",
+    previousGameId: null,
+    gameId: "dungeons-and-dragons-5e-2014",
+    gameName: "Dungeons & Dragons",
+    confidence: "strong",
+    detectedAt: baseTime + 180_000,
+    scope: "guild",
+    guildId: "100000000000000003",
+    channelId: "100000000000000004",
+    guildName: "Thursday D&D",
+    channelName: "curse-of-strahd",
+    rollCount: 4,
+    sessionStartedAt: baseTime,
+    sessionLastRollAt: baseTime + 180_000,
+  } as const;
+
+  it("preserves valid announcement identity", () => {
+    expect(parseGameDetectionAnnouncementV1(announcement)).toBe(announcement);
+  });
+
+  it.each([
+    { extra: true },
+    { detectionId: "100000000000000099:0123456789abcdef" },
+    { scope: "dm", guildId: "100000000000000003" },
+    { previousGameId: "dungeons-and-dragons-5e-2014" },
+    { sessionLastRollAt: baseTime - 1 },
+  ])("rejects malformed announcement invariants %#", (override) => {
+    expect(() =>
+      parseGameDetectionAnnouncementV1({ ...announcement, ...override })
+    ).toThrow("Game-detection announcement is invalid");
+  });
+});
 
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);

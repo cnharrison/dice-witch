@@ -22,7 +22,7 @@ type FontVerticalMetrics = {
 };
 
 // Derived from the head, OS/2, and glyf tables in the embedded font subsets.
-const FONT_VERTICAL_METRICS: Record<AppearanceFontId, FontVerticalMetrics> = {
+const FONT_VERTICAL_METRICS = {
   "liberation-sans": {
     unitsPerEm: 2048,
     xHeight: 1082,
@@ -175,13 +175,10 @@ const FONT_VERTICAL_METRICS: Record<AppearanceFontId, FontVerticalMetrics> = {
       d: [0, 1374],
     },
   },
-};
+} satisfies Record<AppearanceFontId, FontVerticalMetrics>;
 
 // Caps each font at Liberation Sans's maximum digit ink width and height.
-const DIGIT_PROJECTION_SCALE: Record<
-  AppearanceFontId,
-  Readonly<{ x: number; y: number }>
-> = {
+const DIGIT_PROJECTION_SCALE = {
   "liberation-sans": { x: 1, y: 1 },
   "new-rocker": { x: 1, y: 0.921 },
   "stencil-ops": { x: 0.828, y: 1 },
@@ -190,7 +187,10 @@ const DIGIT_PROJECTION_SCALE: Record<
   "luckiest-guy": { x: 0.886, y: 0.942 },
   "fontdiner-swanky": { x: 0.765, y: 0.786 },
   syncopate: { x: 0.677, y: 1 },
-};
+} satisfies Record<
+  AppearanceFontId,
+  Readonly<{ x: number; y: number }>
+>;
 
 const APPEARANCE_GLYPHS: ReadonlySet<string> = new Set(
   "0123456789+-d",

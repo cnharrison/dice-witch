@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const { customFetch } = vi.hoisted(() => ({ customFetch: vi.fn() }));
-vi.mock("./api", () => ({ customFetch }));
-
+import { customFetch as productionFetch } from "./api";
 import {
+  createSavedRollApi,
+  savedRollDraft,
+  type SavedRollScope,
+} from "./saved-rolls";
+
+const customFetch = vi.fn<typeof productionFetch>();
+const {
   createSavedRoll,
   deleteSavedRollBatch,
   listSavedRollLibraries,
   listSavedRolls,
   searchSavedRolls,
-  savedRollDraft,
-  type SavedRollScope,
-} from "./saved-rolls";
+} = createSavedRollApi(customFetch);
 
 const scope: SavedRollScope = { type: "personal" };
 const savedRoll = {
@@ -146,6 +148,7 @@ describe("saved-roll frontend API", () => {
     });
 
     expect(result.status).toBe("applied");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const [, init] = customFetch.mock.calls[0] as [string, RequestInit];
     expect(init.headers).toEqual({
       "content-type": "application/json",
@@ -168,6 +171,7 @@ describe("saved-roll frontend API", () => {
       deleteSavedRollBatch(scope, [savedRoll], 4),
     ).resolves.toMatchObject({ status: "applied", listRevision: 5 });
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const [path, init] = customFetch.mock.calls[0] as [string, RequestInit];
     expect(path).toBe("/api/saved-rolls/v2/me/delete-batch");
     expect(init.method).toBe("POST");

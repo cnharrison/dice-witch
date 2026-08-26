@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { z } from "zod";
 import {
   canonicalizePrivateJsonPath,
   createPrivateJsonEvidenceFile,
@@ -35,12 +36,9 @@ export const RESET_APPEARANCE_PROFILES_SQL = [
   COUNT_APPEARANCE_PROFILES_SQL,
 ].join("\n");
 
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function normalized(value) {
-  return typeof value === "string" ? value.toLowerCase() : "";
+  const parsed = z.string().safeParse(value);
+  return parsed.success ? parsed.data.toLowerCase() : "";
 }
 
 function isInside(parent, candidate) {
@@ -100,9 +98,10 @@ export function validateStagingAppearanceReset(input) {
   if (requestedDatabaseId !== configDatabaseId) {
     throw new Error("Requested staging D1 database id does not match configuration");
   }
+  const databaseName = z.string().safeParse(input.databaseName);
   if (
-    typeof input.databaseName !== "string" ||
-    !input.databaseName.toLowerCase().includes(input.requestedEnvironment)
+    !databaseName.success ||
+    !databaseName.data.toLowerCase().includes(input.requestedEnvironment)
   ) {
     throw new Error("Staging D1 database name does not match the environment");
   }
@@ -116,21 +115,23 @@ export function validateStagingAppearanceReset(input) {
   if (input.requestedSha !== input.configBuildSha) {
     throw new Error("Requested source SHA does not match staging configuration");
   }
-  if (typeof input.gitStatus !== "string" || input.gitStatus.trim() !== "") {
+  const gitStatus = z.string().safeParse(input.gitStatus);
+  if (!gitStatus.success || gitStatus.data.trim() !== "") {
     throw new Error("Staging appearance reset worktree must be clean");
   }
   if (input.productionIsolationVerified !== true) {
     throw new Error("Production-target isolation must be verified");
   }
 
+  const parsedEvidencePath = z.string().safeParse(input.evidencePath);
   if (
-    typeof input.evidencePath !== "string" ||
-    !path.isAbsolute(input.evidencePath) ||
-    path.extname(input.evidencePath) !== ".json"
+    !parsedEvidencePath.success ||
+    !path.isAbsolute(parsedEvidencePath.data) ||
+    path.extname(parsedEvidencePath.data) !== ".json"
   ) {
     throw new Error("Reset evidence must use an absolute private JSON path");
   }
-  const evidencePath = path.resolve(input.evidencePath);
+  const evidencePath = path.resolve(parsedEvidencePath.data);
   const repositoryRoot = path.resolve(input.repositoryRoot);
   if (isInside(repositoryRoot, evidencePath)) {
     throw new Error("Reset evidence must be stored outside the source repository");
@@ -153,7 +154,7 @@ export function validateStagingAppearanceReset(input) {
     environment: input.requestedEnvironment,
     accountId: requestedAccountId,
     databaseId: requestedDatabaseId,
-    databaseName: input.databaseName,
+    databaseName: databaseName.data,
     sourceSha: input.requestedSha,
     evidencePath,
     confirmation,
@@ -167,32 +168,26 @@ function parseWranglerResults(output, expectedLength) {
   } catch {
     throw new Error("Staging appearance reset Wrangler result is invalid");
   }
-  if (
-    !Array.isArray(value) ||
-    value.length !== expectedLength ||
-    value.some((entry) => !isRecord(entry) || entry.success !== true)
-  ) {
+  const parsed = z.array(
+    z.object({ success: z.literal(true) }).passthrough(),
+  ).length(expectedLength).safeParse(value);
+  if (!parsed.success) {
     throw new Error("Staging appearance reset Wrangler result is invalid");
   }
-  return value;
+  return parsed.data;
 }
 
 function parseCounts(result) {
-  const rows = result.results;
-  const row = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
-  if (
-    !isRecord(row) ||
-    Object.keys(row).sort().join(",") !== "guild_profiles,user_profiles" ||
-    !Number.isSafeInteger(row.user_profiles) ||
-    row.user_profiles < 0 ||
-    !Number.isSafeInteger(row.guild_profiles) ||
-    row.guild_profiles < 0
-  ) {
+  const rows = z.array(z.strictObject({
+    user_profiles: z.number().int().nonnegative(),
+    guild_profiles: z.number().int().nonnegative(),
+  })).length(1).safeParse(result.results);
+  if (!rows.success) {
     throw new Error("Staging appearance reset row count result is invalid");
   }
   return {
-    userProfiles: row.user_profiles,
-    guildProfiles: row.guild_profiles,
+    userProfiles: rows.data[0].user_profiles,
+    guildProfiles: rows.data[0].guild_profiles,
   };
 }
 
@@ -350,8 +345,7 @@ async function main() {
     configBuildSha: configSummary.buildSha,
     gitStatus: await git(repositoryRoot, "status", "--porcelain"),
     apiTokenAvailable:
-      typeof process.env.CLOUDFLARE_API_TOKEN === "string" &&
-      process.env.CLOUDFLARE_API_TOKEN.length > 0,
+      z.string().min(1).safeParse(process.env.CLOUDFLARE_API_TOKEN).success,
     productionIsolationVerified: true,
     repositoryRoot,
   });

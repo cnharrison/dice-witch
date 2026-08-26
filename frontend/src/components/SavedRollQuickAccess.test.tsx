@@ -6,15 +6,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listSavedRolls } = vi.hoisted(() => ({
-  listSavedRolls: vi.fn(),
-}));
-vi.mock("@/lib/saved-rolls", async (loadOriginal) => {
-  const original = await loadOriginal<typeof import("@/lib/saved-rolls")>();
-  return { ...original, listSavedRolls };
-});
+const listSavedRolls = vi.fn();
 
-import { SavedRollQuickAccess } from "./SavedRollQuickAccess";
+import { SavedRollQuickAccessView } from "./SavedRollQuickAccess";
 
 const savedRoll = {
   version: 2 as const,
@@ -45,7 +39,8 @@ function renderQuickAccess(
   render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
-        <SavedRollQuickAccess
+        <SavedRollQuickAccessView
+          dependencies={{ listSavedRolls }}
           guildScope={guildScope}
           recentRolls={recentRolls}
           stagingReady={stagingReady}
@@ -166,6 +161,7 @@ describe("SavedRollQuickAccess", () => {
     const onLoad = renderQuickAccess(vi.fn(), null, [], false);
     const load = await screen.findByRole("button", { name: "Load Fireball" });
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((load as HTMLButtonElement).disabled).toBe(true);
     await user.click(load);
     expect(onLoad).not.toHaveBeenCalled();
@@ -201,7 +197,8 @@ describe("SavedRollQuickAccess", () => {
     const view = render(
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
-          <SavedRollQuickAccess
+          <SavedRollQuickAccessView
+            dependencies={{ listSavedRolls }}
             guildScope={{
               type: "guild",
               guildId: "100000000000000001",
@@ -226,7 +223,8 @@ describe("SavedRollQuickAccess", () => {
     view.rerender(
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
-          <SavedRollQuickAccess
+          <SavedRollQuickAccessView
+            dependencies={{ listSavedRolls }}
             guildScope={{
               type: "guild",
               guildId: "100000000000000002",

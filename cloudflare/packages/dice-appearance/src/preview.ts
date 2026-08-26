@@ -4,6 +4,7 @@ import {
   type AppearanceRecipeV3,
   type DiceViewPreferencesV4,
 } from "@dice-witch/dice-v4-model";
+import * as z from "zod";
 import {
   APPEARANCE_TARGETS,
   type AppearanceCatalog,
@@ -41,69 +42,57 @@ export type AppearancePreviewRequestV3 = AppearancePreviewRequestBase<
   AppearanceRecipeV3
 >;
 
+export type AppearancePreviewOverrides = Partial<
+  Record<AppearanceTarget, AppearanceRecipeV3>
+>;
+
 export type AppearancePreviewRequestV4 = AppearancePreviewRequestV3 & {
   diceView: DiceViewPreferencesV4;
   // Per-die designs refine the ALL composite; absent for single-target
   // previews, which already carry the exact recipe.
-  overrides?: Partial<Record<AppearanceTarget, AppearanceRecipeV3>>;
+  overrides?: AppearancePreviewOverrides;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+type ValidationInput = z.input<z.ZodUnknown>;
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
-}
-
-function isPreviewTarget(value: unknown): value is AppearancePreviewTarget {
-  return (
-    value === "all" ||
-    (typeof value === "string" &&
-      APPEARANCE_TARGETS.some((target) => target === value))
-  );
-}
-
-function isPreviewState(value: unknown): value is AppearancePreviewState {
-  return (
-    value === "normal" ||
-    value === "critical-success" ||
-    value === "critical-failure"
-  );
-}
+const appearanceTargetSchema = z.enum(APPEARANCE_TARGETS);
+const previewTargetSchema = z.enum([...APPEARANCE_TARGETS, "all"]);
+const previewStateSchema = z.enum([
+  "normal",
+  "critical-success",
+  "critical-failure",
+]);
+const previewEnvelopeSchema = z.strictObject({
+  target: previewTargetSchema,
+  recipe: z.unknown(),
+  seed: z.number().int().min(0).max(0xffff_ffff),
+  state: previewStateSchema,
+});
+const previewRequestV4Schema = z.strictObject({
+  diceView: z.unknown(),
+  recipe: z.unknown(),
+  seed: z.number().int().min(0).max(0xffff_ffff),
+  state: previewStateSchema,
+  target: previewTargetSchema,
+  overrides: z.unknown().optional(),
+});
+const previewOverridesSchema = z.partialRecord(
+  appearanceTargetSchema,
+  z.unknown(),
+);
 
 function parseAppearancePreviewEnvelope(
-  value: unknown,
-): AppearancePreviewRequestBase<unknown> {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["recipe", "seed", "state", "target"]) ||
-    !isPreviewTarget(value.target) ||
-    !isPreviewState(value.state) ||
-    !Number.isInteger(value.seed) ||
-    Number(value.seed) < 0 ||
-    Number(value.seed) > 0xffff_ffff
-  ) {
+  value: ValidationInput,
+): z.output<typeof previewEnvelopeSchema> {
+  const parsed = previewEnvelopeSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error("Appearance preview request is invalid");
   }
-  return {
-    target: value.target,
-    recipe: value.recipe,
-    seed: Number(value.seed),
-    state: value.state,
-  };
+  return parsed.data;
 }
 
 export function parseAppearancePreviewRequest(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): AppearancePreviewRequest {
   const request = parseAppearancePreviewEnvelope(value);
@@ -114,7 +103,7 @@ export function parseAppearancePreviewRequest(
 }
 
 export function parseAppearancePreviewRequestV2(
-  value: unknown,
+  value: ValidationInput,
   catalog: AppearanceCatalog,
 ): AppearancePreviewRequestV2 {
   const request = parseAppearancePreviewEnvelope(value);
@@ -125,7 +114,7 @@ export function parseAppearancePreviewRequestV2(
 }
 
 export function parseAppearancePreviewRequestV3(
-  value: unknown,
+  value: ValidationInput,
 ): AppearancePreviewRequestV3 {
   const request = parseAppearancePreviewEnvelope(value);
   return {
@@ -134,59 +123,47 @@ export function parseAppearancePreviewRequestV3(
   };
 }
 
-const PREVIEW_REQUEST_V4_KEYS = [
-  "diceView",
-  "recipe",
-  "seed",
-  "state",
-  "target",
-] as const;
-
 function parsePreviewOverrides(
-  value: unknown,
+  value: ValidationInput,
   target: AppearancePreviewTarget,
-): Partial<Record<AppearanceTarget, AppearanceRecipeV3>> {
-  if (target !== "all" || !isRecord(value)) {
+) {
+  const parsed = previewOverridesSchema.safeParse(value);
+  if (target !== "all" || !parsed.success) {
     throw new Error("Appearance preview request is invalid");
   }
-  const entries = Object.entries(value);
-  if (
-    entries.length === 0 ||
-    !entries.every(([key]) =>
-      APPEARANCE_TARGETS.some((candidate) => candidate === key),
-    )
-  ) {
+  const entries = Object.entries(parsed.data);
+  if (entries.length === 0) {
     throw new Error("Appearance preview request is invalid");
   }
-  return Object.fromEntries(
-    entries.map(([key, recipe]) => [key, parseAppearanceRecipeV3(recipe)]),
-  );
+  const overrides: AppearancePreviewOverrides = {};
+  for (const [targetKey, recipe] of entries) {
+    const parsedTarget = appearanceTargetSchema.parse(targetKey);
+    overrides[parsedTarget] = parseAppearanceRecipeV3(recipe);
+  }
+  return overrides;
 }
 
 export function parseAppearancePreviewRequestV4(
-  value: unknown,
+  value: ValidationInput,
 ): AppearancePreviewRequestV4 {
-  if (
-    !isRecord(value) ||
-    (!hasExactKeys(value, PREVIEW_REQUEST_V4_KEYS) &&
-      !hasExactKeys(value, [...PREVIEW_REQUEST_V4_KEYS, "overrides"]))
-  ) {
+  const envelope = previewRequestV4Schema.safeParse(value);
+  if (!envelope.success) {
     throw new Error("Appearance preview request is invalid");
   }
   const request = parseAppearancePreviewEnvelope({
-    recipe: value.recipe,
-    seed: value.seed,
-    state: value.state,
-    target: value.target,
+    recipe: envelope.data.recipe,
+    seed: envelope.data.seed,
+    state: envelope.data.state,
+    target: envelope.data.target,
   });
   const parsed: AppearancePreviewRequestV4 = {
     ...request,
     recipe: parseAppearanceRecipeV3(request.recipe),
-    diceView: parseDiceViewPreferencesV4(value.diceView),
+    diceView: parseDiceViewPreferencesV4(envelope.data.diceView),
   };
-  if (!("overrides" in value)) return parsed;
+  if (!Object.hasOwn(envelope.data, "overrides")) return parsed;
   return {
     ...parsed,
-    overrides: parsePreviewOverrides(value.overrides, request.target),
+    overrides: parsePreviewOverrides(envelope.data.overrides, request.target),
   };
 }

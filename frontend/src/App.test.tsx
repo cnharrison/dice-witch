@@ -3,33 +3,29 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import * as React from "react";
 import { MemoryRouter } from "react-router";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
+import { AppView, createAppRoutes } from "./App";
 
-vi.mock("./components/EnvironmentBanner", () => ({
-  EnvironmentBanner: () => null,
-}));
-vi.mock("./components/SvgFilters", () => ({ SvgFilters: () => null }));
-vi.mock("./pages/LandingPage", () => ({
-  default: () => <div>Landing page</div>,
-}));
-vi.mock("./lib/app-route-loaders", () => ({
+const AppRoutes = createAppRoutes({
+  LandingPage: () => <div>Landing page</div>,
   loadAuthenticatedApp: async () => ({
     default: () => <div>Authenticated app</div>,
   }),
-  loadDocsApp: async () => ({ default: () => <div>Documentation page</div> }),
-  loadHomePage: async () => ({ default: () => null }),
-  loadLibraryPage: async () => ({ default: () => null }),
-  loadPreferencesPage: async () => ({ default: () => null }),
-}));
-
-import App from "./App";
+  loadDocsApp: async () => ({
+    default: () => <div>Documentation page</div>,
+  }),
+});
 
 afterEach(cleanup);
 
 it("serves documentation publicly outside the authenticated app", async () => {
   render(
     <MemoryRouter initialEntries={["/docs/dice-notation"]}>
-      <App />
+      <AppView
+        AppRoutes={AppRoutes}
+        EnvironmentBannerSlot={() => null}
+        SvgFiltersSlot={() => null}
+      />
     </MemoryRouter>,
   );
 

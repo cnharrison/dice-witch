@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   parseAppearanceProfileV4,
   parseGuildAppearanceProfileV4,
@@ -15,6 +16,14 @@ import {
 } from "./mutation-receipt";
 
 const MAX_PROFILE_JSON_LENGTH = 65_536;
+
+type SerializableAppearanceProfile =
+  | AppearanceProfileV4
+  | GuildAppearanceProfileV4
+  | AppearanceMixV4;
+type StoredAppearanceProfileJson = Parameters<
+  typeof parseAppearanceProfileV4
+>[0];
 
 type StoredProfileRow = {
   revision: number;
@@ -153,13 +162,22 @@ function validateExpectedRevision(value: number): number {
   return value;
 }
 
-function serializeProfile(profile: object): string {
+function serializeProfile(profile: SerializableAppearanceProfile): string {
   const profileJson = JSON.stringify(profile);
   if (profileJson.length > MAX_PROFILE_JSON_LENGTH) {
     throw new Error("Appearance profile is too large");
   }
   return profileJson;
 }
+
+const AppearanceMixSchema = z.strictObject({
+  assignments: z.json(),
+  designs: z.json(),
+});
+const RestoreReceiptPayloadSchema = z.strictObject({
+  profile: z.json(),
+  request: z.json(),
+});
 
 function mixFromProfile(profile: AppearanceProfileV4): AppearanceMixV4 {
   return {
@@ -177,31 +195,11 @@ function resetProfile<Profile extends AppearanceProfileV4>(
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    keys.length === sortedExpected.length &&
-    keys.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function isExactMix(value: unknown): value is AppearanceMixV4 {
-  return isRecord(value) && hasExactKeys(value, ["assignments", "designs"]);
-}
-
 function restoreReceiptProfile(
   row: MutationReceiptRow,
   receipt: Omit<MutationReceipt, "payloadJson">,
   requestJson: string,
-): { matched: false } | { matched: true; profile: unknown } {
+): { matched: false } | { matched: true; profile: StoredAppearanceProfileJson } {
   if (
     row.entity_type !== receipt.entityType ||
     row.entity_key !== receipt.entityKey ||
@@ -210,17 +208,17 @@ function restoreReceiptProfile(
   ) {
     return { matched: false };
   }
-  let payload: unknown;
+  let payload: ReturnType<typeof RestoreReceiptPayloadSchema.safeParse>;
   try {
-    payload = JSON.parse(row.payload_json) as unknown;
+    payload = RestoreReceiptPayloadSchema.safeParse(
+      JSON.parse(row.payload_json),
+    );
   } catch {
     return { matched: false };
   }
-  if (!isRecord(payload) || !hasExactKeys(payload, ["profile", "request"])) {
-    return { matched: false };
-  }
-  return JSON.stringify(payload.request) === requestJson
-    ? { matched: true, profile: payload.profile }
+  if (!payload.success) return { matched: false };
+  return JSON.stringify(payload.data.request) === requestJson
+    ? { matched: true, profile: payload.data.profile }
     : { matched: false };
 }
 
@@ -229,14 +227,14 @@ function parseStoredPersonalMix(
   current: AppearanceProfileV4,
   catalog: AppearanceValidationCatalogV3,
 ): AppearanceProfileV4 {
-  const mix = parseStoredJson(value);
-  if (!isExactMix(mix)) throw new Error("Stored appearance reset mix is invalid");
+  const mix = AppearanceMixSchema.safeParse(parseStoredJson(value));
+  if (!mix.success) throw new Error("Stored appearance reset mix is invalid");
   return parseStoredProfile(() =>
     parseAppearanceProfileV4(
       {
         ...current,
-        designs: mix.designs,
-        assignments: mix.assignments,
+        designs: mix.data.designs,
+        assignments: mix.data.assignments,
       },
       catalog,
     ),
@@ -248,23 +246,23 @@ function parseStoredGuildMix(
   current: GuildAppearanceProfileV4,
   catalog: AppearanceValidationCatalogV3,
 ): GuildAppearanceProfileV4 {
-  const mix = parseStoredJson(value);
-  if (!isExactMix(mix)) throw new Error("Stored appearance reset mix is invalid");
+  const mix = AppearanceMixSchema.safeParse(parseStoredJson(value));
+  if (!mix.success) throw new Error("Stored appearance reset mix is invalid");
   return parseStoredProfile(() =>
     parseGuildAppearanceProfileV4(
       {
         ...current,
-        designs: mix.designs,
-        assignments: mix.assignments,
+        designs: mix.data.designs,
+        assignments: mix.data.assignments,
       },
       catalog,
     ),
   );
 }
 
-function parseStoredJson(value: string): unknown {
+function parseStoredJson(value: string): StoredAppearanceProfileJson {
   try {
-    return JSON.parse(value) as unknown;
+    return z.json().parse(JSON.parse(value));
   } catch {
     throw new Error("Stored appearance profile is invalid");
   }

@@ -505,12 +505,13 @@ function independentAppearance(
   appearance: RenderAppearanceV4,
   index: number,
 ): RenderAppearanceV4 {
+  const [, ...remainingColors] = appearance.palette;
   return {
     ...appearance,
     palette: [
       independentPrimaryColor(index),
-      ...appearance.palette.slice(1),
-    ] as RenderAppearanceV4["palette"],
+      ...remainingColors,
+    ],
     texture: {
       ...appearance.texture,
       seed: 0x51ce_b00c + index,

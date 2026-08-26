@@ -2,25 +2,18 @@ import {
   buildTextResultResponse,
   type ParsedTextResultInteractionV1,
 } from "../../../packages/discord-contracts/src";
+import type {
+  DurableObjectNamespacePort,
+  RollWorkPort,
+  WebDeliveryWorkPort,
+} from "./ports";
+import { parseTextResultLookup } from "./service-results";
 
 const UNAVAILABLE_MESSAGE = "This text result is no longer available.";
 
-type TextResultLookup =
-  | { status: "available"; resultText: string }
-  | { status: "expired" | "missing" };
-
-type TextResultStub = {
-  getTextResult(value: {
-    applicationId: string;
-    guildId: string;
-    channelId: string;
-    messageId: string;
-  }): Promise<TextResultLookup>;
-};
-
 type TextResultEnv = {
-  ROLL_WORK: DurableObjectNamespace;
-  WEB_DELIVERY_WORK: DurableObjectNamespace;
+  ROLL_WORK: DurableObjectNamespacePort<RollWorkPort>;
+  WEB_DELIVERY_WORK: DurableObjectNamespacePort<WebDeliveryWorkPort>;
 };
 
 export async function handleTextResultInteraction(
@@ -34,14 +27,14 @@ export async function handleTextResultInteraction(
     ? interaction.source.id
     : `${interaction.source.userId}:${interaction.source.id}`;
   try {
-    const result = await (
-      namespace.getByName(objectName) as unknown as TextResultStub
-    ).getTextResult({
+    const result = parseTextResultLookup(
+      await namespace.getByName(objectName).getTextResult({
       applicationId: interaction.applicationId,
       guildId: interaction.guildId,
       channelId: interaction.channelId,
-      messageId: interaction.messageId,
-    });
+        messageId: interaction.messageId,
+      }),
+    );
     if (result.status === "available") {
       return buildTextResultResponse(result.resultText);
     }

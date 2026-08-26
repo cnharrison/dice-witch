@@ -7,19 +7,20 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const rendererMocks = vi.hoisted(() => ({
+import {
+  DiceAnimation3DView,
+  type DiceAnimation3DProps,
+  type DiceAnimation3DRendererFactoryV4,
+} from "./DiceAnimation3D";
+
+// SAFETY: The test factory installs only Error callbacks into this controlled slot before invocation.
+const rendererMocks = {
   replaceModel: vi.fn(async () => {}),
   setRolling: vi.fn(),
   dispose: vi.fn(),
-  create: vi.fn(),
+  create: vi.fn<DiceAnimation3DRendererFactoryV4>(),
   runtimeUnavailable: null as ((error: Error) => void) | null,
-}));
-
-vi.mock("./dice-v4-3d/roll-renderer", () => ({
-  createThreeRollRendererV4: rendererMocks.create,
-}));
-
-import { DiceAnimation3D } from "./DiceAnimation3D";
+};
 
 function stubMatchMedia(reducedMotion = false): void {
   vi.stubGlobal(
@@ -39,11 +40,12 @@ function stubMatchMedia(reducedMotion = false): void {
 }
 
 function renderAnimation(
-  props: Partial<React.ComponentProps<typeof DiceAnimation3D>> = {},
+  props: Partial<DiceAnimation3DProps> = {},
 ): ReturnType<typeof render> {
   return render(
     <ThemeProvider defaultTheme="dark" storageKey="dice-animation-test-theme">
-      <DiceAnimation3D
+      <DiceAnimation3DView
+        createRenderer={rendererMocks.create}
         isRolling={false}
         onUnavailable={vi.fn()}
         {...props}
@@ -93,7 +95,8 @@ describe("DiceAnimation3D", () => {
 
     view.rerender(
       <ThemeProvider defaultTheme="dark" storageKey="dice-animation-test-theme">
-        <DiceAnimation3D
+        <DiceAnimation3DView
+          createRenderer={rendererMocks.create}
           renderModel={authoritative}
           isRolling={false}
           blankFaces={false}
@@ -132,7 +135,8 @@ describe("DiceAnimation3D", () => {
     );
     view.rerender(
       <ThemeProvider defaultTheme="dark" storageKey="dice-animation-test-theme">
-        <DiceAnimation3D
+        <DiceAnimation3DView
+          createRenderer={rendererMocks.create}
           renderModel={model}
           isRolling={false}
           blankFaces

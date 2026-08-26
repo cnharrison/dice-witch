@@ -119,6 +119,7 @@ export function DiceViewPreferencesV4({
     });
   };
 
+  // SAFETY: The surrounding validation establishes the DiceViewAzimuthV4["mode"] invariant used below.
   return (
     <TooltipProvider delayDuration={0}>
       <section className="space-y-5 rounded-lg border bg-muted/20 p-4" aria-label="Dice view">
@@ -257,6 +258,7 @@ export function DiceViewPreferencesV4({
                     aria-label={`${APPEARANCE_TARGET_LABELS[target]} viewing side`}
                     value={override?.mode ?? "inherit"}
                     onChange={(event) => {
+                      // SAFETY: The surrounding validation establishes the | "inherit" | DiceViewAzimuthV4["mode"] invariant used below.
                       onChange(
                         updateOverride(
                           value,

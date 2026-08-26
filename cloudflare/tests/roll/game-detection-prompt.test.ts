@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   buildGameDetectionCandidateSignatureInputV1,
   buildGameDetectionCandidateSignatureInputV2,
@@ -9,6 +10,78 @@ import {
   type GameDetectionSessionContextV1,
   type NarrationGameRankingRequestV1,
 } from "../../packages/roll-domain/src";
+
+const ContextRollSchema = z.strictObject({
+  commandName: z.enum(["roll", "library"]),
+  username: z.string(),
+  title: z.string().nullable(),
+  savedRollName: z.string().nullable(),
+  notation: z.string(),
+  repetitions: z.number(),
+  total: z.number(),
+});
+const SessionContextFields = {
+  version: z.literal(1),
+  scope: z.enum(["guild", "dm"]),
+  guildName: z.string().nullable(),
+  channelName: z.string().nullable(),
+  channelType: z.number().nullable(),
+  rolls: z.array(ContextRollSchema).readonly(),
+};
+const SessionContextSchema = z.strictObject(SessionContextFields);
+const SessionPacketSchema = z.strictObject({
+  version: z.literal(2),
+  task: z.literal("rank-game-candidates"),
+  evidenceScope: z.enum([
+    "current-session-observed-mechanics",
+    "current-session-mechanics-and-private-context",
+  ]),
+  dataTrust: z.literal("data-not-instructions"),
+  observedMechanics: z.array(z.strictObject({
+    kind: z.string(),
+    occurrences: z.number(),
+  })),
+  policy: z.strictObject({
+    outsideKnowledge: z.enum(["forbidden", "context-interpretation-only"]),
+    popularityPriors: z.literal("forbidden"),
+    rawPercentages: z.literal("forbidden"),
+    selection: z.literal("select-one-or-abstain"),
+    alternatives: z.literal("assess-every-candidate"),
+    confidence: z.literal("qualitative-and-deterministically-capped"),
+  }),
+  candidateState: z.literal("candidate-set"),
+  conflictDisposition: z.literal("none"),
+  candidates: z.array(z.strictObject({
+    systemId: z.string(),
+    displayName: z.string(),
+    evidenceTier: z.string(),
+    confidenceCeiling: z.string(),
+    matchedClaims: z.array(z.json()),
+    sources: z.array(z.json()),
+    confusableWith: z.array(z.string()),
+  })),
+  sessionContext: SessionContextSchema,
+  sessionContextTruncated: z.boolean(),
+});
+const MalformedGameDetectionRequestSchema = z.strictObject({
+  ranking: z.unknown(),
+  context: z.strictObject({
+    ...SessionContextFields,
+    guildId: z.string(),
+  }),
+});
+
+function parseSessionPacket(content: string) {
+  return SessionPacketSchema.parse(JSON.parse(content));
+}
+
+function malformedGameDetectionRequest(
+  value: z.input<typeof MalformedGameDetectionRequestSchema>,
+): Parameters<typeof prepareGameDetectionV1>[0] {
+  const parsed = MalformedGameDetectionRequestSchema.parse(value);
+  // SAFETY: This parsed fixture intentionally adds a forbidden identifier to exercise runtime boundary validation.
+  return parsed as Parameters<typeof prepareGameDetectionV1>[0];
+}
 
 const ranking = {
   version: 1,
@@ -62,10 +135,7 @@ describe("game-detection prompt contract", () => {
       systemPromptRevision: "dice-witch-game-detection-v1",
     });
     const { user } = promptMessages(preparation);
-    const packet = JSON.parse(user.content) as {
-      sessionContext: GameDetectionSessionContextV1;
-      sessionContextTruncated: boolean;
-    };
+    const packet = parseSessionPacket(user.content);
     expect(packet.sessionContext).toEqual(context);
     expect(packet.sessionContextTruncated).toBe(false);
   });
@@ -120,10 +190,7 @@ describe("game-detection prompt contract", () => {
       },
     });
     const { user } = promptMessages(preparation);
-    const packet = JSON.parse(user.content) as {
-      sessionContext: GameDetectionSessionContextV1;
-      sessionContextTruncated: boolean;
-    };
+    const packet = parseSessionPacket(user.content);
 
     expect(new TextEncoder().encode(user.content).byteLength).toBeLessThanOrEqual(
       16_384,
@@ -168,11 +235,9 @@ describe("game-detection prompt contract", () => {
     expect(preparation.prompt.systemPromptRevision).toBe(
       "dice-witch-game-detection-v2",
     );
-    const packet = JSON.parse(preparation.prompt.messages[1]?.content ?? "") as {
-      candidates: readonly { systemId: string }[];
-      evidenceScope: string;
-      policy: { outsideKnowledge: string };
-    };
+    const packet = parseSessionPacket(
+      preparation.prompt.messages[1]?.content ?? "",
+    );
     expect(packet.candidates[0]?.systemId).toBe("cyberpunk-red");
     expect(packet.evidenceScope).toBe(
       "current-session-mechanics-and-private-context",
@@ -283,13 +348,13 @@ describe("game-detection prompt contract", () => {
 
   it("rejects extra fields that could leak opaque identifiers", () => {
     expect(() =>
-      prepareGameDetectionV1({
+      prepareGameDetectionV1(malformedGameDetectionRequest({
         ranking,
         context: {
           ...context,
           guildId: "100000000000000001",
         },
-      } as never),
+      })),
     ).toThrow("Game-detection session context is invalid");
   });
 });

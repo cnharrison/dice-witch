@@ -1,4 +1,5 @@
 import { canonicalJsonV4 } from "@dice-witch/dice-v4-model/canonical-json";
+import * as z from "zod";
 import type {
   AppearanceMaterialV4,
   AppearanceRecipeV3,
@@ -55,6 +56,7 @@ import {
   METAL_FINISHES_V4,
   NEUTRAL_RANDOM_FONT_IDS_V4,
   PAINT_STYLES_V4,
+  PATTERN_IDS_V4,
   POLYHEDRAL_FORMS_V4,
   RESIN_FINISHES_V4,
   RESIN_INCLUSIONS_V4,
@@ -186,7 +188,6 @@ const R34_FONT_IDS_V3 = FONT_IDS_V4.filter(
 const R37_FONT_IDS_V3 = R34_FONT_IDS_V3.map(r37MixedFontIdV3);
 
 const LEGACY_FONTS = catalogOptions(LEGACY_FONT_IDS_V3, FONT_NAMES_V3);
-const FONTS = catalogOptions(FONT_IDS_V4, FONT_NAMES_V3);
 const R34_FONTS_V3 = catalogOptions(R34_FONT_IDS_V3, FONT_NAMES_V3);
 const R37_FONTS_V3 = catalogOptions(R37_FONT_IDS_V3, FONT_NAMES_V3);
 
@@ -1178,17 +1179,19 @@ function selectionV3<Input, Output>(
 }
 
 function fontIdV3(value: string): FontIdV4 {
-  if (!FONTS.some(({ id }) => id === value)) {
+  const parsed = z.enum(FONT_IDS_V4).safeParse(value);
+  if (!parsed.success) {
     throw new Error(`Built-in appearance font ${value} is required`);
   }
-  return value as FontIdV4;
+  return parsed.data;
 }
 
 function patternIdV3(value: string): PatternIdV4 {
-  if (!PATTERNS.some(({ id }) => id === value)) {
+  const parsed = z.enum(PATTERN_IDS_V4).safeParse(value);
+  if (!parsed.success) {
     throw new Error(`Built-in appearance pattern ${value} is required`);
   }
-  return value as PatternIdV4;
+  return parsed.data;
 }
 
 function fontSelectionV3(
@@ -1302,11 +1305,10 @@ function simpleSolidRecipeV3(
   finish: "satin" | "gloss",
   randomization?: AppearanceRecipeV3["randomization"],
 ): AppearanceRecipeV3 {
-  return {
+  const recipe: AppearanceRecipeV3 = {
     version: 3,
     variation: randomization === undefined ? "fixed" : "wild",
     varyBy: "die",
-    ...(randomization === undefined ? {} : { randomization }),
     colors,
     material: {
       mode: "fixed",
@@ -1334,6 +1336,8 @@ function simpleSolidRecipeV3(
       direction: { mode: "fixed", value: "upper-left" },
     },
   };
+  if (randomization === undefined) return recipe;
+  return { ...recipe, randomization };
 }
 
 const solidRecipeV3 = simpleSolidRecipeV3(
@@ -2192,11 +2196,17 @@ export const APPEARANCE_CATALOG_V3 = appearanceCatalogV3(
 
 export type AppearanceCatalogPolicyV3 = "r34" | "r37";
 
+const appearanceCatalogPolicySchema = z.enum(["r34", "r37"]);
+type AppearanceCatalogPolicyInputV3 = z.input<z.ZodUnknown>;
+
 export function parseAppearanceCatalogPolicyV3(
-  value: unknown,
+  value: AppearanceCatalogPolicyInputV3,
 ): AppearanceCatalogPolicyV3 {
-  if (value === "r34" || value === "r37") return value;
-  throw new Error("Appearance catalog policy must be r34 or r37");
+  const parsed = appearanceCatalogPolicySchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error("Appearance catalog policy must be r34 or r37");
+  }
+  return parsed.data;
 }
 
 export function appearanceCatalogForPolicyV3(
@@ -2221,8 +2231,8 @@ export const APPEARANCE_VALIDATION_CATALOG: AppearanceCatalog = {
 
 export const BUILTIN_APPEARANCE_RECIPES = Object.fromEntries(
   styles.map(({ id, recipe }) => [id, recipe]),
-) as Readonly<Record<string, AppearanceRecipeV1>>;
+);
 
 export const BUILTIN_APPEARANCE_RECIPES_V2 = Object.fromEntries(
   stylesV2.map(({ id, recipe }) => [id, recipe]),
-) as Readonly<Record<string, AppearanceRecipeV2>>;
+);

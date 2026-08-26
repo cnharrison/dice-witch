@@ -16,6 +16,7 @@ export {
 } from "./generation";
 export type {
   GenerationAction,
+  GenerationDispatchRoute,
   GenerationEvent,
   GenerationMachine,
   GenerationPhase,

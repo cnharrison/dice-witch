@@ -8,7 +8,6 @@ import {
   GuildAppearanceProfileV4,
 } from "@dice-witch/dice-v4-model";
 import { AppearanceApiError } from "@/lib/appearance-api-error";
-import { getAppearancePreviewV4 } from "@/lib/appearance-v4";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -21,20 +20,33 @@ import {
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AppearanceEditorV3 } from "./AppearanceEditorV3";
+import {
+  AppearanceEditorV3View,
+  type AppearanceEditorV3Props,
+} from "./AppearanceEditorV3";
+import {
+  AppearancePreviewPaneV3,
+  AppearancePreviewPaneV3View,
+} from "./AppearancePreviewPaneV3";
 
-vi.mock("@/lib/appearance-v4", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/appearance-v4")>();
-  return {
-    ...actual,
-    getAppearancePreviewV4: vi.fn(async () => ({
-      contentType: "image/png",
-      width: 150,
-      height: 150,
-      base64: "iVBORw0KGgo=",
-    })),
-  };
-});
+const getAppearancePreviewV4 = vi.fn(async () => ({
+  version: 4 as const,
+  contentType: "image/png" as const,
+  width: 150,
+  height: 150,
+  base64: "iVBORw0KGgo=",
+}));
+
+function TestPreviewPane(
+  props: React.ComponentProps<typeof AppearancePreviewPaneV3>,
+) {
+  return (
+    <AppearancePreviewPaneV3View
+      {...props}
+      getPreview={getAppearancePreviewV4}
+    />
+  );
+}
 
 const designId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
@@ -109,7 +121,7 @@ function materialTile(name: string): HTMLElement {
   );
 }
 
-type EditorProps = React.ComponentProps<typeof AppearanceEditorV3>;
+type EditorProps = AppearanceEditorV3Props;
 type EditorTestProps = Omit<
   EditorProps,
   "onReset" | "onRestore" | "resource"
@@ -152,7 +164,8 @@ function renderEditor(props: EditorTestProps): void {
   const onRestore = props.onRestore ?? restoreTestProfile;
   render(
     <QueryClientProvider client={client}>
-      <AppearanceEditorV3
+      <AppearanceEditorV3View
+        PreviewPane={TestPreviewPane}
         {...props}
         resource={{ canRestorePreviousMix: false, ...props.resource }}
         onReset={onReset}
@@ -396,7 +409,7 @@ describe("AppearanceEditorV3", () => {
     expect(screen.getByLabelText("d8 viewing side")).toBeDefined();
     expect(screen.queryByLabelText("d4 viewing side")).toBeNull();
     await waitFor(() =>
-      expect(vi.mocked(getAppearancePreviewV4)).toHaveBeenLastCalledWith(
+      expect(getAppearancePreviewV4).toHaveBeenLastCalledWith(
         expect.objectContaining({ target: "d8" }),
         expect.any(AbortSignal),
       ),
@@ -404,7 +417,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByLabelText("Use legacy dice view"));
     expect(d8.getAttribute("aria-checked")).toBe("true");
     await waitFor(() =>
-      expect(vi.mocked(getAppearancePreviewV4)).toHaveBeenLastCalledWith(
+      expect(getAppearancePreviewV4).toHaveBeenLastCalledWith(
         expect.objectContaining({ target: "d8" }),
         expect.any(AbortSignal),
       ),
@@ -562,6 +575,7 @@ describe("AppearanceEditorV3", () => {
     );
     expect(new Set(titles).size).toBe(titles.length);
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     fireEvent.keyDown(screen.getAllByRole("slider")[0] as HTMLElement, {
       key: "ArrowLeft",
     });
@@ -862,6 +876,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV4;
     expect(saved.designs[0]).toMatchObject({ id: designId, name: "Night garden" });
     expect(saved.assignments.all).toEqual({ source: "custom", id: designId });
@@ -923,7 +938,7 @@ describe("AppearanceEditorV3", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
-    const props: React.ComponentProps<typeof AppearanceEditorV3> = {
+    const props: AppearanceEditorV3Props = {
       catalog: APPEARANCE_CATALOG_V3,
       resource: {
         revision: 4,
@@ -939,7 +954,7 @@ describe("AppearanceEditorV3", () => {
     };
     const view = render(
       <QueryClientProvider client={client}>
-        <AppearanceEditorV3 {...props} />
+        <AppearanceEditorV3View PreviewPane={TestPreviewPane} {...props} />
       </QueryClientProvider>,
     );
 
@@ -948,7 +963,8 @@ describe("AppearanceEditorV3", () => {
     remoteProfile.assignments.all = { source: "builtin", id: "pride" };
     view.rerender(
       <QueryClientProvider client={client}>
-        <AppearanceEditorV3
+        <AppearanceEditorV3View
+          PreviewPane={TestPreviewPane}
           {...props}
           resource={{
             revision: 5,
@@ -979,7 +995,7 @@ describe("AppearanceEditorV3", () => {
       { id: designId, name: "Night garden", recipe: styleRecipe("pride") },
     ];
     profile.assignments.all = { source: "custom", id: designId };
-    const props: React.ComponentProps<typeof AppearanceEditorV3> = {
+    const props: AppearanceEditorV3Props = {
       catalog: APPEARANCE_CATALOG_V3,
       resource: {
         revision: 4,
@@ -995,7 +1011,7 @@ describe("AppearanceEditorV3", () => {
     };
     const view = render(
       <QueryClientProvider client={client}>
-        <AppearanceEditorV3 {...props} />
+        <AppearanceEditorV3View PreviewPane={TestPreviewPane} {...props} />
       </QueryClientProvider>,
     );
 
@@ -1009,7 +1025,8 @@ describe("AppearanceEditorV3", () => {
     remoteProfile.assignments.all = { source: "builtin", id: "dice-witch" };
     view.rerender(
       <QueryClientProvider client={client}>
-        <AppearanceEditorV3
+        <AppearanceEditorV3View
+          PreviewPane={TestPreviewPane}
           {...props}
           resource={{
             revision: 5,
@@ -1040,7 +1057,7 @@ describe("AppearanceEditorV3", () => {
       designs: [],
       assignments: { all: null, overrides: {} },
     };
-    const props: React.ComponentProps<typeof AppearanceEditorV3> = {
+    const props: AppearanceEditorV3Props = {
       catalog: APPEARANCE_CATALOG_V3,
       resource: {
         revision: 4,
@@ -1056,14 +1073,15 @@ describe("AppearanceEditorV3", () => {
     };
     const view = render(
       <QueryClientProvider client={client}>
-        <AppearanceEditorV3 {...props} />
+        <AppearanceEditorV3View PreviewPane={TestPreviewPane} {...props} />
       </QueryClientProvider>,
     );
 
     await selectStartFromStyle(user, "dice-witch");
     view.rerender(
       <QueryClientProvider client={client}>
-        <AppearanceEditorV3
+        <AppearanceEditorV3View
+          PreviewPane={TestPreviewPane}
           {...props}
           resource={{
             revision: 5,
@@ -1119,6 +1137,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const copied = onSave.mock.calls[0]?.[0] as GuildAppearanceProfileV4;
     expect(copied.mode).toBe("default");
     expect(copied.assignments.all).toEqual({
@@ -1173,6 +1192,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV4;
     expect(saved.designs).toHaveLength(2);
     expect(saved.designs[0]).toMatchObject({
@@ -1207,6 +1227,7 @@ describe("AppearanceEditorV3", () => {
     await user.click(screen.getByRole("button", { name: "Save & apply" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const saved = onSave.mock.calls[0]?.[0] as AppearanceProfileV4;
     expect(saved.designs).toHaveLength(1);
     expect(saved.designs[0]).toMatchObject({

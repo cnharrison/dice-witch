@@ -1,55 +1,71 @@
+import { z } from "zod";
 import {
   buildFooterComponents,
   type DiscordFooterLinks,
 } from "./footer-links";
+import {
+  boundaryObjectSchema,
+  interactionTokenSchema,
+  type SchemaInput,
+  snowflakeSchema,
+} from "./schema-primitives";
 
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
-const INTERACTION_TOKEN = /^[A-Za-z0-9._-]{1,512}$/;
 const PANACHE_COLOR = 0xff_00_ff;
 const EPHEMERAL_FLAG = 64;
 const THUMBNAIL_URL = "https://i.imgur.com/tBfG2pP.png";
 
-export type StaticInteractionCommand = "web" | "prefs";
+const StaticInteractionCommandSchema = z.enum(["web", "prefs"]);
+const StaticCommandIdentitySchema = z.looseObject({
+  id: snowflakeSchema,
+  token: interactionTokenSchema,
+  data: z.looseObject({ type: z.literal(1) }),
+});
+const EmptyOptionsSchema = z.tuple([]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+export type StaticInteractionCommand = z.infer<
+  typeof StaticInteractionCommandSchema
+>;
 
 export function parseStaticInteractionCommand(
-  value: unknown,
+  value: SchemaInput,
   applicationId: string,
   allowedGuildId?: string,
 ): StaticInteractionCommand | null {
-  if (!isRecord(value)) throw new Error("Interaction must be an object");
-  if (value.application_id !== applicationId || value.type !== 2) return null;
-  const guildId = value.guild_id;
+  const interaction = boundaryObjectSchema.safeParse(value);
+  if (!interaction.success) throw new Error("Interaction must be an object");
   if (
-    (guildId !== undefined &&
-      (typeof guildId !== "string" || !SNOWFLAKE.test(guildId))) ||
-    (allowedGuildId !== undefined &&
-      guildId !== undefined &&
-      guildId !== allowedGuildId)
+    interaction.data.application_id !== applicationId ||
+    interaction.data.type !== 2
   ) {
     return null;
   }
-  if (
-    typeof value.id !== "string" ||
-    !SNOWFLAKE.test(value.id) ||
-    typeof value.token !== "string" ||
-    !INTERACTION_TOKEN.test(value.token) ||
-    !isRecord(value.data) ||
-    value.data.type !== 1
-  ) {
+
+  const guildId = interaction.data.guild_id;
+  if (guildId !== undefined) {
+    const guild = snowflakeSchema.safeParse(guildId);
+    if (
+      !guild.success ||
+      (allowedGuildId !== undefined && guild.data !== allowedGuildId)
+    ) {
+      return null;
+    }
+  }
+
+  const identity = StaticCommandIdentitySchema.safeParse(interaction.data);
+  if (!identity.success) {
     throw new Error("Static command interaction is invalid");
   }
-  if (value.data.name !== "web" && value.data.name !== "prefs") return null;
+  const command = StaticInteractionCommandSchema.safeParse(
+    identity.data.data.name,
+  );
+  if (!command.success) return null;
   if (
-    value.data.options !== undefined &&
-    (!Array.isArray(value.data.options) || value.data.options.length !== 0)
+    identity.data.data.options !== undefined &&
+    !EmptyOptionsSchema.safeParse(identity.data.data.options).success
   ) {
     throw new Error("Static command options are invalid");
   }
-  return value.data.name;
+  return command.data;
 }
 
 export function buildWebAppRouteUrl(
@@ -75,7 +91,7 @@ export function buildStaticCommandResponse(
   command: StaticInteractionCommand,
   links: DiscordFooterLinks,
   webAppUrl: string,
-): Record<string, unknown> {
+) {
   const destination = buildWebAppRouteUrl(
     webAppUrl,
     command === "prefs" ? "preferences" : undefined,

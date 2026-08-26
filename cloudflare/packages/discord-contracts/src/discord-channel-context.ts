@@ -1,13 +1,79 @@
+import { z } from "zod";
 import {
   isDiscordRollChannelType,
   type DiscordRollChannelType,
 } from "./roll-interaction";
+import {
+  boundedNameSchema,
+  exactEnumSchema,
+  safeIntegerSchema,
+  type SchemaInput,
+  snowflakeSchema,
+  strictObjectSchema,
+  timestampSchema,
+} from "./schema-primitives";
 
-export type DiscordChannelContextRequestV1 = Readonly<{
-  version: 1;
-  guildId: string;
-  channelId: string;
-}>;
+const DiscordChannelContextRequestV1Schema = strictObjectSchema({
+  version: z.literal(1),
+  guildId: snowflakeSchema,
+  channelId: snowflakeSchema,
+});
+const DiscordChannelContextSourceV1Schema = exactEnumSchema([
+  "gateway",
+  "interaction",
+  "lifecycle",
+  "rest",
+]);
+const DiscordChannelNameSchema = boundedNameSchema(1, 100);
+const DiscordChannelContextResponseSchema = z.looseObject({
+  id: snowflakeSchema,
+  guild_id: snowflakeSchema,
+  name: DiscordChannelNameSchema,
+  type: safeIntegerSchema,
+});
+const DiscordChannelDirectoryDeleteV1Schema = strictObjectSchema({
+  version: z.literal(1),
+  operation: z.literal("delete"),
+  source: z.literal("gateway"),
+  guildId: snowflakeSchema,
+  channelId: snowflakeSchema,
+  observedAt: timestampSchema,
+});
+const DiscordChannelDirectoryUpsertV1Schema = strictObjectSchema({
+  version: z.literal(1),
+  operation: z.literal("upsert"),
+  source: DiscordChannelContextSourceV1Schema,
+  guildId: snowflakeSchema,
+  channelId: snowflakeSchema,
+  channelName: DiscordChannelNameSchema,
+  channelType: safeIntegerSchema.refine(isDiscordRollChannelType),
+  observedAt: timestampSchema,
+});
+const DiscordChannelDirectoryMutationV1Schema = z.discriminatedUnion(
+  "operation",
+  [
+    DiscordChannelDirectoryUpsertV1Schema,
+    DiscordChannelDirectoryDeleteV1Schema,
+  ],
+);
+const UpsertDispatchSchema = exactEnumSchema([
+  "CHANNEL_CREATE",
+  "CHANNEL_UPDATE",
+  "THREAD_CREATE",
+  "THREAD_UPDATE",
+]);
+const DeleteDispatchSchema = exactEnumSchema([
+  "CHANNEL_DELETE",
+  "THREAD_DELETE",
+]);
+const DiscordChannelDispatchIdentitySchema = z.looseObject({
+  id: snowflakeSchema,
+  guild_id: snowflakeSchema,
+});
+
+export type DiscordChannelContextRequestV1 = Readonly<
+  z.infer<typeof DiscordChannelContextRequestV1Schema>
+>;
 
 export type DiscordChannelContextResultV1 =
   | Readonly<{
@@ -23,183 +89,52 @@ export type DiscordChannelContextResultV1 =
     }>
   | Readonly<{ status: "failed"; httpStatus: number }>;
 
-export type DiscordChannelContextSourceV1 =
-  | "gateway"
-  | "interaction"
-  | "lifecycle"
-  | "rest";
+export type DiscordChannelContextSourceV1 = z.infer<
+  typeof DiscordChannelContextSourceV1Schema
+>;
 
 export type DiscordChannelDirectoryMutationV1 =
-  | Readonly<{
-      version: 1;
-      operation: "upsert";
-      source: DiscordChannelContextSourceV1;
-      guildId: string;
-      channelId: string;
-      channelName: string;
-      channelType: DiscordRollChannelType;
-      observedAt: number;
-    }>
-  | Readonly<{
-      version: 1;
-      operation: "delete";
-      source: "gateway";
-      guildId: string;
-      channelId: string;
-      observedAt: number;
-    }>;
-
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/u;
-const SOURCES = new Set<DiscordChannelContextSourceV1>([
-  "gateway",
-  "interaction",
-  "lifecycle",
-  "rest",
-]);
-const UPSERT_DISPATCHES = new Set([
-  "CHANNEL_CREATE",
-  "CHANNEL_UPDATE",
-  "THREAD_CREATE",
-  "THREAD_UPDATE",
-]);
-const DELETE_DISPATCHES = new Set([
-  "CHANNEL_DELETE",
-  "THREAD_DELETE",
-]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  const sorted = [...expected].sort();
-  return actual.length === sorted.length &&
-    actual.every((key, index) => key === sorted[index]);
-}
-
-function isTimestamp(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isContextSource(
-  value: unknown,
-): value is DiscordChannelContextSourceV1 {
-  return typeof value === "string" &&
-    SOURCES.has(value as DiscordChannelContextSourceV1);
-}
-
-function isChannelName(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 100;
-}
+  | Readonly<z.infer<typeof DiscordChannelDirectoryUpsertV1Schema>>
+  | Readonly<z.infer<typeof DiscordChannelDirectoryDeleteV1Schema>>;
 
 export function parseDiscordChannelContextRequestV1(
-  value: unknown,
+  value: SchemaInput,
 ): DiscordChannelContextRequestV1 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["channelId", "guildId", "version"]) ||
-    value.version !== 1 ||
-    typeof value.guildId !== "string" ||
-    !SNOWFLAKE.test(value.guildId) ||
-    typeof value.channelId !== "string" ||
-    !SNOWFLAKE.test(value.channelId)
-  ) {
+  const result = DiscordChannelContextRequestV1Schema.safeParse(value);
+  if (!result.success) {
     throw new Error("Discord channel context request is invalid");
   }
-  return {
-    version: 1,
-    guildId: value.guildId,
-    channelId: value.channelId,
-  };
+  return result.data;
 }
 
 export function parseDiscordChannelContextResponseV1(
-  value: unknown,
+  value: SchemaInput,
   request: DiscordChannelContextRequestV1,
 ): Extract<DiscordChannelContextResultV1, { status: "resolved" }> {
+  const result = DiscordChannelContextResponseSchema.safeParse(value);
   if (
-    !isRecord(value) ||
-    value.id !== request.channelId ||
-    value.guild_id !== request.guildId ||
-    !isChannelName(value.name) ||
-    !isDiscordRollChannelType(value.type)
+    !result.success ||
+    result.data.id !== request.channelId ||
+    result.data.guild_id !== request.guildId ||
+    !isDiscordRollChannelType(result.data.type)
   ) {
     throw new Error("Discord channel context response is invalid");
   }
   return {
     status: "resolved",
-    channelName: value.name,
-    channelType: value.type,
+    channelName: result.data.name,
+    channelType: result.data.type,
   };
 }
 
 export function parseDiscordChannelDirectoryMutationV1(
-  value: unknown,
+  value: SchemaInput,
 ): DiscordChannelDirectoryMutationV1 {
-  if (
-    !isRecord(value) ||
-    value.version !== 1 ||
-    typeof value.guildId !== "string" ||
-    !SNOWFLAKE.test(value.guildId) ||
-    typeof value.channelId !== "string" ||
-    !SNOWFLAKE.test(value.channelId) ||
-    !isTimestamp(value.observedAt)
-  ) {
+  const result = DiscordChannelDirectoryMutationV1Schema.safeParse(value);
+  if (!result.success) {
     throw new Error("Discord channel directory mutation is invalid");
   }
-  if (
-    value.operation === "delete" &&
-    value.source === "gateway" &&
-    hasExactKeys(value, [
-      "channelId",
-      "guildId",
-      "observedAt",
-      "operation",
-      "source",
-      "version",
-    ])
-  ) {
-    return {
-      version: 1,
-      operation: "delete",
-      source: "gateway",
-      guildId: value.guildId,
-      channelId: value.channelId,
-      observedAt: value.observedAt,
-    };
-  }
-  if (
-    value.operation !== "upsert" ||
-    !isContextSource(value.source) ||
-    !hasExactKeys(value, [
-      "channelId",
-      "channelName",
-      "channelType",
-      "guildId",
-      "observedAt",
-      "operation",
-      "source",
-      "version",
-    ]) ||
-    !isChannelName(value.channelName) ||
-    !isDiscordRollChannelType(value.channelType)
-  ) {
-    throw new Error("Discord channel directory mutation is invalid");
-  }
-  return {
-    version: 1,
-    operation: "upsert",
-    source: value.source,
-    guildId: value.guildId,
-    channelId: value.channelId,
-    channelName: value.channelName,
-    channelType: value.channelType,
-    observedAt: value.observedAt,
-  };
+  return result.data;
 }
 
 type DiscordChannelDirectoryContextV1 = Readonly<{
@@ -238,47 +173,42 @@ export function buildDiscordChannelDirectoryUpsertV1(
 
 export function parseDiscordChannelDirectoryDispatchV1(
   eventType: string,
-  data: unknown,
+  data: SchemaInput,
   observedAt: number,
 ): DiscordChannelDirectoryMutationV1 | null {
-  if (!UPSERT_DISPATCHES.has(eventType) && !DELETE_DISPATCHES.has(eventType)) {
-    return null;
-  }
-  if (
-    !isRecord(data) ||
-    typeof data.id !== "string" ||
-    !SNOWFLAKE.test(data.id) ||
-    typeof data.guild_id !== "string" ||
-    !SNOWFLAKE.test(data.guild_id) ||
-    !isTimestamp(observedAt)
-  ) {
+  const upsertDispatch = UpsertDispatchSchema.safeParse(eventType);
+  const deleteDispatch = DeleteDispatchSchema.safeParse(eventType);
+  if (!upsertDispatch.success && !deleteDispatch.success) return null;
+
+  const identity = DiscordChannelDispatchIdentitySchema.safeParse(data);
+  const timestamp = timestampSchema.safeParse(observedAt);
+  if (!identity.success || !timestamp.success) {
     throw new Error("Discord channel directory dispatch is invalid");
   }
-  if (DELETE_DISPATCHES.has(eventType)) {
+  if (deleteDispatch.success) {
     return parseDiscordChannelDirectoryMutationV1({
       version: 1,
       operation: "delete",
       source: "gateway",
-      guildId: data.guild_id,
-      channelId: data.id,
-      observedAt,
+      guildId: identity.data.guild_id,
+      channelId: identity.data.id,
+      observedAt: timestamp.data,
     });
   }
-  if (
-    typeof data.type !== "number" ||
-    !Number.isSafeInteger(data.type)
-  ) {
+
+  const channelType = safeIntegerSchema.safeParse(identity.data.type);
+  if (!channelType.success) {
     throw new Error("Discord channel directory dispatch is invalid");
   }
-  if (!isDiscordRollChannelType(data.type)) return null;
+  if (!isDiscordRollChannelType(channelType.data)) return null;
   return parseDiscordChannelDirectoryMutationV1({
     version: 1,
     operation: "upsert",
     source: "gateway",
-    guildId: data.guild_id,
-    channelId: data.id,
-    channelName: data.name,
-    channelType: data.type,
-    observedAt,
+    guildId: identity.data.guild_id,
+    channelId: identity.data.id,
+    channelName: identity.data.name,
+    channelType: channelType.data,
+    observedAt: timestamp.data,
   });
 }

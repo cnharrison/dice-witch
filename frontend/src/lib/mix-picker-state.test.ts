@@ -27,6 +27,7 @@ import { MATERIAL_WEIGHT_TOTAL_V3 } from "@/lib/material-weight-percentages";
 
 // State-layer tests exercise data flow, not render validity: family-specific
 // parameters are opaque here, so fixtures only carry the discriminator.
+// SAFETY: The test controls this fixture and verifies its use in the scenario below.
 const materialValue = (family: string) => ({ family }) as AppearanceMaterialV4;
 
 function recipeWithMaterial(
@@ -74,6 +75,7 @@ describe("string rows (font / engraving)", () => {
   });
 
   it("normalizes off-total weighted engraving rows", () => {
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = applyStringRows(
       { mode: "fixed", value: "matte-ink" } as never,
       {
@@ -93,6 +95,7 @@ describe("materialRowsFromRecipe", () => {
   it("loads a legacy five-material weighted mix one-to-one", () => {
     const families = ["classic", "sharp-resin", "glass", "metal", "wood"];
     const weights = [370, 230, 200, 150, 50];
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const recipe = recipeWithMaterial({
       mode: "weighted",
       options: families.map((family, index) => ({
@@ -280,6 +283,7 @@ describe("variety", () => {
       variation: "curated",
       varyBy: "die",
     });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(applyVariety(recipe, "chaos" as never)).toBeDefined();
   });
 

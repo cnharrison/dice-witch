@@ -7,6 +7,19 @@ import {
 export const GATEWAY_COORDINATOR_NAME = "development-generation-1";
 export const GATEWAY_PARTITION_NAME = "development-shard-0";
 
+export type CurrentGuildIdsPage = {
+  guildIds: string[];
+  nextAfter: string | null;
+};
+
+type GuildLifecycleLogInput = {
+  mutationId: string;
+  eventType: "guildAdd" | "guildRemove";
+  guildName: string;
+};
+
+type GuildLifecycleLogResult = { status: "delivered" };
+
 export type GatewayEnv = Omit<
   GatewayBindings,
   | "DISCORD_GATEWAY_BOT_URL"
@@ -25,8 +38,8 @@ export type GatewayEnv = Omit<
     captureAudienceSnapshotV1(input: {
       shardCount: number;
     }): Promise<DiscordAudienceCaptureV1>;
-    listCurrentGuildIdsPage(after: string | null): Promise<unknown>;
-    logGuildLifecycle(input: unknown): Promise<unknown>;
+    listCurrentGuildIdsPage(after: string | null): Promise<CurrentGuildIdsPage>;
+    logGuildLifecycle(input: GuildLifecycleLogInput): Promise<GuildLifecycleLogResult>;
     reportBotListStats(): Promise<{
       status: "reported" | "failed" | "skipped";
       servers: number;
@@ -46,7 +59,9 @@ export type GatewayEnv = Omit<
 
 const DISCORD_BOT_TOKEN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
-export async function discordBotToken(env: GatewayEnv): Promise<string> {
+export async function discordBotToken(
+  env: Pick<GatewayEnv, "DISCORD_BOT_TOKEN">,
+): Promise<string> {
   const token = await readWorkerSecret(
     env.DISCORD_BOT_TOKEN,
     "DISCORD_BOT_TOKEN",
@@ -72,7 +87,9 @@ export async function gatewayControlToken(env: GatewayEnv): Promise<string> {
   return token;
 }
 
-export function allowedGatewayHostname(env: GatewayEnv): string {
+export function allowedGatewayHostname(
+  env: Pick<GatewayEnv, "GATEWAY_ALLOWED_HOSTNAME">,
+): string {
   const hostname = env.GATEWAY_ALLOWED_HOSTNAME;
   const url = new URL(`https://${hostname}`);
   if (

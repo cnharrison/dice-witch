@@ -13,10 +13,13 @@ async function signedFixture(): Promise<{
   signature: string;
   timestamp: string;
 }> {
-  const keys = (await crypto.subtle.generateKey("Ed25519", true, [
+  const keys = await crypto.subtle.generateKey("Ed25519", true, [
     "sign",
     "verify",
-  ])) as CryptoKeyPair;
+  ]);
+  if (!("privateKey" in keys)) {
+    throw new Error("Ed25519 key generation did not return a key pair");
+  }
   const body = new TextEncoder().encode('{"type":1}');
   const timestamp = "1783800000";
   const message = new Uint8Array(
@@ -24,11 +27,13 @@ async function signedFixture(): Promise<{
   );
   message.set(new TextEncoder().encode(timestamp));
   message.set(body, timestamp.length);
+  const publicKey = await crypto.subtle.exportKey("raw", keys.publicKey);
+  if (!(publicKey instanceof ArrayBuffer)) {
+    throw new Error("Ed25519 public key export was not raw bytes");
+  }
   return {
     body,
-    publicKey: hex(
-      (await crypto.subtle.exportKey("raw", keys.publicKey)) as ArrayBuffer,
-    ),
+    publicKey: hex(publicKey),
     signature: hex(
       await crypto.subtle.sign("Ed25519", keys.privateKey, message),
     ),

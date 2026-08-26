@@ -1,3 +1,4 @@
+import type { SchemaInput } from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   DISCORD_AUDIENCE_SNAPSHOT_VERSION,
   parseDiscordAudienceCaptureV1,
@@ -71,7 +72,7 @@ export class D1AudienceSnapshotRepository {
   }
 
   async store(
-    value: unknown,
+    value: SchemaInput,
     now = Date.now(),
   ): Promise<StoreAudienceSnapshotResult> {
     const capture = parseDiscordAudienceCaptureV1(value);

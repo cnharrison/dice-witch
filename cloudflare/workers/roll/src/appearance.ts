@@ -1,104 +1,116 @@
 import {
-  APPEARANCE_TARGETS_V4,
   parseAppearanceRecipeV3,
   parseDiceViewPreferencesV4,
 } from "@dice-witch/dice-v4-model";
+import { z } from "zod";
 import {
-  APPEARANCE_TARGETS,
   APPEARANCE_VALIDATION_CATALOG,
   parseAppearanceRecipeV2,
   type EffectiveAppearanceRecipesV2,
   type EffectiveAppearanceRecipesV3,
   type EffectiveAppearanceV4,
 } from "../../../packages/dice-appearance/src";
+import type { SchemaInput } from "../../../packages/discord-contracts/src/schema-primitives";
 
 export type AppearanceDataService = {
   fetch(request: Request): Promise<Response>;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+const EffectiveRecipesSchema = z.strictObject({
+  d4: z.unknown(),
+  d6: z.unknown(),
+  d8: z.unknown(),
+  d10: z.unknown(),
+  d12: z.unknown(),
+  d20: z.unknown(),
+  percentile: z.unknown(),
+  fudge: z.unknown(),
+  other: z.unknown(),
+});
+const EffectiveAppearanceRecipesV2Schema = z.strictObject({
+  version: z.literal(2),
+  recipes: EffectiveRecipesSchema,
+});
+const EffectiveAppearanceRecipesV3Schema = z.strictObject({
+  version: z.literal(3),
+  recipes: EffectiveRecipesSchema,
+});
+const EffectiveAppearanceV4Schema = z.strictObject({
+  version: z.literal(4),
+  recipes: EffectiveRecipesSchema,
+  diceView: z.unknown(),
+});
+
+function invalidEffectiveAppearance(): Error {
+  return new Error("Effective appearance response is invalid");
 }
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
+function parseRecipesV2(
+  recipes: z.output<typeof EffectiveRecipesSchema>,
+): EffectiveAppearanceRecipesV2 {
+  return {
+    d4: parseAppearanceRecipeV2(recipes.d4, APPEARANCE_VALIDATION_CATALOG),
+    d6: parseAppearanceRecipeV2(recipes.d6, APPEARANCE_VALIDATION_CATALOG),
+    d8: parseAppearanceRecipeV2(recipes.d8, APPEARANCE_VALIDATION_CATALOG),
+    d10: parseAppearanceRecipeV2(recipes.d10, APPEARANCE_VALIDATION_CATALOG),
+    d12: parseAppearanceRecipeV2(recipes.d12, APPEARANCE_VALIDATION_CATALOG),
+    d20: parseAppearanceRecipeV2(recipes.d20, APPEARANCE_VALIDATION_CATALOG),
+    percentile: parseAppearanceRecipeV2(
+      recipes.percentile,
+      APPEARANCE_VALIDATION_CATALOG,
+    ),
+    fudge: parseAppearanceRecipeV2(
+      recipes.fudge,
+      APPEARANCE_VALIDATION_CATALOG,
+    ),
+    other: parseAppearanceRecipeV2(
+      recipes.other,
+      APPEARANCE_VALIDATION_CATALOG,
+    ),
+  };
+}
+
+function parseRecipesV3(
+  recipes: z.output<typeof EffectiveRecipesSchema>,
+): EffectiveAppearanceRecipesV3 {
+  return {
+    d4: parseAppearanceRecipeV3(recipes.d4),
+    d6: parseAppearanceRecipeV3(recipes.d6),
+    d8: parseAppearanceRecipeV3(recipes.d8),
+    d10: parseAppearanceRecipeV3(recipes.d10),
+    d12: parseAppearanceRecipeV3(recipes.d12),
+    d20: parseAppearanceRecipeV3(recipes.d20),
+    percentile: parseAppearanceRecipeV3(recipes.percentile),
+    fudge: parseAppearanceRecipeV3(recipes.fudge),
+    other: parseAppearanceRecipeV3(recipes.other),
+  };
 }
 
 export function parseEffectiveAppearanceRecipesV2(
-  value: unknown,
+  value: SchemaInput,
 ): EffectiveAppearanceRecipesV2 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["recipes", "version"]) ||
-    value.version !== 2 ||
-    !isRecord(value.recipes) ||
-    !hasExactKeys(value.recipes, APPEARANCE_TARGETS)
-  ) {
-    throw new Error("Effective appearance response is invalid");
-  }
-  const recipes = value.recipes;
-  return Object.fromEntries(
-    APPEARANCE_TARGETS.map((target) => [
-      target,
-      parseAppearanceRecipeV2(
-        recipes[target],
-        APPEARANCE_VALIDATION_CATALOG,
-      ),
-    ]),
-  ) as EffectiveAppearanceRecipesV2;
+  const result = EffectiveAppearanceRecipesV2Schema.safeParse(value);
+  if (!result.success) throw invalidEffectiveAppearance();
+  return parseRecipesV2(result.data.recipes);
 }
 
 export function parseEffectiveAppearanceRecipesV3(
-  value: unknown,
+  value: SchemaInput,
 ): EffectiveAppearanceRecipesV3 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["recipes", "version"]) ||
-    value.version !== 3 ||
-    !isRecord(value.recipes) ||
-    !hasExactKeys(value.recipes, APPEARANCE_TARGETS_V4)
-  ) {
-    throw new Error("Effective appearance response is invalid");
-  }
-  const recipes = value.recipes;
-  return Object.fromEntries(
-    APPEARANCE_TARGETS_V4.map((target) => [
-      target,
-      parseAppearanceRecipeV3(recipes[target]),
-    ]),
-  ) as EffectiveAppearanceRecipesV3;
+  const result = EffectiveAppearanceRecipesV3Schema.safeParse(value);
+  if (!result.success) throw invalidEffectiveAppearance();
+  return parseRecipesV3(result.data.recipes);
 }
 
 export function parseEffectiveAppearanceV4(
-  value: unknown,
+  value: SchemaInput,
 ): EffectiveAppearanceV4 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["diceView", "recipes", "version"]) ||
-    value.version !== 4 ||
-    !isRecord(value.recipes) ||
-    !hasExactKeys(value.recipes, APPEARANCE_TARGETS_V4)
-  ) {
-    throw new Error("Effective appearance response is invalid");
-  }
-  const recipes = value.recipes;
+  const result = EffectiveAppearanceV4Schema.safeParse(value);
+  if (!result.success) throw invalidEffectiveAppearance();
   return {
     version: 4,
-    recipes: Object.fromEntries(
-      APPEARANCE_TARGETS_V4.map((target) => [
-        target,
-        parseAppearanceRecipeV3(recipes[target]),
-      ]),
-    ) as EffectiveAppearanceRecipesV3,
-    diceView: parseDiceViewPreferencesV4(value.diceView),
+    recipes: parseRecipesV3(result.data.recipes),
+    diceView: parseDiceViewPreferencesV4(result.data.diceView),
   };
 }
 
@@ -107,7 +119,7 @@ async function loadEffectiveAppearance(
   version: 2 | 3 | 4,
   userId: string,
   guildId: string | null,
-): Promise<unknown> {
+): Promise<SchemaInput> {
   let response: Response;
   try {
     response = await dataService.fetch(
@@ -124,13 +136,12 @@ async function loadEffectiveAppearance(
     throw new Error("Effective appearance lookup failed");
   }
   if (!response.ok) throw new Error("Effective appearance lookup failed");
-  let value: unknown;
   try {
-    value = await response.json();
+    const value: SchemaInput = await response.json();
+    return value;
   } catch {
-    throw new Error("Effective appearance response is invalid");
+    throw invalidEffectiveAppearance();
   }
-  return value;
 }
 
 export async function loadEffectiveAppearanceV2(

@@ -1,20 +1,34 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const CLI_USAGE =
   "Usage: node tools/staging-smoke.mjs --web-origin <url> --roll-origin <url> --gateway-origin <url> --expected-sha <full-sha>";
 const PROPAGATION_ATTEMPTS = 12;
 const PROPAGATION_RETRY_MS = 5_000;
+const TargetsSchema = z.object({
+  webOrigin: z.string(),
+  rollOrigin: z.string(),
+  gatewayOrigin: z.string(),
+  expectedSha: z.string().regex(FULL_SHA),
+});
+const MetadataSchema = z.object({
+  environment: z.literal("staging"),
+  build: z.object({ sha: z.string(), time: z.string() }),
+});
+const AnonymousSessionSchema = z.strictObject({ user: z.null() });
+const WorkerHealthSchema = z.object({
+  ok: z.literal(true),
+  service: z.string(),
+  renderVersion: z.number().optional(),
+});
 const PROPAGATION_ERRORS = new Set([
   "metadata SHA does not match the expected source SHA",
   "interaction boundary expected HTTP 404, received 500",
 ]);
 
 function parseHttpsOrigin(name, value) {
-  if (typeof value !== "string") {
-    throw new Error(`${name} is required`);
-  }
   let url;
   try {
     url = new URL(value);
@@ -75,17 +89,11 @@ async function checkMetadata(fetchImplementation, webOrigin, expectedSha) {
     `${webOrigin}/api/meta`,
   );
   requireStatus("build metadata", response, 200);
-  const body = await response.json();
-  if (body?.environment !== "staging") {
-    throw new Error("metadata environment must be staging");
-  }
-  if (body?.build?.sha !== expectedSha) {
+  const body = MetadataSchema.parse(await response.json());
+  if (body.build.sha !== expectedSha) {
     throw new Error("metadata SHA does not match the expected source SHA");
   }
-  if (
-    typeof body.build.time !== "string" ||
-    Number.isNaN(Date.parse(body.build.time))
-  ) {
+  if (Number.isNaN(Date.parse(body.build.time))) {
     throw new Error("metadata build time is invalid");
   }
   return { name: "build metadata", status: response.status };
@@ -98,14 +106,8 @@ async function checkAnonymousSession(fetchImplementation, webOrigin) {
     `${webOrigin}/api/auth/session`,
   );
   requireStatus("anonymous session", response, 401);
-  const body = await response.json();
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    Array.isArray(body) ||
-    Object.keys(body).length !== 1 ||
-    body.user !== null
-  ) {
+  const body = AnonymousSessionSchema.safeParse(await response.json());
+  if (!body.success) {
     throw new Error("anonymous session response is invalid");
   }
   return { name: "anonymous session", status: response.status };
@@ -137,32 +139,28 @@ async function checkWorkerHealth(
     `${origin}/health`,
   );
   requireStatus(`${name} health`, response, 200);
-  const body = await response.json();
+  const parsedBody = WorkerHealthSchema.safeParse(await response.json());
   if (
-    typeof body !== "object" ||
-    body === null ||
-    Array.isArray(body) ||
-    body.ok !== true ||
-    typeof body.service !== "string" ||
-    (body.service !== serviceName && !body.service.startsWith(`${serviceName}-`)) ||
+    !parsedBody.success ||
+    (parsedBody.data.service !== serviceName &&
+      !parsedBody.data.service.startsWith(`${serviceName}-`)) ||
     (expectedRenderVersion !== undefined &&
-      body.renderVersion !== expectedRenderVersion)
+      parsedBody.data.renderVersion !== expectedRenderVersion)
   ) {
     throw new Error(`${name} health response is invalid`);
   }
   return { name: `${name} health`, status: response.status };
 }
 
-export async function runStagingSmoke(targets, fetchImplementation = fetch) {
-  if (typeof targets !== "object" || targets === null) {
+export async function runStagingSmoke(value, fetchImplementation = fetch) {
+  const parsedTargets = TargetsSchema.safeParse(value);
+  if (!parsedTargets.success) {
     throw new Error("Staging smoke targets are required");
   }
+  const targets = parsedTargets.data;
   const webOrigin = parseHttpsOrigin("webOrigin", targets.webOrigin);
   const rollOrigin = parseHttpsOrigin("rollOrigin", targets.rollOrigin);
   const gatewayOrigin = parseHttpsOrigin("gatewayOrigin", targets.gatewayOrigin);
-  if (!FULL_SHA.test(targets.expectedSha ?? "")) {
-    throw new Error("expectedSha must be a full commit SHA");
-  }
   const checks = [];
   checks.push(await checkWebRoot(fetchImplementation, webOrigin));
   checks.push(

@@ -164,7 +164,7 @@ function projectVector(
 function viewerUprightLabelFrame(
   normal: Point3V4,
   frame: CameraFrameV4,
-): { right: Point3V4; up: Point3V4 } {
+) {
   const right = normalizePointV4(
     subtractPointsV4(
       frame.right,

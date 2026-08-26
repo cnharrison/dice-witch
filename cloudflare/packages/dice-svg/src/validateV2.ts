@@ -1,18 +1,25 @@
+import { z } from "zod";
 import { APPEARANCE_BORDER_COLOR } from "./appearance";
 import {
-  APPEARANCE_FONT_IDS,
-  PATTERN_NAMES_V1_V2,
-  type AppearanceFontId,
   type IconName,
-  type PatternNameV1V2,
   type RenderAppearanceFillV2,
   type RenderAppearanceV2,
   type RenderDieV2,
   type RenderRequestV2,
   type RenderTargetV2,
 } from "./types";
+import {
+  appearanceFontSchema,
+  booleanValueSchema,
+  hasExactKeys,
+  iconNameSchema,
+  isBoundaryRecord,
+  numberValueSchema,
+  patternNameV1V2Schema,
+  stringValueSchema,
+  type ValidationInput,
+} from "./validationBoundary";
 
-const APPEARANCE_FONTS: ReadonlySet<unknown> = new Set(APPEARANCE_FONT_IDS);
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const REQUEST_KEYS = ["groups", "version"] as const;
 const DIE_KEYS = ["appearance", "icons", "result", "target"] as const;
@@ -27,7 +34,7 @@ const APPEARANCE_KEYS = [
   "secondaryColor",
   "textColor",
 ] as const;
-const TARGETS = new Set<RenderTargetV2>([
+const targetSchema = z.enum([
   "d4",
   "d6",
   "d8",
@@ -37,90 +44,68 @@ const TARGETS = new Set<RenderTargetV2>([
   "percentile",
   "fudge",
   "other",
+] satisfies readonly RenderTargetV2[]);
+const FIXED_TARGET_SIDES = new Map<RenderTargetV2, number>([
+  ["d4", 4],
+  ["d6", 6],
+  ["d8", 8],
+  ["d10", 10],
+  ["d12", 12],
+  ["d20", 20],
 ]);
-const TARGET_SIDES: Partial<Record<RenderTargetV2, number>> = {
-  d4: 4,
-  d6: 6,
-  d8: 8,
-  d10: 10,
-  d12: 12,
-  d20: 20,
-};
-const ICON_NAMES = new Set<IconName>([
-  "trashcan",
-  "explosion",
-  "recycle",
-  "chevronUp",
-  "chevronDown",
-  "target-success",
-  "critical-success",
-  "critical-failure",
-  "penetrate",
-  "unique",
-  "blank",
-]);
-const PATTERN_NAMES: ReadonlySet<string> = new Set(PATTERN_NAMES_V1_V2);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    keys.length === sortedExpected.length &&
-    keys.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function parseColor(value: unknown, path: string): string {
-  if (typeof value !== "string" || !HEX_COLOR.test(value)) {
+function parseColor(value: ValidationInput, path: string): string {
+  const parsed = stringValueSchema.safeParse(value);
+  if (!parsed.success || !HEX_COLOR.test(parsed.data)) {
     throw new Error(`${path} must be a six-digit hex color`);
   }
-  return value.toLowerCase();
+  return parsed.data.toLowerCase();
 }
 
-function parseOutlineColor(value: unknown, path: string): "#000000" {
+function parseOutlineColor(
+  value: ValidationInput,
+  path: string,
+): "#000000" {
   if (parseColor(value, path) !== APPEARANCE_BORDER_COLOR) {
     throw new Error(`${path} must be ${APPEARANCE_BORDER_COLOR}`);
   }
   return APPEARANCE_BORDER_COLOR;
 }
 
-function parseFill(value: unknown, path: string): RenderAppearanceFillV2 {
-  if (!isRecord(value) || typeof value.type !== "string") {
+function parseFill(
+  value: ValidationInput,
+  path: string,
+): RenderAppearanceFillV2 {
+  if (!isBoundaryRecord(value)) {
+    throw new Error(`${path} is invalid`);
+  }
+  const fillType = stringValueSchema.safeParse(value.type);
+  if (!fillType.success) {
     throw new Error(`${path} is invalid`);
   }
   if (
-    (value.type === "solid" || value.type === "gradient") &&
+    (fillType.data === "solid" || fillType.data === "gradient") &&
     hasExactKeys(value, ["type"])
   ) {
-    return { type: value.type };
+    return { type: fillType.data };
   }
-  if (
-    value.type === "pattern" &&
-    hasExactKeys(value, ["pattern", "type"]) &&
-    typeof value.pattern === "string" &&
-    PATTERN_NAMES.has(value.pattern)
-  ) {
-    return { type: "pattern", pattern: value.pattern as PatternNameV1V2 };
+  if (fillType.data === "pattern" && hasExactKeys(value, ["pattern", "type"])) {
+    const pattern = patternNameV1V2Schema.safeParse(value.pattern);
+    if (pattern.success) {
+      return { type: "pattern", pattern: pattern.data };
+    }
   }
   throw new Error(`${path} is invalid`);
 }
 
-function isAppearanceFontId(value: unknown): value is AppearanceFontId {
-  return typeof value === "string" && APPEARANCE_FONTS.has(value);
-}
-
-function parseAppearance(value: unknown, path: string): RenderAppearanceV2 {
-  if (!isRecord(value) || !hasExactKeys(value, APPEARANCE_KEYS)) {
+function parseAppearance(
+  value: ValidationInput,
+  path: string,
+): RenderAppearanceV2 {
+  if (!isBoundaryRecord(value) || !hasExactKeys(value, APPEARANCE_KEYS)) {
     throw new Error(`${path} has invalid fields`);
   }
-  if (!isAppearanceFontId(value.fontId)) {
+  const fontId = appearanceFontSchema.safeParse(value.fontId);
+  if (!fontId.success) {
     throw new Error(`${path}.fontId is not supported`);
   }
   if (
@@ -130,72 +115,74 @@ function parseAppearance(value: unknown, path: string): RenderAppearanceV2 {
   ) {
     throw new Error(`${path}.effect is not supported`);
   }
-  if (typeof value.requiresLocalSeparation !== "boolean") {
+  const requiresLocalSeparation = booleanValueSchema.safeParse(
+    value.requiresLocalSeparation,
+  );
+  if (!requiresLocalSeparation.success) {
     throw new Error(`${path}.requiresLocalSeparation must be a boolean`);
   }
   return {
     primaryColor: parseColor(value.primaryColor, `${path}.primaryColor`),
-    secondaryColor: parseColor(
-      value.secondaryColor,
-      `${path}.secondaryColor`,
-    ),
+    secondaryColor: parseColor(value.secondaryColor, `${path}.secondaryColor`),
     textColor: parseColor(value.textColor, `${path}.textColor`),
-    outlineColor: parseOutlineColor(
-      value.outlineColor,
-      `${path}.outlineColor`,
-    ),
+    outlineColor: parseOutlineColor(value.outlineColor, `${path}.outlineColor`),
     fill: parseFill(value.fill, `${path}.fill`),
-    fontId: value.fontId,
+    fontId: fontId.data,
     effect: value.effect,
-    requiresLocalSeparation: value.requiresLocalSeparation,
+    requiresLocalSeparation: requiresLocalSeparation.data,
   };
 }
 
-function parseIcons(value: unknown, path: string): IconName[] {
+function parseIcons(value: ValidationInput, path: string): IconName[] {
   if (!Array.isArray(value) || value.length > 3) {
     throw new Error(`${path} must contain at most three icons`);
   }
   return value.map((icon, index) => {
-    if (typeof icon !== "string" || !ICON_NAMES.has(icon as IconName)) {
+    const parsed = iconNameSchema.safeParse(icon);
+    if (!parsed.success) {
       throw new Error(`${path}[${String(index)}] is not supported`);
     }
-    return icon as IconName;
+    return parsed.data;
   });
 }
 
-function parseTarget(value: unknown, path: string): RenderTargetV2 {
-  if (typeof value !== "string" || !TARGETS.has(value as RenderTargetV2)) {
+function parseTarget(value: ValidationInput, path: string): RenderTargetV2 {
+  const parsed = targetSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error(`${path}.target is not supported`);
   }
-  return value as RenderTargetV2;
+  return parsed.data;
 }
 
-function parseOtherSides(value: unknown, path: string): number {
+function parseOtherSides(value: ValidationInput, path: string): number {
+  const parsed = numberValueSchema.safeParse(value);
   if (
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < 1 ||
-    value > 999
+    !parsed.success ||
+    !Number.isInteger(parsed.data) ||
+    parsed.data < 1 ||
+    parsed.data > 999
   ) {
     throw new Error(`${path}.sides must be from 1 through 999`);
   }
-  return value;
+  return parsed.data;
 }
 
 function parseResult(
-  value: unknown,
+  value: ValidationInput,
   target: RenderTargetV2,
   sides: number | undefined,
   path: string,
 ): number {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
+  const parsed = numberValueSchema.safeParse(value);
+  if (!parsed.success || !Number.isInteger(parsed.data)) {
     throw new Error(`${path}.result must be an integer`);
   }
-  const fixedSides = TARGET_SIDES[target];
+  const result = parsed.data;
+  const fixedSides = FIXED_TARGET_SIDES.get(target);
   const minimumFixedResult = target === "d10" ? 0 : 1;
   if (
     fixedSides !== undefined &&
-    (value < minimumFixedResult || value > fixedSides)
+    (result < minimumFixedResult || result > fixedSides)
   ) {
     throw new Error(
       `${path}.result must be from ${String(minimumFixedResult)} through ${String(fixedSides)}`,
@@ -203,28 +190,26 @@ function parseResult(
   }
   if (
     target === "percentile" &&
-    (value < 0 || value > 90 || value % 10 !== 0)
+    (result < 0 || result > 90 || result % 10 !== 0)
   ) {
-    throw new Error(
-      `${path}.result must be a multiple of 10 from 0 through 90`,
-    );
+    throw new Error(`${path}.result must be a multiple of 10 from 0 through 90`);
   }
-  if (target === "fudge" && ![-1, 0, 1].includes(value)) {
+  if (target === "fudge" && ![-1, 0, 1].includes(result)) {
     throw new Error(`${path}.result must be -1, 0, or 1`);
   }
   if (target === "other") {
     if (sides === undefined) {
       throw new Error(`${path}.sides is required for Other dice`);
     }
-    if (value < 1 || value > sides) {
+    if (result < 1 || result > sides) {
       throw new Error(`${path}.result must be from 1 through ${String(sides)}`);
     }
   }
-  return value;
+  return result;
 }
 
-function parseDie(value: unknown, path: string): RenderDieV2 {
-  if (!isRecord(value)) {
+function parseDie(value: ValidationInput, path: string): RenderDieV2 {
+  if (!isBoundaryRecord(value)) {
     throw new Error(`${path} must be an object`);
   }
   const target = parseTarget(value.target, path);
@@ -252,8 +237,10 @@ function parseDie(value: unknown, path: string): RenderDieV2 {
   };
 }
 
-export function validateRenderRequestV2(value: unknown): RenderRequestV2 {
-  if (!isRecord(value) || !hasExactKeys(value, REQUEST_KEYS)) {
+export function validateRenderRequestV2(
+  value: ValidationInput,
+): RenderRequestV2 {
+  if (!isBoundaryRecord(value) || !hasExactKeys(value, REQUEST_KEYS)) {
     throw new Error("Render request V2 has invalid fields");
   }
   if (value.version !== 2) {

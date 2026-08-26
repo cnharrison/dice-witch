@@ -97,6 +97,7 @@ describe("SavedRollGrid", () => {
     const names = screen.getAllByRole("row").slice(1).map((tableRow) => tableRow.textContent);
     expect(names[0]).toContain("Fireball");
     expect(names[1]).toContain("Acid Arrow");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByRole("columnheader", { name: /Order/ })).toBeNull();
     expect(screen.getByRole("button", { name: "About library order" })).toBeDefined();
@@ -106,8 +107,10 @@ describe("SavedRollGrid", () => {
     expect(screen.queryByLabelText(/Pin/)).toBeNull();
 
     await user.click(screen.getByRole("button", { name: /Created/ }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(true);
     await user.click(screen.getByRole("button", { name: "Use library order" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect((screen.getByRole("button", { name: "Move Fireball" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -189,6 +192,7 @@ describe("SavedRollGrid", () => {
     render(<Harness />);
 
     await user.click(screen.getByRole("checkbox", { name: "Select Fireball" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const selectAll = screen.getByRole("checkbox", {
       name: "Select all visible rolls",
     }) as HTMLInputElement;
@@ -197,18 +201,21 @@ describe("SavedRollGrid", () => {
     await user.keyboard("{Shift>}");
     await user.click(screen.getByRole("checkbox", { name: "Select Magic Missile" }));
     await user.keyboard("{/Shift}");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(
       (screen.getByRole("checkbox", { name: "Select Acid Arrow" }) as HTMLInputElement)
         .checked,
     ).toBe(false);
     await user.click(screen.getByRole("checkbox", { name: "Select Acid Arrow" }));
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(screen.getAllByRole("checkbox").slice(1).every(
       (checkbox) => (checkbox as HTMLInputElement).checked,
     )).toBe(true);
     expect(selectAll.checked).toBe(true);
 
     await user.click(selectAll);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(screen.getAllByRole("checkbox").every(
       (checkbox) => !(checkbox as HTMLInputElement).checked,
     )).toBe(true);

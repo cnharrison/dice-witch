@@ -81,6 +81,7 @@ describe("AppearanceTargetPickerV3", () => {
 });
 
 describe("AppearanceTargetPickerV3 overrides", () => {
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   const baseProps = {
     value: "d20" as const,
     onChange: vi.fn(),

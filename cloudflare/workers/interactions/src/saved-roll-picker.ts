@@ -1,8 +1,12 @@
+import { z } from "zod";
 import type { DiscordContainerChild } from "../../../packages/discord-contracts/src";
+import type { SchemaInput } from "../../../packages/discord-contracts/src/schema-primitives";
 import { parseSavedRollNameV1 } from "../../../packages/saved-rolls/src/name";
+import type { FetchPort } from "./ports";
 
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const SAVED_ROLL_SELECTION = /^(mine|server):[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const SNOWFLAKE = /^[1-9][0-9]{16,19}$/u;
 const AUTOCOMPLETE_CHOICE_LIMIT = 25;
 const PICKER_PAGE_SIZE = 20;
 const MAX_CHOICE_LABEL_UTF16_LENGTH = 100;
@@ -37,7 +41,7 @@ export type VisibleSavedRollList = {
 export type SavedRollScope = "mine" | "server";
 
 export async function fetchVisibleSavedRolls(
-  dataService: Fetcher,
+  dataService: FetchPort,
   userId: string,
   guildId: string | null,
 ): Promise<{ mine: VisibleSavedRollList; server: VisibleSavedRollList }> {
@@ -75,40 +79,39 @@ export async function fetchVisibleSavedRolls(
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const sorted = [...expected].sort();
-  return actual.length === sorted.length && actual.every((key, index) => key === sorted[index]);
-}
-
-function nonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function parseOwner(value: unknown): SavedRollOwnerV1 {
-  if (!isRecord(value)) throw new Error("Saved roll list response is invalid");
-  if (
-    exactKeys(value, ["type", "userId"]) &&
-    value.type === "user" &&
-    typeof value.userId === "string" &&
-    SNOWFLAKE.test(value.userId)
-  ) {
-    return { type: "user", userId: value.userId };
-  }
-  if (
-    exactKeys(value, ["guildId", "type"]) &&
-    value.type === "guild" &&
-    typeof value.guildId === "string" &&
-    SNOWFLAKE.test(value.guildId)
-  ) {
-    return { type: "guild", guildId: value.guildId };
-  }
-  throw new Error("Saved roll list response is invalid");
-}
+const nonNegativeSafeIntegerSchema = z.number()
+  .refine(Number.isSafeInteger)
+  .nonnegative();
+const positiveSafeIntegerSchema = nonNegativeSafeIntegerSchema.positive();
+const SavedRollOwnerSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("user"), userId: z.string().regex(SNOWFLAKE) }),
+  z.strictObject({ type: z.literal("guild"), guildId: z.string().regex(SNOWFLAKE) }),
+]);
+const VisibleSavedRollSchema = z.strictObject({
+  version: z.literal(1),
+  id: z.string().regex(UUID_V4),
+  owner: SavedRollOwnerSchema,
+  displayName: z.string().min(1),
+  comparisonKey: z.string().min(1),
+  notation: z.string().min(1),
+  title: z.string().min(1).nullable(),
+  repetitions: positiveSafeIntegerSchema,
+  pinned: z.boolean(),
+  manualOrder: nonNegativeSafeIntegerSchema,
+  revision: positiveSafeIntegerSchema,
+  createdByUserId: z.string().regex(SNOWFLAKE),
+  updatedByUserId: z.string().regex(SNOWFLAKE),
+  createdAt: nonNegativeSafeIntegerSchema,
+  updatedAt: nonNegativeSafeIntegerSchema,
+});
+const VisibleSavedRollListResultSchema = z.union([
+  z.strictObject({ status: z.literal("missing") }),
+  z.strictObject({
+    status: z.literal("found"),
+    listRevision: nonNegativeSafeIntegerSchema,
+    savedRolls: z.array(VisibleSavedRollSchema),
+  }),
+]);
 
 function sameOwner(left: SavedRollOwnerV1, right: SavedRollOwnerV1): boolean {
   return left.type === right.type &&
@@ -117,93 +120,21 @@ function sameOwner(left: SavedRollOwnerV1, right: SavedRollOwnerV1): boolean {
       : right.type === "guild" && left.guildId === right.guildId);
 }
 
-function parseSavedRoll(value: unknown, expectedOwner: SavedRollOwnerV1): VisibleSavedRollV1 {
-  if (
-    !isRecord(value) ||
-    !exactKeys(value, [
-      "comparisonKey",
-      "createdAt",
-      "createdByUserId",
-      "displayName",
-      "id",
-      "manualOrder",
-      "notation",
-      "owner",
-      "pinned",
-      "repetitions",
-      "revision",
-      "title",
-      "updatedAt",
-      "updatedByUserId",
-      "version",
-    ]) ||
-    value.version !== 1 ||
-    typeof value.id !== "string" ||
-    !UUID_V4.test(value.id) ||
-    typeof value.displayName !== "string" ||
-    value.displayName.length < 1 ||
-    typeof value.comparisonKey !== "string" ||
-    value.comparisonKey.length < 1 ||
-    typeof value.notation !== "string" ||
-    value.notation.length < 1 ||
-    (value.title !== null && (typeof value.title !== "string" || value.title.length < 1)) ||
-    !nonNegativeSafeInteger(value.repetitions) ||
-    value.repetitions < 1 ||
-    typeof value.pinned !== "boolean" ||
-    !nonNegativeSafeInteger(value.manualOrder) ||
-    !nonNegativeSafeInteger(value.revision) ||
-    value.revision < 1 ||
-    typeof value.createdByUserId !== "string" ||
-    !SNOWFLAKE.test(value.createdByUserId) ||
-    typeof value.updatedByUserId !== "string" ||
-    !SNOWFLAKE.test(value.updatedByUserId) ||
-    !nonNegativeSafeInteger(value.createdAt) ||
-    !nonNegativeSafeInteger(value.updatedAt)
-  ) {
-    throw new Error("Saved roll list response is invalid");
-  }
-  const owner = parseOwner(value.owner);
-  if (!sameOwner(owner, expectedOwner)) {
-    throw new Error("Saved roll list response is invalid");
-  }
-  return {
-    version: 1,
-    id: value.id,
-    owner,
-    displayName: value.displayName,
-    comparisonKey: value.comparisonKey,
-    notation: value.notation,
-    title: value.title,
-    repetitions: value.repetitions,
-    pinned: value.pinned,
-    manualOrder: value.manualOrder,
-    revision: value.revision,
-    createdByUserId: value.createdByUserId,
-    updatedByUserId: value.updatedByUserId,
-    createdAt: value.createdAt,
-    updatedAt: value.updatedAt,
-  };
-}
-
 export function parseVisibleSavedRollList(
-  value: unknown,
+  value: SchemaInput,
   owner: SavedRollOwnerV1,
 ): VisibleSavedRollList {
-  if (isRecord(value) && exactKeys(value, ["status"]) && value.status === "missing") {
+  const result = VisibleSavedRollListResultSchema.safeParse(value);
+  if (!result.success) throw new Error("Saved roll list response is invalid");
+  if (result.data.status === "missing") {
     return { listRevision: 0, savedRolls: [] };
   }
-  if (
-    !isRecord(value) ||
-    !exactKeys(value, ["listRevision", "savedRolls", "status"]) ||
-    value.status !== "found" ||
-    !nonNegativeSafeInteger(value.listRevision) ||
-    !Array.isArray(value.savedRolls)
-  ) {
+  if (result.data.savedRolls.some((savedRoll) => !sameOwner(savedRoll.owner, owner))) {
     throw new Error("Saved roll list response is invalid");
   }
   return {
-    listRevision: value.listRevision,
-    savedRolls: value.savedRolls.map((record) => parseSavedRoll(record, owner)),
+    listRevision: result.data.listRevision,
+    savedRolls: result.data.savedRolls,
   };
 }
 
@@ -262,11 +193,11 @@ export function resolveSavedRollSelection(
   mine: readonly VisibleSavedRollV1[],
   server: readonly VisibleSavedRollV1[],
 ): SavedRollSelectionResult {
-  const opaque = /^(mine|server):(.+)$/.exec(selection);
-  if (opaque !== null) {
-    const scope = opaque[1] as SavedRollScope;
-    const id = opaque[2];
-    if (id === undefined || !UUID_V4.test(id)) return { status: "missing" };
+  if (SAVED_ROLL_SELECTION.test(selection)) {
+    const scope: SavedRollScope = selection.startsWith("mine:")
+      ? "mine"
+      : "server";
+    const id = selection.slice(scope.length + 1);
     const savedRoll = (scope === "mine" ? mine : server).find((record) => record.id === id);
     return savedRoll === undefined ? { status: "missing" } : { status: "found", scope, savedRoll };
   }
@@ -312,11 +243,12 @@ export function buildSavedRollPickerResponse(input: {
     ) {
       throw new Error("Library URL is invalid");
     }
+    const parse: string[] = [];
     return {
       type: input.update === true ? 7 : 4,
       data: {
         flags: (1 << 15) | 64,
-        allowed_mentions: { parse: [] as string[] },
+        allowed_mentions: { parse },
         components: [
           {
             type: 17,
@@ -396,11 +328,12 @@ export function buildSavedRollPickerResponse(input: {
       content: `No ${input.scope === "mine" ? "personal" : "server"} library rolls are available.`,
     });
   }
+  const parse: string[] = [];
   return {
     type: input.update === true ? 7 : 4,
     data: {
       flags: (1 << 15) | 64,
-      allowed_mentions: { parse: [] as string[] },
+      allowed_mentions: { parse },
       components: [
         {
           type: 17,

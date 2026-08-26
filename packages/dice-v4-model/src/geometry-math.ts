@@ -211,10 +211,7 @@ export function quaternionFromFrameV4(
   return canonicalQuaternion(quaternion);
 }
 
-export function uprightFaceFrameV4(normal: Point3V4): {
-  right: Point3V4;
-  up: Point3V4;
-} {
+export function uprightFaceFrameV4(normal: Point3V4) {
   const upReference: Point3V4 =
     Math.abs(normal[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0];
   const up = normalizePointV4(

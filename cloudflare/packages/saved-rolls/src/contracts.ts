@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   MAX_NOTATION_LENGTH,
   MAX_REPETITIONS,
@@ -25,27 +26,48 @@ export type SavedRollDraftV2 = Omit<SavedRollDraftV1, "version"> & {
   nameColor: string | null;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const SavedRollDraftV1Schema = z.strictObject({
+  version: z.literal(1),
+  name: z.unknown(),
+  notation: z.unknown(),
+  repetitions: z.unknown(),
+  title: z.unknown(),
+});
+const SavedRollDraftV2Schema = z.strictObject({
+  version: z.literal(2),
+  name: z.unknown(),
+  nameColor: z.unknown(),
+  notation: z.unknown(),
+  repetitions: z.unknown(),
+  title: z.unknown(),
+});
+const SavedRollNotationSchema = z.string();
+const SavedRollRepetitionsSchema = z
+  .number()
+  .refine(Number.isSafeInteger)
+  .min(1)
+  .max(MAX_REPETITIONS);
+const SavedRollTitleSchema = z.union([
+  z.null(),
+  z.string().min(1).max(MAX_TITLE_LENGTH),
+]);
+type SavedRollDraftV1Input = Parameters<typeof SavedRollDraftV1Schema.parse>[0];
+type SavedRollDraftV2Input = Parameters<typeof SavedRollDraftV2Schema.parse>[0];
+type SavedRollNotationInput = Parameters<typeof SavedRollNotationSchema.parse>[0];
+type SavedRollRepetitionsInput = Parameters<
+  typeof SavedRollRepetitionsSchema.parse
+>[0];
+type SavedRollTitleInput = Parameters<typeof SavedRollTitleSchema.parse>[0];
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    actual.length === sortedExpected.length &&
-    actual.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function parseNotation(value: unknown, repetitions: number): string {
-  if (typeof value !== "string") {
+function parseNotation(
+  value: SavedRollNotationInput,
+  repetitions: number,
+): string {
+  const result = SavedRollNotationSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Saved roll notation must be a string");
   }
-  const notation = value.trim();
+  const notation = result.data.trim();
   if (notation.length < 1 || notation.length > MAX_NOTATION_LENGTH) {
     throw new Error(
       `Saved roll notation must contain 1 through ${MAX_NOTATION_LENGTH} characters`,
@@ -62,82 +84,59 @@ function parseNotation(value: unknown, repetitions: number): string {
   return notation;
 }
 
-function parseRepetitions(value: unknown): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 1 ||
-    value > MAX_REPETITIONS
-  ) {
+function parseRepetitions(value: SavedRollRepetitionsInput): number {
+  const result = SavedRollRepetitionsSchema.safeParse(value);
+  if (!result.success) {
     throw new Error(
       `Saved roll repetitions must be an integer from 1 through ${MAX_REPETITIONS}`,
     );
   }
-  return value;
+  return result.data;
 }
 
-function parseTitle(value: unknown): string | null {
-  if (value === null) return null;
-  if (
-    typeof value !== "string" ||
-    value.length < 1 ||
-    value.length > MAX_TITLE_LENGTH
-  ) {
+function parseTitle(value: SavedRollTitleInput): string | null {
+  const result = SavedRollTitleSchema.safeParse(value);
+  if (!result.success) {
     throw new Error(
       `Saved roll title must be null or contain 1 through ${MAX_TITLE_LENGTH} characters`,
     );
   }
-  return value;
+  return result.data;
 }
 
-export function parseSavedRollDraftV1(value: unknown): SavedRollDraftV1 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "name",
-      "notation",
-      "repetitions",
-      "title",
-      "version",
-    ]) ||
-    value.version !== 1
-  ) {
+export function parseSavedRollDraftV1(
+  value: SavedRollDraftV1Input,
+): SavedRollDraftV1 {
+  const result = SavedRollDraftV1Schema.safeParse(value);
+  if (!result.success) {
     throw new Error("Saved roll draft has invalid fields");
   }
-  const repetitions = parseRepetitions(value.repetitions);
-  const name = parseSavedRollNameV1(value.name);
+  const repetitions = parseRepetitions(result.data.repetitions);
+  const name = parseSavedRollNameV1(result.data.name);
   return {
     version: 1,
     ...name,
-    notation: parseNotation(value.notation, repetitions),
-    title: parseTitle(value.title),
+    notation: parseNotation(result.data.notation, repetitions),
+    title: parseTitle(result.data.title),
     repetitions,
   };
 }
 
-export function parseSavedRollDraftV2(value: unknown): SavedRollDraftV2 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "name",
-      "nameColor",
-      "notation",
-      "repetitions",
-      "title",
-      "version",
-    ]) ||
-    value.version !== 2
-  ) {
+export function parseSavedRollDraftV2(
+  value: SavedRollDraftV2Input,
+): SavedRollDraftV2 {
+  const result = SavedRollDraftV2Schema.safeParse(value);
+  if (!result.success) {
     throw new Error("Library roll draft has invalid fields");
   }
-  const repetitions = parseRepetitions(value.repetitions);
-  const name = parseSavedRollNameV1(value.name);
+  const repetitions = parseRepetitions(result.data.repetitions);
+  const name = parseSavedRollNameV1(result.data.name);
   return {
     version: 2,
     ...name,
-    nameColor: parseSavedRollNameColorV2(value.nameColor),
-    notation: parseNotation(value.notation, repetitions),
-    title: parseTitle(value.title),
+    nameColor: parseSavedRollNameColorV2(result.data.nameColor),
+    notation: parseNotation(result.data.notation, repetitions),
+    title: parseTitle(result.data.title),
     repetitions,
   };
 }

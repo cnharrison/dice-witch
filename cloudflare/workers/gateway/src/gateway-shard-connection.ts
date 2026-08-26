@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   createGatewayMachine,
   hasResumableGatewaySession,
@@ -20,9 +21,11 @@ import {
   normalizeDiscordGatewayUrl,
   parseGatewayMessage,
   serializeGatewayPayload,
+  type GatewayDispatchData,
   type ParsedGatewayMessage,
 } from "./discord-gateway";
 import type {
+  GatewayCoordinator,
   IdentifyPermitResult,
   ShardOwnershipRequest,
 } from "./gateway-coordinator";
@@ -38,10 +41,55 @@ const RECOVERY_HEARTBEAT_INTERVALS = 2;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const GUILD_FILTER_BATCH_SIZE = 100;
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const SnowflakeSchema = z.string().regex(SNOWFLAKE);
+const GuildIdsSchema = z
+  .array(SnowflakeSchema)
+  .refine((guildIds) => new Set(guildIds).size === guildIds.length);
+const GatewayGuildInventoryStateSchema = z.looseObject({
+  version: z.literal(1),
+  generation: z.number().refine(Number.isSafeInteger).positive(),
+  shardId: z.number().refine(Number.isSafeInteger).nonnegative(),
+  shardCount: z.number().refine(Number.isSafeInteger).positive(),
+  sessionId: z.string().min(1),
+  capturedAt: z.number().refine(Number.isSafeInteger).nonnegative(),
+  guildIds: GuildIdsSchema,
+});
+const GatewayInitialGuildStateSchema = z.looseObject({
+  version: z.literal(1),
+  guildIds: GuildIdsSchema,
+  syncGuildIds: GuildIdsSchema,
+});
+const GatewayGuildIdentitySchema = z.looseObject({ id: SnowflakeSchema });
+const InitialGuildFilterResponseSchema = z.looseObject({
+  guildIds: GuildIdsSchema,
+});
+const DirectorySynchronizationResponseSchema = z.looseObject({
+  status: z.enum(["applied", "existing", "stale"]),
+});
+const GuildLifecycleSynchronizationResponseSchema = z.looseObject({
+  status: z.enum(["applied", "existing", "missing"]),
+  guildName: z.nullable(z.string()),
+});
+const GuildLifecycleLogResponseSchema = z.looseObject({
+  status: z.literal("delivered"),
+});
+const GatewayMessageDataSchema = z.string();
+const RuntimeErrorSchema = z.instanceof(Error);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+type GatewayBoundaryInput = Parameters<
+  typeof GatewayGuildInventoryStateSchema.safeParse
+>[0];
+type InitialGuildCounts = { pending: number; requiringSync: number };
+type GatewayOutboundPayload =
+  | ReturnType<typeof buildGatewayHeartbeat>
+  | ReturnType<typeof buildGatewayIdentify>
+  | ReturnType<typeof buildGatewayPresenceUpdate>
+  | ReturnType<typeof buildGatewayResume>;
+type GatewayStorageValue =
+  | GatewaySessionCheckpoint
+  | GatewayInitialGuildState
+  | GatewayGuildInventoryState;
+type GatewayStorageEntries = { [key: string]: GatewayStorageValue };
 
 export async function gatewaySessionMutationScope(
   sessionId: string,
@@ -52,7 +100,7 @@ export async function gatewaySessionMutationScope(
   const digest = new Uint8Array(
     await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sessionId)),
   );
-  return [...digest.slice(0, 16)]
+  return Array.from(digest.slice(0, 16))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
@@ -103,66 +151,39 @@ export type GatewayGuildInventoryState = {
   guildIds: string[];
 };
 
-function validGuildIds(value: unknown): value is string[] {
-  return Array.isArray(value) &&
-    value.every(
-      (guildId): guildId is string =>
-        typeof guildId === "string" && SNOWFLAKE.test(guildId),
-    ) &&
-    new Set(value).size === value.length;
-}
-
 export function parseGatewayGuildInventoryState(
-  value: unknown,
+  value: GatewayBoundaryInput,
 ): GatewayGuildInventoryState {
-  if (
-    !isRecord(value) ||
-    value.version !== 1 ||
-    !Number.isSafeInteger(value.generation) ||
-    Number(value.generation) < 1 ||
-    !Number.isSafeInteger(value.shardId) ||
-    Number(value.shardId) < 0 ||
-    !Number.isSafeInteger(value.shardCount) ||
-    Number(value.shardCount) < 1 ||
-    Number(value.shardId) >= Number(value.shardCount) ||
-    typeof value.sessionId !== "string" ||
-    value.sessionId.length < 1 ||
-    !Number.isSafeInteger(value.capturedAt) ||
-    Number(value.capturedAt) < 0 ||
-    !validGuildIds(value.guildIds)
-  ) {
+  const state = GatewayGuildInventoryStateSchema.safeParse(value);
+  if (!state.success || state.data.shardId >= state.data.shardCount) {
     throw new Error("Gateway guild inventory state is invalid");
   }
   return {
     version: 1,
-    generation: Number(value.generation),
-    shardId: Number(value.shardId),
-    shardCount: Number(value.shardCount),
-    sessionId: value.sessionId,
-    capturedAt: Number(value.capturedAt),
-    guildIds: [...value.guildIds],
+    generation: state.data.generation,
+    shardId: state.data.shardId,
+    shardCount: state.data.shardCount,
+    sessionId: state.data.sessionId,
+    capturedAt: state.data.capturedAt,
+    guildIds: [...state.data.guildIds],
   };
 }
 
 export function parseGatewayInitialGuildState(
-  value: unknown,
+  value: GatewayBoundaryInput,
 ): GatewayInitialGuildState {
-  if (
-    !isRecord(value) ||
-    value.version !== 1 ||
-    !validGuildIds(value.guildIds) ||
-    !validGuildIds(value.syncGuildIds)
-  ) {
+  const state = GatewayInitialGuildStateSchema.safeParse(value);
+  if (!state.success) {
     throw new Error("Gateway initial guild state is invalid");
   }
-  const guildIds = new Set(value.guildIds);
-  if (!value.syncGuildIds.every((guildId) => guildIds.has(guildId))) {
+  const guildIds = new Set(state.data.guildIds);
+  if (!state.data.syncGuildIds.every((guildId) => guildIds.has(guildId))) {
     throw new Error("Gateway initial guild state is invalid");
   }
   return {
     version: 1,
-    guildIds: [...value.guildIds],
-    syncGuildIds: [...value.syncGuildIds],
+    guildIds: [...state.data.guildIds],
+    syncGuildIds: [...state.data.syncGuildIds],
   };
 }
 
@@ -227,16 +248,11 @@ export class InitialGuildTracker {
     this.syncGuildIds = new Set(syncGuildIds);
   }
 
-  match(eventType: string, data: unknown): string | null {
-    if (
-      eventType !== "GUILD_CREATE" ||
-      !isRecord(data) ||
-      typeof data.id !== "string" ||
-      !this.guildIds.has(data.id)
-    ) {
-      return null;
-    }
-    return data.id;
+  match(eventType: string, data: GatewayDispatchData): string | null {
+    if (eventType !== "GUILD_CREATE") return null;
+    const guild = GatewayGuildIdentitySchema.safeParse(data);
+    if (!guild.success || !this.guildIds.has(guild.data.id)) return null;
+    return guild.data.id;
   }
 
   needsSync(guildId: string): boolean {
@@ -248,7 +264,7 @@ export class InitialGuildTracker {
     this.syncGuildIds.delete(guildId);
   }
 
-  counts(): { pending: number; requiringSync: number } {
+  counts(): InitialGuildCounts {
     return {
       pending: this.guildIds.size,
       requiringSync: this.syncGuildIds.size,
@@ -298,16 +314,17 @@ export async function findGuildsNeedingInitialSync(
     if (!response.ok) {
       throw new Error("Initial guild classification failed");
     }
-    const value: unknown = await response.json();
+    const value = InitialGuildFilterResponseSchema.safeParse(
+      await response.json(),
+    );
     const batchIds = new Set(batch);
     if (
-      !isRecord(value) ||
-      !validGuildIds(value.guildIds) ||
-      !value.guildIds.every((guildId) => batchIds.has(guildId))
+      !value.success ||
+      !value.data.guildIds.every((guildId) => batchIds.has(guildId))
     ) {
       throw new Error("Initial guild classification response is invalid");
     }
-    for (const guildId of value.guildIds) activeGuildIds.add(guildId);
+    for (const guildId of value.data.guildIds) activeGuildIds.add(guildId);
   }
   return guildIds.filter((guildId) => !activeGuildIds.has(guildId));
 }
@@ -318,6 +335,23 @@ export function gatewayInitialGuildStateKey(checkpointKey: string): string {
 
 export function gatewayGuildInventoryStateKey(checkpointKey: string): string {
   return `${checkpointKey}:guild-inventory-v1`;
+}
+
+function gatewayStorageEntries(
+  checkpointKey: string,
+  checkpoint: GatewaySessionCheckpoint,
+  initialGuildState: GatewayInitialGuildState,
+  guildInventoryState: GatewayGuildInventoryState | null,
+) {
+  const entries = {
+    [checkpointKey]: checkpoint,
+    [gatewayInitialGuildStateKey(checkpointKey)]: initialGuildState,
+  } satisfies GatewayStorageEntries;
+  if (guildInventoryState !== null) {
+    const inventoryKey = gatewayGuildInventoryStateKey(checkpointKey);
+    return { ...entries, [inventoryKey]: guildInventoryState };
+  }
+  return entries;
 }
 
 export function gatewayRecoveryAlarmAt(
@@ -391,48 +425,102 @@ export type GatewayShardFaultResult =
 
 export type GatewayShardIdentity = ShardOwnershipRequest;
 
-const DISCORD_ERROR_CLASSES: Readonly<Record<string, string>> = {
-  "Discord Get Gateway Bot response is invalid":
+const DISCORD_ERROR_CLASSES = new Map([
+  [
+    "Discord Get Gateway Bot response is invalid",
     "discord-gateway-bot-invalid-response",
-  "Discord Gateway socket is not open": "discord-socket-not-open",
-  "Discord Gateway URL is invalid": "discord-gateway-url-invalid",
-  "Discord Identify shard coordinates are invalid":
+  ],
+  ["Discord Gateway socket is not open", "discord-socket-not-open"],
+  ["Discord Gateway URL is invalid", "discord-gateway-url-invalid"],
+  [
+    "Discord Identify shard coordinates are invalid",
     "discord-identify-coordinates-invalid",
-  "Guild lifecycle synchronization failed":
-    "guild-lifecycle-sync-failed",
-  "Guild lifecycle synchronization response is invalid":
+  ],
+  ["Guild lifecycle synchronization failed", "guild-lifecycle-sync-failed"],
+  [
+    "Guild lifecycle synchronization response is invalid",
     "guild-lifecycle-sync-invalid-response",
-  "Guild lifecycle logging response is invalid":
+  ],
+  [
+    "Guild lifecycle logging response is invalid",
     "guild-lifecycle-log-invalid-response",
-  "Initial guild classification failed":
-    "guild-initial-classification-failed",
-  "Initial guild classification response is invalid":
+  ],
+  ["Initial guild classification failed", "guild-initial-classification-failed"],
+  [
+    "Initial guild classification response is invalid",
     "guild-initial-classification-invalid-response",
-};
+  ],
+]);
 
-export function classifyGatewayRuntimeError(value: unknown): string {
-  if (!(value instanceof Error)) return "non-error";
+export function classifyGatewayRuntimeError(value: GatewayBoundaryInput): string {
+  const parsedError = RuntimeErrorSchema.safeParse(value);
+  if (!parsedError.success) return "non-error";
+  const error = parsedError.data;
   if (
-    value.message.includes("Cannot perform I/O on behalf of a different Durable Object")
+    error.message.includes("Cannot perform I/O on behalf of a different Durable Object")
   ) {
     return "cross-durable-object-io";
   }
-  if (value.message.startsWith("Gateway ")) return "gateway-protocol";
-  const gatewayBotStatus = value.message.match(
+  if (error.message.startsWith("Gateway ")) return "gateway-protocol";
+  const gatewayBotStatus = error.message.match(
     /^Discord Get Gateway Bot returned HTTP ([1-5][0-9]{2})$/,
   );
   if (gatewayBotStatus !== null) {
     return `discord-gateway-bot-http-${gatewayBotStatus[1]}`;
   }
-  const discordError = DISCORD_ERROR_CLASSES[value.message];
+  const discordError = DISCORD_ERROR_CLASSES.get(error.message);
   if (discordError !== undefined) return discordError;
-  if (value.message.startsWith("Discord ")) return "discord-response";
+  if (error.message.startsWith("Discord ")) return "discord-response";
   return "unexpected";
 }
 
+export type GatewayShardStorageValue =
+  | GatewaySessionCheckpoint
+  | GatewayInitialGuildState
+  | GatewayGuildInventoryState;
+
+export type GatewayShardConnectionContext = {
+  storage: {
+    put(
+      key: string,
+      value: GatewayShardStorageValue,
+      options?: DurableObjectPutOptions,
+    ): Promise<void>;
+    put(
+      entries: Record<string, GatewayShardStorageValue>,
+      options?: DurableObjectPutOptions,
+    ): Promise<void>;
+  };
+  waitUntil(promise: Promise<unknown>): void;
+};
+
+type GatewayCoordinatorPort = {
+  acquireOwnership(
+    request: Parameters<GatewayCoordinator["acquireOwnership"]>[0],
+  ): Promise<Awaited<ReturnType<GatewayCoordinator["acquireOwnership"]>>>;
+  releaseOwnership(
+    request: Parameters<GatewayCoordinator["releaseOwnership"]>[0],
+  ): Promise<Awaited<ReturnType<GatewayCoordinator["releaseOwnership"]>>>;
+  requestIdentifyPermit(
+    request: Parameters<GatewayCoordinator["requestIdentifyPermit"]>[0],
+  ): Promise<Awaited<ReturnType<GatewayCoordinator["requestIdentifyPermit"]>>>;
+  gatewayUrl(): Promise<string>;
+};
+
+export type GatewayShardConnectionEnv = Pick<
+  GatewayEnv,
+  "DISCORD_BOT_TOKEN" | "GATEWAY_ALLOWED_HOSTNAME"
+> & {
+  DATA_SERVICE: { fetch(request: Request): Promise<Response> };
+  DISCORD_REST: Pick<GatewayEnv["DISCORD_REST"], "logGuildLifecycle">;
+  GATEWAY_COORDINATOR: {
+    getByName(name: string): GatewayCoordinatorPort;
+  };
+};
+
 export type GatewayShardConnectionOptions = {
-  ctx: DurableObjectState;
-  env: GatewayEnv;
+  ctx: GatewayShardConnectionContext;
+  env: GatewayShardConnectionEnv;
   identity: GatewayShardIdentity;
   checkpoint?: GatewaySessionCheckpoint;
   checkpointKey: string;
@@ -452,14 +540,11 @@ export function initialGatewayCheckpoint(
   now: number,
   allowedHostname?: string,
 ): GatewaySessionCheckpoint {
-  return {
+  const checkpoint: GatewaySessionCheckpoint = {
     version: 1,
     generation: identity.generation,
     shardId: identity.shardId,
     shardCount: identity.shardCount,
-    ...(allowedHostname === undefined
-      ? {}
-      : { allowedGatewayHostname: allowedHostname }),
     sessionId: null,
     resumeGatewayUrl: null,
     sequence: null,
@@ -468,6 +553,10 @@ export function initialGatewayCheckpoint(
     lastHeartbeatAckAt: null,
     updatedAt: now,
   };
+  if (allowedHostname !== undefined) {
+    checkpoint.allowedGatewayHostname = allowedHostname;
+  }
+  return checkpoint;
 }
 
 export class GatewayShardConnection {
@@ -499,8 +588,8 @@ export class GatewayShardConnection {
   private identifyPermitsGranted = 0;
   private identifyPermitDenials = 0;
   private lastIdentifyPermit: PublicIdentifyPermit | null = null;
-  private readonly ctx: DurableObjectState;
-  private readonly env: GatewayEnv;
+  private readonly ctx: GatewayShardConnectionContext;
+  private readonly env: GatewayShardConnectionEnv;
   private readonly identity: GatewayShardIdentity;
   private readonly checkpointKey: string;
   private readonly scheduleAlarm: (scheduledAt: number) => Promise<void>;
@@ -741,16 +830,12 @@ export class GatewayShardConnection {
         this.send(buildGatewayHeartbeat(action.sequence));
         return;
       case "persist-checkpoint": {
-        const entries: Record<string, unknown> = {
-          [this.checkpointKey]: this.machine.checkpoint,
-          [gatewayInitialGuildStateKey(this.checkpointKey)]:
-            this.initialGuilds.snapshot(),
-        };
-        const guildInventory = this.guildInventory.snapshot();
-        if (guildInventory !== null) {
-          entries[gatewayGuildInventoryStateKey(this.checkpointKey)] =
-            guildInventory;
-        }
+        const entries = gatewayStorageEntries(
+          this.checkpointKey,
+          this.machine.checkpoint,
+          this.initialGuilds.snapshot(),
+          this.guildInventory.snapshot(),
+        );
         await this.ctx.storage.put(entries);
         return;
       }
@@ -821,10 +906,11 @@ export class GatewayShardConnection {
     });
     socket.addEventListener("message", (event) => {
       this.runSocketEvent(socket, "message", async () => {
-        if (typeof event.data !== "string") {
+        const message = GatewayMessageDataSchema.safeParse(event.data);
+        if (!message.success) {
           throw new Error("Gateway message must use JSON text encoding");
         }
-        await this.handleGatewayMessage(parseGatewayMessage(event.data));
+        await this.handleGatewayMessage(parseGatewayMessage(message.data));
       });
     });
     socket.addEventListener("close", (event) => {
@@ -1004,7 +1090,7 @@ export class GatewayShardConnection {
 
   private syncDiscordChannelDirectory(
     eventType: string,
-    data: unknown,
+    data: GatewayDispatchData,
     receivedAt: number,
   ): void {
     const warn = () => {
@@ -1035,12 +1121,10 @@ export class GatewayShardConnection {
           body: JSON.stringify(mutation),
         }),
       );
-      const result: unknown = response.ok ? await response.json() : null;
-      if (
-        !response.ok ||
-        !isRecord(result) ||
-        !["applied", "existing", "stale"].includes(String(result.status))
-      ) {
+      const result = DirectorySynchronizationResponseSchema.safeParse(
+        response.ok ? await response.json() : null,
+      );
+      if (!response.ok || !result.success) {
         throw new Error("Discord channel directory synchronization failed");
       }
     });
@@ -1053,7 +1137,7 @@ export class GatewayShardConnection {
 
   private async syncGuildLifecycle(
     eventType: string,
-    data: unknown,
+    data: GatewayDispatchData,
     sequence: number,
     receivedAt: number,
     mode: GuildLifecycleMode,
@@ -1076,14 +1160,10 @@ export class GatewayShardConnection {
     if (!response.ok) {
       throw new Error("Guild lifecycle synchronization failed");
     }
-    const result: unknown = await response.json();
-    if (
-      !isRecord(result) ||
-      (result.status !== "applied" &&
-        result.status !== "existing" &&
-        result.status !== "missing") ||
-      (result.guildName !== null && typeof result.guildName !== "string")
-    ) {
+    const result = GuildLifecycleSynchronizationResponseSchema.safeParse(
+      await response.json(),
+    );
+    if (!result.success) {
       throw new Error("Guild lifecycle synchronization response is invalid");
     }
     this.guildInventory.apply(event);
@@ -1096,17 +1176,17 @@ export class GatewayShardConnection {
     }
     if (
       mode === "synchronize" ||
-      result.status === "missing" ||
-      typeof result.guildName !== "string"
+      result.data.status === "missing" ||
+      result.data.guildName === null
     ) {
       return event;
     }
     const logged = await this.env.DISCORD_REST.logGuildLifecycle({
       mutationId,
       eventType: event.type === "upsert" ? "guildAdd" : "guildRemove",
-      guildName: result.guildName,
+      guildName: result.data.guildName,
     });
-    if (!isRecord(logged) || logged.status !== "delivered") {
+    if (!GuildLifecycleLogResponseSchema.safeParse(logged).success) {
       throw new Error("Guild lifecycle logging response is invalid");
     }
     return event;
@@ -1216,7 +1296,7 @@ export class GatewayShardConnection {
     return coordinator.gatewayUrl();
   }
 
-  private send(payload: unknown): void {
+  private send(payload: GatewayOutboundPayload): void {
     if (this.socket === null || this.socket.readyState !== WebSocket.OPEN) {
       throw new Error("Discord Gateway socket is not open");
     }

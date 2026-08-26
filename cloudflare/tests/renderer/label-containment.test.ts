@@ -34,7 +34,7 @@ const appearance = {
 const appearanceV3 = {
   surface: {
     type: "gradient" as const,
-    colors: ["#301934", "#d4af37"] as [string, string],
+    colors: ["#301934", "#d4af37"] satisfies [string, string],
     scope: "die-wide" as const,
     direction: "upper-left-to-lower-right" as const,
   },

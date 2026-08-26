@@ -1,16 +1,12 @@
-import { env } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { dataTestEnv as dataEnv } from "./test-bindings";
 import {
   D1SessionRepository,
   generateOpaqueToken,
   hashOpaqueToken,
 } from "../../workers/data/src/session-repository";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
 const userId = "100000000000000003";
 const createdAt = 1_767_225_600_123;
 const expiresAt = createdAt + 30 * 24 * 60 * 60 * 1_000;

@@ -9,6 +9,7 @@ import {
   createDeterministicRandomV4,
   deriveAppearanceSeedV4,
   deriveNamedSeedV4,
+  type AppearanceSeedInputV4,
 } from "./random";
 import type {
   AppearanceRecipeV3,
@@ -64,7 +65,7 @@ export function resolveRenderViewV4({
       result,
     });
   }
-  const scopedSeed = deriveAppearanceSeedV4({
+  const seedInput: AppearanceSeedInputV4 = {
     renderSeed,
     target,
     groupIndex,
@@ -72,9 +73,10 @@ export function resolveRenderViewV4({
     variation: "curated",
     varyBy: "die",
     recipe,
-    ...(groupIdentity === undefined ? {} : { groupIdentity }),
-    ...(dieIdentity === undefined ? {} : { dieIdentity }),
-  });
+  };
+  if (groupIdentity !== undefined) seedInput.groupIdentity = groupIdentity;
+  if (dieIdentity !== undefined) seedInput.dieIdentity = dieIdentity;
+  const scopedSeed = deriveAppearanceSeedV4(seedInput);
   const cameraSeed = deriveNamedSeedV4(scopedSeed, "camera");
   const azimuthPreference =
     diceView?.azimuth.overrides[preferenceTarget] ?? diceView?.azimuth.all;

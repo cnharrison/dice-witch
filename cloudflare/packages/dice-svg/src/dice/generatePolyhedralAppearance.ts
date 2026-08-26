@@ -23,6 +23,7 @@ import {
   resolveFacetLabelFrame,
   type FacetLabelFrame,
 } from "../facetProjection";
+import type { ValidationInput } from "../validationBoundary";
 
 export type D4AppearanceRequest = AppearanceDieRequest;
 export type D8AppearanceRequest = AppearanceDieRequest;
@@ -488,13 +489,13 @@ function offsetValue(result: number, sides: number, offset: number): number {
   return ((result - 1 + offset) % sides) + 1;
 }
 
-export function getD4VisibleFaceValues(result: number): D4VisibleFaceValues {
+export function getD4VisibleFaceValues(result: number) {
   validateResult(result, 4);
   return {
     result,
     left: offsetValue(result, 4, 1),
     right: offsetValue(result, 4, 2),
-  };
+  } satisfies D4VisibleFaceValues;
 }
 
 export function getD8VisibleFaceValues(result: number): D8VisibleFaceValues {
@@ -507,7 +508,7 @@ function validateD10Result(result: number): void {
   }
 }
 
-export function getD10VisibleFaceValues(result: number): D10VisibleFaceValues {
+export function getD10VisibleFaceValues(result: number) {
   validateD10Result(result);
   return {
     result,
@@ -515,7 +516,7 @@ export function getD10VisibleFaceValues(result: number): D10VisibleFaceValues {
     "upper-right": offsetValue(result, 10, 7),
     "lower-left": offsetValue(result, 10, 4),
     "lower-right": offsetValue(result, 10, 8),
-  };
+  } satisfies D10VisibleFaceValues;
 }
 
 function d10FaceValues(
@@ -524,14 +525,14 @@ function d10FaceValues(
   upperRight: number,
   lowerLeft: number,
   lowerRight: number,
-): D10VisibleFaceValues {
+) {
   return {
     result,
     "upper-left": upperLeft,
     "upper-right": upperRight,
     "lower-left": lowerLeft,
     "lower-right": lowerRight,
-  };
+  } satisfies D10VisibleFaceValues;
 }
 
 const ORIGINAL_D10_VISIBLE_FACE_VALUES: readonly D10VisibleFaceValues[] = [
@@ -548,9 +549,7 @@ const ORIGINAL_D10_VISIBLE_FACE_VALUES: readonly D10VisibleFaceValues[] = [
   d10FaceValues(10, 4, 8, 5, 2),
 ];
 
-export function getOriginalD10VisibleFaceValues(
-  result: number,
-): D10VisibleFaceValues {
+export function getOriginalD10VisibleFaceValues(result: number) {
   validateD10Result(result);
   const values = ORIGINAL_D10_VISIBLE_FACE_VALUES[result];
   if (values === undefined) {
@@ -559,7 +558,7 @@ export function getOriginalD10VisibleFaceValues(
   return { ...values };
 }
 
-export function getD12VisibleFaceValues(result: number): D12VisibleFaceValues {
+export function getD12VisibleFaceValues(result: number) {
   validateResult(result, 12);
   return {
     result,
@@ -568,11 +567,11 @@ export function getD12VisibleFaceValues(result: number): D12VisibleFaceValues {
     left: offsetValue(result, 12, 1),
     right: offsetValue(result, 12, 5),
     bottom: offsetValue(result, 12, 9),
-  };
+  } satisfies D12VisibleFaceValues;
 }
 
 export function composeD4AppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parseAppearanceDieRequest(value, 4);
@@ -584,12 +583,12 @@ export function composeD4AppearanceSvgWithOptions(
   );
 }
 
-export function composeD4AppearanceSvg(value: unknown): string {
+export function composeD4AppearanceSvg(value: ValidationInput): string {
   return composeD4AppearanceSvgWithOptions(value, { localSeparation: false });
 }
 
 export function composeD8AppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parseAppearanceDieRequest(value, 8);
@@ -601,12 +600,12 @@ export function composeD8AppearanceSvgWithOptions(
   );
 }
 
-export function composeD8AppearanceSvg(value: unknown): string {
+export function composeD8AppearanceSvg(value: ValidationInput): string {
   return composeD8AppearanceSvgWithOptions(value, { localSeparation: false });
 }
 
 export function composeD10AppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parseD10AppearanceRequest(value);
@@ -618,14 +617,14 @@ export function composeD10AppearanceSvgWithOptions(
   );
 }
 
-export function composeD10AppearanceSvg(value: unknown): string {
+export function composeD10AppearanceSvg(value: ValidationInput): string {
   return composeD10AppearanceSvgWithOptions(value, {
     localSeparation: false,
   });
 }
 
 export function composeD12AppearanceSvgWithOptions(
-  value: unknown,
+  value: ValidationInput,
   options: AppearanceCompositionOptions,
 ): string {
   const request = parseAppearanceDieRequest(value, 12);
@@ -637,7 +636,7 @@ export function composeD12AppearanceSvgWithOptions(
   );
 }
 
-export function composeD12AppearanceSvg(value: unknown): string {
+export function composeD12AppearanceSvg(value: ValidationInput): string {
   return composeD12AppearanceSvgWithOptions(value, {
     localSeparation: false,
   });

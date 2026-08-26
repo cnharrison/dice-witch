@@ -92,6 +92,12 @@ describe("Text result interaction contract", () => {
         { applicationId },
       ),
     ).toBeNull();
+    expect(
+      parseTextResultInteraction(
+        interaction("save-roll:v1:d:1400000000000000000"),
+        { applicationId },
+      ),
+    ).toBeNull();
   });
 
   it("validates a message-bound 90-day result intent", () => {
@@ -116,6 +122,9 @@ describe("Text result interaction contract", () => {
     expect(() =>
       parseTextResultIntent({ ...value, resultText: "x".repeat(4_001) })
     ).toThrow("Text result intent is invalid");
+    expect(() => parseTextResultIntent({ ...value, extra: true })).toThrow(
+      "Text result intent is invalid",
+    );
   });
 
   it("returns the exact result ephemerally without mention expansion", () => {

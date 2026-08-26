@@ -46,15 +46,13 @@ type LightingVector = Readonly<{
   y2: number;
 }>;
 
-const DIRECTIONAL_VECTORS: Readonly<
-  Record<RenderLightingDirectionV3, LightingVector>
-> = {
+const DIRECTIONAL_VECTORS = {
   top: { x1: 300, y1: 70, x2: 300, y2: 545 },
   "upper-left": { x1: 90, y1: 70, x2: 520, y2: 545 },
   "upper-right": { x1: 510, y1: 70, x2: 80, y2: 545 },
   left: { x1: 70, y1: 300, x2: 545, y2: 300 },
   right: { x1: 530, y1: 300, x2: 55, y2: 300 },
-};
+} satisfies Readonly<Record<RenderLightingDirectionV3, LightingVector>>;
 
 function boundedOpacity(value: number, name: string): number {
   if (!Number.isFinite(value) || value < 0 || value > 1) {

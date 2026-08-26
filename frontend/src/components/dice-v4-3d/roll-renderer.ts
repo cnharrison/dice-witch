@@ -1,9 +1,15 @@
 import type { PublicRenderModelV4 } from "@dice-witch/dice-v4-model";
-import { Quaternion, WebGLRenderer } from "three";
+import * as z from "zod";
+import {
+  Quaternion,
+  WebGLRenderer,
+  type WebGLRendererParameters,
+} from "three";
 import {
   createThreeDiceGridResourcesV4,
   disposeThreeDiceGridResourcesV4,
   prepareThreeDiceGridV4,
+  type PreparedThreeDiceGridV4,
   type ThreeDiceGridResourcesV4,
 } from "./grid-resources";
 import {
@@ -11,6 +17,7 @@ import {
   disposeThreeDiceGridRenderContextV4,
   renderThreeDiceGridV4,
   type ThreeDiceGridRenderContextV4,
+  type ThreeDiceGridRenderOptionsV4,
 } from "./grid-render";
 import { THREE_DICE_GRID_CELL_SIZE_V4 } from "./grid-layout";
 import { geometryDescriptorForDieV4 } from "./geometry";
@@ -36,7 +43,6 @@ import type { ThreeDiceGridViewportV4 } from "./grid-layout";
 import {
   assertThreeDrawingBufferSizeV4,
   readThreeDrawingBufferLimitsV4,
-  type ThreeDrawingBufferLimitsV4,
 } from "./webgl-capabilities";
 
 export const THREE_RESULT_TRANSITION_MILLISECONDS_V4 = 400;
@@ -61,6 +67,55 @@ export type ThreeRollRendererV4 = {
 
 export type ThreeRollRendererCallbacksV4 = {
   onUnavailable(error: Error): void;
+};
+
+export type ThreeRollRenderDriverV4 = {
+  domElement: HTMLCanvasElement;
+  assertDrawingBufferSize(width: number, height: number): void;
+  setSize(width: number, height: number): void;
+  renderGrid(
+    resources: ThreeDiceGridResourcesV4,
+    context: ThreeDiceGridRenderContextV4,
+    options: ThreeDiceGridRenderOptionsV4,
+  ): void;
+  renderTray(
+    resources: ThreeDiceGridResourcesV4,
+    context: ThreeTrayRenderContextV4,
+    width: number,
+    height: number,
+  ): void;
+  dispose(): void;
+};
+
+export type ThreeRollRendererDependenciesV4<Preparation> = {
+  createRenderDriver(options: WebGLRendererParameters): ThreeRollRenderDriverV4;
+  grid: {
+    prepare(
+      model: PublicRenderModelV4,
+      maximumColumns: number,
+    ): Promise<Preparation>;
+    create(preparation: Preparation): ThreeDiceGridResourcesV4;
+    dispose(resources: ThreeDiceGridResourcesV4): void;
+  };
+  gridContext: {
+    create(): ThreeDiceGridRenderContextV4;
+    dispose(context: ThreeDiceGridRenderContextV4): void;
+  };
+  trayPhysics: {
+    create: typeof createTrayPhysicsV4;
+    freshMotionSeed: typeof freshMotionSeedV4;
+    geometryDescriptor: typeof geometryDescriptorForDieV4;
+  };
+  trayRender: {
+    createContext: typeof createThreeTrayRenderContextV4;
+    disposeContext: typeof disposeThreeTrayRenderContextV4;
+    configureCamera: typeof configureThreeTrayCameraV4;
+    applySnapshot: typeof applyTraySnapshotToGroupV4;
+    resetGroupTransform: typeof resetTrayGroupTransformV4;
+    snapshotViewport: typeof traySnapshotViewportV4;
+    addSmoke: typeof addThreeTraySmokeV4;
+    updateSmoke: typeof updateThreeTraySmokeV4;
+  };
 };
 
 type SettleStateV4 = {
@@ -104,9 +159,13 @@ type CapturedPresentationV4 = {
   rotations: ReadonlyMap<string, Quaternion>;
 };
 
-function asErrorV4(error: unknown): Error {
-  return error instanceof Error
-    ? error
+const rendererFailureSchema = z.unknown();
+type RendererFailure = z.input<typeof rendererFailureSchema>;
+
+function asErrorV4(error: RendererFailure): Error {
+  const parsed = z.instanceof(Error).safeParse(error);
+  return parsed.success
+    ? parsed.data
     : new Error("Three.js V4 renderer failed");
 }
 
@@ -200,46 +259,32 @@ function availableColumnsV4(container: HTMLElement): number {
   return Math.max(1, Math.min(10, Math.floor(width / THREE_DICE_GRID_CELL_SIZE_V4)));
 }
 
-function trayDimensionsV4(container: HTMLElement): {
-  width: number;
-  height: number;
-} {
+function trayDimensionsV4(container: HTMLElement) {
   return {
     width: Math.max(THREE_DICE_GRID_CELL_SIZE_V4, container.clientWidth),
     height: Math.max(300, container.clientHeight),
   };
 }
 
-export function createThreeRollRendererV4(
+export function createThreeRollRendererWithDependenciesV4<Preparation>(
   container: HTMLElement,
   callbacks: ThreeRollRendererCallbacksV4,
+  dependencies: ThreeRollRendererDependenciesV4<Preparation>,
 ): ThreeRollRendererV4 {
-  let renderer: WebGLRenderer | null = null;
-  let drawingBufferLimits: ThreeDrawingBufferLimitsV4;
-  try {
-    renderer = new WebGLRenderer({
-      alpha: true,
-      antialias: true,
-      powerPreference: "high-performance",
-    });
-    renderer.setPixelRatio(1);
-    drawingBufferLimits = readThreeDrawingBufferLimitsV4(
-      renderer.getContext(),
-    );
-  } catch (error) {
-    renderer?.dispose();
-    renderer?.domElement.remove();
-    throw error;
-  }
-
+  const { grid, gridContext, trayPhysics, trayRender } = dependencies;
+  const renderer = dependencies.createRenderDriver({
+    alpha: true,
+    antialias: true,
+    powerPreference: "high-performance",
+  });
   const canvas = renderer.domElement;
   let renderContext: ThreeDiceGridRenderContextV4;
   let trayRenderContext: ThreeTrayRenderContextV4;
   try {
-    const context = createThreeDiceGridRenderContextV4();
+    const context = gridContext.create();
     let trayContext: ThreeTrayRenderContextV4 | null = null;
     try {
-      trayContext = createThreeTrayRenderContextV4();
+      trayContext = trayRender.createContext();
       canvas.style.display = "block";
       canvas.style.margin = "0 auto";
       canvas.style.maxWidth = "100%";
@@ -251,9 +296,9 @@ export function createThreeRollRendererV4(
       renderContext = context;
       trayRenderContext = trayContext;
     } catch (error) {
-      disposeThreeDiceGridRenderContextV4(context);
+      gridContext.dispose(context);
       if (trayContext !== null) {
-        disposeThreeTrayRenderContextV4(trayContext);
+        trayRender.disposeContext(trayContext);
       }
       throw error;
     }
@@ -280,10 +325,10 @@ export function createThreeRollRendererV4(
   let resizeObserver: ResizeObserver | null = null;
 
   const setCanvasSize = (width: number, height: number): void => {
-    assertThreeDrawingBufferSizeV4(width, height, drawingBufferLimits);
+    renderer.assertDrawingBufferSize(width, height);
     renderWidth = width;
     renderHeight = height;
-    renderer.setSize(width, height, false);
+    renderer.setSize(width, height);
     canvas.style.width = `${String(width)}px`;
     canvas.style.height = `${String(height)}px`;
   };
@@ -297,8 +342,7 @@ export function createThreeRollRendererV4(
   const render = (): void => {
     if (disposed || resources === null) return;
     if (presentation?.kind === "tray") {
-      renderThreeTrayV4(
-        renderer,
+      renderer.renderTray(
         resources,
         trayRenderContext,
         renderWidth,
@@ -306,7 +350,7 @@ export function createThreeRollRendererV4(
       );
       return;
     }
-    renderThreeDiceGridV4(renderer, resources, renderContext, {
+    renderer.renderGrid(resources, renderContext, {
       width: renderWidth,
       height: renderHeight,
       showModifierIcons,
@@ -315,14 +359,14 @@ export function createThreeRollRendererV4(
 
   const setFinalOrientation = (): void => {
     resources?.entries.forEach(({ group }) => {
-      resetTrayGroupTransformV4(group);
+      trayRender.resetGroupTransform(group);
       group.quaternion.identity();
     });
   };
 
   const disposeGrid = (): void => {
     if (resources === null) return;
-    disposeThreeDiceGridResourcesV4(resources);
+    grid.dispose(resources);
     resources = null;
   };
 
@@ -348,7 +392,7 @@ export function createThreeRollRendererV4(
             key,
             snapshot === undefined
               ? presentationViewport ?? cell.viewport
-              : traySnapshotViewportV4(
+              : trayRender.snapshotViewport(
                   trayRenderContext,
                   snapshot,
                   tray?.width ?? renderWidth,
@@ -381,13 +425,13 @@ export function createThreeRollRendererV4(
     if (presentation?.kind === "tray") presentation.physics.dispose();
     presentation = null;
     disposeGrid();
-    disposeThreeDiceGridRenderContextV4(renderContext);
-    disposeThreeTrayRenderContextV4(trayRenderContext);
+    gridContext.dispose(renderContext);
+    trayRender.disposeContext(trayRenderContext);
     renderer.dispose();
     canvas.remove();
   };
 
-  const failRuntime = (error: unknown): void => {
+  const failRuntime = (error: RendererFailure): void => {
     if (disposed) return;
     const failure = asErrorV4(error);
     dispose();
@@ -406,7 +450,7 @@ export function createThreeRollRendererV4(
     }
     resources.entries.forEach((entry) => {
       entry.presentationViewport = undefined;
-      resetTrayGroupTransformV4(entry.group);
+      trayRender.resetGroupTransform(entry.group);
       entry.group.quaternion.identity();
     });
     presentation = null;
@@ -422,7 +466,7 @@ export function createThreeRollRendererV4(
       const identity = state.inputs[index]?.identity;
       if (identity === undefined) return;
       const snapshot = state.physics.snapshot(identity);
-      if (snapshot !== undefined) applyTraySnapshotToGroupV4(entry.group, snapshot);
+      if (snapshot !== undefined) trayRender.applySnapshot(entry.group, snapshot);
     });
   };
 
@@ -438,7 +482,7 @@ export function createThreeRollRendererV4(
         } else if (presentation?.kind === "tray") {
           presentation.physics.freeze();
           applyTraySnapshots(presentation);
-          updateThreeTraySmokeV4(
+          trayRender.updateSmoke(
             trayRenderContext,
             Number.POSITIVE_INFINITY,
           );
@@ -459,7 +503,7 @@ export function createThreeRollRendererV4(
         );
         state.lastFrameAt = timestamp;
         applyTraySnapshots(state);
-        const smokeActive = updateThreeTraySmokeV4(
+        const smokeActive = trayRender.updateSmoke(
           trayRenderContext,
           timestamp,
         );
@@ -595,15 +639,15 @@ export function createThreeRollRendererV4(
         cell.groupIndex,
         cell.groupDieIndex,
       ),
-      descriptor: geometryDescriptorForDieV4(
+      descriptor: trayPhysics.geometryDescriptor(
         model.rendererRevision,
         cell.die,
       ),
       materialFamily: cell.die.appearance.material.family,
-      motionSeed: freshMotionSeedV4(),
+      motionSeed: trayPhysics.freshMotionSeed(),
     }));
     const physics = previousTray?.physics ??
-      createTrayPhysicsV4(inputs, now, reducedMotion);
+      trayPhysics.create(inputs, now, reducedMotion);
     const removed = previousTray === null
       ? []
       : physics.reconcile(inputs, now, reducedMotion).removed;
@@ -616,17 +660,17 @@ export function createThreeRollRendererV4(
       physics,
     };
     presentation = state;
-    configureThreeTrayCameraV4(
+    trayRender.configureCamera(
       trayRenderContext,
       dimensions.width,
       dimensions.height,
       physics.bounds(),
     );
     if (reducedMotion) {
-      updateThreeTraySmokeV4(trayRenderContext, Number.POSITIVE_INFINITY);
+      trayRender.updateSmoke(trayRenderContext, Number.POSITIVE_INFINITY);
     } else {
       removed.forEach((removed) => {
-        addThreeTraySmokeV4(
+        trayRender.addSmoke(
           trayRenderContext,
           removed.position,
           removed.rotation,
@@ -664,7 +708,7 @@ export function createThreeRollRendererV4(
         cell.groupIndex,
         cell.groupDieIndex,
       );
-      resetTrayGroupTransformV4(group);
+      trayRender.resetGroupTransform(group);
       const rotation = captured.rotations.get(key);
       if (rotation === undefined) {
         group.rotation.set(
@@ -774,14 +818,14 @@ export function createThreeRollRendererV4(
       let next: ThreeDiceGridResourcesV4 | null = null;
       let committed = false;
       try {
-        const preparation = await prepareThreeDiceGridV4(
+        const preparation = await grid.prepare(
           model,
           availableColumnsV4(container),
         );
         if (disposed || revision !== replacementRevision) return;
-        next = createThreeDiceGridResourcesV4(preparation);
+        next = grid.create(preparation);
         if (disposed || revision !== replacementRevision) {
-          disposeThreeDiceGridResourcesV4(next);
+          grid.dispose(next);
           next = null;
           return;
         }
@@ -809,7 +853,7 @@ export function createThreeRollRendererV4(
           if (labels !== undefined) labels.visible = !nextOptions.blankFaces;
         });
         if (previousResources !== null) {
-          disposeThreeDiceGridResourcesV4(previousResources);
+          grid.dispose(previousResources);
         }
         canvas.dataset.modelRevision = String(revision);
         canvas.dataset.diceCount = String(resources.layout.diceCount);
@@ -826,7 +870,7 @@ export function createThreeRollRendererV4(
         }
 
         previousTray?.physics.dispose();
-        updateThreeTraySmokeV4(trayRenderContext, Number.POSITIVE_INFINITY);
+        trayRender.updateSmoke(trayRenderContext, Number.POSITIVE_INFINITY);
         canvas.dataset.removalSmokeCount = "0";
         presentation = null;
         setCanvasSize(resources.layout.width, resources.layout.height);
@@ -860,7 +904,7 @@ export function createThreeRollRendererV4(
         }
       } catch (error) {
         if (committed) failRuntime(error);
-        else if (next !== null) disposeThreeDiceGridResourcesV4(next);
+        else if (next !== null) grid.dispose(next);
         throw error;
       }
     },
@@ -879,7 +923,7 @@ export function createThreeRollRendererV4(
           presentation.physics.reconcile(presentation.inputs, now, true);
           presentation.lastFrameAt = now;
           applyTraySnapshots(presentation);
-          updateThreeTraySmokeV4(
+          trayRender.updateSmoke(
             trayRenderContext,
             Number.POSITIVE_INFINITY,
           );
@@ -900,7 +944,7 @@ export function createThreeRollRendererV4(
           presentation.physics.freeze();
           applyTraySnapshots(presentation);
           stopAnimation();
-          updateThreeTraySmokeV4(
+          trayRender.updateSmoke(
             trayRenderContext,
             Number.POSITIVE_INFINITY,
           );
@@ -923,7 +967,7 @@ export function createThreeRollRendererV4(
     dispose,
   };
 
-  if (typeof ResizeObserver !== "undefined") {
+  if (z.object({ ResizeObserver: z.function() }).safeParse(globalThis).success) {
     resizeObserver = new ResizeObserver(() => {
       if (disposed || resources === null) return;
       try {
@@ -953,7 +997,7 @@ export function createThreeRollRendererV4(
           ) {
             return;
           }
-          configureThreeTrayCameraV4(
+          trayRender.configureCamera(
             trayRenderContext,
             dimensions.width,
             dimensions.height,
@@ -987,4 +1031,78 @@ export function createThreeRollRendererV4(
   }
 
   return controller;
+}
+
+function createProductionRenderDriverV4(
+  options: WebGLRendererParameters,
+): ThreeRollRenderDriverV4 {
+  let renderer: WebGLRenderer | null = null;
+  try {
+    renderer = new WebGLRenderer(options);
+    renderer.setPixelRatio(1);
+    const drawingBufferLimits = readThreeDrawingBufferLimitsV4(
+      renderer.getContext(),
+    );
+    return {
+      domElement: renderer.domElement,
+      assertDrawingBufferSize(width, height) {
+        assertThreeDrawingBufferSizeV4(width, height, drawingBufferLimits);
+      },
+      setSize(width, height) {
+        renderer.setSize(width, height, false);
+      },
+      renderGrid(resources, context, renderOptions) {
+        renderThreeDiceGridV4(renderer, resources, context, renderOptions);
+      },
+      renderTray(resources, context, width, height) {
+        renderThreeTrayV4(renderer, resources, context, width, height);
+      },
+      dispose() {
+        renderer.dispose();
+      },
+    };
+  } catch (error) {
+    renderer?.dispose();
+    renderer?.domElement.remove();
+    throw error;
+  }
+}
+
+const productionThreeRollRendererDependenciesV4 = {
+  createRenderDriver: createProductionRenderDriverV4,
+  grid: {
+    prepare: prepareThreeDiceGridV4,
+    create: createThreeDiceGridResourcesV4,
+    dispose: disposeThreeDiceGridResourcesV4,
+  },
+  gridContext: {
+    create: createThreeDiceGridRenderContextV4,
+    dispose: disposeThreeDiceGridRenderContextV4,
+  },
+  trayPhysics: {
+    create: createTrayPhysicsV4,
+    freshMotionSeed: freshMotionSeedV4,
+    geometryDescriptor: geometryDescriptorForDieV4,
+  },
+  trayRender: {
+    createContext: createThreeTrayRenderContextV4,
+    disposeContext: disposeThreeTrayRenderContextV4,
+    configureCamera: configureThreeTrayCameraV4,
+    applySnapshot: applyTraySnapshotToGroupV4,
+    resetGroupTransform: resetTrayGroupTransformV4,
+    snapshotViewport: traySnapshotViewportV4,
+    addSmoke: addThreeTraySmokeV4,
+    updateSmoke: updateThreeTraySmokeV4,
+  },
+} satisfies ThreeRollRendererDependenciesV4<PreparedThreeDiceGridV4>;
+
+export function createThreeRollRendererV4(
+  container: HTMLElement,
+  callbacks: ThreeRollRendererCallbacksV4,
+): ThreeRollRendererV4 {
+  return createThreeRollRendererWithDependenciesV4(
+    container,
+    callbacks,
+    productionThreeRollRendererDependenciesV4,
+  );
 }

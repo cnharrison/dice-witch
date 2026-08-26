@@ -28,11 +28,13 @@ function requireDiscordClientId(value: string | undefined): string {
   return clientId;
 }
 
+// SAFETY: The surrounding validation establishes the Environment invariant used below.
 function requireEnvironment(value: string | undefined): Environment {
   const environment = requireEnvironmentValue("VITE_ENVIRONMENT", value);
   if (!ENVIRONMENTS.includes(environment as Environment)) {
     throw new Error("VITE_ENVIRONMENT must be development, staging, or production");
   }
+  // SAFETY: The surrounding validation establishes the Environment invariant used below.
   return environment as Environment;
 }
 

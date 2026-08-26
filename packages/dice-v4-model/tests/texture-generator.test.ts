@@ -488,16 +488,16 @@ describe("V4 material texture generation", () => {
 
     expect(revision5.pixels).toEqual(differentSeed.pixels);
     expect(revision5.pixels).not.toEqual(revision4.pixels);
-    expect([...revision5.pixels.slice(0, 4)]).toEqual([0, 0, 0, 255]);
+    expect(Array.from(revision5.pixels.slice(0, 4))).toEqual([0, 0, 0, 255]);
     const midpoint = (96 * 192 + 96) * 4;
-    expect([...revision5.pixels.slice(midpoint, midpoint + 4)]).toEqual([
+    expect(Array.from(revision5.pixels.slice(midpoint, midpoint + 4))).toEqual([
       128,
       128,
       128,
       255,
     ]);
     const endpoint = 191 * 4;
-    expect([...revision5.pixels.slice(endpoint, endpoint + 4)]).toEqual([
+    expect(Array.from(revision5.pixels.slice(endpoint, endpoint + 4))).toEqual([
       255,
       255,
       255,
@@ -678,7 +678,7 @@ describe("V4 material texture generation", () => {
         ...material,
         metal: "brass",
         finish: "polished",
-      } as AppearanceMaterialV4;
+      } satisfies AppearanceMaterialV4;
       const brassInput = {
         ...input(brassMaterial, 0x4d41_5404),
         palette: ["#080609", "#72501e", "#e7b957"],

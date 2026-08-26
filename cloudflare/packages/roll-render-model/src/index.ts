@@ -13,6 +13,7 @@ import {
   type RendererRevisionV4,
   type RenderRequestV4,
 } from "@dice-witch/dice-v4-model";
+import { z } from "zod";
 import {
   resolveAppearanceOutlineColorR40V3,
   resolveAppearanceOutlineColorR41V3,
@@ -171,21 +172,35 @@ export type EffectiveAppearanceRecipesV3 = Readonly<
   Partial<Record<AppearanceTargetV4, AppearanceRecipeV3>>
 >;
 
-const TARGET_BY_SIDES: Partial<Record<number, AppearanceTarget>> = {
-  4: "d4",
-  6: "d6",
-  8: "d8",
-  10: "d10",
-  12: "d12",
-  20: "d20",
-};
+const TARGET_BY_SIDES = new Map<number, AppearanceTarget>([
+  [4, "d4"],
+  [6, "d6"],
+  [8, "d8"],
+  [10, "d10"],
+  [12, "d12"],
+  [20, "d20"],
+]);
+const RollDieNumericSidesSchema = z.union([
+  z.number(),
+  z.nan(),
+  z.literal(Infinity),
+  z.literal(-Infinity),
+]);
 type AppearanceFontId = RenderAppearanceV2["fontId"];
 const APPEARANCE_FONTS: ReadonlySet<string> = new Set(APPEARANCE_FONT_IDS);
 
 function appearanceTarget(die: RollDie): AppearanceTarget {
   if (die.sides === "%") return "percentile";
   if (die.sides === "F") return "fudge";
-  return TARGET_BY_SIDES[die.sides] ?? "other";
+  return TARGET_BY_SIDES.get(die.sides) ?? "other";
+}
+
+function numericSidesForOtherTarget(die: RollDie): number {
+  const result = RollDieNumericSidesSchema.safeParse(die.sides);
+  if (!result.success) {
+    throw new Error("Other appearance target requires numeric sides");
+  }
+  return result.data;
 }
 
 function renderedAppearanceFace(die: RollDie): number {
@@ -259,10 +274,13 @@ function renderDieV2(
   const result = renderedAppearanceFace(die);
   const icons = iconsFor(die.modifiers);
   if (target === "other") {
-    if (typeof die.sides !== "number") {
-      throw new Error("Other appearance target requires numeric sides");
-    }
-    return { target, sides: die.sides, result, appearance, icons };
+    return {
+      target,
+      sides: numericSidesForOtherTarget(die),
+      result,
+      appearance,
+      icons,
+    };
   }
   return { target, result, appearance, icons };
 }
@@ -382,10 +400,13 @@ function renderDieV3(
   const result = renderedAppearanceFace(die);
   const icons = iconsFor(die.modifiers);
   if (target === "other") {
-    if (typeof die.sides !== "number") {
-      throw new Error("Other appearance target requires numeric sides");
-    }
-    return { target, sides: die.sides, result, appearance, icons };
+    return {
+      target,
+      sides: numericSidesForOtherTarget(die),
+      result,
+      appearance,
+      icons,
+    };
   }
   const renderTarget =
     target === "d10" && resolved.compatibility === "native-v2"
@@ -530,6 +551,11 @@ function appearanceSeedPolicyV3(
     : "legacy";
 }
 
+type AppearanceRecipeResolutionContextV3 = Parameters<
+  typeof resolveAppearanceRecipeV3
+>[1];
+type RenderViewResolutionInputV4 = Parameters<typeof resolveRenderViewV4>[0];
+
 function renderDieV4(
   die: RollDie,
   renderSeed: number,
@@ -549,20 +575,21 @@ function renderDieV4(
   const onesIdentity = logicalPercentileIdentity(die, "ones");
   let resolved: ResolvedAppearanceV3;
   if (onesIdentity === undefined) {
+    const resolutionContext: AppearanceRecipeResolutionContextV3 = {
+      renderSeed,
+      target,
+      groupIndex,
+      dieIndex,
+    };
+    if (die.appearanceGroupIdentity !== undefined) {
+      resolutionContext.groupIdentity = die.appearanceGroupIdentity;
+    }
+    if (die.appearanceDieIdentity !== undefined) {
+      resolutionContext.dieIdentity = die.appearanceDieIdentity;
+    }
     resolved = resolveAppearanceRecipeV3(
       recipe,
-      {
-        renderSeed,
-        target,
-        groupIndex,
-        dieIndex,
-        ...(die.appearanceGroupIdentity === undefined
-          ? {}
-          : { groupIdentity: die.appearanceGroupIdentity }),
-        ...(die.appearanceDieIdentity === undefined
-          ? {}
-          : { dieIdentity: die.appearanceDieIdentity }),
-      },
+      resolutionContext,
       appearanceSeedPolicyV3(rendererRevision),
     );
   } else {
@@ -576,7 +603,7 @@ function renderDieV4(
   if (percentileIdentity !== undefined) {
     percentileAppearances.set(percentileIdentity, resolved);
   }
-  const view = resolveRenderViewV4({
+  let viewInput: RenderViewResolutionInputV4 = {
     target,
     preferenceTarget: onesIdentity === undefined ? target : "percentile",
     result,
@@ -585,22 +612,26 @@ function renderDieV4(
     renderSeed,
     groupIndex,
     dieIndex,
-    ...(die.appearanceGroupIdentity === undefined
-      ? {}
-      : { groupIdentity: die.appearanceGroupIdentity }),
-    ...(die.appearanceDieIdentity === undefined
-      ? {}
-      : { dieIdentity: die.appearanceDieIdentity }),
     diceView,
     rendererRevision,
-  });
+  };
+  if (die.appearanceGroupIdentity !== undefined) {
+    viewInput = {
+      ...viewInput,
+      groupIdentity: die.appearanceGroupIdentity,
+    };
+  }
+  if (die.appearanceDieIdentity !== undefined) {
+    viewInput = {
+      ...viewInput,
+      dieIdentity: die.appearanceDieIdentity,
+    };
+  }
+  const view = resolveRenderViewV4(viewInput);
   if (target === "other") {
-    if (typeof die.sides !== "number") {
-      throw new Error("Other appearance target requires numeric sides");
-    }
     return {
       target,
-      sides: die.sides,
+      sides: numericSidesForOtherTarget(die),
       result,
       form: resolved.form,
       appearance: renderAppearanceV4(
@@ -614,12 +645,25 @@ function renderDieV4(
     };
   }
 
+  if (onesIdentity !== undefined) {
+    return {
+      target: "d10",
+      result,
+      faceLabelSet: "percentile-ones",
+      form: resolved.form,
+      appearance: renderAppearanceV4(
+        resolved,
+        die.modifiers,
+        rendererRevision,
+        target,
+      ),
+      icons: iconsFor(die.modifiers),
+      view,
+    };
+  }
   return {
     target,
     result,
-    ...(onesIdentity === undefined
-      ? {}
-      : { faceLabelSet: "percentile-ones" as const }),
     form: resolved.form,
     appearance: renderAppearanceV4(
       resolved,

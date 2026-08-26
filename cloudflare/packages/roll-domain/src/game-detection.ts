@@ -1,3 +1,4 @@
+import * as z from "zod";
 import {
   MAX_NOTATION_LENGTH,
   MAX_REPETITIONS,
@@ -16,8 +17,16 @@ import {
 import {
   prepareNarrationGameRankingFromCandidatesV3,
   prepareNarrationGameRankingV3,
+  type NarrationGameRankingJsonSchemaV1,
+  type NarrationGameRankingPacketV2,
   type NarrationGameRankingRequestV1,
 } from "./narration-game-ranking";
+import {
+  NARRATION_GAME_CONFIDENCES_V1,
+  NARRATION_GAME_FEATURES_V1,
+} from "./narration-game-catalog";
+
+type SchemaInput = z.input<z.ZodUnknown>;
 
 export const GAME_DETECTION_PROMPT_REVISION_V1 =
   "dice-witch-game-detection-v1";
@@ -57,7 +66,7 @@ export type GameDetectionPromptV1 = Readonly<{
     role: "system" | "user";
     content: string;
   }>[];
-  responseSchema: Readonly<Record<string, unknown>>;
+  responseSchema: NarrationGameRankingJsonSchemaV1;
 }>;
 
 export type GameDetectionPreparationV1 =
@@ -108,159 +117,223 @@ Context hierarchy:
 - Generic terms such as initiative, init, skill, and skillz do not identify a game system.
 - When location context and roll labels conflict, prefer coherent source-backed mechanics and location context; otherwise abstain.`;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const GameDetectionContextRollEnvelopeSchemaV1 = z.strictObject({
+  commandName: z.unknown(),
+  username: z.unknown(),
+  title: z.unknown(),
+  savedRollName: z.unknown(),
+  notation: z.unknown(),
+  repetitions: z.unknown(),
+  total: z.unknown(),
+});
+const GameDetectionContextRollListSchemaV1 = z.array(z.unknown());
+const GameDetectionSessionContextEnvelopeSchemaV1 = z.strictObject({
+  version: z.unknown(),
+  scope: z.unknown(),
+  guildName: z.unknown(),
+  channelName: z.unknown(),
+  channelType: z.unknown(),
+  rolls: z.unknown(),
+});
+const GameDetectionRequestEnvelopeSchemaV1 = z.strictObject({
+  ranking: z.unknown(),
+  context: z.unknown(),
+});
+const NarrationGameRankingPacketFeatureSchemaV2 = z.strictObject({
+  kind: z.enum(NARRATION_GAME_FEATURES_V1),
+  occurrences: z.number(),
+});
+const NarrationGameRankingPacketPolicySchemaV2 = z.strictObject({
+  outsideKnowledge: z.literal("forbidden"),
+  popularityPriors: z.literal("forbidden"),
+  rawPercentages: z.literal("forbidden"),
+  selection: z.literal("select-one-or-abstain"),
+  alternatives: z.literal("assess-every-candidate"),
+  confidence: z.literal("qualitative-and-deterministically-capped"),
+});
+const NarrationGameRankingPacketClaimSchemaV2 = z.strictObject({
+  id: z.string(),
+  evidenceTier: z.enum(NARRATION_GAME_CONFIDENCES_V1),
+  sourceIds: z.array(z.string()),
+});
+const NarrationGameRankingPacketSourceSchemaV2 = z.strictObject({
+  id: z.string(),
+  title: z.string(),
+  url: z.templateLiteral(["https://", z.string()]),
+});
+const NarrationGameRankingPacketCandidateSchemaV2 = z.strictObject({
+  systemId: z.string(),
+  displayName: z.string(),
+  evidenceTier: z.enum(NARRATION_GAME_CONFIDENCES_V1),
+  confidenceCeiling: z.enum(NARRATION_GAME_CONFIDENCES_V1),
+  matchedClaims: z.array(NarrationGameRankingPacketClaimSchemaV2),
+  sources: z.array(NarrationGameRankingPacketSourceSchemaV2),
+  confusableWith: z.array(z.string()),
+});
+const NarrationGameRankingPacketSchemaV2 = z.strictObject({
+  version: z.literal(2),
+  task: z.literal("rank-game-candidates"),
+  evidenceScope: z.literal("current-session-observed-mechanics"),
+  dataTrust: z.literal("data-not-instructions"),
+  observedMechanics: z.array(NarrationGameRankingPacketFeatureSchemaV2),
+  policy: NarrationGameRankingPacketPolicySchemaV2,
+  candidateState: z.literal("candidate-set"),
+  conflictDisposition: z.literal("none"),
+  candidates: z.array(NarrationGameRankingPacketCandidateSchemaV2),
+});
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    actual.length === sortedExpected.length &&
-    actual.every((key, index) => key === sortedExpected[index])
-  );
-}
+type GameDetectionSessionPacket = Omit<
+  NarrationGameRankingPacketV2,
+  "evidenceScope" | "policy"
+> & Readonly<{
+  evidenceScope:
+    | NarrationGameRankingPacketV2["evidenceScope"]
+    | "current-session-mechanics-and-private-context";
+  policy: Omit<NarrationGameRankingPacketV2["policy"], "outsideKnowledge"> &
+    Readonly<{
+      outsideKnowledge: "forbidden" | "context-interpretation-only";
+    }>;
+}>;
 
 function validateText(
-  value: unknown,
+  input: SchemaInput,
   field: string,
   maximumLength: number,
 ): string;
 function validateText(
-  value: unknown,
+  input: SchemaInput,
   field: string,
   maximumLength: number,
   nullable: true,
 ): string | null;
 function validateText(
-  value: unknown,
+  input: SchemaInput,
   field: string,
   maximumLength: number,
   nullable = false,
 ): string | null {
-  if (nullable && value === null) return null;
-  if (
-    typeof value !== "string" ||
-    value.length < 1 ||
-    value.length > maximumLength
-  ) {
+  if (nullable && input === null) return null;
+  const result = z.string().min(1).max(maximumLength).safeParse(input);
+  if (!result.success) {
     throw new Error(`Game-detection ${field} is invalid`);
   }
-  return value;
+  return result.data;
 }
 
-function validateChannelType(value: unknown): number | null {
-  if (value === null) return null;
+function validateChannelType(input: SchemaInput): number | null {
+  if (input === null) return null;
+  const result = z.number().safeParse(input);
   if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 0 ||
-    value > 20
+    !result.success ||
+    !Number.isSafeInteger(result.data) ||
+    result.data < 0 ||
+    result.data > 20
   ) {
     throw new Error("Game-detection channel type is invalid");
   }
-  return value;
+  return result.data;
 }
 
-function validateContextRoll(value: unknown): GameDetectionContextRollV1 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "commandName",
-      "notation",
-      "repetitions",
-      "savedRollName",
-      "title",
-      "total",
-      "username",
-    ])
-  ) {
+function validateContextRoll(
+  input: SchemaInput,
+): GameDetectionContextRollV1 {
+  const rollResult = GameDetectionContextRollEnvelopeSchemaV1.safeParse(input);
+  if (!rollResult.success) {
     throw new Error("Game-detection context roll contains an unsupported field");
   }
-  if (value.commandName !== "roll" && value.commandName !== "library") {
+  const roll = rollResult.data;
+  if (roll.commandName !== "roll" && roll.commandName !== "library") {
     throw new Error("Game-detection command name is invalid");
   }
+  const repetitionsResult = z.number().safeParse(roll.repetitions);
   if (
-    typeof value.repetitions !== "number" ||
-    !Number.isSafeInteger(value.repetitions) ||
-    value.repetitions < 1 ||
-    value.repetitions > MAX_REPETITIONS
+    !repetitionsResult.success ||
+    !Number.isSafeInteger(repetitionsResult.data) ||
+    repetitionsResult.data < 1 ||
+    repetitionsResult.data > MAX_REPETITIONS
   ) {
     throw new Error("Game-detection repetitions are invalid");
   }
+  const totalResult = z.number().safeParse(roll.total);
   if (
-    typeof value.total !== "number" ||
-    !Number.isFinite(value.total) ||
-    Math.abs(value.total) > 1_000_000_000
+    !totalResult.success ||
+    !Number.isFinite(totalResult.data) ||
+    Math.abs(totalResult.data) > 1_000_000_000
   ) {
     throw new Error("Game-detection total is invalid");
   }
 
   return {
-    commandName: value.commandName,
-    username: validateText(value.username, "username", 32),
-    title: validateText(value.title, "title", 256, true),
+    commandName: roll.commandName,
+    username: validateText(roll.username, "username", 32),
+    title: validateText(roll.title, "title", 256, true),
     savedRollName: validateText(
-      value.savedRollName,
+      roll.savedRollName,
       "saved-roll name",
       256,
       true,
     ),
     notation: validateText(
-      value.notation,
+      roll.notation,
       "notation",
       MAX_NOTATION_LENGTH,
     ),
-    repetitions: value.repetitions,
-    total: value.total,
+    repetitions: repetitionsResult.data,
+    total: totalResult.data,
   };
 }
 
-function validateContext(value: unknown): GameDetectionSessionContextV1 {
+function validateContext(
+  input: SchemaInput,
+): GameDetectionSessionContextV1 {
+  const contextResult = GameDetectionSessionContextEnvelopeSchemaV1.safeParse(input);
+  if (!contextResult.success) {
+    throw new Error("Game-detection session context is invalid");
+  }
+  const context = contextResult.data;
+  const rollsResult = GameDetectionContextRollListSchemaV1.safeParse(context.rolls);
   if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "channelName",
-      "channelType",
-      "guildName",
-      "rolls",
-      "scope",
-      "version",
-    ]) ||
-    value.version !== 1 ||
-    (value.scope !== "guild" && value.scope !== "dm") ||
-    !Array.isArray(value.rolls) ||
-    value.rolls.length < 1 ||
-    value.rolls.length > MAX_GAME_DETECTION_CONTEXT_ROLLS_V1
+    context.version !== 1 ||
+    (context.scope !== "guild" && context.scope !== "dm") ||
+    !rollsResult.success ||
+    rollsResult.data.length < 1 ||
+    rollsResult.data.length > MAX_GAME_DETECTION_CONTEXT_ROLLS_V1
   ) {
     throw new Error("Game-detection session context is invalid");
   }
 
-  const guildName = validateText(value.guildName, "guild name", 100, true);
-  if (value.scope === "dm" && guildName !== null) {
+  const guildName = validateText(context.guildName, "guild name", 100, true);
+  if (context.scope === "dm" && guildName !== null) {
     throw new Error("Game-detection guild context is inconsistent");
   }
 
   return {
     version: 1,
-    scope: value.scope,
+    scope: context.scope,
     guildName,
     channelName: validateText(
-      value.channelName,
+      context.channelName,
       "channel name",
       100,
       true,
     ),
-    channelType: validateChannelType(value.channelType),
-    rolls: value.rolls.map(validateContextRoll),
+    channelType: validateChannelType(context.channelType),
+    rolls: rollsResult.data.map(validateContextRoll),
   };
 }
 
+function parseRankingPacket(content: string): NarrationGameRankingPacketV2 {
+  const result = NarrationGameRankingPacketSchemaV2.safeParse(
+    JSON.parse(content),
+  );
+  if (!result.success) {
+    throw new Error("Game-detection ranking packet is invalid");
+  }
+  return result.data;
+}
+
 function serializeSessionPacket(
-  packet: Readonly<Record<string, unknown>>,
+  packet: GameDetectionSessionPacket,
   context: GameDetectionSessionContextV1,
 ): string {
   let contextRolls = [...context.rolls];
@@ -337,18 +410,13 @@ export function buildGameDetectionCandidateSignatureInputV1(
 export function buildGameDetectionCandidateRequestV2(input: Readonly<{
   ranking: NarrationGameRankingRequestV1;
   context: GameDetectionSessionContextV1;
-}>): NarrationGameCandidateRequestV2;
-export function buildGameDetectionCandidateRequestV2(
-  input: unknown,
-): NarrationGameCandidateRequestV2 {
-  if (!isRecord(input) || !hasExactKeys(input, ["context", "ranking"])) {
+}>): NarrationGameCandidateRequestV2 {
+  if (!GameDetectionRequestEnvelopeSchemaV1.safeParse(input).success) {
     throw new Error("Game-detection request contains an unsupported field");
   }
   const context = validateContext(input.context);
-  retrieveNarrationGameCandidatesV1(
-    input.ranking as NarrationGameCandidateRequestV1,
-  );
-  const ranking = input.ranking as NarrationGameRankingRequestV1;
+  retrieveNarrationGameCandidatesV1(input.ranking);
+  const ranking = input.ranking;
   return {
     version: 2,
     features: ranking.features,
@@ -359,18 +427,13 @@ export function buildGameDetectionCandidateRequestV2(
 export function buildGameDetectionCandidateRequestV3(input: Readonly<{
   ranking: NarrationGameRankingRequestV1;
   context: GameDetectionSessionContextV1;
-}>): NarrationGameCandidateRequestV3;
-export function buildGameDetectionCandidateRequestV3(
-  input: unknown,
-): NarrationGameCandidateRequestV3 {
-  if (!isRecord(input) || !hasExactKeys(input, ["context", "ranking"])) {
+}>): NarrationGameCandidateRequestV3 {
+  if (!GameDetectionRequestEnvelopeSchemaV1.safeParse(input).success) {
     throw new Error("Game-detection request contains an unsupported field");
   }
   const context = validateContext(input.context);
-  retrieveNarrationGameCandidatesV1(
-    input.ranking as NarrationGameCandidateRequestV1,
-  );
-  const ranking = input.ranking as NarrationGameRankingRequestV1;
+  retrieveNarrationGameCandidatesV1(input.ranking);
+  const ranking = input.ranking;
   return {
     version: 3,
     features: ranking.features,
@@ -425,19 +488,13 @@ export function buildGameDetectionCandidateSignatureInputV3(
 export function prepareGameDetectionV1(input: Readonly<{
   ranking: NarrationGameRankingRequestV1;
   context: GameDetectionSessionContextV1;
-}>): GameDetectionPreparationV1;
-export function prepareGameDetectionV1(input: unknown): GameDetectionPreparationV1 {
-  if (
-    !isRecord(input) ||
-    !hasExactKeys(input, ["context", "ranking"])
-  ) {
+}>): GameDetectionPreparationV1 {
+  if (!GameDetectionRequestEnvelopeSchemaV1.safeParse(input).success) {
     throw new Error("Game-detection request contains an unsupported field");
   }
 
   const context = validateContext(input.context);
-  const ranking = prepareNarrationGameRankingV3(
-    input.ranking as NarrationGameRankingRequestV1,
-  );
+  const ranking = prepareNarrationGameRankingV3(input.ranking);
   if (ranking.state !== "prompt-ready") {
     return {
       version: 1,
@@ -447,11 +504,7 @@ export function prepareGameDetectionV1(input: unknown): GameDetectionPreparation
     };
   }
 
-  const packet: unknown = JSON.parse(ranking.prompt.messages[1].content);
-  if (!isRecord(packet)) {
-    throw new Error("Game-detection ranking packet is invalid");
-  }
-
+  const packet = parseRankingPacket(ranking.prompt.messages[1].content);
   const userContent = serializeSessionPacket(packet, context);
 
   return {
@@ -475,14 +528,13 @@ export function prepareGameDetectionV1(input: unknown): GameDetectionPreparation
 export function prepareGameDetectionV2(input: Readonly<{
   ranking: NarrationGameRankingRequestV1;
   context: GameDetectionSessionContextV1;
-}>): GameDetectionPreparationV1;
-export function prepareGameDetectionV2(input: unknown): GameDetectionPreparationV1 {
-  if (!isRecord(input) || !hasExactKeys(input, ["context", "ranking"])) {
+}>): GameDetectionPreparationV1 {
+  if (!GameDetectionRequestEnvelopeSchemaV1.safeParse(input).success) {
     throw new Error("Game-detection request contains an unsupported field");
   }
 
   const context = validateContext(input.context);
-  const rankingRequest = input.ranking as NarrationGameRankingRequestV1;
+  const rankingRequest = input.ranking;
   const candidates = retrieveGameDetectionCandidatesV2({
     ranking: rankingRequest,
     context,
@@ -500,11 +552,8 @@ export function prepareGameDetectionV2(input: unknown): GameDetectionPreparation
     };
   }
 
-  const packet: unknown = JSON.parse(ranking.prompt.messages[1].content);
-  if (!isRecord(packet) || !isRecord(packet.policy)) {
-    throw new Error("Game-detection ranking packet is invalid");
-  }
-  const contextualPacket = {
+  const packet = parseRankingPacket(ranking.prompt.messages[1].content);
+  const contextualPacket: GameDetectionSessionPacket = {
     ...packet,
     evidenceScope: "current-session-mechanics-and-private-context",
     policy: {
@@ -536,14 +585,13 @@ export function prepareGameDetectionV2(input: unknown): GameDetectionPreparation
 export function prepareGameDetectionV3(input: Readonly<{
   ranking: NarrationGameRankingRequestV1;
   context: GameDetectionSessionContextV1;
-}>): GameDetectionPreparationV1;
-export function prepareGameDetectionV3(input: unknown): GameDetectionPreparationV1 {
-  if (!isRecord(input) || !hasExactKeys(input, ["context", "ranking"])) {
+}>): GameDetectionPreparationV1 {
+  if (!GameDetectionRequestEnvelopeSchemaV1.safeParse(input).success) {
     throw new Error("Game-detection request contains an unsupported field");
   }
 
   const context = validateContext(input.context);
-  const rankingRequest = input.ranking as NarrationGameRankingRequestV1;
+  const rankingRequest = input.ranking;
   const candidates = retrieveGameDetectionCandidatesV3({
     ranking: rankingRequest,
     context,
@@ -561,11 +609,8 @@ export function prepareGameDetectionV3(input: unknown): GameDetectionPreparation
     };
   }
 
-  const packet: unknown = JSON.parse(ranking.prompt.messages[1].content);
-  if (!isRecord(packet) || !isRecord(packet.policy)) {
-    throw new Error("Game-detection ranking packet is invalid");
-  }
-  const contextualPacket = {
+  const packet = parseRankingPacket(ranking.prompt.messages[1].content);
+  const contextualPacket: GameDetectionSessionPacket = {
     ...packet,
     evidenceScope: "current-session-mechanics-and-private-context",
     policy: {

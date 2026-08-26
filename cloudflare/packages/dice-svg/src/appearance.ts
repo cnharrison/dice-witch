@@ -2,10 +2,21 @@ import generateLinearGradientFill from "./fills/generateLinearGradientFill";
 import patternFills from "./fills/generatePatternFills";
 import { getAppearanceLabelBaselineShift } from "./appearanceFontMetrics";
 import {
-  PATTERN_NAMES_V1_V2,
   type AppearanceFontId,
   type PatternNameV1V2,
 } from "./types";
+import {
+  appearanceFontSchema,
+  fudgeResultSchema,
+  hasExactKeys,
+  isBoundaryRecord,
+  numberValueSchema,
+  patternNameV1V2Schema,
+  percentileResultSchema,
+  stringValueSchema,
+  type BoundaryRecord,
+  type ValidationInput,
+} from "./validationBoundary";
 
 export type { AppearanceFontId } from "./types";
 export type AppearanceEffect =
@@ -43,6 +54,10 @@ export type OtherAppearanceRequest = AppearanceStyle & {
 export type AppearanceCompositionOptions = {
   localSeparation: boolean;
 };
+type AppearanceSurfaceFill = {
+  definition: string;
+  value: string;
+};
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const APPEARANCE_REQUEST_KEYS = [
@@ -59,14 +74,13 @@ const OTHER_APPEARANCE_REQUEST_KEYS = [
   ...APPEARANCE_REQUEST_KEYS,
   "sides",
 ] as const;
-const PATTERN_NAMES: ReadonlySet<string> = new Set(PATTERN_NAMES_V1_V2);
 type AppearanceFontStyle = {
   family: string;
   weight: number;
   inkStrokeWidth: number;
 };
 
-const FONT_STYLES: Record<AppearanceFontId, AppearanceFontStyle> = {
+const FONT_STYLES = {
   "liberation-sans": {
     family: "Liberation Sans",
     weight: 700,
@@ -99,7 +113,7 @@ const FONT_STYLES: Record<AppearanceFontId, AppearanceFontStyle> = {
     inkStrokeWidth: 4,
   },
   syncopate: { family: "Syncopate", weight: 700, inkStrokeWidth: 4 },
-};
+} satisfies Record<AppearanceFontId, AppearanceFontStyle>;
 
 export const CRITICAL_GLOW_FILTER = `<filter id="critical-glow" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
       <feGaussianBlur stdDeviation="14"/>
@@ -144,31 +158,16 @@ export function composeFacetBorder(points: string): string {
   return `<polygon points="${points}" fill="none" stroke="${APPEARANCE_BORDER_COLOR}" stroke-width="3" stroke-linejoin="round"/>`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    keys.length === sortedExpected.length &&
-    keys.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function parseColor(value: unknown, name: string): string {
-  if (typeof value !== "string" || !HEX_COLOR.test(value)) {
+function parseColor(value: ValidationInput, name: string): string {
+  const parsed = stringValueSchema.safeParse(value);
+  if (!parsed.success || !HEX_COLOR.test(parsed.data)) {
     throw new Error(`${name} must be a six-digit hex color`);
   }
-  return value.toLowerCase();
+  return parsed.data.toLowerCase();
 }
 
 function parseOutlineColor(
-  value: unknown,
+  value: ValidationInput,
   dieName: string,
 ): typeof APPEARANCE_BORDER_COLOR {
   if (parseColor(value, `${dieName} outline color`) !== APPEARANCE_BORDER_COLOR) {
@@ -177,36 +176,35 @@ function parseOutlineColor(
   return APPEARANCE_BORDER_COLOR;
 }
 
-function isAppearanceFontId(value: unknown): value is AppearanceFontId {
-  return typeof value === "string" && Object.hasOwn(FONT_STYLES, value);
-}
-
-function parseFill(value: unknown, dieName: string): AppearanceFill {
-  if (!isRecord(value) || typeof value.type !== "string") {
+function parseFill(value: ValidationInput, dieName: string): AppearanceFill {
+  if (!isBoundaryRecord(value)) {
+    throw new Error(`${dieName} appearance fill is invalid`);
+  }
+  const fillType = stringValueSchema.safeParse(value.type);
+  if (!fillType.success) {
     throw new Error(`${dieName} appearance fill is invalid`);
   }
   if (
-    (value.type === "solid" || value.type === "gradient") &&
+    (fillType.data === "solid" || fillType.data === "gradient") &&
     hasExactKeys(value, ["type"])
   ) {
-    return { type: value.type };
+    return { type: fillType.data };
   }
-  if (
-    value.type === "pattern" &&
-    hasExactKeys(value, ["pattern", "type"]) &&
-    typeof value.pattern === "string" &&
-    PATTERN_NAMES.has(value.pattern)
-  ) {
-    return { type: "pattern", pattern: value.pattern as PatternNameV1V2 };
+  if (fillType.data === "pattern" && hasExactKeys(value, ["pattern", "type"])) {
+    const pattern = patternNameV1V2Schema.safeParse(value.pattern);
+    if (pattern.success) {
+      return { type: "pattern", pattern: pattern.data };
+    }
   }
   throw new Error(`${dieName} appearance fill is invalid`);
 }
 
 function parseAppearanceStyle(
-  value: Record<string, unknown>,
+  value: BoundaryRecord,
   dieName: string,
 ): AppearanceStyle {
-  if (!isAppearanceFontId(value.fontId)) {
+  const fontId = appearanceFontSchema.safeParse(value.fontId);
+  if (!fontId.success) {
     throw new Error(`${dieName} appearance font is not supported`);
   }
   if (
@@ -225,24 +223,24 @@ function parseAppearanceStyle(
     textColor: parseColor(value.textColor, `${dieName} text color`),
     outlineColor: parseOutlineColor(value.outlineColor, dieName),
     fill: parseFill(value.fill, dieName),
-    fontId: value.fontId,
+    fontId: fontId.data,
     effect: value.effect,
   };
 }
 
 function parseExactAppearanceRecord(
-  value: unknown,
+  value: ValidationInput,
   dieName: string,
   keys: readonly string[],
-): Record<string, unknown> {
-  if (!isRecord(value) || !hasExactKeys(value, keys)) {
+): BoundaryRecord {
+  if (!isBoundaryRecord(value) || !hasExactKeys(value, keys)) {
     throw new Error(`${dieName} appearance request has invalid fields`);
   }
   return value;
 }
 
 export function parseAppearanceDieRequest(
-  value: unknown,
+  value: ValidationInput,
   sides: number,
 ): AppearanceDieRequest {
   const dieName = `D${String(sides)}`;
@@ -251,24 +249,25 @@ export function parseAppearanceDieRequest(
     dieName,
     APPEARANCE_REQUEST_KEYS,
   );
+  const result = numberValueSchema.safeParse(record.result);
   if (
-    typeof record.result !== "number" ||
-    !Number.isInteger(record.result) ||
-    record.result < 1 ||
-    record.result > sides
+    !result.success ||
+    !Number.isInteger(result.data) ||
+    result.data < 1 ||
+    result.data > sides
   ) {
     throw new Error(
       `${dieName} appearance result must be from 1 through ${String(sides)}`,
     );
   }
   return {
-    result: record.result,
+    result: result.data,
     ...parseAppearanceStyle(record, dieName),
   };
 }
 
 export function parseD10AppearanceRequest(
-  value: unknown,
+  value: ValidationInput,
 ): AppearanceDieRequest {
   const dieName = "D10";
   const record = parseExactAppearanceRecord(
@@ -276,22 +275,23 @@ export function parseD10AppearanceRequest(
     dieName,
     APPEARANCE_REQUEST_KEYS,
   );
+  const result = numberValueSchema.safeParse(record.result);
   if (
-    typeof record.result !== "number" ||
-    !Number.isInteger(record.result) ||
-    record.result < 0 ||
-    record.result > 10
+    !result.success ||
+    !Number.isInteger(result.data) ||
+    result.data < 0 ||
+    result.data > 10
   ) {
     throw new Error("D10 appearance result must be from 0 through 10");
   }
   return {
-    result: record.result,
+    result: result.data,
     ...parseAppearanceStyle(record, dieName),
   };
 }
 
 export function parsePercentileAppearanceRequest(
-  value: unknown,
+  value: ValidationInput,
 ): PercentileAppearanceRequest {
   const dieName = "Percentile";
   const record = parseExactAppearanceRecord(
@@ -299,25 +299,20 @@ export function parsePercentileAppearanceRequest(
     dieName,
     APPEARANCE_REQUEST_KEYS,
   );
-  if (
-    typeof record.result !== "number" ||
-    !Number.isInteger(record.result) ||
-    record.result < 0 ||
-    record.result > 90 ||
-    record.result % 10 !== 0
-  ) {
+  const result = percentileResultSchema.safeParse(record.result);
+  if (!result.success) {
     throw new Error(
       "Percentile appearance result must be a multiple of 10 from 0 through 90",
     );
   }
   return {
-    result: record.result as PercentileResult,
+    result: result.data,
     ...parseAppearanceStyle(record, dieName),
   };
 }
 
 export function parseFudgeAppearanceRequest(
-  value: unknown,
+  value: ValidationInput,
 ): FudgeAppearanceRequest {
   const dieName = "Fudge";
   const record = parseExactAppearanceRecord(
@@ -325,21 +320,18 @@ export function parseFudgeAppearanceRequest(
     dieName,
     APPEARANCE_REQUEST_KEYS,
   );
-  if (
-    typeof record.result !== "number" ||
-    !Number.isInteger(record.result) ||
-    ![-1, 0, 1].includes(record.result)
-  ) {
+  const result = fudgeResultSchema.safeParse(record.result);
+  if (!result.success) {
     throw new Error("Fudge appearance result must be -1, 0, or 1");
   }
   return {
-    result: record.result as FudgeResult,
+    result: result.data,
     ...parseAppearanceStyle(record, dieName),
   };
 }
 
 export function parseOtherAppearanceRequest(
-  value: unknown,
+  value: ValidationInput,
 ): OtherAppearanceRequest {
   const dieName = "Other";
   const record = parseExactAppearanceRecord(
@@ -347,27 +339,29 @@ export function parseOtherAppearanceRequest(
     dieName,
     OTHER_APPEARANCE_REQUEST_KEYS,
   );
+  const sides = numberValueSchema.safeParse(record.sides);
   if (
-    typeof record.sides !== "number" ||
-    !Number.isInteger(record.sides) ||
-    record.sides < 1 ||
-    record.sides > 999
+    !sides.success ||
+    !Number.isInteger(sides.data) ||
+    sides.data < 1 ||
+    sides.data > 999
   ) {
     throw new Error("Other appearance sides must be from 1 through 999");
   }
+  const result = numberValueSchema.safeParse(record.result);
   if (
-    typeof record.result !== "number" ||
-    !Number.isInteger(record.result) ||
-    record.result < 1 ||
-    record.result > record.sides
+    !result.success ||
+    !Number.isInteger(result.data) ||
+    result.data < 1 ||
+    result.data > sides.data
   ) {
     throw new Error(
-      `Other appearance result must be from 1 through ${String(record.sides)}`,
+      `Other appearance result must be from 1 through ${String(sides.data)}`,
     );
   }
   return {
-    sides: record.sides,
-    result: record.result,
+    sides: sides.data,
+    result: result.data,
     ...parseAppearanceStyle(record, dieName),
   };
 }
@@ -378,11 +372,12 @@ export function getAppearanceFontStyle(
   return FONT_STYLES[fontId];
 }
 
-export function createAppearanceSurfaceFill(
-  request: AppearanceStyle,
-): { definition: string; value: string } {
+export function createAppearanceSurfaceFill(request: AppearanceStyle) {
   if (request.fill.type === "solid") {
-    return { definition: "", value: request.primaryColor };
+    return {
+      definition: "",
+      value: request.primaryColor,
+    } satisfies AppearanceSurfaceFill;
   }
   const definition =
     request.fill.type === "gradient"
@@ -394,7 +389,10 @@ export function createAppearanceSurfaceFill(
           request.primaryColor,
           request.secondaryColor,
         );
-  return { definition: definition.string, value: `url(#${definition.name})` };
+  return {
+    definition: definition.string,
+    value: `url(#${definition.name})`,
+  } satisfies AppearanceSurfaceFill;
 }
 
 function composeOrientationMark(value: string, fontSize: number): string {

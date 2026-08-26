@@ -1,6 +1,13 @@
+import { z } from "zod";
+import {
+  nonNegativeSafeIntegerSchema,
+  safeIntegerSchema,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   buildDiscordChannelDirectoryUpsertV1,
   parseRollLifecycleSnapshot,
+  type DiscordChannelContextRequestV1,
   type DiscordChannelContextResultV1,
   type RollLifecycleAlert,
   type RollLifecycleAlertV1,
@@ -26,12 +33,12 @@ export const ROLL_LIFECYCLE_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
 const MAX_LIFECYCLE_BODY_BYTES = 80 * 1_024;
 
 export type RollLifecycleAlertService = {
-  createRollLifecycleAlertV1(value: unknown): Promise<unknown>;
-  updateRollLifecycleAlertV1(value: unknown): Promise<unknown>;
-  createRollLifecycleAlertV2(value: unknown): Promise<unknown>;
-  updateRollLifecycleAlertV2(value: unknown): Promise<unknown>;
+  createRollLifecycleAlertV1(value: RollLifecycleAlertV1): Promise<SchemaInput>;
+  updateRollLifecycleAlertV1(value: RollLifecycleAlertV1): Promise<SchemaInput>;
+  createRollLifecycleAlertV2(value: RollLifecycleAlertV2): Promise<SchemaInput>;
+  updateRollLifecycleAlertV2(value: RollLifecycleAlertV2): Promise<SchemaInput>;
   resolveDiscordChannelContextV1(
-    value: unknown,
+    request: DiscordChannelContextRequestV1,
   ): Promise<DiscordChannelContextResultV1>;
 };
 
@@ -49,50 +56,29 @@ type AlertDeliveryResult =
       retryAfterMs: number | null;
     };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const AlertDeliveryResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("delivered"),
+    messageId: z.string(),
+    httpStatus: safeIntegerSchema,
+  }),
+  z.object({
+    status: z.literal("failed"),
+    httpStatus: safeIntegerSchema,
+  }),
+  z.object({
+    status: z.literal("retryable"),
+    httpStatus: safeIntegerSchema.nullable(),
+    retryAfterMs: nonNegativeSafeIntegerSchema.nullable(),
+  }),
+]);
 
-function parseAlertResult(value: unknown): AlertDeliveryResult {
-  if (!isRecord(value) || typeof value.status !== "string") {
+function parseAlertResult(value: SchemaInput): AlertDeliveryResult {
+  const result = AlertDeliveryResultSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Roll lifecycle alert response is invalid");
   }
-  if (
-    value.status === "delivered" &&
-    typeof value.messageId === "string" &&
-    typeof value.httpStatus === "number" &&
-    Number.isSafeInteger(value.httpStatus)
-  ) {
-    return {
-      status: "delivered",
-      messageId: value.messageId,
-      httpStatus: value.httpStatus,
-    };
-  }
-  if (
-    value.status === "failed" &&
-    typeof value.httpStatus === "number" &&
-    Number.isSafeInteger(value.httpStatus)
-  ) {
-    return { status: "failed", httpStatus: value.httpStatus };
-  }
-  if (
-    value.status === "retryable" &&
-    (value.httpStatus === null ||
-      (typeof value.httpStatus === "number" &&
-        Number.isSafeInteger(value.httpStatus))) &&
-    (value.retryAfterMs === null ||
-      (typeof value.retryAfterMs === "number" &&
-        Number.isSafeInteger(value.retryAfterMs) &&
-        value.retryAfterMs >= 0))
-  ) {
-    return {
-      status: "retryable",
-      httpStatus: value.httpStatus,
-      retryAfterMs: value.retryAfterMs,
-    };
-  }
-  throw new Error("Roll lifecycle alert response is invalid");
+  return result.data;
 }
 
 function alertValue(
@@ -201,7 +187,7 @@ function deliverAlert(
   service: RollLifecycleAlertService,
   value: RollLifecycleAlert,
   operation: "send" | "update",
-): Promise<unknown> {
+): Promise<SchemaInput> {
   if (value.version === 1) {
     return operation === "send"
       ? service.createRollLifecycleAlertV1(value)
@@ -326,7 +312,7 @@ export async function recordRollLifecycle(
       { status: 413 },
     );
   }
-  let value: unknown;
+  let value: SchemaInput;
   try {
     value = JSON.parse(new TextDecoder().decode(body));
   } catch {

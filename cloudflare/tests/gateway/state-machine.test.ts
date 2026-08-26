@@ -264,12 +264,26 @@ describe("Gateway dispatch and heartbeat state", () => {
 
 describe("Gateway transition validation", () => {
   it.each([
-    [createGatewayMachine(checkpoint()), { type: "ready" }],
+    [
+      createGatewayMachine(checkpoint()),
+      {
+        type: "ready",
+        sequence: 1,
+        sessionId: "session-123",
+        resumeGatewayUrl: "wss://gateway.discord.gg",
+        receivedAt: 1_720_000_001_000,
+      },
+    ],
     [createGatewayMachine(checkpoint()), { type: "socket-open" }],
     [readyMachine(), { type: "identify-permit-granted" }],
-    [identifyHandshake(), { type: "resumed" }],
-  ] as const)("rejects invalid transitions", (machine, event) => {
-    expect(() => transitionGateway(machine, event as GatewayEvent)).toThrow(
+    [
+      identifyHandshake(),
+      { type: "resumed", sequence: 1, receivedAt: 1_720_000_001_000 },
+    ],
+  ] satisfies readonly (readonly [GatewayMachine, GatewayEvent])[])(
+    "rejects invalid transitions",
+    (machine, event) => {
+    expect(() => transitionGateway(machine, event)).toThrow(
       GatewayTransitionError,
     );
   });

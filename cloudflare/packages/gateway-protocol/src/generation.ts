@@ -368,10 +368,15 @@ export function transitionGeneration(
   }
 }
 
+export type GenerationDispatchRoute = {
+  generation: number;
+  shardId: number;
+};
+
 export function routeGenerationDispatch(
   active: { activeGeneration: number; activeShardCount: number },
   source: { generation: number; shardId: number; shardCount: number },
-): { generation: number; shardId: number } {
+): GenerationDispatchRoute {
   if (
     source.generation !== active.activeGeneration ||
     source.shardCount !== active.activeShardCount ||

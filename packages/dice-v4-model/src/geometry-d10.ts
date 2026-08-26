@@ -224,7 +224,7 @@ function engravingFrame(
   vertexIndices: readonly number[],
   normal: Point3V4,
   target: "D10" | "Percentile",
-): { origin: Point3V4; right: Point3V4; up: Point3V4 } {
+) {
   const origin = faceOrigin(vertexIndices);
   const up = normalizePointV4(
     subtractPointsV4(facePole(vertexIndices, target), origin),
@@ -243,7 +243,7 @@ function engravingFrame(
 function resultPoseFrame(
   face: GeometryFaceV4,
   target: "D10" | "Percentile",
-): { right: Point3V4; up: Point3V4 } {
+) {
   const up = normalizePointV4(
     subtractPointsV4(
       facePole(face.vertexIndices, target),

@@ -5,13 +5,77 @@ import {
   runInDurableObject,
 } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   LOG_WORK_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   MAX_LOG_ARTIFACT_PNG_BYTES,
+  imageUnavailableLogArtifact,
+  storedLogArtifact,
   validateRollLogArtifact,
   type RollLogArtifactV1,
+  type RollLogArtifactV2,
 } from "../../packages/discord-contracts/src";
+
+const LogicalShardSchema = z.union([
+  z.strictObject({
+    status: z.literal("available"),
+    shardId: z.number(),
+    shardCount: z.number(),
+    generation: z.number(),
+  }),
+  z.strictObject({ status: z.literal("unavailable") }),
+  z.null(),
+]);
+const TelemetryContextFields = {
+  telemetryVersion: z.literal(2),
+  level: z.enum(["info", "warn", "error"]),
+  subsystem: z.literal("private-roll-log"),
+  rollId: z.string(),
+  interactionId: z.string(),
+  source: z.enum(["discord", "web"]),
+  notation: z.string(),
+  userId: z.string(),
+  username: z.string(),
+  guildId: z.string().nullable(),
+  channelId: z.string(),
+  context: z.json().nullable(),
+  guildName: z.string().nullable(),
+  channelName: z.string().nullable(),
+  channelType: z.number().nullable(),
+  title: z.string().nullable(),
+  destinationPayload: z.json(),
+  destinationDeliveredAt: z.number(),
+  imageStatus: z.enum(["available", "unavailable"]),
+  imageFilename: z.string().nullable(),
+  imageUnavailableReason: z.string().nullable(),
+  logicalShard: LogicalShardSchema,
+  userImpact: z.literal("none"),
+};
+const TelemetryEventSchema = z.discriminatedUnion("message", [
+  z.strictObject({
+    ...TelemetryContextFields,
+    message: z.literal("Private roll log delivery will retry"),
+    state: z.literal("pending"),
+    failureKind: z.literal("discord-retryable"),
+    attempt: z.number(),
+    httpStatus: z.number(),
+    retryAfterMs: z.number().nullable(),
+  }),
+  z.strictObject({
+    ...TelemetryContextFields,
+    message: z.literal("Private roll log delivery completed"),
+    state: z.enum(["delivered", "failed"]),
+    attempts: z.number(),
+    httpStatus: z.number(),
+    elapsedMs: z.number(),
+    imageSha256: z.string().nullable(),
+  }),
+]);
+
+function parseTelemetryEvent(value: string) {
+  return TelemetryEventSchema.parse(JSON.parse(value));
+}
 
 const PNG = Uint8Array.from(
   atob(
@@ -88,6 +152,43 @@ function artifact(
       filename: "dice-1400000000000000001.png",
       png: PNG,
     },
+    ...overrides,
+  };
+}
+
+function artifactV2(
+  overrides: Partial<RollLogArtifactV2> = {},
+): RollLogArtifactV2 {
+  const rollId = "1400000000000000020";
+  const filename = `dice-${rollId}.png`;
+  return {
+    version: 2,
+    rollId,
+    source: "discord",
+    notation: "1d20",
+    user: { id: "100000000000000002", username: "roller" },
+    guildId: null,
+    channelId: "100000000000000010",
+    context: { kind: "dm", channelId: "100000000000000010" },
+    destinationDeliveredAt: 1_750_000_000_000,
+    presentation: { title: "Initiative", result: "[20] = 20", savedRoll: null },
+    payload: {
+      flags: 1 << 15,
+      components: [
+        {
+          type: 17,
+          components: [
+            { type: 10, content: "[20] = 20" },
+            {
+              type: 12,
+              items: [{ media: { url: `attachment://${filename}` } }],
+            },
+            { type: 14 },
+          ],
+        },
+      ],
+    },
+    image: { status: "available", filename, png: PNG },
     ...overrides,
   };
 }
@@ -247,6 +348,126 @@ describe("LogWork Durable Object", () => {
     ).toThrow("Roll log artifact embeds exceed Discord's aggregate limit");
   });
 
+  it("validates PNG structure in signature, chunk, and CRC order", () => {
+    const badSignature = PNG.slice();
+    badSignature[0] = 0;
+    const truncatedChunk = PNG.slice(0, PNG.byteLength - 1);
+    const badCrc = PNG.slice();
+    const finalByte = badCrc.length - 1;
+    badCrc[finalByte] = (badCrc[finalByte] ?? 0) ^ 1;
+
+    for (const [rollId, png] of [
+      ["1400000000000000021", badSignature],
+      ["1400000000000000022", truncatedChunk],
+      ["1400000000000000023", badCrc],
+    ] as const) {
+      expect(() =>
+        validateRollLogArtifact(artifact({
+          rollId,
+          payload: {
+            embeds: [{ image: { url: `attachment://dice-${rollId}.png` } }],
+          },
+          image: { status: "available", filename: `dice-${rollId}.png`, png },
+        })),
+      ).toThrow("Roll log artifact image is invalid");
+    }
+  });
+
+  it("round-trips V2 storage and places the image-unavailable marker", async () => {
+    const inputPng = PNG.slice();
+    const input = artifactV2({
+      image: {
+        status: "available",
+        filename: "dice-1400000000000000020.png",
+        png: inputPng,
+      },
+    });
+    const validated = validateRollLogArtifact(input);
+    expect(validated.version).toBe(2);
+    expect(validated.image.status).toBe("available");
+    if (validated.image.status !== "available") {
+      throw new Error("Validated image is unavailable");
+    }
+    expect(validated.image.png).not.toBe(inputPng);
+    expect(validated.image.png).toEqual(inputPng);
+
+    const stored = await storedLogArtifact(validated);
+    expect(stored.artifact.version).toBe(2);
+    expect(stored.artifact.payload).toEqual(validated.payload);
+    expect(stored.identity).toBe(JSON.stringify(stored.artifact));
+    expect(stored.png).toBe(validated.image.png);
+    expect(stored.artifact.image).toMatchObject({
+      status: "available",
+      bytes: PNG.byteLength,
+    });
+    if (stored.artifact.image.status !== "available") {
+      throw new Error("Stored image is unavailable");
+    }
+    expect(stored.artifact.image.sha256).toMatch(/^[0-9a-f]{64}$/);
+
+    const unavailable = imageUnavailableLogArtifact(input, "discord-rejected");
+    expect(unavailable.version).toBe(2);
+    if (unavailable.version !== 2) throw new Error("V2 artifact changed version");
+    expect(unavailable.image).toEqual({
+      status: "unavailable",
+      reason: "discord-rejected",
+    });
+    expect(unavailable.payload.components).toEqual([
+      {
+        type: 17,
+        components: [
+          { type: 10, content: "[20] = 20" },
+          { type: 10, content: "**image unavailable**" },
+          { type: 14 },
+        ],
+      },
+    ]);
+  });
+
+  it("enforces V2 image agreement and the exact artifact JSON byte limit", () => {
+    expect(() =>
+      validateRollLogArtifact(artifactV2({
+        image: { status: "unavailable", reason: "missing" },
+      })),
+    ).toThrow("Roll log artifact payload does not match its image");
+
+    const components = Array.from(
+      { length: 31 },
+      () => ({ type: 10 as const, content: "x".repeat(4_000) }),
+    );
+    const payloadWithEmptyTail = {
+      flags: 1 << 15,
+      components: [...components, { type: 10 as const, content: "" }],
+    };
+    const remainingBytes = 128_000 - JSON.stringify(payloadWithEmptyTail).length;
+    const exactPayload = {
+      ...payloadWithEmptyTail,
+      components: [
+        ...components,
+        { type: 10 as const, content: "x".repeat(remainingBytes) },
+      ],
+    };
+    const withoutImage = artifactV2({
+      payload: exactPayload,
+      image: { status: "unavailable", reason: "not-applicable" },
+    });
+
+    expect(JSON.stringify(exactPayload)).toHaveLength(128_000);
+    expect(() => validateRollLogArtifact(withoutImage)).not.toThrow();
+    expect(() =>
+      validateRollLogArtifact({
+        ...withoutImage,
+        payload: {
+          ...exactPayload,
+          components: [
+            ...components,
+            { type: 10, content: `${"x".repeat(remainingBytes)}x` },
+          ],
+        },
+      }),
+    ).toThrow("Roll log artifact payload is invalid");
+  });
+
   it("stores the maximum permitted PNG below the SQLite row limit", async () => {
     const rollId = "1400000000000000007";
     const png = pngWithByteLength(MAX_LOG_ARTIFACT_PNG_BYTES);
@@ -282,7 +503,7 @@ describe("LogWork Durable Object", () => {
       lastHttpStatus: 200,
     });
     if (status.state === "missing") throw new Error("Log artifact is missing");
-    expect(typeof status.completedAt).toBe("number");
+    expect(status.completedAt).toEqual(expect.any(Number));
     await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql
         .exec<{ image_bytes: ArrayBuffer | null }>(
@@ -320,7 +541,7 @@ describe("LogWork Durable Object", () => {
       });
 
       const retry = consoleWarn.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .map(([entry]) => parseTelemetryEvent(String(entry)))
         .find(({ message }) => message === "Private roll log delivery will retry");
       expect(retry).toMatchObject({
         telemetryVersion: 2,
@@ -359,8 +580,11 @@ describe("LogWork Durable Object", () => {
         ],
       });
       const completed = consoleInfo.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .map(([entry]) => parseTelemetryEvent(String(entry)))
         .find(({ message }) => message === "Private roll log delivery completed");
+      if (completed?.message !== "Private roll log delivery completed") {
+        throw new Error("Completed private roll telemetry event is missing");
+      }
       expect(completed).toMatchObject({
         telemetryVersion: 2,
         subsystem: "private-roll-log",
@@ -382,8 +606,8 @@ describe("LogWork Durable Object", () => {
         attempts: 2,
         httpStatus: 200,
       });
-      expect(completed?.destinationPayload).toEqual(retry?.destinationPayload);
-      expect(completed?.imageSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(completed.destinationPayload).toEqual(retry?.destinationPayload);
+      expect(completed.imageSha256).toMatch(/^[0-9a-f]{64}$/);
       expect(JSON.stringify([retry, completed])).not.toMatch(
         /fixture\.bot\.token|interaction-token|image_bytes/i,
       );
@@ -543,7 +767,7 @@ describe("LogWork Durable Object", () => {
         imageBytes: 0,
       });
       const completed = consoleError.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .map(([entry]) => parseTelemetryEvent(String(entry)))
         .find(({ message }) => message === "Private roll log delivery completed");
       expect(completed).toMatchObject({
         telemetryVersion: 2,

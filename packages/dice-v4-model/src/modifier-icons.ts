@@ -123,7 +123,7 @@ const starburst = [
   Z(),
 ] as const;
 
-const designs: Record<DrawableModifierIconNameV4, ModifierIconCommandV4[]> = {
+const designs = {
   trashcan: [
     ...token(ACCENTS.trashcan),
     strokePath([
@@ -205,7 +205,7 @@ const designs: Record<DrawableModifierIconNameV4, ModifierIconCommandV4[]> = {
       M(46, 29), L(38, 28), L(40, 21),
     ], 4),
   ],
-};
+} satisfies Record<DrawableModifierIconNameV4, ModifierIconCommandV4[]>;
 
 function freezeCommands(
   commands: ModifierIconCommandV4[],
@@ -220,14 +220,21 @@ function freezeCommands(
   return Object.freeze(commands);
 }
 
-export const SIGNAL_DISK_MODIFIER_ICONS_V4 = Object.freeze(
-  Object.fromEntries(
-    Object.entries(designs).map(([name, commands]) => [
-      name,
-      freezeCommands(commands),
-    ]),
-  ) as Record<DrawableModifierIconNameV4, readonly ModifierIconCommandV4[]>,
-);
+export const SIGNAL_DISK_MODIFIER_ICONS_V4 = Object.freeze({
+  trashcan: freezeCommands(designs.trashcan),
+  explosion: freezeCommands(designs.explosion),
+  recycle: freezeCommands(designs.recycle),
+  chevronUp: freezeCommands(designs.chevronUp),
+  chevronDown: freezeCommands(designs.chevronDown),
+  "target-success": freezeCommands(designs["target-success"]),
+  "critical-success": freezeCommands(designs["critical-success"]),
+  "critical-failure": freezeCommands(designs["critical-failure"]),
+  penetrate: freezeCommands(designs.penetrate),
+  unique: freezeCommands(designs.unique),
+} satisfies Record<
+  DrawableModifierIconNameV4,
+  readonly ModifierIconCommandV4[]
+>);
 
 export function modifierIconDesignV4(
   rendererRevision: RendererRevisionV4,

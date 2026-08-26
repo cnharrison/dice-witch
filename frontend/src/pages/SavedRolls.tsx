@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as z from "zod";
 import { Copy, GripHorizontal, Plus, Save, Trash2 } from "lucide-react";
 import { LibraryRollColorPicker } from "@/components/LibraryRollColorPicker";
 import { SavedRollGrid, type SavedRollGridRow } from "@/components/SavedRollGrid";
@@ -36,6 +37,7 @@ import {
   SavedRollApiError,
   updateSavedRoll,
   type SavedRoll,
+  type SavedRollApi,
   type SavedRollDraft,
   type SavedRollMutation,
   type SavedRollScope,
@@ -75,7 +77,7 @@ function mutationMessage(result: SavedRollMutation): string | null {
   }
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: Error): string {
   return error instanceof SavedRollApiError
     ? error.message
     : "The library is temporarily unavailable.";
@@ -321,8 +323,30 @@ function copyConflictName(
   throw new Error("A library copy must include one server library");
 }
 
-export default function SavedRolls() {
-  const { user } = useUser();
+export interface SavedRollsDependencies {
+  useUserId: () => string | undefined;
+  fetchResponse: typeof customFetch;
+  api: SavedRollApi;
+}
+
+export function SavedRollsView({
+  dependencies,
+}: {
+  dependencies: SavedRollsDependencies;
+}) {
+  const { useUserId, fetchResponse, api } = dependencies;
+  const {
+    copySavedRoll,
+    createSavedRoll,
+    deleteSavedRoll,
+    deleteSavedRollBatch,
+    listSavedRollLibraries,
+    listSavedRolls,
+    reorderSavedRolls,
+    searchSavedRolls,
+    updateSavedRoll,
+  } = api;
+  const userId = useUserId();
   const queryClient = useQueryClient();
   const [scope, setScope] = React.useState<SavedRollScope>({ type: "personal" });
   const [search, setSearch] = React.useState("");
@@ -348,17 +372,27 @@ export default function SavedRolls() {
 
   const mutualGuildQuery = useQuery<Guild[]>({
     queryKey: ["guilds"],
-    enabled: user?.id !== undefined,
+    enabled: userId !== undefined,
     staleTime: 5 * 60 * 1_000,
     queryFn: async () => {
-      const response = await customFetch("/api/guilds/mutual");
+      const response = await fetchResponse("/api/guilds/mutual");
       if (!response.ok) throw new Error("Guild lookup failed");
-      const value: unknown = await response.json();
-      return typeof value === "object" &&
-        value !== null &&
-        "guilds" in value &&
-        Array.isArray(value.guilds)
-        ? (value.guilds as Guild[])
+      const value = z.object({
+        guilds: z.array(z.object({
+          guilds: z.object({
+            id: z.string(),
+            name: z.string(),
+            icon: z.string().nullable(),
+          }),
+          isAdmin: z.boolean(),
+          isDiceWitchAdmin: z.boolean(),
+        })),
+      }).safeParse(await response.json());
+      return value.success
+        ? value.data.guilds.map((guild) => ({
+            ...guild,
+            guilds: { ...guild.guilds, icon: guild.guilds.icon ?? "" },
+          }))
         : [];
     },
   });
@@ -476,7 +510,7 @@ export default function SavedRolls() {
         setSelectedIds(new Set());
       }
     },
-    onError: async (error: unknown) => {
+    onError: async (error: Error) => {
       setMessage(errorMessage(error));
       await queryClient.invalidateQueries({ queryKey: ["saved-rolls"] });
     },
@@ -982,4 +1016,28 @@ export default function SavedRolls() {
       </div>
     </TooltipProvider>
   );
+}
+
+function useProductionUserId(): string | undefined {
+  return useUser().user?.id;
+}
+
+const productionSavedRollsDependencies: SavedRollsDependencies = {
+  useUserId: useProductionUserId,
+  fetchResponse: customFetch,
+  api: {
+    copySavedRoll,
+    createSavedRoll,
+    deleteSavedRoll,
+    deleteSavedRollBatch,
+    listSavedRollLibraries,
+    listSavedRolls,
+    reorderSavedRolls,
+    searchSavedRolls,
+    updateSavedRoll,
+  },
+};
+
+export default function SavedRolls() {
+  return <SavedRollsView dependencies={productionSavedRollsDependencies} />;
 }

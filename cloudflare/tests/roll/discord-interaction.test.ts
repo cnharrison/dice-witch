@@ -1,13 +1,45 @@
 import { describe, expect, it } from "vitest";
 import {
   parseRollInteraction,
+  parseRollLoggingContext,
   rollInteractionContextMissingReasons,
 } from "../../packages/discord-contracts/src";
 
 const applicationId = "100000000000000001";
 const guildId = "100000000000000002";
 
-function interaction(overrides: Record<string, unknown> = {}) {
+type InteractionFixtureOverrides = Partial<{
+  application_id: string;
+  guild_id: string | undefined;
+  channel_id: string;
+  channel:
+    | {
+        id: string;
+        guild_id?: string;
+        name?: string;
+        type?: number;
+      }
+    | undefined;
+  guild: { id: string; name: string } | undefined;
+  type: number;
+  token: string;
+  member:
+    | { user?: { id: string; username: string } }
+    | undefined;
+  user: { id: string; username: string };
+  data: {
+    id?: string;
+    name: string;
+    type: number;
+    options?: Array<{
+      name: string;
+      type: number;
+      value: string;
+    }>;
+  };
+}>;
+
+function interaction(overrides: InteractionFixtureOverrides = {}) {
   return {
     id: "1400000000000000000",
     application_id: applicationId,
@@ -125,6 +157,77 @@ describe("parseRollInteraction", () => {
         { applicationId, guildId },
       )?.loggingContext,
     ).toEqual({ kind: "dm", channelId: "1400000000000000002" });
+  });
+
+  it("preserves routing and first-error precedence", () => {
+    expect(() =>
+      parseRollInteraction(null, { applicationId, guildId })
+    ).toThrow("Interaction must be an object");
+    expect(() =>
+      parseRollInteraction(
+        interaction({ application_id: "bad", token: "" }),
+        { applicationId, guildId },
+      )
+    ).toThrow("Interaction application_id must be a Discord Snowflake");
+    expect(
+      parseRollInteraction(
+        interaction({
+          application_id: "100000000000000004",
+          token: "",
+        }),
+        { applicationId, guildId },
+      ),
+    ).toBeNull();
+    expect(
+      parseRollInteraction(
+        interaction({
+          token: "",
+          data: { name: "status", type: 1 },
+        }),
+        { applicationId, guildId },
+      ),
+    ).toBeNull();
+    expect(() =>
+      parseRollInteraction(interaction({ token: "" }), {
+        applicationId,
+        guildId,
+      })
+    ).toThrow("Interaction token is invalid");
+  });
+
+  it("keeps logging contexts strict and guild/DM consistent", () => {
+    expect(() =>
+      parseRollLoggingContext(
+        {
+          kind: "dm",
+          channelId: "1400000000000000002",
+          extra: true,
+        },
+        null,
+        "1400000000000000002",
+      )
+    ).toThrow("Roll logging context is invalid");
+    expect(() =>
+      parseRollLoggingContext(
+        { kind: "dm", channelId: "1400000000000000002" },
+        guildId,
+        "1400000000000000002",
+      )
+    ).toThrow("Roll logging context is invalid");
+    expect(() =>
+      parseRollLoggingContext(
+        {
+          kind: "guild",
+          guildId,
+          guildName: "Fixture Guild",
+          channelId: "1400000000000000002",
+          channelName: "dice-rolls",
+          channelType: 0,
+        },
+        null,
+        "1400000000000000002",
+      )
+    ).toThrow("Roll logging context is invalid");
   });
 
   it.each([

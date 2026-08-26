@@ -11,6 +11,20 @@ export const MAX_NARRATION_GAME_RANKING_PACKET_BYTES = 16_384;
 
 export type NarrationGameRankingRequestV1 = NarrationGameCandidateRequestV1;
 
+export type NarrationGameRankingJsonSchemaV1 = Readonly<{
+  type?: "object" | "array" | "string" | "integer";
+  additionalProperties?: false;
+  properties?: Readonly<{
+    [property: string]: NarrationGameRankingJsonSchemaV1;
+  }>;
+  required?: readonly string[];
+  oneOf?: readonly NarrationGameRankingJsonSchemaV1[];
+  enum?: readonly (string | number | null)[];
+  items?: NarrationGameRankingJsonSchemaV1;
+  minItems?: number;
+  maxItems?: number;
+}>;
+
 export type NarrationGameRankingPacketCandidateV1 = Readonly<{
   systemId: string;
   displayName: string;
@@ -71,7 +85,7 @@ export type NarrationGameRankingPromptContractV1 = Readonly<{
     NarrationGameRankingMessageV1,
     NarrationGameRankingMessageV1,
   ];
-  responseSchema: Readonly<Record<string, unknown>>;
+  responseSchema: NarrationGameRankingJsonSchemaV1;
 }>;
 
 export type NarrationGameRankingPromptContractV2 = Readonly<{
@@ -81,7 +95,7 @@ export type NarrationGameRankingPromptContractV2 = Readonly<{
     NarrationGameRankingMessageV1,
     NarrationGameRankingMessageV1,
   ];
-  responseSchema: Readonly<Record<string, unknown>>;
+  responseSchema: NarrationGameRankingJsonSchemaV1;
 }>;
 
 export type NarrationGameRankingPromptContractV3 = Readonly<{
@@ -91,7 +105,7 @@ export type NarrationGameRankingPromptContractV3 = Readonly<{
     NarrationGameRankingMessageV1,
     NarrationGameRankingMessageV1,
   ];
-  responseSchema: Readonly<Record<string, unknown>>;
+  responseSchema: NarrationGameRankingJsonSchemaV1;
 }>;
 
 export type NarrationGameRankingAbstentionReasonV1 =
@@ -250,7 +264,7 @@ function confidenceTiersThrough(
 
 function citationSchemaV1(
   candidate: NarrationGameCandidateV1,
-): Readonly<Record<string, unknown>> {
+): NarrationGameRankingJsonSchemaV1 {
   return {
     oneOf: candidate.evidence.map(({ claim, sourceIds }) => ({
       type: "object",
@@ -271,7 +285,7 @@ function citationSchemaV1(
 
 function assessmentSchemaV1(
   candidate: NarrationGameCandidateV1,
-): Readonly<Record<string, unknown>> {
+): NarrationGameRankingJsonSchemaV1 {
   return {
     type: "object",
     additionalProperties: false,
@@ -293,7 +307,7 @@ function assessmentSchemaV1(
 
 function decisionSchemas(
   selectableCandidateIds: readonly string[],
-): readonly Readonly<Record<string, unknown>>[] {
+): readonly NarrationGameRankingJsonSchemaV1[] {
   const selections = selectableCandidateIds.map((systemId) => ({
     properties: {
       disposition: { enum: ["select"] },
@@ -315,7 +329,7 @@ function decisionSchemas(
 
 function responseSchemaV1(
   candidates: readonly NarrationGameCandidateV1[],
-): Readonly<Record<string, unknown>> {
+): NarrationGameRankingJsonSchemaV1 {
   const candidateIds = candidates.map(({ systemId }) => systemId);
   const selectableCandidateIds = candidates
     .filter((candidate) =>
@@ -355,7 +369,7 @@ function responseSchemaV1(
 
 function citationSchemaV2(
   candidate: NarrationGameCandidateV1,
-): Readonly<Record<string, unknown>> {
+): NarrationGameRankingJsonSchemaV1 {
   const sourceIds = [
     ...new Set(candidate.evidence.flatMap((evidence) => evidence.sourceIds)),
   ];
@@ -383,7 +397,7 @@ function citationSchemaV2(
 
 function assessmentSchemaV2(
   candidate: NarrationGameCandidateV1,
-): Readonly<Record<string, unknown>> {
+): NarrationGameRankingJsonSchemaV1 {
   return {
     type: "object",
     additionalProperties: false,
@@ -405,7 +419,7 @@ function assessmentSchemaV2(
 
 function responseSchemaV2(
   candidates: readonly NarrationGameCandidateV1[],
-): Readonly<Record<string, unknown>> {
+): NarrationGameRankingJsonSchemaV1 {
   const candidateIds = candidates.map(({ systemId }) => systemId);
   const selectableCandidateIds = candidates
     .filter((candidate) =>
@@ -492,13 +506,8 @@ function abstentionReason(
 
 export function prepareNarrationGameRankingV1(
   request: NarrationGameRankingRequestV1,
-): NarrationGameRankingPreparationV1;
-export function prepareNarrationGameRankingV1(
-  request: unknown,
 ): NarrationGameRankingPreparationV1 {
-  const result = retrieveNarrationGameCandidatesV1(
-    request as NarrationGameCandidateRequestV1,
-  );
+  const result = retrieveNarrationGameCandidatesV1(request);
   const reason = abstentionReason(result);
   if (reason !== null) {
     return {
@@ -548,13 +557,8 @@ export function prepareNarrationGameRankingV1(
 
 export function prepareNarrationGameRankingV2(
   request: NarrationGameRankingRequestV1,
-): NarrationGameRankingPreparationV2;
-export function prepareNarrationGameRankingV2(
-  request: unknown,
 ): NarrationGameRankingPreparationV2 {
-  const result = retrieveNarrationGameCandidatesV1(
-    request as NarrationGameCandidateRequestV1,
-  );
+  const result = retrieveNarrationGameCandidatesV1(request);
   const reason = abstentionReason(result);
   if (reason !== null) {
     return {
@@ -568,10 +572,7 @@ export function prepareNarrationGameRankingV2(
   }
 
   const candidates = result.candidates;
-  const packet = buildPacketV2(
-    request as NarrationGameRankingRequestV1,
-    candidates,
-  );
+  const packet = buildPacketV2(request, candidates);
 
   return {
     version: 2,
@@ -625,11 +626,7 @@ export function prepareNarrationGameRankingFromCandidatesV3(
 
 export function prepareNarrationGameRankingV3(
   request: NarrationGameRankingRequestV1,
-): NarrationGameRankingPreparationV3;
-export function prepareNarrationGameRankingV3(
-  request: unknown,
 ): NarrationGameRankingPreparationV3 {
-  const validatedRequest = request as NarrationGameRankingRequestV1;
-  const result = retrieveNarrationGameCandidatesV1(validatedRequest);
-  return prepareNarrationGameRankingFromCandidatesV3(validatedRequest, result);
+  const result = retrieveNarrationGameCandidatesV1(request);
+  return prepareNarrationGameRankingFromCandidatesV3(request, result);
 }

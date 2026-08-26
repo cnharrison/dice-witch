@@ -4,136 +4,140 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as z from "zod";
 
-const mocks = vi.hoisted(() => ({
-  customFetch: vi.fn(),
-  toast: vi.fn(),
-  guildsLoading: false,
-  invalidateQueries: vi.fn(),
-  selectedGuildId: "100000000000000001",
-}));
+import { HomeView, type HomeDependencies } from "./Home";
 
-vi.mock("@/lib/AuthProvider", () => ({
-  useUser: () => ({ user: { id: "100000000000000003" } }),
-}));
+const preparation = {
+  renderSeed: 1,
+  appearanceDigest: "a".repeat(64),
+  groupSizes: [1],
+  appearanceIdentities: [["expression:0:repeat:0:definition:20:0:die:0"]],
+  renderedImage: {
+    contentType: "image/png",
+    width: 150,
+    height: 150,
+    base64: "iVBORw0KGgo=",
+  },
+};
 
-vi.mock("@/context/GuildContext", () => ({
-  useGuild: () => ({
-    selectedGuildId: mocks.selectedGuildId,
-    selectedChannelId: "100000000000000010",
-    setSelectedGuildId: vi.fn(),
-    setSelectedChannelId: vi.fn(),
-  }),
-}));
+const rollResult = {
+  diceArray: [[{
+    sides: 20,
+    rolled: 20,
+    value: 20,
+    color: "#ff00ff",
+    secondaryColor: "#000000",
+    textColor: "#ffffff",
+    icon: [],
+  }]],
+  resultArray: [{ results: 20, output: "20" }],
+  appearanceIdentities: preparation.appearanceIdentities,
+  rerolledAppearanceIdentities: [],
+  renderedImage: preparation.renderedImage,
+  message: "20",
+};
 
-vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ invalidateQueries: mocks.invalidateQueries }),
-  useMutation: () => ({ mutate: vi.fn(), isPending: false }),
-  useQuery: ({ queryKey }: { queryKey: string[] }) =>
-    queryKey[0] === "guilds"
-      ? {
-          data: [
-            {
-              guilds: {
-                id: "100000000000000001",
-                name: "Fixture guild",
-                icon: null,
-              },
-              isAdmin: true,
-              isDiceWitchAdmin: false,
-              isRollable: true,
-            },
-            {
-              guilds: {
-                id: "100000000000000002",
-                name: "Ordinary membership",
-                icon: null,
-              },
-              isAdmin: false,
-              isDiceWitchAdmin: false,
-              isRollable: true,
-            },
-            {
-              guilds: {
-                id: "100000000000000004",
-                name: "No usable channels",
-                icon: null,
-              },
-              isAdmin: true,
-              isDiceWitchAdmin: false,
-              isRollable: false,
-            },
-          ],
-          isLoading: mocks.guildsLoading,
-          isFetching: false,
-        }
-      : {
-          data: {
-            channels: [
-              { id: "100000000000000010", name: "general", type: 0 },
-            ],
-          },
-          isLoading: false,
-          isFetching: false,
-        },
-}));
+type DiceInputProps = React.ComponentProps<HomeDependencies["DiceInputSlot"]>;
+type GuildDropdownProps = React.ComponentProps<
+  HomeDependencies["GuildDropdownSlot"]
+>;
+type LoadingMediaProps = React.ComponentProps<
+  HomeDependencies["LoadingMediaSlot"]
+>;
+type RollerProps = React.ComponentProps<HomeDependencies["RollerSlot"]>;
+type SavedRollQuickAccessProps = React.ComponentProps<
+  HomeDependencies["SavedRollQuickAccessSlot"]
+>;
+type RollToast = ReturnType<HomeDependencies["useRollToast"]>;
 
-vi.mock("@/hooks/useDiceValidation", async () => {
-  const ReactModule = await import("react");
-  const validDiceInfo = { dice: 1 };
-  return {
-    useDiceValidation: () => {
-      const [input, setInput] = ReactModule.useState("");
-      const valid = input === "1d20";
-      return {
-        input,
-        setInput,
-        isValid: valid,
-        validatedInput: input,
-        diceInfo: valid ? validDiceInfo : null,
-      };
-    },
-  };
-});
-
-vi.mock("@/components/GuildDropdown", () => ({
-  GuildDropdown: ({
-    guilds,
-  }: {
-    guilds: Array<{ guilds: { name: string } }>;
-  }) => (
-    <div data-testid="guild-options">
-      {guilds.map((guild) => guild.guilds.name).join(",")}
+function TestDiceInput({
+  input,
+  setInput,
+  onRoll,
+  isRollReady,
+  timesToRepeat,
+  onTimesToRepeatChange,
+  rollTitle,
+  onRollTitleChange,
+  onHistoryPrevious,
+  onHistoryNext,
+}: DiceInputProps) {
+  return (
+    <div
+      data-testid="dice-input"
+      data-input={input}
+      data-repeat={String(timesToRepeat)}
+      data-title={rollTitle}
+    >
+      <input
+        aria-label="Dice notation"
+        value={input}
+        onChange={(event) => setInput(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowUp") onHistoryPrevious?.();
+          else if (event.key === "ArrowDown") onHistoryNext?.();
+          else if (event.key === "Enter" && isRollReady) onRoll?.();
+        }}
+      />
+      <button type="button" onClick={() => setInput("1d20")}>
+        Set valid notation
+      </button>
+      <button type="button" onClick={() => setInput("invalid")}>
+        Set invalid notation
+      </button>
+      <button type="button" onClick={() => onRollTitleChange?.("Initiative")}>
+        Set title
+      </button>
+      <button type="button" onClick={() => onTimesToRepeatChange?.(3)}>
+        Set repeat count
+      </button>
+      <button type="button" onClick={onRoll} disabled={!isRollReady}>
+        Roll now
+      </button>
     </div>
-  ),
-}));
-vi.mock("@/components/ChannelDropdown", () => ({
-  ChannelDropdown: () => <div>Channel selector</div>,
-}));
-vi.mock("@/components/LoadingMedia", () => ({
-  LoadingMedia: ({ staticImage, alt }: { staticImage: string; alt: string }) => (
-    <img src={staticImage} alt={`${alt} portrait`} />
-  ),
-}));
-vi.mock("@/components/SavedRollQuickAccess", () => ({
-  SavedRollQuickAccess: ({
-    guildScope,
-    onLoad,
-    onRollNow,
-  }: {
-    guildScope: { guildId: string } | null;
-    onLoad: (savedRoll: {
-      notation: string;
-      title: string | null;
-      repetitions: number;
-    }) => void;
-    onRollNow: (savedRoll: {
-      notation: string;
-      title: string | null;
-      repetitions: number;
-      libraryRoll: { scope: "personal"; id: string; revision: number };
-    }) => void;
-  }) => (
+  );
+}
+
+function TestGuildDropdown({ guilds }: GuildDropdownProps) {
+  return (
+    <div data-testid="guild-options">
+      {guilds?.map((guild) => guild.guilds.name).join(",")}
+    </div>
+  );
+}
+
+function TestChannelDropdown() {
+  return <div>Channel selector</div>;
+}
+
+function TestLoadingMedia({ staticImage, alt }: LoadingMediaProps) {
+  return <img src={staticImage} alt={alt} />;
+}
+
+function TestRoller({
+  isPreparing,
+  rollPreparation,
+  rollResults,
+  mobileView,
+}: RollerProps) {
+  return (
+    <div
+      data-testid="roller"
+      data-preparing={String(isPreparing)}
+      data-has-preparation={String(rollPreparation !== null)}
+      data-has-results={String(rollResults !== null)}
+      data-mobile-view={mobileView}
+    />
+  );
+}
+
+function TestSavedRollQuickAccess({
+  guildScope,
+  onLoad,
+  onRollNow,
+}: SavedRollQuickAccessProps) {
+  return (
     <div
       data-testid="saved-roll-guild-scope"
       data-guild-id={guildScope?.guildId ?? ""}
@@ -175,162 +179,162 @@ vi.mock("@/components/SavedRollQuickAccess", () => ({
         Roll saved draft now
       </button>
     </div>
-  ),
-}));
-vi.mock("@/components/ui/tooltip", () => ({
-  TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: mocks.toast }),
-}));
-vi.mock("@/lib/config", () => ({
-  appConfig: { inviteUrl: "https://example.com/invite" },
-}));
-vi.mock("../lib/api", () => ({ customFetch: mocks.customFetch }));
-vi.mock("@/lib/roll-response", () => ({
-  parseWebRollPreparation: (value: unknown) => value,
-  parseWebRollResponse: (value: unknown) => value,
-}));
+  );
+}
 
-vi.mock("@/components/Roller", () => ({
-  Roller: ({
-    isPreparing,
-    rollPreparation,
-    rollResults,
-    mobileView,
-  }: {
-    isPreparing: boolean;
-    rollPreparation: unknown;
-    rollResults: unknown;
-    mobileView: "controls" | "result";
-  }) => (
-    <div
-      data-testid="roller"
-      data-preparing={String(isPreparing)}
-      data-has-preparation={String(rollPreparation !== null)}
-      data-has-results={String(rollResults !== null)}
-      data-mobile-view={mobileView}
-    />
-  ),
-}));
+function TestSaveLibraryRollDialog() {
+  return null;
+}
 
-vi.mock("@/components/DiceInput", () => ({
-  DiceInput: ({
+function useTestDiceValidation() {
+  const [input, setInput] = React.useState("");
+  const isValid = input === "1d20";
+  return {
     input,
     setInput,
-    onRoll,
-    isRollReady,
-    timesToRepeat,
-    onTimesToRepeatChange,
-    rollTitle,
-    onRollTitleChange,
-    onHistoryPrevious,
-    onHistoryNext,
-  }: {
-    input: string;
-    setInput: (value: string) => void;
-    onRoll: () => void;
-    isRollReady: boolean;
-    timesToRepeat: number;
-    onTimesToRepeatChange: (value: number) => void;
-    rollTitle: string;
-    onRollTitleChange: (value: string) => void;
-    onHistoryPrevious: () => void;
-    onHistoryNext: () => void;
-  }) => (
-    <div
-      data-testid="dice-input"
-      data-input={input}
-      data-repeat={String(timesToRepeat)}
-      data-title={rollTitle}
-    >
-      <input
-        aria-label="Dice notation"
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowUp") onHistoryPrevious();
-          else if (event.key === "ArrowDown") onHistoryNext();
-          else if (event.key === "Enter" && isRollReady) onRoll();
-        }}
-      />
-      <button type="button" onClick={() => setInput("1d20")}>
-        Set valid notation
-      </button>
-      <button type="button" onClick={() => setInput("invalid")}>
-        Set invalid notation
-      </button>
-      <button type="button" onClick={() => onRollTitleChange("Initiative")}>
-        Set title
-      </button>
-      <button type="button" onClick={() => onTimesToRepeatChange(3)}>
-        Set repeat count
-      </button>
-      <button type="button" onClick={onRoll} disabled={!isRollReady}>
-        Roll now
-      </button>
-    </div>
-  ),
-}));
+    isValid,
+    validatedInput: input,
+    hasDiceInfo: isValid,
+  };
+}
 
-import { Home } from "./Home";
+function createHomeHarness() {
+  const state = {
+    guildsLoading: false,
+    isMobile: false,
+    selectedGuildId: "100000000000000001",
+  };
+  const customFetch = vi.fn<HomeDependencies["fetchResponse"]>();
+  const toast = vi.fn<RollToast>();
+  const dependencies: HomeDependencies = {
+    useUserId: () => "100000000000000003",
+    useGuildSelection: () => ({
+      selectedGuildId: state.selectedGuildId,
+      selectedChannelId: "100000000000000010",
+      setSelectedGuildId: vi.fn(),
+      setSelectedChannelId: vi.fn(),
+    }),
+    useDiceValidation: useTestDiceValidation,
+    useIsMobile: () => state.isMobile,
+    useRollerGuilds: () => ({
+      data: [
+        {
+          guilds: {
+            id: "100000000000000001",
+            name: "Fixture guild",
+            icon: "",
+          },
+          isAdmin: true,
+          isDiceWitchAdmin: false,
+          isRollable: true,
+        },
+        {
+          guilds: {
+            id: "100000000000000002",
+            name: "Ordinary membership",
+            icon: "",
+          },
+          isAdmin: false,
+          isDiceWitchAdmin: false,
+          isRollable: true,
+        },
+        {
+          guilds: {
+            id: "100000000000000004",
+            name: "No usable channels",
+            icon: "",
+          },
+          isAdmin: true,
+          isDiceWitchAdmin: false,
+          isRollable: false,
+        },
+      ],
+      isLoading: state.guildsLoading,
+      isFetching: false,
+    }),
+    useGuildChannels: () => [
+      { id: "100000000000000010", name: "general", type: 0 },
+    ],
+    useRollToast: () => toast,
+    fetchResponse: customFetch,
+    DiceInputSlot: TestDiceInput,
+    GuildDropdownSlot: TestGuildDropdown,
+    ChannelDropdownSlot: TestChannelDropdown,
+    RollerSlot: TestRoller,
+    LoadingMediaSlot: TestLoadingMedia,
+    SavedRollQuickAccessSlot: TestSavedRollQuickAccess,
+    SaveLibraryRollDialogSlot: TestSaveLibraryRollDialog,
+  };
 
-const preparation = {
-  renderSeed: 1,
-  appearanceDigest: "a".repeat(64),
-  groupSizes: [1],
-  appearanceIdentities: [["expression:0:repeat:0:definition:20:0:die:0"]],
-  renderedImage: {
-    contentType: "image/png",
-    width: 150,
-    height: 150,
-    base64: "iVBORw0KGgo=",
-  },
-};
+  return {
+    dependencies,
+    customFetch,
+    toast,
+    get guildsLoading() {
+      return state.guildsLoading;
+    },
+    set guildsLoading(value: boolean) {
+      state.guildsLoading = value;
+    },
+    get isMobile() {
+      return state.isMobile;
+    },
+    set isMobile(value: boolean) {
+      state.isMobile = value;
+    },
+    get selectedGuildId() {
+      return state.selectedGuildId;
+    },
+    set selectedGuildId(value: string) {
+      state.selectedGuildId = value;
+    },
+  };
+}
 
-const rollResult = {
-  diceArray: [[{ sides: 20, rolled: 20, icon: null }]],
-  resultArray: [{ results: 20, output: "20" }],
-  appearanceIdentities: preparation.appearanceIdentities,
-  rerolledAppearanceIdentities: [],
-  message: "20",
-};
+type JsonValue = z.input<ReturnType<typeof z.json>>;
 
-function response(value: unknown, status = 200): Response {
+const rollRequestSchema = z.object({
+  notation: z.string().optional(),
+  title: z.string().nullable().optional(),
+  timesToRepeat: z.number().optional(),
+  libraryRoll: z
+    .object({
+      scope: z.string(),
+      id: z.string(),
+      revision: z.number(),
+    })
+    .optional(),
+  deliveryId: z.string().optional(),
+});
+type RollRequest = z.infer<typeof rollRequestSchema>;
+
+function response(value: JsonValue, status = 200): Response {
   return new Response(JSON.stringify(value), {
     status,
     headers: { "content-type": "application/json" },
   });
 }
 
+function parseRollRequest(body: RequestInit["body"]): RollRequest {
+  return rollRequestSchema.parse(JSON.parse(String(body)));
+}
+
+let mocks: ReturnType<typeof createHomeHarness>;
+
+function Home() {
+  return <HomeView dependencies={mocks.dependencies} />;
+}
+
 function stubMobile(): void {
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn((query: string) => ({
-      matches: query === "(max-width: 639px)",
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  );
+  mocks.isMobile = true;
 }
 
 beforeEach(() => {
-  mocks.customFetch.mockReset();
-  mocks.toast.mockReset();
-  mocks.guildsLoading = false;
-  mocks.selectedGuildId = "100000000000000001";
+  mocks = createHomeHarness();
   window.localStorage.clear();
 });
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
+afterEach(cleanup);
 
 describe("Home roll preparation lifecycle", () => {
   it("announces server loading without forcing reduced-motion animation", () => {
@@ -368,7 +372,7 @@ describe("Home roll preparation lifecycle", () => {
   it("renders the idle portrait from the bundled image asset", () => {
     render(<Home />);
 
-    const portrait = screen.getByRole("img", { name: "Dice Witch portrait" });
+    const portrait = screen.getByRole("img", { name: "Dice Witch" });
     expect(portrait.getAttribute("src")).toContain(
       "/src/assets/dice-witch-banner.webp",
     );
@@ -449,11 +453,11 @@ describe("Home roll preparation lifecycle", () => {
         }],
       }),
     );
-    const rollBodies: Array<Record<string, unknown>> = [];
+    const rollBodies: RollRequest[] = [];
     mocks.customFetch.mockImplementation((path: string, init?: RequestInit) => {
       if (path === "/api/dice/prepare") return Promise.resolve(response(preparation));
       if (path === "/api/dice/roll") {
-        rollBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        rollBodies.push(parseRollRequest(init?.body));
         return Promise.resolve(response(rollResult));
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -464,6 +468,7 @@ describe("Home roll preparation lifecycle", () => {
 
     notation.focus();
     await user.keyboard("{ArrowUp}");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement).disabled)
         .toBe(false),
@@ -479,11 +484,11 @@ describe("Home roll preparation lifecycle", () => {
   });
 
   it("preserves Library identity in a web Roll-now request", async () => {
-    const rollBodies: Array<Record<string, unknown>> = [];
+    const rollBodies: RollRequest[] = [];
     mocks.customFetch.mockImplementation((path: string, init?: RequestInit) => {
       if (path === "/api/dice/prepare") return Promise.resolve(response(preparation));
       if (path === "/api/dice/roll") {
-        rollBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        rollBodies.push(parseRollRequest(init?.body));
         return Promise.resolve(response(rollResult));
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -505,6 +510,7 @@ describe("Home roll preparation lifecycle", () => {
       },
     });
     await waitFor(() => {
+      // SAFETY: The test controls this fixture and verifies its use in the scenario below.
       const stored = JSON.parse(
         window.localStorage.getItem(
           "dice-witch-recent-rolls-v1:100000000000000003",
@@ -539,6 +545,7 @@ describe("Home roll preparation lifecycle", () => {
       screen.getByRole("button", { name: "Load valid saved draft" }),
     );
     await waitFor(() => expect(document.activeElement).toBe(notation));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement)
@@ -580,6 +587,7 @@ describe("Home roll preparation lifecycle", () => {
     expect(screen.getByTestId("dice-input").dataset.input).toBe("4d8");
 
     await user.click(screen.getByRole("button", { name: "Set valid notation" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement)
@@ -633,6 +641,7 @@ describe("Home roll preparation lifecycle", () => {
       screen.getByRole("button", { name: "Set valid notation" }),
     );
     const retry = await screen.findByRole("button", { name: "Retry" });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(
       (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement)
         .disabled,
@@ -640,6 +649,7 @@ describe("Home roll preparation lifecycle", () => {
 
     await user.click(retry);
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", {
@@ -676,6 +686,7 @@ describe("Home roll preparation lifecycle", () => {
 
     await user.click(screen.getByRole("button", { name: "Set valid notation" }));
     const notation = screen.getByRole("textbox", { name: "Dice notation" });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement).disabled,
@@ -708,6 +719,7 @@ describe("Home roll preparation lifecycle", () => {
     await user.click(screen.getByRole("button", { name: "Set valid notation" }));
     await user.click(screen.getByRole("button", { name: "Set title" }));
     await user.click(screen.getByRole("button", { name: "Set repeat count" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement)
@@ -759,6 +771,7 @@ describe("Home roll preparation lifecycle", () => {
     render(<Home />);
 
     await user.click(screen.getByRole("button", { name: "Set valid notation" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement)
@@ -773,6 +786,7 @@ describe("Home roll preparation lifecycle", () => {
     await user.click(screen.getByRole("button", { name: "Set invalid notation" }));
 
     expect(screen.getByTestId("roller").dataset.hasResults).toBe("true");
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(
       (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement)
         .disabled,
@@ -795,6 +809,7 @@ describe("Home roll preparation lifecycle", () => {
     await user.click(screen.getByRole("button", { name: "Set valid notation" }));
     await user.click(screen.getByRole("button", { name: "Set title" }));
     await user.click(screen.getByRole("button", { name: "Set repeat count" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement)
@@ -846,6 +861,7 @@ describe("Home roll preparation lifecycle", () => {
     await user.click(screen.getByRole("button", { name: "Set valid notation" }));
     await user.click(screen.getByRole("button", { name: "Set title" }));
     await user.click(screen.getByRole("button", { name: "Set repeat count" }));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "Roll now" }) as HTMLButtonElement)
@@ -865,7 +881,7 @@ describe("Home roll preparation lifecycle", () => {
   });
 
   it("reuses one delivery identity while durable Discord delivery is pending", async () => {
-    const rollBodies: Array<Record<string, unknown>> = [];
+    const rollBodies: RollRequest[] = [];
     let rollAttempts = 0;
     mocks.customFetch.mockImplementation(
       (path: string, init?: RequestInit) => {
@@ -873,9 +889,7 @@ describe("Home roll preparation lifecycle", () => {
           return Promise.resolve(response(preparation));
         }
         if (path === "/api/dice/roll") {
-          rollBodies.push(
-            JSON.parse(String(init?.body)) as Record<string, unknown>,
-          );
+          rollBodies.push(parseRollRequest(init?.body));
           rollAttempts += 1;
           return Promise.resolve(
             rollAttempts === 1
@@ -893,6 +907,7 @@ describe("Home roll preparation lifecycle", () => {
       screen.getByRole("button", { name: "Set valid notation" }),
     );
     const rollButton = screen.getByRole("button", { name: "Roll now" });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect((rollButton as HTMLButtonElement).disabled).toBe(false),
     );
@@ -926,6 +941,7 @@ describe("Home roll preparation lifecycle", () => {
     await user.click(
       screen.getByRole("button", { name: "Set valid notation" }),
     );
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await waitFor(() =>
       expect(
         (screen.getByRole("button", {

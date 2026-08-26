@@ -31,9 +31,9 @@ function renderPreferences(): void {
 }
 
 function requestUrl(input: string | URL | Request): URL {
-  if (typeof input === "string") return new URL(input);
   if (input instanceof URL) return input;
-  return new URL(input.url);
+  if (input instanceof Request) return new URL(input.url);
+  return new URL(input);
 }
 
 function mockFetch(options: {
@@ -57,6 +57,7 @@ function mockFetch(options: {
       }
       if (url.pathname === "/api/appearance/v4/me/state") {
         if (init?.method === "PUT") {
+          // SAFETY: The test controls this fixture and verifies its use in the scenario below.
           const body = JSON.parse(String(init.body)) as { profile: unknown };
           return Response.json({
             status: "applied",
@@ -318,6 +319,7 @@ describe("appearance preference authorization", () => {
         requestUrl(input).pathname === `/api/guilds/${GUILD_ID}/preferences` &&
         init?.method === undefined,
       );
+      // SAFETY: The test controls this fixture and verifies its use in the scenario below.
       expect(requestUrl(read?.[0] as string).searchParams.get("version")).toBe("2");
       const mutations = calls.filter(([input, init]) =>
         requestUrl(input).pathname === `/api/guilds/${GUILD_ID}/preferences` &&

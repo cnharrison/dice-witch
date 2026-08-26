@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildStatusCommandResponse,
   DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS,
+  parseDiscordAudienceCaptureV1,
+  parseDiscordAudienceSnapshotV1,
   parseStatusCommandInteraction,
 } from "../../packages/discord-contracts/src";
 
@@ -36,6 +38,42 @@ describe("HTTP status command contract", () => {
         ),
       ).toEqual({ createdAt });
     }
+  });
+
+  it("routes unrelated applications before recognized-payload validation", () => {
+    expect(
+      parseStatusCommandInteraction(
+        { application_id: "100000000000000099", type: 2 },
+        applicationId,
+        guildId,
+      ),
+    ).toBeNull();
+    expect(() =>
+      parseStatusCommandInteraction(
+        { application_id: applicationId, type: 2, data: { name: "status" } },
+        applicationId,
+        guildId,
+      )
+    ).toThrow("Status interaction is invalid");
+  });
+
+  it("rejects non-empty status options", () => {
+    expect(() =>
+      parseStatusCommandInteraction(
+        {
+          id: interactionId,
+          application_id: applicationId,
+          type: 2,
+          token: "fixture.interaction.token",
+          data: {
+            name: "status",
+            type: 1,
+            options: [{ name: "unexpected" }, { name: "unexpected" }],
+          },
+        },
+        applicationId,
+      )
+    ).toThrow("Status options are invalid");
   });
 
   it("builds public status from one versioned audience snapshot", () => {
@@ -93,6 +131,41 @@ describe("HTTP status command contract", () => {
         createdAt,
       ),
     ).toThrow("Status response input is invalid");
+  });
+
+  it("enforces exact audience keys, shard totals, and first errors", () => {
+    const capture = {
+      version: 1,
+      capturedAt: snapshotCapturedAt,
+      liveGuilds: 3,
+      estimatedGuildMemberships: 50,
+      shardCount: 2,
+      guildCountsByShard: [2, 1],
+    };
+
+    expect(() =>
+      parseDiscordAudienceCaptureV1({ ...capture, extra: true })
+    ).toThrow("Discord audience capture is invalid");
+    expect(() =>
+      parseDiscordAudienceCaptureV1({
+        ...capture,
+        guildCountsByShard: [3, 1],
+      })
+    ).toThrow("Discord audience capture is invalid");
+    expect(() =>
+      parseDiscordAudienceSnapshotV1({
+        ...capture,
+        knownDiceWitchUsers: -1,
+        version: 2,
+      })
+    ).toThrow("Discord audience snapshot is invalid");
+    expect(() =>
+      parseDiscordAudienceSnapshotV1({
+        ...capture,
+        knownDiceWitchUsers: 7,
+        version: 2,
+      })
+    ).toThrow("Discord audience capture is invalid");
   });
 
   it("fails closed on an incomplete shard snapshot", () => {

@@ -2,19 +2,22 @@ import { describe, expect, it } from "vitest";
 import {
   assertThreeDrawingBufferSizeV4,
   readThreeDrawingBufferLimitsV4,
+  type ThreeDrawingBufferContextV4,
 } from "./webgl-capabilities";
 
+type ViewportFixture = Int32Array | readonly number[];
+
 function context(
-  viewport: unknown,
-  renderbuffer: unknown,
-): WebGLRenderingContext {
+  viewport: ViewportFixture,
+  renderbuffer: number,
+): ThreeDrawingBufferContextV4 {
   return {
     MAX_RENDERBUFFER_SIZE: 1,
     MAX_VIEWPORT_DIMS: 2,
     getParameter(parameter: number) {
       return parameter === 2 ? viewport : renderbuffer;
     },
-  } as unknown as WebGLRenderingContext;
+  };
 }
 
 describe("V4 Three.js WebGL drawing-buffer capabilities", () => {

@@ -123,7 +123,9 @@ describe("V4 deterministic random", () => {
     expect(() => canonicalJsonV4({ invalid: Number.NaN })).toThrow(
       "Canonical JSON contains an unsupported value",
     );
-    expect(() => canonicalJsonV4(new Array(1))).toThrow(
+    const sparseArray: unknown[] = [];
+    sparseArray.length = 1;
+    expect(() => canonicalJsonV4(sparseArray)).toThrow(
       "Canonical JSON contains an unsupported value",
     );
 

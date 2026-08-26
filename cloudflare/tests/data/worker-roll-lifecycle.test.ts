@@ -1,15 +1,14 @@
-import { env, exports } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { RollLifecycleSnapshotV1 } from "../../packages/discord-contracts/src";
+import type {
+  RollLifecycleAlertV1,
+  RollLifecycleSnapshotV1,
+} from "../../packages/discord-contracts/src";
 import { D1DiscordChannelDirectoryRepository } from "../../workers/data/src/discord-channel-directory-repository";
 import { D1RollLifecycleRepository } from "../../workers/data/src/roll-lifecycle-repository";
 import { processRollLifecycleAlerts } from "../../workers/data/src/roll-lifecycle-service";
-
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
+import { dataTestEnv as dataEnv } from "./test-bindings";
 const acceptedAt = 1_767_225_600_000;
 const interactionId = "100000000000000011";
 
@@ -125,7 +124,7 @@ describe("Data Worker roll lifecycle service", () => {
       channelType: 0,
       observedAt: acceptedAt,
     }, acceptedAt);
-    const createRollLifecycleAlertV1 = vi.fn((value: unknown) => {
+    const createRollLifecycleAlertV1 = vi.fn((value: RollLifecycleAlertV1) => {
       void value;
       return Promise.resolve({
         status: "delivered",
@@ -172,7 +171,7 @@ describe("Data Worker roll lifecycle service", () => {
     const guildId = "100000000000000017";
     const channelId = "100000000000000018";
     await repository.record(failedGuildSnapshot(guildId, channelId));
-    const createRollLifecycleAlertV1 = vi.fn((value: unknown) => {
+    const createRollLifecycleAlertV1 = vi.fn((value: RollLifecycleAlertV1) => {
       void value;
       return Promise.resolve({
         status: "delivered",

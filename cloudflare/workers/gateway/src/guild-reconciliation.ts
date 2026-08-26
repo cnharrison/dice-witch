@@ -1,6 +1,16 @@
+import { z } from "zod";
 import type { GatewayActiveGuildInventory } from "./gateway-coordinator";
 
 const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
+const NonNegativeSafeIntegerSchema = z
+  .number()
+  .refine(Number.isSafeInteger)
+  .nonnegative();
+const GuildReconciliationResponseSchema = z.looseObject({
+  status: z.literal("applied"),
+  activatedCount: NonNegativeSafeIntegerSchema,
+  deactivatedCount: NonNegativeSafeIntegerSchema,
+});
 
 type GuildReconciliationEnv = {
   DATA_SERVICE: {
@@ -14,10 +24,6 @@ export type GuildReconciliationResult = {
   activatedCount: number;
   deactivatedCount: number;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function validateGuildInventory(inventory: GatewayActiveGuildInventory): void {
   if (
@@ -67,21 +73,16 @@ export async function reconcileGuildInventory(
     }),
   );
   if (!response.ok) throw new Error("Guild reconciliation update failed");
-  const result: unknown = await response.json();
-  if (
-    !isRecord(result) ||
-    result.status !== "applied" ||
-    !Number.isSafeInteger(result.activatedCount) ||
-    Number(result.activatedCount) < 0 ||
-    !Number.isSafeInteger(result.deactivatedCount) ||
-    Number(result.deactivatedCount) < 0
-  ) {
+  const result = GuildReconciliationResponseSchema.safeParse(
+    await response.json(),
+  );
+  if (!result.success) {
     throw new Error("Guild reconciliation update response is invalid");
   }
   return {
     status: "applied",
     observedGuildCount: inventory.guildIds.length,
-    activatedCount: Number(result.activatedCount),
-    deactivatedCount: Number(result.deactivatedCount),
+    activatedCount: result.data.activatedCount,
+    deactivatedCount: result.data.deactivatedCount,
   };
 }

@@ -114,10 +114,7 @@ const CANONICAL_TO_TARGET_V4: QuaternionV4 = [
   TARGET_TO_CANONICAL_V4[3],
 ];
 
-function resultOrientation(result: number): {
-  result: number;
-  rotation: QuaternionV4;
-} {
+function resultOrientation(result: number) {
   const resultFace = D6_FACES_V4.find((face) => face.id === `face-${result}`);
   const sourceFrame = D6_RESULT_POSE_FRAMES_V4.get(result);
   if (resultFace === undefined || sourceFrame === undefined) {

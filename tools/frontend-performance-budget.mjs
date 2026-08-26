@@ -57,7 +57,7 @@ export async function measureFrontendEntry(distDirectory) {
   }
 
   const assets = [];
-  for (const reference of [...new Set(localReferences)]) {
+  for (const reference of new Set(localReferences)) {
     const file = path.join(distDirectory, reference.replace(/^\//, ""));
     const contents = await readFile(file);
     assets.push({

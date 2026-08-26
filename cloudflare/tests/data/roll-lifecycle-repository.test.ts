@@ -1,18 +1,18 @@
-import { env } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import type {
-  RollLifecycleSnapshotV1,
-  RollLifecycleSnapshotV2,
+import { dataTestEnv as dataEnv } from "./test-bindings";
+import {
+  parseRollLifecycleContext,
+  parseRollLifecycleSnapshot,
+  rollLifecycleContextJson,
+  type RollLifecycleSnapshotV1,
+  type RollLifecycleSnapshotV2,
 } from "../../packages/discord-contracts/src";
 import { D1RollLifecycleRepository } from "../../workers/data/src/roll-lifecycle-repository";
 
-const dataEnv = env as unknown as {
-  DATA: D1Database;
-  TEST_MIGRATIONS: D1Migration[];
-};
 const acceptedAt = 1_767_225_600_123;
 const interactionId = "100000000000000001";
+type CyclicValue = { self?: CyclicValue };
 
 function snapshot(
   overrides: Partial<RollLifecycleSnapshotV1> = {},
@@ -87,6 +87,87 @@ function snapshotV2(
 beforeEach(async () => {
   await applyD1Migrations(dataEnv.DATA, dataEnv.TEST_MIGRATIONS);
   await dataEnv.DATA.prepare("DELETE FROM roll_lifecycle_receipts").run();
+});
+
+describe("roll lifecycle contracts", () => {
+  it("preserves JSON identities while rejecting forbidden and non-JSON values", () => {
+    const outcome = { rolls: [{ total: 20 }] };
+    const destinationPayload = { components: [{ content: "result" }] };
+    const parsed = parseRollLifecycleContext({
+      ...snapshot().context,
+      outcome,
+      destinationPayload,
+    });
+
+    expect(parsed.outcome).toBe(outcome);
+    expect(parsed.destinationPayload).toBe(destinationPayload);
+    expect(() =>
+      parseRollLifecycleContext({
+        ...snapshot().context,
+        destinationPayload: { nested: [{ ToKeN: "forbidden" }] },
+      }),
+    ).toThrow("Roll lifecycle context is invalid");
+    expect(() =>
+      parseRollLifecycleContext({
+        ...snapshot().context,
+        destinationPayload: { valid: undefined },
+      }),
+    ).toThrow("Roll lifecycle context is invalid");
+
+    const cyclic: CyclicValue = {};
+    cyclic.self = cyclic;
+    expect(() =>
+      parseRollLifecycleContext({ ...snapshot().context, outcome: cyclic }),
+    ).toThrow("Roll lifecycle context is invalid");
+  });
+
+  it("enforces the encoded context byte limit at its exact boundary", () => {
+    const base = { ...snapshot().context, outcome: null };
+    let minimum = 0;
+    let maximum = 65_536;
+    while (minimum < maximum) {
+      const candidate = Math.ceil((minimum + maximum) / 2);
+      try {
+        rollLifecycleContextJson({
+          ...base,
+          destinationPayload: "x".repeat(candidate),
+        });
+        minimum = candidate;
+      } catch {
+        maximum = candidate - 1;
+      }
+    }
+
+    expect(new TextEncoder().encode(rollLifecycleContextJson({
+      ...base,
+      destinationPayload: "x".repeat(minimum),
+    }))).toHaveLength(65_536);
+    expect(() =>
+      rollLifecycleContextJson({
+        ...base,
+        destinationPayload: "x".repeat(minimum + 1),
+      }),
+    ).toThrow("Roll lifecycle context is invalid");
+  });
+
+  it("keeps snapshot state and context error precedence", () => {
+    expect(() =>
+      parseRollLifecycleSnapshot({
+        ...snapshot(),
+        state: "deferred",
+        context: { token: "forbidden" },
+      }),
+    ).toThrow("Roll lifecycle snapshot is invalid");
+    expect(() =>
+      parseRollLifecycleSnapshot({
+        ...snapshotV2(),
+        context: { ...snapshot().context, destinationPayload: { png: [] } },
+        diagnostics: { invalid: true },
+      }),
+    ).toThrow("Roll lifecycle context is invalid");
+    expect(parseRollLifecycleSnapshot(snapshot()).version).toBe(1);
+    expect(parseRollLifecycleSnapshot(snapshotV2()).version).toBe(2);
+  });
 });
 
 describe("D1RollLifecycleRepository", () => {

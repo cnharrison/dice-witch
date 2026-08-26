@@ -1,3 +1,4 @@
+import type { SchemaInput } from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   parseRollLifecycleContext,
   parseRollLifecycleSnapshot,
@@ -67,7 +68,7 @@ type StoredLifecycle = {
   alert_message_id: string | null;
 };
 
-const STATE_RANK: Record<RollLifecycleSnapshot["state"], number> = {
+const STATE_RANK = {
   deferred: 0,
   accepted: 1,
   delivery_started: 2,
@@ -75,7 +76,7 @@ const STATE_RANK: Record<RollLifecycleSnapshot["state"], number> = {
   failed: 3,
 };
 
-function identityContext(context: RollLifecycleContextV1): unknown {
+function identityContext(context: RollLifecycleContextV1) {
   return { ...context, destinationPayload: null };
 }
 
@@ -240,7 +241,7 @@ function workItem(row: StoredLifecycle & { interaction_id: string }): RollLifecy
 export class D1RollLifecycleRepository {
   constructor(private readonly db: D1Database) {}
 
-  async record(value: unknown): Promise<RecordRollLifecycleResult> {
+  async record(value: SchemaInput): Promise<RecordRollLifecycleResult> {
     const snapshot = parseRollLifecycleSnapshot(value);
     const diagnostics = snapshot.version === 2 ? snapshot.diagnostics : null;
     const contextJson = rollLifecycleContextJson(snapshot.context);

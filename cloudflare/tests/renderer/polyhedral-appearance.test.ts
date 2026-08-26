@@ -19,7 +19,6 @@ import {
   renderD10AppearanceToPng,
   renderD12AppearanceToPng,
   renderComposedSvgToPng,
-  type AppearanceFontId,
   type D10VisibleFaceValues,
   type RenderAppearanceV3,
 } from "../../packages/dice-svg/src";
@@ -31,7 +30,7 @@ const baseAppearance = {
   textColor: "#ffffff",
   outlineColor: "#000000" as const,
   fill: { type: "gradient" as const },
-  fontId: "liberation-sans" as AppearanceFontId,
+  fontId: "liberation-sans" as const,
   effect: null,
 };
 

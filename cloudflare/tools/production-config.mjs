@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 
 export const PRODUCTION_WORKERS = [
   "data",
@@ -136,19 +137,20 @@ const SECRET_NAMES = {
 };
 
 function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return z.object({}).passthrough().safeParse(value).success;
 }
 
-function decodeValues(encodedValues) {
+function decodeValues(value) {
+  const encodedValues = z.string().safeParse(value);
   if (
-    typeof encodedValues !== "string" ||
-    encodedValues.length === 0 ||
-    encodedValues.length % 4 !== 0 ||
-    !/^[A-Za-z0-9+/]*={0,2}$/.test(encodedValues)
+    !encodedValues.success ||
+    encodedValues.data.length === 0 ||
+    encodedValues.data.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(encodedValues.data)
   ) {
     throw new Error("Production values bundle is invalid");
   }
-  const decoded = Buffer.from(encodedValues, "base64");
+  const decoded = Buffer.from(encodedValues.data, "base64");
   if (decoded.byteLength > MAX_VALUES_BYTES) {
     throw new Error("Production values bundle exceeds 16 KiB");
   }
@@ -159,7 +161,7 @@ function decodeValues(encodedValues) {
     throw new Error("Production values bundle is invalid");
   }
   if (
-    !isRecord(values) ||
+    !z.object({}).passthrough().safeParse(values).success ||
     Object.keys(values).sort().join(",") !== REQUIRED_VALUE_KEYS.join(",") ||
     values.version !== 1 ||
     values.d1DatabaseName !== DATABASE_NAME ||
@@ -214,17 +216,18 @@ function productionSecrets(worker, storeId) {
 }
 
 function baseConfig(template, worker) {
-  return {
+  const config = {
     ...structuredClone(template),
     name: productionName(worker),
     workers_dev: false,
-    ...(template.services === undefined
-      ? {}
-      : { services: productionServices(template.services) }),
-    ...(template.r2_buckets === undefined
-      ? {}
-      : { r2_buckets: productionBuckets(template.r2_buckets) }),
   };
+  if (template.services !== undefined) {
+    config.services = productionServices(template.services);
+  }
+  if (template.r2_buckets !== undefined) {
+    config.r2_buckets = productionBuckets(template.r2_buckets);
+  }
+  return config;
 }
 
 function productionBuckets(buckets = []) {

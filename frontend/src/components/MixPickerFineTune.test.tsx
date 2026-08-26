@@ -11,8 +11,10 @@ import type {
   AppearanceCatalogV3,
   AppearanceRecipeV3,
 } from "@/types/appearance";
+import { APPEARANCE_CATALOG_V3 } from "../../../cloudflare/packages/dice-appearance/src/catalog";
 
 const catalog = {
+  ...APPEARANCE_CATALOG_V3,
   materials: [
     {
       family: "classic",
@@ -57,15 +59,17 @@ const catalog = {
     directions: [{ id: "upper-left", name: "Upper left" }],
   },
   editorDefaults: {
+    ...APPEARANCE_CATALOG_V3.editorDefaults,
     primaryColor: "#101010",
     palette: ["#201040", "#301050"],
     patternId: "dots",
   },
-} as never as AppearanceCatalogV3;
+} satisfies AppearanceCatalogV3;
 
 function recipeWith(
   overrides: Partial<AppearanceRecipeV3> = {},
 ): AppearanceRecipeV3 {
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   return {
     version: 3,
     variation: "curated",
@@ -187,6 +191,7 @@ describe("MixPickerFineTune panel", () => {
   });
 
   it("reveals spread and direction once a classic gradient joins the mix", () => {
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const gradientMaterial = {
       family: "classic",
       treatment: "gradient",
@@ -215,6 +220,7 @@ describe("MixPickerFineTune panel", () => {
       onChange,
     );
     fireEvent.click(screen.getByRole("checkbox"));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     if (next.font.mode !== "weighted") throw new Error("expected weighted");
     expect(next.font.options.map(({ weight }) => weight)).toEqual([500, 500]);
@@ -239,6 +245,7 @@ describe("MixPickerFineTune panel", () => {
       onChange,
     );
     fireEvent.click(screen.getByRole("checkbox"));
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const next = onChange.mock.calls[0][0] as AppearanceRecipeV3;
     expect(next.font).toEqual({ mode: "allowlist", values: ["cinzel", "fraunces"] });
     // Fixed single-id rows pass through untouched.

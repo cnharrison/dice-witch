@@ -1,49 +1,54 @@
-import type {
-  RollInteraction,
-  RollLoggingContext,
-} from "./roll-interaction";
+import { z } from "zod";
+import {
+  safeIntegerSchema,
+  type SchemaInput,
+  seedSchema,
+  strictObjectSchema,
+} from "./schema-primitives";
+import type { RollInteraction, RollLoggingContext } from "./roll-interaction";
 
 const DISCORD_EPOCH_MS = 1_420_070_400_000;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const RollDeliveryTelemetryV2Schema = strictObjectSchema({
+  version: z.literal(2),
+  handlerStartedAt: safeIntegerSchema,
+  acknowledgementPreparedAt: safeIntegerSchema,
+  acknowledgementType: z.union([z.literal(4), z.literal(5), z.literal(6)]),
+});
+export type RollDeliveryTelemetryV2 = z.infer<
+  typeof RollDeliveryTelemetryV2Schema
+>;
+const NullableRollDeliveryTelemetryV2Schema = z.nullable(
+  RollDeliveryTelemetryV2Schema,
+);
 
-export type RollDeliveryTelemetryV2 = {
-  version: 2;
-  handlerStartedAt: number;
-  acknowledgementPreparedAt: number;
-  acknowledgementType: 4 | 5 | 6;
-};
+const AcknowledgedClatterSchema = strictObjectSchema({
+  renderSeed: seedSchema,
+  deliveredAt: safeIntegerSchema.positive(),
+});
+const NullableAcknowledgedClatterSchema = z.nullable(
+  AcknowledgedClatterSchema,
+);
+type AcknowledgedClatter = z.infer<typeof AcknowledgedClatterSchema>;
 
 function parseRollDeliveryTelemetry(
-  value: unknown,
+  value: SchemaInput,
   receivedAt: number,
   deferredAt: number,
 ): RollDeliveryTelemetryV2 | null {
-  if (value === null) return null;
+  const result = NullableRollDeliveryTelemetryV2Schema.safeParse(value);
+  if (!result.success) {
+    throw new Error("Roll delivery telemetry is invalid");
+  }
+  if (result.data === null) return null;
   if (
-    !isRecord(value) ||
-    value.version !== 2 ||
-    typeof value.handlerStartedAt !== "number" ||
-    !Number.isSafeInteger(value.handlerStartedAt) ||
-    value.handlerStartedAt < receivedAt ||
-    value.handlerStartedAt > deferredAt ||
-    typeof value.acknowledgementPreparedAt !== "number" ||
-    !Number.isSafeInteger(value.acknowledgementPreparedAt) ||
-    value.acknowledgementPreparedAt < deferredAt ||
-    (value.acknowledgementType !== 4 &&
-      value.acknowledgementType !== 5 &&
-      value.acknowledgementType !== 6)
+    result.data.handlerStartedAt < receivedAt ||
+    result.data.handlerStartedAt > deferredAt ||
+    result.data.acknowledgementPreparedAt < deferredAt
   ) {
     throw new Error("Roll delivery telemetry is invalid");
   }
-  return {
-    version: 2,
-    handlerStartedAt: value.handlerStartedAt,
-    acknowledgementPreparedAt: value.acknowledgementPreparedAt,
-    acknowledgementType: value.acknowledgementType,
-  };
+  return result.data;
 }
 
 export type RollDeliveryPayload = {
@@ -83,30 +88,25 @@ export type RollDeliveryPayload = {
   };
 };
 
+type RollDeliveryFields = Omit<RollDeliveryPayload, "logging">;
+
 export function buildRollDeliveryPayload(
   interaction: RollInteraction,
   deferredAt: number,
   rollSeed: number,
-  telemetry: unknown,
-  acknowledgedClatter: { renderSeed: number; deliveredAt: number } | null = null,
+  telemetry: SchemaInput,
+  acknowledgedClatter: AcknowledgedClatter | null = null,
 ): RollDeliveryPayload {
-  if (
-    !Number.isSafeInteger(rollSeed) ||
-    rollSeed < 0 ||
-    rollSeed > 0xffff_ffff
-  ) {
+  if (!seedSchema.safeParse(rollSeed).success) {
     throw new Error("Roll delivery seed is invalid");
   }
-  if (
-    acknowledgedClatter !== null &&
-    (!Number.isSafeInteger(acknowledgedClatter.renderSeed) ||
-      acknowledgedClatter.renderSeed < 0 ||
-      acknowledgedClatter.renderSeed > 0xffff_ffff ||
-      !Number.isSafeInteger(acknowledgedClatter.deliveredAt) ||
-      acknowledgedClatter.deliveredAt <= 0)
-  ) {
+  const parsedClatter = NullableAcknowledgedClatterSchema.safeParse(
+    acknowledgedClatter,
+  );
+  if (!parsedClatter.success) {
     throw new Error("Roll delivery clatter acknowledgement is invalid");
   }
+
   const receivedAt = Number(
     (BigInt(interaction.id) >> 22n) + BigInt(DISCORD_EPOCH_MS),
   );
@@ -115,7 +115,7 @@ export function buildRollDeliveryPayload(
     receivedAt,
     deferredAt,
   );
-  return {
+  const fields: RollDeliveryFields = {
     interaction: {
       id: interaction.id,
       applicationId: interaction.applicationId,
@@ -136,20 +136,19 @@ export function buildRollDeliveryPayload(
     },
     deferredAt,
     rollSeed,
-    ...(parsedTelemetry === null ? {} : { telemetry: parsedTelemetry }),
-    ...(acknowledgedClatter === null
-      ? {}
-      : {
-          renderSeed: acknowledgedClatter.renderSeed,
-          clatter: { deliveredAt: acknowledgedClatter.deliveredAt },
-        }),
-    logging: {
-      source: "discord",
-      channelId: interaction.channelId,
-      notation: interaction.notation,
-      ...(interaction.loggingContext === null
-        ? {}
-        : { context: interaction.loggingContext }),
-    },
   };
+  if (parsedTelemetry !== null) fields.telemetry = parsedTelemetry;
+  if (parsedClatter.data !== null) {
+    fields.renderSeed = parsedClatter.data.renderSeed;
+    fields.clatter = { deliveredAt: parsedClatter.data.deliveredAt };
+  }
+  const logging: RollDeliveryPayload["logging"] = {
+    source: "discord",
+    channelId: interaction.channelId,
+    notation: interaction.notation,
+  };
+  if (interaction.loggingContext !== null) {
+    logging.context = interaction.loggingContext;
+  }
+  return { ...fields, logging };
 }

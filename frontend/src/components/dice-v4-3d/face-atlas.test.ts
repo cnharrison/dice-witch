@@ -26,7 +26,9 @@ import {
 
 function labelCanvasHarness() {
   const drawn: string[] = [];
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   const canvas = { width: 0, height: 0 } as HTMLCanvasElement;
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   const context = {
     canvas,
     font: "",
@@ -38,6 +40,7 @@ function labelCanvasHarness() {
     measureText: (text: string) => {
       const fontSize = Number.parseFloat(context.font) || 100;
       const width = Array.from(text).length * fontSize * 0.56;
+      // SAFETY: The test controls this fixture and verifies its use in the scenario below.
       return {
         width,
         actualBoundingBoxLeft: 0,
@@ -52,7 +55,8 @@ function labelCanvasHarness() {
     save: () => undefined,
     stroke: () => undefined,
     strokeText: (text: string) => drawn.push(text),
-  } as unknown as CanvasRenderingContext2D;
+  } as CanvasRenderingContext2D;
+  // SAFETY: The test controls this fixture and verifies its use in the scenario below.
   canvas.getContext = (() => context) as HTMLCanvasElement["getContext"];
   return { canvas, drawn };
 }
@@ -286,6 +290,7 @@ describe("V4 Three.js face atlas layout", () => {
       4,
     );
     const sourceLayout = createFaceAtlasLayoutV4(physical.labels.length);
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     expect(() =>
       createPhysicalLabelAtlasResourcesFromSourceV4(physical, {
         canvas: {

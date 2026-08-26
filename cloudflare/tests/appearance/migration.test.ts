@@ -29,7 +29,7 @@ const catalog: AppearanceCatalog = {
 };
 const designId = "5dbb69e6-e748-4b01-9d6f-a19aa5c24a8f";
 
-function profileV1(): unknown {
+function profileV1() {
   return {
     version: 1,
     designs: [
@@ -132,9 +132,10 @@ describe("appearance V1 to V2 migration", () => {
   });
 
   it("preserves guild mode and rejects native recipes as legacy", () => {
-    const source = profileV1() as Record<string, unknown>;
-    source.mode = "enforced";
-    const guild = parseGuildAppearanceProfile(source, catalog);
+    const guild = parseGuildAppearanceProfile(
+      { ...profileV1(), mode: "enforced" },
+      catalog,
+    );
     expect(migrateGuildAppearanceProfileV1(guild).mode).toBe("enforced");
 
     const guildRecipe = guild.designs[0]?.recipe;

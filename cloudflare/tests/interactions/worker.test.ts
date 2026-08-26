@@ -1,8 +1,72 @@
+import {
+  createExecutionContext,
+  waitOnExecutionContext,
+} from "cloudflare:test";
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import {
+  parseDiscordChannelDirectoryMutationV1,
+  type RollDeliveryPayload,
+} from "../../packages/discord-contracts/src";
+import {
   handleInteractionRequest,
+  handleInteractionRequestWithDependencies,
   type InteractionEnv,
 } from "../../workers/interactions/src";
+import type { CopyResult } from "../../workers/interactions/src/service-results";
+import type {
+  DiscordRestPort,
+  DirectSavedRollReservation,
+  FetchPort,
+  RollWorkPort,
+  SavedRollCopyRequest,
+  WebDeliveryWorkPort,
+} from "../../workers/interactions/src/ports";
+
+const AcceptanceTelemetrySchema = z.strictObject({
+  telemetryVersion: z.literal(2),
+  level: z.literal("info"),
+  message: z.literal("Discord roll lifecycle advanced"),
+  interactionId: z.string(),
+  stage: z.literal("accepted"),
+  status: z.enum(["created", "existing"]),
+  timingClock: z.literal("workers-io"),
+  acceptanceRpcMs: z.number(),
+  acknowledgementToAcceptanceStartMs: z.number().nullable(),
+  acknowledgementToAcceptanceCompleteMs: z.number().nullable(),
+});
+
+type AcceptanceTelemetry = z.output<typeof AcceptanceTelemetrySchema>;
+
+function unavailablePortMethod(): Promise<never> {
+  return Promise.reject(new Error("Unexpected interaction port call"));
+}
+
+const unavailableRollWork: RollWorkPort = {
+  acceptDelivery: unavailablePortMethod,
+  getSaveRollIntent: unavailablePortMethod,
+  getTextResult: unavailablePortMethod,
+  openSavedRollPicker: unavailablePortMethod,
+  updateSavedRollPicker: unavailablePortMethod,
+  reserveSavedRollRun: unavailablePortMethod,
+  reserveDirectSavedRoll: unavailablePortMethod,
+  acceptSavedRollDelivery: unavailablePortMethod,
+  copySavedRollToMine: unavailablePortMethod,
+};
+
+function rollWorkPort(overrides: Partial<RollWorkPort> = {}): RollWorkPort {
+  return { ...unavailableRollWork, ...overrides };
+}
+
+function webDeliveryWorkPort(
+  overrides: Partial<WebDeliveryWorkPort> = {},
+): WebDeliveryWorkPort {
+  return {
+    getSaveRollIntent: unavailablePortMethod,
+    getTextResult: unavailablePortMethod,
+    ...overrides,
+  };
+}
 
 function hex(bytes: ArrayBuffer): string {
   return [...new Uint8Array(bytes)]
@@ -14,17 +78,20 @@ async function signedRequest(
   body: string,
   overrides: {
     path?: string;
-    rollWork?: Record<string, (value: unknown) => Promise<unknown>>;
-    webDeliveryWork?: Record<string, (value: unknown) => Promise<unknown>>;
-    discordRest?: { sendRollHelper(value: unknown): Promise<unknown> };
-    dataFetch?: (request: Request) => Promise<Response>;
+    rollWork?: Partial<RollWorkPort>;
+    webDeliveryWork?: Partial<WebDeliveryWorkPort>;
+    discordRest?: DiscordRestPort;
+    dataFetch?: FetchPort["fetch"];
     signature?: string;
   } = {},
 ): Promise<{ env: InteractionEnv; request: Request }> {
-  const keys = (await crypto.subtle.generateKey("Ed25519", true, [
+  const keys = await crypto.subtle.generateKey("Ed25519", true, [
     "sign",
     "verify",
-  ])) as CryptoKeyPair;
+  ]);
+  if (!("privateKey" in keys)) {
+    throw new Error("Ed25519 key generation did not return a key pair");
+  }
   const timestamp = "1783800000";
   const bodyBytes = new TextEncoder().encode(body);
   const timestampBytes = new TextEncoder().encode(timestamp);
@@ -34,12 +101,14 @@ async function signedRequest(
   const signature = hex(
     await crypto.subtle.sign("Ed25519", keys.privateKey, message),
   );
+  const publicKey = await crypto.subtle.exportKey("raw", keys.publicKey);
+  if (!(publicKey instanceof ArrayBuffer)) {
+    throw new Error("Ed25519 public key export was not raw bytes");
+  }
   return {
     env: {
       DISCORD_APPLICATION_ID: "100000000000000001",
-      DISCORD_PUBLIC_KEY: hex(
-        (await crypto.subtle.exportKey("raw", keys.publicKey)) as ArrayBuffer,
-      ),
+      DISCORD_PUBLIC_KEY: hex(publicKey),
       DISCORD_TEST_GUILD_ID: "100000000000000002",
       INVITE_LINK:
         "https://discord.com/api/oauth2/authorize?client_id=100000000000000001&permissions=0&scope=bot%20applications.commands",
@@ -62,7 +131,7 @@ async function signedRequest(
               },
             }),
           )),
-      } as unknown as Fetcher,
+      },
       GATEWAY_STATUS: {
         getStatusSnapshot: () =>
           Promise.resolve({
@@ -75,11 +144,11 @@ async function signedRequest(
         sendRollHelper: () => Promise.resolve({ status: "delivered" }),
       },
       ROLL_WORK: {
-        getByName: () => overrides.rollWork ?? {},
-      } as unknown as DurableObjectNamespace,
+        getByName: () => rollWorkPort(overrides.rollWork),
+      },
       WEB_DELIVERY_WORK: {
-        getByName: () => overrides.webDeliveryWork ?? {},
-      } as unknown as DurableObjectNamespace,
+        getByName: () => webDeliveryWorkPort(overrides.webDeliveryWork),
+      },
     },
     request: new Request(
       `https://interactions.test${overrides.path ?? "/interactions"}`,
@@ -449,20 +518,14 @@ describe("Discord HTTP interaction Worker", () => {
         },
       },
     );
-    let background: Promise<unknown> | undefined;
-    const ctx = {
-      waitUntil(promise: Promise<unknown>) {
-        background = promise;
-      },
-    } as unknown as ExecutionContext;
+    const ctx = createExecutionContext();
 
     const response = await handleInteractionRequest(request, env, ctx);
 
     await expect(response.json()).resolves.toEqual({ type: 6 });
     expect(updateSavedRollPicker).not.toHaveBeenCalled();
-    expect(background).toBeDefined();
     for (const release of releaseData) release();
-    await background;
+    await waitOnExecutionContext(ctx);
     expect(updateSavedRollPicker).toHaveBeenCalledWith(
       expect.objectContaining({ action: "select", selection }),
     );
@@ -478,10 +541,10 @@ describe("Discord HTTP interaction Worker", () => {
   });
 
   it("reserves an opaque saved roll before publicly deferring its direct delivery", async () => {
-    const reserveDirectSavedRoll = vi.fn((value: unknown) => {
-      const input = value as { selection: unknown };
-      return Promise.resolve({ status: "reserved", selection: input.selection });
-    });
+    const reserveDirectSavedRoll = vi.fn(
+      (value: DirectSavedRollReservation) =>
+        Promise.resolve({ status: "reserved", selection: value.selection }),
+    );
     const acceptSavedRollDelivery = vi.fn(() =>
       Promise.resolve({ status: "created", delivery: "pending" }),
     );
@@ -545,10 +608,10 @@ describe("Discord HTTP interaction Worker", () => {
           });
         }),
     );
-    const reserveDirectSavedRoll = vi.fn((value: unknown) => {
-      const input = value as { selection: unknown };
-      return Promise.resolve({ status: "reserved", selection: input.selection });
-    });
+    const reserveDirectSavedRoll = vi.fn(
+      (value: DirectSavedRollReservation) =>
+        Promise.resolve({ status: "reserved", selection: value.selection }),
+    );
     const acceptSavedRollDelivery = vi.fn(() =>
       Promise.resolve({ status: "created" }),
     );
@@ -585,33 +648,31 @@ describe("Discord HTTP interaction Worker", () => {
         rollWork: { reserveDirectSavedRoll, acceptSavedRollDelivery },
       },
     );
-    let background: Promise<unknown> | undefined;
-    const ctx = {
-      waitUntil(promise: Promise<unknown>) {
-        background = promise;
-      },
-    } as unknown as ExecutionContext;
+    const ctx = createExecutionContext();
 
     const response = await handleInteractionRequest(request, env, ctx);
     await expect(response.json()).resolves.toEqual({ type: 5 });
     expect(reserveDirectSavedRoll).not.toHaveBeenCalled();
-    expect(background).toBeDefined();
 
     for (const release of releaseData) release();
-    await background;
+    await waitOnExecutionContext(ctx);
     expect(reserveDirectSavedRoll).toHaveBeenCalledOnce();
     expect(acceptSavedRollDelivery).toHaveBeenCalledOnce();
   });
 
   it("opens a prefilled private rename modal for Copy to Personal conflicts", async () => {
-    const copySavedRollToMine = vi.fn((value: unknown) => {
-      const input = value as { name: string | null };
-      return Promise.resolve(
-        input.name === null
-          ? { status: "name_conflict", name: "Attack" }
-          : { status: "copied", name: input.name },
-      );
-    });
+    const copySavedRollToMine = vi.fn(
+      (value: SavedRollCopyRequest): Promise<CopyResult> =>
+        Promise.resolve(
+          value.name === null
+            ? { status: "name_conflict", name: "Attack" }
+            : {
+                status: "copied",
+                name: value.name,
+                destinationId: "123e4567-e89b-42d3-a456-426614174000",
+              },
+        ),
+    );
     const base = {
       id: "100000000000000011",
       application_id: "100000000000000001",
@@ -704,7 +765,7 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       (BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const acceptDelivery = vi.fn((value: RollDeliveryPayload) => {
       void value;
       return Promise.resolve({
         status: "created",
@@ -726,7 +787,9 @@ describe("Discord HTTP interaction Worker", () => {
       }
       contextMutations += 1;
       expect(path).toBe("/internal/discord-channel-context");
-      const mutation = await request.json<Record<string, unknown>>();
+      const mutation = parseDiscordChannelDirectoryMutationV1(
+        await request.json(),
+      );
       expect(mutation).toMatchObject({
         version: 1,
         operation: "upsert",
@@ -736,7 +799,7 @@ describe("Discord HTTP interaction Worker", () => {
         channelName: "dice-rolls",
         channelType: 0,
       });
-      expect(typeof mutation.observedAt).toBe("number");
+      expect(Number.isSafeInteger(mutation.observedAt)).toBe(true);
       return new Response(null, { status: 503 });
     });
     const { env, request } = await signedRequest(
@@ -773,12 +836,7 @@ describe("Discord HTTP interaction Worker", () => {
       { rollWork: { acceptDelivery }, dataFetch: cacheContext },
     );
     env.ROLL_LIFECYCLE_TELEMETRY_VERSION = "2";
-    const pending: Promise<unknown>[] = [];
-    const ctx = {
-      waitUntil(promise: Promise<unknown>) {
-        pending.push(promise);
-      },
-    } as ExecutionContext;
+    const ctx = createExecutionContext();
 
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(
       () => undefined,
@@ -787,34 +845,21 @@ describe("Discord HTTP interaction Worker", () => {
       () => undefined,
     );
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(
-      (entry: unknown) => {
-        if (
-          typeof entry === "object" &&
-          entry !== null &&
-          !Array.isArray(entry) &&
-          (entry as Record<string, unknown>).message ===
-            "Discord roll lifecycle advanced" &&
-          (entry as Record<string, unknown>).stage === "accepted"
-        ) {
+      (entry) => {
+        if (AcceptanceTelemetrySchema.safeParse(entry).success) {
           throw new Error("acceptance telemetry unavailable");
         }
       },
     );
     let response: Response;
-    let acceptanceEvent: Record<string, unknown> | undefined;
+    let acceptanceEvent: AcceptanceTelemetry | undefined;
     try {
       response = await handleInteractionRequest(request, env, ctx);
-      await Promise.all(pending);
+      await waitOnExecutionContext(ctx);
       for (const [entry] of consoleInfo.mock.calls) {
-        if (
-          typeof entry === "object" &&
-          entry !== null &&
-          !Array.isArray(entry) &&
-          (entry as Record<string, unknown>).message ===
-            "Discord roll lifecycle advanced" &&
-          (entry as Record<string, unknown>).stage === "accepted"
-        ) {
-          acceptanceEvent = entry as Record<string, unknown>;
+        const event = AcceptanceTelemetrySchema.safeParse(entry);
+        if (event.success) {
+          acceptanceEvent = event.data;
           break;
         }
       }
@@ -864,13 +909,23 @@ describe("Discord HTTP interaction Worker", () => {
       status: "created",
       timingClock: "workers-io",
     });
-    for (const field of [
+    const timingFields: Array<
+      keyof Pick<
+        AcceptanceTelemetry,
+        | "acceptanceRpcMs"
+        | "acknowledgementToAcceptanceCompleteMs"
+        | "acknowledgementToAcceptanceStartMs"
+      >
+    > = [
       "acceptanceRpcMs",
       "acknowledgementToAcceptanceCompleteMs",
       "acknowledgementToAcceptanceStartMs",
-    ] as const) {
-      expect(Number.isSafeInteger(acceptanceEvent[field])).toBe(true);
-      expect(acceptanceEvent[field]).toBeGreaterThanOrEqual(0);
+    ];
+    for (const field of timingFields) {
+      const duration = acceptanceEvent[field];
+      if (duration === null) throw new Error(`${field} is missing`);
+      expect(Number.isSafeInteger(duration)).toBe(true);
+      expect(duration).toBeGreaterThanOrEqual(0);
     }
     expect(JSON.stringify(acceptanceEvent)).not.toMatch(
       /fixture\.interaction\.token|100000000000000004|100000000000000002|100000000000000003|2d20 \+ 5|Attack|alice/,
@@ -895,30 +950,22 @@ describe("Discord HTTP interaction Worker", () => {
     );
     expect(contextMutations).toBe(1);
     expect(acceptDelivery).toHaveBeenCalledOnce();
-    const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
+    const acceptedRequest = acceptDelivery.mock.calls[0]?.[0];
     if (
-      typeof acceptedRequest !== "object" ||
-      acceptedRequest === null ||
-      !("deferredAt" in acceptedRequest) ||
-      !("rollSeed" in acceptedRequest) ||
-      !("renderSeed" in acceptedRequest) ||
-      !("clatter" in acceptedRequest) ||
-      !("telemetry" in acceptedRequest)
+      acceptedRequest === undefined ||
+      acceptedRequest.renderSeed === undefined ||
+      acceptedRequest.clatter === undefined ||
+      acceptedRequest.telemetry === undefined
     ) {
       throw new Error("Accepted roll request is missing preflight metadata");
     }
-    const deferredAt = acceptedRequest.deferredAt;
-    const rollSeed = acceptedRequest.rollSeed;
-    const renderSeed = acceptedRequest.renderSeed;
-    const telemetry = acceptedRequest.telemetry;
-    expect(typeof deferredAt).toBe("number");
+    const { deferredAt, rollSeed, renderSeed, telemetry } = acceptedRequest;
     expect(rollSeed).toEqual(expect.any(Number));
     expect(renderSeed).toEqual(expect.any(Number));
     // The recorded delivery time is the acknowledgement itself, so the roll's
     // delay window starts when the user actually saw the dice clatter.
     expect(acceptedRequest.clatter).toEqual({
-      deliveredAt: (telemetry as { acknowledgementPreparedAt: number })
-        .acknowledgementPreparedAt,
+      deliveredAt: telemetry.acknowledgementPreparedAt,
     });
     expect(acceptDelivery).toHaveBeenCalledWith({
       interaction: {
@@ -963,7 +1010,7 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const acceptDelivery = vi.fn((value: RollDeliveryPayload) => {
       void value;
       return Promise.resolve({
         status: "created",
@@ -1008,19 +1055,14 @@ describe("Discord HTTP interaction Worker", () => {
       }),
       { rollWork: { acceptDelivery }, dataFetch },
     );
-    const pending: Promise<unknown>[] = [];
-    const ctx = {
-      waitUntil(promise: Promise<unknown>) {
-        pending.push(promise);
-      },
-    } as ExecutionContext;
+    const ctx = createExecutionContext();
 
     const response = await handleInteractionRequest(request, env, ctx);
     // The setting is resolved after the response, so it cannot delay it and no
     // request has been made by the time the acknowledgement is sent.
     expect(settingsRequests).toEqual([]);
     await expect(response.json()).resolves.toMatchObject({ type: 4 });
-    await Promise.all(pending);
+    await waitOnExecutionContext(ctx);
 
     expect(settingsRequests).toEqual([{
       guildId: "100000000000000002",
@@ -1037,7 +1079,7 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const acceptDelivery = vi.fn((value: RollDeliveryPayload) => {
       void value;
       return Promise.resolve({
         status: "created",
@@ -1072,17 +1114,12 @@ describe("Discord HTTP interaction Worker", () => {
         dataFetch: () => Promise.resolve(new Response(null, { status: 503 })),
       },
     );
-    const pending: Promise<unknown>[] = [];
-    const ctx = {
-      waitUntil(promise: Promise<unknown>) {
-        pending.push(promise);
-      },
-    } as ExecutionContext;
+    const ctx = createExecutionContext();
 
     const response = await handleInteractionRequest(request, env, ctx);
     // An unavailable data service must not change the acknowledgement at all.
     await expect(response.json()).resolves.toMatchObject({ type: 4 });
-    await Promise.all(pending);
+    await waitOnExecutionContext(ctx);
 
     expect(acceptDelivery).toHaveBeenCalledOnce();
     expect(acceptDelivery.mock.calls[0]?.[0]).not.toHaveProperty("settings");
@@ -1094,7 +1131,7 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const acceptDelivery = vi.fn((value: RollDeliveryPayload) => {
       void value;
       return Promise.resolve({
         status: "created",
@@ -1136,12 +1173,7 @@ describe("Discord HTTP interaction Worker", () => {
         },
       },
     );
-    const pending: Promise<unknown>[] = [];
-    const ctx = {
-      waitUntil(promise: Promise<unknown>) {
-        pending.push(promise);
-      },
-    } as ExecutionContext;
+    const ctx = createExecutionContext();
 
     try {
       // Discord discards an interaction that is not answered within three
@@ -1150,7 +1182,7 @@ describe("Discord HTTP interaction Worker", () => {
       await expect(response.json()).resolves.toMatchObject({ type: 4 });
     } finally {
       releaseDataService();
-      await Promise.all(pending);
+      await waitOnExecutionContext(ctx);
     }
   });
 
@@ -1159,7 +1191,7 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       ((BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n) | 1n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const acceptDelivery = vi.fn((value: RollDeliveryPayload) => {
       void value;
       return Promise.resolve({
         status: "created",
@@ -1210,19 +1242,15 @@ describe("Discord HTTP interaction Worker", () => {
     expect(JSON.stringify(body)).not.toContain("Preparing your roll");
     expect(JSON.stringify(body)).toContain("Dice notation guide");
     expect(acceptDelivery).toHaveBeenCalledOnce();
-    const acceptedRequest: unknown = acceptDelivery.mock.calls[0]?.[0];
+    const acceptedRequest = acceptDelivery.mock.calls[0]?.[0];
+    if (acceptedRequest === undefined) {
+      throw new Error("Accepted invalid roll is missing");
+    }
     expect(acceptedRequest).toMatchObject({
       interaction: { id: interactionId },
       request: { notation: "1776", repetitions: 1 },
     });
-    if (
-      typeof acceptedRequest !== "object" ||
-      acceptedRequest === null ||
-      !("rollSeed" in acceptedRequest)
-    ) {
-      throw new Error("Accepted invalid roll is missing its preflight seed");
-    }
-    expect(typeof acceptedRequest.rollSeed).toBe("number");
+    expect(Number.isSafeInteger(acceptedRequest.rollSeed)).toBe(true);
     expect(acceptedRequest).not.toHaveProperty("telemetry");
   });
 
@@ -1231,7 +1259,7 @@ describe("Discord HTTP interaction Worker", () => {
     const interactionId = String(
       (BigInt(interactionTimestamp) - 1_420_070_400_000n) << 22n,
     );
-    const acceptDelivery = vi.fn((value: unknown) => {
+    const acceptDelivery = vi.fn((value: RollDeliveryPayload) => {
       void value;
       return Promise.resolve({
         status: "created",
@@ -1261,9 +1289,8 @@ describe("Discord HTTP interaction Worker", () => {
 
     expect(response.status).toBe(200);
     expect(acceptDelivery).toHaveBeenCalledOnce();
-    const accepted = acceptDelivery.mock.calls[0]?.[0] as {
-      accounting: { guildId: string | null };
-    };
+    const accepted = acceptDelivery.mock.calls[0]?.[0];
+    if (accepted === undefined) throw new Error("Accepted DM roll is missing");
     expect(accepted.accounting.guildId).toBeNull();
   });
 
@@ -1368,39 +1395,35 @@ describe("Discord HTTP interaction Worker", () => {
       }),
       { discordRest: { sendRollHelper } },
     );
-    let background: Promise<unknown> | undefined;
     const responseFetch = vi.fn((request: Request) => {
       void request;
       return Promise.resolve(new Response(null, { status: 204 }));
     });
-    vi.stubGlobal("fetch", responseFetch);
-    try {
-      const response = await handleInteractionRequest(request, env, {
-        waitUntil(promise) {
-          background = promise;
-        },
-      } as ExecutionContext);
+    const ctx = createExecutionContext();
+    const response = await handleInteractionRequestWithDependencies(
+      request,
+      env,
+      { responseFetch: { fetch: responseFetch } },
+      ctx,
+    );
 
-      await expect(response.json()).resolves.toEqual({ type: 6 });
-      await background;
-      expect(sendRollHelper).toHaveBeenCalledWith({
-        rollId: "100000000000000010",
-        userId: "100000000000000004",
-      });
-      expect(responseFetch).toHaveBeenCalledOnce();
-      const edit = responseFetch.mock.calls[0]?.[0];
-      if (!(edit instanceof Request)) {
-        throw new Error("Knowledge base confirmation request is missing");
-      }
-      expect(edit.method).toBe("PATCH");
-      const editBody = await edit.json<{ flags: number; components: unknown[] }>();
-      expect(editBody.flags).toBe(1 << 15);
-      expect(JSON.stringify(editBody.components)).toContain(
-        "🧠 Knowledge base sent to your DMs",
-      );
-    } finally {
-      vi.unstubAllGlobals();
+    await expect(response.json()).resolves.toEqual({ type: 6 });
+    await waitOnExecutionContext(ctx);
+    expect(sendRollHelper).toHaveBeenCalledWith({
+      rollId: "100000000000000010",
+      userId: "100000000000000004",
+    });
+    expect(responseFetch).toHaveBeenCalledOnce();
+    const edit = responseFetch.mock.calls[0]?.[0];
+    if (!(edit instanceof Request)) {
+      throw new Error("Knowledge base confirmation request is missing");
     }
+    expect(edit.method).toBe("PATCH");
+    const editBody = await edit.json<{ flags: number; components: unknown[] }>();
+    expect(editBody.flags).toBe(1 << 15);
+    expect(JSON.stringify(editBody.components)).toContain(
+      "🧠 Knowledge base sent to your DMs",
+    );
   });
 
   it.each([

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   parseSavedRollDraftV1,
   parseSavedRollDraftV2,
@@ -25,6 +26,15 @@ export type SavedRollOwner =
   | { type: "guild"; guildId: string };
 
 type SavedRollDraft = SavedRollDraftV1 | SavedRollDraftV2;
+type SavedRollDraftInput = Parameters<typeof parseSavedRollDraftV1>[0];
+
+const SavedRollDraftV2BoundarySchema = z.looseObject({
+  version: z.literal(2),
+});
+const StoredCreateReceiptSchema = z.looseObject({
+  manualOrder: z.number(),
+});
+const booleanSchema = z.boolean();
 
 export type SavedRollV1 = Omit<SavedRollDraftV1, "version"> & {
   version: 1;
@@ -47,7 +57,7 @@ export type CreateSavedRollInputV1 = {
   operation: "create" | "copy";
   id: string;
   expectedListRevision: number;
-  draft: unknown;
+  draft: SavedRollDraftInput;
   pinned: boolean;
   mutationId: string;
   occurredAt: number;
@@ -71,7 +81,7 @@ export type UpdateSavedRollInputV1 = {
   id: string;
   expectedListRevision: number;
   expectedRecordRevision: number;
-  draft: unknown;
+  draft: SavedRollDraftInput;
   pinned: boolean;
   mutationId: string;
   occurredAt: number;
@@ -288,9 +298,9 @@ function mutationAuthorization(
   };
 }
 
-function parseDraft(value: unknown): SavedRollDraft {
-  if (typeof value === "object" && value !== null && "version" in value) {
-    if (value.version === 2) return parseSavedRollDraftV2(value);
+function parseDraft(value: SavedRollDraftInput): SavedRollDraft {
+  if (SavedRollDraftV2BoundarySchema.safeParse(value).success) {
+    return parseSavedRollDraftV2(value);
   }
   return parseSavedRollDraftV1(value);
 }
@@ -576,16 +586,20 @@ export class D1SavedRollRepository {
       "Expected saved roll list revision",
       0,
     );
-    if (typeof input.pinned !== "boolean") throw new Error("Saved roll pinned state is invalid");
+    if (!booleanSchema.safeParse(input.pinned).success) {
+      throw new Error("Saved roll pinned state is invalid");
+    }
     validateMutationMetadata(input.mutationId, input.occurredAt);
     const draft = parseDraft(input.draft);
     const existing = await readMutationReceipt(this.db, input.mutationId);
     if (existing !== null) {
       let manualOrder: number;
       try {
-        const payload = JSON.parse(existing.payload_json) as { manualOrder?: unknown };
+        const payload = StoredCreateReceiptSchema.parse(
+          JSON.parse(existing.payload_json),
+        );
         manualOrder = validateRevision(
-          payload.manualOrder as number,
+          payload.manualOrder,
           "Stored saved roll mutation order",
           0,
         );
@@ -798,7 +812,7 @@ export class D1SavedRollRepository {
       "Expected saved roll record revision",
       1,
     );
-    if (typeof input.pinned !== "boolean") {
+    if (!booleanSchema.safeParse(input.pinned).success) {
       throw new Error("Saved roll pinned state is invalid");
     }
     validateMutationMetadata(input.mutationId, input.occurredAt);

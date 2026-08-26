@@ -5,17 +5,56 @@ import {
   runInDurableObject,
 } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import type { WebDeliveryExecutionResult } from "../../workers/roll/src";
+import { z } from "zod";
+import {
+  WebDeliveryWork,
+  type WebDeliveryExecutionResult,
+} from "../../workers/roll/src";
+import type { WebSavedRollAttribution } from "../../workers/roll/src/web-roll-service";
 
 const APPLICATION_ID = "100000000000000001";
 const USER_ID = "100000000000000003";
 const GUILD_ID = "100000000000000002";
 const CHANNEL_ID = "100000000000000010";
 
+type WebDeliveryFixture = {
+  deliveryId: string;
+  applicationId: string;
+  notation: string;
+  repetitions: number;
+  username: string;
+  title: string | null;
+  userId: string;
+  guildId: string;
+  channelId: string;
+  skipDelay: boolean;
+  hideRollResultText: boolean;
+  savedRoll?: WebSavedRollAttribution;
+  renderSeed?: number;
+  appearanceDigest?: string;
+};
+
+const StoredDeliveryRequestSchema = z.strictObject({
+  deliveryId: z.string(),
+  applicationId: z.string(),
+  notation: z.string(),
+  repetitions: z.number(),
+  username: z.string(),
+  title: z.string().nullable(),
+  userId: z.string(),
+  guildId: z.string(),
+  channelId: z.string(),
+  skipDelay: z.boolean(),
+  hideRollResultText: z.boolean(),
+  savedRoll: z.json().optional(),
+  renderSeed: z.number().optional(),
+  appearanceDigest: z.string().optional(),
+});
+
 function request(
   deliveryId: string,
-  overrides: Record<string, unknown> = {},
-) {
+  overrides: Partial<WebDeliveryFixture> = {},
+): WebDeliveryFixture {
   return {
     deliveryId,
     applicationId: APPLICATION_ID,
@@ -38,7 +77,7 @@ function work(deliveryId: string) {
 
 async function executeWork(
   stub: ReturnType<typeof work>,
-  value: unknown,
+  value: WebDeliveryFixture,
 ): Promise<WebDeliveryExecutionResult> {
   return stub.execute(value);
 }
@@ -288,9 +327,20 @@ describe("WebDeliveryWork Durable Object", () => {
            FROM web_delivery`,
         )
         .one();
-      const legacy = JSON.parse(row.request_json) as Record<string, unknown>;
-      delete legacy.applicationId;
-      delete legacy.hideRollResultText;
+      const current = StoredDeliveryRequestSchema.parse(
+        JSON.parse(row.request_json),
+      );
+      const legacy = {
+        deliveryId: current.deliveryId,
+        notation: current.notation,
+        repetitions: current.repetitions,
+        username: current.username,
+        title: current.title,
+        userId: current.userId,
+        guildId: current.guildId,
+        channelId: current.channelId,
+        skipDelay: current.skipDelay,
+      };
       const requestJson = JSON.stringify(legacy);
       const identitySha256 = await storedIdentity({
         requestJson,
@@ -332,10 +382,10 @@ describe("WebDeliveryWork Durable Object", () => {
     });
 
     await runInDurableObject(stub, async (instance) => {
-      const workInstance = instance as unknown as {
-        execute(value: unknown): Promise<unknown>;
-      };
-      await expect(workInstance.execute(input)).rejects.toThrow(
+      if (!(instance instanceof WebDeliveryWork)) {
+        throw new Error("WebDeliveryWork instance is missing");
+      }
+      await expect(instance.execute(input)).rejects.toThrow(
         "simulated result commit failure",
       );
     });

@@ -16,6 +16,15 @@ type OctahedralTextureMappingV4 = {
   weight: Float32Array;
 };
 
+type OctahedralTextureSourceV4 = {
+  version: number;
+  width: number;
+  height: number;
+  colorSpace: string;
+  alphaMode: string;
+  pixels: Uint8Array;
+};
+
 let cachedMapping: OctahedralTextureMappingV4 | undefined;
 
 function eighthPower(value: number): number {
@@ -80,14 +89,10 @@ function wrap(value: number, size: number): number {
 }
 
 export function createOctahedralTextureAtlasV4(
-  texture: TextureRasterV4,
+  texture: OctahedralTextureSourceV4,
   placement: TexturePlacementV4 = IDENTITY_TEXTURE_PLACEMENT_V4,
 ): TextureRasterV4 {
-  const width: number = texture.width;
-  const height: number = texture.height;
-  const version = texture.version as number;
-  const colorSpace = texture.colorSpace as string;
-  const alphaMode = texture.alphaMode as string;
+  const { version, width, height, colorSpace, alphaMode } = texture;
   if (
     (version !== 1 && version !== 2) ||
     width !== SOURCE_TEXTURE_SIZE_V4 ||
@@ -108,9 +113,16 @@ export function createOctahedralTextureAtlasV4(
     const destination = pixel * 4;
     for (let plane = 0; plane < 3; plane += 1) {
       const sample = pixel * 3 + plane;
-      const sampleWeight = samples.weight[sample] as number;
-      const sourceX = samples.x[sample] as number;
-      const sourceY = samples.y[sample] as number;
+      const sampleWeight = samples.weight[sample];
+      const sourceX = samples.x[sample];
+      const sourceY = samples.y[sample];
+      if (
+        sampleWeight === undefined ||
+        sourceX === undefined ||
+        sourceY === undefined
+      ) {
+        throw new Error("V4 octahedral texture mapping is incomplete");
+      }
       let placedX = sourceX;
       let placedY = sourceY;
       if (placementUniforms !== undefined) {
@@ -133,10 +145,20 @@ export function createOctahedralTextureAtlasV4(
       const bottomLeft = (toY * width + fromX) * 4;
       const bottomRight = (toY * width + toX) * 4;
       for (let channel = 0; channel < 3; channel += 1) {
-        const topLeftValue = source[topLeft + channel] as number;
-        const topRightValue = source[topRight + channel] as number;
-        const bottomLeftValue = source[bottomLeft + channel] as number;
-        const bottomRightValue = source[bottomRight + channel] as number;
+        const topLeftValue = source[topLeft + channel];
+        const topRightValue = source[topRight + channel];
+        const bottomLeftValue = source[bottomLeft + channel];
+        const bottomRightValue = source[bottomRight + channel];
+        const accumulatedValue = pixels[destination + channel];
+        if (
+          topLeftValue === undefined ||
+          topRightValue === undefined ||
+          bottomLeftValue === undefined ||
+          bottomRightValue === undefined ||
+          accumulatedValue === undefined
+        ) {
+          throw new Error("V4 octahedral texture sample is incomplete");
+        }
         const top =
           topLeftValue + (topRightValue - topLeftValue) * amountX;
         const bottom =
@@ -144,11 +166,19 @@ export function createOctahedralTextureAtlasV4(
         // Byte accumulation is intentional and pinned by the direct-versus-
         // preprojected visual corpus; it avoids a second full-size float image.
         pixels[destination + channel] =
-          (pixels[destination + channel] as number) +
+          accumulatedValue +
           (top + (bottom - top) * amountY) * sampleWeight;
       }
     }
     pixels[destination + 3] = 255;
   }
-  return { ...texture, pixels };
+  return {
+    ...texture,
+    version,
+    width,
+    height,
+    colorSpace,
+    alphaMode,
+    pixels,
+  };
 }

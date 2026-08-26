@@ -75,6 +75,20 @@ function byte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
+function requiredSample(value: number | undefined): number {
+  if (value === undefined) {
+    throw new Error("CanvasKit V4 spherical sample is missing");
+  }
+  return value;
+}
+
+function requiredTextureChannel(value: number | undefined): number {
+  if (value === undefined) {
+    throw new Error("CanvasKit V4 spherical texture channel is missing");
+  }
+  return value;
+}
+
 export function createSphericalMaterialRasterV4(
   texture: TextureRasterV4,
   lighting?: RenderLightingV4,
@@ -108,8 +122,8 @@ export function createSphericalMaterialRasterV4(
   const pixels = new Uint8Array(size * size * 4);
   for (let pixel = 0; pixel < size * size; pixel += 1) {
     if (samples.visible[pixel] !== 1) continue;
-    const sourceX = samples.sourceX[pixel] as number;
-    const sourceY = samples.sourceY[pixel] as number;
+    const sourceX = requiredSample(samples.sourceX[pixel]);
+    const sourceY = requiredSample(samples.sourceY[pixel]);
     let placedX = sourceX;
     let placedY = sourceY;
     if (placementUniforms !== undefined) {
@@ -150,10 +164,18 @@ export function createSphericalMaterialRasterV4(
       (1 - Math.max(z, 0)) ** 2.4 * parameters.rim * 255,
     );
     for (let channel = 0; channel < 3; channel += 1) {
-      const topLeftValue = texture.pixels[topLeft + channel] as number;
-      const topRightValue = texture.pixels[topRight + channel] as number;
-      const bottomLeftValue = texture.pixels[bottomLeft + channel] as number;
-      const bottomRightValue = texture.pixels[bottomRight + channel] as number;
+      const topLeftValue = requiredTextureChannel(
+        texture.pixels[topLeft + channel],
+      );
+      const topRightValue = requiredTextureChannel(
+        texture.pixels[topRight + channel],
+      );
+      const bottomLeftValue = requiredTextureChannel(
+        texture.pixels[bottomLeft + channel],
+      );
+      const bottomRightValue = requiredTextureChannel(
+        texture.pixels[bottomRight + channel],
+      );
       const top = topLeftValue + (topRightValue - topLeftValue) * amountX;
       const bottom =
         bottomLeftValue + (bottomRightValue - bottomLeftValue) * amountX;

@@ -7,8 +7,13 @@ type AuthWrapperProps = {
   children: ReactNode;
 };
 
-export const AuthWrapper = ({ children }: AuthWrapperProps) => {
-  const { isLoading, isSignedIn } = useAuth();
+export const AuthWrapperView = ({
+  children,
+  useAuthState,
+}: AuthWrapperProps & {
+  useAuthState: () => Pick<ReturnType<typeof useAuth>, "isLoading" | "isSignedIn">;
+}) => {
+  const { isLoading, isSignedIn } = useAuthState();
   const location = useLocation();
 
   if (isLoading) {
@@ -29,3 +34,7 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
 
   return <>{children}</>;
 };
+
+export const AuthWrapper = (props: AuthWrapperProps) => (
+  <AuthWrapperView {...props} useAuthState={useAuth} />
+);

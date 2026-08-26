@@ -17,13 +17,21 @@ import type {
   RenderLightingV3,
 } from "../../packages/dice-svg/src/types";
 
-const VECTORS: Record<RenderLightingDirectionV3, string> = {
+const DIRECTIONS = [
+  "top",
+  "upper-left",
+  "upper-right",
+  "left",
+  "right",
+] as const satisfies readonly RenderLightingDirectionV3[];
+
+const VECTORS = {
   top: 'x1="300" y1="70" x2="300" y2="545"',
   "upper-left": 'x1="90" y1="70" x2="520" y2="545"',
   "upper-right": 'x1="510" y1="70" x2="80" y2="545"',
   left: 'x1="70" y1="300" x2="545" y2="300"',
   right: 'x1="530" y1="300" x2="55" y2="300"',
-};
+} satisfies Record<RenderLightingDirectionV3, string>;
 
 function directional(
   direction: RenderLightingDirectionV3 = "upper-left",
@@ -57,9 +65,10 @@ describe("V3 lighting composition", () => {
   });
 
   it("uses every approved directional vector", () => {
-    for (const [direction, vector] of Object.entries(VECTORS)) {
+    for (const direction of DIRECTIONS) {
+      const vector = VECTORS[direction];
       const layer = resolveLightingLayersV3(
-        directional(direction as RenderLightingDirectionV3),
+        directional(direction),
       ).directional;
       expect(layer?.definition).toContain(
         `gradientUnits="userSpaceOnUse" ${vector}`,

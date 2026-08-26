@@ -5,9 +5,10 @@ import {
   runInDurableObject,
 } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   getAuthoredRenderViewV4,
-  type RenderRequestV4,
+  validateRenderRequestV4,
 } from "@dice-witch/dice-v4-model";
 import {
   APPEARANCE_TARGETS,
@@ -19,21 +20,306 @@ import {
   buildRollRenderRequestV4,
 } from "../../packages/roll-render-model/src";
 import { executeRoll } from "../../packages/roll-domain/src";
-import { rollResultText } from "../../packages/discord-contracts/src";
+import {
+  parseRollLifecycleSnapshot,
+  parseTextResultIntent,
+  rollResultText,
+  type RollLifecycleContextV1,
+  type RollLifecycleSnapshot,
+} from "../../packages/discord-contracts/src";
+import type { SchemaInput } from "../../packages/discord-contracts/src/schema-primitives";
 import rollWorkV2Fixture from "./fixtures/roll-work-v2.json";
 import rollWorkV3Fixture from "./fixtures/roll-work-v3.json";
 import rollWorkV4Fixture from "./fixtures/roll-work-v4.json";
 import rollWorker, {
+  type DeliverRollWorkResult,
   type RollDeliveryRequest,
+  type RollWork,
 } from "../../workers/roll/src";
 import {
   deliveryMetadata,
+  parseDeliveryMetadata,
   parseRecord,
   tokenFingerprint,
   validateDeliveryRequest,
+  type StoredDeliveryRow,
 } from "../../workers/roll/src/contracts";
 
 const rollEnv = env;
+
+const EffectiveAppearanceLookupSchema = z.strictObject({
+  guildId: z.string().nullable(),
+  userId: z.string(),
+});
+const InteractionIdentitySchema = z.object({ interactionId: z.string() });
+const RollDieSchema = z.strictObject({
+  sides: z.union([z.number(), z.literal("%"), z.literal("F")]),
+  rolled: z.number(),
+  modifiers: z.array(z.string()),
+  physicalFace: z.number().optional(),
+  appearanceGroupIdentity: z.string().optional(),
+  appearanceDieIdentity: z.string().optional(),
+});
+const RollOutcomeSchema = z.strictObject({
+  notation: z.string(),
+  output: z.string(),
+  total: z.number(),
+  dice: z.array(RollDieSchema),
+});
+const RollExecutionErrorSchema = z.union([
+  z.strictObject({
+    code: z.enum([
+      "TOO_MANY_DICE",
+      "TOO_MANY_SIDES",
+      "UNSAFE_EXPLOSION",
+      "NO_DICE",
+    ]),
+    message: z.string(),
+  }),
+  z.strictObject({
+    code: z.enum([
+      "INVALID_NOTATION",
+      "NON_FINITE_TOTAL",
+      "TOTAL_TOO_LARGE",
+    ]),
+    notation: z.string(),
+  }),
+]);
+const RollExecutionResultSchema = z.strictObject({
+  version: z.literal(1),
+  seed: z.number(),
+  outcomes: z.array(RollOutcomeSchema),
+  errors: z.array(RollExecutionErrorSchema),
+});
+const RollWorkRequestSchema = z.strictObject({
+  notation: z.array(z.string()),
+  repetitions: z.number(),
+});
+const StoredDeliveryVersionSchema = z.object({
+  version: z.number(),
+});
+const StoredSourceRollLogArtifactSchema = z.strictObject({
+  version: z.literal(2),
+  rollId: z.string(),
+  source: z.enum(["discord", "web"]),
+  notation: z.string(),
+  user: z.strictObject({ id: z.string(), username: z.string() }),
+  guildId: z.string().nullable(),
+  channelId: z.string(),
+  context: z.json(),
+  presentation: z.strictObject({
+    title: z.string().nullable(),
+    result: z.string().nullable(),
+    savedRoll: z.strictObject({
+      scope: z.enum(["personal", "server"]),
+      name: z.string(),
+    }).nullable(),
+  }),
+  payload: z.json(),
+  image: z.discriminatedUnion("status", [
+    z.strictObject({ status: z.literal("available"), filename: z.string() }),
+    z.strictObject({
+      status: z.literal("unavailable"),
+      reason: z.enum([
+        "corrupt",
+        "discord-rejected",
+        "missing",
+        "not-applicable",
+        "oversized",
+      ]),
+    }),
+  ]),
+});
+const PersistedRollLogArtifactSchema = StoredSourceRollLogArtifactSchema.extend({
+  destinationDeliveredAt: z.number(),
+  image: z.discriminatedUnion("status", [
+    z.strictObject({
+      status: z.literal("available"),
+      filename: z.string(),
+      sha256: z.string(),
+      bytes: z.number(),
+    }),
+    z.strictObject({
+      status: z.literal("unavailable"),
+      reason: z.enum([
+        "corrupt",
+        "discord-rejected",
+        "missing",
+        "not-applicable",
+        "oversized",
+      ]),
+    }),
+  ]),
+});
+const SavedRollInvocationSchema = z.strictObject({
+  version: z.literal(1),
+  id: z.string(),
+  scope: z.enum(["personal", "guild"]),
+  name: z.string(),
+  notation: z.string(),
+  title: z.string().nullable(),
+  repetitions: z.number(),
+  revision: z.number(),
+  nameColor: z.string().nullable(),
+});
+const DeliveryTelemetryContextSchema = z.strictObject({
+  interactionId: z.string().nullable(),
+  applicationId: z.string().nullable(),
+  source: z.enum(["discord", "web"]).nullable(),
+  notation: z.string().nullable(),
+  request: RollWorkRequestSchema.nullable(),
+  outcome: RollExecutionResultSchema.nullable(),
+  rollSeed: z.number().nullable(),
+  renderSeed: z.number().nullable(),
+  title: z.string().nullable(),
+  savedRoll: z.json().nullable(),
+  userId: z.string().nullable(),
+  username: z.string().nullable(),
+  guildId: z.string().nullable(),
+  channelId: z.string().nullable(),
+  context: z.json().nullable(),
+  guildName: z.string().nullable(),
+  channelName: z.string().nullable(),
+  channelType: z.number().nullable(),
+  destinationPayload: z.json().nullable(),
+  destinationDeliveredAt: z.number().nullable(),
+});
+const DestinationTelemetrySchema = DeliveryTelemetryContextSchema.extend({
+  telemetryVersion: z.literal(5),
+  level: z.enum(["info", "error"]),
+  message: z.literal("Roll destination delivery completed"),
+  subsystem: z.literal("roll-destination"),
+  rollId: z.string(),
+  state: z.enum(["delivered", "failed"]),
+  userImpact: z.enum(["none", "failed"]),
+  attempts: z.number(),
+  httpStatus: z.number().nullable(),
+  failurePhase: z.string().nullable(),
+  discordErrorCode: z.number().nullable(),
+  discordOperation: z.string().nullable(),
+  elapsedMs: z.number().nullable(),
+  delayMs: z.number().nullable(),
+  ackToClatterMs: z.number().nullable(),
+  acceptanceToDeliveryStartMs: z.number().nullable(),
+  lifecycleSyncMs: z.number().nullable(),
+  accountingMs: z.number().nullable(),
+  guildSettingsMs: z.number().nullable(),
+  clatterPostMs: z.number().nullable(),
+  renderSnapshotPreparationMs: z.number().nullable(),
+  resultUploadMs: z.number().nullable(),
+  postDelayMs: z.number().nullable(),
+  imageByteLength: z.number().nullable(),
+  renderVersion: z.number().nullable(),
+  rendererRevision: z.string().nullable(),
+  imageSha256: z.string().nullable(),
+});
+const TerminalFailureTelemetrySchema = DeliveryTelemetryContextSchema.extend({
+  telemetryVersion: z.literal(2),
+  level: z.literal("error"),
+  message: z.literal("Roll delivery encountered a terminal internal failure"),
+  subsystem: z.literal("roll-destination"),
+  rollId: z.string(),
+  userImpact: z.literal("failed"),
+  phase: z.enum(["record", "render", "response", "deadline"]),
+  attempt: z.number(),
+});
+const AcceptanceTelemetrySchema = z.strictObject({
+  telemetryVersion: z.literal(1),
+  level: z.literal("info"),
+  message: z.literal("Roll durable acceptance completed"),
+  subsystem: z.literal("roll-acceptance"),
+  acceptanceStatus: z.literal("created"),
+  acknowledgementType: z.union([z.literal(4), z.literal(5), z.literal(6)]),
+  timingClock: z.literal("workers-io"),
+  acknowledgementToHandlerStartMs: z.number(),
+  recordPreparationMs: z.number(),
+  renderSnapshotPreparationMs: z.number().nullable(),
+  recoveryAlarmWriteMs: z.number(),
+  expiryAlarmWriteMs: z.number(),
+  deliveryAlarmWriteMs: z.number().nullable(),
+  handlerElapsedMs: z.number(),
+  acknowledgementToHandlerCompleteMs: z.number(),
+});
+
+type ConsoleMethod = (...data: Parameters<typeof console.info>) => void;
+type RollDeliveryTargetFixture = Readonly<{
+  id: string;
+  applicationId: string;
+  token: string;
+}>;
+type RollWorkInstancePort = Pick<
+  RollWork,
+  "acceptDelivery" | "alarm" | "deliver" | "deliveryDiagnostics" | "render"
+>;
+type RollWorkDeadlineFixture = {
+  deliver(value: SchemaInput): Promise<DeliverRollWorkResult>;
+  finalizeIfResultWindowClosed(
+    delivery: StoredDeliveryRow,
+    target: RollDeliveryTargetFixture,
+    attempts: number,
+  ): Promise<DeliverRollWorkResult | null>;
+};
+type RollWorkTestInstance = DurableObject & RollWorkInstancePort;
+type RollWorkDeadlineTestInstance = DurableObject & RollWorkDeadlineFixture;
+
+function parseLifecycleJson(value: string): RollLifecycleSnapshot {
+  const input: SchemaInput = JSON.parse(value);
+  return parseRollLifecycleSnapshot(input);
+}
+
+function parseStoredSourceRollLogArtifactMetadata(
+  value: string,
+): z.output<typeof StoredSourceRollLogArtifactSchema> {
+  const input: SchemaInput = JSON.parse(value);
+  return StoredSourceRollLogArtifactSchema.parse(input);
+}
+
+function parseStoredSourceRollLogArtifact(
+  value: string,
+  destinationDeliveredAt: number | null,
+  imageBytes: ArrayBuffer,
+) {
+  const stored = parseStoredSourceRollLogArtifactMetadata(value);
+  const image = stored.image.status === "available"
+    ? { ...stored.image, png: new Uint8Array(imageBytes) }
+    : stored.image;
+  return {
+    ...stored,
+    destinationDeliveredAt: destinationDeliveredAt ?? 0,
+    payloadJson: JSON.stringify(stored.payload),
+    image,
+  };
+}
+
+function parsePersistedRollLogArtifactMetadata(
+  value: string,
+): z.output<typeof PersistedRollLogArtifactSchema> {
+  const input: SchemaInput = JSON.parse(value);
+  return PersistedRollLogArtifactSchema.parse(input);
+}
+
+function parsedConsoleEvents<Schema extends z.ZodType>(
+  calls: readonly Parameters<ConsoleMethod>[],
+  schema: Schema,
+): z.output<Schema>[] {
+  return calls.flatMap(([entry]) => {
+    const event = schema.safeParse(entry);
+    return event.success ? [event.data] : [];
+  });
+}
+
+function parsedConsoleJsonEvents<Schema extends z.ZodType>(
+  calls: readonly Parameters<ConsoleMethod>[],
+  schema: Schema,
+): z.output<Schema>[] {
+  return calls.flatMap(([entry]) => {
+    const text = z.string().safeParse(entry);
+    if (!text.success) return [];
+    const value: SchemaInput = JSON.parse(text.data);
+    const event = schema.safeParse(value);
+    return event.success ? [event.data] : [];
+  });
+}
 
 function work(name: string) {
   return rollEnv.ROLL_WORK.getByName(name);
@@ -41,6 +327,26 @@ function work(name: string) {
 
 function logWork(name: string) {
   return rollEnv.LOG_WORK.getByName(name);
+}
+
+function runInRollWork<Result>(
+  stub: ReturnType<typeof work>,
+  callback: (
+    instance: RollWorkInstancePort,
+    state: DurableObjectState,
+  ) => Result | Promise<Result>,
+): Promise<Result> {
+  return runInDurableObject<RollWorkTestInstance, Result>(stub, callback);
+}
+
+function runInRollWorkDeadlineFixture<Result>(
+  stub: ReturnType<typeof work>,
+  callback: (
+    instance: RollWorkDeadlineFixture,
+    state: DurableObjectState,
+  ) => Result | Promise<Result>,
+): Promise<Result> {
+  return runInDurableObject<RollWorkDeadlineTestInstance, Result>(stub, callback);
 }
 
 // Bookkeeping trails delivery, so a wake can return while the roll it started
@@ -66,7 +372,7 @@ async function callAlarm(instance: {
   await instance.alarm();
 }
 
-function controlledSignal(): { promise: Promise<void>; resolve: () => void } {
+function controlledSignal() {
   let resolve = (): void => undefined;
   const promise = new Promise<void>((complete) => {
     resolve = complete;
@@ -78,70 +384,94 @@ function interceptEffectiveAppearance(
   userId: string,
   intercept: () => Response | undefined | Promise<Response | undefined>,
 ): () => void {
-  const service = rollEnv.DATA_SERVICE as unknown as {
-    fetch: (request: Request) => Promise<Response>;
-  };
-  const originalFetch = service.fetch;
-  service.fetch = vi.fn(async (request: Request): Promise<Response> => {
-    const path = new URL(request.url).pathname;
-    if (
-      path === "/internal/appearance/v2/effective" ||
-      path === "/internal/appearance/v3/effective" ||
-      path === "/internal/appearance/v4/effective"
-    ) {
-      const body = await request.clone().json<{ userId?: unknown }>();
-      if (body.userId === userId) {
-        const response = await intercept();
-        if (response !== undefined) return response;
+  const service = rollEnv.DATA_SERVICE;
+  const originalFetch = service.fetch.bind(service);
+  const fetchSpy = vi.spyOn(service, "fetch").mockImplementation(
+    async (input, init): Promise<Response> => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (
+        path === "/internal/appearance/v2/effective" ||
+        path === "/internal/appearance/v3/effective" ||
+        path === "/internal/appearance/v4/effective"
+      ) {
+        const body = EffectiveAppearanceLookupSchema.parse(
+          await request.clone().json<SchemaInput>(),
+        );
+        if (body.userId === userId) {
+          const response = await intercept();
+          if (response !== undefined) return response;
+        }
       }
-    }
-    return originalFetch.call(service, request);
-  });
+      return originalFetch(input, init);
+    },
+  );
   return () => {
-    service.fetch = originalFetch;
+    fetchSpy.mockRestore();
   };
 }
 
 type LifecycleSyncObservation = {
-  state: unknown;
-  rendererRevision: unknown;
+  state: RollLifecycleSnapshot["state"];
+  rendererRevision: RollLifecycleContextV1["rendererRevision"];
   httpStatus: number;
 };
 
-function observeLifecycleSyncs(interactionId: string): Readonly<{
-  observations: LifecycleSyncObservation[];
-  restore: () => void;
-}> {
-  const service = rollEnv.DATA_SERVICE as unknown as {
-    fetch: (request: Request) => Promise<Response>;
+function observeDataServicePath(pathname: string) {
+  const service = rollEnv.DATA_SERVICE;
+  const originalFetch = service.fetch.bind(service);
+  let callCount = 0;
+  const fetchSpy = vi.spyOn(service, "fetch").mockImplementation(
+    async (input, init): Promise<Response> => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
+      if (new URL(request.url).pathname === pathname) callCount += 1;
+      return originalFetch(input, init);
+    },
+  );
+  return {
+    callCount: () => callCount,
+    restore: () => {
+      fetchSpy.mockRestore();
+    },
   };
-  const originalFetch = service.fetch;
+}
+
+function observeLifecycleSyncs(interactionId: string) {
+  const service = rollEnv.DATA_SERVICE;
+  const originalFetch = service.fetch.bind(service);
   const observations: LifecycleSyncObservation[] = [];
-  service.fetch = vi.fn(async (request: Request): Promise<Response> => {
-    const path = new URL(request.url).pathname;
-    const snapshot = path === "/internal/roll-lifecycle"
-      ? await request.clone().json<{
-          interactionId?: unknown;
-          state?: unknown;
-          context?: { rendererRevision?: unknown };
-        }>()
-      : null;
-    const observation = snapshot?.interactionId === interactionId
-      ? {
-          state: snapshot.state,
-          rendererRevision: snapshot.context?.rendererRevision,
-          httpStatus: 0,
-        }
-      : null;
-    if (observation !== null) observations.push(observation);
-    const response = await originalFetch.call(service, request);
-    if (observation !== null) observation.httpStatus = response.status;
-    return response;
-  });
+  const fetchSpy = vi.spyOn(service, "fetch").mockImplementation(
+    async (input, init): Promise<Response> => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      const snapshot = path === "/internal/roll-lifecycle"
+        ? parseRollLifecycleSnapshot(
+            await request.clone().json<SchemaInput>(),
+          )
+        : null;
+      const observation = snapshot?.interactionId === interactionId
+        ? {
+            state: snapshot.state,
+            rendererRevision: snapshot.context.rendererRevision,
+            httpStatus: 0,
+          }
+        : null;
+      if (observation !== null) observations.push(observation);
+      const response = await originalFetch(input, init);
+      if (observation !== null) observation.httpStatus = response.status;
+      return response;
+    },
+  );
   return {
     observations,
     restore: () => {
-      service.fetch = originalFetch;
+      fetchSpy.mockRestore();
     },
   };
 }
@@ -243,19 +573,15 @@ async function beginDelayedDelivery(
   stub: ReturnType<typeof work>,
   input: RollDeliveryRequest,
 ): Promise<void> {
-  await runInDurableObject(stub, async (instance, state) => {
-    const roll = instance as unknown as {
-      acceptDelivery(value: RollDeliveryRequest): Promise<unknown>;
-      deliver(value: RollDeliveryRequest): Promise<unknown>;
-    };
-    await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+  await runInRollWork(stub, async (instance, state) => {
+    await expect(instance.acceptDelivery(input)).resolves.toMatchObject({
       status: "created",
       delivery: "pending",
     });
     state.storage.sql.exec(
       "UPDATE interaction_delivery SET delay_ms = 5000",
     );
-    await expect(roll.deliver(input)).resolves.toMatchObject({
+    await expect(instance.deliver(input)).resolves.toMatchObject({
       status: "pending",
     });
     await state.storage.setAlarm(Date.now() + 60_000);
@@ -271,11 +597,8 @@ async function seedPendingV5Delivery(
     notation: [input.request.notation],
     repetitions: input.request.repetitions,
   });
-  await runInDurableObject(stub, async (instance, state) => {
-    const roll = instance as unknown as {
-      acceptDelivery(value: RollDeliveryRequest): Promise<unknown>;
-    };
-    await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+  await runInRollWork(stub, async (instance, state) => {
+    await expect(instance.acceptDelivery(input)).resolves.toMatchObject({
       status: "created",
       delivery: "pending",
     });
@@ -283,7 +606,7 @@ async function seedPendingV5Delivery(
     const workRow = state.storage.sql
       .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
       .one();
-    const record = JSON.parse(workRow.record_json) as Record<string, unknown>;
+    const record = parseRecord(workRow.record_json);
     const pending = parseRecord(
       JSON.stringify({
         ...record,
@@ -297,9 +620,7 @@ async function seedPendingV5Delivery(
         "SELECT snapshot_json FROM roll_lifecycle_outbox WHERE singleton = 1",
       )
       .one();
-    const lifecycle = JSON.parse(lifecycleRow.snapshot_json) as {
-      context: Record<string, unknown>;
-    };
+    const lifecycle = parseLifecycleJson(lifecycleRow.snapshot_json);
     state.storage.sql.exec(
       "UPDATE roll_work SET record_json = ? WHERE singleton = 1",
       JSON.stringify(pending),
@@ -680,11 +1001,10 @@ describe("RollWork Durable Object", () => {
     });
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await settleDelivery(stub);
-    const completed = consoleInfo.mock.calls
-      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-      .find(({ message, rollId }) =>
-        message === "Roll destination delivery completed" && rollId === runId
-      );
+    const completed = parsedConsoleJsonEvents(
+      consoleInfo.mock.calls,
+      DestinationTelemetrySchema,
+    ).find(({ rollId }) => rollId === runId);
     consoleInfo.mockRestore();
     const destinationPayload = JSON.stringify(completed?.destinationPayload);
     expect(destinationPayload).toContain(`save-roll:v1:d:${sessionId}`);
@@ -720,7 +1040,9 @@ describe("RollWork Durable Object", () => {
       const row = state.storage.sql
         .exec<{ invocation_json: string }>("SELECT invocation_json FROM saved_roll_invocation")
         .one();
-      expect(JSON.parse(row.invocation_json)).toMatchObject({
+      expect(
+        SavedRollInvocationSchema.parse(JSON.parse(row.invocation_json)),
+      ).toMatchObject({
         version: 1,
         id: selection.id,
         scope: "guild",
@@ -854,11 +1176,11 @@ describe("RollWork Durable Object", () => {
       lastHttpStatus: 200,
     });
     await runInDurableObject(stub, (_instance, state) => {
-      const record = JSON.parse(
+      const record = parseRecord(
         state.storage.sql
           .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
           .one().record_json,
-      ) as { rollSeed: number };
+      );
       expect(record.rollSeed).toBe(input.rollSeed);
     });
   });
@@ -921,7 +1243,7 @@ describe("RollWork Durable Object", () => {
       const row = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      const record: unknown = JSON.parse(row.record_json);
+      const record = parseRecord(row.record_json);
       expect(record).toMatchObject({
         version: 4,
         renderRequest: {
@@ -950,17 +1272,15 @@ describe("RollWork Durable Object", () => {
       const row = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      const record = JSON.parse(row.record_json) as {
-        renderRequest: {
-          groups: Array<
-            Array<{
-              appearance: { palette: string[] };
-            }>
-          >;
-        };
-      };
+      const record = parseRecord(row.record_json);
+      if (
+        record.version !== 4 &&
+        (record.version !== 5 || record.renderVersion !== 4)
+      ) {
+        throw new Error("Renderer V4 snapshot is missing");
+      }
       expect(
-        record.renderRequest.groups[0]?.[0]?.appearance.palette,
+        record.renderRequest?.groups[0]?.[0]?.appearance.palette,
       ).toContain("#aa0000");
       snapshot = JSON.stringify(record.renderRequest);
     });
@@ -975,7 +1295,13 @@ describe("RollWork Durable Object", () => {
       const row = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      const record = JSON.parse(row.record_json) as { renderRequest: unknown };
+      const record = parseRecord(row.record_json);
+      if (
+        record.version !== 4 &&
+        (record.version !== 5 || record.renderVersion !== 4)
+      ) {
+        throw new Error("Renderer V4 snapshot is missing");
+      }
       expect(JSON.stringify(record.renderRequest)).toBe(snapshot);
     });
   });
@@ -1021,14 +1347,9 @@ describe("RollWork Durable Object", () => {
         serialized,
       );
     });
-    const dataService = rollEnv.DATA_SERVICE as unknown as {
-      fetch: (request: Request) => Promise<Response>;
-    };
-    const originalFetch = dataService.fetch;
-    const dataFetch = vi.fn((): Promise<Response> =>
-      Promise.reject(new Error("V3 retries must not query Data")),
-    );
-    dataService.fetch = dataFetch;
+    const dataFetch = vi
+      .spyOn(rollEnv.DATA_SERVICE, "fetch")
+      .mockRejectedValue(new Error("V3 retries must not query Data"));
 
     try {
       const first = await stub.render(rollWorkV3Fixture.request);
@@ -1044,7 +1365,7 @@ describe("RollWork Durable Object", () => {
       expect(retry).toEqual(first);
       expect(dataFetch).not.toHaveBeenCalled();
     } finally {
-      dataService.fetch = originalFetch;
+      dataFetch.mockRestore();
     }
 
     await runInDurableObject(stub, (_instance, state) => {
@@ -1067,14 +1388,9 @@ describe("RollWork Durable Object", () => {
         serialized,
       );
     });
-    const dataService = rollEnv.DATA_SERVICE as unknown as {
-      fetch: (request: Request) => Promise<Response>;
-    };
-    const originalFetch = dataService.fetch;
-    const dataFetch = vi.fn((): Promise<Response> =>
-      Promise.reject(new Error("V4 retries must not query Data")),
-    );
-    dataService.fetch = dataFetch;
+    const dataFetch = vi
+      .spyOn(rollEnv.DATA_SERVICE, "fetch")
+      .mockRejectedValue(new Error("V4 retries must not query Data"));
 
     try {
       const first = await stub.render(rollWorkV4Fixture.request);
@@ -1097,7 +1413,7 @@ describe("RollWork Durable Object", () => {
       expect(retry).toEqual(first);
       expect(dataFetch).not.toHaveBeenCalled();
     } finally {
-      dataService.fetch = originalFetch;
+      dataFetch.mockRestore();
     }
 
     await runInDurableObject(stub, (_instance, state) => {
@@ -1179,9 +1495,9 @@ describe("RollWork Durable Object", () => {
       ...pendingV4,
       viewPolicy: "r41" as const,
     };
-    const r33RenderRequest = structuredClone(
-      rollWorkV4Fixture.renderRequest,
-    ) as unknown as RenderRequestV4;
+    const r33RenderRequest = validateRenderRequestV4(
+      structuredClone(rollWorkV4Fixture.renderRequest),
+    );
     r33RenderRequest.rendererRevision = "canvaskit-v4-r33";
     const r33Die = r33RenderRequest.groups[0]?.[0];
     if (r33Die === undefined) throw new Error("r33 V5 fixture die is missing");
@@ -1248,12 +1564,10 @@ describe("RollWork Durable Object", () => {
       );
     });
 
-    await runInDurableObject(stub, async (instance) => {
-      await expect(
-        (instance as unknown as {
-          render(value: unknown): Promise<unknown>;
-        }).render(pending.request),
-      ).rejects.toThrow("Roll render snapshot is pending");
+    await runInRollWork(stub, async (instance) => {
+      await expect(instance.render(pending.request)).rejects.toThrow(
+        "Roll render snapshot is pending",
+      );
     });
   });
 
@@ -1345,99 +1659,150 @@ describe("RollWork Durable Object", () => {
   }, 20_000);
 
   it("rejects V3 and V4 records with incompatible render data", () => {
-    const wrongVersion = structuredClone(rollWorkV3Fixture) as {
-      renderRequest: { version: number };
+    const v3Group = rollWorkV3Fixture.renderRequest.groups[0];
+    const v3Die = v3Group?.[0];
+    if (v3Group === undefined || v3Die === undefined) {
+      throw new Error("V3 fixture die is missing");
+    }
+    const wrongVersion = {
+      ...structuredClone(rollWorkV3Fixture),
+      renderRequest: {
+        ...structuredClone(rollWorkV3Fixture.renderRequest),
+        version: 2,
+      },
     };
-    wrongVersion.renderRequest.version = 2;
     expect(() => parseRecord(JSON.stringify(wrongVersion))).toThrow(
       "Render request version must be 3",
     );
 
-    const groupMismatch = structuredClone(rollWorkV3Fixture) as {
-      renderRequest: { groups: unknown[][] };
+    const groupMismatch = {
+      ...structuredClone(rollWorkV3Fixture),
+      renderRequest: {
+        ...structuredClone(rollWorkV3Fixture.renderRequest),
+        groups: [
+          ...structuredClone(rollWorkV3Fixture.renderRequest.groups),
+          structuredClone(v3Group),
+        ],
+      },
     };
-    const storedGroup = groupMismatch.renderRequest.groups[0];
-    if (storedGroup === undefined) throw new Error("V3 fixture group is missing");
-    groupMismatch.renderRequest.groups.push(structuredClone(storedGroup));
     expect(() => parseRecord(JSON.stringify(groupMismatch))).toThrow(
       "Stored roll work render snapshot does not match outcome",
     );
 
-    const dieMismatch = structuredClone(rollWorkV3Fixture) as {
-      renderRequest: { groups: unknown[][] };
+    const dieMismatch = {
+      ...structuredClone(rollWorkV3Fixture),
+      renderRequest: {
+        ...structuredClone(rollWorkV3Fixture.renderRequest),
+        groups: [
+          [...structuredClone(v3Group), structuredClone(v3Die)],
+          ...structuredClone(rollWorkV3Fixture.renderRequest.groups.slice(1)),
+        ],
+      },
     };
-    const firstGroup = dieMismatch.renderRequest.groups[0];
-    const storedDie = firstGroup?.[0];
-    if (firstGroup === undefined || storedDie === undefined) {
-      throw new Error("V3 fixture die is missing");
-    }
-    firstGroup.push(structuredClone(storedDie));
     expect(() => parseRecord(JSON.stringify(dieMismatch))).toThrow(
       "Stored roll work render snapshot does not match outcome",
     );
 
-    const wrongRevision = structuredClone(rollWorkV4Fixture) as {
-      renderRequest: { rendererRevision: string };
+    const v4Group = rollWorkV4Fixture.renderRequest.groups[0];
+    const v4Die = v4Group?.[0];
+    if (v4Group === undefined || v4Die === undefined) {
+      throw new Error("V4 fixture die is missing");
+    }
+    const wrongRevision = {
+      ...structuredClone(rollWorkV4Fixture),
+      renderRequest: {
+        ...structuredClone(rollWorkV4Fixture.renderRequest),
+        rendererRevision: "canvaskit-v4-r42",
+      },
     };
-    wrongRevision.renderRequest.rendererRevision = "canvaskit-v4-r42";
     expect(() => parseRecord(JSON.stringify(wrongRevision))).toThrow(
       "Render request rendererRevision is not supported",
     );
 
-    const v4GroupMismatch = structuredClone(rollWorkV4Fixture) as {
-      renderRequest: { groups: unknown[][] };
+    const v4GroupMismatch = {
+      ...structuredClone(rollWorkV4Fixture),
+      renderRequest: {
+        ...structuredClone(rollWorkV4Fixture.renderRequest),
+        groups: [
+          ...structuredClone(rollWorkV4Fixture.renderRequest.groups),
+          structuredClone(v4Group),
+        ],
+      },
     };
-    const v4Group = v4GroupMismatch.renderRequest.groups[0];
-    if (v4Group === undefined) throw new Error("V4 fixture group is missing");
-    v4GroupMismatch.renderRequest.groups.push(structuredClone(v4Group));
     expect(() => parseRecord(JSON.stringify(v4GroupMismatch))).toThrow(
       "Stored roll work render snapshot does not match outcome",
     );
 
-    const v4ResultMismatch = structuredClone(rollWorkV4Fixture);
-    const mismatchedDie = v4ResultMismatch.renderRequest.groups[0]?.[0];
-    if (mismatchedDie === undefined) throw new Error("V4 fixture die is missing");
-    mismatchedDie.result = 20;
+    const v4ResultMismatch = {
+      ...structuredClone(rollWorkV4Fixture),
+      renderRequest: {
+        ...structuredClone(rollWorkV4Fixture.renderRequest),
+        groups: [[{ ...structuredClone(v4Die), result: 20 }]],
+      },
+    };
     expect(() => parseRecord(JSON.stringify(v4ResultMismatch))).toThrow(
       "Stored roll work render snapshot does not match outcome",
     );
 
-    const v4TargetMismatch = structuredClone(rollWorkV4Fixture) as {
-      renderRequest: { groups: Array<Array<{ target: string }>> };
+    const v4TargetMismatch = {
+      ...structuredClone(rollWorkV4Fixture),
+      renderRequest: {
+        ...structuredClone(rollWorkV4Fixture.renderRequest),
+        groups: [[{ ...structuredClone(v4Die), target: "d12" }]],
+      },
     };
-    const targetDie = v4TargetMismatch.renderRequest.groups[0]?.[0];
-    if (targetDie === undefined) throw new Error("V4 fixture die is missing");
-    targetDie.target = "d12";
     expect(() => parseRecord(JSON.stringify(v4TargetMismatch))).toThrow(
       "Stored roll work render snapshot does not match outcome",
     );
 
-    const v4IconMismatch = structuredClone(rollWorkV4Fixture);
-    const iconDie = v4IconMismatch.renderRequest.groups[0]?.[0];
-    if (iconDie === undefined) throw new Error("V4 fixture die is missing");
-    (iconDie.icons as string[]).push("explosion");
+    const v4IconMismatch = {
+      ...structuredClone(rollWorkV4Fixture),
+      renderRequest: {
+        ...structuredClone(rollWorkV4Fixture.renderRequest),
+        groups: [[{
+          ...structuredClone(v4Die),
+          icons: [...v4Die.icons, "explosion"],
+        }]],
+      },
+    };
     expect(() => parseRecord(JSON.stringify(v4IconMismatch))).toThrow(
       "Stored roll work render snapshot does not match outcome",
     );
 
-    const invalidV4Request = structuredClone(rollWorkV4Fixture);
-    invalidV4Request.request.repetitions = 0;
+    const invalidV4Request = {
+      ...structuredClone(rollWorkV4Fixture),
+      request: { ...rollWorkV4Fixture.request, repetitions: 0 },
+    };
     expect(() => parseRecord(JSON.stringify(invalidV4Request))).toThrow(
       "Stored roll work is invalid",
     );
 
-    const incompleteV4Outcome = structuredClone(rollWorkV4Fixture);
-    incompleteV4Outcome.request.notation.push("1d12");
+    const incompleteV4Outcome = {
+      ...structuredClone(rollWorkV4Fixture),
+      request: {
+        ...rollWorkV4Fixture.request,
+        notation: [...rollWorkV4Fixture.request.notation, "1d12"],
+      },
+    };
     expect(() => parseRecord(JSON.stringify(incompleteV4Outcome))).toThrow(
       "Stored roll work is invalid",
     );
 
-    const invalidV4Outcome = structuredClone(rollWorkV4Fixture) as {
-      outcome: { outcomes: Array<{ dice: Array<{ modifiers: unknown }> }> };
+    const outcome = rollWorkV4Fixture.outcome.outcomes[0];
+    const outcomeDie = outcome?.dice[0];
+    if (outcome === undefined || outcomeDie === undefined) {
+      throw new Error("V4 outcome die is missing");
+    }
+    const invalidV4Outcome = {
+      ...structuredClone(rollWorkV4Fixture),
+      outcome: {
+        ...structuredClone(rollWorkV4Fixture.outcome),
+        outcomes: [{
+          ...structuredClone(outcome),
+          dice: [{ ...structuredClone(outcomeDie), modifiers: "critical-success" }],
+        }],
+      },
     };
-    const outcomeDie = invalidV4Outcome.outcome.outcomes[0]?.dice[0];
-    if (outcomeDie === undefined) throw new Error("V4 outcome die is missing");
-    outcomeDie.modifiers = "critical-success";
     expect(() => parseRecord(JSON.stringify(invalidV4Outcome))).toThrow(
       "Stored roll work is invalid",
     );
@@ -1775,8 +2140,10 @@ describe("RollWork Durable Object", () => {
         )
         .one();
       expect(row.token).toBe(input.interaction.token);
-      expect(JSON.parse(row.metadata_json)).toMatchObject({
-        version: 4,
+      expect(
+        StoredDeliveryVersionSchema.parse(JSON.parse(row.metadata_json)).version,
+      ).toBe(4);
+      expect(parseDeliveryMetadata(row.metadata_json)).toMatchObject({
         logging: { context: input.logging.context },
       });
       const alarm = await state.storage.getAlarm();
@@ -1833,8 +2200,7 @@ describe("RollWork Durable Object", () => {
           "SELECT metadata_json FROM interaction_delivery",
         )
         .one();
-      expect(JSON.parse(row.metadata_json)).toMatchObject({
-        version: 4,
+      expect(parseDeliveryMetadata(row.metadata_json)).toMatchObject({
         logging: { context },
       });
     });
@@ -1848,19 +2214,23 @@ describe("RollWork Durable Object", () => {
     if (input.logging.context?.kind === "guild") {
       input.logging.context.guildId = "100000000000000002";
     }
-    const dataService = rollEnv.DATA_SERVICE as unknown as {
-      fetch: (request: Request) => Promise<Response>;
-    };
-    const originalFetch = dataService.fetch;
+    const dataService = rollEnv.DATA_SERVICE;
+    const originalFetch = dataService.fetch.bind(dataService);
     const lifecycleSyncStarted = controlledSignal();
     const lifecycleSyncReleased = controlledSignal();
-    let firstLifecycleSnapshot: unknown;
-    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+    let firstLifecycleSnapshot: RollLifecycleSnapshot | undefined;
+    const dataFetch = vi.spyOn(dataService, "fetch").mockImplementation(
+      async (input, init): Promise<Response> => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
       if (
         new URL(request.url).pathname === "/internal/roll-lifecycle" &&
         firstLifecycleSnapshot === undefined
       ) {
-        const snapshot = await request.clone().json<{ interactionId?: unknown }>();
+        const snapshot = parseRollLifecycleSnapshot(
+          await request.clone().json<SchemaInput>(),
+        );
         if (snapshot.interactionId === id) {
           firstLifecycleSnapshot = snapshot;
           lifecycleSyncStarted.resolve();
@@ -1868,15 +2238,12 @@ describe("RollWork Durable Object", () => {
           return Response.json({ status: "applied" });
         }
       }
-      return originalFetch.call(dataService, request);
+      return originalFetch(input, init);
     });
 
     try {
-      await runInDurableObject(stub, async (instance, state) => {
-        const roll = instance as unknown as {
-          acceptDelivery(value: unknown): Promise<unknown>;
-        };
-        await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+      await runInRollWork(stub, async (instance, state) => {
+        await expect(instance.acceptDelivery(input)).resolves.toMatchObject({
           status: "created",
           delivery: "pending",
         });
@@ -1884,7 +2251,7 @@ describe("RollWork Durable Object", () => {
 
         const alarm = callAlarm(instance);
         await lifecycleSyncStarted.promise;
-        await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+        await expect(instance.acceptDelivery(input)).resolves.toMatchObject({
           status: "created",
           delivery: "pending",
         });
@@ -1897,7 +2264,7 @@ describe("RollWork Durable Object", () => {
       });
     } finally {
       lifecycleSyncReleased.resolve();
-      dataService.fetch = originalFetch;
+      dataFetch.mockRestore();
     }
 
     expect(firstLifecycleSnapshot).toMatchObject({
@@ -1933,7 +2300,7 @@ describe("RollWork Durable Object", () => {
       const stored = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      const record: unknown = JSON.parse(stored.record_json);
+      const record = parseRecord(stored.record_json);
       expect(record).toMatchObject({
         request: { notation: ["1d20", "1d10"], repetitions: 1 },
       });
@@ -2001,7 +2368,7 @@ describe("RollWork Durable Object", () => {
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      expect(JSON.parse(workRow.record_json)).toMatchObject({ version: 1 });
+      expect(parseRecord(workRow.record_json)).toMatchObject({ version: 1 });
     });
   });
 
@@ -2130,11 +2497,8 @@ describe("RollWork Durable Object", () => {
     );
 
     try {
-      await runInDurableObject(stub, async (instance) => {
-        const roll = instance as unknown as {
-          deliver(value: unknown): Promise<unknown>;
-        };
-        const deliveryPromise = roll.deliver(input);
+      await runInRollWork(stub, async (instance) => {
+        const deliveryPromise = instance.deliver(input);
         try {
           await appearanceStarted.promise;
           expect(jsonCalls).toBe(0);
@@ -2178,7 +2542,7 @@ describe("RollWork Durable Object", () => {
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      expect(JSON.parse(workRow.record_json)).toMatchObject({
+      expect(parseRecord(workRow.record_json)).toMatchObject({
         version: 5,
         renderVersion: 4,
         renderRequest: {
@@ -2302,16 +2666,10 @@ describe("RollWork Durable Object", () => {
         state: "delivered",
       });
 
-      const delivered = consoleInfo.mock.calls
-        .flatMap(([entry]) =>
-          typeof entry === "string"
-            ? [JSON.parse(entry) as Record<string, unknown>]
-            : [],
-        )
-        .find(
-          ({ message, rollId }) =>
-            message === "Roll destination delivery completed" && rollId === id,
-        );
+      const delivered = parsedConsoleJsonEvents(
+        consoleInfo.mock.calls,
+        DestinationTelemetrySchema,
+      ).find(({ rollId }) => rollId === id);
       expect(delivered).toMatchObject({
         telemetryVersion: 5,
         state: "delivered",
@@ -2383,11 +2741,8 @@ describe("RollWork Durable Object", () => {
     let finalizedRecord = "";
     let sourceImage = new Uint8Array();
     try {
-      await runInDurableObject(stub, async (instance, state) => {
-        const roll = instance as unknown as {
-          deliver(value: unknown): Promise<unknown>;
-        };
-        const deliveryPromise = roll.deliver(input);
+      await runInRollWork(stub, async (instance, state) => {
+        const deliveryPromise = instance.deliver(input);
         try {
           await appearanceStarted.promise;
           expect(clatterCalls).toBe(1);
@@ -2414,7 +2769,7 @@ describe("RollWork Durable Object", () => {
           const pendingWork = state.storage.sql
             .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
             .one();
-          expect(JSON.parse(pendingWork.record_json)).toMatchObject({
+          expect(parseRecord(pendingWork.record_json)).toMatchObject({
             version: 5,
             renderVersion: expectedRenderVersion,
             renderRequest: null,
@@ -2434,7 +2789,7 @@ describe("RollWork Durable Object", () => {
           finalizedRecord = state.storage.sql
             .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
             .one().record_json;
-          expect(JSON.parse(finalizedRecord)).toMatchObject({
+          expect(parseRecord(finalizedRecord)).toMatchObject({
             version: 5,
             renderVersion: expectedRenderVersion,
             renderRequest:
@@ -2542,7 +2897,7 @@ describe("RollWork Durable Object", () => {
       state: "delivered",
     });
     await runInDurableObject(stub, (_instance, state) => {
-      const record: unknown = JSON.parse(
+      const record = parseRecord(
         state.storage.sql
           .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
           .one().record_json,
@@ -2586,7 +2941,9 @@ describe("RollWork Durable Object", () => {
           return;
         }
         if (contentType.startsWith("application/json")) {
-          const payload = JSON.stringify(await request.clone().json<unknown>());
+          const payload = JSON.stringify(
+            await request.clone().json<SchemaInput>(),
+          );
           // Extreme rolls swap in a random clatter variant, so match the
           // shared ellipsis opener instead of one variant's wording.
           if (payload.includes("_...")) clatterCalls += 1;
@@ -2598,21 +2955,13 @@ describe("RollWork Durable Object", () => {
     );
 
     try {
-      await runInDurableObject(stub, async (instance, state) => {
+      await runInRollWorkDeadlineFixture(stub, async (roll, state) => {
         state.storage.sql.exec(
           `UPDATE interaction_delivery
            SET expires_at = ?, delay_ms = 1
            WHERE singleton = 1`,
           Date.now() + 120_000,
         );
-        const roll = instance as unknown as {
-          deliver(value: unknown): Promise<unknown>;
-          finalizeIfResultWindowClosed(
-            delivery: { expires_at: number },
-            target: unknown,
-            attempts: number,
-          ): Promise<unknown>;
-        };
         const finalizeIfResultWindowClosed =
           roll.finalizeIfResultWindowClosed.bind(roll);
         roll.finalizeIfResultWindowClosed = (delivery, target, attempts) =>
@@ -2641,11 +2990,8 @@ describe("RollWork Durable Object", () => {
     expect(clatterCalls).toBe(1);
     expect(resultCalls).toBe(0);
     expect(terminalCalls).toBe(1);
-    await runInDurableObject(stub, (instance) => {
-      const roll = instance as unknown as {
-        deliveryDiagnostics(): unknown;
-      };
-      expect(roll.deliveryDiagnostics()).toMatchObject({
+    await runInRollWork(stub, (instance) => {
+      expect(instance.deliveryDiagnostics()).toMatchObject({
         state: "failed",
         failurePhase: "deadline",
       });
@@ -2693,11 +3039,8 @@ describe("RollWork Durable Object", () => {
     try {
       // Delivering and inspecting inside one invocation keeps the scheduled
       // retry from finalizing the snapshot before the pending state is read.
-      await runInDurableObject(stub, async (instance, state) => {
-        const roll = instance as unknown as {
-          deliver(value: unknown): Promise<unknown>;
-        };
-        await expect(roll.deliver(input)).resolves.toMatchObject({
+      await runInRollWork(stub, async (instance, state) => {
+        await expect(instance.deliver(input)).resolves.toMatchObject({
           status: "pending",
         });
         const delivery = state.storage.sql
@@ -2709,7 +3052,7 @@ describe("RollWork Durable Object", () => {
         const workRow = state.storage.sql
           .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
           .one();
-        expect(JSON.parse(workRow.record_json)).toMatchObject({
+        expect(parseRecord(workRow.record_json)).toMatchObject({
           version: 5,
           renderRequest: null,
         });
@@ -2738,7 +3081,7 @@ describe("RollWork Durable Object", () => {
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      expect(JSON.parse(workRow.record_json)).toMatchObject({
+      expect(parseRecord(workRow.record_json)).toMatchObject({
         version: 5,
         renderVersion: 4,
         renderRequest: {
@@ -2765,7 +3108,7 @@ describe("RollWork Durable Object", () => {
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      const record = JSON.parse(workRow.record_json) as Record<string, unknown>;
+      const record = parseRecord(workRow.record_json);
       const pending = parseRecord(
         JSON.stringify({
           ...record,
@@ -2833,9 +3176,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
         )
         .one();
-      const lifecycle = JSON.parse(lifecycleRow.snapshot_json) as {
-        context: Record<string, unknown>;
-      };
+      const lifecycle = parseLifecycleJson(lifecycleRow.snapshot_json);
       state.storage.sql.exec(
         "UPDATE roll_lifecycle_outbox SET snapshot_json = ?",
         JSON.stringify({
@@ -2853,7 +3194,7 @@ describe("RollWork Durable Object", () => {
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      expect(JSON.parse(workRow.record_json)).toMatchObject({
+      expect(parseRecord(workRow.record_json)).toMatchObject({
         version: 5,
         renderVersion: 4,
         renderRequest: null,
@@ -2863,11 +3204,8 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
         )
         .one();
-      expect(
-        (JSON.parse(lifecycleRow.snapshot_json) as {
-          context: { rendererRevision: string | null };
-        }).context.rendererRevision,
-      ).toBe("canvaskit-v4-r13");
+      const lifecycle = parseLifecycleJson(lifecycleRow.snapshot_json);
+      expect(lifecycle.context.rendererRevision).toBe("canvaskit-v4-r13");
     });
   });
 
@@ -2887,9 +3225,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
         )
         .one();
-      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
-        revision: number;
-      };
+      const snapshot = parseLifecycleJson(lifecycle.snapshot_json);
       state.storage.sql.exec(
         "UPDATE roll_lifecycle_outbox SET synced_revision = ?",
         snapshot.revision,
@@ -2907,7 +3243,7 @@ describe("RollWork Durable Object", () => {
       const workRow = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      expect(JSON.parse(workRow.record_json)).toMatchObject({
+      expect(parseRecord(workRow.record_json)).toMatchObject({
         version: 5,
         renderVersion: 4,
         renderRequest: {
@@ -2920,11 +3256,8 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
         )
         .one();
-      expect(
-        (JSON.parse(lifecycle.snapshot_json) as {
-          context: { rendererRevision: string | null };
-        }).context.rendererRevision,
-      ).toBeNull();
+      const snapshot = parseLifecycleJson(lifecycle.snapshot_json);
+      expect(snapshot.context.rendererRevision).toBeNull();
       expect(
         state.storage.sql
           .exec<{ count: number }>(
@@ -2995,16 +3328,30 @@ describe("RollWork Durable Object", () => {
         helper_state: "not_applicable",
         helper_attempts: 0,
       });
-      expect(JSON.parse(delivery.metadata_json)).toMatchObject({
-        version: 7,
+      expect(
+        StoredDeliveryVersionSchema.parse(JSON.parse(delivery.metadata_json))
+          .version,
+      ).toBe(7);
+      expect(parseDeliveryMetadata(delivery.metadata_json)).toMatchObject({
         preflighted: true,
       });
       const outbox = state.storage.sql
-        .exec<{ artifact_json: string; image_bytes: ArrayBuffer }>(
-          "SELECT artifact_json, image_bytes FROM roll_log_outbox",
+        .exec<{
+          artifact_json: string;
+          destination_delivered_at: number | null;
+          image_bytes: ArrayBuffer;
+        }>(
+          `SELECT artifact_json, destination_delivered_at, image_bytes
+           FROM roll_log_outbox`,
         )
         .one();
-      expect(JSON.parse(outbox.artifact_json)).toMatchObject({
+      expect(
+        parseStoredSourceRollLogArtifact(
+          outbox.artifact_json,
+          outbox.destination_delivered_at,
+          outbox.image_bytes,
+        ),
+      ).toMatchObject({
         version: 2,
         rollId: id,
         notation,
@@ -3093,11 +3440,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
         )
         .one();
-      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
-        revision: number;
-        state: string;
-        httpStatus: number | null;
-      };
+      const snapshot = parseLifecycleJson(lifecycle.snapshot_json);
       expect(snapshot).toMatchObject({ state: "delivered", httpStatus: 200 });
       expect(lifecycle.synced_revision).toBe(snapshot.revision);
       expect(await state.storage.getAlarm()).toBe(interactionExpiresAt(id));
@@ -3129,11 +3472,9 @@ describe("RollWork Durable Object", () => {
       `);
     });
 
-    await runInDurableObject(stub, async (instance) => {
+    await runInRollWork(stub, async (instance) => {
       await expect(
-        (instance as unknown as {
-          acceptDelivery(value: unknown): Promise<unknown>;
-        }).acceptDelivery(deliveryRequest(id, "delivery-success")),
+        instance.acceptDelivery(deliveryRequest(id, "delivery-success")),
       ).rejects.toThrow("simulated durable acceptance failure");
     });
     await runInDurableObject(stub, (_instance, state) => {
@@ -3142,12 +3483,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
         )
         .one();
-      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
-        revision: number;
-        state: string;
-        acceptedAt: number | null;
-        failureCode: string | null;
-      };
+      const snapshot = parseLifecycleJson(lifecycle.snapshot_json);
       expect(snapshot).toMatchObject({
         state: "failed",
         acceptedAt: null,
@@ -3160,10 +3496,8 @@ describe("RollWork Durable Object", () => {
   it("preserves lifecycle state when an alarm interleaves with acceptance", async () => {
     const id = snowflakeAt(Date.now(), 68);
     const stub = work(id);
-    const dataService = rollEnv.DATA_SERVICE as unknown as {
-      fetch: (request: Request) => Promise<Response>;
-    };
-    const originalFetch = dataService.fetch;
+    const dataService = rollEnv.DATA_SERVICE;
+    const originalFetch = dataService.fetch.bind(dataService);
     const acceptanceAlarmStarted = controlledSignal();
     const acceptanceAlarmReleased = controlledSignal();
     const lifecycleSyncStarted = controlledSignal();
@@ -3171,20 +3505,18 @@ describe("RollWork Durable Object", () => {
     const accountingStarted = controlledSignal();
     const accountingReleased = controlledSignal();
     let acceptanceSettled = false;
-    const lifecycleSnapshots: Array<{
-      interactionId?: unknown;
-      revision?: unknown;
-      state?: unknown;
-    }> = [];
+    const lifecycleSnapshots: RollLifecycleSnapshot[] = [];
 
-    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
+    const dataFetch = vi.spyOn(dataService, "fetch").mockImplementation(
+      async (input, init): Promise<Response> => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
       const path = new URL(request.url).pathname;
       if (path === "/internal/roll-lifecycle") {
-        const snapshot = await request.clone().json<{
-          interactionId?: unknown;
-          revision?: unknown;
-          state?: unknown;
-        }>();
+        const snapshot = parseRollLifecycleSnapshot(
+          await request.clone().json<SchemaInput>(),
+        );
         if (snapshot.interactionId === id) {
           lifecycleSnapshots.push(snapshot);
           if (acceptanceSettled && lifecycleSnapshots.length === 1) {
@@ -3195,20 +3527,20 @@ describe("RollWork Durable Object", () => {
         }
       }
       if (path === "/internal/roll-accounting") {
-        const accounting = await request.clone().json<{
-          interactionId?: unknown;
-        }>();
+        const accounting = InteractionIdentitySchema.parse(
+          await request.clone().json<SchemaInput>(),
+        );
         if (accounting.interactionId === id) {
           accountingStarted.resolve();
           await accountingReleased.promise;
           return Response.json({ status: "applied" });
         }
       }
-      return originalFetch.call(dataService, request);
+      return originalFetch(input, init);
     });
 
     try {
-      await runInDurableObject(stub, async (instance, state) => {
+      await runInRollWork(stub, async (instance, state) => {
         const setAlarm = state.storage.setAlarm.bind(state.storage);
         const setAlarmSpy = vi.spyOn(state.storage, "setAlarm");
         setAlarmSpy
@@ -3219,9 +3551,9 @@ describe("RollWork Durable Object", () => {
             await setAlarm(scheduledTime);
           });
         try {
-          const acceptance = (instance as unknown as {
-            acceptDelivery(value: unknown): Promise<unknown>;
-          }).acceptDelivery(deliveryRequest(id, "delivery-success"));
+          const acceptance = instance.acceptDelivery(
+            deliveryRequest(id, "delivery-success"),
+          );
           await acceptanceAlarmStarted.promise;
           await callAlarm(instance);
           acceptanceAlarmReleased.resolve();
@@ -3238,7 +3570,11 @@ describe("RollWork Durable Object", () => {
             )
             .toArray();
           expect(rows).toHaveLength(1);
-          expect(JSON.parse(rows[0]?.snapshot_json ?? "null")).toMatchObject({
+          const acceptedSnapshot = rows[0];
+          if (acceptedSnapshot === undefined) {
+            throw new Error("Accepted lifecycle snapshot is missing");
+          }
+          expect(parseLifecycleJson(acceptedSnapshot.snapshot_json)).toMatchObject({
             state: "accepted",
             revision: 2,
           });
@@ -3273,7 +3609,7 @@ describe("RollWork Durable Object", () => {
       acceptanceAlarmReleased.resolve();
       lifecycleSyncReleased.resolve();
       accountingReleased.resolve();
-      dataService.fetch = originalFetch;
+      dataFetch.mockRestore();
     }
 
     expect(lifecycleSnapshots[0]).toMatchObject({
@@ -3290,10 +3626,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
         )
         .one();
-      const snapshot = JSON.parse(lifecycle.snapshot_json) as {
-        state: string;
-        revision: number;
-      };
+      const snapshot = parseLifecycleJson(lifecycle.snapshot_json);
       expect(snapshot.state).toBe("delivered");
       expect(lifecycle.synced_revision).toBe(snapshot.revision);
     });
@@ -3308,24 +3641,16 @@ describe("RollWork Durable Object", () => {
       ...deliveryRequest(id, "delivery-success"),
       settings: { skipDiceDelay: false, hideRollResultText: true },
     };
-    const dataService = rollEnv.DATA_SERVICE as unknown as {
-      fetch: (request: Request) => Promise<Response>;
-    };
-    const originalFetch = dataService.fetch;
-    let settingsCalls = 0;
-    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
-      if (new URL(request.url).pathname === "/internal/guilds/settings") {
-        settingsCalls += 1;
-      }
-      return originalFetch.call(dataService, request);
-    });
+    const settingsRequests = observeDataServicePath(
+      "/internal/guilds/settings",
+    );
 
     try {
       await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
         status: "created",
         delivery: "pending",
       });
-      expect(settingsCalls).toBe(0);
+      expect(settingsRequests.callCount()).toBe(0);
       await runInDurableObject(stub, (_instance, state) => {
         expect(
           state.storage.sql
@@ -3340,7 +3665,7 @@ describe("RollWork Durable Object", () => {
         ).toEqual({ skip_dice_delay: 0, hide_roll_result_text: 1 });
       });
     } finally {
-      dataService.fetch = originalFetch;
+      settingsRequests.restore();
     }
   });
 
@@ -3365,16 +3690,23 @@ describe("RollWork Durable Object", () => {
         )
         .one();
       const artifact = state.storage.sql
-        .exec<{ artifact_json: string }>(
-          "SELECT artifact_json FROM roll_log_outbox",
+        .exec<{
+          artifact_json: string;
+          destination_delivered_at: number | null;
+          image_bytes: ArrayBuffer;
+        }>(
+          `SELECT artifact_json, destination_delivered_at, image_bytes
+           FROM roll_log_outbox`,
         )
         .one();
       return {
         expectedResult: rollResultText(record.outcome),
-        intent: JSON.parse(intent.intent_json) as Record<string, unknown>,
+        intent: parseTextResultIntent(JSON.parse(intent.intent_json)),
         expiresAt: intent.expires_at,
-        artifactPayload: (
-          JSON.parse(artifact.artifact_json) as { payload: unknown }
+        artifactPayload: parseStoredSourceRollLogArtifact(
+          artifact.artifact_json,
+          artifact.destination_delivered_at,
+          artifact.image_bytes,
         ).payload,
       };
     });
@@ -3463,23 +3795,15 @@ describe("RollWork Durable Object", () => {
       channelName: "dice-rolls",
       channelType: 0,
     };
-    const dataService = rollEnv.DATA_SERVICE as unknown as {
-      fetch: (request: Request) => Promise<Response>;
-    };
-    const originalFetch = dataService.fetch;
-    let settingsCalls = 0;
-    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
-      if (new URL(request.url).pathname === "/internal/guilds/settings") {
-        settingsCalls += 1;
-      }
-      return originalFetch.call(dataService, request);
-    });
+    const settingsRequests = observeDataServicePath(
+      "/internal/guilds/settings",
+    );
 
     try {
       await expect(stub.deliver(input)).resolves.toEqual({
         status: "delivered",
       });
-      expect(settingsCalls).toBe(1);
+      expect(settingsRequests.callCount()).toBe(1);
       await runInDurableObject(stub, (_instance, state) => {
         expect(
           state.storage.sql
@@ -3503,7 +3827,7 @@ describe("RollWork Durable Object", () => {
         messageId: "100000000000000087",
       })).resolves.toMatchObject({ status: "available" });
     } finally {
-      dataService.fetch = originalFetch;
+      settingsRequests.restore();
     }
   });
 
@@ -3511,28 +3835,20 @@ describe("RollWork Durable Object", () => {
     const id = snowflakeAt(Date.now(), 72);
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");
-    const dataService = rollEnv.DATA_SERVICE as unknown as {
-      fetch: (request: Request) => Promise<Response>;
-    };
-    const originalFetch = dataService.fetch;
-    let settingsCalls = 0;
-    dataService.fetch = vi.fn(async (request: Request): Promise<Response> => {
-      if (new URL(request.url).pathname === "/internal/guilds/settings") {
-        settingsCalls += 1;
-      }
-      return originalFetch.call(dataService, request);
-    });
+    const settingsRequests = observeDataServicePath(
+      "/internal/guilds/settings",
+    );
 
     try {
       await expect(stub.acceptDelivery(input)).resolves.toMatchObject({
         status: "created",
         delivery: "pending",
       });
-      expect(settingsCalls).toBe(0);
+      expect(settingsRequests.callCount()).toBe(0);
       await settleDelivery(stub);
-      expect(settingsCalls).toBe(1);
+      expect(settingsRequests.callCount()).toBe(1);
     } finally {
-      dataService.fetch = originalFetch;
+      settingsRequests.restore();
     }
 
     await expect(stub.deliveryStatus()).resolves.toMatchObject({
@@ -3546,11 +3862,8 @@ describe("RollWork Durable Object", () => {
     const stub = work(id);
     const input = deliveryRequest(id, "delivery-success");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await runInDurableObject(stub, async (instance, state) => {
-      const roll = instance as unknown as {
-        acceptDelivery(value: RollDeliveryRequest): Promise<unknown>;
-      };
-      await expect(roll.acceptDelivery(input)).resolves.toMatchObject({
+    await runInRollWork(stub, async (instance, state) => {
+      await expect(instance.acceptDelivery(input)).resolves.toMatchObject({
         status: "created",
         delivery: "pending",
       });
@@ -3558,15 +3871,22 @@ describe("RollWork Durable Object", () => {
       const row = state.storage.sql
         .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
         .one();
-      const record = JSON.parse(row.record_json) as {
-        renderRequest: { groups: unknown[][] };
-      };
+      const record = parseRecord(row.record_json);
+      if (record.version !== 4 || record.renderRequest === null) {
+        throw new Error("V4 render record is missing");
+      }
       const renderGroup = record.renderRequest.groups[0];
       if (renderGroup === undefined) throw new Error("V4 render group is missing");
-      record.renderRequest.groups.push(structuredClone(renderGroup));
+      const invalidRecord = {
+        ...record,
+        renderRequest: {
+          ...record.renderRequest,
+          groups: [...record.renderRequest.groups, structuredClone(renderGroup)],
+        },
+      };
       state.storage.sql.exec(
         "UPDATE roll_work SET record_json = ? WHERE singleton = 1",
-        JSON.stringify(record),
+        JSON.stringify(invalidRecord),
       );
     });
 
@@ -3580,13 +3900,10 @@ describe("RollWork Durable Object", () => {
         state: "failed",
         failurePhase: "record",
       });
-      const terminalFailure = consoleError.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(
-          ({ message, rollId }) =>
-            message === "Roll delivery encountered a terminal internal failure" &&
-            rollId === id,
-        );
+      const terminalFailure = parsedConsoleJsonEvents(
+        consoleError.mock.calls,
+        TerminalFailureTelemetrySchema,
+      ).find(({ rollId }) => rollId === id);
       expect(terminalFailure).toMatchObject({
         rollId: id,
         interactionId: id,
@@ -3602,11 +3919,7 @@ describe("RollWork Durable Object", () => {
             "SELECT snapshot_json, synced_revision FROM roll_lifecycle_outbox",
           )
           .one();
-        const snapshot = JSON.parse(lifecycle.snapshot_json) as {
-          revision: number;
-          state: string;
-          failureCode: string | null;
-        };
+        const snapshot = parseLifecycleJson(lifecycle.snapshot_json);
         expect(snapshot).toMatchObject({
           state: "failed",
           failureCode: "stored-record-invalid",
@@ -3641,11 +3954,7 @@ describe("RollWork Durable Object", () => {
             "SELECT snapshot_json FROM roll_lifecycle_outbox",
           )
           .one();
-        const snapshot = JSON.parse(row.snapshot_json) as {
-          version: number;
-          state: string;
-          diagnostics: Record<string, unknown>;
-        };
+        const snapshot = parseLifecycleJson(row.snapshot_json);
         expect(snapshot).toMatchObject({
           version: 2,
           state: "failed",
@@ -3654,18 +3963,16 @@ describe("RollWork Durable Object", () => {
             discordOperation: "edit-original-result",
           },
         });
-        expect(typeof snapshot.diagnostics.firstProviderAttemptAt).toBe(
-          "number",
-        );
+        if (snapshot.version !== 2) {
+          throw new Error("V2 lifecycle diagnostics are missing");
+        }
+        expect(snapshot.diagnostics.firstProviderAttemptAt).toBeTypeOf("number");
       });
 
-      const delivered = consoleInfo.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(
-          ({ message, rollId }) =>
-            message === "Roll destination delivery completed" &&
-            rollId === deliveredId,
-        );
+      const delivered = parsedConsoleJsonEvents(
+        consoleInfo.mock.calls,
+        DestinationTelemetrySchema,
+      ).find(({ rollId }) => rollId === deliveredId);
       expect(delivered).toMatchObject({
         telemetryVersion: 5,
         subsystem: "roll-destination",
@@ -3711,13 +4018,10 @@ describe("RollWork Durable Object", () => {
       expect(delivered?.resultUploadMs).toBeTypeOf("number");
       expect(Number(delivered?.imageByteLength)).toBeGreaterThan(0);
 
-      const failed = consoleError.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(
-          ({ message, rollId }) =>
-            message === "Roll destination delivery completed" &&
-            rollId === failedId,
-        );
+      const failed = parsedConsoleJsonEvents(
+        consoleError.mock.calls,
+        DestinationTelemetrySchema,
+      ).find(({ rollId }) => rollId === failedId);
       expect(failed).toMatchObject({
         telemetryVersion: 5,
         subsystem: "roll-destination",
@@ -3765,7 +4069,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
         )
         .one();
-      expect(JSON.parse(row.snapshot_json)).toMatchObject({
+      expect(parseLifecycleJson(row.snapshot_json)).toMatchObject({
         version: 2,
         state: "failed",
         diagnostics: { discordErrorCode: null },
@@ -3784,12 +4088,10 @@ describe("RollWork Durable Object", () => {
 
     try {
       await expect(work(id).deliver(input)).resolves.toEqual({ status: "failed" });
-      const failed = consoleError.mock.calls
-        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find(
-          ({ message, rollId }) =>
-            message === "Roll destination delivery completed" && rollId === id,
-        );
+      const failed = parsedConsoleJsonEvents(
+        consoleError.mock.calls,
+        DestinationTelemetrySchema,
+      ).find(({ rollId }) => rollId === id);
       expect(failed).toMatchObject({
         rollId: id,
         state: "failed",
@@ -3829,7 +4131,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
         )
         .one();
-      const snapshot = JSON.parse(row.snapshot_json) as Record<string, unknown>;
+      const snapshot = parseLifecycleJson(row.snapshot_json);
       expect(snapshot).toMatchObject({
         version: 2,
         state: "failed",
@@ -3842,17 +4144,11 @@ describe("RollWork Durable Object", () => {
           originalResponseProbe: "missing",
         },
       });
-      const diagnostics = snapshot.diagnostics;
-      if (
-        typeof diagnostics !== "object" ||
-        diagnostics === null ||
-        !("firstProviderAttemptAt" in diagnostics) ||
-        !("clatterSucceededAt" in diagnostics)
-      ) {
+      if (snapshot.version !== 2) {
         throw new Error("Roll lifecycle diagnostics are missing");
       }
-      expect(typeof diagnostics.firstProviderAttemptAt).toBe("number");
-      expect(typeof diagnostics.clatterSucceededAt).toBe("number");
+      expect(snapshot.diagnostics.firstProviderAttemptAt).toBeTypeOf("number");
+      expect(snapshot.diagnostics.clatterSucceededAt).toBeTypeOf("number");
       expect(JSON.stringify(snapshot)).not.toMatch(
         /delivery-result-message-missing|unknown message|authorization/i,
       );
@@ -3882,7 +4178,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
         )
         .one();
-      expect(JSON.parse(row.snapshot_json)).toMatchObject({
+      expect(parseLifecycleJson(row.snapshot_json)).toMatchObject({
         version: 2,
         state: "failed",
         httpStatus: 404,
@@ -3919,7 +4215,7 @@ describe("RollWork Durable Object", () => {
           "SELECT snapshot_json FROM roll_lifecycle_outbox",
         )
         .one();
-      expect(JSON.parse(row.snapshot_json)).toMatchObject({
+      expect(parseLifecycleJson(row.snapshot_json)).toMatchObject({
         version: 2,
         state: "failed",
         httpStatus: 404,
@@ -3944,23 +4240,16 @@ describe("RollWork Durable Object", () => {
       await expect(work(id).deliver(input)).resolves.toEqual({
         status: "delivered",
       });
-      const entry = consoleInfo.mock.calls
-        .map(([value]) => String(value))
-        .find((value) => {
-          const event = JSON.parse(value) as Record<string, unknown>;
-          return (
-            event.message === "Roll destination delivery completed" &&
-            event.rollId === id
-          );
-        });
-      expect(entry).toBeDefined();
-      if (entry === undefined) throw new Error("Destination telemetry is missing");
-      expect(new TextEncoder().encode(entry).byteLength).toBeLessThan(256 * 1_024);
-
-      const event = JSON.parse(entry) as {
-        outcome?: { outcomes?: Array<{ dice?: unknown[] }> };
-      };
-      expect(event.outcome?.outcomes?.[0]?.dice).toHaveLength(50);
+      const event = parsedConsoleJsonEvents(
+        consoleInfo.mock.calls,
+        DestinationTelemetrySchema,
+      ).find(({ rollId }) => rollId === id);
+      if (event === undefined) throw new Error("Destination telemetry is missing");
+      const serialized = JSON.stringify(event);
+      expect(new TextEncoder().encode(serialized).byteLength).toBeLessThan(
+        256 * 1_024,
+      );
+      expect(event.outcome?.outcomes[0]?.dice).toHaveLength(50);
     } finally {
       consoleInfo.mockRestore();
     }
@@ -3978,7 +4267,9 @@ describe("RollWork Durable Object", () => {
       status: "pending",
     });
     let sourcePng = new Uint8Array();
-    let sourceArtifact: Record<string, unknown> = {};
+    let sourceArtifact: ReturnType<
+      typeof parseStoredSourceRollLogArtifactMetadata
+    > | undefined;
     await runInDurableObject(stub, (_instance, state) => {
       const row = state.storage.sql
         .exec<{
@@ -3991,9 +4282,12 @@ describe("RollWork Durable Object", () => {
         )
         .one();
       sourcePng = new Uint8Array(row.image_bytes).slice();
-      sourceArtifact = JSON.parse(row.artifact_json) as Record<string, unknown>;
+      const artifact = parseStoredSourceRollLogArtifactMetadata(
+        row.artifact_json,
+      );
+      sourceArtifact = artifact;
       expect(row.destination_delivered_at).toBeNull();
-      expect(sourceArtifact).toMatchObject({
+      expect(artifact).toMatchObject({
         version: 2,
         rollId: id,
         user: { id: input.accounting.userId },
@@ -4007,12 +4301,13 @@ describe("RollWork Durable Object", () => {
           filename: `dice-${id}.png`,
         },
       });
-      const presentation = sourceArtifact.presentation as
-        | { result?: unknown }
-        | undefined;
-      expect(presentation?.result).toMatch(/^1d20:/);
+      expect(artifact.presentation.result).toMatch(/^1d20:/);
       expect(sourcePng.byteLength).toBeGreaterThan(0);
     });
+    if (sourceArtifact === undefined) {
+      throw new Error("Source roll log artifact is missing");
+    }
+    const expectedSourceArtifact = sourceArtifact;
 
     await evictDurableObject(stub);
     await expect(stub.deliver(input)).resolves.toEqual({
@@ -4048,7 +4343,9 @@ describe("RollWork Durable Object", () => {
           "SELECT artifact_json, image_bytes FROM log_artifact",
         )
         .one();
-      expect(JSON.parse(row.artifact_json)).toMatchObject(sourceArtifact);
+      expect(
+        parsePersistedRollLogArtifactMetadata(row.artifact_json),
+      ).toMatchObject(expectedSourceArtifact);
       expect(new Uint8Array(row.image_bytes)).toEqual(sourcePng);
     });
   });
@@ -4374,14 +4671,8 @@ describe("RollWork Durable Object", () => {
       input.logging.context.guildId = "100000000000000002";
     }
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(
-      (entry: unknown) => {
-        if (
-          typeof entry === "object" &&
-          entry !== null &&
-          !Array.isArray(entry) &&
-          (entry as Record<string, unknown>).message ===
-            "Roll durable acceptance completed"
-        ) {
+      (...entries: Parameters<ConsoleMethod>) => {
+        if (AcceptanceTelemetrySchema.safeParse(entries[0]).success) {
           throw new Error("acceptance telemetry unavailable");
         }
       },
@@ -4399,25 +4690,17 @@ describe("RollWork Durable Object", () => {
         const row = state.storage.sql
           .exec<{ record_json: string }>("SELECT record_json FROM roll_work")
           .one();
-        expect(JSON.parse(row.record_json)).toMatchObject({
+        expect(parseRecord(row.record_json)).toMatchObject({
           version: 5,
           renderVersion: 4,
           renderRequest: null,
         });
       });
 
-      const events: Record<string, unknown>[] = [];
-      for (const [entry] of consoleInfo.mock.calls) {
-        if (
-          typeof entry === "object" &&
-          entry !== null &&
-          !Array.isArray(entry) &&
-          (entry as Record<string, unknown>).message ===
-            "Roll durable acceptance completed"
-        ) {
-          events.push(entry as Record<string, unknown>);
-        }
-      }
+      const events = parsedConsoleEvents(
+        consoleInfo.mock.calls,
+        AcceptanceTelemetrySchema,
+      );
       expect(events).toHaveLength(1);
       const event = events[0];
       expect(event).toBeDefined();
@@ -4464,7 +4747,7 @@ describe("RollWork Durable Object", () => {
       }
       expect(event.renderSnapshotPreparationMs).toBeNull();
       expect(event.handlerElapsedMs).toBeGreaterThanOrEqual(
-        event.recordPreparationMs as number,
+        event.recordPreparationMs,
       );
       const serialized = JSON.stringify(event);
       for (const sensitive of [
@@ -4553,10 +4836,15 @@ describe("RollWork Durable Object", () => {
       if (input.logging.context?.kind !== "guild") {
         throw new Error("Expected guild logging context");
       }
-      (input.logging.context as { channelType: unknown }).channelType =
-        channelType;
+      const malformedInput = {
+        ...input,
+        logging: {
+          ...input.logging,
+          context: { ...input.logging.context, channelType },
+        },
+      };
 
-      expect(() => validateDeliveryRequest(input)).toThrow(
+      expect(() => validateDeliveryRequest(malformedInput)).toThrow(
         "Roll logging context is invalid",
       );
     },
@@ -4567,42 +4855,40 @@ describe("RollWork Durable Object", () => {
     const stub = work(id);
     const request = deliveryRequest(id, "delivery-temporary");
     request.message.title = null;
-    const dataService = rollEnv.DATA_SERVICE as unknown as {
-      fetch: (request: Request) => Promise<Response>;
-    };
-    const originalFetch = dataService.fetch;
-    dataService.fetch = vi.fn(async (dataRequest: Request): Promise<Response> => {
+    const dataService = rollEnv.DATA_SERVICE;
+    const originalFetch = dataService.fetch.bind(dataService);
+    const dataFetch = vi.spyOn(dataService, "fetch").mockImplementation(
+      async (input, init): Promise<Response> => {
+      const dataRequest = input instanceof Request
+        ? input
+        : new Request(input, init);
       const path = new URL(dataRequest.url).pathname;
       if (path === "/internal/roll-lifecycle") {
-        const lifecycle = await dataRequest.clone().json<{
-          interactionId?: unknown;
-        }>();
+        const lifecycle = parseRollLifecycleSnapshot(
+          await dataRequest.clone().json<SchemaInput>(),
+        );
         if (lifecycle.interactionId === id) {
           return Response.json({ error: "temporary" }, { status: 503 });
         }
       }
-      return originalFetch.call(dataService, dataRequest);
+      return originalFetch(input, init);
     });
 
     try {
-      await runInDurableObject(stub, async (instance, state) => {
-        const roll = instance as unknown as {
-          acceptDelivery(value: unknown): Promise<unknown>;
-          deliver(value: unknown): Promise<unknown>;
-        };
-        await expect(roll.acceptDelivery(request)).resolves.toMatchObject({
+      await runInRollWork(stub, async (instance, state) => {
+        await expect(instance.acceptDelivery(request)).resolves.toMatchObject({
           status: "created",
           delivery: "pending",
         });
         state.storage.sql.exec(
           "UPDATE interaction_delivery SET expires_at = 0",
         );
-        await expect(roll.deliver(request)).resolves.toEqual({
+        await expect(instance.deliver(request)).resolves.toEqual({
           status: "expired",
         });
       });
     } finally {
-      dataService.fetch = originalFetch;
+      dataFetch.mockRestore();
     }
 
     await expect(stub.deliveryStatus()).resolves.toEqual({ state: "missing" });
@@ -4622,7 +4908,7 @@ describe("RollWork Durable Object", () => {
            FROM roll_lifecycle_outbox`,
         )
         .one();
-      expect(JSON.parse(lifecycle.snapshot_json)).toMatchObject({
+      expect(parseLifecycleJson(lifecycle.snapshot_json)).toMatchObject({
         state: "failed",
         failureCode: "delivery-expired",
       });

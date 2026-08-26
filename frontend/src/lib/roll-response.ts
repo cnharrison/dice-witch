@@ -1,3 +1,4 @@
+import * as z from "zod";
 import {
   parsePublicRenderModelV4,
   serializeRenderRequestV4,
@@ -22,18 +23,33 @@ const MAX_RENDERED_IMAGE_WIDTH = 1_500;
 const MAX_RENDERED_IMAGE_HEIGHT = 9_350;
 const MAX_ICON_CHARACTERS = 64;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+const boundaryValueSchema = z.unknown();
+type BoundaryValue = z.input<typeof boundaryValueSchema>;
+const jsonObjectSchema = z.looseObject({});
+type JsonObject = z.infer<typeof jsonObjectSchema>;
+const stringSchema = z.string();
+const numberSchema = z.number();
+
+function isString(value: BoundaryValue): value is string {
+  return stringSchema.safeParse(value).success;
+}
+
+function isNumber(value: BoundaryValue): value is number {
+  return numberSchema.safeParse(value).success;
+}
+
+function isRecord(value: BoundaryValue): value is JsonObject {
+  return jsonObjectSchema.safeParse(value).success;
 }
 
 function hasOnlyKeys(
-  value: Record<string, unknown>,
+  value: JsonObject,
   allowed: readonly string[],
 ): boolean {
   return Object.keys(value).every((key) => allowed.includes(key));
 }
 
-function parseDie(value: unknown): Die {
+function parseDie(value: BoundaryValue): Die {
   if (
     !isRecord(value) ||
     !hasOnlyKeys(value, [
@@ -54,23 +70,24 @@ function parseDie(value: unknown): Die {
     ) ||
     !Number.isSafeInteger(value.rolled) ||
     !Number.isSafeInteger(value.value) ||
-    typeof value.color !== "string" ||
+    !isString(value.color) ||
     !HEX_COLOR.test(value.color) ||
-    typeof value.secondaryColor !== "string" ||
+    !isString(value.secondaryColor) ||
     !HEX_COLOR.test(value.secondaryColor) ||
-    typeof value.textColor !== "string" ||
+    !isString(value.textColor) ||
     !HEX_COLOR.test(value.textColor) ||
     !Array.isArray(value.icon) ||
     value.icon.length > 3 ||
     !value.icon.every(
       (icon) =>
-        typeof icon === "string" &&
+        isString(icon) &&
         icon.length >= 1 &&
         icon.length <= MAX_ICON_CHARACTERS,
     )
   ) {
     throw new Error("Web roll response is invalid");
   }
+  // SAFETY: The surrounding validation establishes the Die["sides"] invariant used below.
   return {
     sides: value.sides as Die["sides"],
     rolled: value.rolled,
@@ -82,11 +99,11 @@ function parseDie(value: unknown): Die {
   };
 }
 
-function parseResult(value: unknown): Result {
+function parseResult(value: BoundaryValue): Result {
   if (
     !isRecord(value) ||
     !hasOnlyKeys(value, ["output", "results"]) ||
-    typeof value.output !== "string" ||
+    !isString(value.output) ||
     value.output.length < 1 ||
     value.output.length > MAX_ROLL_TEXT_CHARACTERS ||
     !Number.isFinite(value.results)
@@ -96,7 +113,7 @@ function parseResult(value: unknown): Result {
   return { output: value.output, results: Number(value.results) };
 }
 
-function parseRenderedImage(value: unknown): RenderedRollImage {
+function parseRenderedImage(value: BoundaryValue): RenderedRollImage {
   if (
     !isRecord(value) ||
     !hasOnlyKeys(value, ["base64", "contentType", "height", "width"]) ||
@@ -107,7 +124,7 @@ function parseRenderedImage(value: unknown): RenderedRollImage {
     !Number.isSafeInteger(value.height) ||
     Number(value.height) < 1 ||
     Number(value.height) > MAX_RENDERED_IMAGE_HEIGHT ||
-    typeof value.base64 !== "string" ||
+    !isString(value.base64) ||
     value.base64.length < 1 ||
     value.base64.length >
       Math.ceil((Number(value.width) * Number(value.height) * 4 + 65_536) / 3) *
@@ -125,7 +142,7 @@ function parseRenderedImage(value: unknown): RenderedRollImage {
 }
 
 function parseAppearanceIdentities(
-  value: unknown,
+  value: BoundaryValue,
   groupSizes: readonly number[],
   errorMessage: string,
 ): string[][] {
@@ -138,7 +155,7 @@ function parseAppearanceIdentities(
     }
     return group.map((identity) => {
       if (
-        typeof identity !== "string" ||
+        !isString(identity) ||
         identity.length < 1 ||
         identity.length > 512
       ) {
@@ -155,12 +172,13 @@ function parseAppearanceIdentities(
 }
 
 function parseRerolledAppearanceIdentities(
-  value: unknown,
+  value: BoundaryValue,
   appearanceIdentities: readonly (readonly string[])[],
 ): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+  if (!Array.isArray(value) || !value.every(isString)) {
     throw new Error("Web roll response is invalid");
   }
+  // SAFETY: The surrounding validation establishes the string[] invariant used below.
   const identities = value as string[];
   const validIdentities = new Set(appearanceIdentities.flat());
   if (
@@ -172,7 +190,7 @@ function parseRerolledAppearanceIdentities(
   return [...identities];
 }
 
-function parseRenderModel(value: unknown): PublicRenderModelV4 {
+function parseRenderModel(value: BoundaryValue): PublicRenderModelV4 {
   try {
     const renderModel = parsePublicRenderModelV4(value);
     serializeRenderRequestV4(renderModel);
@@ -237,7 +255,7 @@ function assertRenderModelMatchesDice(
   });
 }
 
-export function parseWebRollPreparation(value: unknown): RollPreparation {
+export function parseWebRollPreparation(value: BoundaryValue): RollPreparation {
   if (
     !isRecord(value) ||
     !hasOnlyKeys(value, [
@@ -248,9 +266,9 @@ export function parseWebRollPreparation(value: unknown): RollPreparation {
       "renderModel",
       "renderSeed",
     ]) ||
-    typeof value.appearanceDigest !== "string" ||
+    !isString(value.appearanceDigest) ||
     !SHA256.test(value.appearanceDigest) ||
-    typeof value.renderSeed !== "number" ||
+    !isNumber(value.renderSeed) ||
     !Number.isInteger(value.renderSeed) ||
     value.renderSeed < 0 ||
     value.renderSeed > 0xffff_ffff ||
@@ -287,17 +305,18 @@ export function parseWebRollPreparation(value: unknown): RollPreparation {
   ) {
     throw new Error("Web roll preparation does not match render model");
   }
-  return {
+  const preparation: RollPreparation = {
     renderSeed: value.renderSeed,
     appearanceDigest: value.appearanceDigest,
     groupSizes,
     appearanceIdentities,
     renderedImage,
-    ...(renderModel === undefined ? {} : { renderModel }),
   };
+  if (renderModel !== undefined) Object.assign(preparation, { renderModel });
+  return preparation;
 }
 
-export function parseWebRollResponse(value: unknown): RollResponse {
+export function parseWebRollResponse(value: BoundaryValue): RollResponse {
   if (
     !isRecord(value) ||
     !hasOnlyKeys(value, [
@@ -314,12 +333,12 @@ export function parseWebRollResponse(value: unknown): RollResponse {
     value.diceArray.length > MAX_ROLL_GROUPS ||
     !Array.isArray(value.resultArray) ||
     value.resultArray.length > MAX_ROLL_GROUPS ||
-    typeof value.message !== "string" ||
+    !isString(value.message) ||
     value.message.length < 1 ||
     value.message.length > MAX_ROLL_TEXT_CHARACTERS ||
     !(
       value.error === undefined ||
-      (typeof value.error === "string" &&
+      (isString(value.error) &&
         value.error.length >= 1 &&
         value.error.length <= MAX_ROLL_TEXT_CHARACTERS)
     )
@@ -385,14 +404,15 @@ export function parseWebRollResponse(value: unknown): RollResponse {
     assertRenderModelMatchesDice(renderModel, diceArray);
   }
 
-  return {
+  const rollResponse: RollResponse = {
     diceArray,
     resultArray,
     appearanceIdentities,
     rerolledAppearanceIdentities,
     message: value.message,
-    ...(value.error === undefined ? {} : { error: value.error }),
-    ...(renderedImage === undefined ? {} : { renderedImage }),
-    ...(renderModel === undefined ? {} : { renderModel }),
   };
+  if (value.error !== undefined) Object.assign(rollResponse, { error: value.error });
+  if (renderedImage !== undefined) Object.assign(rollResponse, { renderedImage });
+  if (renderModel !== undefined) Object.assign(rollResponse, { renderModel });
+  return rollResponse;
 }

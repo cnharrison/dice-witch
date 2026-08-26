@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { serializeRenderRequestV4 } from "@dice-witch/dice-v4-model";
+import { z } from "zod";
 import {
   createCanvasKitRequestRendererV4,
   renderV4WithSingleRetry,
@@ -44,14 +45,29 @@ import {
   ROLL_SAVE_INTENT_RETENTION_MS,
   LOG_WORK_RETRY_WINDOW_MS,
   parseRollLifecycleSnapshot,
+  parseRollLoggingContext,
   validateRollLogArtifact,
   type DiscordComponentsV2Message,
   type RollLifecycleContextV1,
   type RollLifecycleDiagnosticsV2,
   type RollLogArtifact,
+  type RollResultMessageOptions,
   type SaveRollIntent,
   type TextResultIntentV1,
 } from "../../../packages/discord-contracts/src";
+import {
+  interactionTokenSchema,
+  nonNegativeSafeIntegerSchema,
+  safeIntegerSchema,
+  snowflakeSchema,
+  uuidV4Schema,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
+import type {
+  ChannelRollMessageDeliveryInputV1,
+  ChannelRollMessageDeliveryResultV1,
+  DiscordMessageExistenceResult,
+} from "../../discord-rest/src/index";
 import {
   buildRollRenderRequest,
   ROLL_RENDERER_REVISION_R20_V4,
@@ -100,6 +116,7 @@ import {
   type RollDeliveryFailurePhase,
   type RollDeliverySettings,
   type RollDeliveryStatus,
+  type RollDeliveryRequest,
   type RollWorkRecord,
   type RollWorkRecordV5,
   type RollWorkRequest,
@@ -132,7 +149,26 @@ export type {
   WebRollResult,
 } from "./web-roll-service";
 
-export type RollEnv = RollBindings;
+type DiscordRestServicePort = {
+  deliverChannelRollMessageV1(
+    value: ChannelRollMessageDeliveryInputV1,
+  ): Promise<SchemaInput>;
+  sendRollHelper(value: RollHelperRequest): Promise<SchemaInput>;
+};
+
+type DiscordMessageProbeServicePort = {
+  inspectDiscordMessageExistence(
+    value: DiscordMessageProbeRequest,
+  ): Promise<SchemaInput>;
+};
+
+export type RollEnv = Omit<
+  RollBindings,
+  "DISCORD_MESSAGE_PROBE" | "DISCORD_REST"
+> & {
+  DISCORD_MESSAGE_PROBE: DiscordMessageProbeServicePort;
+  DISCORD_REST: DiscordRestServicePort;
+};
 export type {
   AcceptRollDeliveryResult,
   DeliverRollWorkResult,
@@ -203,102 +239,47 @@ type DiscordFailureDetails = Readonly<{
   operation: DiscordOperation;
 }>;
 
-type ChannelRollMessageDeliveryResult =
-  | { status: "delivered"; messageId: string; httpStatus: number }
-  | { status: "invalid_response" }
-  | {
-      status: "retryable";
-      httpStatus: number | null;
-      retryAfterMs: number | null;
-    }
-  | {
-      status: "failed";
-      httpStatus: number;
-      discordErrorCode: number | null;
-    };
-
-type ChannelRollMessageDeliveryService = {
-  deliverChannelRollMessageV1(value: unknown): Promise<unknown>;
-};
-
 type ChannelRollMessageAttempt =
   | {
       delivery: Extract<
-        ChannelRollMessageDeliveryResult,
+        ChannelRollMessageDeliveryResultV1,
         { status: "delivered" }
       >;
     }
   | { result: DeliverRollWorkResult };
 
+const ChannelRollMessageDeliveryResultSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    status: z.literal("delivered"),
+    messageId: snowflakeSchema,
+    httpStatus: safeIntegerSchema.min(200).max(299),
+  }),
+  z.strictObject({ status: z.literal("invalid_response") }),
+  z.strictObject({
+    status: z.literal("retryable"),
+    httpStatus: safeIntegerSchema
+      .refine(isRetryableHttpStatus)
+      .nullable(),
+    retryAfterMs: nonNegativeSafeIntegerSchema.nullable(),
+  }),
+  z.strictObject({
+    status: z.literal("failed"),
+    httpStatus: safeIntegerSchema
+      .min(400)
+      .max(599)
+      .refine((status) => !isRetryableHttpStatus(status)),
+    discordErrorCode: safeIntegerSchema.positive().nullable(),
+  }),
+]);
+
 function parseChannelRollMessageDeliveryResult(
-  value: unknown,
-): ChannelRollMessageDeliveryResult {
-  if (!isRecord(value) || typeof value.status !== "string") {
+  value: SchemaInput,
+): ChannelRollMessageDeliveryResultV1 {
+  const result = ChannelRollMessageDeliveryResultSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Channel roll message delivery response is invalid");
   }
-  if (
-    value.status === "delivered" &&
-    hasExactKeys(value, ["httpStatus", "messageId", "status"]) &&
-    typeof value.messageId === "string" &&
-    SAVED_ROLL_SNOWFLAKE.test(value.messageId) &&
-    Number.isSafeInteger(value.httpStatus) &&
-    Number(value.httpStatus) >= 200 &&
-    Number(value.httpStatus) < 300
-  ) {
-    return {
-      status: value.status,
-      messageId: value.messageId,
-      httpStatus: Number(value.httpStatus),
-    };
-  }
-  if (
-    value.status === "invalid_response" &&
-    hasExactKeys(value, ["status"])
-  ) {
-    return { status: value.status };
-  }
-  if (
-    value.status === "retryable" &&
-    hasExactKeys(value, ["httpStatus", "retryAfterMs", "status"]) &&
-    (value.httpStatus === null ||
-      (Number.isSafeInteger(value.httpStatus) &&
-        isRetryableHttpStatus(Number(value.httpStatus)))) &&
-    (value.retryAfterMs === null ||
-      (Number.isSafeInteger(value.retryAfterMs) &&
-        Number(value.retryAfterMs) >= 0))
-  ) {
-    return {
-      status: value.status,
-      httpStatus:
-        value.httpStatus === null ? null : Number(value.httpStatus),
-      retryAfterMs:
-        value.retryAfterMs === null ? null : Number(value.retryAfterMs),
-    };
-  }
-  if (
-    value.status === "failed" &&
-    hasExactKeys(value, [
-      "discordErrorCode",
-      "httpStatus",
-      "status",
-    ]) &&
-    Number.isSafeInteger(value.httpStatus) &&
-    Number(value.httpStatus) >= 400 &&
-    Number(value.httpStatus) <= 599 &&
-    !isRetryableHttpStatus(Number(value.httpStatus)) &&
-    (value.discordErrorCode === null ||
-      (Number.isSafeInteger(value.discordErrorCode) &&
-        Number(value.discordErrorCode) >= 1))
-  ) {
-    return {
-      status: value.status,
-      httpStatus: Number(value.httpStatus),
-      discordErrorCode: value.discordErrorCode === null
-        ? null
-        : Number(value.discordErrorCode),
-    };
-  }
-  throw new Error("Channel roll message delivery response is invalid");
+  return result.data;
 }
 
 function mergeLifecycleDiagnostics(
@@ -353,13 +334,15 @@ function deliveryFinalizationAt(expiresAt: number): number {
   return expiresAt - DELIVERY_FINALIZATION_BUFFER_MS;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const DiscordErrorSchema = z.looseObject({ code: safeIntegerSchema });
+const DiscordMessageSchema = z.looseObject({ id: snowflakeSchema });
+const DiscordBodyStreamSchema = z.custom<ReadableStream<Uint8Array>>(
+  (value) => value instanceof ReadableStream,
+);
 
 async function readBoundedDiscordJson(
   response: Response,
-): Promise<unknown> {
+): Promise<SchemaInput> {
   const contentType = response.headers.get("content-type")
     ?.split(";", 1)[0]
     ?.trim()
@@ -373,7 +356,9 @@ async function readBoundedDiscordJson(
   ) {
     return null;
   }
-  const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+  const stream = DiscordBodyStreamSchema.safeParse(response.body);
+  if (!stream.success) return null;
+  const reader = stream.data.getReader();
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
   try {
@@ -398,35 +383,28 @@ async function readBoundedDiscordJson(
     offset += chunk.byteLength;
   }
   try {
-    return JSON.parse(new TextDecoder().decode(body)) as unknown;
+    const parsed: SchemaInput = JSON.parse(new TextDecoder().decode(body));
+    return parsed;
   } catch {
     return null;
   }
 }
 
 async function readDiscordErrorCode(response: Response): Promise<number | null> {
-  const parsed = await readBoundedDiscordJson(response);
-  if (!isRecord(parsed) || !Number.isSafeInteger(parsed.code)) return null;
-  const code = Number(parsed.code);
-  return code > 0 ? code : null;
+  const result = DiscordErrorSchema.safeParse(
+    await readBoundedDiscordJson(response),
+  );
+  if (!result.success || result.data.code <= 0) return null;
+  return result.data.code;
 }
 
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const sorted = [...expected].sort();
-  return actual.length === sorted.length && actual.every((key, index) => key === sorted[index]);
-}
-
-const SAVED_ROLL_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SAVED_ROLL_SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
 
 async function readDiscordMessageId(response: Response): Promise<string | null> {
-  const parsed = await readBoundedDiscordJson(response);
-  return isRecord(parsed) &&
-      typeof parsed.id === "string" &&
-      SAVED_ROLL_SNOWFLAKE.test(parsed.id)
-    ? parsed.id
-    : null;
+  const result = DiscordMessageSchema.safeParse(
+    await readBoundedDiscordJson(response),
+  );
+  return result.success ? result.data.id : null;
 }
 const SAVED_ROLL_PICKER_MAX_PAGE = { mine: 2, server: 4 } as const;
 const SAVED_ROLL_PICKER_SCHEMA = `
@@ -451,26 +429,45 @@ type SavedRollSelection = {
   revision: number;
 };
 
-type SavedRollPickerContext = {
-  version: 1;
-  interactionId: string;
-  userId: string;
-  guildId: string | null;
-  channelId: string;
-};
+const LowercaseUuidV4Schema = uuidV4Schema.refine(
+  (value) => value === value.toLowerCase(),
+);
 
-type SavedRollPickerRow = {
-  user_id: string;
-  guild_id: string | null;
-  channel_id: string;
-  expires_at: number;
-  scope: "mine" | "server";
-  page: number;
-  selected_id: string | null;
-  selected_revision: number | null;
-  state: "open" | "reserved";
-  run_interaction_id: string | null;
+const SavedRollPickerContextSchema = z.strictObject({
+  version: z.literal(1),
+  interactionId: snowflakeSchema,
+  userId: snowflakeSchema,
+  guildId: snowflakeSchema.nullable(),
+  channelId: snowflakeSchema,
+});
+type SavedRollPickerContext = z.output<typeof SavedRollPickerContextSchema>;
+
+const SavedRollPickerRowFields = {
+  singleton: z.literal(1),
+  user_id: snowflakeSchema,
+  guild_id: snowflakeSchema.nullable(),
+  channel_id: snowflakeSchema,
+  expires_at: nonNegativeSafeIntegerSchema,
+  scope: z.enum(["mine", "server"]),
+  page: safeIntegerSchema.min(0).max(4),
 };
+const SavedRollPickerRowSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    ...SavedRollPickerRowFields,
+    selected_id: LowercaseUuidV4Schema.nullable(),
+    selected_revision: safeIntegerSchema.positive().nullable(),
+    state: z.literal("open"),
+    run_interaction_id: z.null(),
+  }),
+  z.strictObject({
+    ...SavedRollPickerRowFields,
+    selected_id: LowercaseUuidV4Schema,
+    selected_revision: safeIntegerSchema.positive(),
+    state: z.literal("reserved"),
+    run_interaction_id: snowflakeSchema,
+  }),
+]);
+type SavedRollPickerRow = z.output<typeof SavedRollPickerRowSchema>;
 
 type SavedRollInvocationV1 = {
   version: 1;
@@ -484,46 +481,183 @@ type SavedRollInvocationV1 = {
   nameColor: string | null;
 };
 
-function parseSavedRollPickerContext(value: unknown): SavedRollPickerContext {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["channelId", "guildId", "interactionId", "userId", "version"]) ||
-    value.version !== 1 ||
-    typeof value.interactionId !== "string" ||
-    !SAVED_ROLL_SNOWFLAKE.test(value.interactionId) ||
-    typeof value.userId !== "string" ||
-    !SAVED_ROLL_SNOWFLAKE.test(value.userId) ||
-    (value.guildId !== null &&
-      (typeof value.guildId !== "string" || !SAVED_ROLL_SNOWFLAKE.test(value.guildId))) ||
-    typeof value.channelId !== "string" ||
-    !SAVED_ROLL_SNOWFLAKE.test(value.channelId)
-  ) {
+const StoredSavedRollInvocationSchema = z.strictObject({
+  version: z.literal(1),
+  id: LowercaseUuidV4Schema,
+  scope: z.enum(["personal", "guild"]),
+  name: z.string(),
+  notation: z.string(),
+  title: z.string().nullable(),
+  repetitions: safeIntegerSchema.positive(),
+  revision: safeIntegerSchema.positive(),
+  nameColor: z.unknown().optional(),
+});
+const SavedRollOwnerSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("user"), userId: snowflakeSchema }),
+  z.strictObject({ type: z.literal("guild"), guildId: snowflakeSchema }),
+]);
+const SavedRollDataRecordSchema = z.strictObject({
+  comparisonKey: z.unknown(),
+  createdAt: z.unknown(),
+  createdByUserId: z.unknown(),
+  displayName: z.unknown(),
+  id: LowercaseUuidV4Schema,
+  manualOrder: safeIntegerSchema,
+  nameColor: z.unknown(),
+  notation: z.unknown(),
+  owner: SavedRollOwnerSchema,
+  pinned: z.boolean(),
+  repetitions: z.unknown(),
+  revision: safeIntegerSchema,
+  title: z.unknown(),
+  updatedAt: z.unknown(),
+  updatedByUserId: z.unknown(),
+  version: z.unknown(),
+});
+const SavedRollDataResponseSchema = z.strictObject({
+  status: z.literal("found"),
+  savedRoll: SavedRollDataRecordSchema,
+});
+const SavedRollColorResponseSchema = z.looseObject({
+  status: z.literal("found"),
+  savedRoll: z.looseObject({
+    id: LowercaseUuidV4Schema,
+    version: z.literal(2),
+    revision: safeIntegerSchema,
+    nameColor: z.unknown(),
+  }),
+});
+const SavedRollListResponseSchema = z.union([
+  z.looseObject({
+    status: z.literal("found"),
+    listRevision: nonNegativeSafeIntegerSchema,
+  }),
+  z.looseObject({ status: z.literal("missing") }),
+]);
+const SavedRollCopyResponseSchema = z.looseObject({
+  status: z.enum([
+    "applied",
+    "existing",
+    "name_conflict",
+    "cap_reached",
+    "list_revision_conflict",
+    "mutation_conflict",
+  ]),
+});
+
+const SavedRollSelectionSchema = z.strictObject({
+  scope: z.enum(["mine", "server"]),
+  id: LowercaseUuidV4Schema,
+  revision: safeIntegerSchema.positive(),
+});
+
+function parseSavedRollPickerContext(
+  value: SchemaInput,
+): SavedRollPickerContext {
+  const result = SavedRollPickerContextSchema.safeParse(value);
+  if (!result.success) {
     throw new Error("Saved roll picker context is invalid");
   }
-  return {
-    version: 1,
-    interactionId: value.interactionId,
-    userId: value.userId,
-    guildId: value.guildId,
-    channelId: value.channelId,
-  };
+  return result.data;
 }
 
-function parseSavedRollSelection(value: unknown): SavedRollSelection {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["id", "revision", "scope"]) ||
-    (value.scope !== "mine" && value.scope !== "server") ||
-    typeof value.id !== "string" ||
-    !SAVED_ROLL_UUID_V4.test(value.id) ||
-    typeof value.revision !== "number" ||
-    !Number.isSafeInteger(value.revision) ||
-    value.revision < 1
-  ) {
-    throw new Error("Saved roll selection is invalid");
+const SavedRollPickerUpdateSchema = SavedRollPickerContextSchema.extend({
+  action: z.enum(["mine", "server", "previous", "next", "select"]),
+  selection: SavedRollSelectionSchema.nullable(),
+});
+const DirectSavedRollReservationSchema = SavedRollPickerContextSchema.extend({
+  selection: SavedRollSelectionSchema,
+});
+const SavedRollDeliveryRequestSchema = z.strictObject({
+  version: z.literal(1),
+  sessionId: snowflakeSchema,
+  selection: SavedRollSelectionSchema,
+  deferredAt: nonNegativeSafeIntegerSchema,
+  interaction: z.strictObject({
+    id: snowflakeSchema,
+    applicationId: snowflakeSchema,
+    token: interactionTokenSchema,
+  }),
+  actor: z.strictObject({
+    version: z.literal(1),
+    userId: snowflakeSchema,
+    guildId: snowflakeSchema.nullable(),
+    channelId: snowflakeSchema,
+    username: z.string(),
+    loggingContext: z.unknown().nullable(),
+  }),
+  sourceInteraction: z.enum(["command", "component"]),
+  responseMode: z.enum(["channel-message", "edit-original", "followup"]),
+});
+const SavedRollCopyRequestSchema = SavedRollPickerContextSchema.extend({
+  username: z.string().min(1).max(32),
+  name: z.string().nullable(),
+});
+const TextResultRequestSchema = z.strictObject({
+  applicationId: snowflakeSchema,
+  guildId: snowflakeSchema,
+  channelId: snowflakeSchema,
+  messageId: snowflakeSchema,
+});
+
+type RollHelperRequest = Readonly<{ rollId: string; userId: string }>;
+type DiscordMessageProbeRequest = Readonly<{
+  channelId: string;
+  messageId: string;
+}>;
+
+const RollHelperResultSchema = z.looseObject({
+  status: z.literal("delivered"),
+});
+const DiscordMessageExistenceResultSchema = z.looseObject({
+  outcome: z.enum(["exists", "missing", "inaccessible", "probe-failed"]),
+});
+
+function parseDiscordMessageExistenceResult(
+  value: SchemaInput,
+): DiscordMessageExistenceResult {
+  const result = DiscordMessageExistenceResultSchema.safeParse(value);
+  if (!result.success) {
+    throw new Error("Discord message existence response is invalid");
   }
-  return { scope: value.scope, id: value.id, revision: value.revision };
+  return result.data;
 }
+
+const StoredTelemetryArtifactSchema = z.looseObject({ payload: z.json() });
+const LifecycleSyncResponseSchema = z.looseObject({
+  status: z.enum(["applied", "existing", "stale"]),
+});
+const AccountingResponseSchema = z.looseObject({
+  status: z.enum(["applied", "existing"]),
+});
+const LogAcceptanceResponseSchema = z.looseObject({
+  status: z.enum(["created", "existing", "conflict"]),
+});
+const GuildDeliverySettingsResponseSchema = z.looseObject({
+  status: z.literal("found"),
+  settings: z.looseObject({
+    skipDiceDelay: z.boolean(),
+    hideRollResultText: z.boolean(),
+  }),
+});
+const StoredSourceLogArtifactSchema = z.looseObject({
+  image: z.discriminatedUnion("status", [
+    z.strictObject({
+      status: z.literal("available"),
+      filename: z.string(),
+    }),
+    z.strictObject({
+      status: z.literal("unavailable"),
+      reason: z.enum([
+        "corrupt",
+        "discord-rejected",
+        "missing",
+        "not-applicable",
+        "oversized",
+      ]),
+    }),
+  ]),
+});
 
 function samePickerContext(row: SavedRollPickerRow, context: SavedRollPickerContext): boolean {
   return row.user_id === context.userId &&
@@ -554,6 +688,43 @@ type FinishedDeliveryAcceptance = Readonly<{
   recoveryAlarmWriteMs: number;
   expiryAlarmWriteMs: number;
 }>;
+
+type LifecycleTimings = Readonly<{
+  acknowledgementPreparedAt: number | null;
+  acceptedAt: number | null;
+  deliveryStartedAt: number | null;
+}>;
+
+type RollDelay = Readonly<{
+  delayMs: number;
+  resultNotBefore: number | null;
+}>;
+
+type LifecycleAdvance = {
+  state: "delivery_started" | "delivered" | "failed";
+  occurredAt: number;
+  attempts: number;
+  httpStatus: number | null;
+  failurePhase?: string | null;
+  failureCode?: string | null;
+  destinationPayload?:
+    | RollLifecycleContextV1["destinationPayload"]
+    | DiscordComponentsV2Message;
+  diagnostics?: Partial<RollLifecycleDiagnosticsV2>;
+};
+
+type DestinationCompletion = {
+  rollId: string;
+  state: "delivered" | "failed";
+  attempts: number;
+  httpStatus: number | null;
+  failurePhase: DestinationCompletionPhase | null;
+  completedAt: number;
+  record?: RollWorkRecord;
+  delayMs?: number | null;
+  resultUploadMs?: number | null;
+  discordFailure?: DiscordFailureDetails;
+};
 
 // Deployed Workers clocks advance only after I/O, so these spans do not
 // claim to measure CPU-only work.
@@ -667,7 +838,7 @@ function logDurableAcceptanceTiming(input: Readonly<{
 function deliveryTelemetryContext(
   metadata: DeliveryMetadata | null,
   record: RollWorkRecord | undefined,
-  destinationPayload: unknown,
+  destinationPayload: RollLifecycleContextV1["destinationPayload"],
   destinationDeliveredAt: number | null,
 ) {
   const logging = metadata?.logging ?? null;
@@ -722,7 +893,7 @@ async function sha256Hex(value: Uint8Array): Promise<string> {
     .join("");
 }
 
-function rollLogArtifact(value: unknown): RollLogArtifact {
+function rollLogArtifact(value: SchemaInput): RollLogArtifact {
   const artifact = { ...validateRollLogArtifact(value) };
   Reflect.deleteProperty(artifact, "payloadJson");
   return artifact;
@@ -924,12 +1095,16 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private readSavedRollPicker(): SavedRollPickerRow | undefined {
-    return this.ctx.storage.sql
-      .exec<SavedRollPickerRow>("SELECT * FROM saved_roll_picker WHERE singleton = 1")
+    const row: SchemaInput = this.ctx.storage.sql
+      .exec("SELECT * FROM saved_roll_picker WHERE singleton = 1")
       .toArray()[0];
+    if (row === undefined) return undefined;
+    const result = SavedRollPickerRowSchema.safeParse(row);
+    if (!result.success) throw new Error("Stored saved roll picker is invalid");
+    return result.data;
   }
 
-  openSavedRollPicker(value: unknown) {
+  openSavedRollPicker(value: SchemaInput) {
     const context = parseSavedRollPickerContext(value);
     if (this.ctx.id.name !== context.interactionId) return { status: "conflict" } as const;
     const expiresAt = interactionExpiresAt(context.interactionId);
@@ -961,37 +1136,27 @@ export class RollWork extends DurableObject<RollEnv> {
     });
   }
 
-  updateSavedRollPicker(value: unknown) {
-    if (
-      !isRecord(value) ||
-      !hasExactKeys(value, [
-        "action",
-        "channelId",
-        "guildId",
-        "interactionId",
-        "selection",
-        "userId",
-        "version",
-      ]) ||
-      !["mine", "server", "previous", "next", "select"].includes(String(value.action))
-    ) {
+  updateSavedRollPicker(value: SchemaInput) {
+    const result = SavedRollPickerUpdateSchema.safeParse(value);
+    if (!result.success) {
       throw new Error("Saved roll picker update is invalid");
     }
-    const context = parseSavedRollPickerContext({
-      version: value.version,
-      interactionId: value.interactionId,
-      userId: value.userId,
-      guildId: value.guildId,
-      channelId: value.channelId,
-    });
-    const selection = value.selection === null ? null : parseSavedRollSelection(value.selection);
+    const update = result.data;
+    const context: SavedRollPickerContext = {
+      version: update.version,
+      interactionId: update.interactionId,
+      userId: update.userId,
+      guildId: update.guildId,
+      channelId: update.channelId,
+    };
+    const selection = update.selection;
     return this.ctx.storage.transactionSync(() => {
       const row = this.readSavedRollPicker();
       if (row === undefined) return { status: "missing" as const };
       if (!samePickerContext(row, context)) return { status: "unauthorized" as const };
       if (row.expires_at <= Date.now()) return { status: "expired" as const };
       if (row.state !== "open") return { status: "consumed" as const };
-      const action = value.action as "mine" | "server" | "previous" | "next" | "select";
+      const { action } = update;
       if (
         (action === "server" && context.guildId === null) ||
         (action === "select" &&
@@ -1035,7 +1200,7 @@ export class RollWork extends DurableObject<RollEnv> {
     });
   }
 
-  reserveSavedRollRun(value: unknown) {
+  reserveSavedRollRun(value: SchemaInput) {
     const context = parseSavedRollPickerContext(value);
     return this.ctx.storage.transactionSync(() => {
       const row = this.readSavedRollPicker();
@@ -1048,8 +1213,8 @@ export class RollWork extends DurableObject<RollEnv> {
               status: "existing" as const,
               selection: {
                 scope: row.scope,
-                id: row.selected_id as string,
-                revision: row.selected_revision as number,
+                id: row.selected_id,
+                revision: row.selected_revision,
               },
             }
           : { status: "consumed" as const };
@@ -1074,28 +1239,20 @@ export class RollWork extends DurableObject<RollEnv> {
     });
   }
 
-  reserveDirectSavedRoll(value: unknown) {
-    if (
-      !isRecord(value) ||
-      !hasExactKeys(value, [
-        "channelId",
-        "guildId",
-        "interactionId",
-        "selection",
-        "userId",
-        "version",
-      ])
-    ) {
+  reserveDirectSavedRoll(value: SchemaInput) {
+    const result = DirectSavedRollReservationSchema.safeParse(value);
+    if (!result.success) {
       throw new Error("Direct saved roll reservation is invalid");
     }
-    const context = parseSavedRollPickerContext({
-      version: value.version,
-      interactionId: value.interactionId,
-      userId: value.userId,
-      guildId: value.guildId,
-      channelId: value.channelId,
-    });
-    const selection = parseSavedRollSelection(value.selection);
+    const reservation = result.data;
+    const context: SavedRollPickerContext = {
+      version: reservation.version,
+      interactionId: reservation.interactionId,
+      userId: reservation.userId,
+      guildId: reservation.guildId,
+      channelId: reservation.channelId,
+    };
+    const selection = reservation.selection;
     if (
       this.ctx.id.name !== context.interactionId ||
       (selection.scope === "server" && context.guildId === null)
@@ -1141,13 +1298,14 @@ export class RollWork extends DurableObject<RollEnv> {
       )
       .toArray()[0];
     if (row === undefined) return undefined;
-    const invocation = JSON.parse(row.invocation_json) as Omit<
-      SavedRollInvocationV1,
-      "nameColor"
-    > & { nameColor?: string | null };
+    const input: SchemaInput = JSON.parse(row.invocation_json);
+    const result = StoredSavedRollInvocationSchema.safeParse(input);
+    if (!result.success) {
+      throw new Error("Stored saved roll invocation is invalid");
+    }
     return {
-      ...invocation,
-      nameColor: parseSavedRollNameColorV2(invocation.nameColor ?? null),
+      ...result.data,
+      nameColor: parseSavedRollNameColorV2(result.data.nameColor ?? null),
     };
   }
 
@@ -1188,46 +1346,18 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     if (response.status === 404) return "missing";
     if (!response.ok) return "unavailable";
-    let value: unknown;
+    let value: SchemaInput;
     try {
       value = await response.json();
     } catch {
       return "unavailable";
     }
+    const result = SavedRollDataResponseSchema.safeParse(value);
+    if (!result.success) return "unavailable";
+    const { savedRoll } = result.data;
     if (
-      !isRecord(value) ||
-      !hasExactKeys(value, ["savedRoll", "status"]) ||
-      value.status !== "found" ||
-      !isRecord(value.savedRoll)
-    ) {
-      return "unavailable";
-    }
-    const savedRoll = value.savedRoll;
-    if (
-      !hasExactKeys(savedRoll, [
-        "comparisonKey",
-        "createdAt",
-        "createdByUserId",
-        "displayName",
-        "id",
-        "manualOrder",
-        "nameColor",
-        "notation",
-        "owner",
-        "pinned",
-        "repetitions",
-        "revision",
-        "title",
-        "updatedAt",
-        "updatedByUserId",
-        "version",
-      ]) ||
       savedRoll.id !== selection.id ||
-      !isRecord(savedRoll.owner) ||
-      JSON.stringify(savedRoll.owner) !== JSON.stringify(owner) ||
-      typeof savedRoll.pinned !== "boolean" ||
-      !Number.isSafeInteger(savedRoll.manualOrder) ||
-      !Number.isSafeInteger(savedRoll.revision)
+      JSON.stringify(savedRoll.owner) !== JSON.stringify(owner)
     ) {
       return "unavailable";
     }
@@ -1287,81 +1417,50 @@ export class RollWork extends DurableObject<RollEnv> {
       return { status: "unavailable" };
     }
     if (!response.ok) return { status: "unavailable" };
-    let value: unknown;
+    let value: SchemaInput;
     try {
       value = await response.json();
     } catch {
       return { status: "unavailable" };
     }
+    const result = SavedRollColorResponseSchema.safeParse(value);
     if (
-      !isRecord(value) ||
-      value.status !== "found" ||
-      !isRecord(value.savedRoll) ||
-      value.savedRoll.id !== selection.id ||
-      value.savedRoll.version !== 2 ||
-      value.savedRoll.revision !== selection.revision
+      !result.success ||
+      result.data.savedRoll.id !== selection.id ||
+      result.data.savedRoll.revision !== selection.revision
     ) {
       return { status: "unavailable" };
     }
     try {
       return {
         status: "found",
-        nameColor: parseSavedRollNameColorV2(value.savedRoll.nameColor),
+        nameColor: parseSavedRollNameColorV2(
+          result.data.savedRoll.nameColor,
+        ),
       };
     } catch {
       return { status: "unavailable" };
     }
   }
 
-  async acceptSavedRollDelivery(value: unknown) {
-    if (
-      !isRecord(value) ||
-      !hasExactKeys(value, [
-        "actor",
-        "deferredAt",
-        "interaction",
-        "responseMode",
-        "selection",
-        "sourceInteraction",
-        "sessionId",
-        "version",
-      ]) ||
-      value.version !== 1 ||
-      value.sessionId !== this.ctx.id.name ||
-      !Number.isSafeInteger(value.deferredAt) ||
-      Number(value.deferredAt) < 0 ||
-      (value.responseMode !== "channel-message" &&
-        value.responseMode !== "followup" &&
-        value.responseMode !== "edit-original") ||
-      (value.sourceInteraction !== "command" &&
-        value.sourceInteraction !== "component") ||
-      !isRecord(value.interaction) ||
-      !hasExactKeys(value.interaction, ["applicationId", "id", "token"]) ||
-      !isRecord(value.actor) ||
-      !hasExactKeys(value.actor, [
-        "channelId",
-        "guildId",
-        "loggingContext",
-        "userId",
-        "username",
-        "version",
-      ]) ||
-      typeof value.actor.username !== "string"
-    ) {
+  async acceptSavedRollDelivery(value: SchemaInput) {
+    const result = SavedRollDeliveryRequestSchema.safeParse(value);
+    if (!result.success || result.data.sessionId !== this.ctx.id.name) {
       throw new Error("Saved roll delivery request is invalid");
     }
-    const selection = parseSavedRollSelection(value.selection);
-    const context = parseSavedRollPickerContext({
-      version: value.actor.version,
-      interactionId: value.interaction.id,
-      userId: value.actor.userId,
-      guildId: value.actor.guildId,
-      channelId: value.actor.channelId,
-    });
+    const request = result.data;
+    const selection = request.selection;
+    const context: SavedRollPickerContext = {
+      version: request.actor.version,
+      interactionId: request.interaction.id,
+      userId: request.actor.userId,
+      guildId: request.actor.guildId,
+      channelId: request.actor.channelId,
+    };
     // Components accept both legacy modes during the independently deployed
     // Interactions-to-Roll contract transition.
-    const validResponseMode = value.sourceInteraction === "component" ||
-      value.responseMode === "edit-original";
+    const validResponseMode = request.sourceInteraction === "component" ||
+      request.responseMode === "edit-original";
     if (!validResponseMode) {
       throw new Error("Saved roll delivery response mode is invalid");
     }
@@ -1377,30 +1476,42 @@ export class RollWork extends DurableObject<RollEnv> {
     ) {
       return { status: "conflict" } as const;
     }
-    const invocation = await this.resolveSavedRollInvocation(selection, picker);
-    if (typeof invocation === "string") return { status: invocation } as const;
+    const resolution = await this.resolveSavedRollInvocation(selection, picker);
+    switch (resolution) {
+      case "missing":
+      case "stale":
+      case "unavailable":
+      case "conflict":
+        return { status: resolution } as const;
+    }
+    const invocation = resolution;
+    const logging: RollDeliveryRequest["logging"] = {
+      source: "discord",
+      channelId: context.channelId,
+      notation: invocation.notation,
+    };
+    if (request.actor.loggingContext !== null) {
+      logging.context = parseRollLoggingContext(
+        request.actor.loggingContext,
+        context.guildId,
+        context.channelId,
+      );
+    }
     const delivery = {
-      interaction: value.interaction,
+      interaction: request.interaction,
       request: {
         notation: invocation.notation,
         repetitions: invocation.repetitions,
       },
-      message: { title: invocation.title, username: value.actor.username },
+      message: { title: invocation.title, username: request.actor.username },
       accounting: {
         guildId: context.guildId,
         userId: context.userId,
         receivedAt: interactionExpiresAt(context.interactionId) - 15 * 60 * 1_000,
       },
-      deferredAt: Number(value.deferredAt),
-      logging: {
-        source: "discord",
-        channelId: context.channelId,
-        notation: invocation.notation,
-        ...(value.actor.loggingContext === null
-          ? {}
-          : { context: value.actor.loggingContext }),
-      },
-      responseMode: value.responseMode,
+      deferredAt: request.deferredAt,
+      logging,
+      responseMode: request.responseMode,
       savedRoll: invocation,
     };
     const accepted = await this.acceptDelivery(delivery);
@@ -1409,36 +1520,19 @@ export class RollWork extends DurableObject<RollEnv> {
       : accepted;
   }
 
-  async copySavedRollToMine(value: unknown) {
-    if (
-      !isRecord(value) ||
-      !hasExactKeys(value, [
-        "channelId",
-        "guildId",
-        "interactionId",
-        "name",
-        "userId",
-        "username",
-        "version",
-      ])
-    ) {
+  async copySavedRollToMine(value: SchemaInput) {
+    const result = SavedRollCopyRequestSchema.safeParse(value);
+    if (!result.success) {
       throw new Error("Saved roll copy request is invalid");
     }
-    const context = parseSavedRollPickerContext({
-      version: value.version,
-      interactionId: value.interactionId,
-      userId: value.userId,
-      guildId: value.guildId,
-      channelId: value.channelId,
-    });
-    if (
-      (value.name !== null && typeof value.name !== "string") ||
-      typeof value.username !== "string" ||
-      value.username.length < 1 ||
-      value.username.length > 32
-    ) {
-      throw new Error("Saved roll copy request is invalid");
-    }
+    const request = result.data;
+    const context: SavedRollPickerContext = {
+      version: request.version,
+      interactionId: request.interactionId,
+      userId: request.userId,
+      guildId: request.guildId,
+      channelId: request.channelId,
+    };
     const picker = this.readSavedRollPicker();
     if (picker === undefined) return { status: "missing" } as const;
     if (!samePickerContext(picker, context)) return { status: "unauthorized" } as const;
@@ -1455,12 +1549,19 @@ export class RollWork extends DurableObject<RollEnv> {
       id: picker.selected_id,
       revision: picker.selected_revision,
     };
-    const resolved = await this.resolveSavedRollInvocation(
+    const resolution = await this.resolveSavedRollInvocation(
       selection,
       picker,
       picker.state === "reserved",
     );
-    if (typeof resolved === "string") return { status: resolved } as const;
+    switch (resolution) {
+      case "missing":
+      case "stale":
+      case "unavailable":
+      case "conflict":
+        return { status: resolution } as const;
+    }
+    const resolved = resolution;
     if (picker.guild_id === null) return { status: "invalid_selection" } as const;
     const colorResult = await this.resolveSavedRollNameColor(
       { type: "guild", guildId: picker.guild_id },
@@ -1471,9 +1572,9 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     const { nameColor } = colorResult;
     let displayName = resolved.name;
-    if (value.name !== null) {
+    if (request.name !== null) {
       try {
-        displayName = parseSavedRollNameV1(value.name).displayName;
+        displayName = parseSavedRollNameV1(request.name).displayName;
       } catch {
         return { status: "invalid_name" } as const;
       }
@@ -1486,7 +1587,7 @@ export class RollWork extends DurableObject<RollEnv> {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             userId: context.userId,
-            username: value.username,
+            username: request.username,
             occurredAt: interactionCreatedAt(context.interactionId),
           }),
         }),
@@ -1510,25 +1611,17 @@ export class RollWork extends DurableObject<RollEnv> {
     if (!listResponse.ok && listResponse.status !== 404) {
       return { status: "unavailable" } as const;
     }
-    let listValue: unknown;
+    let listValue: SchemaInput;
     try {
       listValue = await listResponse.json();
     } catch {
       return { status: "unavailable" } as const;
     }
-    let listRevision: number;
-    if (
-      isRecord(listValue) &&
-      listValue.status === "found" &&
-      Number.isSafeInteger(listValue.listRevision) &&
-      Number(listValue.listRevision) >= 0
-    ) {
-      listRevision = Number(listValue.listRevision);
-    } else if (isRecord(listValue) && listValue.status === "missing") {
-      listRevision = 0;
-    } else {
-      return { status: "unavailable" } as const;
-    }
+    const listResult = SavedRollListResponseSchema.safeParse(listValue);
+    if (!listResult.success) return { status: "unavailable" } as const;
+    const listRevision = listResult.data.status === "found"
+      ? listResult.data.listRevision
+      : 0;
     const receipt = this.ctx.storage.transactionSync(() => {
       const existing = this.ctx.storage.sql
         .exec<{
@@ -1592,36 +1685,30 @@ export class RollWork extends DurableObject<RollEnv> {
     } catch {
       return { status: "unavailable" } as const;
     }
-    let result: unknown;
+    let copyResponseValue: SchemaInput;
     try {
-      result = await copyResponse.json();
+      copyResponseValue = await copyResponse.json();
     } catch {
       return { status: "unavailable" } as const;
     }
-    if (!isRecord(result) || typeof result.status !== "string") {
-      return { status: "unavailable" } as const;
-    }
-    if (result.status === "applied" || result.status === "existing") {
+    const copyResult = SavedRollCopyResponseSchema.safeParse(copyResponseValue);
+    if (!copyResult.success) return { status: "unavailable" } as const;
+    const { status } = copyResult.data;
+    if (status === "applied" || status === "existing") {
       return {
         status: "copied" as const,
         name: receipt.display_name,
         destinationId: receipt.destination_id,
       };
     }
-    if (result.status === "name_conflict") {
+    if (status === "name_conflict") {
       return { status: "name_conflict" as const, name: receipt.display_name };
     }
-    if (result.status === "cap_reached") return { status: "cap_reached" as const };
-    if (
-      result.status === "list_revision_conflict" ||
-      result.status === "mutation_conflict"
-    ) {
-      return { status: "conflict" as const };
-    }
-    return { status: "unavailable" } as const;
+    if (status === "cap_reached") return { status: "cap_reached" as const };
+    return { status: "conflict" as const };
   }
 
-  async deliver(value: unknown): Promise<DeliverRollWorkResult> {
+  async deliver(value: SchemaInput): Promise<DeliverRollWorkResult> {
     const accepted = await this.acceptDeliveryInternal(value, true);
     if (
       accepted.status === "conflict" ||
@@ -1640,12 +1727,12 @@ export class RollWork extends DurableObject<RollEnv> {
     return result;
   }
 
-  async acceptDelivery(value: unknown): Promise<AcceptRollDeliveryResult> {
+  async acceptDelivery(value: SchemaInput): Promise<AcceptRollDeliveryResult> {
     return this.acceptDeliveryInternal(value, false);
   }
 
   private async acceptDeliveryInternal(
-    value: unknown,
+    value: SchemaInput,
     deliverInline: boolean,
   ): Promise<AcceptRollDeliveryResult> {
     const handlerStartedAt = Date.now();
@@ -1861,14 +1948,13 @@ export class RollWork extends DurableObject<RollEnv> {
         // Telemetry must not interrupt durable delivery recovery.
       }
     }
-    let destinationPayload: unknown = null;
+    let destinationPayload: RollLifecycleContextV1["destinationPayload"] = null;
     try {
       const source = this.readSourceLogRow();
       if (source !== undefined) {
-        const artifact: unknown = JSON.parse(source.artifact_json);
-        if (isRecord(artifact) && artifact.payload !== undefined) {
-          destinationPayload = artifact.payload;
-        }
+        const input: SchemaInput = JSON.parse(source.artifact_json);
+        const artifact = StoredTelemetryArtifactSchema.safeParse(input);
+        if (artifact.success) destinationPayload = artifact.data.payload;
       }
     } catch {
       // Telemetry must not interrupt durable delivery recovery.
@@ -2008,16 +2094,7 @@ export class RollWork extends DurableObject<RollEnv> {
       .toArray()[0];
   }
 
-  private advanceLifecycle(input: {
-    state: "delivery_started" | "delivered" | "failed";
-    occurredAt: number;
-    attempts: number;
-    httpStatus: number | null;
-    failurePhase?: string | null;
-    failureCode?: string | null;
-    destinationPayload?: unknown;
-    diagnostics?: Partial<RollLifecycleDiagnosticsV2>;
-  }): void {
+  private advanceLifecycle(input: LifecycleAdvance): void {
     const row = this.readLifecycleOutbox();
     if (row === undefined) return;
     const current = parseRollLifecycleSnapshot(JSON.parse(row.snapshot_json));
@@ -2028,7 +2105,13 @@ export class RollWork extends DurableObject<RollEnv> {
       return;
     }
     const terminal = input.state === "delivered" || input.state === "failed";
-    const next = parseRollLifecycleSnapshot({
+    const context = input.destinationPayload === undefined
+      ? current.context
+      : {
+          ...current.context,
+          destinationPayload: input.destinationPayload,
+        };
+    const common = {
       ...current,
       revision: current.revision + 1,
       state: input.state,
@@ -2044,21 +2127,17 @@ export class RollWork extends DurableObject<RollEnv> {
         input.state === "failed" ? input.failurePhase ?? "unknown" : null,
       failureCode:
         input.state === "failed" ? input.failureCode ?? "internal-failure" : null,
-      ...(current.version === 2
-        ? {
-            diagnostics: mergeLifecycleDiagnostics(
-              current.diagnostics,
-              input.diagnostics ?? {},
-            ),
-          }
-        : {}),
-      context: {
-        ...current.context,
-        ...(input.destinationPayload === undefined
-          ? {}
-          : { destinationPayload: input.destinationPayload }),
-      },
-    });
+      context,
+    };
+    const next = current.version === 2
+      ? parseRollLifecycleSnapshot({
+          ...common,
+          diagnostics: mergeLifecycleDiagnostics(
+            current.diagnostics,
+            input.diagnostics ?? {},
+          ),
+        })
+      : parseRollLifecycleSnapshot(common);
     this.ctx.storage.sql.exec(
       `UPDATE roll_lifecycle_outbox
        SET snapshot_json = ?, next_sync_at = ?
@@ -2146,20 +2225,15 @@ export class RollWork extends DurableObject<RollEnv> {
       this.deferLifecycleSync(row.sync_attempts + 1);
       return;
     }
-    let result: unknown;
+    let value: SchemaInput;
     try {
-      result = await response.json();
+      value = await response.json();
     } catch {
       this.deferLifecycleSync(row.sync_attempts + 1);
       return;
     }
-    if (
-      response.ok &&
-      isRecord(result) &&
-      (result.status === "applied" ||
-        result.status === "existing" ||
-        result.status === "stale")
-    ) {
+    const result = LifecycleSyncResponseSchema.safeParse(value);
+    if (response.ok && result.success) {
       this.ctx.storage.sql.exec(
         `UPDATE roll_lifecycle_outbox
          SET synced_revision = ?, sync_attempts = 0
@@ -2219,11 +2293,7 @@ export class RollWork extends DurableObject<RollEnv> {
     );
   }
 
-  private readLifecycleTimings(): Readonly<{
-    acknowledgementPreparedAt: number | null;
-    acceptedAt: number | null;
-    deliveryStartedAt: number | null;
-  }> {
+  private readLifecycleTimings(): LifecycleTimings {
     const row = this.readLifecycleOutbox();
     if (row === undefined) {
       return {
@@ -2243,18 +2313,7 @@ export class RollWork extends DurableObject<RollEnv> {
     };
   }
 
-  private logDestinationCompletion(input: {
-    rollId: string;
-    state: "delivered" | "failed";
-    attempts: number;
-    httpStatus: number | null;
-    failurePhase: DestinationCompletionPhase | null;
-    completedAt: number;
-    record?: RollWorkRecord;
-    delayMs?: number | null;
-    resultUploadMs?: number | null;
-    discordFailure?: DiscordFailureDetails;
-  }): void {
+  private logDestinationCompletion(input: DestinationCompletion): void {
     const record = input.record ?? this.tryReadWork();
     const source = this.readSourceLogRow();
     const delivery = this.readDelivery();
@@ -2549,16 +2608,13 @@ export class RollWork extends DurableObject<RollEnv> {
     }
 
     if (response.ok) {
-      let result: unknown;
+      let value: SchemaInput;
       try {
-        result = await response.json();
+        value = await response.json();
       } catch {
         return;
       }
-      if (
-        isRecord(result) &&
-        (result.status === "applied" || result.status === "existing")
-      ) {
+      if (AccountingResponseSchema.safeParse(value).success) {
         this.ctx.storage.sql.exec(
           `UPDATE interaction_delivery
            SET accounting_state = 'accounted', accounting_http_status = ?
@@ -2617,14 +2673,11 @@ export class RollWork extends DurableObject<RollEnv> {
       attempts,
     );
     try {
-      const service = this.env.DISCORD_REST as unknown as {
-        sendRollHelper(value: unknown): Promise<unknown>;
-      };
-      const result = await service.sendRollHelper({
+      const value = await this.env.DISCORD_REST.sendRollHelper({
         rollId: metadata.interactionId,
         userId: metadata.accounting.userId,
       });
-      if (isRecord(result) && result.status === "delivered") {
+      if (RollHelperResultSchema.safeParse(value).success) {
         this.ctx.storage.sql.exec(
           "UPDATE interaction_delivery SET helper_state = 'delivered' WHERE singleton = 1",
         );
@@ -2700,13 +2753,13 @@ export class RollWork extends DurableObject<RollEnv> {
         });
         return;
       }
-      let result: unknown;
+      let value: SchemaInput;
       try {
         const source = await this.readSourceLogArtifact();
         if (source === undefined) {
           throw new Error("Source roll log artifact is missing");
         }
-        result = await this.env.LOG_WORK
+        value = await this.env.LOG_WORK
           .getByName(metadata.interactionId)
           .accept(source.artifact);
       } catch {
@@ -2724,9 +2777,10 @@ export class RollWork extends DurableObject<RollEnv> {
         );
         return;
       }
+      const result = LogAcceptanceResponseSchema.safeParse(value);
       if (
-        isRecord(result) &&
-        (result.status === "created" || result.status === "existing")
+        result.success &&
+        (result.data.status === "created" || result.data.status === "existing")
       ) {
         this.ctx.storage.transactionSync(() => {
           this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
@@ -2738,7 +2792,7 @@ export class RollWork extends DurableObject<RollEnv> {
         });
         return;
       }
-      if (isRecord(result) && result.status === "conflict") {
+      if (result.success && result.data.status === "conflict") {
         this.ctx.storage.transactionSync(() => {
           this.ctx.storage.sql.exec("DELETE FROM roll_log_outbox");
           this.ctx.storage.sql.exec(
@@ -2867,20 +2921,12 @@ export class RollWork extends DurableObject<RollEnv> {
       }),
     );
     if (!response.ok) throw new Error("Guild settings lookup failed");
-    const value: unknown = await response.json();
-    if (
-      !isRecord(value) ||
-      value.status !== "found" ||
-      !isRecord(value.settings) ||
-      typeof value.settings.skipDiceDelay !== "boolean" ||
-      typeof value.settings.hideRollResultText !== "boolean"
-    ) {
+    const value: SchemaInput = await response.json();
+    const result = GuildDeliverySettingsResponseSchema.safeParse(value);
+    if (!result.success) {
       throw new Error("Guild settings response is invalid");
     }
-    return {
-      skipDiceDelay: value.settings.skipDiceDelay,
-      hideRollResultText: value.settings.hideRollResultText,
-    };
+    return result.data.settings;
   }
 
   private storeDeliverySettings(settings: {
@@ -2900,10 +2946,7 @@ export class RollWork extends DurableObject<RollEnv> {
     );
   }
 
-  private resolveRollDelay(delivery: StoredDeliveryRow): {
-    delayMs: number;
-    resultNotBefore: number | null;
-  } {
+  private resolveRollDelay(delivery: StoredDeliveryRow): RollDelay {
     const delayMs =
       delivery.delay_ms ?? selectRollDelayMs(randomSeed() / 2 ** 32);
     let resultNotBefore = delivery.result_not_before;
@@ -2986,33 +3029,39 @@ export class RollWork extends DurableObject<RollEnv> {
   > {
     const row = this.readSourceLogRow();
     if (row === undefined) return undefined;
-    const stored = JSON.parse(row.artifact_json) as Record<string, unknown>;
-    const image = stored.image;
-    const imageBytes = new Uint8Array(row.image_bytes);
-    if (!isRecord(image)) {
+    const input: SchemaInput = JSON.parse(row.artifact_json);
+    const result = StoredSourceLogArtifactSchema.safeParse(input);
+    if (!result.success) {
       throw new Error("Stored source roll log artifact is invalid");
     }
+    const stored = result.data;
+    const imageBytes = new Uint8Array(row.image_bytes);
     if ((await sha256Hex(imageBytes)) !== row.image_sha256) {
       throw new Error("Stored source roll log image hash is invalid");
     }
-    let restoredImage: unknown;
-    if (image.status === "available" && typeof image.filename === "string") {
-      restoredImage = {
-        status: "available",
-        filename: image.filename,
-        png: imageBytes,
+    if (stored.image.status === "available") {
+      return {
+        artifact: rollLogArtifact({
+          ...stored,
+          destinationDeliveredAt: row.destination_delivered_at ?? 0,
+          image: {
+            status: "available",
+            filename: stored.image.filename,
+            png: imageBytes,
+          },
+        }),
       };
-    } else if (image.status === "unavailable" && imageBytes.byteLength === 0) {
-      restoredImage = image;
-    } else {
+    }
+    if (imageBytes.byteLength !== 0) {
       throw new Error("Stored source roll log artifact is invalid");
     }
-    const artifact = rollLogArtifact({
-      ...stored,
-      destinationDeliveredAt: row.destination_delivered_at ?? 0,
-      image: restoredImage,
-    });
-    return { artifact };
+    return {
+      artifact: rollLogArtifact({
+        ...stored,
+        destinationDeliveredAt: row.destination_delivered_at ?? 0,
+        image: stored.image,
+      }),
+    };
   }
 
   private async ensureSourceLogArtifact(
@@ -3030,21 +3079,32 @@ export class RollWork extends DurableObject<RollEnv> {
       validated.image.status === "available"
         ? validated.image.png
         : new Uint8Array();
-    const artifactJson = JSON.stringify({
-      version: validated.version,
-      rollId: validated.rollId,
-      source: validated.source,
-      notation: validated.notation,
-      user: validated.user,
-      guildId: validated.guildId,
-      channelId: validated.channelId,
-      context: validated.context,
-      ...(validated.version === 2
-        ? { presentation: validated.presentation }
-        : {}),
-      payload: validated.payload,
-      image,
-    });
+    const artifactJson = validated.version === 2
+      ? JSON.stringify({
+          version: validated.version,
+          rollId: validated.rollId,
+          source: validated.source,
+          notation: validated.notation,
+          user: validated.user,
+          guildId: validated.guildId,
+          channelId: validated.channelId,
+          context: validated.context,
+          presentation: validated.presentation,
+          payload: validated.payload,
+          image,
+        })
+      : JSON.stringify({
+          version: validated.version,
+          rollId: validated.rollId,
+          source: validated.source,
+          notation: validated.notation,
+          user: validated.user,
+          guildId: validated.guildId,
+          channelId: validated.channelId,
+          context: validated.context,
+          payload: validated.payload,
+          image,
+        });
     const imageSha256 = await sha256Hex(imageBytes);
     const existing = this.readSourceLogRow();
     if (existing !== undefined) {
@@ -3134,24 +3194,22 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private async deliverChannelRollMessage(
-    value: unknown,
-  ): Promise<ChannelRollMessageDeliveryResult> {
-    const service = this.env.DISCORD_REST as unknown as
-      ChannelRollMessageDeliveryService;
+    value: ChannelRollMessageDeliveryInputV1,
+  ): Promise<ChannelRollMessageDeliveryResultV1> {
     return parseChannelRollMessageDeliveryResult(
-      await service.deliverChannelRollMessageV1(value),
+      await this.env.DISCORD_REST.deliverChannelRollMessageV1(value),
     );
   }
 
   private async attemptChannelRollMessage(
-    value: unknown,
+    value: ChannelRollMessageDeliveryInputV1,
     target: RollDeliveryTarget,
     attempts: number,
     expiresAt: number,
     phase: "clatter" | "discord",
     operation: DiscordOperation,
   ): Promise<ChannelRollMessageAttempt> {
-    let delivery: ChannelRollMessageDeliveryResult;
+    let delivery: ChannelRollMessageDeliveryResultV1;
     try {
       this.recordProviderAttempt();
       delivery = await this.deliverChannelRollMessage(value);
@@ -3438,15 +3496,11 @@ export class RollWork extends DurableObject<RollEnv> {
           clatterHttpStatus = clatterResponse.status;
           if (metadata.responseMode === "followup") {
             try {
-              const message = await readBoundedDiscordJson(clatterResponse);
-              if (
-                !isRecord(message) ||
-                typeof message.id !== "string" ||
-                !SAVED_ROLL_SNOWFLAKE.test(message.id)
-              ) {
+              const messageId = await readDiscordMessageId(clatterResponse);
+              if (messageId === null) {
                 throw new Error("Discord followup response is invalid");
               }
-              followupMessageId = message.id;
+              followupMessageId = messageId;
             } catch {
               return this.terminateDelivery(
                 target,
@@ -3457,14 +3511,9 @@ export class RollWork extends DurableObject<RollEnv> {
             }
           } else {
             try {
-              const message = await readBoundedDiscordJson(clatterResponse);
-              if (
-                isRecord(message) &&
-                typeof message.id === "string" &&
-                SAVED_ROLL_SNOWFLAKE.test(message.id)
-              ) {
-                originalResponseMessageId = message.id;
-              }
+              originalResponseMessageId = await readDiscordMessageId(
+                clatterResponse,
+              );
             } catch {
               // Diagnostics must not alter successful delivery behavior.
             }
@@ -3481,15 +3530,13 @@ export class RollWork extends DurableObject<RollEnv> {
         const clatterSentAt = Date.now();
         resultNotBefore = clatterSentAt + delayMs;
         this.ctx.storage.transactionSync(() => {
-          this.updateLifecycleDiagnostics(
-            {
-              clatterSucceededAt: clatterSentAt,
-              ...(originalResponseMessageId === null
-                ? {}
-                : { originalResponseMessageId }),
-            },
-            clatterSentAt,
-          );
+          const diagnostics: Partial<RollLifecycleDiagnosticsV2> = {
+            clatterSucceededAt: clatterSentAt,
+          };
+          if (originalResponseMessageId !== null) {
+            diagnostics.originalResponseMessageId = originalResponseMessageId;
+          }
+          this.updateLifecycleDiagnostics(diagnostics, clatterSentAt);
           this.ctx.storage.sql.exec(
             `UPDATE interaction_delivery
              SET clatter_sent_at = ?, followup_message_id = ?,
@@ -3634,37 +3681,32 @@ export class RollWork extends DurableObject<RollEnv> {
           const textResultIntent = settings.hideRollResultText
             ? this.ensureTextResultIntent(record, metadata)
             : null;
-          payload = buildRollResultMessage(record.outcome, {
+          const messageOptions: RollResultMessageOptions = {
             ...metadata.message,
             source: "discord",
             repetitions: record.request.repetitions,
             filename,
-            ...(settings.skipDiceDelay ? {} : { clatter }),
-            ...(textResultIntent === null
-              ? {}
-              : {
-                  textResultCustomId: buildTextResultCustomId({
-                    kind: "discord",
-                    id: this.saveRollSourceId(),
-                  }),
-                }),
-            ...(saveRollIntent === null
-              ? {}
-              : {
-                  saveRollCustomId: buildSaveRollCustomId({
-                    kind: "discord",
-                    id: this.saveRollSourceId(),
-                  }),
-                }),
-            ...(metadata.savedRoll === null
-              ? {}
-              : {
-                  savedRoll: {
-                    scope: metadata.savedRoll.scope === "personal" ? "Mine" : "Server",
-                    name: metadata.savedRoll.name,
-                  },
-                }),
-          });
+          };
+          if (!settings.skipDiceDelay) messageOptions.clatter = clatter;
+          if (textResultIntent !== null) {
+            messageOptions.textResultCustomId = buildTextResultCustomId({
+              kind: "discord",
+              id: this.saveRollSourceId(),
+            });
+          }
+          if (saveRollIntent !== null) {
+            messageOptions.saveRollCustomId = buildSaveRollCustomId({
+              kind: "discord",
+              id: this.saveRollSourceId(),
+            });
+          }
+          if (metadata.savedRoll !== null) {
+            messageOptions.savedRoll = {
+              scope: metadata.savedRoll.scope === "personal" ? "Mine" : "Server",
+              name: metadata.savedRoll.name,
+            };
+          }
+          payload = buildRollResultMessage(record.outcome, messageOptions);
           sourceArtifact = await this.prepareSourceLogArtifact(
             metadata,
             payload,
@@ -4113,22 +4155,13 @@ export class RollWork extends DurableObject<RollEnv> {
     messageId: string,
   ): Promise<RollLifecycleDiagnosticsV2["originalResponseProbe"]> {
     try {
-      const service = this.env.DISCORD_MESSAGE_PROBE as unknown as {
-        inspectDiscordMessageExistence(value: unknown): Promise<unknown>;
-      };
-      const result = await service.inspectDiscordMessageExistence({
-        channelId,
-        messageId,
-      });
-      if (
-        isRecord(result) &&
-        (result.outcome === "exists" ||
-          result.outcome === "missing" ||
-          result.outcome === "inaccessible" ||
-          result.outcome === "probe-failed")
-      ) {
-        return result.outcome;
-      }
+      const result = parseDiscordMessageExistenceResult(
+        await this.env.DISCORD_MESSAGE_PROBE.inspectDiscordMessageExistence({
+          channelId,
+          messageId,
+        }),
+      );
+      return result.outcome;
     } catch {
       // The diagnostic probe must never change delivery behavior.
     }
@@ -4176,34 +4209,35 @@ export class RollWork extends DurableObject<RollEnv> {
       httpStatus,
     );
     const completedAt = Date.now();
-    this.advanceLifecycle({
+    const lifecycleFailure: LifecycleAdvance = {
       state: "failed",
       occurredAt: completedAt,
       attempts,
       httpStatus,
       failurePhase,
       failureCode: `${failurePhase}-rejected`,
-      ...(discordFailure === undefined
-        ? {}
-        : {
-            diagnostics: {
-              discordErrorCode: discordFailure.code,
-              discordOperation: discordFailure.operation,
-              ...(originalResponseProbe === null
-                ? {}
-                : { originalResponseProbe }),
-            },
-          }),
-    });
-    this.logDestinationCompletion({
+    };
+    if (discordFailure !== undefined) {
+      const diagnostics: Partial<RollLifecycleDiagnosticsV2> = {
+        discordErrorCode: discordFailure.code,
+        discordOperation: discordFailure.operation,
+      };
+      if (originalResponseProbe !== null) {
+        diagnostics.originalResponseProbe = originalResponseProbe;
+      }
+      lifecycleFailure.diagnostics = diagnostics;
+    }
+    this.advanceLifecycle(lifecycleFailure);
+    const completion: DestinationCompletion = {
       rollId,
       state: "failed",
       attempts,
       httpStatus,
       failurePhase,
       completedAt,
-      ...(discordFailure === undefined ? {} : { discordFailure }),
-    });
+    };
+    if (discordFailure !== undefined) completion.discordFailure = discordFailure;
+    this.logDestinationCompletion(completion);
     await this.ctx.storage.setAlarm(expiresAt);
     return { status: "failed" };
   }
@@ -4507,7 +4541,7 @@ export class RollWork extends DurableObject<RollEnv> {
     };
   }
 
-  async render(value: unknown): Promise<RenderRollWorkResult> {
+  async render(value: SchemaInput): Promise<RenderRollWorkResult> {
     const prepared = this.prepare(value);
     if (prepared.status === "conflict") return prepared;
     return {
@@ -4516,7 +4550,7 @@ export class RollWork extends DurableObject<RollEnv> {
     };
   }
 
-  prepare(value: unknown): PrepareRollWorkResult {
+  prepare(value: SchemaInput): PrepareRollWorkResult {
     return this.ctx.storage.transactionSync(() =>
       this.prepareRequest(validateRequest(value)),
     );
@@ -4714,26 +4748,17 @@ export class RollWork extends DurableObject<RollEnv> {
     }
   }
 
-  getTextResult(value: unknown) {
+  getTextResult(value: SchemaInput) {
     const intent = this.readTextResultIntent();
     if (intent === undefined) return { status: "missing" as const };
     if (intent.expiresAt <= Date.now()) return { status: "expired" as const };
+    const result = TextResultRequestSchema.safeParse(value);
     if (
-      !isRecord(value) ||
-      !hasExactKeys(value, [
-        "applicationId",
-        "channelId",
-        "guildId",
-        "messageId",
-      ]) ||
-      typeof value.applicationId !== "string" ||
-      typeof value.guildId !== "string" ||
-      typeof value.channelId !== "string" ||
-      typeof value.messageId !== "string" ||
-      intent.applicationId !== value.applicationId ||
-      intent.guildId !== value.guildId ||
-      intent.channelId !== value.channelId ||
-      intent.messageId !== value.messageId
+      !result.success ||
+      intent.applicationId !== result.data.applicationId ||
+      intent.guildId !== result.data.guildId ||
+      intent.channelId !== result.data.channelId ||
+      intent.messageId !== result.data.messageId
     ) {
       return { status: "missing" as const };
     }
@@ -4802,7 +4827,7 @@ export class RollWork extends DurableObject<RollEnv> {
 }
 
 const worker = {
-  fetch(request: Request, env: RollEnv): Response {
+  fetch(request: Request, env: RollBindings): Response {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json(
@@ -4825,6 +4850,6 @@ const worker = {
       },
     );
   },
-} satisfies ExportedHandler<RollEnv>;
+} satisfies ExportedHandler<RollBindings>;
 
 export default worker;

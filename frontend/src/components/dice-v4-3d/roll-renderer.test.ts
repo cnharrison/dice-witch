@@ -1,16 +1,49 @@
 // @vitest-environment jsdom
 
-import { Group, Quaternion } from "three";
+import {
+  D6_STANDARD_GEOMETRY_V4,
+  parsePublicRenderModelV4,
+} from "@dice-witch/dice-v4-model";
+import {
+  Group,
+  MeshBasicMaterial,
+  OrthographicCamera,
+  Quaternion,
+} from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import fixture from "./fixtures/d6-r3.json";
+import { createThreeDiceGridLayoutV4 } from "./grid-layout";
+import { createThreeDiceGridRenderContextV4 } from "./grid-render";
+import type { ThreeLightingResourcesV4 } from "./lighting";
+import {
+  THREE_RESULT_TRANSITION_MILLISECONDS_V4,
+  createThreeRollRendererWithDependenciesV4,
+  type ThreeRollRenderDriverV4,
+  type ThreeRollRendererCallbacksV4,
+  type ThreeRollRendererDependenciesV4,
+} from "./roll-renderer";
+import {
+  createThreeTrayRenderContextV4,
+  type ThreeTraySmokeV4,
+} from "./tray-render";
 
-const mocks = vi.hoisted(() => ({
-  rendererInstances: [] as Array<{
-    domElement: HTMLCanvasElement;
+const sourceModel = parsePublicRenderModelV4(fixture);
+const sourceDie = sourceModel.groups[0]?.[0];
+if (sourceDie === undefined) throw new Error("Roll-renderer fixture is empty");
+
+// SAFETY: These empty test registries are populated only by the typed factories below.
+const mocks = {
+  rendererInstances: [] as Array<ThreeRollRenderDriverV4 & {
     dispose: ReturnType<typeof vi.fn>;
     options: unknown;
+    setSize: ReturnType<typeof vi.fn>;
   }>,
-  prepare: vi.fn(),
-  createResources: vi.fn(),
+  prepare: vi.fn<
+    (model: typeof sourceModel, maximumColumns: number) => Promise<TestPreparation>
+  >(),
+  createResources: vi.fn<
+    (preparation: TestPreparation) => ReturnType<typeof resources>
+  >(),
   disposeResources: vi.fn(),
   render: vi.fn(),
   renderTray: vi.fn(),
@@ -29,111 +62,11 @@ const mocks = vi.hoisted(() => ({
     diagnostics: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
   }>,
-  smoke: [] as unknown[],
+  smoke: [] as ThreeTraySmokeV4[],
   motionSeed: 0,
   readLimits: vi.fn(),
   assertSize: vi.fn(),
-}));
-
-vi.mock("three", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("three")>();
-  return {
-    ...actual,
-    WebGLRenderer: class {
-      domElement = document.createElement("canvas");
-      dispose = vi.fn();
-      setPixelRatio = vi.fn();
-      setSize = vi.fn();
-      setClearColor = vi.fn();
-      setViewport = vi.fn();
-      setScissor = vi.fn();
-      setScissorTest = vi.fn();
-      clear = vi.fn();
-      render = vi.fn();
-      autoClear = true;
-      getContext = vi.fn(() => ({}));
-
-      constructor(readonly options: unknown) {
-        mocks.rendererInstances.push(this);
-      }
-    },
-  };
-});
-
-vi.mock("./grid-resources", () => ({
-  prepareThreeDiceGridV4: mocks.prepare,
-  createThreeDiceGridResourcesV4: mocks.createResources,
-  disposeThreeDiceGridResourcesV4: mocks.disposeResources,
-}));
-
-vi.mock("./grid-render", () => ({
-  createThreeDiceGridRenderContextV4: vi.fn(() => ({})),
-  disposeThreeDiceGridRenderContextV4: mocks.disposeRenderContext,
-  renderThreeDiceGridV4: mocks.render,
-}));
-
-vi.mock("./geometry", () => ({
-  geometryDescriptorForDieV4: vi.fn(() => ({
-    id: "d6-standard-r1",
-    kind: "polyhedral",
-  })),
-}));
-
-vi.mock("./tray-physics", () => ({
-  createTrayPhysicsV4: mocks.createTrayPhysics,
-  freshMotionSeedV4: vi.fn(() => {
-    mocks.motionSeed += 1;
-    return mocks.motionSeed;
-  }),
-}));
-
-vi.mock("./tray-render", () => ({
-  createThreeTrayRenderContextV4: mocks.createTrayRenderContext,
-  disposeThreeTrayRenderContextV4: mocks.disposeTrayRenderContext,
-  configureThreeTrayCameraV4: vi.fn(),
-  renderThreeTrayV4: mocks.renderTray,
-  applyTraySnapshotToGroupV4: vi.fn((group, snapshot) => {
-    group.position.set(
-      snapshot.position.x,
-      snapshot.position.y,
-      snapshot.position.z,
-    );
-    group.quaternion.set(
-      snapshot.rotation.x,
-      snapshot.rotation.y,
-      snapshot.rotation.z,
-      snapshot.rotation.w,
-    );
-    group.scale.setScalar(snapshot.renderScale);
-  }),
-  resetTrayGroupTransformV4: vi.fn((group) => {
-    group.position.set(0, 0, 0);
-    group.scale.setScalar(1);
-  }),
-  traySnapshotViewportV4: vi.fn((_context, snapshot) => ({
-    x: Math.round(snapshot.position.x * 10),
-    y: Math.round(snapshot.position.y * 10),
-    width: 72,
-    height: 72,
-  })),
-  addThreeTraySmokeV4: vi.fn((context) => {
-    context.smoke.push({});
-  }),
-  updateThreeTraySmokeV4: vi.fn((context, now) => {
-    if (now === Number.POSITIVE_INFINITY) context.smoke.length = 0;
-    return context.smoke.length > 0;
-  }),
-}));
-
-vi.mock("./webgl-capabilities", () => ({
-  readThreeDrawingBufferLimitsV4: mocks.readLimits,
-  assertThreeDrawingBufferSizeV4: mocks.assertSize,
-}));
-
-import {
-  THREE_RESULT_TRANSITION_MILLISECONDS_V4,
-  createThreeRollRendererV4,
-} from "./roll-renderer";
+};
 
 type FakeTrayInput = {
   identity: string;
@@ -223,44 +156,165 @@ function fakeTrayPhysics(initialInputs: readonly FakeTrayInput[], reduced: boole
   return instance;
 }
 
-function resources(
-  seed: number,
-  count = 1,
-  recycledIndexes: readonly number[] = [],
-) {
-  const entries = Array.from({ length: count }, (_, index) => {
-    const group = new Group();
-    const labels = new Group();
-    labels.name = "dice-v4-labels";
-    group.add(labels);
-    return {
-      cell: {
-        groupIndex: 0,
-        groupDieIndex: index,
-        die: {
-          appearance: {
-            material: { family: "classic" },
-            texture: { seed: seed + index },
-          },
-          icons: recycledIndexes.includes(index) ? ["recycle"] : [],
-        },
-        viewport: { x: index * 150, y: 0, width: 150, height: 150 },
-      },
-      group,
-    };
-  });
+function renderModel(count = 1) {
   return {
-    layout: {
-      width: count * 150,
-      height: 150,
-      diceCount: count,
-      maximumColumns: Math.min(10, count),
+    ...sourceModel,
+    groups: [Array.from({ length: count }, () => sourceDie)],
+  };
+}
+
+type TestPreparation = { layout: { width: number; height: number } };
+
+function resources(seed: number, count = 1) {
+  const dice = Array.from({ length: count }, (_, index) => ({
+    ...sourceDie,
+    icons: [],
+    appearance: {
+      ...sourceDie.appearance,
+      texture: { ...sourceDie.appearance.texture, seed: seed + index },
     },
+  }));
+  const layout = createThreeDiceGridLayoutV4(
+    [dice],
+    ({ icons }) => icons,
+    Math.min(10, count),
+  );
+  const entries = layout.rows.flatMap(({ cells }) =>
+    cells.map((cell) => {
+      const group = new Group();
+      const labels = new Group();
+      labels.name = "dice-v4-labels";
+      group.add(labels);
+      const lighting = {
+        group: new Group(),
+        directionalLights: [],
+        policy: {
+          ambientIntensity: 1,
+          hemisphereIntensity: 1,
+          keyIntensity: 1,
+          rimIntensity: 0,
+          keyPosition: [0, 6, 5],
+          rimPosition: [0, 1.5, -5],
+        },
+      } satisfies ThreeLightingResourcesV4;
+      return {
+        cell,
+        group,
+        camera: new OrthographicCamera(),
+        lighting,
+      };
+    }),
+  );
+  return {
+    layout,
     entries,
     assets: [],
-    lighting: [],
+    lighting: entries.map(({ lighting }) => lighting),
     modifierIcons: null,
   };
+}
+
+const dependencies = {
+  createRenderDriver(options) {
+    const domElement = document.createElement("canvas");
+    const dispose = vi.fn();
+    const setSize = vi.fn();
+    const driver = {
+      domElement,
+      options,
+      dispose,
+      setSize,
+      assertDrawingBufferSize(width: number, height: number) {
+        mocks.assertSize(width, height);
+      },
+      renderGrid(...args: Parameters<ThreeRollRenderDriverV4["renderGrid"]>) {
+        mocks.render(...args);
+      },
+      renderTray(...args: Parameters<ThreeRollRenderDriverV4["renderTray"]>) {
+        mocks.renderTray(...args);
+      },
+    };
+    mocks.rendererInstances.push(driver);
+    try {
+      mocks.readLimits();
+      return driver;
+    } catch (error) {
+      dispose();
+      domElement.remove();
+      throw error;
+    }
+  },
+  grid: {
+    prepare: mocks.prepare,
+    create: mocks.createResources,
+    dispose: mocks.disposeResources,
+  },
+  gridContext: {
+    create: createThreeDiceGridRenderContextV4,
+    dispose: mocks.disposeRenderContext,
+  },
+  trayPhysics: {
+    create: mocks.createTrayPhysics,
+    freshMotionSeed() {
+      mocks.motionSeed += 1;
+      return mocks.motionSeed;
+    },
+    geometryDescriptor: vi.fn(() => D6_STANDARD_GEOMETRY_V4),
+  },
+  trayRender: {
+    createContext: mocks.createTrayRenderContext,
+    disposeContext: mocks.disposeTrayRenderContext,
+    configureCamera: vi.fn(),
+    applySnapshot(group, snapshot) {
+      group.position.set(
+        snapshot.position.x,
+        snapshot.position.y,
+        snapshot.position.z,
+      );
+      group.quaternion.set(
+        snapshot.rotation.x,
+        snapshot.rotation.y,
+        snapshot.rotation.z,
+        snapshot.rotation.w,
+      );
+      group.scale.setScalar(snapshot.renderScale);
+    },
+    resetGroupTransform(group) {
+      group.position.set(0, 0, 0);
+      group.scale.setScalar(1);
+    },
+    snapshotViewport(_context, snapshot) {
+      return {
+        x: Math.round(snapshot.position.x * 10),
+        y: Math.round(snapshot.position.y * 10),
+        width: 72,
+        height: 72,
+      };
+    },
+    addSmoke(context) {
+      context.smoke.push({
+        group: new Group(),
+        material: new MeshBasicMaterial(),
+        startedAt: 0,
+        originY: 0,
+      });
+    },
+    updateSmoke(context, now) {
+      if (now === Number.POSITIVE_INFINITY) context.smoke.length = 0;
+      return context.smoke.length > 0;
+    },
+  },
+} satisfies ThreeRollRendererDependenciesV4<TestPreparation>;
+
+function createTestRenderer(
+  container: HTMLElement,
+  callbacks: ThreeRollRendererCallbacksV4,
+) {
+  return createThreeRollRendererWithDependenciesV4(
+    container,
+    callbacks,
+    dependencies,
+  );
 }
 
 beforeEach(() => {
@@ -287,7 +341,11 @@ beforeEach(() => {
   mocks.disposeTrayRenderContext.mockReset();
   mocks.createTrayRenderContext
     .mockReset()
-    .mockImplementation(() => ({ smoke: mocks.smoke }));
+    .mockImplementation(() => {
+      const context = createThreeTrayRenderContextV4();
+      context.smoke = mocks.smoke;
+      return context;
+    });
   mocks.readLimits.mockReset().mockReturnValue({
     maxViewportWidth: 8_192,
     maxViewportHeight: 8_192,
@@ -307,8 +365,8 @@ describe("Three.js V4 roll renderer lifecycle", () => {
   it("commits a prepared replacement before disposing the previous model and cleans up on context loss", async () => {
     const container = document.createElement("div");
     const onUnavailable = vi.fn();
-    const renderer = createThreeRollRendererV4(container, { onUnavailable });
-    const model = {} as Parameters<typeof renderer.replaceModel>[0];
+    const renderer = createTestRenderer(container, { onUnavailable });
+    const model = renderModel();
 
     await renderer.replaceModel(model, {
       animateResult: false,
@@ -355,8 +413,8 @@ describe("Three.js V4 roll renderer lifecycle", () => {
   it("fails closed when replacement setup throws after commit", async () => {
     const container = document.createElement("div");
     const onUnavailable = vi.fn();
-    const renderer = createThreeRollRendererV4(container, { onUnavailable });
-    const model = {} as Parameters<typeof renderer.replaceModel>[0];
+    const renderer = createTestRenderer(container, { onUnavailable });
+    const model = renderModel();
 
     await renderer.replaceModel(model, {
       animateResult: false,
@@ -386,10 +444,10 @@ describe("Three.js V4 roll renderer lifecycle", () => {
 
   it("hides every label in a blank-face tray", async () => {
     const container = document.createElement("div");
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
-    await renderer.replaceModel({} as Parameters<typeof renderer.replaceModel>[0], {
+    await renderer.replaceModel(renderModel(), {
       animateResult: false,
       blankFaces: true,
       reducedMotion: true,
@@ -414,12 +472,13 @@ describe("Three.js V4 roll renderer lifecycle", () => {
       clientWidth: { value: 450, configurable: true },
       clientHeight: { value: 360, configurable: true },
     });
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await renderer.replaceModel(
-      { groups: [[{}, {}, {}]] } as Parameters<typeof renderer.replaceModel>[0],
+      renderModel(3),
       {
         animateResult: false,
         blankFaces: true,
@@ -450,11 +509,12 @@ describe("Three.js V4 roll renderer lifecycle", () => {
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
     mocks.createResources.mockReset().mockImplementationOnce(() => resources(35));
     const container = document.createElement("div");
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await renderer.replaceModel(
-      { groups: [[{}]] } as Parameters<typeof renderer.replaceModel>[0],
+      renderModel(),
       {
         animateResult: false,
         blankFaces: true,
@@ -473,7 +533,9 @@ describe("Three.js V4 roll renderer lifecycle", () => {
   });
 
   it("keeps a late blank-face replacement frozen after Roll starts", async () => {
-    let finishPreparation: ((value: unknown) => void) | undefined;
+    let finishPreparation:
+      | ((value: { layout: { width: number; height: number } }) => void)
+      | undefined;
     mocks.prepare
       .mockReset()
       .mockResolvedValueOnce({ layout: { width: 150, height: 150 } })
@@ -489,12 +551,10 @@ describe("Three.js V4 roll renderer lifecycle", () => {
     vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
     const container = document.createElement("div");
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
-    const model = {
-      groups: [[{}]],
-    } as Parameters<typeof renderer.replaceModel>[0];
+    const model = renderModel();
 
     await renderer.replaceModel(model, {
       animateResult: false,
@@ -502,8 +562,9 @@ describe("Three.js V4 roll renderer lifecycle", () => {
       reducedMotion: false,
       appearanceIdentities: [["retained"]],
     });
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     const replacement = renderer.replaceModel(
-      { groups: [[{}, {}]] } as Parameters<typeof renderer.replaceModel>[0],
+      renderModel(2),
       {
         animateResult: false,
         blankFaces: true,
@@ -535,12 +596,10 @@ describe("Three.js V4 roll renderer lifecycle", () => {
       clientWidth: { value: 450, configurable: true },
       clientHeight: { value: 360, configurable: true },
     });
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
-    const model = {
-      groups: [[{}, {}]],
-    } as Parameters<typeof renderer.replaceModel>[0];
+    const model = renderModel(2);
 
     await renderer.replaceModel(model, {
       animateResult: false,
@@ -575,21 +634,17 @@ describe("Three.js V4 roll renderer lifecycle", () => {
     mocks.createResources
       .mockReset()
       .mockImplementationOnce(() => resources(11, 2))
-      .mockImplementationOnce(() => resources(11, 3, [2]));
+      .mockImplementationOnce(() => resources(11, 3));
     const container = document.createElement("div");
     Object.defineProperties(container, {
       clientWidth: { value: 450, configurable: true },
       clientHeight: { value: 360, configurable: true },
     });
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
-    const preparedModel = {
-      groups: [[{}, {}]],
-    } as Parameters<typeof renderer.replaceModel>[0];
-    const resultModel = {
-      groups: [[{}, {}, {}]],
-    } as Parameters<typeof renderer.replaceModel>[0];
+    const preparedModel = renderModel(2);
+    const resultModel = renderModel(3);
 
     await renderer.replaceModel(preparedModel, {
       animateResult: false,
@@ -649,11 +704,7 @@ describe("Three.js V4 roll renderer lifecycle", () => {
     expect(container.querySelector("canvas")?.dataset.diceMotion).toBe(
       "static",
     );
-    expect(mocks.rendererInstances[0]?.setSize).toHaveBeenLastCalledWith(
-      450,
-      150,
-      false,
-    );
+    expect(mocks.rendererInstances[0]?.setSize).toHaveBeenLastCalledWith(450, 150);
     renderer.dispose();
   });
 
@@ -686,12 +737,10 @@ describe("Three.js V4 roll renderer lifecycle", () => {
       clientWidth: { get: () => width, configurable: true },
       clientHeight: { value: 360, configurable: true },
     });
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
-    const model = {
-      groups: [[{}, {}]],
-    } as Parameters<typeof renderer.replaceModel>[0];
+    const model = renderModel(2);
     const identities = [["first", "second"]] as const;
 
     await renderer.replaceModel(model, {
@@ -742,10 +791,11 @@ describe("Three.js V4 roll renderer lifecycle", () => {
       clientHeight: { value: 360, configurable: true },
     });
     const onUnavailable = vi.fn();
-    const renderer = createThreeRollRendererV4(container, { onUnavailable });
+    const renderer = createTestRenderer(container, { onUnavailable });
 
+    // SAFETY: The test controls this fixture and verifies its use in the scenario below.
     await renderer.replaceModel(
-      { groups: [[{}]] } as Parameters<typeof renderer.replaceModel>[0],
+      renderModel(),
       {
         animateResult: false,
         blankFaces: true,
@@ -778,15 +828,11 @@ describe("Three.js V4 roll renderer lifecycle", () => {
       clientWidth: { value: 450, configurable: true },
       clientHeight: { value: 360, configurable: true },
     });
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
-    const initialModel = {
-      groups: [[{}, {}]],
-    } as Parameters<typeof renderer.replaceModel>[0];
-    const expandedModel = {
-      groups: [[{}, {}, {}]],
-    } as Parameters<typeof renderer.replaceModel>[0];
+    const initialModel = renderModel(2);
+    const expandedModel = renderModel(3);
 
     await renderer.replaceModel(initialModel, {
       animateResult: false,
@@ -825,7 +871,9 @@ describe("Three.js V4 roll renderer lifecycle", () => {
   });
 
   it("retains a mid-preparation reduced-motion change", async () => {
-    let finishPreparation: ((value: unknown) => void) | undefined;
+    let finishPreparation:
+      | ((value: { layout: { width: number; height: number } }) => void)
+      | undefined;
     mocks.prepare.mockReturnValueOnce(
       new Promise((resolve) => {
         finishPreparation = resolve;
@@ -834,10 +882,10 @@ describe("Three.js V4 roll renderer lifecycle", () => {
     const requestAnimationFrame = vi.fn(() => 1);
     vi.stubGlobal("requestAnimationFrame", requestAnimationFrame);
     const container = document.createElement("div");
-    const renderer = createThreeRollRendererV4(container, {
+    const renderer = createTestRenderer(container, {
       onUnavailable: vi.fn(),
     });
-    const model = {} as Parameters<typeof renderer.replaceModel>[0];
+    const model = renderModel();
 
     const replacement = renderer.replaceModel(model, {
       animateResult: true,
@@ -862,7 +910,7 @@ describe("Three.js V4 roll renderer lifecycle", () => {
     });
 
     expect(() =>
-      createThreeRollRendererV4(document.createElement("div"), {
+      createTestRenderer(document.createElement("div"), {
         onUnavailable: vi.fn(),
       }),
     ).toThrow(failure);
@@ -879,7 +927,7 @@ describe("Three.js V4 roll renderer lifecycle", () => {
     });
 
     expect(() =>
-      createThreeRollRendererV4(document.createElement("div"), {
+      createTestRenderer(document.createElement("div"), {
         onUnavailable: vi.fn(),
       }),
     ).toThrow(failure);

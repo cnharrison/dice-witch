@@ -1,93 +1,83 @@
+import { z } from "zod";
+import {
+  nonNegativeSafeIntegerSchema,
+  type SchemaInput,
+  strictObjectSchema,
+  timestampSchema,
+} from "./schema-primitives";
+
 export const DISCORD_AUDIENCE_SNAPSHOT_VERSION = 1;
 export const DISCORD_AUDIENCE_SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1_000;
 
-export type DiscordAudienceCaptureV1 = {
-  version: 1;
-  capturedAt: number;
-  liveGuilds: number;
-  estimatedGuildMemberships: number;
-  shardCount: number;
-  guildCountsByShard: number[];
+const captureFields = {
+  version: z.literal(DISCORD_AUDIENCE_SNAPSHOT_VERSION),
+  capturedAt: timestampSchema,
+  liveGuilds: nonNegativeSafeIntegerSchema,
+  estimatedGuildMemberships: nonNegativeSafeIntegerSchema,
+  shardCount: nonNegativeSafeIntegerSchema.min(1),
+  guildCountsByShard: z.array(nonNegativeSafeIntegerSchema),
 };
 
-export type DiscordAudienceSnapshotV1 = DiscordAudienceCaptureV1 & {
-  knownDiceWitchUsers: number;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
+function shardCountsAreValid(
+  guildCountsByShard: readonly number[],
+  shardCount: number,
+  liveGuilds: number,
 ): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return JSON.stringify(actual) === JSON.stringify(sortedExpected);
-}
-
-function nonNegativeSafeInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && Number(value) >= 0;
-}
-
-function validShardCounts(value: unknown, shardCount: number, total: number): value is number[] {
-  if (!Array.isArray(value) || value.length !== shardCount) return false;
+  if (guildCountsByShard.length !== shardCount) return false;
   let sum = 0;
-  for (const count of value) {
-    if (!nonNegativeSafeInteger(count)) return false;
+  for (const count of guildCountsByShard) {
     sum += count;
     if (!Number.isSafeInteger(sum)) return false;
   }
-  return sum === total;
+  return sum === liveGuilds;
 }
 
+const DiscordAudienceCaptureV1Schema = strictObjectSchema(captureFields).refine(
+  ({ guildCountsByShard, shardCount, liveGuilds }) =>
+    shardCountsAreValid(guildCountsByShard, shardCount, liveGuilds),
+);
+const DiscordAudienceSnapshotV1Schema = strictObjectSchema({
+  ...captureFields,
+  knownDiceWitchUsers: nonNegativeSafeIntegerSchema,
+}).refine(({ guildCountsByShard, shardCount, liveGuilds }) =>
+  shardCountsAreValid(guildCountsByShard, shardCount, liveGuilds)
+);
+const DiscordAudienceSnapshotBoundarySchema = z.looseObject({
+  knownDiceWitchUsers: z.unknown(),
+});
+
+export type DiscordAudienceCaptureV1 = z.infer<
+  typeof DiscordAudienceCaptureV1Schema
+>;
+export type DiscordAudienceSnapshotV1 = z.infer<
+  typeof DiscordAudienceSnapshotV1Schema
+>;
+
 export function parseDiscordAudienceCaptureV1(
-  value: unknown,
+  value: SchemaInput,
 ): DiscordAudienceCaptureV1 {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "capturedAt",
-      "estimatedGuildMemberships",
-      "guildCountsByShard",
-      "liveGuilds",
-      "shardCount",
-      "version",
-    ]) ||
-    value.version !== DISCORD_AUDIENCE_SNAPSHOT_VERSION ||
-    !nonNegativeSafeInteger(value.capturedAt) ||
-    !nonNegativeSafeInteger(value.liveGuilds) ||
-    !nonNegativeSafeInteger(value.estimatedGuildMemberships) ||
-    !nonNegativeSafeInteger(value.shardCount) ||
-    value.shardCount < 1 ||
-    !validShardCounts(
-      value.guildCountsByShard,
-      value.shardCount,
-      value.liveGuilds,
-    )
-  ) {
+  const result = DiscordAudienceCaptureV1Schema.safeParse(value);
+  if (!result.success) {
     throw new Error("Discord audience capture is invalid");
   }
-  return {
-    version: DISCORD_AUDIENCE_SNAPSHOT_VERSION,
-    capturedAt: value.capturedAt,
-    liveGuilds: value.liveGuilds,
-    estimatedGuildMemberships: value.estimatedGuildMemberships,
-    shardCount: value.shardCount,
-    guildCountsByShard: [...value.guildCountsByShard],
-  };
+  return result.data;
 }
 
 export function parseDiscordAudienceSnapshotV1(
-  value: unknown,
+  value: SchemaInput,
 ): DiscordAudienceSnapshotV1 {
-  if (!isRecord(value) || !nonNegativeSafeInteger(value.knownDiceWitchUsers)) {
+  const boundary = DiscordAudienceSnapshotBoundarySchema.safeParse(value);
+  if (
+    !boundary.success ||
+    !nonNegativeSafeIntegerSchema.safeParse(
+      boundary.data.knownDiceWitchUsers,
+    ).success
+  ) {
     throw new Error("Discord audience snapshot is invalid");
   }
-  const { knownDiceWitchUsers, ...capture } = value;
-  return {
-    ...parseDiscordAudienceCaptureV1(capture),
-    knownDiceWitchUsers,
-  };
+  const result = DiscordAudienceSnapshotV1Schema.safeParse(value);
+  if (!result.success) {
+    throw new Error("Discord audience capture is invalid");
+  }
+  return result.data;
 }

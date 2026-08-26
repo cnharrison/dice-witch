@@ -110,7 +110,7 @@ function bottomEdgeFrame(
   origin: Point3V4,
   neighborByValue: ReadonlyMap<number, number>,
   context: "label" | "result pose",
-): { right: Point3V4; up: Point3V4 } {
+) {
   const bottomEdgeNeighborValue = neighborByValue.get(value);
   const bottomEdgeNeighborIndex = D12_FACE_VALUES_V4.findIndex(
     (candidate) => candidate === bottomEdgeNeighborValue,

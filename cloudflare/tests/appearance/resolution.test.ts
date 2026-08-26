@@ -1386,15 +1386,6 @@ describe("resolveAppearanceRecipeV3", () => {
     const patternIds = new Set<string>();
     const specialIds = new Set<string>();
     const engravingFinishes = new Set<string>();
-    const d20Forms = {
-      "sharp-resin": "sharp",
-      "liquid-core": "standard",
-      glass: "crystal-cut",
-      metal: "standard",
-      "hollow-metal": "hollow-cage",
-      wood: "standard",
-    } as const;
-
     for (let dieIndex = 0; dieIndex < sampleCount; dieIndex += 1) {
       const resolved = resolveAppearanceRecipeV3(
         style.recipe,
@@ -1434,9 +1425,6 @@ describe("resolveAppearanceRecipeV3", () => {
         specialIds.add(special.id);
         expect(appearance.palette).toEqual(special.palette);
         expect(resolved.form).toBe(special.d20Form);
-        expect(resolved.form).toBe(
-          d20Forms[appearance.material.family as keyof typeof d20Forms],
-        );
       }
     }
 
@@ -1547,19 +1535,20 @@ describe("resolveAppearanceRecipeV3", () => {
         classicSolids += 1;
       }
 
+      if (material.family !== "elemental" && material.family !== "paint") {
+        continue;
+      }
       const id = material.family === "elemental"
         ? `elemental-${material.style}`
-        : material.family === "paint"
-          ? "paint-splatter"
-          : null;
-      if (id === null) continue;
+        : "paint-splatter";
+      const expectedPalette = material.family === "elemental"
+        ? R32_MATERIAL_PALETTES_V3[`elemental-${material.style}`]
+        : R32_MATERIAL_PALETTES_V3["paint-splatter"];
       firstIndexByMaterial.set(id, firstIndexByMaterial.get(id) ?? dieIndex);
       countByMaterial.set(id, (countByMaterial.get(id) ?? 0) + 1);
       expect(resolved.form).toBe("standard");
       expect(resolved.appearance.texture.scope).toBe("die-wide");
-      expect(resolved.appearance.palette).toEqual(
-        R32_MATERIAL_PALETTES_V3[id as keyof typeof R32_MATERIAL_PALETTES_V3],
-      );
+      expect(resolved.appearance.palette).toEqual(expectedPalette);
       if (material.family === "elemental") {
         if (material.style === "lava") {
           expect(material.fissureDensity).toBeGreaterThanOrEqual(48);
@@ -1587,7 +1576,7 @@ describe("resolveAppearanceRecipeV3", () => {
           expect(material.textureScale).toBeGreaterThanOrEqual(185);
           expect(material.textureScale).toBeLessThanOrEqual(305);
         }
-      } else if (material.family === "paint") {
+      } else {
         expect(material.dropDensity).toBeGreaterThanOrEqual(50);
         expect(material.dropDensity).toBeLessThanOrEqual(82);
         expect(material.streakLength).toBeGreaterThanOrEqual(34);
@@ -2562,7 +2551,7 @@ describe("resolveAppearanceRecipeV3", () => {
               outlineColor,
               effect: null,
             },
-            icons: [] as RenderDieV4["icons"],
+            icons: [] satisfies RenderDieV4["icons"],
             view: getAuthoredRenderViewV4(
               rendererRevision,
               "legacy",

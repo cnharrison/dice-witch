@@ -1,6 +1,8 @@
+import type { SchemaInput } from "../../../packages/discord-contracts/src/schema-primitives";
 import {
   parseDiscordChannelContextRequestV1,
   parseDiscordChannelDirectoryMutationV1,
+  type DiscordChannelContextRequestV1,
   type DiscordChannelContextResultV1,
   type DiscordChannelDirectoryMutationV1,
 } from "../../../packages/discord-contracts/src";
@@ -15,7 +17,7 @@ const MAX_FUTURE_SKEW_MS = 5 * 60 * 1_000;
 
 export type DiscordChannelContextResolver = {
   resolveDiscordChannelContextV1(
-    value: unknown,
+    request: DiscordChannelContextRequestV1,
   ): Promise<DiscordChannelContextResultV1>;
 };
 
@@ -95,7 +97,7 @@ export async function recordDiscordChannelDirectoryMutation(
 
 export async function resolveDiscordChannelContextCachedV1(
   env: DiscordChannelDirectoryServiceEnv,
-  value: unknown,
+  value: SchemaInput,
   now: number,
 ): Promise<DiscordChannelContextResultV1> {
   const request = parseDiscordChannelContextRequestV1(value);

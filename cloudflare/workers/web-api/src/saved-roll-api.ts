@@ -1,3 +1,16 @@
+import { z } from "zod";
+import {
+  nonNegativeSafeIntegerSchema,
+  positiveSafeIntegerSchema,
+  snowflakeSchema,
+  strictObjectSchema,
+  uuidV4Schema,
+  type SchemaInput,
+} from "../../../packages/discord-contracts/src/schema-primitives";
+import {
+  parseSavedRollDraftV1,
+  parseSavedRollDraftV2,
+} from "../../../packages/saved-rolls/src";
 import {
   synchronizeGuildProof,
   type GuildMembershipProof,
@@ -5,8 +18,171 @@ import {
 import { json } from "./responses";
 
 const MAX_BODY_BYTES = 64 * 1024;
-const SNOWFLAKE = /^[1-9][0-9]{16,19}$/;
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const revisionSchema = nonNegativeSafeIntegerSchema.max(
+  Number.MAX_SAFE_INTEGER - 1,
+);
+const SavedRollOwnerSchema = z.discriminatedUnion("type", [
+  strictObjectSchema({ type: z.literal("user"), userId: snowflakeSchema }),
+  strictObjectSchema({ type: z.literal("guild"), guildId: snowflakeSchema }),
+]);
+const DraftV1Schema = strictObjectSchema({
+  version: z.literal(1),
+  name: z.string(),
+  notation: z.string(),
+  title: z.union([z.null(), z.string()]),
+  repetitions: z.number(),
+});
+const DraftV2Schema = strictObjectSchema({
+  version: z.literal(2),
+  name: z.string(),
+  nameColor: z.union([z.null(), z.string()]),
+  notation: z.string(),
+  title: z.union([z.null(), z.string()]),
+  repetitions: z.number(),
+});
+const CreateV1Schema = strictObjectSchema({
+  id: uuidV4Schema,
+  expectedListRevision: revisionSchema,
+  draft: DraftV1Schema,
+  pinned: z.boolean(),
+});
+const CreateV2Schema = strictObjectSchema({
+  id: uuidV4Schema,
+  expectedListRevision: revisionSchema,
+  draft: DraftV2Schema,
+  pinned: z.boolean(),
+});
+const UpdateV1Schema = strictObjectSchema({
+  expectedListRevision: revisionSchema,
+  expectedRecordRevision: positiveSafeIntegerSchema,
+  draft: DraftV1Schema,
+  pinned: z.boolean(),
+});
+const UpdateV2Schema = strictObjectSchema({
+  expectedListRevision: revisionSchema,
+  expectedRecordRevision: positiveSafeIntegerSchema,
+  draft: DraftV2Schema,
+  pinned: z.boolean(),
+});
+const DeleteSchema = strictObjectSchema({
+  expectedListRevision: revisionSchema,
+  expectedRecordRevision: positiveSafeIntegerSchema,
+});
+const DeleteBatchSchema = strictObjectSchema({
+  expectedListRevision: revisionSchema,
+  records: z
+    .array(
+      strictObjectSchema({
+        id: uuidV4Schema,
+        revision: positiveSafeIntegerSchema,
+      }),
+    )
+    .min(1)
+    .max(100)
+    .refine(
+      (records) => new Set(records.map(({ id }) => id)).size === records.length,
+    ),
+});
+const ReorderSchema = strictObjectSchema({
+  expectedListRevision: revisionSchema,
+  orderedIds: z
+    .array(uuidV4Schema)
+    .max(100)
+    .refine((ids) => new Set(ids).size === ids.length),
+});
+const LibraryCandidateSchema = strictObjectSchema({
+  guildId: snowflakeSchema,
+  guildName: z.string().min(1).max(255),
+  guildIcon: z.string().max(255).nullable(),
+});
+const LibrariesResultSchema = strictObjectSchema({
+  status: z.literal("found"),
+  libraries: z.array(LibraryCandidateSchema).max(200),
+});
+const SavedRollWireSchema = strictObjectSchema({
+  version: z.union([z.literal(1), z.literal(2)]).optional(),
+  id: uuidV4Schema.optional(),
+  owner: SavedRollOwnerSchema.optional(),
+  displayName: z.string().optional(),
+  comparisonKey: z.string().optional(),
+  notation: z.string().optional(),
+  title: z.string().nullable().optional(),
+  repetitions: positiveSafeIntegerSchema.optional(),
+  nameColor: z.string().nullable().optional(),
+  pinned: z.boolean().optional(),
+  manualOrder: nonNegativeSafeIntegerSchema.optional(),
+  revision: positiveSafeIntegerSchema.optional(),
+  createdByUserId: snowflakeSchema.optional(),
+  updatedByUserId: snowflakeSchema.optional(),
+  createdAt: nonNegativeSafeIntegerSchema.optional(),
+  updatedAt: nonNegativeSafeIntegerSchema.optional(),
+});
+const SearchSavedRollSchema = SavedRollWireSchema.extend({
+  owner: SavedRollOwnerSchema,
+});
+const SearchResultSchema = strictObjectSchema({
+  status: z.literal("found"),
+  entries: z
+    .array(
+      strictObjectSchema({
+        savedRoll: SearchSavedRollSchema,
+        listRevision: nonNegativeSafeIntegerSchema,
+        guildName: z.string().nullable(),
+        guildIcon: z.string().nullable(),
+      }),
+    )
+    .max(50),
+  hasMore: z.boolean(),
+  total: nonNegativeSafeIntegerSchema,
+});
+const ProxyDataResultSchema = z.union([
+  strictObjectSchema({ error: z.string() }),
+  strictObjectSchema({ status: z.literal("missing") }),
+  strictObjectSchema({ status: z.literal("unauthorized") }),
+  strictObjectSchema({ status: z.literal("mutation_conflict") }),
+  strictObjectSchema({
+    status: z.literal("found"),
+    listRevision: nonNegativeSafeIntegerSchema,
+    savedRolls: z.array(SavedRollWireSchema),
+  }),
+  strictObjectSchema({
+    status: z.literal("found"),
+    savedRoll: SavedRollWireSchema,
+  }),
+  strictObjectSchema({
+    status: z.enum(["applied", "existing"]),
+    listRevision: positiveSafeIntegerSchema,
+    savedRoll: SavedRollWireSchema,
+  }),
+  strictObjectSchema({
+    status: z.enum(["applied", "existing"]),
+    listRevision: positiveSafeIntegerSchema,
+    recordRevision: positiveSafeIntegerSchema,
+  }),
+  strictObjectSchema({
+    status: z.enum(["applied", "existing"]),
+    listRevision: positiveSafeIntegerSchema,
+  }),
+  strictObjectSchema({
+    status: z.enum([
+      "list_revision_conflict",
+      "name_conflict",
+      "record_set_conflict",
+    ]),
+    listRevision: nonNegativeSafeIntegerSchema,
+  }),
+  strictObjectSchema({
+    status: z.literal("record_revision_conflict"),
+    recordRevision: positiveSafeIntegerSchema,
+  }),
+  strictObjectSchema({
+    status: z.literal("cap_reached"),
+    listRevision: nonNegativeSafeIntegerSchema,
+    limit: positiveSafeIntegerSchema,
+  }),
+]);
 
 type SavedRollApiEnv = {
   DATA_SERVICE: Fetcher;
@@ -14,42 +190,89 @@ type SavedRollApiEnv = {
     inspectMembership(
       guildId: string,
       userId: string,
-    ): Promise<GuildMembershipProof>;
+    ): Promise<SchemaInput>;
   };
 };
 
-type Owner =
-  | { type: "user"; userId: string }
-  | { type: "guild"; guildId: string };
-
-type AuthorizedLibrary = {
-  guildId: string;
-  guildName: string;
-  guildIcon: string | null;
+type Owner = z.output<typeof SavedRollOwnerSchema>;
+type AuthorizedLibrary = z.output<typeof LibraryCandidateSchema> & {
   isAdmin: boolean;
   isDiceWitchAdmin: boolean;
 };
-
 type SavedRollContractVersion = 1 | 2;
-
-type Route = {
+type Operation =
+  | "list"
+  | "get"
+  | "create"
+  | "copy"
+  | "update"
+  | "delete"
+  | "delete-batch"
+  | "reorder";
+type Route =
+  | { owner: Owner; operation: "list"; contractVersion: SavedRollContractVersion }
+  | {
+      owner: Owner;
+      operation: "get" | "update" | "delete";
+      contractVersion: SavedRollContractVersion;
+      id: string;
+    }
+  | {
+      owner: Owner;
+      operation: "create" | "copy" | "reorder";
+      contractVersion: SavedRollContractVersion;
+    }
+  | {
+      owner: Owner;
+      operation: "delete-batch";
+      contractVersion: 2;
+    };
+type SavedRollMutationBody =
+  | z.output<typeof CreateV1Schema>
+  | z.output<typeof CreateV2Schema>
+  | z.output<typeof UpdateV1Schema>
+  | z.output<typeof UpdateV2Schema>
+  | z.output<typeof DeleteSchema>
+  | z.output<typeof DeleteBatchSchema>
+  | z.output<typeof ReorderSchema>;
+type SavedRollReadDataRequest = { owner: Owner; id?: string };
+type SavedRollMutationDataRequest = SavedRollMutationBody & {
   owner: Owner;
-  operation:
-    | "list"
-    | "get"
-    | "create"
-    | "copy"
-    | "update"
-    | "delete"
-    | "delete-batch"
-    | "reorder";
-  contractVersion: SavedRollContractVersion;
+  actorUserId: string;
+  authorizationUpdatedAt: number | null;
+  mutationId: string;
+  occurredAt: number;
   id?: string;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+type SavedRollSearchDataRequest = {
+  userId: string;
+  guildIds: string[];
+  query: string;
+  offset: number;
+  sort: "name" | "roll" | "created" | "updated";
+  direction: "asc" | "desc";
+};
+type SavedRollDataRequest =
+  | { userId: string }
+  | SavedRollReadDataRequest
+  | SavedRollMutationDataRequest
+  | SavedRollSearchDataRequest;
+type SavedRollDataPath =
+  | "/internal/saved-rolls/v1/libraries"
+  | `/internal/saved-rolls/v${SavedRollContractVersion}/${Operation | "search"}`;
+type SearchResponseEntry = {
+  savedRoll: z.output<typeof SearchSavedRollSchema>;
+  listRevision: number;
+  source:
+    | { type: "personal" }
+    | {
+        type: "guild";
+        guildId: string;
+        guildName: string;
+        guildIcon: string | null;
+      };
+  canManage: boolean;
+};
 
 function containsControlCharacter(value: string): boolean {
   for (const character of value) {
@@ -61,19 +284,10 @@ function containsControlCharacter(value: string): boolean {
   return false;
 }
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const keys = Object.keys(value).sort();
-  const expectedKeys = [...expected].sort();
-  return (
-    keys.length === expectedKeys.length &&
-    keys.every((key, index) => key === expectedKeys[index])
-  );
-}
-
-async function readBoundedJson(request: Request): Promise<unknown> {
+async function readBoundedJson<Schema extends z.ZodType>(
+  request: Request,
+  schema: Schema,
+): Promise<z.output<Schema>> {
   if (
     request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
     "application/json"
@@ -87,12 +301,13 @@ async function readBoundedJson(request: Request): Promise<unknown> {
   ) {
     throw new Error("Saved roll body is too large");
   }
-  if (request.body === null) throw new Error("Saved roll body is missing");
-  const reader = (request.body as ReadableStream<Uint8Array>).getReader();
+  const body = request.body;
+  if (body === null) throw new Error("Saved roll body is missing");
+  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
-    const chunk = await reader.read();
+    const chunk: ReadableStreamReadResult<Uint8Array> = await reader.read();
     if (chunk.done) break;
     size += chunk.value.byteLength;
     if (size > MAX_BODY_BYTES) {
@@ -107,9 +322,10 @@ async function readBoundedJson(request: Request): Promise<unknown> {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return JSON.parse(
+  const value: SchemaInput = JSON.parse(
     new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes),
-  ) as unknown;
+  );
+  return schema.parse(value);
 }
 
 function personalRoute(
@@ -117,8 +333,8 @@ function personalRoute(
   method: string,
   userId: string,
 ): Route | null {
-  const match = pathname.match(
-    /^\/api\/saved-rolls\/(v1|v2)\/me(?:\/([0-9a-f-]+|copy|delete-batch|reorder))?$/,
+  const match = /^\/api\/saved-rolls\/(v1|v2)\/me(?:\/([0-9a-f-]+|copy|delete-batch|reorder))?$/.exec(
+    pathname,
   );
   if (match === null || match[1] === undefined) return null;
   const contractVersion = match[1] === "v2" ? 2 : 1;
@@ -139,22 +355,25 @@ function personalRoute(
     return { owner, operation: "reorder", contractVersion };
   }
   if (!UUID_V4.test(suffix)) return null;
-  if (method === "GET") return { owner, operation: "get", id: suffix, contractVersion };
-  if (method === "PATCH") return { owner, operation: "update", id: suffix, contractVersion };
-  if (method === "DELETE") return { owner, operation: "delete", id: suffix, contractVersion };
+  if (method === "GET") {
+    return { owner, operation: "get", id: suffix, contractVersion };
+  }
+  if (method === "PATCH") {
+    return { owner, operation: "update", id: suffix, contractVersion };
+  }
+  if (method === "DELETE") {
+    return { owner, operation: "delete", id: suffix, contractVersion };
+  }
   return null;
 }
 
 function guildRoute(pathname: string, method: string): Route | null {
-  const match = pathname.match(
-    /^\/api\/guilds\/([1-9][0-9]{16,19})\/saved-rolls\/(v1|v2)(?:\/([0-9a-f-]+|copy|delete-batch|reorder))?$/,
+  const match = /^\/api\/guilds\/([1-9][0-9]{16,19})\/saved-rolls\/(v1|v2)(?:\/([0-9a-f-]+|copy|delete-batch|reorder))?$/.exec(
+    pathname,
   );
-  if (
-    match === null ||
-    match[1] === undefined ||
-    match[2] === undefined ||
-    !SNOWFLAKE.test(match[1])
-  ) return null;
+  if (match === null || match[1] === undefined || match[2] === undefined) {
+    return null;
+  }
   const contractVersion = match[2] === "v2" ? 2 : 1;
   const owner: Owner = { type: "guild", guildId: match[1] };
   const suffix = match[3];
@@ -173,21 +392,28 @@ function guildRoute(pathname: string, method: string): Route | null {
     return { owner, operation: "reorder", contractVersion };
   }
   if (!UUID_V4.test(suffix)) return null;
-  if (method === "GET") return { owner, operation: "get", id: suffix, contractVersion };
-  if (method === "PATCH") return { owner, operation: "update", id: suffix, contractVersion };
-  if (method === "DELETE") return { owner, operation: "delete", id: suffix, contractVersion };
+  if (method === "GET") {
+    return { owner, operation: "get", id: suffix, contractVersion };
+  }
+  if (method === "PATCH") {
+    return { owner, operation: "update", id: suffix, contractVersion };
+  }
+  if (method === "DELETE") {
+    return { owner, operation: "delete", id: suffix, contractVersion };
+  }
   return null;
 }
 
 function parseRoute(request: Request, userId: string): Route | null {
   const pathname = new URL(request.url).pathname;
-  return personalRoute(pathname, request.method, userId) ?? guildRoute(pathname, request.method);
+  return personalRoute(pathname, request.method, userId) ??
+    guildRoute(pathname, request.method);
 }
 
 async function postData(
   dataService: Fetcher,
-  path: string,
-  body: unknown,
+  path: SavedRollDataPath,
+  body: SavedRollDataRequest,
 ): Promise<Response> {
   return dataService.fetch(
     new Request(`https://data.internal${path}`, {
@@ -210,45 +436,50 @@ async function synchronizeSavedRollGuildProof(
     : json({ error: "Saved roll guild authorization failed" }, 502);
 }
 
-function mutationKeys(operation: Route["operation"]): readonly string[] {
-  if (operation === "create" || operation === "copy") {
-    return ["draft", "expectedListRevision", "id", "pinned"];
-  }
-  if (operation === "update") {
-    return ["draft", "expectedListRevision", "expectedRecordRevision", "pinned"];
-  }
-  if (operation === "delete") {
-    return ["expectedListRevision", "expectedRecordRevision"];
-  }
-  if (operation === "delete-batch") {
-    return ["expectedListRevision", "records"];
-  }
-  if (operation === "reorder") {
-    return ["expectedListRevision", "orderedIds"];
-  }
-  return [];
+function validateDraft(
+  draft: z.output<typeof DraftV1Schema> | z.output<typeof DraftV2Schema>,
+): void {
+  if (draft.version === 1) parseSavedRollDraftV1(draft);
+  else parseSavedRollDraftV2(draft);
 }
 
-async function mutationBody(request: Request, operation: Route["operation"]): Promise<Record<string, unknown>> {
-  const value = await readBoundedJson(request);
-  const keys = mutationKeys(operation);
-  if (!isRecord(value) || keys.length === 0 || !hasExactKeys(value, keys)) {
-    throw new Error("Saved roll request is invalid");
+async function mutationBody(
+  request: Request,
+  route: Exclude<Route, { operation: "list" | "get" }>,
+): Promise<SavedRollMutationBody> {
+  if (route.operation === "create" || route.operation === "copy") {
+    const body = await readBoundedJson(
+      request,
+      route.contractVersion === 1 ? CreateV1Schema : CreateV2Schema,
+    );
+    validateDraft(body.draft);
+    return body;
   }
-  return value;
+  if (route.operation === "update") {
+    const body = await readBoundedJson(
+      request,
+      route.contractVersion === 1 ? UpdateV1Schema : UpdateV2Schema,
+    );
+    validateDraft(body.draft);
+    return body;
+  }
+  if (route.operation === "delete") {
+    return readBoundedJson(request, DeleteSchema);
+  }
+  if (route.operation === "delete-batch") {
+    return readBoundedJson(request, DeleteBatchSchema);
+  }
+  return readBoundedJson(request, ReorderSchema);
 }
 
 async function proxyDataResponse(response: Response): Promise<Response> {
-  let value: unknown;
+  let value: z.output<typeof ProxyDataResultSchema>;
   try {
-    value = await response.json();
+    value = ProxyDataResultSchema.parse(await response.json());
   } catch {
     return json({ error: "Saved roll service response is invalid" }, 502);
   }
-  if (
-    isRecord(value) &&
-    [200, 400, 403, 404, 409].includes(response.status)
-  ) {
+  if ([200, 400, 403, 404, 409].includes(response.status)) {
     return json(value, response.status);
   }
   return json({ error: "Saved roll service failed" }, 502);
@@ -267,45 +498,16 @@ async function authorizedLibraries(
   if (!response.ok) {
     return json({ error: "Saved roll library lookup failed" }, 502);
   }
-  let value: unknown;
+  let value: z.output<typeof LibrariesResultSchema>;
   try {
-    value = await response.json();
+    value = LibrariesResultSchema.parse(await response.json());
   } catch {
     return json({ error: "Saved roll library response is invalid" }, 502);
   }
-  if (
-    !isRecord(value) ||
-    value.status !== "found" ||
-    !Array.isArray(value.libraries) ||
-    value.libraries.length > 200
-  ) {
-    return json({ error: "Saved roll library response is invalid" }, 502);
-  }
-  const candidates: Omit<AuthorizedLibrary, "isAdmin" | "isDiceWitchAdmin">[] = [];
-  for (const library of value.libraries) {
-    if (
-      !isRecord(library) ||
-      typeof library.guildId !== "string" ||
-      !SNOWFLAKE.test(library.guildId) ||
-      typeof library.guildName !== "string" ||
-      library.guildName.length < 1 ||
-      library.guildName.length > 255 ||
-      (library.guildIcon !== null &&
-        (typeof library.guildIcon !== "string" ||
-          library.guildIcon.length > 255))
-    ) {
-      return json({ error: "Saved roll library response is invalid" }, 502);
-    }
-    candidates.push({
-      guildId: library.guildId,
-      guildName: library.guildName,
-      guildIcon: library.guildIcon,
-    });
-  }
 
   const libraries: AuthorizedLibrary[] = [];
-  for (let offset = 0; offset < candidates.length; offset += 5) {
-    const batch = candidates.slice(offset, offset + 5);
+  for (let offset = 0; offset < value.libraries.length; offset += 5) {
+    const batch = value.libraries.slice(offset, offset + 5);
     const proofs = await Promise.all(
       batch.map((library) =>
         synchronizeSavedRollGuildProof(env, library.guildId, userId, now),
@@ -376,7 +578,7 @@ async function searchSavedRolls(
   );
   const response = await postData(
     env.DATA_SERVICE,
-    `/internal/saved-rolls/v${String(contractVersion)}/search`,
+    `/internal/saved-rolls/v${contractVersion}/search`,
     {
       userId,
       guildIds: managedLibraries.map(({ guildId }) => guildId),
@@ -389,37 +591,17 @@ async function searchSavedRolls(
   if (!response.ok) {
     return json({ error: "Saved roll search failed" }, 502);
   }
-  let value: unknown;
+  let value: z.output<typeof SearchResultSchema>;
   try {
-    value = await response.json();
+    value = SearchResultSchema.parse(await response.json());
   } catch {
-    return json({ error: "Saved roll search response is invalid" }, 502);
-  }
-  if (
-    !isRecord(value) ||
-    value.status !== "found" ||
-    !Array.isArray(value.entries) ||
-    value.entries.length > 50 ||
-    typeof value.hasMore !== "boolean" ||
-    typeof value.total !== "number" ||
-    !Number.isSafeInteger(value.total) ||
-    value.total < 0
-  ) {
     return json({ error: "Saved roll search response is invalid" }, 502);
   }
   const libraryById = new Map(
     managedLibraries.map((library) => [library.guildId, library]),
   );
-  const entries: unknown[] = [];
+  const entries: SearchResponseEntry[] = [];
   for (const entry of value.entries) {
-    if (
-      !isRecord(entry) ||
-      !isRecord(entry.savedRoll) ||
-      !isRecord(entry.savedRoll.owner) ||
-      typeof entry.listRevision !== "number"
-    ) {
-      return json({ error: "Saved roll search response is invalid" }, 502);
-    }
     const owner = entry.savedRoll.owner;
     if (owner.type === "user" && owner.userId === userId) {
       entries.push({
@@ -430,7 +612,7 @@ async function searchSavedRolls(
       });
       continue;
     }
-    if (owner.type !== "guild" || typeof owner.guildId !== "string") {
+    if (owner.type !== "guild") {
       return json({ error: "Saved roll search response is invalid" }, 502);
     }
     const library = libraryById.get(owner.guildId);
@@ -464,8 +646,8 @@ export async function handleSavedRollApiRequest(
   now: number,
 ): Promise<Response | null> {
   const pathname = new URL(request.url).pathname;
-  const topLevelMatch = pathname.match(
-    /^\/api\/saved-rolls\/(v1|v2)\/(libraries|search)$/,
+  const topLevelMatch = /^\/api\/saved-rolls\/(v1|v2)\/(libraries|search)$/.exec(
+    pathname,
   );
   if (topLevelMatch !== null && topLevelMatch[1] !== undefined) {
     const contractVersion = topLevelMatch[1] === "v2" ? 2 : 1;
@@ -482,14 +664,14 @@ export async function handleSavedRollApiRequest(
 
   const isRead = route.operation === "list" || route.operation === "get";
   let idempotencyKey: string | null = null;
-  let body: Record<string, unknown> | null = null;
+  let body: SavedRollMutationBody | null = null;
   if (!isRead) {
     idempotencyKey = request.headers.get("idempotency-key");
     if (idempotencyKey === null || !UUID_V4.test(idempotencyKey)) {
       return json({ error: "Saved roll idempotency key is invalid" }, 400);
     }
     try {
-      body = await mutationBody(request, route.operation);
+      body = await mutationBody(request, route);
     } catch {
       return json({ error: "Saved roll request is invalid" }, 400);
     }
@@ -513,14 +695,13 @@ export async function handleSavedRollApiRequest(
     if (!isRead) authorizationUpdatedAt = now;
   }
 
-  if (isRead) {
+  if (route.operation === "list" || route.operation === "get") {
+    const readBody: SavedRollReadDataRequest = { owner: route.owner };
+    if (route.operation === "get") readBody.id = route.id;
     const response = await postData(
       env.DATA_SERVICE,
-      `/internal/saved-rolls/v${String(route.contractVersion)}/${route.operation}`,
-      {
-        owner: route.owner,
-        ...(route.id === undefined ? {} : { id: route.id }),
-      },
+      `/internal/saved-rolls/v${route.contractVersion}/${route.operation}`,
+      readBody,
     );
     return proxyDataResponse(response);
   }
@@ -528,18 +709,21 @@ export async function handleSavedRollApiRequest(
   if (idempotencyKey === null || body === null) {
     return json({ error: "Saved roll request is invalid" }, 500);
   }
+  const dataBody: SavedRollMutationDataRequest = {
+    owner: route.owner,
+    actorUserId: userId,
+    authorizationUpdatedAt,
+    ...body,
+    mutationId: `web-saved-roll:${route.operation}:${idempotencyKey}`,
+    occurredAt: now,
+  };
+  if (route.operation === "update" || route.operation === "delete") {
+    dataBody.id = route.id;
+  }
   const response = await postData(
     env.DATA_SERVICE,
-    `/internal/saved-rolls/v${String(route.contractVersion)}/${route.operation}`,
-    {
-      owner: route.owner,
-      actorUserId: userId,
-      authorizationUpdatedAt,
-      ...body,
-      ...(route.id === undefined ? {} : { id: route.id }),
-      mutationId: `web-saved-roll:${route.operation}:${idempotencyKey}`,
-      occurredAt: now,
-    },
+    `/internal/saved-rolls/v${route.contractVersion}/${route.operation}`,
+    dataBody,
   );
   return proxyDataResponse(response);
 }

@@ -61,12 +61,7 @@ describe("knowledgebase interaction contract", () => {
   });
 
   it("builds the public V2 Fudge article, topic select, and required links", () => {
-    const response = buildKnowledgeBaseResponse("fudge", links) as {
-      data: {
-        flags: number;
-        components: Array<{ type: number; accent_color: number }>;
-      };
-    };
+    const response = buildKnowledgeBaseResponse("fudge", links);
     expect(response.data.flags).toBe(1 << 15);
     expect(response).not.toHaveProperty("data.embeds");
     expect(response.data.components[0]).toMatchObject({
@@ -108,6 +103,30 @@ describe("knowledgebase interaction contract", () => {
     );
   });
 
+  it("routes unrelated interactions before validating recognized payloads", () => {
+    expect(
+      parseKnowledgeBaseInteraction(
+        {
+          application_id: "100000000000000099",
+          type: 2,
+          data: { name: "knowledgebase", type: 1, options: [] },
+        },
+        applicationId,
+      ),
+    ).toBeNull();
+    expect(() =>
+      parseKnowledgeBaseInteraction(
+        {
+          ...identity,
+          token: "",
+          type: 2,
+          data: { name: "knowledgebase", type: 1, options: [] },
+        },
+        applicationId,
+      )
+    ).toThrow("Knowledgebase interaction is invalid");
+  });
+
   it("rejects malformed command options and ignores unknown button ids", () => {
     expect(() =>
       parseKnowledgeBaseInteraction(
@@ -129,5 +148,19 @@ describe("knowledgebase interaction contract", () => {
         applicationId,
       ),
     ).toBeNull();
+    expect(() =>
+      parseKnowledgeBaseInteraction(
+        {
+          ...identity,
+          type: 3,
+          data: {
+            custom_id: "knowledgebase-topic",
+            component_type: 3,
+            values: ["fudge", "fudge"],
+          },
+        },
+        applicationId,
+      )
+    ).toThrow("Knowledgebase select is invalid");
   });
 });

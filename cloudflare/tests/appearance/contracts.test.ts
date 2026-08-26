@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as z from "zod";
 import {
   APPEARANCE_GRADIENT_COLOR_SOURCES,
   APPEARANCE_GRADIENT_SCOPES,
@@ -32,7 +33,26 @@ const catalog: AppearanceCatalog = {
 
 const customDesignId = "5dbb69e6-e748-4b01-9d6f-a19aa5c24a8f";
 
-function validProfileV2(): unknown {
+type FixtureValue =
+  | null
+  | boolean
+  | number
+  | string
+  | FixtureValue[]
+  | FixtureRecord;
+type FixtureRecord = { [key: string]: FixtureValue };
+
+const mutableFixtureSchema = z.custom<FixtureRecord>(
+  (value) => value !== null && Object(value) === value && !Array.isArray(value),
+);
+
+function mutableFixture(value: FixtureValue | undefined): FixtureRecord {
+  const parsed = mutableFixtureSchema.safeParse(value);
+  if (!parsed.success) throw new Error("Mutable fixture must be an object");
+  return parsed.data;
+}
+
+function validProfileV2() {
   return {
     version: 2,
     designs: [
@@ -91,15 +111,15 @@ function validProfileV2(): unknown {
   };
 }
 
-function mutableV2Recipe(profile: unknown): Record<string, unknown> {
-  return (
-    profile as {
-      designs: Array<{ recipe: Record<string, unknown> }>;
-    }
-  ).designs[0]?.recipe ?? {};
+function mutableV2Recipe(
+  profile: ReturnType<typeof validProfileV2> | ReturnType<typeof validProfile>,
+) {
+  const design = profile.designs[0];
+  if (design === undefined) throw new Error("Fixture design is missing");
+  return mutableFixture(design.recipe);
 }
 
-function validProfile(): unknown {
+function validProfile() {
   return {
     version: 1,
     designs: [
@@ -288,7 +308,7 @@ describe("appearance V2 validation", () => {
       ],
     });
 
-    const guild = validProfileV2() as Record<string, unknown>;
+    const guild = mutableFixture(validProfileV2());
     guild.mode = "enforced";
     expect(parseGuildAppearanceProfileV2(guild, catalog).mode).toBe(
       "enforced",
@@ -302,12 +322,12 @@ describe("appearance V2 validation", () => {
       "Appearance recipe V2 is invalid",
     );
 
-    const structurallyMixed = validProfileV2() as {
-      designs: Array<{ recipe: unknown }>;
-    };
+    const structurallyMixed = validProfileV2();
     const mixedDesign = structurallyMixed.designs[0];
     if (mixedDesign === undefined) throw new Error("Fixture design is missing");
-    mixedDesign.recipe = mutableV2Recipe(validProfile());
+    mutableFixture(mixedDesign).recipe = mutableFixture(
+      validProfile().designs[0]?.recipe,
+    );
     expect(() => parseAppearanceProfileV2(structurallyMixed, catalog)).toThrow(
       "Appearance recipe V2 has invalid fields",
     );
@@ -323,10 +343,9 @@ describe("appearance V2 validation", () => {
     );
 
     const unknown = validProfileV2();
-    const gradient = mutableV2Recipe(unknown).gradient as Record<
-      string,
-      unknown
-    >;
+    const gradient = mutableFixture(
+      mutableV2Recipe(unknown).gradient,
+    );
     gradient.radialOrigin = "center";
     expect(() => parseAppearanceProfileV2(unknown, catalog)).toThrow(
       "Appearance gradient V2 has invalid fields",
@@ -335,8 +354,9 @@ describe("appearance V2 validation", () => {
 
   it("rejects invalid, duplicate, and unbounded treatment selections", () => {
     const duplicate = validProfileV2();
-    const duplicateGradient = mutableV2Recipe(duplicate)
-      .gradient as Record<string, unknown>;
+    const duplicateGradient = mutableFixture(
+      mutableV2Recipe(duplicate).gradient,
+    );
     duplicateGradient.scope = {
       mode: "allowlist",
       values: ["repeated", "repeated"],
@@ -346,8 +366,9 @@ describe("appearance V2 validation", () => {
     );
 
     const invalidWeight = validProfileV2();
-    const invalidLighting = mutableV2Recipe(invalidWeight)
-      .lighting as Record<string, unknown>;
+    const invalidLighting = mutableFixture(
+      mutableV2Recipe(invalidWeight).lighting,
+    );
     invalidLighting.strength = {
       mode: "weighted",
       options: [{ value: "subtle", weight: 0 }],
@@ -357,8 +378,9 @@ describe("appearance V2 validation", () => {
     );
 
     const unsupported = validProfileV2();
-    const unsupportedGradient = mutableV2Recipe(unsupported)
-      .gradient as Record<string, unknown>;
+    const unsupportedGradient = mutableFixture(
+      mutableV2Recipe(unsupported).gradient,
+    );
     unsupportedGradient.direction = {
       mode: "fixed",
       value: "clockwise",
@@ -457,8 +479,9 @@ describe("appearance V2 validation", () => {
     );
 
     const nativePair = validProfileV2();
-    const nativeGradient = mutableV2Recipe(nativePair)
-      .gradient as Record<string, unknown>;
+    const nativeGradient = mutableFixture(
+      mutableV2Recipe(nativePair).gradient,
+    );
     nativeGradient.colorSource = "resolved-pair";
     expect(() => parseAppearanceProfileV2(nativePair, catalog)).toThrow(
       "Native appearance recipes require full-palette gradients",
@@ -581,17 +604,11 @@ describe("parseAppearanceProfile", () => {
   });
 
   it("accepts explicit weighted surface and font selections", () => {
-    const profile = validProfile() as {
-      designs: Array<{
-        recipe: {
-          fill: unknown;
-          font: unknown;
-        };
-      }>;
-    };
+    const profile = validProfile();
     const design = profile.designs[0];
     if (design === undefined) throw new Error("Fixture design is missing");
-    design.recipe.fill = {
+    const recipe = mutableFixture(design.recipe);
+    recipe.fill = {
       mode: "weighted",
       options: [
         { value: { type: "gradient" }, weight: 60 },
@@ -601,7 +618,7 @@ describe("parseAppearanceProfile", () => {
         },
       ],
     };
-    design.recipe.font = {
+    recipe.font = {
       mode: "weighted",
       options: [
         { fontId: "liberation-sans", weight: 7 },
@@ -610,17 +627,16 @@ describe("parseAppearanceProfile", () => {
     };
 
     const parsed = parseAppearanceProfile(profile, catalog);
-    expect(parsed.designs[0]?.recipe.fill).toEqual(design.recipe.fill);
-    expect(parsed.designs[0]?.recipe.font).toEqual(design.recipe.font);
+    expect(parsed.designs[0]?.recipe.fill).toEqual(recipe.fill);
+    expect(parsed.designs[0]?.recipe.font).toEqual(recipe.font);
   });
 
   it("rejects duplicate weighted options and invalid weights", () => {
-    const profile = validProfile() as {
-      designs: Array<{ recipe: { fill: unknown; font: unknown } }>;
-    };
+    const profile = validProfile();
     const design = profile.designs[0];
     if (design === undefined) throw new Error("Fixture design is missing");
-    design.recipe.fill = {
+    const recipe = mutableFixture(design.recipe);
+    recipe.fill = {
       mode: "weighted",
       options: [
         { value: { type: "gradient" }, weight: 60 },
@@ -631,8 +647,8 @@ describe("parseAppearanceProfile", () => {
       "Appearance weighted fills must be distinct",
     );
 
-    design.recipe.fill = { mode: "fixed", value: { type: "gradient" } };
-    design.recipe.font = {
+    recipe.fill = { mode: "fixed", value: { type: "gradient" } };
+    recipe.font = {
       mode: "weighted",
       options: [{ fontId: "liberation-sans", weight: 0 }],
     };
@@ -642,12 +658,10 @@ describe("parseAppearanceProfile", () => {
   });
 
   it("rejects unknown catalog identifiers", () => {
-    const profile = validProfile() as {
-      designs: Array<{ recipe: { font: { fontIds: string[] } } }>;
-    };
+    const profile = validProfile();
     const [design] = profile.designs;
     if (design === undefined) throw new Error("Fixture design is missing");
-    design.recipe.font.fontIds = ["missing-font"];
+    mutableFixture(design.recipe.font).fontIds = ["missing-font"];
 
     expect(() => parseAppearanceProfile(profile, catalog)).toThrow(
       "Appearance font id is not supported",
@@ -655,12 +669,10 @@ describe("parseAppearanceProfile", () => {
   });
 
   it("rejects duplicate palette colors so Wild pairs remain distinct", () => {
-    const profile = validProfile() as {
-      designs: Array<{ recipe: { colors: { colors: string[] } } }>;
-    };
+    const profile = validProfile();
     const [design] = profile.designs;
     if (design === undefined) throw new Error("Fixture design is missing");
-    design.recipe.colors.colors = ["#a020f0", "#A020F0"];
+    mutableFixture(design.recipe.colors).colors = ["#a020f0", "#A020F0"];
 
     expect(() => parseAppearanceProfile(profile, catalog)).toThrow(
       "Appearance palette colors must be distinct",
@@ -668,10 +680,8 @@ describe("parseAppearanceProfile", () => {
   });
 
   it("rejects custom references that are not owned by the profile", () => {
-    const profile = validProfile() as {
-      assignments: { overrides: Record<string, unknown> };
-    };
-    profile.assignments.overrides.d6 = {
+    const profile = validProfile();
+    mutableFixture(profile.assignments.overrides).d6 = {
       source: "custom",
       id: "c69e0632-9a4b-4677-9dbc-dce2c98acb28",
     };
@@ -682,9 +692,11 @@ describe("parseAppearanceProfile", () => {
   });
 
   it("rejects more than ten custom designs", () => {
-    const profile = validProfile() as { designs: unknown[] };
-    profile.designs = Array.from({ length: 11 }, (_, index) => ({
-      ...(profile.designs[0] as object),
+    const profile = validProfile();
+    const design = profile.designs[0];
+    if (design === undefined) throw new Error("Fixture design is missing");
+    mutableFixture(profile).designs = Array.from({ length: 11 }, (_, index) => ({
+      ...design,
       id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     }));
 
@@ -694,7 +706,7 @@ describe("parseAppearanceProfile", () => {
   });
 
   it("rejects unknown fields instead of silently storing them", () => {
-    const profile = validProfile() as Record<string, unknown>;
+    const profile = mutableFixture(validProfile());
     profile.unexpected = true;
 
     expect(() => parseAppearanceProfile(profile, catalog)).toThrow(
@@ -705,7 +717,7 @@ describe("parseAppearanceProfile", () => {
 
 describe("parseGuildAppearanceProfile", () => {
   it("validates and canonicalizes the guild mode with the shared profile", () => {
-    const profile = validProfile() as Record<string, unknown>;
+    const profile = mutableFixture(validProfile());
     profile.mode = "enforced";
 
     expect(parseGuildAppearanceProfile(profile, catalog).mode).toBe(
@@ -714,13 +726,13 @@ describe("parseGuildAppearanceProfile", () => {
   });
 
   it("rejects invalid modes and unknown fields", () => {
-    const invalidMode = validProfile() as Record<string, unknown>;
+    const invalidMode = mutableFixture(validProfile());
     invalidMode.mode = "sometimes";
     expect(() => parseGuildAppearanceProfile(invalidMode, catalog)).toThrow(
       "Guild appearance mode is invalid",
     );
 
-    const unknownField = validProfile() as Record<string, unknown>;
+    const unknownField = mutableFixture(validProfile());
     unknownField.mode = "default";
     unknownField.unexpected = true;
     expect(() => parseGuildAppearanceProfile(unknownField, catalog)).toThrow(

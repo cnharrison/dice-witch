@@ -32,17 +32,20 @@ type CanvasKitInitializationStageV4 =
   | "runtime-contract";
 
 function requireCanvasKitRuntime(runtime: CanvasKit): CanvasKitRuntimeV4 {
-  const candidate = runtime as Partial<CanvasKitRuntimeV4>;
+  if (!("HEAPU8" in runtime)) {
+    throw new Error("CanvasKit V4 runtime contract is invalid");
+  }
   if (
-    !(candidate.HEAPU8 instanceof Uint8Array) ||
-    candidate.HEAPU8.buffer.byteLength !==
+    !(runtime.HEAPU8 instanceof Uint8Array) ||
+    runtime.HEAPU8.buffer.byteLength !==
       CANVASKIT_INITIAL_MEMORY_BYTES_V4 ||
-    typeof candidate.MakeSurface !== "function" ||
-    typeof candidate.Paint !== "function" ||
-    typeof candidate.RuntimeEffect?.Make !== "function"
+    !(runtime.MakeSurface instanceof Function) ||
+    !(runtime.Paint instanceof Function) ||
+    !(runtime.RuntimeEffect.Make instanceof Function)
   ) {
     throw new Error("CanvasKit V4 runtime contract is invalid");
   }
+  // SAFETY: The CanvasKit FFI heap and callable runtime entry points were checked above.
   return runtime as CanvasKitRuntimeV4;
 }
 

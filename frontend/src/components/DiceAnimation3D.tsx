@@ -3,6 +3,7 @@ import * as React from "react";
 import { useBrowserMediaQueryV4 } from "./dice-v4-3d/browser-media";
 import {
   createThreeRollRendererV4,
+  type ThreeRollRendererReplaceOptionsV4,
   type ThreeRollRendererV4,
 } from "./dice-v4-3d/roll-renderer";
 
@@ -17,11 +18,18 @@ export interface DiceAnimation3DProps {
   onUnavailable: (error: Error) => void;
 }
 
-function asDiceAnimationErrorV4(error: unknown, message: string): Error {
-  return error instanceof Error ? error : new Error(message);
+export type DiceAnimation3DRendererFactoryV4 =
+  typeof createThreeRollRendererV4;
+
+type DiceAnimation3DViewProps = DiceAnimation3DProps & {
+  createRenderer: DiceAnimation3DRendererFactoryV4;
+};
+
+function asDiceAnimationErrorV4(error: Error, message: string): Error {
+  return error.message === "" ? new Error(message) : error;
 }
 
-export function DiceAnimation3D({
+export function DiceAnimation3DView({
   className = "",
   renderModel = null,
   isRolling,
@@ -30,7 +38,8 @@ export function DiceAnimation3D({
   rerolledAppearanceIdentities,
   onReadyChange,
   onUnavailable,
-}: DiceAnimation3DProps) {
+  createRenderer,
+}: DiceAnimation3DViewProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rendererRef = React.useRef<ThreeRollRendererV4 | null>(null);
   const replacementRevisionRef = React.useRef(0);
@@ -53,7 +62,7 @@ export function DiceAnimation3D({
     if (!enabled || containerRef.current === null) return;
     mountedRef.current = true;
     try {
-      const renderer = createThreeRollRendererV4(containerRef.current, {
+      const renderer = createRenderer(containerRef.current, {
         onUnavailable(error) {
           if (!mountedRef.current) return;
           replacementRevisionRef.current += 1;
@@ -83,7 +92,7 @@ export function DiceAnimation3D({
       rendererRef.current = null;
       hasReadySceneRef.current = false;
     };
-  }, [enabled]);
+  }, [createRenderer, enabled]);
 
   React.useEffect(() => {
     const renderer = rendererRef.current;
@@ -94,18 +103,17 @@ export function DiceAnimation3D({
       setStatus("loading");
       onReadyChangeRef.current?.(false);
     }
+    const options: ThreeRollRendererReplaceOptionsV4 = {
+      animateResult: !blankFaces,
+      blankFaces,
+      reducedMotion: reducedMotionRef.current,
+    };
+    if (appearanceIdentities !== undefined) options.appearanceIdentities = appearanceIdentities;
+    if (rerolledAppearanceIdentities !== undefined) {
+      options.rerolledAppearanceIdentities = rerolledAppearanceIdentities;
+    }
     void renderer
-      .replaceModel(renderModel, {
-        animateResult: !blankFaces,
-        blankFaces,
-        reducedMotion: reducedMotionRef.current,
-        ...(appearanceIdentities === undefined
-          ? {}
-          : { appearanceIdentities }),
-        ...(rerolledAppearanceIdentities === undefined
-          ? {}
-          : { rerolledAppearanceIdentities }),
-      })
+      .replaceModel(renderModel, options)
       .then(() => {
         if (
           !mountedRef.current ||
@@ -119,7 +127,7 @@ export function DiceAnimation3D({
           onReadyChangeRef.current?.(true);
         }
       })
-      .catch((error: unknown) => {
+      .catch((error: Error) => {
         if (
           !mountedRef.current ||
           revision !== replacementRevisionRef.current
@@ -161,5 +169,14 @@ export function DiceAnimation3D({
         aria-hidden={status !== "ready"}
       />
     </div>
+  );
+}
+
+export function DiceAnimation3D(props: DiceAnimation3DProps) {
+  return (
+    <DiceAnimation3DView
+      {...props}
+      createRenderer={createThreeRollRendererV4}
+    />
   );
 }
