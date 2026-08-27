@@ -1008,6 +1008,11 @@ function resolveColorsV3(
   random: DeterministicRandom,
   seedPolicy: AppearanceResolutionSeedPolicyV3,
 ): NativeColors {
+  if (recipe.colors.mode === "shadow") {
+    const color = canonicalColor(recipe.colors.primary);
+    const pair: [string, string] = [color, mixColor(color, 0, 0.2)];
+    return { ordered: [...pair], pair };
+  }
   if (recipe.colors.mode === "solid") {
     const color = canonicalColor(recipe.colors.primary);
     return { ordered: [color, color], pair: [color, color] };

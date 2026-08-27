@@ -518,6 +518,7 @@ describe("built-in appearance catalog", () => {
     expect(optionIds(APPEARANCE_CATALOG_V3.colorModes)).toEqual([
       "solid",
       "tonal",
+      "shadow",
       "random",
       "palette",
       "random-pair",

@@ -227,6 +227,7 @@ const COLOR_MODES_V3 = catalogOptions(
   [
     "solid",
     "tonal",
+    "shadow",
     "random",
     "palette",
     "random-pair",
@@ -235,6 +236,7 @@ const COLOR_MODES_V3 = catalogOptions(
   {
     solid: "One base color",
     tonal: "One base color + shade",
+    shadow: "One base color + shadow",
     random: "Chosen + random color",
     palette: "Custom palette",
     "random-pair": "Random palette · 2 colors",

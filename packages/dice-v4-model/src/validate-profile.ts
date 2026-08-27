@@ -175,6 +175,7 @@ function parseColors(value: ValidationInput): AppearanceColorsV3 {
   if (
     value.mode === "solid" ||
     value.mode === "tonal" ||
+    value.mode === "shadow" ||
     value.mode === "random"
   ) {
     if (!hasExactKeys(value, ["mode", "primary"])) {

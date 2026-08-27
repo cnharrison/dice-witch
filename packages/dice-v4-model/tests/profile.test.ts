@@ -315,6 +315,24 @@ describe("Appearance Profile V3", () => {
     ).toThrow("Appearance colors are invalid");
   });
 
+  it("accepts one exact shadow body color", () => {
+    const shadow = {
+      ...recipe(),
+      colors: { mode: "shadow" as const, primary: "#6699CC" },
+    };
+
+    expect(parseAppearanceRecipeV3(shadow).colors).toEqual({
+      mode: "shadow",
+      primary: "#6699cc",
+    });
+    expect(() =>
+      parseAppearanceRecipeV3({
+        ...shadow,
+        colors: { ...shadow.colors, secondary: "#000000" },
+      }),
+    ).toThrow("Appearance colors are invalid");
+  });
+
   it("rejects malformed colors, materials, and treatment fields", () => {
     for (const colors of [
       { mode: "palette", colors: ["#123456", "#123456"] },

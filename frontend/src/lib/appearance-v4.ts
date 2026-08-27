@@ -100,6 +100,7 @@ const PREVIEW_STATES = ["normal", "critical-success", "critical-failure"] as con
 const COLOR_MODES = [
   "solid",
   "tonal",
+  "shadow",
   "random",
   "palette",
   "random-pair",

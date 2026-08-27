@@ -2468,6 +2468,19 @@ describe("resolveAppearanceRecipeV3", () => {
     );
   });
 
+  it("keeps shadow colors dominant with a subtle darker partner", () => {
+    const resolved = resolveAppearanceRecipeV3(
+      appearanceRecipeV3({
+        variation: "fixed",
+        colors: { mode: "shadow", primary: "#6699cc" },
+      }),
+      contextV3(),
+      "property-streams-r37",
+    );
+
+    expect(resolved.appearance.palette).toEqual(["#6699cc", "#527aa3"]);
+  });
+
   it("keeps r27 tonal partners close to the selected color", () => {
     const resolved = resolveAppearanceRecipeV3(
       appearanceRecipeV3({

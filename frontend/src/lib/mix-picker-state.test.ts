@@ -413,12 +413,13 @@ describe("colors row", () => {
     });
   });
 
-  it("round-trips palette, solid, tonal, and random modes one-to-one", () => {
+  it("round-trips every stored color mode one-to-one", () => {
     const modes: AppearanceRecipeV3["colors"][] = [
       { mode: "palette", colors: ["#111111", "#222222", "#333333"] },
       { mode: "solid", primary: "#444444" },
       { mode: "tonal", primary: "#555555" },
-      { mode: "random", primary: "#666666" },
+      { mode: "shadow", primary: "#666666" },
+      { mode: "random", primary: "#777777" },
     ];
     for (const colors of modes) {
       const recipe = { ...base(), colors };
@@ -428,12 +429,17 @@ describe("colors row", () => {
     }
   });
 
-  it("maps single chips to solid or tonal by the tonal flag", () => {
+  it("maps single chips to their selected treatment", () => {
     const recipe = base();
-    expect(applyColorsRow(recipe, { mode: "single", primary: "#101010", tonal: false }).colors)
-      .toEqual({ mode: "solid", primary: "#101010" });
-    expect(applyColorsRow(recipe, { mode: "single", primary: "#101010", tonal: true }).colors)
-      .toEqual({ mode: "tonal", primary: "#101010" });
+    for (const treatment of ["solid", "tonal", "shadow"] as const) {
+      expect(
+        applyColorsRow(recipe, {
+          mode: "single",
+          primary: "#101010",
+          treatment,
+        }).colors,
+      ).toEqual({ mode: treatment, primary: "#101010" });
+    }
   });
 
   it("rejects palettes the validator would reject", () => {

@@ -383,13 +383,13 @@ describe("MixPickerColorsRow", () => {
       .not.toBeNull();
   });
 
-  it("toggles single-color treatment between solid and tonal", () => {
+  it("toggles single-color treatment between solid, tonal, and shadow", () => {
     const recipe = recipeWith(
       { mode: "fixed", value: materialValue("classic") },
       { mode: "solid", primary: "#444444" },
     );
     const onChange = vi.fn();
-    render(
+    const { rerender } = render(
       <MixPickerColorsRow
         recipe={recipe}
         catalog={catalog}
@@ -400,6 +400,30 @@ describe("MixPickerColorsRow", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       ...recipe,
       colors: { mode: "tonal", primary: "#444444" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "shadow" }));
+    const shadowRecipe: AppearanceRecipeV3 = {
+      ...recipe,
+      colors: { mode: "shadow", primary: "#444444" },
+    };
+    expect(onChange).toHaveBeenLastCalledWith(shadowRecipe);
+
+    rerender(
+      <MixPickerColorsRow
+        recipe={shadowRecipe}
+        catalog={catalog}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Dice color" }));
+    fireEvent.change(screen.getByLabelText("Hex color"), {
+      target: { value: "#6699CC" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...shadowRecipe,
+      colors: { mode: "shadow", primary: "#6699cc" },
     });
   });
 

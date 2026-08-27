@@ -21,6 +21,7 @@ import {
   materialSelectionValuesV3,
   nextAppearanceDesignNameV3,
   nextPresetEditNameV3,
+  reconcileAppearanceColorEditV3,
   reconcileAppearanceMaterialEditV3,
   withAutomaticMaterialFormsV3,
   resolveAppearanceEditorSelectionV3,
@@ -146,6 +147,22 @@ describe("appearance editor V3 draft operations", () => {
     expect(() =>
       createVividAppearancePaletteV3(1, new Uint32Array([0, 1])),
     ).toThrow("Vivid palette must contain from two through six colors");
+  });
+
+  it("uses a gradient surface for Shadow on Classic Solid", () => {
+    const recipe = styleRecipe("solid");
+    recipe.colors = { mode: "shadow", primary: "#6699cc" };
+
+    const reconciled = reconcileAppearanceColorEditV3(recipe);
+
+    expect(reconciled.colors).toEqual({
+      mode: "shadow",
+      primary: "#6699cc",
+    });
+    expect(reconciled.material).toMatchObject({
+      mode: "fixed",
+      value: { family: "classic", treatment: "gradient" },
+    });
   });
 
   it("creates every material family from catalog-owned editor defaults", () => {

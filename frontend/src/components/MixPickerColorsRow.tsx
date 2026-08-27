@@ -21,6 +21,11 @@ type EditingColor =
   | { kind: "palette"; index: number }
   | { kind: "primary" };
 
+type EditableSingleColor = Extract<
+  AppearanceColorsV3,
+  { mode: "solid" | "tonal" | "shadow" }
+>;
+
 type MixPickerColorsRowProps = {
   recipe: AppearanceRecipeV3;
   catalog: AppearanceCatalogV3;
@@ -42,10 +47,18 @@ function usesSelectedColors(material: AppearanceMaterialV4): boolean {
   );
 }
 
+function isEditableSingleColor(
+  colors: AppearanceColorsV3,
+): colors is EditableSingleColor {
+  return (
+    colors.mode === "solid" ||
+    colors.mode === "tonal" ||
+    colors.mode === "shadow"
+  );
+}
+
 function colorSchemeBackground(colors: AppearanceColorsV3): string {
-  if (colors.mode === "solid" || colors.mode === "tonal" || colors.mode === "random") {
-    return colors.primary;
-  }
+  if ("primary" in colors) return colors.primary;
   if (colors.mode === "palette") {
     const step = 100 / colors.colors.length;
     return `linear-gradient(90deg, ${colors.colors
@@ -200,13 +213,12 @@ export function MixPickerColorsRow({
       </div>
     );
   } else {
-    const primary =
-      colors.mode === "solid" || colors.mode === "tonal"
-        ? colors.primary
-        : catalog.editorDefaults.primaryColor;
+    const primary = isEditableSingleColor(colors)
+      ? colors.primary
+      : catalog.editorDefaults.primaryColor;
     const editPrimary = () => {
       setEditingColor({ kind: "primary" });
-      if (colors.mode !== "solid" && colors.mode !== "tonal") {
+      if (!isEditableSingleColor(colors)) {
         emit({ mode: "solid", primary });
       }
     };
@@ -230,7 +242,7 @@ export function MixPickerColorsRow({
           <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
         <div role="group" aria-label="Color treatment" className="flex gap-1">
-          {(["solid", "tonal"] as const).map((mode) => (
+          {(["solid", "tonal", "shadow"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
@@ -256,7 +268,7 @@ export function MixPickerColorsRow({
     pickerColor = colors.colors[editingColor.index];
   } else if (
     editingColor?.kind === "primary" &&
-    (colors.mode === "solid" || colors.mode === "tonal")
+    isEditableSingleColor(colors)
   ) {
     pickerColor = colors.primary;
   }
@@ -269,7 +281,7 @@ export function MixPickerColorsRow({
       emit({ mode: "palette", colors: next });
     } else if (
       editingColor?.kind === "primary" &&
-      (colors.mode === "solid" || colors.mode === "tonal")
+      isEditableSingleColor(colors)
     ) {
       emit({ ...colors, primary: normalized });
     }

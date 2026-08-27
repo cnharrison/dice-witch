@@ -151,7 +151,11 @@ export const CHAOS_ASSIGNMENT_V3 = {
 
 export type ColorsRowState =
   | { mode: "palette"; colors: readonly HexColor[] }
-  | { mode: "single"; primary: HexColor; tonal: boolean }
+  | {
+      mode: "single";
+      primary: HexColor;
+      treatment: "solid" | "tonal" | "shadow";
+    }
   // colors.mode "random" re-rolls the color every render; carried through
   // untouched so read→apply round-trips preserve its semantics.
   | { mode: "randomized"; primary: HexColor }
@@ -187,7 +191,7 @@ export function colorsRowFromRecipe(
   return {
     mode: "single",
     primary: colors.primary,
-    tonal: colors.mode === "tonal",
+    treatment: colors.mode,
   };
 }
 
@@ -310,7 +314,7 @@ export function applyColorsRow(
       return {
         ...recipe,
         colors: {
-          mode: row.tonal ? "tonal" : "solid",
+          mode: row.treatment,
           primary: row.primary,
         },
       };
@@ -345,7 +349,8 @@ function primaryOf(recipe: AppearanceRecipeV3): HexColor | null {
   if (
     colors.mode === "random" ||
     colors.mode === "solid" ||
-    colors.mode === "tonal"
+    colors.mode === "tonal" ||
+    colors.mode === "shadow"
   ) {
     return colors.primary;
   }

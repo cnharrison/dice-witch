@@ -231,6 +231,7 @@ function appearancePrimaryColorV3(
   if (
     colors.mode === "solid" ||
     colors.mode === "tonal" ||
+    colors.mode === "shadow" ||
     colors.mode === "random"
   ) {
     return colors.primary;
