@@ -1,0 +1,135 @@
+name: Dagger CI Shadow
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dagger-ci-shadow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-validation:
+    name: Shadow static validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Verify source identity
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Run static validation through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        with:
+          version: v0.21.9
+          call: static-validation --source=. --sha=${{ github.sha }} --run-nonce=${{ github.run_id }}.${{ github.run_attempt }}
+
+  test-suite:
+    name: Shadow tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Cloudflare configuration
+            suite: CLOUDFLARE_CONFIGURATION
+          - name: CanvasKit runtime
+            suite: CANVAS_KIT_RUNTIME
+          - name: appearance
+            suite: APPEARANCE
+          - name: saved rolls
+            suite: SAVED_ROLLS
+          - name: SVG renderer
+            suite: SVG_RENDERER
+          - name: Gateway
+            suite: GATEWAY
+          - name: Discord REST
+            suite: DISCORD_REST
+          - name: Interactions
+            suite: INTERACTIONS
+          - name: Roll
+            suite: ROLL
+          - name: Data
+            suite: DATA
+          - name: Web API
+            suite: WEB_API
+          - name: frontend
+            suite: FRONTEND
+          - name: V4 model
+            suite: V_4_MODEL
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Verify source identity
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Run ${{ matrix.name }} tests through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        with:
+          version: v0.21.9
+          call: test-suite --source=. --suite=${{ matrix.suite }} --sha=${{ github.sha }}
+
+  worker-dry-runs:
+    name: Shadow Worker dry-runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Verify source identity
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Dry-run Workers through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        with:
+          version: v0.21.9
+          call: worker-dry-runs --source=. --sha=${{ github.sha }}
+
+  shadow-quality:
+    name: Dagger shadow quality
+    needs: [static-validation, test-suite, worker-dry-runs]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every shadow job
+        env:
+          STATIC_RESULT: ${{ needs.static-validation.result }}
+          TEST_RESULT: ${{ needs.test-suite.result }}
+          DRY_RUN_RESULT: ${{ needs.worker-dry-runs.result }}
+        run: |
+          set -euo pipefail
+          for result in "$STATIC_RESULT" "$TEST_RESULT" "$DRY_RUN_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              printf 'Dagger shadow dependency did not succeed: %s\n' "$result" >&2
+              exit 1
+            fi
+          done

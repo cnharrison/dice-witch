@@ -4576,9 +4576,11 @@ describe("RollWork Durable Object", () => {
   it("replaces a pending interaction with an explicit error before expiry", async () => {
     const id = snowflakeAt(Date.now(), 42);
     const stub = work(id);
-    await stub.acceptDelivery(deliveryRequest(id, "delivery-deadline"));
 
-    await runInDurableObject(stub, async (instance, state) => {
+    await runInRollWork(stub, async (instance, state) => {
+      await instance.acceptDelivery(
+        deliveryRequest(id, "delivery-deadline"),
+      );
       state.storage.sql.exec(
         "UPDATE interaction_delivery SET expires_at = ?",
         Date.now() + 30_000,

@@ -1,0 +1,9 @@
+{
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-transform-types --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "typescript": "5.9.3"
+  }
+}

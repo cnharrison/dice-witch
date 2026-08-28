@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createProductionPlan } from "./production-plan.mjs";
+import {
+  createProductionPlan,
+  validateProductionSource,
+} from "./production-plan.mjs";
 
 const sha = "a".repeat(40);
 const allWorkers = [
@@ -49,11 +52,11 @@ test("keeps migration authorization independent from the complete cohort", () =>
 
 test("requires exact source, Web API metadata, and Gateway acknowledgement", () => {
   assert.throws(
-    () => createProductionPlan({ ...base, headSha: "b".repeat(40) }),
+    () => validateProductionSource({ ...base, headSha: "b".repeat(40) }),
     /does not match HEAD/,
   );
   assert.throws(
-    () => createProductionPlan({ ...base, gitStatus: " M unsafe" }),
+    () => validateProductionSource({ ...base, gitStatus: " M unsafe" }),
     /worktree must be clean/,
   );
   assert.throws(

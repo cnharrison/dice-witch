@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createStagingPlan } from "./staging-plan.mjs";
+import {
+  createStagingPlan,
+  validateStagingSource,
+} from "./staging-plan.mjs";
 
 const sha = "a".repeat(40);
 const allWorkers = [
@@ -89,11 +92,14 @@ test("keeps migration authorization independent from the complete cohort", () =>
 
 test("requires exact source, valid configuration, isolation, and Gateway acknowledgement", () => {
   assert.throws(
-    () => createStagingPlan(input({ requestedSha: "b".repeat(40) })),
+    () => validateStagingSource(input({ requestedSha: "b".repeat(40) })),
     /does not match HEAD/,
   );
   assert.throws(
-    () => createStagingPlan(input({ gitStatus: " M cloudflare/package.json" })),
+    () =>
+      validateStagingSource(
+        input({ gitStatus: " M cloudflare/package.json" }),
+      ),
     /worktree must be clean/,
   );
   assert.throws(

@@ -21,7 +21,7 @@ const DEPLOYMENT_ORDER = [
 const CLI_USAGE =
   "Usage: node tools/production-plan.mjs --sha <full-sha> --workers <comma-list> [--apply-migrations] [--allow-gateway-deploy]";
 
-export function createProductionPlan(input) {
+export function validateProductionSource(input) {
   if (!FULL_SHA.test(input?.requestedSha ?? "")) {
     throw new Error("Requested source SHA must be a full 40-character commit SHA");
   }
@@ -30,6 +30,12 @@ export function createProductionPlan(input) {
   }
   if (input.gitStatus.trim() !== "") {
     throw new Error("Production deployment worktree must be clean");
+  }
+}
+
+export function createProductionPlan(input) {
+  if (!FULL_SHA.test(input?.requestedSha ?? "")) {
+    throw new Error("Requested source SHA must be a full 40-character commit SHA");
   }
   if (!Array.isArray(input.workers) || input.workers.length === 0) {
     throw new Error("At least one production Worker must be selected");
@@ -119,12 +125,14 @@ async function main() {
   const repositoryRoot = path.resolve(cloudflareRoot, "..");
   const configs = await loadConfigs(cloudflareRoot);
   const configSummary = validateProductionConfigs(configs, arguments_.requestedSha);
-  const plan = createProductionPlan({
+  const input = {
     ...arguments_,
     headSha: await git(repositoryRoot, "rev-parse", "HEAD"),
     gitStatus: await git(repositoryRoot, "status", "--porcelain"),
     configSummary,
-  });
+  };
+  validateProductionSource(input);
+  const plan = createProductionPlan(input);
   process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
 }
 

@@ -88,7 +88,7 @@ function qualityGateCommands(configSummary) {
   return commands;
 }
 
-export function createStagingPlan(input) {
+export function validateStagingSource(input) {
   if (!FULL_SHA.test(input?.requestedSha ?? "")) {
     throw new Error("Requested source SHA must be a full 40-character commit SHA");
   }
@@ -99,6 +99,12 @@ export function createStagingPlan(input) {
   }
   if (input.gitStatus.trim() !== "") {
     throw new Error("Staging deployment worktree must be clean");
+  }
+}
+
+export function createStagingPlan(input) {
+  if (!FULL_SHA.test(input?.requestedSha ?? "")) {
+    throw new Error("Requested source SHA must be a full 40-character commit SHA");
   }
   if (!Array.isArray(input.workers) || input.workers.length === 0) {
     throw new Error("At least one staging Worker must be selected");
@@ -289,13 +295,15 @@ async function main() {
     configs,
     process.env.STAGING_PRODUCTION_DENYLIST_B64,
   );
-  const plan = createStagingPlan({
+  const input = {
     ...arguments_,
     productionIsolationVerified: true,
     headSha: await git(repositoryRoot, "rev-parse", "HEAD"),
     gitStatus: await git(repositoryRoot, "status", "--porcelain"),
     configSummary,
-  });
+  };
+  validateStagingSource(input);
+  const plan = createStagingPlan(input);
   process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
 }
 

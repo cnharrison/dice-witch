@@ -1,0 +1,271 @@
+import {
+  argument,
+  Container,
+  dag,
+  Directory,
+  func,
+  object,
+  Secret,
+} from "@dagger.io/dagger"
+
+import {
+  TEST_SUITE_COMMANDS,
+  TestSuite,
+  validateCommitSha,
+  validateRunNonce,
+  WORKER_DRY_RUN_ORDER,
+} from "./ci.js"
+import { validateBuildTime } from "./validation.js"
+
+const SOURCE_IGNORES = [
+  ".git",
+  ".dagger",
+  ".handoff",
+  ".pi-subagents",
+  "**/node_modules",
+  "**/dist",
+  "**/coverage",
+  "**/.wrangler",
+  "**/.env",
+  "**/.env.*",
+  "**/.dev.vars",
+  "**/.dev.vars.*",
+  "**/renderer-output",
+  "**/benchmark-results",
+  "cloudflare/.generated",
+  "cloudflare/wrangler.data.jsonc",
+  "cloudflare/wrangler.discord-rest.jsonc",
+  "cloudflare/wrangler.gateway.jsonc",
+  "cloudflare/wrangler.interactions.jsonc",
+  "cloudflare/wrangler.roll.jsonc",
+  "cloudflare/wrangler.web-api.jsonc",
+  "cloudflare/wrangler.renderer-v4-boundary-control.jsonc",
+  "cloudflare/wrangler.renderer-v4-boundary-in-process.jsonc",
+  "cloudflare/wrangler.renderer-v4-boundary-private.jsonc",
+  "cloudflare/wrangler.renderer-v4-boundary-rpc.jsonc",
+  "*.log",
+]
+
+@object()
+export class DiceWitch {
+  /** Run every current CI gate. */
+  @func({ cache: "never" })
+  async ci(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    sha: string,
+    runNonce: string,
+  ): Promise<string> {
+    await this.staticValidation(source, sha, runNonce)
+    for (const suite of Object.values(TestSuite)) {
+      await this.testSuite(source, suite, sha)
+    }
+    await this.workerDryRuns(source, sha)
+
+    return "all CI gates passed"
+  }
+
+  /** Run tooling tests, the live dependency audit, type-check, lint, and build. */
+  @func({ cache: "never" })
+  async staticValidation(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    sha: string,
+    runNonce: string,
+  ): Promise<string> {
+    const validatedSha = validateCommitSha(sha)
+    const validatedRunNonce = validateRunNonce(runNonce)
+
+    await this.run(source, validatedSha, [
+      ["sh", "-c", "node --test tools/*.test.mjs"],
+    ])
+    await this.run(
+      source,
+      validatedSha,
+      [["npm", "run", "audit:ci"]],
+      validatedRunNonce,
+    )
+    await this.run(source, validatedSha, [
+      ["npm", "run", "type-check"],
+      ["npm", "run", "lint:ci"],
+      ["npm", "run", "build"],
+    ])
+
+    return "static validation passed"
+  }
+
+  /** Run one closed-set CI test suite. */
+  @func()
+  async testSuite(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    suite: TestSuite,
+    sha: string,
+  ): Promise<string> {
+    const validatedSha = validateCommitSha(sha)
+    await this.run(source, validatedSha, [TEST_SUITE_COMMANDS[suite]])
+    return `${suite} tests passed`
+  }
+
+  /** Build frontend assets, then dry-run the complete public Worker cohort. */
+  @func()
+  async workerDryRuns(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    sha: string,
+  ): Promise<string> {
+    const validatedSha = validateCommitSha(sha)
+    let container = this.environment(source, validatedSha).withExec([
+      "npm",
+      "run",
+      "build",
+      "--workspace=@dice-witch/frontend",
+    ])
+
+    container = container.withWorkdir("/workspace/cloudflare")
+    for (const worker of WORKER_DRY_RUN_ORDER) {
+      container = container.withExec([
+        "npx",
+        "--no-install",
+        "wrangler",
+        "deploy",
+        "--dry-run",
+        "--config",
+        `wrangler.${worker}.example.jsonc`,
+      ])
+    }
+
+    await container.sync()
+    return "public Worker dry-runs passed"
+  }
+
+  /** Validate private staging configuration without Cloudflare credentials or mutations. */
+  @func({ cache: "never" })
+  async stagingValidate(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    sha: string,
+    buildTime: string,
+    runNonce: string,
+    configBundle: Secret,
+    productionDenylist: Secret,
+    rollOrigin: Secret,
+    gatewayOrigin: Secret,
+  ): Promise<string> {
+    const input = this.validationInput(source, sha, buildTime, runNonce)
+    const container = input.container
+      .withSecretVariable("STAGING_CONFIG_B64", configBundle)
+      .withSecretVariable(
+        "STAGING_PRODUCTION_DENYLIST_B64",
+        productionDenylist,
+      )
+      .withSecretVariable("STAGING_ROLL_ORIGIN", rollOrigin)
+      .withSecretVariable("STAGING_GATEWAY_ORIGIN", gatewayOrigin)
+      .withExec(this.validationCommand("staging", input.sha, input.buildTime))
+
+    await container.sync()
+    return "private staging validation passed"
+  }
+
+  /** Validate private production configuration without Cloudflare credentials or mutations. */
+  @func({ cache: "never" })
+  async productionValidate(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    sha: string,
+    buildTime: string,
+    runNonce: string,
+    values: Secret,
+  ): Promise<string> {
+    const input = this.validationInput(source, sha, buildTime, runNonce)
+    const container = input.container
+      .withSecretVariable("PRODUCTION_VALUES_B64", values)
+      .withExec(this.validationCommand("production", input.sha, input.buildTime))
+
+    await container.sync()
+    return "private production validation passed"
+  }
+
+  private environment(source: Directory, sha: string): Container {
+    const manifests = dag
+      .directory()
+      .withFile("package.json", source.file("package.json"))
+      .withFile("package-lock.json", source.file("package-lock.json"))
+      .withFile("cloudflare/package.json", source.file("cloudflare/package.json"))
+      .withFile("frontend/package.json", source.file("frontend/package.json"))
+      .withFile(
+        "packages/dice-v4-model/package.json",
+        source.file("packages/dice-v4-model/package.json"),
+      )
+
+    return dag
+      .container()
+      .from("node:24.13.0-bookworm-slim")
+      .withMountedCache("/root/.npm", dag.cacheVolume("npm-11"))
+      .withWorkdir("/workspace")
+      .withExec(["npm", "install", "--global", "npm@11.6.2"])
+      .withDirectory("/workspace", manifests)
+      .withExec(["npm", "ci"])
+      .withDirectory("/workspace", source)
+      .withEnvVariable("VITE_API_BASE", "https://ci.invalid")
+      .withEnvVariable("VITE_DISCORD_CLIENT_ID", "100000000000000001")
+      .withEnvVariable("VITE_ENVIRONMENT", "development")
+      .withEnvVariable("VITE_BUILD_SHA", sha)
+  }
+
+  private validationInput(
+    source: Directory,
+    sha: string,
+    buildTime: string,
+    runNonce: string,
+  ): { container: Container; sha: string; buildTime: string } {
+    const validatedSha = validateCommitSha(sha)
+    const validatedBuildTime = validateBuildTime(buildTime)
+    const validatedRunNonce = validateRunNonce(runNonce)
+    const container = this.environment(source, validatedSha)
+      .withDirectory("/source", source)
+      .withMountedTemp("/private")
+      .withEnvVariable("DAGGER_RUN_NONCE", validatedRunNonce)
+
+    return {
+      container,
+      sha: validatedSha,
+      buildTime: validatedBuildTime,
+    }
+  }
+
+  private validationCommand(
+    environment: "staging" | "production",
+    sha: string,
+    buildTime: string,
+  ): string[] {
+    return [
+      "node",
+      "/workspace/cloudflare/tools/dagger-validation.mjs",
+      "--environment",
+      environment,
+      "--sha",
+      sha,
+      "--build-time",
+      buildTime,
+      "--source",
+      "/source",
+      "--workspace",
+      "/private/workspace",
+      "--node-modules",
+      "/workspace/node_modules",
+    ]
+  }
+
+  private async run(
+    source: Directory,
+    sha: string,
+    commands: readonly (readonly string[])[],
+    runNonce?: string,
+  ): Promise<void> {
+    let container = this.environment(source, sha)
+
+    if (runNonce) {
+      container = container.withEnvVariable("DAGGER_RUN_NONCE", runNonce)
+    }
+    for (const command of commands) {
+      container = container.withExec([...command])
+    }
+
+    await container.sync()
+  }
+}
