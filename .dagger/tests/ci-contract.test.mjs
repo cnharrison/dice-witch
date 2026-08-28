@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
 import {
+  SOURCE_IGNORES,
   TEST_SUITE_COMMANDS,
   TestSuite,
   WORKER_DRY_RUN_ORDER,
@@ -98,6 +99,11 @@ describe("Dagger CI contract", () => {
   it("uses the complete current CI suite allowlist and exact commands", () => {
     assert.equal(Object.values(TestSuite).length, 13)
     assert.deepEqual(TEST_SUITE_COMMANDS, EXPECTED_TEST_SUITES)
+  })
+
+  it("includes tracked Dagger code in static validation", () => {
+    assert.ok(!SOURCE_IGNORES.includes(".dagger"))
+    assert.ok(SOURCE_IGNORES.includes(".dagger/sdk"))
   })
 
   it("dry-runs the complete Worker cohort in current CI order", () => {

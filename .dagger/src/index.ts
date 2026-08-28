@@ -9,6 +9,7 @@ import {
 } from "@dagger.io/dagger"
 
 import {
+  SOURCE_IGNORES,
   TEST_SUITE_COMMANDS,
   TestSuite,
   validateCommitSha,
@@ -16,35 +17,6 @@ import {
   WORKER_DRY_RUN_ORDER,
 } from "./ci.js"
 import { validateBuildTime } from "./validation.js"
-
-const SOURCE_IGNORES = [
-  ".git",
-  ".dagger",
-  ".handoff",
-  ".pi-subagents",
-  "**/node_modules",
-  "**/dist",
-  "**/coverage",
-  "**/.wrangler",
-  "**/.env",
-  "**/.env.*",
-  "**/.dev.vars",
-  "**/.dev.vars.*",
-  "**/renderer-output",
-  "**/benchmark-results",
-  "cloudflare/.generated",
-  "cloudflare/wrangler.data.jsonc",
-  "cloudflare/wrangler.discord-rest.jsonc",
-  "cloudflare/wrangler.gateway.jsonc",
-  "cloudflare/wrangler.interactions.jsonc",
-  "cloudflare/wrangler.roll.jsonc",
-  "cloudflare/wrangler.web-api.jsonc",
-  "cloudflare/wrangler.renderer-v4-boundary-control.jsonc",
-  "cloudflare/wrangler.renderer-v4-boundary-in-process.jsonc",
-  "cloudflare/wrangler.renderer-v4-boundary-private.jsonc",
-  "cloudflare/wrangler.renderer-v4-boundary-rpc.jsonc",
-  "*.log",
-]
 
 @object()
 export class DiceWitch {
@@ -212,7 +184,7 @@ export class DiceWitch {
     sha: string,
     buildTime: string,
     runNonce: string,
-  ): { container: Container; sha: string; buildTime: string } {
+  ) {
     const validatedSha = validateCommitSha(sha)
     const validatedBuildTime = validateBuildTime(buildTime)
     const validatedRunNonce = validateRunNonce(runNonce)

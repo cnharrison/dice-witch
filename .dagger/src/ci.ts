@@ -14,9 +14,36 @@ export enum TestSuite {
   V4Model = "v4-model",
 }
 
-export const TEST_SUITE_COMMANDS: Readonly<{
-  [suite in TestSuite]: readonly string[]
-}> = {
+export const SOURCE_IGNORES = [
+  ".git",
+  ".dagger/sdk",
+  ".handoff",
+  ".pi-subagents",
+  "**/node_modules",
+  "**/dist",
+  "**/coverage",
+  "**/.wrangler",
+  "**/.env",
+  "**/.env.*",
+  "**/.dev.vars",
+  "**/.dev.vars.*",
+  "**/renderer-output",
+  "**/benchmark-results",
+  "cloudflare/.generated",
+  "cloudflare/wrangler.data.jsonc",
+  "cloudflare/wrangler.discord-rest.jsonc",
+  "cloudflare/wrangler.gateway.jsonc",
+  "cloudflare/wrangler.interactions.jsonc",
+  "cloudflare/wrangler.roll.jsonc",
+  "cloudflare/wrangler.web-api.jsonc",
+  "cloudflare/wrangler.renderer-v4-boundary-control.jsonc",
+  "cloudflare/wrangler.renderer-v4-boundary-in-process.jsonc",
+  "cloudflare/wrangler.renderer-v4-boundary-private.jsonc",
+  "cloudflare/wrangler.renderer-v4-boundary-rpc.jsonc",
+  "*.log",
+]
+
+export const TEST_SUITE_COMMANDS = {
   [TestSuite.CloudflareConfiguration]: [
     "npm",
     "run",
@@ -99,7 +126,7 @@ export const TEST_SUITE_COMMANDS: Readonly<{
     "--",
     "--maxWorkers=1",
   ],
-}
+} as const satisfies Readonly<Record<TestSuite, readonly string[]>>
 
 export const WORKER_DRY_RUN_ORDER = [
   "data",
