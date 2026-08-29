@@ -25,33 +25,22 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
         with:
-          node-version: 24.13.0
-          cache: npm
+          persist-credentials: false
 
-      - name: Set up npm
-        run: npm install --global npm@11.6.2
+      - name: Verify source identity
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Test repository tooling
-        run: node --test tools/*.test.mjs
-
-      - name: Audit dependencies
-        run: npm run audit:ci
-
-      - name: Type-check
-        run: npm run type-check
-
-      - name: Lint with warning budget
-        run: npm run lint:ci
-
-      - name: Build frontend
-        run: npm run build
+      - name: Run static validation through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        with:
+          version: v0.21.9
+          call: static-validation --source=. --sha=${{ github.sha }} --run-nonce=${{ github.run_id }}.${{ github.run_attempt }}
 
   test-suite:
     name: Tests (${{ matrix.name }})
@@ -62,49 +51,50 @@ jobs:
       matrix:
         include:
           - name: Cloudflare configuration
-            command: npm run test:config --workspace=@dice-witch/cloudflare
+            suite: CLOUDFLARE_CONFIGURATION
           - name: CanvasKit runtime
-            command: npm run test:canvaskit-runtime --workspace=@dice-witch/cloudflare
+            suite: CANVAS_KIT_RUNTIME
           - name: appearance
-            command: npm run test:appearance --workspace=@dice-witch/cloudflare
+            suite: APPEARANCE
           - name: saved rolls
-            command: npm run test:saved-rolls --workspace=@dice-witch/cloudflare
+            suite: SAVED_ROLLS
           - name: SVG renderer
-            command: npm run test:dice-svg --workspace=@dice-witch/cloudflare
+            suite: SVG_RENDERER
           - name: Gateway
-            command: npm run test:gateway --workspace=@dice-witch/cloudflare
+            suite: GATEWAY
           - name: Discord REST
-            command: npm run test:discord-rest --workspace=@dice-witch/cloudflare
+            suite: DISCORD_REST
           - name: Interactions
-            command: npm run test:interactions --workspace=@dice-witch/cloudflare
+            suite: INTERACTIONS
           - name: Roll
-            command: npm run test:roll --workspace=@dice-witch/cloudflare
+            suite: ROLL
           - name: Data
-            command: npm run test:data --workspace=@dice-witch/cloudflare
+            suite: DATA
           - name: Web API
-            command: npm run test:web-api --workspace=@dice-witch/cloudflare
+            suite: WEB_API
           - name: frontend
-            command: npm run test --workspace=@dice-witch/frontend -- --maxWorkers=1
+            suite: FRONTEND
           - name: V4 model
-            command: npm run test --workspace=@dice-witch/dice-v4-model -- --maxWorkers=1
+            suite: V_4_MODEL
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
         with:
-          node-version: 24.13.0
-          cache: npm
+          persist-credentials: false
 
-      - name: Set up npm
-        run: npm install --global npm@11.6.2
+      - name: Verify source identity
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run ${{ matrix.name }} tests
-        run: ${{ matrix.command }}
+      - name: Run ${{ matrix.name }} tests through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        with:
+          version: v0.21.9
+          call: test-suite --source=. --suite=${{ matrix.suite }} --sha=${{ github.sha }}
 
   worker-dry-runs:
     runs-on: ubuntu-latest
@@ -112,31 +102,22 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
         with:
-          node-version: 24.13.0
-          cache: npm
+          persist-credentials: false
 
-      - name: Set up npm
-        run: npm install --global npm@11.6.2
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build frontend assets for Web API dry-run
-        run: npm run build --workspace=@dice-witch/frontend
-
-      - name: Dry-run all Workers
-        working-directory: cloudflare
+      - name: Verify source identity
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          for worker in data discord-rest roll gateway interactions web-api; do
-            npx --no-install wrangler deploy \
-              --dry-run \
-              --config "wrangler.${worker}.example.jsonc"
-          done
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Dry-run Workers through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        with:
+          version: v0.21.9
+          call: worker-dry-runs --source=. --sha=${{ github.sha }}
 
   quality:
     needs: [static-validation, test-suite, worker-dry-runs]
