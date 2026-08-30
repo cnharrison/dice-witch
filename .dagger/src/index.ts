@@ -134,6 +134,46 @@ export class DiceWitch {
     return "private staging validation passed"
   }
 
+  /** Deploy the complete staging cohort after guarded validation. */
+  @func({ cache: "never" })
+  async stagingDeploy(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    sha: string,
+    buildTime: string,
+    runNonce: string,
+    applyMigrations: boolean,
+    allowGatewayDeploy: boolean,
+    configBundle: Secret,
+    productionDenylist: Secret,
+    rollOrigin: Secret,
+    gatewayOrigin: Secret,
+    cloudflareApiToken: Secret,
+    cloudflareAccountId: Secret,
+  ): Promise<string> {
+    const input = this.validationInput(source, sha, buildTime, runNonce)
+    const container = input.container
+      .withSecretVariable("STAGING_CONFIG_B64", configBundle)
+      .withSecretVariable(
+        "STAGING_PRODUCTION_DENYLIST_B64",
+        productionDenylist,
+      )
+      .withSecretVariable("STAGING_ROLL_ORIGIN", rollOrigin)
+      .withSecretVariable("STAGING_GATEWAY_ORIGIN", gatewayOrigin)
+      .withSecretVariable("CLOUDFLARE_API_TOKEN", cloudflareApiToken)
+      .withSecretVariable("CLOUDFLARE_ACCOUNT_ID", cloudflareAccountId)
+      .withExec(
+        this.stagingDeployCommand(
+          input.sha,
+          input.buildTime,
+          applyMigrations,
+          allowGatewayDeploy,
+        ),
+      )
+
+    await container.sync()
+    return "staging deployment passed"
+  }
+
   /** Validate private production configuration without Cloudflare credentials or mutations. */
   @func({ cache: "never" })
   async productionValidate(
@@ -189,6 +229,7 @@ export class DiceWitch {
     const validatedBuildTime = validateBuildTime(buildTime)
     const validatedRunNonce = validateRunNonce(runNonce)
     const container = this.environment(source, validatedSha)
+      .withoutMount("/root/.npm")
       .withDirectory("/source", source)
       .withMountedTemp("/private")
       .withEnvVariable("DAGGER_RUN_NONCE", validatedRunNonce)
@@ -198,6 +239,32 @@ export class DiceWitch {
       sha: validatedSha,
       buildTime: validatedBuildTime,
     }
+  }
+
+  private stagingDeployCommand(
+    sha: string,
+    buildTime: string,
+    applyMigrations: boolean,
+    allowGatewayDeploy: boolean,
+  ): string[] {
+    return [
+      "node",
+      "/workspace/cloudflare/tools/dagger-staging-deploy.mjs",
+      "--sha",
+      sha,
+      "--build-time",
+      buildTime,
+      "--source",
+      "/source",
+      "--workspace",
+      "/private/workspace",
+      "--node-modules",
+      "/workspace/node_modules",
+      "--apply-migrations",
+      String(applyMigrations),
+      "--allow-gateway-deploy",
+      String(allowGatewayDeploy),
+    ]
   }
 
   private validationCommand(

@@ -2,94 +2,82 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const workflowUrl = new URL(
-  "../../.github/workflows/deploy-staging.yml",
-  import.meta.url,
+const workflow = await readFile(
+  new URL("../../.github/workflows/deploy-staging.yml", import.meta.url),
+  "utf8",
 );
 
-async function workflow() {
-  return readFile(workflowUrl, "utf8");
-}
+const deploymentSecrets = [
+  "CLOUDFLARE_ACCOUNT_ID",
+  "CLOUDFLARE_API_TOKEN",
+  "STAGING_CONFIG_B64",
+  "STAGING_GATEWAY_ORIGIN",
+  "STAGING_PRODUCTION_DENYLIST_B64",
+  "STAGING_ROLL_ORIGIN",
+];
 
-test("keeps staging deployment manual, serialized, and approval-gated", async () => {
-  const value = await workflow();
-
-  assert.match(value, /workflow_dispatch:/);
-  assert.match(value, /environment: staging/);
-  assert.match(value, /group: dice-witch-staging-deployment/);
-  assert.match(value, /cancel-in-progress: false/);
-  assert.match(value, /deploy-staging/);
-  assert.doesNotMatch(value, /^\s+schedule:/m);
+test("keeps staging deployment manual, protected, serialized, and non-cancelling", () => {
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /^ {2}deploy:$/m);
+  assert.match(workflow, /environment: staging/);
+  assert.match(workflow, /group: dice-witch-staging-deployment/);
+  assert.match(workflow, /cancel-in-progress: false/);
+  assert.match(workflow, /deploy-staging/);
+  assert.doesNotMatch(workflow, /^\s+(?:push|schedule):/m);
 });
 
-test("derives a complete Worker cohort and exposes no partial-deployment path", async () => {
-  const value = await workflow();
+test("admits only an authorized exact SHA with successful required CI", () => {
+  assert.match(workflow, /\^\[0-9a-f\]\{40\}\$/);
+  assert.match(workflow, /ALLOW_GATEWAY_DEPLOY.*true/);
+  assert.equal(workflow.match(/uses: actions\/checkout@v5/g)?.length, 2);
+  assert.equal(workflow.match(/persist-credentials: false/g)?.length, 2);
+  assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /ref: \$\{\{ inputs\.sha \}\}/);
+  assert.match(workflow, /node tools\/verify-ci-promotion\.mjs --sha "\$REQUESTED_SHA"/);
+  assert.match(workflow, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
+});
 
-  assert.doesNotMatch(value, /^ {6}workers:/m);
-  assert.doesNotMatch(value, /audience_producer_only|audience-producer-only/);
-  assert.doesNotMatch(
-    value,
-    /workers="discord-rest,gateway,roll,interactions,web-api"/,
+test("runs complete quality gates through Dagger before deployment credentials", () => {
+  const quality = workflow.indexOf("Run complete quality gates through Dagger");
+  const deployment = workflow.indexOf("Deploy staging through Dagger");
+  const firstCredential = Math.min(
+    ...deploymentSecrets.map((name) => workflow.indexOf(`${name}:`)),
   );
+
+  assert.ok(quality > 0 && quality < deployment);
+  assert.ok(firstCredential > quality);
   assert.match(
-    value,
-    /workers="discord-rest,data,gateway,roll,interactions,web-api"/,
+    workflow,
+    /call: ci --source=\. --sha=\$\{\{ inputs\.sha \}\} --run-nonce=\$\{\{ github\.run_id \}\}\.\$\{\{ github\.run_attempt \}\}\.staging-quality/,
   );
-  assert.match(value, /--workers "\$workers"/);
 });
 
-test("checks migration state while keeping Data in every cohort", async () => {
-  const value = await workflow();
+test("passes only bounded secrets and authorizations to stagingDeploy", () => {
+  assert.equal(workflow.match(/uses: dagger\/dagger-for-github@v8\.4\.1/g)?.length, 2);
+  assert.equal(workflow.match(/version: v0\.21\.9/g)?.length, 2);
+  assert.match(
+    workflow,
+    /call: staging-deploy --source=\. --sha=\$\{\{ inputs\.sha \}\} --build-time=\$\{\{ steps\.metadata\.outputs\.build_time \}\} --run-nonce=\$\{\{ github\.run_id \}\}\.\$\{\{ github\.run_attempt \}\}\.staging-deploy/,
+  );
+  assert.match(workflow, /--apply-migrations=\$\{\{ inputs\.apply_migrations \}\}/);
+  assert.match(workflow, /--allow-gateway-deploy=\$\{\{ inputs\.allow_gateway_deploy \}\}/);
 
-  assert.match(value, /if: \$\{\{ inputs\.apply_migrations == true \}\}/);
-  assert.match(value, /--apply-migrations/);
-  assert.match(value, /Check pending staging D1 migrations/);
-  assert.match(value, /Verify staging D1 migrations are current/);
-  assert.match(value, /assert-migration-state\.mjs/);
-  const check = value.indexOf("Check pending staging D1 migrations");
-  const apply = value.indexOf("Apply staging D1 migrations");
-  const verify = value.indexOf("Verify staging D1 migrations are current");
-  const deploy = value.indexOf("Deploy staging Worker cohort");
-  assert.ok(check < apply && apply < verify && verify < deploy);
-});
+  const referencedSecrets = [...workflow.matchAll(/\$\{\{ secrets\.([A-Z0-9_]+) \}\}/g)]
+    .map((match) => match[1])
+    .toSorted();
+  assert.deepEqual(referencedSecrets, deploymentSecrets);
+  for (const name of deploymentSecrets) {
+    assert.match(workflow, new RegExp(`env://${name}`));
+  }
 
-test("uses the expiring dependency-audit policy", async () => {
-  const value = await workflow();
-
-  assert.match(value, /npm run audit:ci/);
-  assert.doesNotMatch(value, /npm audit --audit-level/);
-});
-
-test("does not expose deployment credentials to dependency or quality steps", async () => {
-  const value = await workflow();
-  const qualityIndex = value.indexOf("Run quality gates without deployment credentials");
-  const materializeIndex = value.indexOf("Materialize private staging configuration");
-  const firstTokenIndex = value.indexOf("CLOUDFLARE_API_TOKEN");
-  const stepsIndex = value.indexOf("    steps:");
-
-  assert.ok(qualityIndex > stepsIndex);
-  assert.ok(materializeIndex > qualityIndex);
-  assert.ok(firstTokenIndex > materializeIndex);
   assert.doesNotMatch(
-    value.slice(0, stepsIndex),
-    /STAGING_CONFIG_B64|CLOUDFLARE_API_TOKEN/,
+    workflow,
+    /wrangler (?:deploy|d1)|staging:materialize|staging-plan\.mjs|staging-smoke\.mjs|actions\/setup-node/,
   );
 });
 
-test("requires exact SHA, isolation, and Gateway acknowledgement", async () => {
-  const value = await workflow();
-
-  assert.match(value, /\^\[0-9a-f\]\{40\}\$/);
-  assert.match(value, /staging-plan\.mjs/);
-  assert.match(value, /--allow-gateway-deploy/);
-  assert.match(value, /STAGING_PRODUCTION_DENYLIST_B64/);
-  assert.match(value, /--expected-sha/);
-});
-
-// The staging bot serves one guild and publishes to nothing, so a fresh
-// audience snapshot is not worth holding the Gateway open for.
-test("does not gate staging deployment on an audience snapshot", async () => {
-  const value = await workflow();
-
-  assert.doesNotMatch(value, /verify-audience-snapshot\.mjs/);
+test("exposes no partial cohort or audience-snapshot deployment path", () => {
+  assert.doesNotMatch(workflow, /^ {6}workers:/m);
+  assert.doesNotMatch(workflow, /audience_producer_only|audience-producer-only/);
+  assert.doesNotMatch(workflow, /verify-audience-snapshot\.mjs/);
 });

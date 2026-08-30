@@ -23,6 +23,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -39,200 +40,66 @@ jobs:
       APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
       ALLOW_GATEWAY_DEPLOY: ${{ inputs.allow_gateway_deploy }}
       DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
-      VITE_API_BASE: https://ci.invalid
-      VITE_DISCORD_CLIENT_ID: "100000000000000001"
-      VITE_ENVIRONMENT: development
-      VITE_BUILD_SHA: ${{ inputs.sha }}
     steps:
       - name: Validate dispatch authorization
         run: |
           set -euo pipefail
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$DEPLOY_CONFIRMATION" == "deploy-staging" ]]
+          [[ "$ALLOW_GATEWAY_DEPLOY" == "true" ]]
 
-      - name: Check out exact source
-        uses: actions/checkout@v4
+      - name: Check out workflow source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify workflow source
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Require successful exact-SHA CI
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/verify-ci-promotion.mjs --sha "$REQUESTED_SHA"
+
+      - name: Check out validated source
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Verify exact source
+      - name: Verify validated source
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "$REQUESTED_SHA" ]]
-          [[ -z "$(git status --porcelain)" ]]
+          test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
+          test -z "$(git status --porcelain)"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Run complete quality gates through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
         with:
-          node-version: 24.13.0
-          cache: npm
+          version: v0.21.9
+          call: ci --source=. --sha=${{ inputs.sha }} --run-nonce=${{ github.run_id }}.${{ github.run_attempt }}.staging-quality
 
-      - name: Set up npm
-        run: npm install --global npm@11.6.2
+      - name: Generate deployment metadata
+        id: metadata
+        run: printf 'build_time=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run quality gates without deployment credentials
-        run: |
-          set -euo pipefail
-          npm run audit:ci
-          npm run type-check
-          npm run lint:ci
-          npm test
-          npm run build
-
-      - name: Dry-run public Worker examples
-        working-directory: cloudflare
-        run: |
-          set -euo pipefail
-          for worker in data discord-rest roll gateway interactions web-api; do
-            npx --no-install wrangler deploy \
-              --dry-run \
-              --config "wrangler.${worker}.example.jsonc" > /dev/null
-          done
-
-      - name: Materialize private staging configuration
-        working-directory: cloudflare
+      - name: Deploy staging through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
         env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           STAGING_CONFIG_B64: ${{ secrets.STAGING_CONFIG_B64 }}
-        run: |
-          set -euo pipefail
-          build_time="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
-          echo "STAGING_BUILD_TIME=$build_time" >> "$GITHUB_ENV"
-          STAGING_BUILD_SHA="$REQUESTED_SHA" \
-          STAGING_BUILD_TIME="$build_time" \
-            npm run staging:materialize
-
-      - name: Export validated frontend build settings
-        working-directory: cloudflare
-        run: |
-          node --input-type=module <<'NODE'
-          import { appendFile, readFile } from 'node:fs/promises';
-          const config = JSON.parse(await readFile('wrangler.web-api.jsonc', 'utf8'));
-          await appendFile(process.env.GITHUB_ENV, [
-            `VITE_API_BASE=${config.vars.FRONTEND_ORIGIN}`,
-            `VITE_DISCORD_CLIENT_ID=${config.vars.DISCORD_CLIENT_ID}`,
-            'VITE_ENVIRONMENT=staging',
-            `VITE_BUILD_SHA=${process.env.REQUESTED_SHA}`,
-            '',
-          ].join('\n'));
-          NODE
-
-      - name: Build exact staging frontend
-        run: npm run build
-
-      - name: Validate staging plan
-        working-directory: cloudflare
-        env:
+          STAGING_GATEWAY_ORIGIN: ${{ secrets.STAGING_GATEWAY_ORIGIN }}
           STAGING_PRODUCTION_DENYLIST_B64: ${{ secrets.STAGING_PRODUCTION_DENYLIST_B64 }}
           STAGING_ROLL_ORIGIN: ${{ secrets.STAGING_ROLL_ORIGIN }}
-          STAGING_GATEWAY_ORIGIN: ${{ secrets.STAGING_GATEWAY_ORIGIN }}
-        run: |
-          set -euo pipefail
-          workers="discord-rest,data,gateway,roll,interactions,web-api"
-          migration_flag=()
-          if [[ "$APPLY_MIGRATIONS" == "true" ]]; then
-            migration_flag+=(--apply-migrations)
-          fi
-          gateway_flag=()
-          if [[ "$ALLOW_GATEWAY_DEPLOY" == "true" ]]; then
-            gateway_flag+=(--allow-gateway-deploy)
-          fi
-          node tools/staging-plan.mjs \
-            --sha "$REQUESTED_SHA" \
-            --workers "$workers" \
-            --roll-origin "$STAGING_ROLL_ORIGIN" \
-            --gateway-origin "$STAGING_GATEWAY_ORIGIN" \
-            "${migration_flag[@]}" \
-            "${gateway_flag[@]}" > "$RUNNER_TEMP/staging-plan.json"
-
-      - name: Dry-run private staging Workers
-        working-directory: cloudflare
-        run: |
-          set -euo pipefail
-          for worker in data discord-rest roll gateway interactions web-api; do
-            npx --no-install wrangler deploy \
-              --dry-run \
-              --config "wrangler.${worker}.jsonc" > /dev/null
-          done
-
-      - name: Check pending staging D1 migrations
-        working-directory: cloudflare
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          migrations="$RUNNER_TEMP/staging-migrations.txt"
-          npx --no-install wrangler d1 migrations list DATA \
-            --remote --config wrangler.data.jsonc | tee "$migrations"
-          node tools/assert-migration-state.mjs \
-            --output "$migrations" \
-            --apply-migrations "$APPLY_MIGRATIONS"
-
-      - name: Apply staging D1 migrations
-        if: ${{ inputs.apply_migrations == true }}
-        working-directory: cloudflare
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          npx --no-install wrangler d1 migrations apply DATA \
-            --remote --config wrangler.data.jsonc > /dev/null
-
-      - name: Verify staging D1 migrations are current
-        working-directory: cloudflare
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          migrations="$RUNNER_TEMP/staging-migrations-current.txt"
-          npx --no-install wrangler d1 migrations list DATA \
-            --remote --config wrangler.data.jsonc | tee "$migrations"
-          node tools/assert-migration-state.mjs \
-            --output "$migrations" \
-            --apply-migrations false
-
-      - name: Deploy staging Worker cohort
-        working-directory: cloudflare
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          node --input-type=module <<'NODE' > "$RUNNER_TEMP/staging-workers"
-          import { readFile } from 'node:fs/promises';
-          const plan = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/staging-plan.json', 'utf8'));
-          process.stdout.write(plan.workers.join('\n') + '\n');
-          NODE
-          while IFS= read -r worker; do
-            npx --no-install wrangler deploy \
-              --strict \
-              --tag "staging-${REQUESTED_SHA:0:12}" \
-              --message "Staging ${REQUESTED_SHA}" \
-              --config "wrangler.${worker}.jsonc" > /dev/null
-            printf 'Deployed %s\n' "$worker"
-          done < "$RUNNER_TEMP/staging-workers"
-
-      - name: Smoke-test exact staging build
-        working-directory: cloudflare
-        env:
-          STAGING_ROLL_ORIGIN: ${{ secrets.STAGING_ROLL_ORIGIN }}
-          STAGING_GATEWAY_ORIGIN: ${{ secrets.STAGING_GATEWAY_ORIGIN }}
-        run: |
-          set -euo pipefail
-          web_origin="$(node --input-type=module -e "import {readFile} from 'node:fs/promises'; const c=JSON.parse(await readFile('wrangler.web-api.jsonc','utf8')); process.stdout.write(c.vars.FRONTEND_ORIGIN)")"
-          node tools/staging-smoke.mjs \
-            --web-origin "$web_origin" \
-            --roll-origin "$STAGING_ROLL_ORIGIN" \
-            --gateway-origin "$STAGING_GATEWAY_ORIGIN" \
-            --expected-sha "$REQUESTED_SHA"
-
-      - name: Remove private staging configuration
-        if: always()
-        working-directory: cloudflare
-        run: rm -f wrangler.{data,discord-rest,gateway,interactions,roll,web-api}.jsonc
+        with:
+          version: v0.21.9
+          call: staging-deploy --source=. --sha=${{ inputs.sha }} --build-time=${{ steps.metadata.outputs.build_time }} --run-nonce=${{ github.run_id }}.${{ github.run_attempt }}.staging-deploy --apply-migrations=${{ inputs.apply_migrations }} --allow-gateway-deploy=${{ inputs.allow_gateway_deploy }} --config-bundle=env://STAGING_CONFIG_B64 --production-denylist=env://STAGING_PRODUCTION_DENYLIST_B64 --roll-origin=env://STAGING_ROLL_ORIGIN --gateway-origin=env://STAGING_GATEWAY_ORIGIN --cloudflare-api-token=env://CLOUDFLARE_API_TOKEN --cloudflare-account-id=env://CLOUDFLARE_ACCOUNT_ID

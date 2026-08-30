@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  cloudflareChildEnvironment,
   PRIVATE_CONFIG_FILES,
   privateDryRunCommands,
   validationChildEnvironment,
@@ -31,11 +32,13 @@ test("private validation exposes only local Wrangler dry-runs", () => {
   }
 });
 
-test("private validation strips configuration secrets from child processes", () => {
+test("private validation strips every deployment secret from child processes", () => {
   const environment = validationChildEnvironment({ PUBLIC_VALUE: "visible" });
 
   assert.equal(environment.PUBLIC_VALUE, "visible");
   for (const name of [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN",
     "PRODUCTION_VALUES_B64",
     "STAGING_CONFIG_B64",
     "STAGING_GATEWAY_ORIGIN",
@@ -44,6 +47,18 @@ test("private validation strips configuration secrets from child processes", () 
   ]) {
     assert.equal(name in environment, false);
   }
+});
+
+test("only remote Cloudflare commands receive Cloudflare credentials", () => {
+  const environment = cloudflareChildEnvironment({
+    accountId: "account-canary",
+    apiToken: "token-canary",
+  });
+
+  assert.equal(environment.CLOUDFLARE_ACCOUNT_ID, "account-canary");
+  assert.equal(environment.CLOUDFLARE_API_TOKEN, "token-canary");
+  assert.equal("STAGING_CONFIG_B64" in environment, false);
+  assert.equal("STAGING_PRODUCTION_DENYLIST_B64" in environment, false);
 });
 
 test("private configuration is removed after success and failure", async () => {

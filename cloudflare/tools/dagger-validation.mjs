@@ -32,7 +32,12 @@ const DRY_RUN_WORKERS = [
   "interactions",
   "web-api",
 ];
+const CLOUDFLARE_CREDENTIAL_NAMES = [
+  "CLOUDFLARE_ACCOUNT_ID",
+  "CLOUDFLARE_API_TOKEN",
+];
 const SECRET_ENVIRONMENT_NAMES = [
+  ...CLOUDFLARE_CREDENTIAL_NAMES,
   "PRODUCTION_VALUES_B64",
   "STAGING_CONFIG_B64",
   "STAGING_GATEWAY_ORIGIN",
@@ -85,17 +90,36 @@ export async function withPrivateConfiguration(
   }
 }
 
-export function validationChildEnvironment(overrides = {}) {
+function privateChildEnvironment(overrides = {}, allowedNames = []) {
+  const allowed = new Set(allowedNames);
   return Object.fromEntries(
     Object.entries({ ...process.env, ...overrides }).filter(
-      ([name]) => !SECRET_ENVIRONMENT_NAMES.includes(name),
+      ([name]) =>
+        !SECRET_ENVIRONMENT_NAMES.includes(name) || allowed.has(name),
     ),
   );
 }
 
-async function runCommand(file, arguments_, options, label) {
+export function validationChildEnvironment(overrides = {}) {
+  return privateChildEnvironment(overrides);
+}
+
+export function cloudflareChildEnvironment({ accountId, apiToken }) {
+  if (!accountId || !apiToken) {
+    throw new Error("Cloudflare deployment credentials are required");
+  }
+  return privateChildEnvironment(
+    {
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+      CLOUDFLARE_API_TOKEN: apiToken,
+    },
+    CLOUDFLARE_CREDENTIAL_NAMES,
+  );
+}
+
+export async function runPrivateCommand(file, arguments_, options, label) {
   try {
-    await execFileAsync(file, arguments_, {
+    return await execFileAsync(file, arguments_, {
       ...options,
       encoding: "utf8",
       maxBuffer: 16 * 1024 * 1024,
@@ -105,8 +129,8 @@ async function runCommand(file, arguments_, options, label) {
   }
 }
 
-async function buildFrontend(workspace, summary, environment) {
-  await runCommand(
+export async function buildFrontend(workspace, summary, environment) {
+  await runPrivateCommand(
     "npm",
     ["run", "build"],
     {
@@ -122,9 +146,9 @@ async function buildFrontend(workspace, summary, environment) {
   );
 }
 
-async function dryRunPrivateWorkers(configDirectory, environment) {
+export async function dryRunPrivateWorkers(configDirectory, environment) {
   for (const command of privateDryRunCommands()) {
-    await runCommand(
+    await runPrivateCommand(
       command.file,
       command.arguments,
       { cwd: configDirectory, env: validationChildEnvironment() },
@@ -224,11 +248,15 @@ function parseArguments(arguments_) {
   return { environment, sha, buildTime, source, workspace, nodeModules };
 }
 
+export async function preparePrivateWorkspace({ source, workspace, nodeModules }) {
+  await cp(source, workspace, { recursive: true });
+  await symlink(nodeModules, path.join(workspace, "node_modules"));
+  return path.join(workspace, "cloudflare");
+}
+
 async function main() {
   const input = parseArguments(process.argv.slice(2));
-  await cp(input.source, input.workspace, { recursive: true });
-  await symlink(input.nodeModules, path.join(input.workspace, "node_modules"));
-  const configDirectory = path.join(input.workspace, "cloudflare");
+  const configDirectory = await preparePrivateWorkspace(input);
   const validation = {
     ...input,
     configDirectory,
