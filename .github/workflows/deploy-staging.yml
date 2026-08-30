@@ -82,7 +82,7 @@ jobs:
           test -z "$(git status --porcelain)"
 
       - name: Run complete quality gates through Dagger
-        uses: dagger/dagger-for-github@v8.4.1
+        uses: dagger/dagger-for-github@27b130bf0f79a7f6fbbbe0fbca6760dc9bb40a77 # v8.4.1
         with:
           version: v0.21.9
           call: ci --source=. --sha=${{ inputs.sha }} --run-nonce=${{ github.run_id }}.${{ github.run_attempt }}.staging-quality
@@ -92,7 +92,7 @@ jobs:
         run: printf 'build_time=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
 
       - name: Deploy staging through Dagger
-        uses: dagger/dagger-for-github@v8.4.1
+        uses: dagger/dagger-for-github@27b130bf0f79a7f6fbbbe0fbca6760dc9bb40a77 # v8.4.1
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

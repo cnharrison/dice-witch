@@ -53,7 +53,12 @@ test("runs complete quality gates through Dagger before deployment credentials",
 });
 
 test("passes only bounded secrets and authorizations to stagingDeploy", () => {
-  assert.equal(workflow.match(/uses: dagger\/dagger-for-github@v8\.4\.1/g)?.length, 2);
+  assert.equal(
+    workflow.match(
+      /uses: dagger\/dagger-for-github@27b130bf0f79a7f6fbbbe0fbca6760dc9bb40a77 # v8\.4\.1/g,
+    )?.length,
+    2,
+  );
   assert.equal(workflow.match(/version: v0\.21\.9/g)?.length, 2);
   assert.match(
     workflow,
