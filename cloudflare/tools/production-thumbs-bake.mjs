@@ -116,7 +116,7 @@ export async function bakeProductionThumbnails(
   const paths = [
     `${prefix}/preset/solid.png`,
     `${prefix}/material/glass.png`,
-    `${prefix}/font/liberation-sans.png`,
+    `${prefix}/font/fraunces.png`,
     `${prefix}/ink/matte-ink.png`,
   ];
   await Promise.all(

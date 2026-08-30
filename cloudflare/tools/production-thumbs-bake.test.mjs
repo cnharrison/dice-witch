@@ -60,6 +60,9 @@ test("bakes the exact production catalog and verifies public PNGs", async () => 
   );
   assert.equal(requests[2]?.init?.body, "{}");
   assert.equal(requests.length, 7);
+  assert.ok(
+    requests.some(({ url }) => url.endsWith("/font/fraunces.png")),
+  );
 });
 
 test("fails before baking when production is not on the exact SHA", async () => {
