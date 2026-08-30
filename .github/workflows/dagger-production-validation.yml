@@ -1,0 +1,75 @@
+name: Dagger production validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full successful CI commit SHA to validate
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dice-witch-production-validation
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      REQUESTED_SHA: ${{ inputs.sha }}
+    steps:
+      - name: Validate requested SHA
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Check out workflow source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify workflow source
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Require successful exact-SHA CI
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/verify-ci-promotion.mjs --sha "$REQUESTED_SHA"
+
+      - name: Check out validated source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify validated source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Generate validation metadata
+        id: metadata
+        run: printf 'build_time=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate private production configuration through Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        env:
+          PRODUCTION_VALUES_B64: ${{ secrets.PRODUCTION_VALUES_B64 }}
+        with:
+          version: v0.21.9
+          call: production-validate --source=. --sha=${{ inputs.sha }} --build-time=${{ steps.metadata.outputs.build_time }} --run-nonce=${{ github.run_id }}.${{ github.run_attempt }} --values=env://PRODUCTION_VALUES_B64
