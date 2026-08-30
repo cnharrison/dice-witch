@@ -50,6 +50,56 @@ test("verifies the active version identity and complete binding contract", () =>
   );
 });
 
+test("verifies the production Web API R2 binding", () => {
+  const webConfig = {
+    compatibility_date: "2026-07-10",
+    r2_buckets: [
+      { binding: "THUMBS", bucket_name: "dice-witch-appearance-thumbs-production" },
+    ],
+  };
+  const webVersion = {
+    id: "22222222-2222-4222-8222-222222222222",
+    annotations: { "workers/tag": `production-${sha.slice(0, 12)}` },
+    resources: {
+      bindings: [
+        {
+          name: "THUMBS",
+          type: "r2_bucket",
+          bucket_name: "dice-witch-appearance-thumbs-production",
+        },
+      ],
+      script_runtime: { compatibility_date: "2026-07-10" },
+    },
+  };
+
+  assert.doesNotThrow(() =>
+    verifyProductionActiveSettings({
+      worker: "web-api",
+      config: webConfig,
+      version: webVersion,
+      sha,
+    }));
+  assert.throws(
+    () =>
+      verifyProductionActiveSettings({
+        worker: "web-api",
+        config: webConfig,
+        version: {
+          ...webVersion,
+          resources: {
+            ...webVersion.resources,
+            bindings: webVersion.resources.bindings.map((binding) => ({
+              ...binding,
+              bucket_name: "dice-witch-appearance-thumbs-staging",
+            })),
+          },
+        },
+        sha,
+      }),
+    /THUMBS.bucket_name differs/,
+  );
+});
+
 test("rejects missing, redirected, or stale active settings", () => {
   assert.throws(
     () =>

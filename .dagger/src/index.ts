@@ -192,6 +192,37 @@ export class DiceWitch {
     return "private production validation passed"
   }
 
+  /** Deploy and verify the complete production cohort after guarded validation. */
+  @func({ cache: "never" })
+  async productionDeploy(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    sha: string,
+    buildTime: string,
+    runNonce: string,
+    applyMigrations: boolean,
+    allowGatewayDeploy: boolean,
+    values: Secret,
+    cloudflareApiToken: Secret,
+    cloudflareAccountId: Secret,
+  ): Promise<string> {
+    const input = this.validationInput(source, sha, buildTime, runNonce)
+    const container = input.container
+      .withSecretVariable("PRODUCTION_VALUES_B64", values)
+      .withSecretVariable("CLOUDFLARE_API_TOKEN", cloudflareApiToken)
+      .withSecretVariable("CLOUDFLARE_ACCOUNT_ID", cloudflareAccountId)
+      .withExec(
+        this.productionDeployCommand(
+          input.sha,
+          input.buildTime,
+          applyMigrations,
+          allowGatewayDeploy,
+        ),
+      )
+
+    await container.sync()
+    return "production deployment passed"
+  }
+
   private environment(source: Directory, sha: string): Container {
     const manifests = dag
       .directory()
@@ -239,6 +270,32 @@ export class DiceWitch {
       sha: validatedSha,
       buildTime: validatedBuildTime,
     }
+  }
+
+  private productionDeployCommand(
+    sha: string,
+    buildTime: string,
+    applyMigrations: boolean,
+    allowGatewayDeploy: boolean,
+  ): string[] {
+    return [
+      "node",
+      "/workspace/cloudflare/tools/dagger-production-deploy.mjs",
+      "--sha",
+      sha,
+      "--build-time",
+      buildTime,
+      "--source",
+      "/source",
+      "--workspace",
+      "/private/workspace",
+      "--node-modules",
+      "/workspace/node_modules",
+      "--apply-migrations",
+      String(applyMigrations),
+      "--allow-gateway-deploy",
+      String(allowGatewayDeploy),
+    ]
   }
 
   private stagingDeployCommand(

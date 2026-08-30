@@ -15,6 +15,21 @@ describe("Dagger deployment validation contract", () => {
     assert.match(validationInput, /\.withoutMount\("\/root\/\.npm"\)/)
   })
 
+  it("keeps production deployment non-cacheable and secret-bounded", () => {
+    const deployment = moduleSource.slice(
+      moduleSource.indexOf("  async productionDeploy("),
+      moduleSource.indexOf("  private environment("),
+    )
+    assert.match(
+      moduleSource,
+      /@func\(\{ cache: "never" \}\)\n  async productionDeploy\(/,
+    )
+    assert.match(deployment, /PRODUCTION_VALUES_B64/)
+    assert.match(deployment, /CLOUDFLARE_API_TOKEN/)
+    assert.match(deployment, /CLOUDFLARE_ACCOUNT_ID/)
+    assert.match(deployment, /productionDeployCommand/)
+  })
+
   it("requires an explicit UTC build timestamp", () => {
     const timestamp = "2026-07-25T04:21:05.000Z"
     assert.equal(validateBuildTime(timestamp), timestamp)

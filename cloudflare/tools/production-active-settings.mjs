@@ -20,6 +20,16 @@ function expectedBindings(config) {
     if (value.entrypoint !== undefined) binding.entrypoint = value.entrypoint;
     bindings.set(value.binding, binding);
   }
+  for (const value of config.r2_buckets ?? []) {
+    const binding = {
+      type: "r2_bucket",
+      bucket_name: value.bucket_name,
+    };
+    if (value.jurisdiction !== undefined) {
+      binding.jurisdiction = value.jurisdiction;
+    }
+    bindings.set(value.binding, binding);
+  }
   for (const value of config.secrets_store_secrets ?? []) {
     bindings.set(value.binding, {
       type: "secrets_store_secret",

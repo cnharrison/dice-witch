@@ -2,92 +2,94 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const workflowUrl = new URL(
-  "../../.github/workflows/deploy-production.yml",
-  import.meta.url,
+const workflow = await readFile(
+  new URL("../../.github/workflows/deploy-production.yml", import.meta.url),
+  "utf8",
 );
 
-async function workflow() {
-  return readFile(workflowUrl, "utf8");
+function job(name, nextName) {
+  const start = workflow.indexOf(`  ${name}:`);
+  const end = nextName === undefined ? workflow.length : workflow.indexOf(`  ${nextName}:`);
+  return workflow.slice(start, end);
 }
 
-test("keeps production deployment manual, protected, serialized, and non-cancelling", async () => {
-  const value = await workflow();
-  assert.match(value, /workflow_dispatch:/);
-  assert.match(value, /name: production/);
-  assert.match(value, /group: dice-witch-production-deployment/);
-  assert.match(value, /cancel-in-progress: false/);
-  assert.match(value, /deploy-production/);
-  assert.doesNotMatch(value, /^\s+(push|schedule):/m);
+const preflight = job("preflight", "deploy");
+const deploy = job("deploy");
+
+const productionSecrets = [
+  "CLOUDFLARE_ACCOUNT_ID",
+  "CLOUDFLARE_API_TOKEN",
+  "PRODUCTION_VALUES_B64",
+];
+
+test("keeps production deployment manual, protected, serialized, and non-cancelling", () => {
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(deploy, /name: production/);
+  assert.match(workflow, /group: dice-witch-production-deployment/);
+  assert.match(workflow, /cancel-in-progress: false/);
+  assert.match(workflow, /deploy-production/);
+  assert.doesNotMatch(workflow, /^\s+(push|schedule):/m);
 });
 
-test("keeps production credentials out of unprotected preflight", async () => {
-  const value = await workflow();
-  const preflight = value.slice(value.indexOf("  preflight:"), value.indexOf("  deploy:"));
+test("keeps production credentials out of unprotected preflight", () => {
   assert.doesNotMatch(
     preflight,
     /PRODUCTION_VALUES_B64|CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID/,
   );
 });
 
-test("requires a successful CI push for the exact SHA without repeating quality gates", async () => {
-  const value = await workflow();
-  const preflight = value.slice(value.indexOf("  preflight:"), value.indexOf("  deploy:"));
+test("requires a successful CI push for the exact SHA without repeating quality gates", () => {
   assert.match(preflight, /actions: read/);
   assert.match(preflight, /Verify successful CI promotion/);
   assert.match(preflight, /node tools\/verify-ci-promotion\.mjs/);
   assert.match(preflight, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.doesNotMatch(preflight, /npm ci|npm test|npm run audit:ci|npm run type-check|npm run lint:ci|npm run build/);
-});
-
-test("derives a complete Worker cohort and has no partial-deployment escape hatch", async () => {
-  const value = await workflow();
-  assert.doesNotMatch(value, /^ {6}workers:/m);
-  assert.doesNotMatch(value, /allow_existing_dependencies|allow-existing-dependencies/);
   assert.doesNotMatch(
-    value,
-    /workers="discord-rest,gateway,roll,interactions,web-api"/,
+    preflight,
+    /npm ci|npm test|npm run audit:ci|npm run type-check|npm run lint:ci|npm run build/,
   );
-  assert.match(
-    value,
-    /workers="discord-rest,data,gateway,roll,interactions,web-api"/,
-  );
-  assert.match(value, /--workers "\$workers"/);
 });
 
-test("requires exact SHA, source-derived config, explicit mutation acknowledgements, and strict deploys", async () => {
-  const value = await workflow();
-  assert.match(value, /\^\[0-9a-f\]\{40\}\$/);
-  assert.match(value, /PRODUCTION_VALUES_B64/);
-  assert.match(value, /production:materialize/);
-  assert.match(value, /production-plan\.mjs/);
-  assert.match(value, /--apply-migrations/);
-  assert.match(value, /Check pending production D1 migrations/);
-  assert.match(value, /Verify production D1 migrations are current/);
-  assert.match(value, /assert-migration-state\.mjs/);
-  const check = value.indexOf("Check pending production D1 migrations");
-  const apply = value.indexOf("Apply authorized production D1 migrations");
-  const verify = value.indexOf("Verify production D1 migrations are current");
-  const deploy = value.indexOf("Deploy production Worker cohort");
-  assert.ok(check < apply && apply < verify && verify < deploy);
-  assert.match(value, /--allow-gateway-deploy/);
-  assert.match(value, /--strict/);
-  assert.match(value, /dfe6c3ddb987a22c7f17955d1973490e/);
-  assert.match(value, /Verify production account and credential scope/);
-  assert.match(value, /production-active-settings\.mjs/);
-  assert.match(value, /wrangler deployments list/);
-  assert.match(value, /wrangler versions view/);
-  assert.match(value, /production-smoke\.mjs/);
+test("requires exact source and explicit production mutation acknowledgements", () => {
+  assert.match(workflow, /\^\[0-9a-f\]\{40\}\$/);
+  assert.match(workflow, /DEPLOY_CONFIRMATION.*\n[\s\S]*deploy-production/);
+  assert.match(workflow, /ALLOW_GATEWAY_DEPLOY.*\n[\s\S]*== "true"/);
+  assert.match(workflow, /APPLY_MIGRATIONS.*\n[\s\S]*"true".*"false"/);
+  assert.equal(workflow.match(/uses: actions\/checkout@v5/g)?.length, 2);
+  assert.equal(workflow.match(/persist-credentials: false/g)?.length, 2);
+  assert.equal(workflow.match(/git rev-parse HEAD/g)?.length, 2);
+  assert.equal(workflow.match(/git status --porcelain/g)?.length, 2);
 });
 
-test("uses Node 24 actions and removes materialized production config on every outcome", async () => {
-  const value = await workflow();
-  assert.match(value, /actions\/checkout@v5/);
-  assert.match(value, /actions\/setup-node@v5/);
-  assert.match(value, /node-version: 24\.13\.0/);
-  assert.match(value, /if: always\(\)/);
+test("runs the complete guarded production deployment through pinned Dagger", () => {
   assert.match(
-    value,
-    /rm -f wrangler\.\{data,discord-rest,gateway,interactions,roll,web-api\}\.jsonc/,
+    deploy,
+    /uses: dagger\/dagger-for-github@27b130bf0f79a7f6fbbbe0fbca6760dc9bb40a77 # v8\.4\.1/,
   );
+  assert.match(deploy, /version: v0\.21\.9/);
+  assert.match(
+    deploy,
+    /call: production-deploy --source=\. --sha=\$\{\{ inputs\.sha \}\} --build-time=\$\{\{ steps\.metadata\.outputs\.build_time \}\} --run-nonce=\$\{\{ github\.run_id \}\}\.\$\{\{ github\.run_attempt \}\} --apply-migrations=\$\{\{ inputs\.apply_migrations \}\} --allow-gateway-deploy=\$\{\{ inputs\.allow_gateway_deploy \}\}/,
+  );
+  assert.match(deploy, /--values=env:\/\/PRODUCTION_VALUES_B64/);
+  assert.match(deploy, /--cloudflare-api-token=env:\/\/CLOUDFLARE_API_TOKEN/);
+  assert.match(deploy, /--cloudflare-account-id=env:\/\/CLOUDFLARE_ACCOUNT_ID/);
+
+  const referencedSecrets = [...deploy.matchAll(/\$\{\{ secrets\.([A-Z0-9_]+) \}\}/g)]
+    .map((match) => match[1])
+    .toSorted();
+  assert.deepEqual(referencedSecrets, productionSecrets);
+  for (const name of productionSecrets) {
+    assert.match(deploy, new RegExp(`${name}: \\$\\{\\{ secrets\\.${name} \\}\\}`));
+    assert.match(deploy, new RegExp(`env://${name}`));
+  }
+});
+
+test("removes the legacy runner deployment path and retains protected job identity", () => {
+  assert.match(workflow, /^ {2}deploy:/m);
+  assert.match(deploy, /timeout-minutes: 45/);
+  assert.doesNotMatch(
+    deploy,
+    /setup-node|npm ci|production:materialize|wrangler |production-plan\.mjs|assert-migration-state\.mjs|verify-audience-snapshot\.mjs|production-active-settings\.mjs|production-smoke\.mjs/,
+  );
+  assert.doesNotMatch(workflow, /allow_existing_dependencies|allow-existing-dependencies/);
 });
