@@ -223,6 +223,34 @@ export class DiceWitch {
     return "production deployment passed"
   }
 
+  /** Bake and verify the exact deployed production appearance thumbnails. */
+  @func({ cache: "never" })
+  async productionThumbsBake(
+    @argument({ defaultPath: "/", ignore: SOURCE_IGNORES }) source: Directory,
+    sha: string,
+    runNonce: string,
+    bakeSecret: Secret,
+  ): Promise<string> {
+    const validatedSha = validateCommitSha(sha)
+    const validatedRunNonce = validateRunNonce(runNonce)
+    const container = this.environment(source, validatedSha)
+      .withoutMount("/root/.npm")
+      .withEnvVariable("DAGGER_RUN_NONCE", validatedRunNonce)
+      .withSecretVariable(
+        "PRODUCTION_APPEARANCE_THUMBS_BAKE_SECRET",
+        bakeSecret,
+      )
+      .withExec([
+        "node",
+        "/workspace/cloudflare/tools/production-thumbs-bake.mjs",
+        "--expected-sha",
+        validatedSha,
+      ])
+
+    await container.sync()
+    return "production thumbnails baked and verified"
+  }
+
   private environment(source: Directory, sha: string): Container {
     const manifests = dag
       .directory()

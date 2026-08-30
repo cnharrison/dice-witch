@@ -1,0 +1,74 @@
+name: Bake production appearance thumbnails
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full deployed production commit SHA
+        required: true
+        type: string
+      confirmation:
+        description: Type bake-production-thumbnails
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dice-witch-production-thumbnail-bake
+  cancel-in-progress: false
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://dicewit.ch
+    env:
+      REQUESTED_SHA: ${{ inputs.sha }}
+      BAKE_CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Validate bake authorization
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$BAKE_CONFIRMATION" = "bake-production-thumbnails"
+
+      - name: Check out workflow source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify workflow source
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Require successful exact-SHA CI
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/verify-ci-promotion.mjs --sha "$REQUESTED_SHA"
+
+      - name: Verify exact production build
+        run: |
+          set -euo pipefail
+          metadata="$(curl --fail --silent --show-error --max-time 15 https://dicewit.ch/api/meta)"
+          test "$(jq -r '.environment' <<< "$metadata")" = "production"
+          deployed_sha="$(jq -r '.build.sha' <<< "$metadata")"
+          test "$deployed_sha" = "$REQUESTED_SHA"
+
+      - name: Bake production thumbnails through Dagger
+        uses: dagger/dagger-for-github@27b130bf0f79a7f6fbbbe0fbca6760dc9bb40a77 # v8.4.1
+        env:
+          PRODUCTION_APPEARANCE_THUMBS_BAKE_SECRET: ${{ secrets.PRODUCTION_APPEARANCE_THUMBS_BAKE_SECRET }}
+        with:
+          version: v0.21.9
+          call: production-thumbs-bake --source=. --sha=${{ inputs.sha }} --run-nonce=${{ github.run_id }}.${{ github.run_attempt }} --bake-secret=env://PRODUCTION_APPEARANCE_THUMBS_BAKE_SECRET

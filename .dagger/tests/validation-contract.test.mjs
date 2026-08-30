@@ -30,6 +30,20 @@ describe("Dagger deployment validation contract", () => {
     assert.match(deployment, /productionDeployCommand/)
   })
 
+  it("keeps production thumbnail baking non-cacheable and secret-bounded", () => {
+    const bake = moduleSource.slice(
+      moduleSource.indexOf("  async productionThumbsBake("),
+      moduleSource.indexOf("  private environment("),
+    )
+    assert.match(
+      moduleSource,
+      /@func\(\{ cache: "never" \}\)\n  async productionThumbsBake\(/,
+    )
+    assert.match(bake, /\.withoutMount\("\/root\/\.npm"\)/)
+    assert.match(bake, /PRODUCTION_APPEARANCE_THUMBS_BAKE_SECRET/)
+    assert.match(bake, /production-thumbs-bake\.mjs/)
+  })
+
   it("requires an explicit UTC build timestamp", () => {
     const timestamp = "2026-07-25T04:21:05.000Z"
     assert.equal(validateBuildTime(timestamp), timestamp)

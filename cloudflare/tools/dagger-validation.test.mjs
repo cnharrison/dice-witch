@@ -39,6 +39,7 @@ test("private validation strips every deployment secret from child processes", (
   for (const name of [
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
+    "PRODUCTION_APPEARANCE_THUMBS_BAKE_SECRET",
     "PRODUCTION_VALUES_B64",
     "STAGING_CONFIG_B64",
     "STAGING_GATEWAY_ORIGIN",
