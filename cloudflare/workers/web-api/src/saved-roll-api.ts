@@ -506,7 +506,11 @@ async function authorizedLibraries(
       }
       if (proof instanceof Response) return proof;
       if (proof.status === "found") {
-        libraries.push({ ...library, ...proof });
+        libraries.push({
+          ...library,
+          isAdmin: proof.isAdmin,
+          isDiceWitchAdmin: proof.isDiceWitchAdmin,
+        });
       }
     }
   }

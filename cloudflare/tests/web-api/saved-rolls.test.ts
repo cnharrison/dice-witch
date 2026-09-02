@@ -105,6 +105,16 @@ const ListResponseSchema = z.strictObject({
   listRevision: z.number(),
   savedRolls: z.array(z.never()),
 });
+const LibrariesResponseSchema = z.strictObject({
+  status: z.literal("found"),
+  libraries: z.array(z.strictObject({
+    guildId: z.string(),
+    guildName: z.string(),
+    guildIcon: z.string().nullable(),
+    isAdmin: z.boolean(),
+    isDiceWitchAdmin: z.boolean(),
+  })),
+});
 const CreateV2ResponseSchema = z.strictObject({
   status: z.literal("applied"),
   listRevision: z.number(),
@@ -247,6 +257,57 @@ describe("saved-roll Web API", () => {
     );
     expect(ListResponseSchema.parse(await response.json())).toMatchObject({
       status: "found",
+    });
+  });
+
+  it("returns the exact frontend library contract", async () => {
+    const dataFetch = vi.fn((dataRequest: Request) => {
+      const path = new URL(dataRequest.url).pathname;
+      if (path === "/internal/sessions/current") {
+        return Promise.resolve(sessionResponse());
+      }
+      if (path === "/internal/saved-rolls/v1/libraries") {
+        return Promise.resolve(Response.json({
+          status: "found",
+          libraries: [{
+            guildId,
+            guildName: "Moonlit Library",
+            guildIcon: null,
+          }],
+        }));
+      }
+      expect(path).toBe("/internal/memberships/permissions");
+      return Promise.resolve(Response.json({
+        status: "applied",
+        permissions: { isAdmin: true, isDiceWitchAdmin: false },
+      }));
+    });
+    const env = bindings(dataFetch);
+    env.DISCORD_REST.inspectMembership = vi.fn(() =>
+      Promise.resolve({
+        status: "found" as const,
+        isAdmin: true,
+        isDiceWitchAdmin: false,
+      })
+    );
+
+    const response = await handleAuthRequest(
+      request("/api/saved-rolls/v2/libraries"),
+      env,
+      vi.fn(),
+      () => now,
+    );
+
+    expect(response.status).toBe(200);
+    expect(LibrariesResponseSchema.parse(await response.json())).toEqual({
+      status: "found",
+      libraries: [{
+        guildId,
+        guildName: "Moonlit Library",
+        guildIcon: null,
+        isAdmin: true,
+        isDiceWitchAdmin: false,
+      }],
     });
   });
 
