@@ -56,6 +56,17 @@ function escapeDiscordMarkdown(value: string): string {
   return escaped;
 }
 
+function formatRollTitle(title: string): string {
+  let content = "";
+  let offset = 0;
+  for (const match of title.matchAll(/\|\|([\s\S]+?)\|\|/g)) {
+    content += escapeDiscordMarkdown(title.slice(offset, match.index));
+    content += `||${escapeDiscordMarkdown(match[0].slice(2, -2))}||`;
+    offset = match.index + match[0].length;
+  }
+  return content + escapeDiscordMarkdown(title.slice(offset));
+}
+
 function savedRollAttributionSuffix(
   savedRoll: RollResultMessageOptions["savedRoll"],
 ): string {
@@ -254,7 +265,7 @@ function resultHeading(
 ): DiscordContainerChild[] {
   const heading = options.title;
   if (heading === null) return [];
-  const content = `## ${escapeDiscordMarkdown(heading)}`;
+  const content = `## ${formatRollTitle(heading)}`;
   const accessory = headingAction(options);
   return accessory === null
     ? [{ type: 10, content }]

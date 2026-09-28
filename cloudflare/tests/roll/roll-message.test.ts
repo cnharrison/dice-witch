@@ -327,6 +327,23 @@ describe("buildRollResultMessage", () => {
     });
   });
 
+  it("renders spoiler markers in roll titles without enabling other Markdown", () => {
+    const message = buildRollResultMessage(result(["1d20"]), {
+      source: "discord",
+      title: "Reveal ||secret **result**|| and |literal| ||unclosed",
+      repetitions: 1,
+      username: "roller",
+      filename: "dice.png",
+    });
+    const container = message.components[0];
+    if (container?.type !== 17) throw new Error("Result Container is missing");
+
+    expect(container.components[0]).toEqual({
+      type: 10,
+      content: "## Reveal ||secret \\*\\*result\\*\\*|| and \\|literal\\| \\|\\|unclosed",
+    });
+  });
+
   it("uses the current limit message for rejected oversized rolls", () => {
     expect(buildRollErrorMessage(result(["51d6"]))).toEqual({
       flags: DISCORD_COMPONENTS_V2_FLAG,
