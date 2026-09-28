@@ -68,6 +68,12 @@ type StoredLifecycle = {
   alert_message_id: string | null;
 };
 
+const ALERT_CLAIM_PREDICATE = `state != 'delivered'
+  AND alert_state IN ('none', 'sending', 'failed')
+  AND alert_message_id IS NULL
+  AND ((alert_state = 'none' AND alert_lease_until IS NULL) OR alert_lease_until <= ?)
+  AND (state = 'failed' OR deferred_at <= ?)`;
+
 const STATE_RANK = {
   deferred: 0,
   accepted: 1,
@@ -303,7 +309,8 @@ export class D1RollLifecycleRepository {
             ),
           )
           .run();
-        if (result.meta.changes !== 1) {
+        // D1 includes trigger writes in meta.changes.
+        if (result.meta.changes < 1) {
           throw new Error("Roll lifecycle insert was not applied");
         }
         return { status: "applied" };
@@ -378,7 +385,7 @@ export class D1RollLifecycleRepository {
         existing.revision,
       )
       .run();
-    if (update.meta.changes === 1) return { status: "applied" };
+    if (update.meta.changes > 0) return { status: "applied" };
     const concurrent = await this.read(snapshot.interactionId);
     if (concurrent === null) {
       throw new Error("Roll lifecycle record disappeared during update");
@@ -408,21 +415,12 @@ export class D1RollLifecycleRepository {
     const candidates = await this.db
       .prepare(
         `SELECT interaction_id
-         FROM roll_lifecycle_receipts
-         WHERE (
-           (alert_state = 'none'
-             AND (alert_lease_until IS NULL OR alert_lease_until <= ?))
-           OR (alert_state = 'sending' AND alert_lease_until <= ?)
-           OR (alert_state = 'failed' AND alert_message_id IS NULL
-             AND alert_lease_until <= ?)
-         ) AND (
-           state = 'failed'
-           OR (state IN ('deferred', 'accepted', 'delivery_started') AND deferred_at <= ?)
-         )
+         FROM roll_lifecycle_receipts INDEXED BY idx_roll_lifecycle_alert_candidates
+         WHERE ${ALERT_CLAIM_PREDICATE}
          ORDER BY deferred_at, interaction_id
          LIMIT ?`,
       )
-      .bind(now, now, now, now - delayedAfterMs, limit)
+      .bind(now, now - delayedAfterMs, limit)
       .all<{ interaction_id: string }>();
     const claimed: RollLifecycleAlertWorkItem[] = [];
     for (const { interaction_id: interactionId } of candidates.results) {
@@ -431,16 +429,9 @@ export class D1RollLifecycleRepository {
           `UPDATE roll_lifecycle_receipts
            SET alert_state = 'sending', alert_lease_until = ?,
                alert_attempts = alert_attempts + 1, updated_at = ?
-           WHERE interaction_id = ?
-             AND (
-               (alert_state = 'none'
-                 AND (alert_lease_until IS NULL OR alert_lease_until <= ?))
-               OR (alert_state = 'sending' AND alert_lease_until <= ?)
-               OR (alert_state = 'failed' AND alert_message_id IS NULL
-                 AND alert_lease_until <= ?)
-             )`,
+           WHERE interaction_id = ? AND ${ALERT_CLAIM_PREDICATE}`,
         )
-        .bind(now + leaseMs, now, interactionId, now, now, now)
+        .bind(now + leaseMs, now, interactionId, now, now - delayedAfterMs)
         .run();
       if (update.meta.changes !== 1) continue;
       const row = await this.readWithId(interactionId);

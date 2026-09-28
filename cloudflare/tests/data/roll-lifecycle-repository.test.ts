@@ -1,5 +1,5 @@
 import { applyD1Migrations } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { dataTestEnv as dataEnv } from "./test-bindings";
 import {
   parseRollLifecycleContext,
@@ -417,6 +417,86 @@ describe("D1RollLifecycleRepository", () => {
     await expect(
       repository.claimAlertUpdates(acceptedAt + 180_020, 60_000, 10),
     ).resolves.toHaveLength(1);
+  });
+
+  it("orders timestamp ties and excludes competing claims", async () => {
+    const repository = new D1RollLifecycleRepository(dataEnv.DATA);
+    const secondId = "100000000000000006";
+    await repository.record(snapshot({ interactionId: secondId }));
+    await repository.record(snapshot());
+    const now = acceptedAt + 120_000;
+    const first = await repository.claimAlerts(now, 120_000, 60_000, 1);
+    expect(first.map(({ interactionId: id }) => id)).toEqual([interactionId]);
+    const claims = await Promise.all([
+      repository.claimAlerts(now, 120_000, 60_000, 1),
+      new D1RollLifecycleRepository(dataEnv.DATA).claimAlerts(now, 120_000, 60_000, 1),
+    ]);
+    expect(claims.flat().map(({ interactionId: id }) => id)).toEqual([secondId]);
+    await expect(dataEnv.DATA.prepare("SELECT alert_attempts FROM roll_lifecycle_receipts ORDER BY interaction_id").all())
+      .resolves.toMatchObject({ results: [{ alert_attempts: 1 }, { alert_attempts: 1 }] });
+  });
+
+  it("reclaims expired send and update leases and honors failed retry boundaries", async () => {
+    const repository = new D1RollLifecycleRepository(dataEnv.DATA);
+    await repository.record(snapshot());
+    const now = acceptedAt + 120_000;
+    await expect(repository.claimAlerts(now, 120_000, 100, 1)).resolves.toHaveLength(1);
+    await expect(repository.claimAlerts(now + 99, 120_000, 100, 1)).resolves.toEqual([]);
+    await expect(repository.claimAlerts(now + 100, 120_000, 100, 1)).resolves.toHaveLength(1);
+    await repository.markAlertFailed(interactionId, "send", now + 200);
+    await expect(repository.claimAlerts(now + 199, 120_000, 100, 1)).resolves.toEqual([]);
+    await expect(repository.claimAlerts(now + 200, 120_000, 100, 1)).resolves.toHaveLength(1);
+    await repository.markAlertSent(interactionId, "100000000000000099", 1, now + 201);
+    await repository.record(snapshot({
+      revision: 2, state: "delivered", terminalAt: now + 202, attempts: 1, httpStatus: 200,
+    }));
+    await expect(repository.claimAlertUpdates(now + 202, 100, 1)).resolves.toHaveLength(1);
+    await expect(repository.claimAlertUpdates(now + 301, 100, 1)).resolves.toEqual([]);
+    await expect(repository.claimAlertUpdates(now + 302, 100, 1)).resolves.toHaveLength(1);
+    await repository.markAlertFailed(interactionId, "update", now + 402);
+    await expect(repository.claimAlertUpdates(now + 401, 100, 1)).resolves.toEqual([]);
+    const claims = await Promise.all([
+      repository.claimAlertUpdates(now + 402, 100, 1),
+      new D1RollLifecycleRepository(dataEnv.DATA).claimAlertUpdates(now + 402, 100, 1),
+    ]);
+    expect(claims.flat()).toHaveLength(1);
+    expect(claims.flat()[0]?.alertMessageId).toBe("100000000000000099");
+    await repository.markAlertUpdated(interactionId, 2, now + 403);
+    await expect(repository.claimAlerts(now + 1_000, 120_000, 100, 1)).resolves.toEqual([]);
+    await expect(repository.claimAlertUpdates(now + 1_000, 100, 1)).resolves.toEqual([]);
+  });
+
+  it("rechecks delivery eligibility after selecting an alert candidate", async () => {
+    const repository = new D1RollLifecycleRepository(dataEnv.DATA);
+    await repository.record(snapshot());
+    const now = acceptedAt + 120_000;
+    const prepare = dataEnv.DATA.prepare.bind(dataEnv.DATA);
+    const spy = vi.spyOn(dataEnv.DATA, "prepare").mockImplementation((sql) => {
+      const statement = prepare(sql);
+      if (sql.startsWith("SELECT interaction_id") && sql.includes("roll_lifecycle_receipts")) {
+        const bind = statement.bind.bind(statement);
+        vi.spyOn(statement, "bind").mockImplementation((...params) => {
+          const bound = bind(...params);
+          const all = bound.all.bind(bound);
+          vi.spyOn(bound, "all").mockImplementation(async <T>() => {
+            const result = await all<T>();
+            await repository.record(snapshot({
+              revision: 2, state: "delivered", terminalAt: now, attempts: 1, httpStatus: 200,
+            }));
+            return result;
+          });
+          return bound;
+        });
+      }
+      return statement;
+    });
+    try {
+      await expect(repository.claimAlerts(now, 120_000, 100, 1)).resolves.toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+    await expect(dataEnv.DATA.prepare("SELECT state, alert_state, alert_attempts FROM roll_lifecycle_receipts").first())
+      .resolves.toEqual({ state: "delivered", alert_state: "none", alert_attempts: 0 });
   });
 
   it("claims known failures immediately and deletes records after retention", async () => {

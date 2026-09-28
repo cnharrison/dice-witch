@@ -301,17 +301,10 @@ export class D1GameDetectionRepository {
       `SELECT r.interaction_id, r.command_name, r.scope,
               r.received_at, r.context_json
        FROM roll_lifecycle_receipts AS r
-       CROSS JOIN game_detection_control AS control
-       WHERE control.singleton = 1
-         AND r.state = 'delivered'
-         AND r.received_at >= control.active_play_started_at
-         AND NOT EXISTS (
-           SELECT 1 FROM game_detection_rolls AS observed
-           WHERE observed.interaction_id = r.interaction_id
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM game_detection_skipped_receipts AS skipped
-           WHERE skipped.interaction_id = r.interaction_id
+       WHERE r.game_detection_pending = 1
+         AND r.received_at >= (
+           SELECT active_play_started_at
+           FROM game_detection_control WHERE singleton = 1
          )
        ORDER BY r.received_at, r.interaction_id
        LIMIT ?`,
@@ -352,17 +345,10 @@ export class D1GameDetectionRepository {
       `SELECT EXISTS (
          SELECT 1
          FROM roll_lifecycle_receipts AS r
-         CROSS JOIN game_detection_control AS control
-         WHERE control.singleton = 1
-           AND r.state = 'delivered'
-           AND r.received_at >= control.active_play_started_at
-           AND NOT EXISTS (
-             SELECT 1 FROM game_detection_rolls AS observed
-             WHERE observed.interaction_id = r.interaction_id
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM game_detection_skipped_receipts AS skipped
-             WHERE skipped.interaction_id = r.interaction_id
+         WHERE r.game_detection_pending = 1
+           AND r.received_at >= (
+             SELECT active_play_started_at
+             FROM game_detection_control WHERE singleton = 1
            )
        ) AS pending`,
     ).first<{ pending: number }>();
@@ -1413,7 +1399,7 @@ export class D1GameDetectionRepository {
       throw new Error("Expired game-detection rolls are not classified");
     }
 
-    const results = await this.db.batch([
+    const results = await this.db.batch<{ deleted_count: number }>([
       this.db.prepare(
         `INSERT INTO game_detection_daily_aggregates (
            day, classification, game_id_key, roll_count, titled_roll_count
@@ -1433,6 +1419,8 @@ export class D1GameDetectionRepository {
       this.db.prepare(
         "DELETE FROM game_detection_rolls WHERE expires_at <= ?",
       ).bind(now),
+      // Unlike D1 meta.changes, changes() excludes receipt trigger writes.
+      this.db.prepare("SELECT changes() AS deleted_count"),
     ]);
     await this.db.prepare(
       `DELETE FROM game_detection_sessions
@@ -1442,10 +1430,10 @@ export class D1GameDetectionRepository {
            WHERE observed.session_id = game_detection_sessions.session_id
          )`,
     ).run();
-    const deleted = results[1];
+    const deleted = results[2]?.results[0];
     if (deleted === undefined) {
       throw new Error("Game-detection retention mutation was not atomic");
     }
-    return changes(deleted);
+    return deleted.deleted_count;
   }
 }

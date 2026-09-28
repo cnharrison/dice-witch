@@ -344,6 +344,7 @@ describe("D1 business schema migration", () => {
       { name: "0018_appearance_profile_fonts_r37.sql" },
       { name: "0019_game_detection_ingest_skips.sql" },
       { name: "0020_appearance_reset_snapshots.sql" },
+      { name: "0021_receipt_pending_work.sql" },
     ]);
   });
 

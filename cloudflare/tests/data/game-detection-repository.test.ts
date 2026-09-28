@@ -209,6 +209,68 @@ async function record(...values: RollLifecycleSnapshotV1[]): Promise<void> {
 }
 
 describe("D1GameDetectionRepository", () => {
+  it("orders equal timestamps and ingests older receipts delivered after the queue drains", async () => {
+    const older = snapshot({ interactionId: "100000000000000401", receivedAt: baseTime - 1_000 });
+    const first = snapshot({ interactionId: "100000000000000402", receivedAt: baseTime });
+    const second = snapshot({ interactionId: "100000000000000403", receivedAt: baseTime });
+    const lifecycle = new D1RollLifecycleRepository(dataEnv.DATA);
+    await record(second, first, {
+      ...older, revision: 1, state: "accepted", terminalAt: null,
+      deliveryStartedAt: null, httpStatus: null, attempts: 0,
+    });
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+    await expect(repository.ingestDeliveredRolls(baseTime + 10, 1)).resolves.toMatchObject({
+      ingested: 1, backlog: true,
+    });
+    await expect(dataEnv.DATA.prepare("SELECT interaction_id FROM game_detection_rolls").all())
+      .resolves.toMatchObject({ results: [{ interaction_id: first.interactionId }] });
+    await expect(repository.ingestDeliveredRolls(baseTime + 10, 1)).resolves.toMatchObject({
+      ingested: 1, backlog: false,
+    });
+    await expect(repository.ingestDeliveredRolls(baseTime + 10)).resolves.toMatchObject({ ingested: 0 });
+    await expect(lifecycle.record(older)).resolves.toEqual({ status: "applied" });
+    await expect(repository.ingestDeliveredRolls(baseTime + 11)).resolves.toMatchObject({
+      ingested: 1, backlog: false,
+    });
+    await expect(lifecycle.record(older)).resolves.toEqual({ status: "existing" });
+    await expect(repository.ingestDeliveredRolls(baseTime + 12)).resolves.toMatchObject({ ingested: 0 });
+    await expect(dataEnv.DATA.prepare("SELECT roll_count, started_at FROM game_detection_sessions").first())
+      .resolves.toMatchObject({ roll_count: 3, started_at: older.receivedAt });
+  });
+
+  it("retains pending receipts across null, forward, and backward policy cutoffs", async () => {
+    await record(snapshot({ interactionId: "100000000000000411", receivedAt: baseTime }));
+    const repository = new D1GameDetectionRepository(dataEnv.DATA);
+    for (const cutoff of [null, baseTime + 1]) {
+      await dataEnv.DATA.prepare("UPDATE game_detection_control SET active_play_started_at = ?")
+        .bind(cutoff).run();
+      await expect(repository.ingestDeliveredRolls(baseTime + 10)).resolves.toMatchObject({
+        ingested: 0, backlog: false,
+      });
+    }
+    await dataEnv.DATA.prepare("UPDATE game_detection_control SET active_play_started_at = ?")
+      .bind(baseTime).run();
+    await expect(repository.ingestDeliveredRolls(baseTime + 10)).resolves.toMatchObject({
+      ingested: 1, backlog: false,
+    });
+  });
+
+  it("deduplicates competing ingesters without clearing unprocessed work", async () => {
+    await record(snapshot({ interactionId: "100000000000000421", receivedAt: baseTime }));
+    const results = await Promise.all([
+      new D1GameDetectionRepository(dataEnv.DATA).ingestDeliveredRolls(baseTime + 10, 1),
+      new D1GameDetectionRepository(dataEnv.DATA).ingestDeliveredRolls(baseTime + 10, 1),
+    ]);
+    expect(results.reduce((sum, result) => sum + result.ingested, 0)).toBe(1);
+    expect(results.every(({ skipped }) => skipped === 0)).toBe(true);
+    await expect(dataEnv.DATA.prepare("SELECT COUNT(*) AS count FROM game_detection_rolls").first("count"))
+      .resolves.toBe(1);
+    await expect(dataEnv.DATA.prepare("SELECT roll_count FROM game_detection_sessions").first("roll_count"))
+      .resolves.toBe(1);
+    await expect(new D1GameDetectionRepository(dataEnv.DATA).ingestDeliveredRolls(baseTime + 11))
+      .resolves.toMatchObject({ ingested: 0, backlog: false });
+  });
+
   it("bounds each default ingestion batch below the minute schedule", async () => {
     await record(
       ...Array.from({ length: 26 }, (_, index) => snapshot({
