@@ -247,7 +247,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     for (const config of manifest.configs) {
       const stream = createWriteStream(path.join(output, `${config.role}-tail.jsonl`), { mode: 0o600 });
       const parser = spawn("python3", [path.join(root, "tools/gateway-capacity/staging-tail.py")], { env: { ...process.env, BENCHMARK_REDACTIONS: JSON.stringify([accountToken, ...Object.values(secrets)]) }, stdio: ["pipe", "pipe", "pipe"] });
-      const child = spawn("npm", ["exec", "--no", "--", "wrangler", "tail", config.name, "--format", "json", "--sampling-rate", "1"], { cwd: root, env: { ...process.env, CLOUDFLARE_API_TOKEN: accountToken, CLOUDFLARE_ACCOUNT_ID: manifest.accountId, CI: "true" }, stdio: ["ignore", "pipe", "pipe"], detached: true });
+      const child = spawn("npm", ["exec", "--no", "--", "wrangler", "tail", config.name, "--format", "json"], { cwd: root, env: { ...process.env, CLOUDFLARE_API_TOKEN: accountToken, CLOUDFLARE_ACCOUNT_ID: manifest.accountId, CI: "true" }, stdio: ["ignore", "pipe", "pipe"], detached: true });
       const tail = { child, parser, stream, role: config.role, attached: false, failure: false, childDone: new Promise((resolve) => child.once("close", resolve)), parserDone: new Promise((resolve) => parser.once("close", resolve)), streamDone: new Promise((resolve) => stream.once("close", resolve)) };
       child.stdout.pipe(parser.stdin);
       parser.stdout.pipe(stream);
