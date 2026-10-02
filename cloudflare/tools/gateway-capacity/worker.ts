@@ -32,11 +32,14 @@ export default {
       case "/start":
         await coordinator.initializeFleet(1, 24, capacity);
         {
+          const shardParameter = url.searchParams.get("shard");
+          const shard = Number(shardParameter);
+          if (shardParameter !== null && (!Number.isSafeInteger(shard) || String(shard) !== shardParameter || shard < assignment.firstShardId || shard > assignment.lastShardId)) throw new Error("Invalid benchmark shard");
           const target = {
             generation: 1,
             shardCount: 24,
             assignment,
-            shardIds: Array.from({ length: assignment.shardCount }, (_, i) => assignment.firstShardId + i),
+            shardIds: shardParameter === null ? Array.from({ length: assignment.shardCount }, (_, i) => assignment.firstShardId + i) : [shard],
           };
           await partition.executeFleetCommand({ type: "start-target-shards", ...target });
           await partition.executeFleetCommand({ type: "activate-generation", ...target });

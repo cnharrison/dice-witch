@@ -206,7 +206,16 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       report.actorAgreement = await expectActorAgreement(config);
       await request(fixture, "/configure", { runId: report.runId, guilds: model.guilds, channels: model.channels, heartbeatMs: model.heartbeatMs, knownGuilds: model.knownGuilds });
       await phase("startup", async () => {
-        await fleet(config, "/start", true);
+        assert(model.startupMode === undefined || model.startupMode === "sequential", "Invalid benchmark startup mode");
+        if (model.startupMode === "sequential") {
+          const capacity = config.role === "six" ? 6 : 24;
+          for (let shard = 0; shard < SHARDS; shard++) {
+            await request(config, `/start?partition=${Math.floor(shard / capacity)}&shard=${shard}`, {});
+            await until(config, ({ shards }) => shards.some((status) => status.shardId === shard && status.state === "ready"), `shard ${shard} READY`, model.heartbeatMs);
+          }
+        } else {
+          await fleet(config, "/start", true);
+        }
         await until(config, ({ shards, stats }) => shards.length === SHARDS && shards.every((s) => s.state === "ready") && stats.connected === SHARDS, "READY", model.heartbeatMs);
         await request(fixture, "/replay", { countPerShard: model.guilds, rate: 600, channelUpdates: false });
         lifecycle = model.knownGuilds ? 0 : model.guilds;
