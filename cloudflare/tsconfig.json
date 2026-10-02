@@ -22,6 +22,7 @@
     "workers/**/*.ts",
     "packages/**/*.ts",
     "tests/**/*.ts",
+    "tools/gateway-capacity/worker.ts",
     "vitest.*.config.ts"
   ],
   "exclude": [
