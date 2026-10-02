@@ -84,8 +84,9 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     assert(content.ok, "Deployed staging source could not be inspected");
     const parts = await content.formData();
     const module = parts.get(path.basename(config.outfile));
-    assert(module instanceof Blob, "Deployed staging main module is missing");
-    assert.equal(createHash("sha256").update(new Uint8Array(await module.arrayBuffer())).digest("hex"), config.digest, "Deployed staging code does not match its local bundle");
+    assert(typeof module === "string" || module instanceof Blob, "Deployed staging main module is missing");
+    const moduleBytes = typeof module === "string" ? Buffer.from(module) : new Uint8Array(await module.arrayBuffer());
+    assert.equal(createHash("sha256").update(moduleBytes).digest("hex"), config.digest, "Deployed staging code does not match its local bundle");
     assert.equal(createHash("sha256").update(await readFile(config.configPath)).digest("hex"), config.configDigest, "Deployment configuration changed");
     const expected = JSON.parse(await readFile(config.configPath, "utf8"));
     const settings = await api(`workers/scripts/${config.name}/settings`);
