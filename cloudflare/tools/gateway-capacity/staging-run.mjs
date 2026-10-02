@@ -42,6 +42,16 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   let maximumBillableRows = 0;
   let lastMetricCheck = 0;
   let cleanupFailed = false;
+  let lastPoll = null;
+  const expectedTokenDigest = createHash("sha256").update(secrets.DISCORD_BOT_TOKEN).digest("hex");
+
+  function withoutTokens(value) {
+    if (Array.isArray(value)) return value.map(withoutTokens);
+    if (value !== null && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).filter(([key]) => !/token/i.test(key)).map(([key, entry]) => [key, withoutTokens(entry)]));
+    }
+    return value;
+  }
 
   async function api(resource) {
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${manifest.accountId}/${resource}`, { headers: { authorization: `Bearer ${accountToken}` }, signal: AbortSignal.timeout(30_000), redirect: "error" });
@@ -148,14 +158,30 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     while (Date.now() < deadline) {
       await costAndResourceGuard();
       const [parts, stats] = await Promise.all([fleet(config, "/status"), request(fixture, "/stats")]);
-      assert.deepEqual(stats.errors, [], "Fixture errors");
       const shards = parts.flatMap(({ connections }) => connections);
+      lastPoll = { shards, stats };
+      assert.deepEqual(stats.errors, [], "Fixture errors");
       assert(shards.every(({ state, lastError }) => state !== "fatal" && lastError === null), "Gateway runtime error");
       const heartbeatHealthy = shards.length === SHARDS && shards.every((s) => s.lastHeartbeatAckAt !== null && s.lastHeartbeatSentAt !== null && s.lastHeartbeatAckAt >= s.lastHeartbeatSentAt && Date.now() - s.lastHeartbeatAckAt < heartbeatMs * 2 && stats.heartbeatSequences[s.shardId] === stats.sequences[s.shardId]);
       if (await predicate({ shards, stats, heartbeatHealthy })) return { shards, stats };
       await delay(1_000);
     }
     throw new Error(`Timed out: ${label}`);
+  }
+
+  async function expectActorAgreement(config) {
+    const probe = await request(fixture, "/probe");
+    assert.equal(probe.sourceSha, manifest.sourceSha, "Fixture actor source mismatch");
+    assert.equal(probe.expiresAt, manifest.expiresAt, "Fixture actor deadline mismatch");
+    assert(probe.tokenDigest === expectedTokenDigest, "Fixture actor bot-token mismatch");
+    if (probe.hasProfile || probe.lostRunId) throw new Error("Fixture actor retains a prior profile");
+    const diagnostics = await fleet(config, "/probe");
+    for (const diagnostic of diagnostics) {
+      assert.equal(diagnostic.sourceSha, manifest.sourceSha, "Gateway actor source mismatch");
+      assert.equal(diagnostic.expiresAt, manifest.expiresAt, "Gateway actor deadline mismatch");
+      assert(diagnostic.tokenDigest === expectedTokenDigest, "Gateway actor bot-token mismatch");
+    }
+    return { fixture: withoutTokens(probe), gateways: withoutTokens(diagnostics) };
   }
 
   async function profile(config, model) {
@@ -176,6 +202,8 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     const drained = () => until(config, ({ shards, stats, heartbeatHealthy }) => shards.length === SHARDS && shards.every((s) => s.state === "ready" && s.sequence >= stats.sequences[s.shardId] && s.initialGuildsPending === 0) && stats.counters.lifecycle === lifecycle && stats.counters.directory === directory && heartbeatHealthy, "event and heartbeat drain", model.heartbeatMs);
     try {
       await stop();
+      lastPoll = null;
+      report.actorAgreement = await expectActorAgreement(config);
       await request(fixture, "/configure", { runId: report.runId, guilds: model.guilds, channels: model.channels, heartbeatMs: model.heartbeatMs, knownGuilds: model.knownGuilds });
       await phase("startup", async () => {
         await fleet(config, "/start", true);
@@ -232,6 +260,11 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     } catch (error) {
       report.status = "failed";
       report.failure = error.message;
+      const observed = lastPoll;
+      if (observed) {
+        report.lastFixture = withoutTokens({ counters: observed.stats?.counters, errors: observed.stats?.errors, connected: observed.stats?.connected, sequences: observed.stats?.sequences, heartbeatSequences: observed.stats?.heartbeatSequences });
+        report.lastGateway = withoutTokens(observed.shards);
+      }
     } finally {
       report.endedAt = new Date().toISOString();
       if (final) { report.counters = final.stats.counters; report.lastStatus = final.shards; }
@@ -289,20 +322,29 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       const expectedObjects = report.role === "six" ? 4 : 1;
       const objectCount = (values) => new Set(values.map(({ dimensions }) => dimensions.objectId)).size;
       const covered = (values) => objectCount(values) === expectedObjects && report.phases.filter(({ name }) => name === "loaded-observation" || name === "drained-observation").every((phase) => objectCount(values.filter(({ dimensions }) => Date.parse(dimensions.datetime) >= Date.parse(phase.start) && Date.parse(dimensions.datetime) <= Date.parse(phase.end))) === expectedObjects);
-      while (Date.now() < deadline) {
-        if (tails.some(({ failure }) => failure)) throw new Error("Staging Tail failed during metric collection");
-        rows = await graph([report.namespaceId], report.startedAt, report.endedAt);
-        const current = JSON.stringify(rows);
-        stable = covered(rows) && current === previous;
-        if (stable) break;
-        previous = current;
-        await delay(15_000);
+      try {
+        while (Date.now() < deadline) {
+          if (tails.some(({ failure }) => failure)) throw new Error("Staging Tail failed during metric collection");
+          rows = await graph([report.namespaceId], report.startedAt, report.endedAt);
+          const current = JSON.stringify(rows);
+          stable = covered(rows) && current === previous;
+          if (stable) break;
+          previous = current;
+          await delay(15_000);
+        }
+        assert(covered(rows), "Platform samples missing during loaded or drained observation");
+        assert(stable, "Platform metrics did not stabilize");
+        assert(rows.every(({ sum }) => sum.exceededCpuErrors === 0 && sum.exceededMemoryErrors === 0), "Platform resource errors");
+        report.metricsStatus = "reconciled";
+        report.metrics = rows;
+        report.observedMaximumIsolateBytes = Math.max(...rows.map(({ max }) => max.memoryUsageBytes));
+      } catch (error) {
+        report.metricsStatus = "unreconciled";
+        report.metricsError = error.message;
+        report.metricsRows = rows;
+        await save(`${reports.indexOf(report) + 1}-${report.role}-${report.model.name}.json`, report);
+        throw new Error(`Platform metrics unreconciled: ${error.message}`, { cause: error });
       }
-      assert(covered(rows), "Platform samples missing during loaded or drained observation");
-      assert(stable, "Platform metrics did not stabilize");
-      assert(rows.every(({ sum }) => sum.exceededCpuErrors === 0 && sum.exceededMemoryErrors === 0), "Platform resource errors");
-      report.metrics = rows;
-      report.observedMaximumIsolateBytes = Math.max(...rows.map(({ max }) => max.memoryUsageBytes));
       await save(`${reports.indexOf(report) + 1}-${report.role}-${report.model.name}.json`, report);
     }
   } finally {

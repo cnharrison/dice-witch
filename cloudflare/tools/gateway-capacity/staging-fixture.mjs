@@ -2,7 +2,7 @@ import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { z } from "zod";
 import { createFixture } from "./fixture.mjs";
 import { gatewayControlToken } from "../../workers/gateway/src/environment.ts";
-import { authorized, smallBody } from "./staging-auth.ts";
+import { authorized, smallBody, tokenDigest } from "./staging-auth.ts";
 
 const Profile = z.strictObject({
   runId: z.string().uuid(),
@@ -27,6 +27,18 @@ export class FixtureController extends DurableObject {
       const stored = await ctx.storage.get("profile");
       if (stored !== undefined) this.lostRunId = stored.runId;
     });
+  }
+
+  async probe() {
+    const digest = await tokenDigest(this.env.DISCORD_BOT_TOKEN);
+    return {
+      sourceSha: this.env.SOURCE_SHA,
+      expiresAt: Number(this.env.EXPIRES_AT),
+      tokenDigest: digest,
+      hasProfile: this.fixture !== undefined,
+      lostRunId: this.lostRunId ?? null,
+      connected: this.fixture?.connectedCount() ?? 0,
+    };
   }
 
   async configure(value) {
@@ -140,9 +152,10 @@ export default {
     const token = scheme === "Bot" ? env.DISCORD_BOT_TOKEN : await gatewayControlToken(env);
     if (!(await authorized(request, token, scheme))) return new Response(null, { status: 401 });
     if (url.pathname === "/health") return Response.json({ sourceSha: env.SOURCE_SHA, expiresAt: Number(env.EXPIRES_AT) });
-    if (Date.now() >= Number(env.EXPIRES_AT) && url.pathname !== "/stop") return new Response(null, { status: 410 });
+    if (Date.now() >= Number(env.EXPIRES_AT) && url.pathname !== "/stop" && url.pathname !== "/probe") return new Response(null, { status: 410 });
     const controller = env.FIXTURE.getByName(CONTROLLER);
     if (url.pathname === "/bot") return controller.fetch(request);
+    if (url.pathname === "/probe" && request.method === "GET") return Response.json(await controller.probe());
     if (url.pathname === "/stats" && request.method === "GET") return Response.json(await controller.stats());
     if (request.method !== "POST") return new Response(null, { status: 405 });
     if (Number(request.headers.get("content-length")) > 4_096) return new Response(null, { status: 413 });

@@ -1,3 +1,9 @@
+export async function tokenDigest(token: string): Promise<string> {
+  if (typeof token !== "string" || token.length < 50 || token.length > 256) throw new Error("Benchmark token is invalid");
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export async function matchesToken(provided: string | null, expected: string): Promise<boolean> {
   if (typeof provided !== "string" || typeof expected !== "string" || expected.length < 50 || provided.length > 256) return false;
   const encoder = new TextEncoder();

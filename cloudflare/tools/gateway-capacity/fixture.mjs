@@ -158,11 +158,13 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
           }
         } catch (error) {
           errors.push(error.message);
-          if (server.readyState === 1) server.close(4000, "fixture-error");
+          const authFailure = error instanceof Error && (/unexpected bot token|RESUME did not restore/.test(error.message));
+          if (server.readyState === 1) server.close(authFailure ? 4004 : 4000, "fixture-error");
         }
       });
       server.addEventListener("close", () => {
         clearTimeout(authenticationTimer);
+        if (server.readyState !== 3) server.close();
         sockets.delete(server);
         retiringSockets.delete(server);
         if (connections.get(shardId) === server) connections.delete(shardId);

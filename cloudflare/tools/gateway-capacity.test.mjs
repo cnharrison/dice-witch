@@ -55,6 +55,37 @@ test("staging bundle preparation refuses unapproved and dirty deployment inputs"
   } finally { await rm(output, { recursive: true, force: true }); }
 });
 
+test("capacity fixtures close wrong-token authentication with a nonrecoverable code", async () => {
+  const require = createRequire(import.meta.resolve("wrangler"));
+  const { Response, WebSocketPair } = require("miniflare");
+  const fixture = createFixture({ Response, WebSocketPair, guildCount: 24, channelCount: 1, heartbeatMs: 1_000, ...fixtureDestinations });
+  const response = await fixture.outbound(new Request("https://gateway.discord.gg/", { headers: { upgrade: "websocket" } }));
+  const socket = response.webSocket;
+  socket.accept();
+  const closed = new Promise((resolve) => socket.addEventListener("close", resolve, { once: true }));
+  socket.send(JSON.stringify({ op: 2, d: { token: "bad.bad.bad-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", shard: [0, 24] } }));
+  const event = await closed;
+  assert.equal(event.code, 4004);
+  assert.deepEqual(fixture.errors, ["Benchmark received an unexpected bot token"]);
+});
+
+test("capacity fixtures acknowledge a peer close so the client does not stall", async () => {
+  const require = createRequire(import.meta.resolve("wrangler"));
+  const { Response, WebSocketPair } = require("miniflare");
+  const fixture = createFixture({ Response, WebSocketPair, guildCount: 24, channelCount: 1, heartbeatMs: 1_000, ...fixtureDestinations });
+  const response = await fixture.outbound(new Request("https://gateway.discord.gg/", { headers: { upgrade: "websocket" } }));
+  const socket = response.webSocket;
+  socket.accept();
+  socket.send(JSON.stringify({ op: 2, d: { token: FIXTURE_TOKEN, shard: [0, 24] } }));
+  const deadline = Date.now() + 5_000;
+  while (fixture.connectedCount() !== 1 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(fixture.connectedCount(), 1);
+  socket.close(1000, "client-bye");
+  while (socket.readyState !== 3 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(socket.readyState, 3);
+  assert.equal(fixture.connectedCount(), 0);
+});
+
 test("capacity fixtures reject an incorrect persisted RESUME sequence", async () => {
   const require = createRequire(import.meta.resolve("wrangler"));
   const { Response, WebSocketPair } = require("miniflare");
