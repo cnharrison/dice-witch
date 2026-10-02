@@ -210,6 +210,7 @@ function connection(activeGuild: boolean, dispatchActive = false) {
     identity,
     checkpoint: initialGatewayCheckpoint(identity, 1),
     checkpointKey,
+    openingQueue: new GatewayEventQueue(),
     scheduleAlarm: () => Promise.resolve(),
     onReady: () => Promise.resolve(),
     onFatal: () => Promise.resolve(),

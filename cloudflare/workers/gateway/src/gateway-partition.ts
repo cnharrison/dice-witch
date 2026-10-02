@@ -14,6 +14,7 @@ import {
 } from "../../../packages/gateway-protocol/src";
 import {
   GatewayShardConnection,
+  GatewayEventQueue,
   classifyGatewayRuntimeError,
   gatewayGuildInventoryStateKey,
   gatewayInitialGuildStateKey,
@@ -228,6 +229,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
   private rejectedDispatches = 0;
   private lastManagerError: string | null = null;
   private generationTransitionQueue: Promise<void> = Promise.resolve();
+  private readonly openingQueue = new GatewayEventQueue();
   private readonly rollbackReadyShardIds = new Set<number>();
   private pendingCoordinatorRollback = false;
 
@@ -344,6 +346,10 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
         this.ctx.waitUntil(
           (async () => {
             for (const { connection, identity } of connections) {
+              if (
+                this.fleetConnections.get(connectionKey(identity)) !== connection ||
+                this.suspendedFleetGenerations.has(identity.generation)
+              ) return;
               try {
                 await connection.start();
               } catch {
@@ -383,6 +389,10 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
         this.suspendedFleetGenerations.delete(command.generation);
         await this.persistFleetPartitionState();
         for (const connection of this.fleetConnectionsFor(command.generation)) {
+          if (
+            this.suspendedFleetGenerations.has(command.generation) ||
+            !this.fleetConnectionsFor(command.generation).includes(connection)
+          ) return;
           await connection.start();
         }
         return;
@@ -395,6 +405,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
 
   async shutdownFleet(): Promise<void> {
     const connections = [...this.fleetConnections.values()];
+    this.fleetConnections.clear();
     await Promise.all(
       connections.map((connection) => {
         const state = connection.status().state;
@@ -403,7 +414,6 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           : connection.stop().then(() => undefined);
       }),
     );
-    this.fleetConnections.clear();
     this.suspendedFleetGenerations.clear();
     this.recoveryDeadlines.clear();
     await this.ctx.storage.delete(FLEET_PARTITION_STATE_KEY);
@@ -661,6 +671,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           allowedGatewayHostname(this.env),
         ),
       checkpointKey: checkpointKey(identity),
+      openingQueue: this.openingQueue,
       scheduleAlarm: (scheduledAt) =>
         this.scheduleConnectionAlarm(connectionKey(identity), scheduledAt),
       onReady: (readyIdentity) => this.handleConnectionReady(readyIdentity),
@@ -710,6 +721,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           allowedGatewayHostname(this.env),
         ),
       checkpointKey: key,
+      openingQueue: this.openingQueue,
       scheduleAlarm: (scheduledAt) =>
         this.scheduleConnectionAlarm(connectionKey(identity), scheduledAt),
       onReady: async (readyIdentity) => {
@@ -1062,6 +1074,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     const entries = [...this.fleetConnections.entries()].filter(([key]) =>
       key.startsWith(`${String(generation)}:`),
     );
+    for (const [key] of entries) this.fleetConnections.delete(key);
     await Promise.all(
       entries.map(([, connection]) => {
         const state = connection.status().state;
@@ -1070,7 +1083,6 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           : connection.stop().then(() => undefined);
       }),
     );
-    for (const [key] of entries) this.fleetConnections.delete(key);
     this.suspendedFleetGenerations.delete(generation);
     await this.persistFleetPartitionState();
   }

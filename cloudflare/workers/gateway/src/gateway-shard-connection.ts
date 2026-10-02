@@ -105,6 +105,8 @@ export async function gatewaySessionMutationScope(
     .join("");
 }
 
+export const GATEWAY_HANDSHAKE_TIMEOUT_MS = 10_000;
+
 export class GatewayEventQueue {
   private tail: Promise<void> | null = null;
 
@@ -524,6 +526,7 @@ export type GatewayShardConnectionOptions = {
   identity: GatewayShardIdentity;
   checkpoint?: GatewaySessionCheckpoint;
   checkpointKey: string;
+  openingQueue: GatewayEventQueue;
   initialGuildState?: GatewayInitialGuildState;
   guildInventoryState?: GatewayGuildInventoryState;
   scheduleAlarm: (scheduledAt: number) => Promise<void>;
@@ -588,6 +591,8 @@ export class GatewayShardConnection {
   private identifyPermitsGranted = 0;
   private identifyPermitDenials = 0;
   private lastIdentifyPermit: PublicIdentifyPermit | null = null;
+  private readonly openingQueue: GatewayEventQueue;
+  private pendingOpening: AbortController | null = null;
   private readonly ctx: GatewayShardConnectionContext;
   private readonly env: GatewayShardConnectionEnv;
   private readonly identity: GatewayShardIdentity;
@@ -601,6 +606,7 @@ export class GatewayShardConnection {
   private readonly isDispatchActive: (identity: GatewayShardIdentity) => boolean;
 
   constructor(options: GatewayShardConnectionOptions) {
+    this.openingQueue = options.openingQueue;
     this.ctx = options.ctx;
     this.env = options.env;
     this.identity = options.identity;
@@ -856,7 +862,7 @@ export class GatewayShardConnection {
       case "terminate-socket":
         this.clearHeartbeatTimer();
         this.clearIdentifyPermitTimer();
-        this.closeSocket(4000, "reconnect");
+        this.closeSocket(4000, "reconnect", true);
         return;
       case "schedule-reconnect":
         this.scheduleReconnect(action.reason, action.closeCode);
@@ -879,14 +885,31 @@ export class GatewayShardConnection {
   }
 
   private async openSocket(mode: GatewayConnectionMode): Promise<void> {
-    const gatewayUrl =
-      mode === "resume"
-        ? this.machine.checkpoint.resumeGatewayUrl
-        : await this.fetchGatewayUrl();
-    if (gatewayUrl === null) {
-      throw new Error("Resume Gateway URL is unavailable");
+    this.pendingOpening?.abort();
+    const opening = new AbortController();
+    this.pendingOpening = opening;
+    try {
+      const gatewayUrl =
+        mode === "resume"
+          ? this.machine.checkpoint.resumeGatewayUrl
+          : await this.fetchGatewayUrl();
+      if (gatewayUrl === null) {
+        throw new Error("Resume Gateway URL is unavailable");
+      }
+      await this.openingQueue.enqueue(() =>
+        this.openHandshakeSocket(gatewayUrl, mode, opening.signal),
+      );
+    } finally {
+      if (this.pendingOpening === opening) this.pendingOpening = null;
     }
+  }
 
+  private openHandshakeSocket(
+    gatewayUrl: string,
+    mode: GatewayConnectionMode,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (signal.aborted) return Promise.resolve();
     const socket = new WebSocket(
       normalizeDiscordGatewayUrl(
         gatewayUrl,
@@ -899,6 +922,35 @@ export class GatewayShardConnection {
       this.initialGuilds.replace([], []);
       this.lifecycleMutationScope = null;
     }
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        socket.removeEventListener("open", finish);
+        socket.removeEventListener("close", finish);
+        socket.removeEventListener("error", fail);
+        signal.removeEventListener("abort", finish);
+        resolve();
+      };
+      const fail = () => {
+        finish();
+        if (this.socket === socket) this.closeSocket(4000, "handshake-failed");
+      };
+      const timer = setTimeout(() => {
+        finish();
+        if (this.socket === socket) this.closeSocket(4000, "handshake-timeout");
+      }, GATEWAY_HANDSHAKE_TIMEOUT_MS);
+      socket.addEventListener("open", finish);
+      socket.addEventListener("close", finish);
+      socket.addEventListener("error", fail);
+      signal.addEventListener("abort", finish, { once: true });
+      this.attachSocketListeners(socket);
+    });
+  }
+
+  private attachSocketListeners(socket: WebSocket): void {
     socket.addEventListener("open", () => {
       this.runSocketEvent(socket, "socket-open", async () => {
         await this.apply({ type: "socket-open" });
@@ -1355,8 +1407,14 @@ export class GatewayShardConnection {
     }, delay);
   }
 
-  private closeSocket(code: number, reason: string): void {
+  private closeSocket(code: number, reason: string, retire = false): void {
+    this.pendingOpening?.abort();
     const socket = this.socket;
+    if (retire) {
+      // Recovery is already scheduled; retire before close callbacks can reschedule it.
+      this.socket = null;
+      this.failedSocket = null;
+    }
     if (socket !== null && socket.readyState <= WebSocket.OPEN) {
       socket.close(code, reason);
     }
