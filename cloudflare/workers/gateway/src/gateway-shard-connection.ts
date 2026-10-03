@@ -898,7 +898,7 @@ export class GatewayShardConnection {
         return;
       case "close-socket":
         this.clearTimers();
-        this.closeSocket(action.code, action.reason);
+        this.closeSocket(action.code, action.reason, true);
         return;
       case "report-suspended":
       case "report-stopped":

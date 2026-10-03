@@ -347,6 +347,24 @@ describe("GatewayShardConnection snapshot persistence", () => {
     } finally { await shard.stop(); }
   });
 
+  it.each(["stop", "suspend"] as const)("ignores a queued heartbeat ACK after %s", async (command) => {
+    const { shard, testable, background } = connection(true);
+    await testable.handleGatewayMessage(readyMessage());
+    await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    const socket = testable.socket;
+    if (socket === null) throw new Error("Fixture socket is required");
+    let release: () => void = () => { throw new Error("Gate is not initialized"); };
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    void testable.socketEventQueue.enqueue(() => gate);
+    testable.runSocketEvent(socket, "message", () => testable.handleGatewayMessage({ type: "heartbeat-ack" }));
+    try {
+      await shard[command]();
+    } finally { release(); }
+    await Promise.all(background);
+    expect(shard.status().lastError).toBeNull();
+    expect(shard.status().state).toBe(command === "stop" ? "stopped" : "suspended");
+  });
+
   it("writes only checkpoints on steady heartbeats and keeps recovery alarms", async () => {
     const { shard, storage, storagePut, scheduleAlarm, testable } = connection(true);
     await testable.handleGatewayMessage(readyMessage());
