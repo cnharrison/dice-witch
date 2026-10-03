@@ -85,11 +85,7 @@ type GatewayOutboundPayload =
   | ReturnType<typeof buildGatewayIdentify>
   | ReturnType<typeof buildGatewayPresenceUpdate>
   | ReturnType<typeof buildGatewayResume>;
-type GatewayStorageValue =
-  | GatewaySessionCheckpoint
-  | GatewayInitialGuildState
-  | GatewayGuildInventoryState;
-type GatewayStorageEntries = { [key: string]: GatewayStorageValue };
+type GatewayStorageEntries = { [key: string]: GatewayShardStorageValue };
 
 export async function gatewaySessionMutationScope(
   sessionId: string,
@@ -360,23 +356,6 @@ export function gatewayGuildInventoryStateKey(checkpointKey: string): string {
   return `${checkpointKey}:guild-inventory-v1`;
 }
 
-function gatewayStorageEntries(
-  checkpointKey: string,
-  checkpoint: GatewaySessionCheckpoint,
-  initialGuildState: GatewayInitialGuildState,
-  guildInventoryState: GatewayGuildInventoryState | null,
-) {
-  const entries = {
-    [checkpointKey]: checkpoint,
-    [gatewayInitialGuildStateKey(checkpointKey)]: initialGuildState,
-  } satisfies GatewayStorageEntries;
-  if (guildInventoryState !== null) {
-    const inventoryKey = gatewayGuildInventoryStateKey(checkpointKey);
-    return { ...entries, [inventoryKey]: guildInventoryState };
-  }
-  return entries;
-}
-
 export function gatewayRecoveryAlarmAt(
   heartbeatIntervalMs: number,
   now: number,
@@ -595,6 +574,8 @@ export class GatewayShardConnection {
   private readonly channelDirectoryQueue = new GatewayEventQueue();
   private readonly initialGuilds: InitialGuildTracker;
   private readonly guildInventory: GuildInventory;
+  private persistedInitialGuildStateJson: string | undefined;
+  private persistedGuildInventoryStateJson: string | undefined;
   private lifecycleMutationScope: string | null = null;
   private failedSocket: WebSocket | null = null;
   private readyAt: number | null = null;
@@ -634,6 +615,12 @@ export class GatewayShardConnection {
     this.checkpointKey = options.checkpointKey;
     this.initialGuilds = new InitialGuildTracker(options.initialGuildState);
     this.guildInventory = new GuildInventory(options.guildInventoryState);
+    if (options.initialGuildState !== undefined) {
+      this.persistedInitialGuildStateJson = JSON.stringify(this.initialGuilds.snapshot());
+    }
+    if (options.guildInventoryState !== undefined) {
+      this.persistedGuildInventoryStateJson = JSON.stringify(this.guildInventory.snapshot());
+    }
     this.scheduleAlarm = options.scheduleAlarm;
     this.onReady = options.onReady;
     this.onFatal = options.onFatal;
@@ -857,13 +844,25 @@ export class GatewayShardConnection {
         this.send(buildGatewayHeartbeat(action.sequence));
         return;
       case "persist-checkpoint": {
-        const entries = gatewayStorageEntries(
-          this.checkpointKey,
-          this.machine.checkpoint,
-          this.initialGuilds.snapshot(),
-          this.guildInventory.snapshot(),
-        );
+        const initialGuildState = this.initialGuilds.snapshot();
+        const guildInventoryState = this.guildInventory.snapshot();
+        const initialGuildStateJson = JSON.stringify(initialGuildState);
+        const guildInventoryStateJson = guildInventoryState === null
+          ? undefined
+          : JSON.stringify(guildInventoryState);
+        const entries: GatewayStorageEntries = {
+          [this.checkpointKey]: this.machine.checkpoint,
+        };
+        if (initialGuildStateJson !== this.persistedInitialGuildStateJson) {
+          entries[gatewayInitialGuildStateKey(this.checkpointKey)] = initialGuildState;
+        }
+        if (guildInventoryState !== null && guildInventoryStateJson !== this.persistedGuildInventoryStateJson) {
+          entries[gatewayGuildInventoryStateKey(this.checkpointKey)] = guildInventoryState;
+        }
         await this.ctx.storage.put(entries);
+        // Only the submitted snapshots become clean, not mutations made while awaiting the write.
+        this.persistedInitialGuildStateJson = initialGuildStateJson;
+        this.persistedGuildInventoryStateJson = guildInventoryStateJson;
         return;
       }
       case "report-ready":
