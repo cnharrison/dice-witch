@@ -107,6 +107,27 @@ export async function gatewaySessionMutationScope(
 
 export const GATEWAY_HANDSHAKE_TIMEOUT_MS = 10_000;
 
+function discordGatewayUpgradeUrl(websocketUrl: string): string {
+  const url = new URL(websocketUrl);
+  if (url.protocol === "ws:") url.protocol = "http:";
+  else if (url.protocol === "wss:") url.protocol = "https:";
+  else throw new Error("Discord Gateway URL is invalid");
+  return url.toString();
+}
+
+async function discardGatewayUpgrade(response: Response, reason: string): Promise<void> {
+  const socket = response.webSocket;
+  if (socket === null) {
+    await response.body?.cancel();
+    return;
+  }
+  try {
+    socket.accept();
+  } finally {
+    if (socket.readyState <= WebSocket.OPEN) socket.close(4000, reason);
+  }
+}
+
 export class GatewayEventQueue {
   private tail: Promise<void> | null = null;
 
@@ -904,58 +925,110 @@ export class GatewayShardConnection {
     }
   }
 
-  private openHandshakeSocket(
+  private async openHandshakeSocket(
     gatewayUrl: string,
     mode: GatewayConnectionMode,
     signal: AbortSignal,
   ): Promise<void> {
-    if (signal.aborted) return Promise.resolve();
-    const socket = new WebSocket(
+    if (signal.aborted) return;
+    const requestUrl = discordGatewayUpgradeUrl(
       normalizeDiscordGatewayUrl(
         gatewayUrl,
         allowedGatewayHostname(this.env),
       ),
     );
-    this.socket = socket;
-    this.failedSocket = null;
     if (mode === "identify") {
       this.initialGuilds.replace([], []);
       this.lifecycleMutationScope = null;
     }
-    return new Promise<void>((resolve) => {
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        socket.removeEventListener("open", finish);
-        socket.removeEventListener("close", finish);
-        socket.removeEventListener("error", fail);
-        signal.removeEventListener("abort", finish);
-        resolve();
-      };
-      const fail = () => {
-        finish();
-        if (this.socket === socket) this.closeSocket(4000, "handshake-failed");
-      };
-      const timer = setTimeout(() => {
-        finish();
-        if (this.socket === socket) this.closeSocket(4000, "handshake-timeout");
-      }, GATEWAY_HANDSHAKE_TIMEOUT_MS);
-      socket.addEventListener("open", finish);
-      socket.addEventListener("close", finish);
-      socket.addEventListener("error", fail);
-      signal.addEventListener("abort", finish, { once: true });
+    const handshake = new AbortController();
+    const handshakeState = { cancelled: false, timedOut: false };
+    const abortHandshake = () => {
+      handshakeState.cancelled = true;
+      handshake.abort();
+    };
+    signal.addEventListener("abort", abortHandshake);
+    const timer = setTimeout(() => {
+      handshakeState.timedOut = true;
+      handshake.abort();
+    }, GATEWAY_HANDSHAKE_TIMEOUT_MS);
+    try {
+      const response = await fetch(requestUrl, {
+        headers: { Upgrade: "websocket" },
+        redirect: "manual",
+        signal: handshake.signal,
+      });
+      if (handshakeState.cancelled || handshakeState.timedOut) {
+        await discardGatewayUpgrade(
+          response,
+          handshakeState.timedOut ? "handshake-timeout" : "handshake-cancelled",
+        );
+        if (!handshakeState.cancelled) {
+          this.recoverFromFailedHandshake("handshake-timeout");
+        }
+        return;
+      }
+      const socket = response.webSocket;
+      if (response.status !== 101 || socket === null) {
+        await response.body?.cancel();
+        this.recoverFromFailedHandshake("handshake-failed");
+        return;
+      }
+      if (socket.readyState > WebSocket.OPEN) {
+        this.recoverFromFailedHandshake("handshake-failed");
+        return;
+      }
+      this.socket = socket;
+      this.failedSocket = null;
       this.attachSocketListeners(socket);
-    });
-  }
-
-  private attachSocketListeners(socket: WebSocket): void {
-    socket.addEventListener("open", () => {
       this.runSocketEvent(socket, "socket-open", async () => {
         await this.apply({ type: "socket-open" });
       });
-    });
+      if (handshake.signal.aborted) {
+        this.socket = null;
+        await discardGatewayUpgrade(response, "handshake-cancelled");
+        return;
+      }
+      socket.accept();
+    } catch {
+      if (handshakeState.cancelled) return;
+      this.recoverFromFailedHandshake(
+        handshakeState.timedOut ? "handshake-timeout" : "handshake-failed",
+      );
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abortHandshake);
+    }
+  }
+
+  private recoverFromFailedHandshake(
+    reason: "handshake-failed" | "handshake-timeout",
+  ): void {
+    if (
+      this.machine.status === "suspended" ||
+      this.machine.status === "stopped" ||
+      this.machine.status === "fatal"
+    ) {
+      return;
+    }
+    this.lastError = reason;
+    const socket = this.socket;
+    if (socket !== null && socket.readyState <= WebSocket.OPEN) {
+      socket.close(4000, reason);
+      return;
+    }
+    this.ctx.waitUntil(
+      this.apply({
+        type: "socket-closed",
+        code: 4000,
+        closedAt: Date.now(),
+      }).catch(() => {
+        this.lastError = reason;
+      }),
+    );
+  }
+
+  private attachSocketListeners(socket: WebSocket): void {
     socket.addEventListener("message", (event) => {
       this.runSocketEvent(socket, "message", async () => {
         const message = GatewayMessageDataSchema.safeParse(event.data);
