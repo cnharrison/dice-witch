@@ -1,6 +1,6 @@
 import { gatewayPartitionAssignments, validateGatewaySessionCheckpoint, type GatewayPartitionCommand } from "../../packages/gateway-protocol/src";
 import { discordBotToken, gatewayControlToken, type GatewayEnv } from "../../workers/gateway/src/environment";
-import localWorker, { GatewayPartition as LocalPartition } from "./worker";
+import localWorker, { benchmarkEnv, GatewayPartition as LocalPartition } from "./worker";
 import { authorized, smallBody, tokenDigest } from "./staging-auth";
 import { fixtureDestination } from "./staging-policy";
 export { GatewayCoordinator } from "./worker";
@@ -86,7 +86,7 @@ export default {
     if (url.pathname === "/restart" || url.pathname === "/diagnostic" || url.pathname === "/probe") {
       const assignment = gatewayPartitionAssignments(24, Number(env.GATEWAY_FLEET_CONNECTION_CAPACITY))[Number(url.searchParams.get("partition"))];
       if (assignment === undefined) return new Response(null, { status: 400 });
-      return env.GATEWAY_PARTITION.getByName(assignment.partitionName).fetch(new Request(`https://benchmark${url.pathname}`));
+      return benchmarkEnv(env).GATEWAY_PARTITION.getByName(assignment.partitionName).fetch(new Request(`https://benchmark${url.pathname}`));
     }
     return localWorker.fetch(request, env);
   },

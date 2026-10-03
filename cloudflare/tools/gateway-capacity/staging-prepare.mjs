@@ -12,9 +12,10 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.resolve("wrangler"));
 const { build } = require("esbuild");
 
-export async function prepareStaging({ output, accountId, workersSubdomain, sourceSha, expiresAt, purpose }) {
+export async function prepareStaging({ output, accountId, workersSubdomain, sourceSha, expiresAt, purpose, candidateCapacity }) {
   if (accountId !== APPROVED_ACCOUNT || typeof workersSubdomain !== "string" || !/^[a-z0-9-]+$/.test(workersSubdomain) || !/^[a-f0-9]{40}$/.test(sourceSha)) throw new Error("Explicit approved account, subdomain, and source SHA are required");
   if (!["typecheck", "local-test", "deploy"].includes(purpose)) throw new Error("Explicit preparation purpose is required");
+  if (![12, 24].includes(candidateCapacity)) throw new Error("Explicit candidate capacity must be 12 or 24");
   function verifySource() {
     if (purpose !== "deploy") return;
     if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim() !== sourceSha || execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim() !== "") throw new Error("Deployment bundles require clean matching committed source");
@@ -28,7 +29,7 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
   const configs = [];
   for (const [role, name] of Object.entries(STAGING_NAMES)) {
     const fixture = role === "fixture";
-    const capacity = role === "six" ? 6 : 24;
+    const capacity = role === "six" ? 6 : candidateCapacity;
     const outfile = path.join(output, `${name}.mjs`);
     const result = await build({
       entryPoints: [path.join(root, "tools/gateway-capacity", fixture ? "staging-fixture.mjs" : "staging-gateway.ts")],
@@ -70,16 +71,16 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
     await writeFile(`${outfile}.meta.json`, `${JSON.stringify(result.metafile, null, 2)}\n`);
     const digest = createHash("sha256").update(await readFile(outfile)).digest("hex");
     const configDigest = createHash("sha256").update(await readFile(configPath)).digest("hex");
-    configs.push({ role, name, configPath, configDigest, outfile, digest, url: `https://${name}.${workersSubdomain}.workers.dev` });
+    configs.push({ role, name, capacity: fixture ? null : capacity, configPath, configDigest, outfile, digest, url: `https://${name}.${workersSubdomain}.workers.dev` });
   }
   verifySource();
-  const manifest = { purpose, accountId, sourceSha, expiresAt, hostname, maxActiveObjects: 8, maxLoadSeconds: 3_600, maxAdditionalCostUsd: 25, configs };
+  const manifest = { purpose, accountId, sourceSha, expiresAt, hostname, candidateCapacity, maxActiveObjects: 7 + 24 / candidateCapacity, maxLoadSeconds: 3_600, maxAdditionalCostUsd: 25, configs };
   await writeFile(path.join(output, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { values } = parseArgs({ options: { output: { type: "string" }, "account-id": { type: "string" }, "workers-subdomain": { type: "string" }, "source-sha": { type: "string" }, "expires-at": { type: "string" }, purpose: { type: "string" } } });
-  const manifest = await prepareStaging({ output: values.output, accountId: values["account-id"], workersSubdomain: values["workers-subdomain"], sourceSha: values["source-sha"], expiresAt: Number(values["expires-at"]), purpose: values.purpose });
+  const { values } = parseArgs({ options: { output: { type: "string" }, "account-id": { type: "string" }, "workers-subdomain": { type: "string" }, "source-sha": { type: "string" }, "expires-at": { type: "string" }, purpose: { type: "string" }, "candidate-capacity": { type: "string" } } });
+  const manifest = await prepareStaging({ output: values.output, accountId: values["account-id"], workersSubdomain: values["workers-subdomain"], sourceSha: values["source-sha"], expiresAt: Number(values["expires-at"]), purpose: values.purpose, candidateCapacity: Number(values["candidate-capacity"]) });
   console.log(JSON.stringify({ sourceSha: manifest.sourceSha, expiresAt: manifest.expiresAt, scripts: manifest.configs.map(({ name }) => name) }));
 }

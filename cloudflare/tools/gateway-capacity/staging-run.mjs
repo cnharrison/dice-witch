@@ -26,7 +26,8 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   assert.equal(manifest.purpose, "deploy");
   assert.equal(manifest.accountId, APPROVED_ACCOUNT);
-  assert.equal(manifest.maxActiveObjects, 8);
+  assert([12, 24].includes(manifest.candidateCapacity), "Invalid candidate capacity");
+  assert.equal(manifest.maxActiveObjects, 7 + SHARDS / manifest.candidateCapacity);
   assert.equal(manifest.maxAdditionalCostUsd, 25);
   assert.equal(manifest.sourceSha, execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim());
   assert.equal(execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim(), "", "Staging requires a clean committed source");
@@ -99,6 +100,11 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     assert.equal(createHash("sha256").update(moduleBytes).digest("hex"), config.digest, "Deployed staging code does not match its local bundle");
     assert.equal(createHash("sha256").update(await readFile(config.configPath)).digest("hex"), config.configDigest, "Deployment configuration changed");
     const expected = JSON.parse(await readFile(config.configPath, "utf8"));
+    if (config.role === "fixture") assert.equal(config.capacity, null);
+    else {
+      assert.equal(config.capacity, config.role === "six" ? 6 : manifest.candidateCapacity);
+      assert.equal(expected.vars.GATEWAY_FLEET_CONNECTION_CAPACITY, String(config.capacity));
+    }
     const settings = await api(`workers/scripts/${config.name}/settings`);
     assert.equal(settings.compatibility_date, expected.compatibility_date);
     assert.deepEqual([...settings.compatibility_flags].sort(), [...expected.compatibility_flags].sort());
@@ -120,12 +126,13 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     const health = await request(config, "/health");
     assert.equal(health.sourceSha, manifest.sourceSha);
     assert.equal(health.expiresAt, manifest.expiresAt);
+    if (config.role !== "fixture") assert.equal(health.capacity, config.capacity);
   }
   assert.equal(new Set(allNamespaceIds).size, 5);
   await save("deployment.json", { ...manifest, startedAt, allNamespaceIds });
 
   function fleetRequests(config, route, post = false, expectedStatus = 200) {
-    const count = config.role === "six" ? 4 : 1;
+    const count = SHARDS / config.capacity;
     return Array.from({ length: count }, (_, index) => request(config, `${route}?partition=${index}`, post ? {} : undefined, expectedStatus));
   }
 
@@ -185,7 +192,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   }
 
   async function profile(config, model) {
-    const report = { role: config.role, worker: config.name, namespaceId: config.namespaceId, model, runId: randomUUID(), startedAt: new Date().toISOString(), phases: [] };
+    const report = { role: config.role, worker: config.name, namespaceId: config.namespaceId, capacity: config.capacity, model, runId: randomUUID(), startedAt: new Date().toISOString(), phases: [] };
     let lifecycle = 0;
     let directory = 0;
     let final;
@@ -208,7 +215,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       await phase("startup", async () => {
         assert(model.startupMode === undefined || model.startupMode === "sequential", "Invalid benchmark startup mode");
         if (model.startupMode === "sequential") {
-          const capacity = config.role === "six" ? 6 : 24;
+          const capacity = config.capacity;
           for (let shard = 0; shard < SHARDS; shard++) {
             await request(config, `/start?partition=${Math.floor(shard / capacity)}&shard=${shard}`, {});
             await until(config, ({ shards }) => shards.some((status) => status.shardId === shard && status.state === "ready"), `shard ${shard} READY`, model.heartbeatMs);
@@ -328,7 +335,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       let rows = [];
       let previous = "";
       let stable = false;
-      const expectedObjects = report.role === "six" ? 4 : 1;
+      const expectedObjects = SHARDS / report.capacity;
       const objectCount = (values) => new Set(values.map(({ dimensions }) => dimensions.objectId)).size;
       const covered = (values) => objectCount(values) === expectedObjects && report.phases.filter(({ name }) => name === "loaded-observation" || name === "drained-observation").every((phase) => objectCount(values.filter(({ dimensions }) => Date.parse(dimensions.datetime) >= Date.parse(phase.start) && Date.parse(dimensions.datetime) <= Date.parse(phase.end))) === expectedObjects);
       try {

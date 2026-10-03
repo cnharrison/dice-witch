@@ -47,10 +47,12 @@ test("warm capacity fixtures consume the filter body once", async () => {
 
 test("staging bundle preparation refuses unapproved and dirty deployment inputs", async () => {
   const output = await mkdtemp(path.join(os.tmpdir(), "gateway-staging-policy-"));
-  const parameters = { output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "deploy" };
+  const parameters = { output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "deploy", candidateCapacity: 12 };
   try {
     await assert.rejects(prepareStaging({ ...parameters, accountId: "0".repeat(32) }), /approved account/);
     await assert.rejects(prepareStaging({ ...parameters, workersSubdomain: undefined }), /approved account/);
+    await assert.rejects(prepareStaging({ ...parameters, candidateCapacity: undefined }), /Explicit candidate capacity/);
+    await assert.rejects(prepareStaging({ ...parameters, candidateCapacity: 8 }), /Explicit candidate capacity/);
     await assert.rejects(prepareStaging(parameters), /clean matching committed source/);
   } finally { await rm(output, { recursive: true, force: true }); }
 });
@@ -105,7 +107,10 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
   const secret = "a".repeat(64);
   let mf;
   try {
-    const manifest = await prepareStaging({ output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "local-test" });
+    const manifest = await prepareStaging({ output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "local-test", candidateCapacity: 12 });
+    assert.equal(manifest.candidateCapacity, 12);
+    assert.equal(manifest.maxActiveObjects, 9);
+    assert.deepEqual(manifest.configs.map(({ capacity }) => capacity), [null, 6, 12]);
     const fixtureConfig = manifest.configs[0];
     const options = manifest.configs.map((entry) => {
       const config = JSON.parse(require("node:fs").readFileSync(entry.configPath, "utf8"));
@@ -126,28 +131,38 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
     assert.equal((await gateway.fetch(`https://${manifest.hostname}/start`, { method: "POST" })).status, 401);
     assert.equal((await fixture.fetch(`https://${manifest.hostname}/configure`, { method: "POST" })).status, 401);
     assert.equal((await send(fixture, "/configure", { runId: "12345678-1234-4234-8234-123456789abc", guilds: 240, channels: 2, heartbeatMs: 1_000, knownGuilds: true })).status, 200);
-    assert.equal((await send(gateway, "/start?partition=0", {})).status, 200);
+    for (const partition of [0, 1]) assert.equal((await send(gateway, `/start?partition=${partition}`, {})).status, 200);
     const deadline = Date.now() + 30_000;
     let stats;
     do { stats = await (await send(fixture, "/stats")).json(); if (stats.connected === 24) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
     assert.equal(stats.connected, 24, JSON.stringify({ stats, status: await (await send(gateway, "/status?partition=0")).json() }));
     assert.equal((await send(fixture, "/replay", { countPerShard: 240, rate: 600, channelUpdates: false })).status, 200);
     let shards;
-    do { shards = (await (await send(gateway, "/status?partition=0")).json()).connections; if (shards.every((s) => s.initialGuildsPending === 0)) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
+    do { shards = (await Promise.all([0, 1].map(async (partition) => (await (await send(gateway, `/status?partition=${partition}`)).json()).connections))).flat(); if (shards.every((s) => s.initialGuildsPending === 0)) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
     assert.equal(shards.length, 24);
     assert(shards.every((s) => s.state === "ready" && s.lastError === null && s.initialGuildsPending === 0));
     stats = await (await send(fixture, "/stats")).json();
     assert.equal(stats.counters.lifecycle, 0);
     assert.deepEqual(stats.errors, []);
-    assert.equal((await send(gateway, "/stop?partition=0", {})).status, 200);
+    for (const partition of [0, 1]) assert.equal((await send(gateway, `/stop?partition=${partition}`, {})).status, 200);
     assert.equal((await send(fixture, "/stop", {})).status, 200);
+
+    // Reuse the namespace to prove that a different capacity cannot inherit its coordinator state.
+    for (const name of ["GATEWAY_PARTITION_CAPACITY", "GATEWAY_FLEET_CONNECTION_CAPACITY", "GATEWAY_ROLLOUT_MAX_UNAVAILABLE_SHARDS"]) options[2].bindings[name] = "24";
+    await mf.setOptions(convertV4MiniflareOptions({ workers: options }));
+    const nextGateway = await mf.getWorker(manifest.configs[2].name);
+    const nextFixture = await mf.getWorker(fixtureConfig.name);
+    assert.equal((await send(nextFixture, "/configure", { runId: "12345678-1234-4234-8234-123456789abc", guilds: 240, channels: 2, heartbeatMs: 1_000, knownGuilds: true })).status, 200);
+    assert.equal((await send(nextGateway, "/start?partition=0", {})).status, 200);
+    assert.equal((await send(nextGateway, "/stop?partition=0", {})).status, 200);
+    assert.equal((await send(nextFixture, "/stop", {})).status, 200);
   } finally {
     if (mf) await mf.dispose();
     await rm(output, { recursive: true, force: true });
   }
 });
 
-test("capacity benchmark checks 24 shards across both topologies and persisted recovery", { timeout: 60_000 }, async () => {
+for (const capacity of ["both", "12"]) test(`capacity benchmark ${capacity} checks 24 shards and persisted recovery`, { timeout: 60_000 }, async () => {
   const output = await mkdtemp(path.join(os.tmpdir(), "gateway-capacity-test-"));
   let passed = false;
   try {
@@ -155,10 +170,10 @@ test("capacity benchmark checks 24 shards across both topologies and persisted r
       new URL("./gateway-capacity/run.mjs", import.meta.url).pathname,
       "--output", output,
       "--guilds", "240", "--channels", "2", "--rate", "600",
-      "--replay", "5", "--slow-ms", "10", "--heartbeat-ms", "1000", "--runs", "1", "--capacity", "both",
+      "--replay", "5", "--slow-ms", "10", "--heartbeat-ms", "1000", "--runs", "1", "--capacity", capacity,
     ], { timeout: 55_000 });
     const manifest = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
-    assert.deepEqual(manifest.results.map((result) => result.status), ["passed-local-gate", "passed-local-gate"]);
+    assert.deepEqual(manifest.results.map((result) => result.status), Array(capacity === "both" ? 2 : 1).fill("passed-local-gate"));
     for (const result of manifest.results) {
       const report = JSON.parse(await readFile(result.file, "utf8"));
       assert.deepEqual(report.phases.map((phase) => phase.name), ["startup", "slow-replay", "reconnect", "restart"]);

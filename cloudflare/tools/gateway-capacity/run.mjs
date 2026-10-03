@@ -23,7 +23,7 @@ const Options = z.strictObject({
   "slow-ms": z.coerce.number().int().min(1).max(200),
   "heartbeat-ms": z.coerce.number().int().min(1_000).max(41_250),
   runs: z.coerce.number().int().min(1).max(5),
-  capacity: z.enum(["6", "24", "both"]),
+  capacity: z.enum(["6", "12", "24", "both"]),
 });
 const SAMPLE_MS = 100;
 const PHASE_TIMEOUT_MS = 180_000;
