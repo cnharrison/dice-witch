@@ -49,6 +49,7 @@ function shardStatus(
     readyAt: null,
     lastEventType: null,
     lastError: null,
+    lastReconnect: null,
     interactionResponses: 0,
     identifyAttempts: 0,
     resumeAttempts: 0,

@@ -36,6 +36,7 @@ const shardStatus: GatewayShardStatus = {
   readyAt: 1_720_000_000_000,
   lastEventType: "READY",
   lastError: null,
+  lastReconnect: null,
   interactionResponses: 0,
   identifyAttempts: 1,
   resumeAttempts: 2,

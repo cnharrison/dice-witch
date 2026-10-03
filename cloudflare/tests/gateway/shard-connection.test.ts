@@ -4,6 +4,7 @@ import {
   transitionGateway,
   validateGatewaySessionCheckpoint,
   type GatewayMachine,
+  type GatewayEvent,
 } from "../../packages/gateway-protocol/src";
 import {
   parseDiscordChannelDirectoryMutationV1,
@@ -135,7 +136,7 @@ type TestableConnection = {
     operation: () => Promise<void>,
   ): void;
   acquireOwnership(): Promise<void>;
-  apply(event: { type: "start" }): Promise<void>;
+  apply(event: GatewayEvent): Promise<void>;
 };
 
 function testableConnection(
@@ -171,7 +172,7 @@ function testableConnection(
       shard["acquireOwnership"] = acquireOwnership;
     },
     get apply() {
-      return (event: { type: "start" }) => shard["apply"](event);
+      return (event: GatewayEvent) => shard["apply"](event);
     },
     set apply(apply) {
       shard["apply"] = apply;
@@ -293,6 +294,59 @@ describe("GatewayShardConnection recovery", () => {
 });
 
 describe("GatewayShardConnection snapshot persistence", () => {
+  it("retains the exact heartbeat reconnect cause after Resume without persisting diagnostics", async () => {
+    const { shard, storagePut, testable } = connection(true);
+    expect(shard.status().lastReconnect).toBeNull();
+    try {
+      await testable.handleGatewayMessage(readyMessage());
+      await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+      const before = shard.status();
+      const writes = storagePut.mock.calls.length;
+      const scheduledAfter = Date.now();
+      await testable.apply({ type: "heartbeat-due", sentAt: Date.now() });
+      const reconnect = shard.status().lastReconnect;
+      expect(reconnect).toEqual({
+        reason: "heartbeat-ack-timeout",
+        closeCode: null,
+        scheduledAt: reconnect?.scheduledAt,
+        lastHeartbeatSentAt: before.lastHeartbeatSentAt,
+        lastHeartbeatAckAt: before.lastHeartbeatAckAt,
+      });
+      expect(reconnect?.scheduledAt).toBeGreaterThanOrEqual(scheduledAfter);
+      expect(reconnect?.scheduledAt).toBeLessThanOrEqual(Date.now());
+      expect(storagePut).toHaveBeenCalledTimes(writes);
+      testable.machine = resumingMachine(testable.machine.checkpoint);
+      testable.socket = new WebSocketPair()[0];
+      testable.socket.accept();
+      await testable.handleGatewayMessage({ type: "resumed", sequence: 2 });
+      expect(shard.status().lastError).toBeNull();
+      expect(shard.status().lastReconnect).toEqual(reconnect);
+      expect(storagePut.mock.calls.at(-1)?.[0]).toEqual({
+        [checkpointKey]: testable.machine.checkpoint,
+      });
+    } finally { await shard.stop(); }
+  });
+
+  it("distinguishes a requested reconnect from a heartbeat timeout", async () => {
+    const { shard, testable } = connection(true);
+    try {
+      await testable.handleGatewayMessage(readyMessage());
+      await shard.forceReconnect();
+      expect(shard.status().lastReconnect?.reason).toBe("gateway-reconnect");
+      expect(shard.status().lastReconnect?.closeCode).toBeNull();
+    } finally { await shard.stop(); }
+  });
+
+  it("retains the reconnect close code", async () => {
+    const { shard, testable } = connection(true);
+    try {
+      await testable.handleGatewayMessage(readyMessage());
+      await testable.apply({ type: "socket-closed", code: 4008, closedAt: Date.now() });
+      expect(shard.status().lastReconnect?.reason).toBe("socket-closed");
+      expect(shard.status().lastReconnect?.closeCode).toBe(4008);
+    } finally { await shard.stop(); }
+  });
+
   it("writes only checkpoints on steady heartbeats and keeps recovery alarms", async () => {
     const { shard, storage, storagePut, scheduleAlarm, testable } = connection(true);
     await testable.handleGatewayMessage(readyMessage());

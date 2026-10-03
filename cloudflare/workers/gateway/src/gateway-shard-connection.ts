@@ -398,6 +398,13 @@ export type GatewayShardStatus = {
   readyAt: number | null;
   lastEventType: string | null;
   lastError: string | null;
+  lastReconnect: {
+    reason: Extract<GatewayAction, { type: "schedule-reconnect" }>["reason"];
+    closeCode: number | null;
+    scheduledAt: number;
+    lastHeartbeatSentAt: number | null;
+    lastHeartbeatAckAt: number | null;
+  } | null;
   interactionResponses: number;
   identifyAttempts: number;
   resumeAttempts: number;
@@ -581,6 +588,7 @@ export class GatewayShardConnection {
   private readyAt: number | null = null;
   private lastEventType: string | null = null;
   private lastError: string | null = null;
+  private lastReconnect: GatewayShardStatus["lastReconnect"] = null;
   private interactionResponses = 0;
   private identifyAttempts = 0;
   private resumeAttempts = 0;
@@ -697,6 +705,7 @@ export class GatewayShardConnection {
       readyAt: this.readyAt,
       lastEventType: this.lastEventType,
       lastError: this.lastError,
+      lastReconnect: this.lastReconnect === null ? null : { ...this.lastReconnect },
       interactionResponses: this.interactionResponses,
       identifyAttempts: this.identifyAttempts,
       resumeAttempts: this.resumeAttempts,
@@ -1462,7 +1471,17 @@ export class GatewayShardConnection {
     );
   }
 
-  private scheduleReconnect(reason: string, closeCode: number | null): void {
+  private scheduleReconnect(
+    reason: Extract<GatewayAction, { type: "schedule-reconnect" }>["reason"],
+    closeCode: number | null,
+  ): void {
+    this.lastReconnect = {
+      reason,
+      closeCode,
+      scheduledAt: Date.now(),
+      lastHeartbeatSentAt: this.machine.checkpoint.lastHeartbeatSentAt,
+      lastHeartbeatAckAt: this.machine.checkpoint.lastHeartbeatAckAt,
+    };
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     const exponent = Math.min(this.reconnectAttempt, 5);
     let delay = 1_000 * 2 ** exponent;
