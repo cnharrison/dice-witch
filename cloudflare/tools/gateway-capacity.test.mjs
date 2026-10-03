@@ -9,6 +9,7 @@ import { test } from "node:test";
 import { createFixture, FIXTURE_TOKEN, guildIds, SHARDS } from "./gateway-capacity/fixture.mjs";
 import { assertHealthy } from "./gateway-capacity/run.mjs";
 import { APPROVED_ACCOUNT, prepareStaging } from "./gateway-capacity/staging-prepare.mjs";
+import { stagingGatewayRoles } from "./gateway-capacity/staging-run.mjs";
 
 const execute = promisify(execFile);
 const fixtureDestinations = { token: FIXTURE_TOKEN, gatewayUrl: "wss://gateway.discord.gg", botUrl: "https://discord.com/api/v10/gateway/bot", knownGuilds: false };
@@ -19,6 +20,14 @@ test("capacity health guard rejects late sampler and runtime failures", () => {
   assert.throws(() => assertHealthy(undefined, ["fixture failure"], []), /Fixture errors/);
   assert.throws(() => assertHealthy(undefined, [], ["runtime failure"]), /Runtime errors/);
   assertHealthy(undefined, [], []);
+});
+
+test("staging requires explicit baseline-only or baseline-first Gateway selection", () => {
+  assert.deepEqual(stagingGatewayRoles("six"), ["six"]);
+  assert.deepEqual(stagingGatewayRoles("both"), ["six", "twentyFour"]);
+  for (const selection of [undefined, "", "twentyFour", "production"]) {
+    assert.throws(() => stagingGatewayRoles(selection), /Explicit six or both/);
+  }
 });
 
 test("capacity fixtures route synthetic guilds to the intended Discord shard", () => {
@@ -86,6 +95,54 @@ test("capacity fixtures acknowledge a peer close so the client does not stall", 
   while (socket.readyState !== 3 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(socket.readyState, 3);
   assert.equal(fixture.connectedCount(), 0);
+});
+
+test("capacity fixtures retain safe peer-close and Resume diagnostics", async () => {
+  const require = createRequire(import.meta.resolve("wrangler"));
+  const { Response, WebSocketPair } = require("miniflare");
+  const fixture = createFixture({ Response, WebSocketPair, guildCount: 24, channelCount: 1, heartbeatMs: 1_000, ...fixtureDestinations });
+  const open = async (message) => {
+    const response = await fixture.outbound(new Request("https://gateway.discord.gg/", { headers: { upgrade: "websocket" } }));
+    response.webSocket.accept();
+    response.webSocket.send(JSON.stringify(message));
+    assert.equal(fixture.connectedCount(), 1);
+    return response.webSocket;
+  };
+  const close = async (socket, code, reason) => {
+    const closed = new Promise((resolve) => socket.addEventListener("close", resolve, { once: true }));
+    socket.close(code, reason);
+    await closed;
+  };
+  const first = await open({ op: 2, d: { token: FIXTURE_TOKEN, shard: [0, 24] } });
+  await close(first, 4000, "heartbeat-ack-timeout");
+  const resumed = await open({ op: 6, d: { token: FIXTURE_TOKEN, session_id: "fixture-session-0", seq: fixture.sequences[0] } });
+  await close(resumed, 1000, FIXTURE_TOKEN);
+  assert.equal(fixture.diagnostics.closes.length, 2);
+  assert.equal(fixture.diagnostics.closes[0].reasonTag, "heartbeat-ack-timeout");
+  assert.equal(fixture.diagnostics.closes[1].reasonTag, "unrecognized");
+  assert.equal(fixture.diagnostics.closes[0].shardId, 0);
+  assert.equal(fixture.diagnostics.closes[0].code, 4000);
+  assert.equal(fixture.diagnostics.resumes[0].shardId, 0);
+  assert.equal(fixture.diagnostics.resumes[0].sequence, 1);
+  assert(Number.isFinite(fixture.diagnostics.resumes[0].at));
+  assert(!JSON.stringify(fixture.diagnostics).includes(FIXTURE_TOKEN));
+});
+
+test("capacity close diagnostics omit rejected peer-supplied shard data", async () => {
+  const require = createRequire(import.meta.resolve("wrangler"));
+  const { Response, WebSocketPair } = require("miniflare");
+  const fixture = createFixture({ Response, WebSocketPair, guildCount: 24, channelCount: 1, heartbeatMs: 1_000, ...fixtureDestinations });
+  const response = await fixture.outbound(new Request("https://gateway.discord.gg/", { headers: { upgrade: "websocket" } }));
+  const socket = response.webSocket;
+  socket.accept();
+  const closed = new Promise((resolve) => socket.addEventListener("close", () => {
+    socket.close();
+    resolve();
+  }, { once: true }));
+  socket.send(JSON.stringify({ op: 2, d: { token: FIXTURE_TOKEN, shard: ["private-peer-data", 24] } }));
+  await closed;
+  assert.equal(fixture.diagnostics.closes[0].shardId, null);
+  assert(!JSON.stringify(fixture.diagnostics).includes("private-peer-data"));
 });
 
 test("capacity fixtures reject an incorrect persisted RESUME sequence", async () => {

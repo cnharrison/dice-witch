@@ -22,7 +22,13 @@ async function privateFile(file) {
   return readFile(file, "utf8");
 }
 
-export async function runStaging({ manifestPath, secretsPath, accountTokenPath, output, profiles }) {
+export function stagingGatewayRoles(selection) {
+  assert(selection === "six" || selection === "both", "Explicit six or both Gateway selection is required");
+  return selection === "six" ? ["six"] : ["six", "twentyFour"];
+}
+
+export async function runStaging({ manifestPath, secretsPath, accountTokenPath, output, profiles, gatewaySelection }) {
+  const selectedRoles = stagingGatewayRoles(gatewaySelection);
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   assert.equal(manifest.purpose, "deploy");
   assert.equal(manifest.accountId, APPROVED_ACCOUNT);
@@ -166,7 +172,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       await costAndResourceGuard();
       const [parts, stats] = await Promise.all([fleet(config, "/status"), request(fixture, "/stats")]);
       const shards = parts.flatMap(({ connections }) => connections);
-      lastPoll = { shards, stats };
+      lastPoll = { shards, stats, observedAt: new Date().toISOString() };
       assert.deepEqual(stats.errors, [], "Fixture errors");
       assert(shards.every(({ state, lastError }) => state !== "fatal" && lastError === null), "Gateway runtime error");
       const heartbeatHealthy = shards.length === SHARDS && shards.every((s) => s.lastHeartbeatAckAt !== null && s.lastHeartbeatSentAt !== null && s.lastHeartbeatAckAt >= s.lastHeartbeatSentAt && Date.now() - s.lastHeartbeatAckAt < heartbeatMs * 2 && stats.heartbeatSequences[s.shardId] === stats.sequences[s.shardId]);
@@ -202,7 +208,8 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       const start = performance.now();
       const startDate = new Date().toISOString();
       const result = await operation();
-      report.phases.push({ name, start: startDate, end: new Date().toISOString(), milliseconds: performance.now() - start, counters: result?.stats?.counters });
+      assert(Array.isArray(result.stats.diagnostics.closes) && Array.isArray(result.stats.diagnostics.resumes), "Fixture socket diagnostics are required");
+      report.phases.push({ name, start: startDate, end: new Date().toISOString(), milliseconds: performance.now() - start, counters: result.stats.counters, diagnostics: result.stats.diagnostics });
       console.log(`${report.role} ${model.name} ${name} complete`);
       return result;
     };
@@ -278,12 +285,17 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       report.failure = error.message;
       const observed = lastPoll;
       if (observed) {
-        report.lastFixture = withoutTokens({ counters: observed.stats?.counters, errors: observed.stats?.errors, connected: observed.stats?.connected, sequences: observed.stats?.sequences, heartbeatSequences: observed.stats?.heartbeatSequences });
+        report.lastObservedAt = observed.observedAt;
+        report.lastFixture = withoutTokens({ counters: observed.stats?.counters, errors: observed.stats?.errors, diagnostics: observed.stats?.diagnostics, connected: observed.stats?.connected, sequences: observed.stats?.sequences, heartbeatSequences: observed.stats?.heartbeatSequences });
         report.lastGateway = withoutTokens(observed.shards);
       }
     } finally {
       report.endedAt = new Date().toISOString();
-      if (final) { report.counters = final.stats.counters; report.lastStatus = final.shards; }
+      if (final) {
+        report.counters = final.stats.counters;
+        report.lastStatus = final.shards;
+        report.diagnostics = final.stats.diagnostics;
+      }
       reports.push(report);
       await save(`${reports.length}-${config.role}-${model.name}.json`, report);
       await stop();
@@ -323,7 +335,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       await delay(500);
     }
     for (const model of profiles) {
-      for (const config of gateways) {
+      for (const config of gateways.filter(({ role }) => selectedRoles.includes(role))) {
         if (tails.some(({ child }) => child.exitCode !== null)) throw new Error("Staging Tail session ended unexpectedly");
         const result = await profile(config, model);
         if (result.status === "failed") throw new Error(`Platform scenario failed: ${result.failure}`);
@@ -379,7 +391,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       if (parser.exitCode !== 0) tail.failure = true;
       if (!await bounded(tail.streamDone)) { tail.failure = true; stream.destroy(); }
     }
-    await save("manifest.json", { sourceSha: manifest.sourceSha, startedAt, endedAt: new Date().toISOString(), maximumBillableRows, cleanupFailed, tailFailures: tails.filter(({ failure }) => failure).map(({ role }) => role), reports });
+    await save("manifest.json", { sourceSha: manifest.sourceSha, gatewaySelection, startedAt, endedAt: new Date().toISOString(), maximumBillableRows, cleanupFailed, tailFailures: tails.filter(({ failure }) => failure).map(({ role }) => role), reports });
   }
   if (cleanupFailed) throw new Error("Staging shutdown did not complete");
   if (tails.some(({ failure }) => failure)) throw new Error("Staging Tail evidence is incomplete");
@@ -387,12 +399,12 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { values } = parseArgs({ options: { manifest: { type: "string" }, secrets: { type: "string" }, "account-token-file": { type: "string" }, output: { type: "string" }, profile: { type: "string" } } });
+  const { values } = parseArgs({ options: { manifest: { type: "string" }, secrets: { type: "string" }, "account-token-file": { type: "string" }, output: { type: "string" }, profile: { type: "string" }, gateways: { type: "string" } } });
   const models = {
     smoke: { name: "smoke", guilds: 240, channels: 2, heartbeatMs: 1_000, knownGuilds: false },
     warm: { name: "warm", guilds: 24_303, channels: 40, heartbeatMs: 41_250, knownGuilds: true },
     cold: { name: "cold", guilds: 24_303, channels: 40, heartbeatMs: 41_250, knownGuilds: false },
   };
   assert(Object.hasOwn(models, values.profile), "Explicit smoke, warm, or cold profile is required");
-  await runStaging({ manifestPath: values.manifest, secretsPath: values.secrets, accountTokenPath: values["account-token-file"], output: values.output, profiles: [models[values.profile]] });
+  await runStaging({ manifestPath: values.manifest, secretsPath: values.secrets, accountTokenPath: values["account-token-file"], output: values.output, profiles: [models[values.profile]], gatewaySelection: values.gateways });
 }

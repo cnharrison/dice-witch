@@ -76,6 +76,7 @@ export class FixtureController extends DurableObject {
       errors: fixture.errors,
       sequences: fixture.sequences,
       heartbeatSequences: fixture.heartbeatSequences,
+      diagnostics: fixture.diagnostics,
       guildCounts: fixture.ids.map((ids) => ids.length),
       connected: fixture.connectedCount(),
       replaying: this.replaying,

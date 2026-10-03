@@ -54,6 +54,10 @@ export function guildPayload(id, channelCount) {
   };
 }
 
+function isFixtureShardId(value) {
+  return Number.isInteger(value) && value >= 0 && value < SHARDS;
+}
+
 export function createFixture({ Response, WebSocketPair, guildCount, channelCount, heartbeatMs, token, gatewayUrl, botUrl, knownGuilds }) {
   if (!token || !gatewayUrl || !botUrl || typeof knownGuilds !== "boolean") throw new Error("Fixture token and destinations are required");
   const ids = Array.from({ length: SHARDS }, (_, shardId) =>
@@ -68,6 +72,8 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
   const reconnecting = new Set();
   const counters = { identifies: 0, resumes: 0, heartbeats: 0, lifecycle: 0, directory: 0, sent: 0, sentBytes: 0 };
   const errors = [];
+  // Each connection can authenticate and close once; the 256-attempt guard bounds this history.
+  const diagnostics = { closes: [], resumes: [] };
   let slowMs = 0;
   let stopping = false;
 
@@ -86,6 +92,7 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
     errors,
     sequences,
     heartbeatSequences,
+    diagnostics,
     setSlowMs(value) { slowMs = value; },
     connectedCount() { return connections.size; },
     async outbound(request) {
@@ -122,7 +129,7 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
               throw new Error("Benchmark received an unexpected bot token");
             }
             shardId = message.d.shard[0];
-            if (!Number.isInteger(shardId) || shardId < 0 || shardId >= SHARDS) throw new Error("Invalid fixture shard");
+            if (!isFixtureShardId(shardId)) throw new Error("Invalid fixture shard");
             if (connections.get(shardId)?.readyState === 1 && !retiringSockets.has(connections.get(shardId))) throw new Error("Duplicate fixture shard");
             clearTimeout(authenticationTimer);
             connections.set(shardId, server);
@@ -135,7 +142,7 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
           } else if (message.op === 6) {
             if (shardId !== undefined) throw new Error("Repeated fixture authentication");
             shardId = Number(message.d.session_id.replace("fixture-session-", ""));
-            if (!Number.isInteger(shardId) || shardId < 0 || shardId >= SHARDS) throw new Error("Invalid fixture session");
+            if (!isFixtureShardId(shardId)) throw new Error("Invalid fixture session");
             if (message.d.token !== token || message.d.seq !== sequences[shardId]) {
               throw new Error("RESUME did not restore the fixture token and drained sequence");
             }
@@ -143,6 +150,7 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
             clearTimeout(authenticationTimer);
             connections.set(shardId, server);
             counters.resumes += 1;
+            diagnostics.resumes.push({ shardId, sequence: message.d.seq, at: Date.now() });
             send(shardId, "RESUMED", {});
           } else if (message.op === 1) {
             counters.heartbeats += 1;
@@ -162,7 +170,12 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
           if (server.readyState === 1) server.close(authFailure ? 4004 : 4000, "fixture-error");
         }
       });
-      server.addEventListener("close", () => {
+      server.addEventListener("close", ({ code, reason }) => {
+        // Peer-supplied close text must not enter saved diagnostics.
+        const reasonTag = reason === "heartbeat-ack-timeout" || reason === "gateway-reconnect"
+          ? reason
+          : "unrecognized";
+        diagnostics.closes.push({ shardId: isFixtureShardId(shardId) ? shardId : null, code, reasonTag, at: Date.now() });
         clearTimeout(authenticationTimer);
         if (server.readyState !== 3) server.close();
         sockets.delete(server);
