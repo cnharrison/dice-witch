@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { createFixture, FIXTURE_TOKEN, guildIds, SHARDS } from "./gateway-capacity/fixture.mjs";
 import { assertHealthy } from "./gateway-capacity/run.mjs";
 import { APPROVED_ACCOUNT, prepareStaging } from "./gateway-capacity/staging-prepare.mjs";
-import { stagingGatewayRoles } from "./gateway-capacity/staging-run.mjs";
+import { stagingDeadline, stagingGatewayRoles } from "./gateway-capacity/staging-run.mjs";
 
 const execute = promisify(execFile);
 const fixtureDestinations = { token: FIXTURE_TOKEN, gatewayUrl: "wss://gateway.discord.gg", botUrl: "https://discord.com/api/v10/gateway/bot", knownGuilds: false };
@@ -28,6 +28,27 @@ test("staging requires explicit baseline-only or baseline-first Gateway selectio
   assert.deepEqual(stagingGatewayRoles("both"), ["six", "twentyFour"]);
   for (const selection of [undefined, "", "twentyFour", "production"]) {
     assert.throws(() => stagingGatewayRoles(selection), /Explicit six or both/);
+  }
+});
+
+test("staging metrics can arrive after five minutes within the authorized deadline", () => {
+  const profileEnd = Date.parse("2026-10-03T18:50:27.388Z");
+  const expiresAt = Date.parse("2026-10-03T19:01:12.588Z");
+  const delayedMetricsAt = profileEnd + 8 * 60_000;
+  const deadline = stagingDeadline(expiresAt, profileEnd);
+  assert(delayedMetricsAt < deadline);
+  assert.equal(deadline, expiresAt - 120_000);
+  assert.equal(stagingDeadline(expiresAt, deadline - 1), deadline);
+});
+
+test("staging observation rejects missing timestamps and stops before cleanup time", () => {
+  const expiresAt = 1_800_000_000_000;
+  for (const invalid of [undefined, null, NaN, Infinity, "1800000000000"]) {
+    assert.throws(() => stagingDeadline(invalid, expiresAt - 180_000), /Explicit staging timestamps/);
+    assert.throws(() => stagingDeadline(expiresAt, invalid), /Explicit staging timestamps/);
+  }
+  for (const now of [expiresAt - 120_000, expiresAt - 1, expiresAt + 1]) {
+    assert.throws(() => stagingDeadline(expiresAt, now), /deadline safety margin/);
   }
 });
 

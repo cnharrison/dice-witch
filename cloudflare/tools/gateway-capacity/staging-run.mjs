@@ -13,6 +13,7 @@ import { guildIds, SHARDS } from "./fixture.mjs";
 import { APPROVED_ACCOUNT, STAGING_NAMES } from "./staging-prepare.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const STOP_MARGIN_MS = 120_000;
 const SecretFile = z.strictObject({ DISCORD_BOT_TOKEN: z.string().min(50).max(200).regex(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/), GATEWAY_CONTROL_TOKEN: z.string().min(50).max(128) });
 const ObjectMetric = z.object({ count: z.number().positive(), avg: z.object({ sampleInterval: z.number().positive() }), dimensions: z.object({ datetime: z.string(), namespaceId: z.string(), objectId: z.string(), name: z.string() }), max: z.object({ memoryUsageBytes: z.number().nonnegative(), activeWebsocketConnections: z.number().nonnegative() }), sum: z.object({ cpuTime: z.number().nonnegative(), duration: z.number().nonnegative(), exceededCpuErrors: z.number().nonnegative(), exceededMemoryErrors: z.number().nonnegative(), fatalInternalErrors: z.number().nonnegative(), inboundWebsocketMsgCount: z.number().nonnegative(), outboundWebsocketMsgCount: z.number().nonnegative(), rowsRead: z.number().nonnegative(), rowsWritten: z.number().nonnegative() }), quantiles: z.object({ memoryUsageBytesP50: z.number().nonnegative(), memoryUsageBytesP99: z.number().nonnegative() }) });
 
@@ -25,6 +26,13 @@ async function privateFile(file) {
 export function stagingGatewayRoles(selection) {
   assert(selection === "six" || selection === "both", "Explicit six or both Gateway selection is required");
   return selection === "six" ? ["six"] : ["six", "twentyFour"];
+}
+
+export function stagingDeadline(expiresAt, now) {
+  assert(Number.isSafeInteger(expiresAt) && Number.isSafeInteger(now), "Explicit staging timestamps are required");
+  const deadline = expiresAt - STOP_MARGIN_MS;
+  assert(now < deadline, "Benchmark deadline safety margin reached");
+  return deadline;
 }
 
 export async function runStaging({ manifestPath, secretsPath, accountTokenPath, output, profiles, gatewaySelection }) {
@@ -159,7 +167,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   }
 
   async function costAndResourceGuard(force = false) {
-    if (Date.now() >= manifest.expiresAt - 120_000) throw new Error("Benchmark deadline safety margin reached");
+    stagingDeadline(manifest.expiresAt, Date.now());
     if (!force && Date.now() - lastMetricCheck < 30_000) return;
     lastMetricCheck = Date.now();
     const rows = await graph(allNamespaceIds, startedAt, new Date().toISOString());
@@ -347,7 +355,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     }
     await costAndResourceGuard(true);
     for (const report of reports) {
-      const deadline = Date.now() + 5 * 60_000;
+      const deadline = stagingDeadline(manifest.expiresAt, Date.now());
       let rows = [];
       let previous = "";
       let stable = false;
