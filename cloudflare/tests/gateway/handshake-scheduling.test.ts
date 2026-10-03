@@ -53,7 +53,7 @@ type HandshakeUpgrade = {
 function stubGatewayUpgradeFetch(): void {
   vi.stubGlobal(
     "fetch",
-    (_input: unknown, init?: { signal?: AbortSignal }) =>
+    (_input: RequestInfo | URL, init?: { signal?: AbortSignal }) =>
       new Promise<HandshakeUpgrade>((resolve, reject) => {
         const socket = new HandshakeSocket("https://gateway.discord.gg/?v=10&encoding=json");
         let settled = false;
@@ -151,14 +151,12 @@ function connection(
       GATEWAY_COORDINATOR: { getByName: () => coordinator },
     },
     identity,
-    checkpoint: {
+    checkpoint: resumable ? {
       ...initialGatewayCheckpoint(identity, 1),
-      ...(resumable ? {
-        sessionId: `session-${shardId}`,
-        sequence: 1,
-        resumeGatewayUrl: "wss://gateway.discord.gg",
-      } : {}),
-    },
+      sessionId: `session-${shardId}`,
+      sequence: 1,
+      resumeGatewayUrl: "wss://gateway.discord.gg",
+    } : initialGatewayCheckpoint(identity, 1),
     checkpointKey: `gateway-checkpoint-v1:7:${shardId}:24`,
     openingQueue,
     scheduleAlarm: () => Promise.resolve(),

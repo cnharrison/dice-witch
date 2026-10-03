@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { z } from "zod";
 
 export const STAGING_NAMES = Object.freeze({ fixture: "dice-witch-gateway-memory-fixture", six: "dice-witch-gateway-memory-six", twentyFour: "dice-witch-gateway-memory-twenty-four" });
 export const APPROVED_ACCOUNT = "dfe6c3ddb987a22c7f17955d1973490e";
@@ -13,16 +14,20 @@ const require = createRequire(import.meta.resolve("wrangler"));
 const { build } = require("esbuild");
 
 export async function prepareStaging({ output, accountId, workersSubdomain, sourceSha, expiresAt, purpose, candidateCapacity }) {
-  if (accountId !== APPROVED_ACCOUNT || typeof workersSubdomain !== "string" || !/^[a-z0-9-]+$/.test(workersSubdomain) || !/^[a-f0-9]{40}$/.test(sourceSha)) throw new Error("Explicit approved account, subdomain, and source SHA are required");
+  if (accountId !== APPROVED_ACCOUNT || !z.string().regex(/^[a-z0-9-]+$/).safeParse(workersSubdomain).success || !/^[a-f0-9]{40}$/.test(sourceSha)) throw new Error("Explicit approved account, subdomain, and source SHA are required");
   if (!["typecheck", "local-test", "deploy"].includes(purpose)) throw new Error("Explicit preparation purpose is required");
   if (![12, 24].includes(candidateCapacity)) throw new Error("Explicit candidate capacity must be 12 or 24");
   function verifySource() {
     if (purpose !== "deploy") return;
-    if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim() !== sourceSha || execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim() !== "") throw new Error("Deployment bundles require clean matching committed source");
+    try {
+      if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() !== sourceSha || execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() !== "") throw new Error("Source revision or working tree differs");
+    } catch (cause) {
+      throw new Error("Deployment bundles require clean matching committed source", { cause });
+    }
   }
   verifySource();
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() || expiresAt > Date.now() + 58 * 60_000) throw new Error("Benchmark deadline must be within 58 minutes");
-  if (typeof output !== "string" || !path.isAbsolute(output)) throw new Error("Absolute output directory is required");
+  if (!z.string().safeParse(output).success || !path.isAbsolute(output)) throw new Error("Absolute output directory is required");
   await mkdir(output, { recursive: true });
   if ((await readdir(output)).length !== 0) throw new Error("Staging output directory must be empty");
   const hostname = `${STAGING_NAMES.fixture}.${workersSubdomain}.workers.dev`;

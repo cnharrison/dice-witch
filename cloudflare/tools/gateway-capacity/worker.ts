@@ -6,9 +6,13 @@ import { GatewayPartition as ProductionGatewayPartition } from "../../workers/ga
 
 function benchmarkNamespace<T extends GatewayEnv["GATEWAY_COORDINATOR"] | GatewayEnv["GATEWAY_PARTITION"]>(namespace: T, capacity: string): T {
   return new Proxy(namespace, {
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- Proxy traps expose native properties, including symbol keys, through an unknown boundary.
     get(target, property): unknown {
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The override crosses the same unknown Proxy return boundary as native properties.
       if (property === "getByName") return (name: string, options?: DurableObjectNamespaceGetDurableObjectOptions) => target.getByName(`memory-capacity-${capacity}:${name}`, options);
+      // oxlint-disable-next-line anti-slop/no-known-value-widening, anti-slop/no-reflect-get -- Reflect preserves native getters' receiver; its untyped result must stay unknown.
       const value: unknown = Reflect.get(target, property, target);
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Callable native namespace properties require their original receiver.
       return typeof value === "function" ? value.bind(target) : value;
     },
   });

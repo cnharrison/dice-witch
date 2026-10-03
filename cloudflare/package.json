@@ -35,12 +35,12 @@
     "production:materialize": "node tools/production-config.mjs --config-dir .",
     "production:plan": "node tools/production-plan.mjs",
     "production:smoke": "node tools/production-smoke.mjs",
-    "types": "rm -rf .generated && mkdir -p .generated && wrangler types .generated/data.d.ts --config wrangler.data.example.jsonc --env-interface DataBindings && wrangler types .generated/discord-rest.d.ts --config wrangler.discord-rest.example.jsonc --env-interface DiscordRestBindings --include-runtime false && wrangler types .generated/gateway.d.ts --config wrangler.gateway.example.jsonc --env-interface GatewayBindings --include-runtime false && wrangler types .generated/interactions.d.ts --config wrangler.interactions.example.jsonc --env-interface InteractionBindings --include-runtime false && wrangler types .generated/roll.d.ts --config wrangler.roll.example.jsonc --env-interface RollBindings --include-runtime false && wrangler types .generated/web-api.d.ts --config wrangler.web-api.example.jsonc --env-interface WebApiBindings --include-runtime false",
+    "types": "rm -rf .generated && mkdir -p .generated && wrangler types .generated/data.d.ts --config wrangler.data.example.jsonc --env-interface DataBindings && wrangler types .generated/discord-rest.d.ts --config wrangler.discord-rest.example.jsonc --env-interface DiscordRestBindings --include-runtime false && wrangler types .generated/gateway.d.ts --config wrangler.gateway.example.jsonc --env-interface GatewayBindings --include-runtime false && wrangler types .generated/interactions.d.ts --config wrangler.interactions.example.jsonc --env-interface InteractionBindings --include-runtime false && wrangler types .generated/roll.d.ts --config wrangler.roll.example.jsonc --env-interface RollBindings --include-runtime false && wrangler types .generated/web-api.d.ts --config wrangler.web-api.example.jsonc --env-interface WebApiBindings --include-runtime false && node tools/gateway-capacity/staging-types.mjs",
     "type-check": "npm run types && tsc --noEmit && tsc --noEmit --project tsconfig.roll.json && npm run type-check:canvaskit-runtime",
     "build:frontend": "npm run build --workspace=@dice-witch/frontend",
     "benchmark:renderer": "vitest run --config vitest.renderer-benchmark.config.ts --reporter=verbose",
     "benchmark:gateway": "node tools/gateway-capacity/run.mjs",
-    "benchmark:gateway:check-staging": "npm run types && node tools/gateway-capacity/staging-types.mjs && tsc --noEmit --project tools/gateway-capacity/tsconfig.staging.json"
+    "benchmark:gateway:check-staging": "npm run types && tsc --noEmit --project tools/gateway-capacity/tsconfig.staging.json"
   },
   "dependencies": {
     "@cf-wasm/resvg": "0.3.4",

@@ -99,6 +99,7 @@ class StorageFixture {
     keyOrEntries: string | Record<string, GatewayShardStorageValue>,
     valueOrOptions?: GatewayShardStorageValue | DurableObjectPutOptions,
   ): Promise<void> {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The storage SDK overload distinguishes a string key from a typed batch.
     if (typeof keyOrEntries === "string") {
       if (valueOrOptions === undefined || !("version" in valueOrOptions)) throw new Error("Storage value is required");
       this.values.set(keyOrEntries, structuredClone(valueOrOptions));

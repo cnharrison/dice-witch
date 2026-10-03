@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
 import { createFixture, FIXTURE_TOKEN, guildIds, SHARDS } from "./gateway-capacity/fixture.mjs";
@@ -64,6 +65,20 @@ test("staging bundle preparation refuses unapproved and dirty deployment inputs"
     await assert.rejects(prepareStaging({ ...parameters, candidateCapacity: 8 }), /Explicit candidate capacity/);
     await assert.rejects(prepareStaging(parameters), /clean matching committed source/);
   } finally { await rm(output, { recursive: true, force: true }); }
+});
+
+test("staging deployment refuses unavailable Git metadata", async () => {
+  const output = await mkdtemp(path.join(os.tmpdir(), "gateway-staging-no-git-"));
+  const parameters = { output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "deploy", candidateCapacity: 12 };
+  try {
+    await assert.rejects(execute(process.execPath, ["--input-type=module", "-e", `import { prepareStaging } from ${JSON.stringify(new URL("./gateway-capacity/staging-prepare.mjs", import.meta.url).href)}; await prepareStaging(${JSON.stringify(parameters)});`], { env: { ...process.env, GIT_DIR: path.join(output, "missing-git") } }), /clean matching committed source/);
+  } finally { await rm(output, { recursive: true, force: true }); }
+});
+
+test("staging binding generation requires an explicit source revision", async () => {
+  const env = { ...process.env };
+  delete env.VITE_BUILD_SHA;
+  await assert.rejects(execute(process.execPath, [fileURLToPath(new URL("./gateway-capacity/staging-types.mjs", import.meta.url))], { env }), /VITE_BUILD_SHA must identify the source revision/);
 });
 
 test("capacity fixtures close wrong-token authentication with a nonrecoverable code", async () => {
@@ -184,7 +199,11 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
     await mf.ready;
     const fixture = await mf.getWorker(fixtureConfig.name);
     const gateway = await mf.getWorker(manifest.configs[2].name);
-    const send = (worker, route, value) => worker.fetch(`https://${manifest.hostname}${route}`, { method: value === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" }, ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
+    const send = (worker, route, value) => {
+      const options = { method: value === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" } };
+      if (value !== undefined) options.body = JSON.stringify(value);
+      return worker.fetch(`https://${manifest.hostname}${route}`, options);
+    };
     assert.equal((await gateway.fetch(`https://${manifest.hostname}/start`, { method: "POST" })).status, 401);
     assert.equal((await fixture.fetch(`https://${manifest.hostname}/configure`, { method: "POST" })).status, 401);
     assert.equal((await send(fixture, "/configure", { runId: "12345678-1234-4234-8234-123456789abc", guilds: 240, channels: 2, heartbeatMs: 1_000, knownGuilds: true })).status, 200);

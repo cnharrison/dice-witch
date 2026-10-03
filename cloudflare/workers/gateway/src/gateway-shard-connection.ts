@@ -859,6 +859,7 @@ export class GatewayShardConnection {
         const guildInventoryStateJson = guildInventoryState === null
           ? undefined
           : JSON.stringify(guildInventoryState);
+        // oxlint-disable-next-line anti-slop/no-known-value-widening -- Storage.put requires a dynamic-key atomic batch containing three persisted value schemas.
         const entries: GatewayStorageEntries = {
           [this.checkpointKey]: this.machine.checkpoint,
         };

@@ -54,6 +54,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
 
   function withoutTokens(value) {
     if (Array.isArray(value)) return value.map(withoutTokens);
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Recursive redaction inspects arbitrary decoded JSON before selecting object keys.
     if (value !== null && typeof value === "object") {
       return Object.fromEntries(Object.entries(value).filter(([key]) => !/token/i.test(key)).map(([key, entry]) => [key, withoutTokens(entry)]));
     }
@@ -81,7 +82,9 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   async function request(config, route, data, expectedStatus = 200) {
     assert.equal(config.name, STAGING_NAMES[config.role]);
     assert.equal(config.url, `https://${config.name}.cnharrison.workers.dev`);
-    const response = await fetch(`${config.url}${route}`, { method: data === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${secrets.GATEWAY_CONTROL_TOKEN}`, "content-type": "application/json" }, ...(data === undefined ? {} : { body: JSON.stringify(data) }), signal: AbortSignal.timeout(route.startsWith("/stop") ? 30_000 : 120_000), redirect: "error" });
+    const options = { method: data === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${secrets.GATEWAY_CONTROL_TOKEN}`, "content-type": "application/json" }, signal: AbortSignal.timeout(route.startsWith("/stop") ? 30_000 : 120_000), redirect: "error" };
+    if (data !== undefined) options.body = JSON.stringify(data);
+    const response = await fetch(`${config.url}${route}`, options);
     if (expectedStatus === "restart-error") {
       assert(response.status >= 500, "Persisted restart did not abort its invocation");
       return { status: response.status };
@@ -100,9 +103,10 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     const content = await fetch(`https://api.cloudflare.com/client/v4/accounts/${manifest.accountId}/workers/scripts/${config.name}`, { headers: { authorization: `Bearer ${accountToken}` }, signal: AbortSignal.timeout(30_000), redirect: "error" });
     assert(content.ok, "Deployed staging source could not be inspected");
     const parts = await content.formData();
-    const module = parts.get(path.basename(config.outfile));
-    assert(typeof module === "string" || module instanceof Blob, "Deployed staging main module is missing");
-    const moduleBytes = typeof module === "string" ? Buffer.from(module) : new Uint8Array(await module.arrayBuffer());
+    const moduleResult = z.union([z.string(), z.instanceof(Blob)]).safeParse(parts.get(path.basename(config.outfile)));
+    assert(moduleResult.success, "Deployed staging main module is missing");
+    const module = moduleResult.data;
+    const moduleBytes = module instanceof Blob ? new Uint8Array(await module.arrayBuffer()) : Buffer.from(module);
     assert.equal(createHash("sha256").update(moduleBytes).digest("hex"), config.digest, "Deployed staging code does not match its local bundle");
     assert.equal(createHash("sha256").update(await readFile(config.configPath)).digest("hex"), config.configDigest, "Deployment configuration changed");
     const expected = JSON.parse(await readFile(config.configPath, "utf8"));

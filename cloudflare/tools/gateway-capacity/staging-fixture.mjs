@@ -109,7 +109,7 @@ export class FixtureController extends DurableObject {
 
   async data(path, body) {
     const fixture = this.active();
-    if (typeof path !== "string" || typeof body !== "string" || body.length > 65_536) throw new Error("Invalid fixture data request");
+    if (!z.string().safeParse(path).success || !z.string().max(65_536).safeParse(body).success) throw new Error("Invalid fixture data request");
     return fixture.data(new Request(`https://data.internal${path}`, { method: "POST", body }));
   }
 
