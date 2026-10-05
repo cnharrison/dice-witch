@@ -234,6 +234,8 @@ export class GuildInventory {
     if (this.state === null || event === null || event.type === "unavailable") {
       return;
     }
+    if (event.type === "upsert" && this.state.guildIds.includes(event.guild.id)) return;
+    if (event.type === "deactivate" && !this.state.guildIds.includes(event.guildId)) return;
     const guildIds = new Set(this.state.guildIds);
     if (event.type === "upsert") guildIds.add(event.guild.id);
     else guildIds.delete(event.guildId);

@@ -67,9 +67,22 @@ describe("Discord channel directory contracts", () => {
       })
     ).toThrow("Discord channel directory mutation is invalid");
 
-    expect(
-      parseDiscordChannelDirectoryDispatchV1("MESSAGE_CREATE", null, -1),
-    ).toBeNull();
+    for (const eventType of ["MESSAGE_CREATE", "GUILD_CREATE", "channel_create", "THREAD_UPDATE_EXTRA"]) {
+      expect(parseDiscordChannelDirectoryDispatchV1(eventType, null, -1)).toBeNull();
+    }
+    const channel = { id: channelId, guild_id: guildId, name: "dice-rolls", type: 0 };
+    for (const eventType of ["CHANNEL_CREATE", "CHANNEL_UPDATE", "THREAD_CREATE", "THREAD_UPDATE"]) {
+      expect(parseDiscordChannelDirectoryDispatchV1(eventType, channel, now)).toEqual(upsert(now));
+      expect(() => parseDiscordChannelDirectoryDispatchV1(eventType, null, now))
+        .toThrow("Discord channel directory dispatch is invalid");
+    }
+    for (const eventType of ["CHANNEL_DELETE", "THREAD_DELETE"]) {
+      expect(parseDiscordChannelDirectoryDispatchV1(eventType, channel, now)).toEqual({
+        version: 1, operation: "delete", source: "gateway", guildId, channelId, observedAt: now,
+      });
+      expect(() => parseDiscordChannelDirectoryDispatchV1(eventType, channel, -1))
+        .toThrow("Discord channel directory dispatch is invalid");
+    }
     expect(
       parseDiscordChannelDirectoryDispatchV1(
         "CHANNEL_CREATE",

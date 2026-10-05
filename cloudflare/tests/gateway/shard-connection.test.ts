@@ -13,12 +13,14 @@ import {
 import type { ParsedGatewayMessage } from "../../workers/gateway/src/discord-gateway";
 import {
   GatewayEventQueue,
+  GuildInventory,
   GatewayShardConnection,
   gatewayGuildInventoryStateKey,
   gatewayInitialGuildStateKey,
   initialGatewayCheckpoint,
   parseGatewayGuildInventoryState,
   parseGatewayInitialGuildState,
+  type GatewayGuildInventoryState,
   type GatewayShardConnectionOptions,
   type GatewayShardIdentity,
   type GatewayShardStorageValue,
@@ -485,6 +487,36 @@ describe("GatewayShardConnection snapshot persistence", () => {
       [gatewayGuildInventoryStateKey(checkpointKey)]: storedSnapshots(storage).guildInventoryState,
     });
     expect(storedSnapshots(storage).guildInventoryState.sessionId).toBe("session-new");
+  });
+});
+
+describe("GuildInventory membership", () => {
+  it("preserves metadata, order and snapshot isolation across duplicate and actual changes", () => {
+    const secondGuildId = "100000000000000002";
+    const missingGuildId = "100000000000000003";
+    const state: GatewayGuildInventoryState = {
+      version: 1, generation: identity.generation, shardId: identity.shardId,
+      shardCount: identity.shardCount, sessionId: "inventory-session", capturedAt: 1_000,
+      guildIds: [guildId, secondGuildId],
+    };
+    const inventory = new GuildInventory(state);
+    const upsert = (id: string) => {
+      inventory.apply({
+        type: "upsert",
+        guild: { id, name: "Guild", icon: null, ownerId: guildId, memberCount: 1,
+          approximateMemberCount: null, preferredLocale: "en-US", joinedTimestamp: 1_000, isActive: true },
+      });
+    };
+    const original = inventory.snapshot();
+    upsert(guildId);
+    inventory.apply({ type: "deactivate", guildId: missingGuildId });
+    inventory.apply({ type: "unavailable", guildId });
+    expect(inventory.snapshot()).toEqual(original);
+    original?.guildIds.push(missingGuildId);
+    expect(inventory.snapshot()?.guildIds).toEqual([guildId, secondGuildId]);
+    inventory.apply({ type: "deactivate", guildId });
+    upsert(guildId);
+    expect(inventory.snapshot()).toEqual({ ...state, guildIds: [secondGuildId, guildId] });
   });
 });
 
