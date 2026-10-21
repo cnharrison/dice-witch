@@ -139,6 +139,8 @@ flowchart TB
 - A Cloudflare account with Wrangler authenticated
 - A Discord application and bot
 
+The Tailwind 4 frontend requires Safari 16.4+, Chrome 111+, or Firefox 128+.
+
 ## TLS trust workaround (October 2026)
 
 While Node's [eMudhra remediation](https://emudhra.we-have-a-problem.com/) is

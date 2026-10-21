@@ -201,7 +201,7 @@ function DocsArticle({ entry }: { entry: DocsEntry }) {
 function MissingDocsArticle() {
   return (
     <div>
-      <h1 className="font-['UnifrakturMaguntia'] text-5xl leading-tight text-brand sm:text-6xl">
+      <h1 className="font-['UnifrakturMaguntia'] text-5xl leading-tight text-brand sm:text-6xl sm:leading-none">
         Guide not found
       </h1>
       <p className="mt-5 max-w-[72ch] leading-7 text-foreground/90">
