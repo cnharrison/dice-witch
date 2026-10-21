@@ -210,7 +210,7 @@ export function AppearanceTargetPickerV3({
                             }
                           }
                     }
-                    className={`relative grid aspect-square w-full min-w-0 place-items-center rounded-md border bg-background p-2 text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:p-2.5 ${
+                    className={`relative grid aspect-square w-full min-w-0 place-items-center rounded-md border bg-background p-2 text-foreground transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:p-2.5 ${
                       highlighted
                         ? "border-2 border-brand bg-brand/10 p-[7px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--brand)_35%,transparent)] sm:p-[9px]"
                         : "border-border hover:border-brand/60 hover:bg-muted/30"
@@ -257,7 +257,7 @@ export function AppearanceTargetPickerV3({
                     role="menuitem"
                     disabled={disabled}
                     onClick={() => runChipAction(target, "edit")}
-                    className="w-full rounded px-2 py-1.5 text-left text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="w-full rounded px-2 py-1.5 text-left text-xs font-medium hover:bg-muted focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     Edit {name}&apos;s design
                   </button>
@@ -266,7 +266,7 @@ export function AppearanceTargetPickerV3({
                     role="menuitem"
                     disabled={disabled}
                     onClick={() => runChipAction(target, "discard")}
-                    className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-destructive hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-destructive hover:bg-muted focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     Discard {name}&apos;s design…
                   </button>

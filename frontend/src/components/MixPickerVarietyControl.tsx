@@ -55,7 +55,7 @@ export function MixPickerVarietyControl({
             onClick={() =>
               variety === "chaos" ? onChaos() : onSelect(variety)
             }
-            className={`min-h-9 flex-1 rounded-md px-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            className={`min-h-9 flex-1 rounded-md px-2 text-sm font-semibold transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
               selected === variety
                 ? "bg-brand/10 text-brand"
                 : "text-muted-foreground hover:text-foreground"

@@ -99,7 +99,7 @@ function ChipGroup<Value extends string>({
           type="button"
           aria-pressed={selected === id}
           onClick={() => onSelect(id)}
-          className={`min-h-9 rounded-md border px-2 text-xs font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`min-h-9 rounded-md border px-2 text-xs font-medium capitalize transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
             selected === id
               ? "border-brand bg-brand/10 text-brand"
               : "border-border text-muted-foreground hover:text-foreground"
@@ -141,7 +141,7 @@ export function MixPickerFineTune({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span aria-hidden="true" className="sm:hidden">Done</span>
             <span className="sr-only sm:hidden">Close fine-tune</span>

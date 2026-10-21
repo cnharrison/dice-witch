@@ -831,7 +831,7 @@ export function SavedRollsView({
             className="grid min-w-0 content-start gap-4"
             aria-label="Library"
           >
-            <div className="sticky top-0 z-20 flex min-w-0 flex-wrap items-end gap-2 rounded-lg border bg-background/95 p-3 shadow-sm backdrop-blur sm:static sm:bg-card">
+            <div className="sticky top-0 z-20 flex min-w-0 flex-wrap items-end gap-2 rounded-lg border bg-background/95 p-3 shadow-xs backdrop-blur-sm sm:static sm:bg-card">
               <div className="min-w-0 flex-1">
                 {libraryQuery.isError ? (
                   <p role="alert" className="text-sm text-destructive">

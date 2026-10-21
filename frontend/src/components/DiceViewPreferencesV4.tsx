@@ -38,7 +38,7 @@ function ModeDescriptionTooltip({
         <button
           type="button"
           aria-label={label}
-          className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Info className="h-4 w-4" aria-hidden="true" />
         </button>

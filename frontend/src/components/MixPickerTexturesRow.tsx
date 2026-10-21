@@ -61,7 +61,7 @@ export function MixPickerTexturesRow({
               data-state={expanded ? "open" : "closed"}
               className={`overflow-hidden rounded-lg border transition-colors ${
                 expanded
-                  ? "border-brand/40 bg-secondary/50 shadow-sm"
+                  ? "border-brand/40 bg-secondary/50 shadow-xs"
                   : "border-border bg-muted/40 hover:bg-muted/60"
               }`}
             >
@@ -70,7 +70,7 @@ export function MixPickerTexturesRow({
                 aria-expanded={expanded}
                 disabled={disabled}
                 onClick={() => setOpenFamily(expanded ? null : material.family)}
-                className={`flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                className={`flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
                   expanded
                     ? "bg-muted/60 text-foreground"
                     : "text-muted-foreground hover:text-foreground"

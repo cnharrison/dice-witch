@@ -13,7 +13,7 @@ export function SparkleLoadingIndicator({
       <svg
         data-loading-glyph="sparkles"
         viewBox="0 0 72 48"
-        className="h-12 w-[4.5rem]"
+        className="h-12 w-18"
         aria-hidden="true"
       >
         <path

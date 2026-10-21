@@ -183,7 +183,7 @@ export function SavedRollQuickAccessView({
                   document.getElementById(`library-${next}-tab`)?.focus();
                 }}
                 className={cn(
-                  "h-10 rounded-md px-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "h-10 rounded-md px-2 text-sm font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                   selected
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground",
@@ -319,7 +319,7 @@ function RollList({
         <li key={entry.id} className="grid min-w-0 grid-cols-[1fr_auto] items-stretch gap-1">
           <button
             type="button"
-            className="min-w-0 rounded-md px-2 py-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-w-0 rounded-md px-2 py-2 text-left hover:bg-muted focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             aria-label={`Load ${entry.name}`}
             disabled={!stagingReady}
             onClick={() =>

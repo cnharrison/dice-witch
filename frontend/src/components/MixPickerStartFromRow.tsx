@@ -61,7 +61,7 @@ export function MixPickerStartFromRow({
         onMouseLeave={() => setHoveredStyleId(null)}
         onFocus={() => setFocusedStyleId(styleId)}
         onBlur={() => setFocusedStyleId(null)}
-        className={`relative grid h-20 w-20 shrink-0 snap-start place-items-center rounded-lg border p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${
+        className={`relative grid h-20 w-20 shrink-0 snap-start place-items-center rounded-lg border p-1 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${
           selected
             ? "border-brand bg-brand/10"
             : "border-border hover:border-brand/50 hover:bg-muted/40"
@@ -69,8 +69,8 @@ export function MixPickerStartFromRow({
       >
         {thumbVersion !== null && (
           <AppearanceThumb
-            className="h-[4.5rem] w-[4.5rem]"
-            imageClassName="absolute left-1/2 top-1/2 !w-auto max-w-none -translate-x-1/2 -translate-y-1/2 scale-[1.3]"
+            className="h-18 w-18"
+            imageClassName="absolute left-1/2 top-1/2 w-auto! max-w-none -translate-x-1/2 -translate-y-1/2 scale-[1.3]"
             kind="preset"
             id={styleId}
             catalogVersion={thumbVersion.catalogVersion}

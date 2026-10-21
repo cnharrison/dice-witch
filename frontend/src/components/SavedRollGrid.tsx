@@ -206,7 +206,7 @@ function SortHeader({
   return (
     <button
       type="button"
-      className="inline-flex min-h-10 items-center gap-1 text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex min-h-10 items-center gap-1 text-left font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       onClick={onClick}
     >
       {label}
@@ -253,7 +253,7 @@ function SelectionCheckbox({
       />
       <span
         aria-hidden="true"
-        className="flex h-6 w-6 items-center justify-center rounded-md border-2 border-brand/60 bg-background text-transparent shadow-sm transition-colors peer-checked:border-brand peer-checked:bg-brand peer-checked:text-brand-foreground peer-indeterminate:border-brand peer-indeterminate:bg-brand peer-indeterminate:text-brand-foreground peer-hover:border-brand"
+        className="flex h-6 w-6 items-center justify-center rounded-md border-2 border-brand/60 bg-background text-transparent shadow-xs transition-colors peer-checked:border-brand peer-checked:bg-brand peer-checked:text-brand-foreground peer-indeterminate:border-brand peer-indeterminate:bg-brand peer-indeterminate:text-brand-foreground peer-hover:border-brand"
       >
         <Check className="h-4 w-4" strokeWidth={3} />
       </span>
@@ -701,7 +701,7 @@ export function SavedRollGrid({
     </>
   ) : (
     <div className="overflow-x-auto overflow-y-hidden rounded-lg border bg-card">
-      <table className="w-full min-w-[44rem] table-fixed border-collapse text-sm">
+      <table className="w-full min-w-176 table-fixed border-collapse text-sm">
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id} className="border-b bg-muted/30 text-left">

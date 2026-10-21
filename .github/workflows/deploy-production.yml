@@ -71,7 +71,7 @@ jobs:
       - name: Verify successful CI promotion
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node tools/verify-ci-promotion.mjs --sha "$REQUESTED_SHA"
+        run: node tools/with-trusted-tls.mjs node tools/verify-ci-promotion.mjs --sha "$REQUESTED_SHA"
 
   deploy:
     needs: preflight

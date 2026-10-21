@@ -533,7 +533,7 @@ export function DiceNotationButtons({
               "flex min-h-0 flex-col overflow-hidden rounded-lg border bg-background p-3",
               mobile
                 ? "fixed inset-x-2 bottom-2 top-16 z-50 pt-14 shadow-xl"
-                : "flex-1 shadow-sm",
+                : "flex-1 shadow-xs",
             )}
           >
             {mobile && (
@@ -584,10 +584,10 @@ export function DiceNotationButtons({
                       ?.focus();
                   }}
                   className={cn(
-                    "rounded px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "rounded px-2 text-xs font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                     mobile ? "h-11" : "h-9",
                     advancedTab === tab
-                      ? "bg-background text-foreground shadow-sm"
+                      ? "bg-background text-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >

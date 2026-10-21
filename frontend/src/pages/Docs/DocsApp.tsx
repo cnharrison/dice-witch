@@ -45,11 +45,11 @@ export function PublicDocsHeaderView({
   };
 
   return (
-    <header className="sticky top-0 z-50 h-14 shrink-0 border-b border-border bg-background/95 backdrop-blur-sm">
+    <header className="sticky top-0 z-50 h-14 shrink-0 border-b border-border bg-background/95 backdrop-blur-xs">
       <div className="flex h-full items-center px-3 sm:px-4">
         <Link
           to="/"
-          className="flex h-full items-center font-['UnifrakturMaguntia'] text-[2rem] leading-none text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-[2.5rem]"
+          className="flex h-full items-center font-['UnifrakturMaguntia'] text-[2rem] leading-none text-brand focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-[2.5rem]"
         >
           Dice Witch
         </Link>
@@ -118,7 +118,7 @@ function PublicDocsHeader() {
 
 function navigationClassName({ isActive }: { isActive: boolean }): string {
   return [
-    "block border-l-2 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "block border-l-2 px-3 py-2 text-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
     isActive
       ? "border-brand bg-brand/10 font-semibold text-brand"
       : "border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground",
@@ -154,7 +154,7 @@ function DocsNavigation() {
           onKeyDown={(event) => {
             if (event.key === "Escape") setQuery("");
           }}
-          className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         />
       </label>
       <p role="status" className="sr-only">
@@ -201,7 +201,7 @@ function DocsArticle({ entry }: { entry: DocsEntry }) {
 function MissingDocsArticle() {
   return (
     <div>
-      <h1 className="font-['UnifrakturMaguntia'] text-5xl leading-tight text-brand sm:text-6xl">
+      <h1 className="font-['UnifrakturMaguntia'] text-5xl leading-tight text-brand sm:text-6xl sm:leading-none">
         Guide not found
       </h1>
       <p className="mt-5 max-w-[72ch] leading-7 text-foreground/90">
@@ -253,7 +253,7 @@ export function DocsAppView({
     <div className="flex min-h-full flex-col bg-background text-foreground">
       <a
         href="#docs-content"
-        className="sr-only z-[60] rounded bg-background px-4 py-2 text-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:outline-none focus:ring-2 focus:ring-ring"
+        className="sr-only z-60 rounded bg-background px-4 py-2 text-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:outline-hidden focus:ring-2 focus:ring-ring"
       >
         Skip to guide
       </a>
@@ -264,7 +264,7 @@ export function DocsAppView({
           id="docs-content"
           ref={mainRef}
           tabIndex={-1}
-          className="min-w-0 pb-16 outline-none"
+          className="min-w-0 pb-16 outline-hidden"
         >
           {entry === undefined ? <MissingDocsArticle /> : <DocsArticle entry={entry} />}
         </main>

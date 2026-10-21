@@ -1,7 +1,7 @@
 import type { AppearanceTargetV4 } from "@dice-witch/dice-v4-model";
 
 const iconClassName =
-  "h-full w-full fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:2.2]";
+  "h-full w-full fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] stroke-[2.2]";
 
 function LegacyCubeIcon({ fudge = false }: { fudge?: boolean }) {
   return (

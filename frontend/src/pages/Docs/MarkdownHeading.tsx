@@ -2,7 +2,7 @@ import * as React from "react";
 import * as z from "zod";
 
 const HEADING_CLASSES = {
-  1: "scroll-mt-24 font-['UnifrakturMaguntia'] text-5xl leading-tight text-brand sm:text-6xl",
+  1: "scroll-mt-24 font-['UnifrakturMaguntia'] text-5xl leading-tight text-brand sm:text-6xl sm:leading-none",
   2: "mt-12 scroll-mt-24 border-b border-border pb-3 text-2xl font-bold tracking-tight sm:text-3xl",
   3: "mt-8 scroll-mt-24 text-xl font-semibold tracking-tight",
 } as const;
@@ -56,7 +56,7 @@ export function MarkdownHeading({
     >
       <a
         href={`#${headingId}`}
-        className="group rounded-sm text-inherit no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group rounded-sm text-inherit no-underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         {children}
         <span

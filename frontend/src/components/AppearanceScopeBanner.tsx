@@ -37,7 +37,7 @@ export function AppearanceScopeBanner({
               type="button"
               disabled={disabled}
               onClick={onReset}
-              className="font-semibold text-brand underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="font-semibold text-brand underline-offset-2 hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               Reset to ALL
             </button>

@@ -96,7 +96,7 @@ function DiceDisplayModeToggle({
     <div
       role="group"
       aria-label="Dice display mode"
-      className="flex rounded-md border border-border/80 bg-background/90 p-0.5 shadow-sm backdrop-blur-sm"
+      className="flex rounded-md border border-border/80 bg-background/90 p-0.5 shadow-xs backdrop-blur-xs"
     >
       <Button
         type="button"
@@ -255,7 +255,7 @@ function DiceResultDisplay({
         {notice !== null && (
           <p
             role="alert"
-            className="absolute bottom-12 left-2 right-2 z-40 rounded-md border border-warning-border bg-background/95 px-3 py-2 text-sm text-foreground shadow-sm"
+            className="absolute bottom-12 left-2 right-2 z-40 rounded-md border border-warning-border bg-background/95 px-3 py-2 text-sm text-foreground shadow-xs"
           >
             {notice}
           </p>
