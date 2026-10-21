@@ -1,158 +1,275 @@
-@font-face {
-  font-family: "Bangers";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/Bangers-Latin.woff2") format("woff2");
+@import 'tailwindcss';
+
+@plugin 'tailwindcss-animate';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-brand-hover: hsl(var(--brand-hover));
+
+  --color-discord: hsl(var(--discord));
+  --color-discord-foreground: hsl(var(--discord-foreground));
+  --color-discord-hover: hsl(var(--discord-hover));
+
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-warning-border: hsl(var(--warning-border));
+
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+  --color-info-border: hsl(var(--info-border));
+
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-success-border: hsl(var(--success-border));
+
+  --color-marketing-background: hsl(var(--marketing-background));
+  --color-marketing-surface: hsl(var(--marketing-surface));
+  --color-marketing-panel: hsl(var(--marketing-panel));
+  --color-marketing-card: hsl(var(--marketing-card));
+  --color-marketing-foreground: hsl(var(--marketing-foreground));
+  --color-marketing-muted: hsl(var(--marketing-muted));
+  --color-marketing-border: hsl(var(--marketing-border));
+  --color-marketing-accent: hsl(var(--marketing-accent));
+  --color-marketing-accent-hover: hsl(var(--marketing-accent-hover));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-select: hsl(var(--select));
+  --color-ring: hsl(var(--ring));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
 }
 
-@font-face {
-  font-family: "UnifrakturMaguntia";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/UnifrakturMaguntia-Latin.woff2") format("woff2");
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
 }
 
-@font-face {
-  font-family: "DiceWitchV4-liberation-sans";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/LiberationSans-Bold-ui.ttf") format("truetype");
-}
+@layer base {
+  @font-face {
+    font-family: "Bangers";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('./assets/fonts/Bangers-Latin.woff2') format('woff2');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-new-rocker";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/NewRocker-Regular-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "UnifrakturMaguntia";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('./assets/fonts/UnifrakturMaguntia-Latin.woff2') format('woff2');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-stencil-ops";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/StencilOps-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-liberation-sans";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/LiberationSans-Bold-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-creeping-horror";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/CreepingHorror-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-new-rocker";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/NewRocker-Regular-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-special-elite";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/SpecialElite-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-stencil-ops";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/StencilOps-ui.ttf') format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-luckiest-guy";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/LuckiestGuy-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-creeping-horror";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/CreepingHorror-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-fontdiner-swanky";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/FontdinerSwanky-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-special-elite";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/SpecialElite-ui.ttf') format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-syncopate";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/Syncopate-Bold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-luckiest-guy";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/LuckiestGuy-ui.ttf') format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-source-sans-3";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/SourceSans3-SemiBold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-fontdiner-swanky";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/FontdinerSwanky-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-cinzel";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/Cinzel-SemiBold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-syncopate";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/Syncopate-Bold-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-barlow-condensed";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/BarlowCondensed-SemiBold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-source-sans-3";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/SourceSans3-SemiBold-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-jetbrains-mono";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/JetBrainsMono-SemiBold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-cinzel";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/Cinzel-SemiBold-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-zilla-slab";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/ZillaSlab-SemiBold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-barlow-condensed";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/BarlowCondensed-SemiBold-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-space-grotesk";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/SpaceGrotesk-SemiBold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-jetbrains-mono";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/JetBrainsMono-SemiBold-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-fraunces";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/Fraunces-SemiBold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-zilla-slab";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/ZillaSlab-SemiBold-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-bricolage-grotesque";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/BricolageGrotesque-SemiBold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-space-grotesk";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/SpaceGrotesk-SemiBold-ui.ttf')
+      format('truetype');
+  }
 
-@font-face {
-  font-family: "DiceWitchV4-alcarin-tengwar";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("./assets/fonts/appearance/AlcarinTengwar-Bold-ui.ttf") format("truetype");
-}
+  @font-face {
+    font-family: "DiceWitchV4-fraunces";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/Fraunces-SemiBold-ui.ttf')
+      format('truetype');
+  }
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+  @font-face {
+    font-family: "DiceWitchV4-bricolage-grotesque";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/BricolageGrotesque-SemiBold-ui.ttf')
+      format('truetype');
+  }
+
+  @font-face {
+    font-family: "DiceWitchV4-alcarin-tengwar";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('./assets/fonts/appearance/AlcarinTengwar-Bold-ui.ttf')
+      format('truetype');
+  }
+}
 @layer base {
   :root {
     --background: 35 42% 84%; /* Darker parchment background */

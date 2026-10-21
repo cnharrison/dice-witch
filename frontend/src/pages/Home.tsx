@@ -178,9 +178,9 @@ function MobileRollTabs({
             document.getElementById(`mobile-${next}-tab`)?.focus();
           }}
           className={cn(
-            "h-11 rounded px-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "h-11 rounded px-2 text-sm font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
             active === id
-              ? "bg-background text-foreground shadow-sm"
+              ? "bg-background text-foreground shadow-xs"
               : "text-muted-foreground",
           )}
         >
@@ -810,7 +810,7 @@ export function HomeView({ dependencies }: { dependencies: HomeDependencies }) {
                       onValueChange={selectGuild}
                       ariaLabel="Server"
                       triggerClassName="w-full"
-                      contentClassName="min-w-[var(--radix-select-trigger-width)]"
+                      contentClassName="min-w-(--radix-select-trigger-width)"
                     />
                     {selectedGuild && channels.length > 0 && (
                       <ChannelDropdownSlot
@@ -822,7 +822,7 @@ export function HomeView({ dependencies }: { dependencies: HomeDependencies }) {
                         }}
                         ariaLabel="Channel"
                         triggerClassName="w-full"
-                        contentClassName="min-w-[var(--radix-select-trigger-width)]"
+                        contentClassName="min-w-(--radix-select-trigger-width)"
                       />
                     )}
                   </div>

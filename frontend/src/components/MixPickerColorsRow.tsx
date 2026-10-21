@@ -179,7 +179,7 @@ export function MixPickerColorsRow({
               aria-label={`Palette color ${index + 1}`}
               disabled={disabled}
               onClick={() => setEditingColor({ kind: "palette", index })}
-              className="block h-9 w-9 rounded-full border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="block h-9 w-9 rounded-full border border-border focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               style={{ backgroundColor: color }}
             />
             {colors.colors.length > 1 && !disabled && (
@@ -229,7 +229,7 @@ export function MixPickerColorsRow({
           aria-label="Dice color"
           disabled={disabled}
           onClick={editPrimary}
-          className="block h-9 w-9 rounded-full border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          className="block h-9 w-9 rounded-full border border-border focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           style={{ backgroundColor: primary }}
         />
         <button
@@ -237,7 +237,7 @@ export function MixPickerColorsRow({
           aria-label="Add palette color"
           disabled={disabled}
           onClick={() => addPaletteColor(primary)}
-          className="grid h-9 w-9 place-items-center rounded-full border border-dashed border-muted-foreground/60 text-muted-foreground hover:border-brand hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          className="grid h-9 w-9 place-items-center rounded-full border border-dashed border-muted-foreground/60 text-muted-foreground hover:border-brand hover:text-brand focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -298,7 +298,7 @@ export function MixPickerColorsRow({
             type="button"
             disabled={disabled}
             onClick={() => emit(createRandomAppearanceColorsV3())}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-brand hover:bg-brand/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             <Dices className="h-3.5 w-3.5" aria-hidden="true" />
             Random
@@ -339,7 +339,7 @@ export function MixPickerColorsRow({
                     style.name,
                   );
                 }}
-                className={`inline-flex min-h-9 items-center gap-2 rounded-md border px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                className={`inline-flex min-h-9 items-center gap-2 rounded-md border px-2 text-xs font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
                   selected
                     ? "border-brand bg-brand/10 text-foreground"
                     : "border-border text-muted-foreground hover:text-foreground"

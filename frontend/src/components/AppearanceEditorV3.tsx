@@ -892,7 +892,7 @@ export function AppearanceEditorV3View({
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
       <aside className="appearance-editor-rail order-1 flex flex-col gap-4 xl:sticky xl:top-6 xl:z-10 xl:col-start-2 xl:row-start-1 xl:self-start">
-        <div className="appearance-editor-target-card rounded-xl border bg-card p-4 shadow-sm sm:p-6">
+        <div className="appearance-editor-target-card rounded-xl border bg-card p-4 shadow-xs sm:p-6">
           <div className="mb-2 flex flex-wrap justify-end gap-2">
             {resource.canRestorePreviousMix && (
               <Button
@@ -963,7 +963,7 @@ export function AppearanceEditorV3View({
             overrides={previewOverrides}
           />
         </div>
-        <div className="appearance-editor-variety-card rounded-xl border bg-card p-4 shadow-sm">
+        <div className="appearance-editor-variety-card rounded-xl border bg-card p-4 shadow-xs">
           <MixPickerVarietyControl
             recipe={activeSelection.recipe}
             isChaosAssignment={activeSelection.styleId === CHAOS_ASSIGNMENT_V3.id}
@@ -996,7 +996,7 @@ export function AppearanceEditorV3View({
         />
       </aside>
 
-      <div className="order-2 space-y-6 rounded-xl border bg-card p-4 shadow-sm sm:p-6 xl:col-start-1 xl:row-start-1">
+      <div className="order-2 space-y-6 rounded-xl border bg-card p-4 shadow-xs sm:p-6 xl:col-start-1 xl:row-start-1">
         <div
           role="tablist"
           aria-label="Appearance editor"
@@ -1020,7 +1020,7 @@ export function AppearanceEditorV3View({
                 tabIndex={activeTab === tab ? 0 : -1}
                 onClick={() => activateTab(tab)}
                 onKeyDown={(event) => handleTabKeyDown(event, tab)}
-                className={`min-h-11 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                className={`min-h-11 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                   activeTab === tab
                     ? "border-brand text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1176,7 +1176,7 @@ export function AppearanceEditorV3View({
         )}
 
         {hasUnsavedChanges && (
-          <div className="sticky bottom-2 z-20 rounded-lg border border-brand/35 bg-card/95 p-4 shadow-lg backdrop-blur-sm">
+          <div className="sticky bottom-2 z-20 rounded-lg border border-brand/35 bg-card/95 p-4 shadow-lg backdrop-blur-xs">
             <div className="grid grid-cols-2 items-center gap-3 sm:grid-cols-[1fr_auto_auto]">
               <p
                 className="col-span-2 text-sm font-medium text-foreground sm:col-span-1"

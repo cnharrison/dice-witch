@@ -277,10 +277,10 @@ describe("MixPickerMaterialsRow", () => {
       segment.style.getPropertyValue("--material-accent"),
     )).toEqual(accents);
     expect(classic.querySelector("img")?.parentElement?.className)
-      .toContain("h-[4.5rem]");
+      .toContain("h-18");
     const thumbnailImage = classic.querySelector("img");
     expect(thumbnailImage?.className).toContain("scale-[1.3]");
-    expect(thumbnailImage?.className).toContain("!w-auto");
+    expect(thumbnailImage?.className).toContain("w-auto!");
     expect(thumbnailImage?.className).toContain("max-w-none");
     expect(thumbnailImage?.className).toContain("absolute");
     expect(thumbnailImage?.className).toContain("left-1/2");

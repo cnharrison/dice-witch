@@ -592,7 +592,7 @@ export default function Preferences() {
 
     content = (
       <section aria-labelledby="server-appearance-heading" className="space-y-6">
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <div className="rounded-xl border bg-card p-5 shadow-xs">
           <div className="flex items-center justify-between gap-4">
             <h2 id="server-appearance-heading" className="text-xl font-semibold">
               Server appearance
@@ -629,7 +629,7 @@ export default function Preferences() {
           type="button"
           onClick={() => selectSection("personal")}
           aria-current={section === "personal" ? "page" : undefined}
-          className={`rounded-full px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`rounded-full px-4 py-2 text-sm font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
             section === "personal"
               ? "bg-primary text-primary-foreground"
               : "border bg-card hover:border-brand/70"
@@ -642,7 +642,7 @@ export default function Preferences() {
             type="button"
             onClick={() => selectSection("guild")}
             aria-current={section === "guild" ? "page" : undefined}
-            className={`rounded-full px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            className={`rounded-full px-4 py-2 text-sm font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
               section === "guild"
                 ? "bg-primary text-primary-foreground"
                 : "border bg-card hover:border-brand/70"

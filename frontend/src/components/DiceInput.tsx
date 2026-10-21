@@ -141,7 +141,7 @@ export function DiceInput({
               disabled={!canRoll}
               onClick={onRoll}
               className={cn(
-                "rounded-sm transition-opacity duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "rounded-sm transition-opacity duration-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 !canRoll && "cursor-not-allowed opacity-50",
               )}
             >
@@ -158,7 +158,7 @@ export function DiceInput({
 
         {/* Row 2: Roll title and times to repeat */}
         <div className="flex items-center space-x-2 w-full">
-          <div className="flex-grow">
+          <div className="grow">
             <Input
               id="mobile-roll-title"
               aria-label="Roll title"
@@ -175,7 +175,7 @@ export function DiceInput({
           </div>
 
           {timesToRepeat > 0 && (
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="relative w-16">
@@ -244,7 +244,7 @@ export function DiceInput({
       </div>
 
       <div className="hidden items-center space-x-2 sm:flex">
-        <div className="relative flex-grow">
+        <div className="relative grow">
           <Input
             ref={diceInputRef}
             aria-label="Dice notation"
@@ -280,7 +280,7 @@ export function DiceInput({
               disabled={!canRoll}
               onClick={onRoll}
               className={cn(
-                "rounded-sm transition-opacity duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "rounded-sm transition-opacity duration-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 !canRoll && "cursor-not-allowed opacity-50",
               )}
             >

@@ -67,7 +67,7 @@ export function SavedAppearanceDesigns({
   }, [editingDesignId]);
 
   return (
-    <div className="appearance-editor-saved-card rounded-xl border bg-card p-4 shadow-sm">
+    <div className="appearance-editor-saved-card rounded-xl border bg-card p-4 shadow-xs">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold">Saved designs</h2>
@@ -171,7 +171,7 @@ export function SavedAppearanceDesigns({
                       aria-label={`Edit ${design.name}`}
                       disabled={isSaving || design.pendingDeletion}
                       onClick={() => onEdit(design.id)}
-                      className="min-w-0 flex-1 rounded px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      className="min-w-0 flex-1 rounded px-2 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                     >
                       <span
                         className={`block truncate text-sm font-medium ${

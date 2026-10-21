@@ -102,7 +102,7 @@ export function MixPickerNumbersRow({
                 disabled={disabled}
                 onClick={() => toggleFont(id)}
                 style={{ fontFamily: `DiceWitchV4-${id}` }}
-                className={`min-h-11 shrink-0 rounded-md border px-3 py-2 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`min-h-11 shrink-0 rounded-md border px-3 py-2 text-base transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
                   selected
                     ? "border-brand bg-brand/10"
                     : "border-border hover:border-brand/50 hover:bg-muted/40"
@@ -137,7 +137,7 @@ export function MixPickerNumbersRow({
                 aria-pressed={selected}
                 disabled={disabled}
                 onClick={() => toggleInk(id)}
-                className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
                   selected
                     ? "border-brand bg-brand/10"
                     : "border-border hover:border-brand/50 hover:bg-muted/40"

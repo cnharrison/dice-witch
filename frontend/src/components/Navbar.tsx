@@ -82,12 +82,12 @@ export function NavbarView({
   };
 
   return (
-    <nav className="sticky top-0 z-50 h-14 shrink-0 border-b border-border bg-background/95 backdrop-blur-sm">
+    <nav className="sticky top-0 z-50 h-14 shrink-0 border-b border-border bg-background/95 backdrop-blur-xs">
       <div className="flex h-full items-center px-3 sm:px-4">
         <Link
           to="/app"
           replace
-          className="flex h-full items-center font-['UnifrakturMaguntia'] text-[2.5rem] leading-none text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="flex h-full items-center font-['UnifrakturMaguntia'] text-[2.5rem] leading-none text-brand focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           Dice Witch
         </Link>
@@ -140,7 +140,7 @@ export function NavbarView({
                     aria-label="Docs"
                     onMouseEnter={() => void routeLoaders.loadDocs()}
                     onFocus={() => void routeLoaders.loadDocs()}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <BookOpen className="h-4 w-4" aria-hidden="true" />
                   </Link>
@@ -177,7 +177,7 @@ export function NavbarView({
                 className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
               >
                 <DropdownMenu.Item
-                  className="flex cursor-pointer select-none items-center rounded-sm px-3 py-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+                  className="flex cursor-pointer select-none items-center rounded-sm px-3 py-2 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground"
                   onSelect={() => signOut()}
                 >
                   <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />

@@ -9,7 +9,7 @@ function markdownLink({ href = "", ...props }: React.ComponentProps<"a">) {
       <Link
         {...props}
         to={href}
-        className="font-medium text-brand underline decoration-brand/45 underline-offset-4 hover:decoration-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="font-medium text-brand underline decoration-brand/45 underline-offset-4 hover:decoration-brand focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       />
     );
   }
@@ -18,7 +18,7 @@ function markdownLink({ href = "", ...props }: React.ComponentProps<"a">) {
     <a
       {...props}
       href={href}
-      className="font-medium text-brand underline decoration-brand/45 underline-offset-4 hover:decoration-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="font-medium text-brand underline decoration-brand/45 underline-offset-4 hover:decoration-brand focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     />
   );
 }

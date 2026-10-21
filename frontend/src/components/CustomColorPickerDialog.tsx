@@ -127,7 +127,7 @@ export function CustomColorPickerDialog({
                 <button
                   type="button"
                   className={cn(
-                    "min-h-12 rounded-md border px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "min-h-12 rounded-md border px-2 text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                     defaultChoice.selected && "ring-2 ring-ring",
                   )}
                   aria-pressed={defaultChoice.selected}
@@ -144,7 +144,7 @@ export function CustomColorPickerDialog({
                   key={suggestion}
                   type="button"
                   className={cn(
-                    "grid min-h-12 place-items-center rounded-md border p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "grid min-h-12 place-items-center rounded-md border p-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                     selectedColorValue === suggestion.toUpperCase() &&
                       "ring-2 ring-ring",
                   )}
@@ -165,7 +165,7 @@ export function CustomColorPickerDialog({
 
           <button
             type="button"
-            className="relative mx-auto h-48 w-48 touch-none rounded-full border-2 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="relative mx-auto h-48 w-48 touch-none rounded-full border-2 shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             style={{
               background:
                 "radial-gradient(circle, #808080 0%, rgb(128 128 128 / 65%) 18%, transparent 70%), conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)",

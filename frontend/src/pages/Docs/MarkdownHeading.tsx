@@ -56,7 +56,7 @@ export function MarkdownHeading({
     >
       <a
         href={`#${headingId}`}
-        className="group rounded-sm text-inherit no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group rounded-sm text-inherit no-underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         {children}
         <span

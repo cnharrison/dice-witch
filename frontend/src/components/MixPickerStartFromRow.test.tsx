@@ -90,8 +90,8 @@ describe("MixPickerStartFromRow", () => {
     const thumbnail = screen
       .getByRole("button", { name: "dice-witch-name" })
       .querySelector("img");
-    expect(thumbnail?.parentElement?.className).toContain("h-[4.5rem]");
-    expect(thumbnail?.className).toContain("!w-auto");
+    expect(thumbnail?.parentElement?.className).toContain("h-18");
+    expect(thumbnail?.className).toContain("w-auto!");
     expect(thumbnail?.className).toContain("max-w-none");
     expect(thumbnail?.className).toContain("left-1/2");
     expect(thumbnail?.className).toContain("top-1/2");

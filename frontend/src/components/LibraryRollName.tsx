@@ -17,7 +17,7 @@ export function LibraryRollName({
   return (
     <span
       className={cn(
-        "text-[var(--library-roll-name-light)] dark:text-[var(--library-roll-name-dark)]",
+        "text-(--library-roll-name-light) dark:text-(--library-roll-name-dark)",
         className,
       )}
       style={{
