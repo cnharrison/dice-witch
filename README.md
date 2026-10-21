@@ -139,12 +139,33 @@ flowchart TB
 - A Cloudflare account with Wrangler authenticated
 - A Discord application and bot
 
+## TLS trust workaround (October 2026)
+
+While Node's [eMudhra remediation](https://emudhra.we-have-a-problem.com/) is
+pending, run networked development commands with `npm run trusted-tls -- COMMAND`,
+for example `npm run trusted-tls -- npx wrangler whoami`. The wrapper uses Node's
+bundled public roots with the affected root keys removed, and supplies the bundle
+to Node, npm, and curl. It does not change the machine's trust store or import
+additional system/private CAs. Legitimate certificates chaining exclusively to
+these distrusted roots will also fail verification.
+
+All Dagger build and deployment containers use this trust policy before the
+first npm download. The production launcher and CI promotion check also use it.
+Run `npm run tls:check` to verify that both Node HTTP clients reject all twelve
+published compromised TLS chains while production and npm HTTPS still work.
+The check requires network access and fails on timeouts or DNS errors.
+
+This workaround covers these project commands, not browsers, other applications,
+or every verifier on the machine. Keep OS/browser trust updates current. Remove
+the workaround only after the replacement runtime rejects the published chains
+through both Node HTTP clients without the wrapper.
+
 ## Local setup
 
 Install dependencies and copy the example configuration files:
 
 ```bash
-npm ci
+node tools/with-trusted-tls.mjs npm ci
 
 cp cloudflare/wrangler.data.example.jsonc cloudflare/wrangler.data.jsonc
 cp cloudflare/wrangler.discord-rest.example.jsonc cloudflare/wrangler.discord-rest.jsonc

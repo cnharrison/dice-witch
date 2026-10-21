@@ -55,12 +55,12 @@ jobs:
       - name: Require successful exact-SHA CI
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node tools/verify-ci-promotion.mjs --sha "$REQUESTED_SHA"
+        run: node tools/with-trusted-tls.mjs node tools/verify-ci-promotion.mjs --sha "$REQUESTED_SHA"
 
       - name: Verify exact production build
         run: |
           set -euo pipefail
-          metadata="$(curl --fail --silent --show-error --max-time 15 https://dicewit.ch/api/meta)"
+          metadata="$(node tools/with-trusted-tls.mjs curl --fail --silent --show-error --max-time 15 https://dicewit.ch/api/meta)"
           test "$(jq -r '.environment' <<< "$metadata")" = "production"
           deployed_sha="$(jq -r '.build.sha' <<< "$metadata")"
           test "$deployed_sha" = "$REQUESTED_SHA"

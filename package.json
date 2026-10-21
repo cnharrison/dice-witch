@@ -21,7 +21,9 @@
   "scripts": {
     "audit:ci": "node tools/audit-policy.mjs",
     "build": "npm run build --workspace=@dice-witch/frontend && npm run performance:budget",
-    "deploy:production": "node tools/deploy-production.mjs",
+    "deploy:production": "node tools/with-trusted-tls.mjs node tools/deploy-production.mjs",
+    "trusted-tls": "node tools/with-trusted-tls.mjs",
+    "tls:check": "node tools/with-trusted-tls.mjs node tools/check-tls-trust.mjs",
     "staging:check": "npm run staging:check --workspace=@dice-witch/cloudflare",
     "lint": "npm run lint:oxlint && npm run lint:eslint",
     "lint:ci": "npm run lint:oxlint && npm run lint --workspace=@dice-witch/dice-v4-model -- --max-warnings=0 && npm run lint --workspace=@dice-witch/cloudflare -- --max-warnings=0 && npm run lint --workspace=@dice-witch/frontend -- --max-warnings=65",
