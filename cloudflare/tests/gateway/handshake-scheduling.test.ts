@@ -12,63 +12,27 @@ class HandshakeSocket extends EventTarget {
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
   readyState = HandshakeSocket.CONNECTING;
-  completeHeaders: ((kind: "open" | "close") => void) | null = null;
 
   constructor(readonly url: string) {
     super();
     HandshakeSocket.instances.push(this);
   }
 
-  accept(): void {
-    if (this.readyState === HandshakeSocket.CONNECTING) this.readyState = HandshakeSocket.OPEN;
-  }
-
   send(): void {}
 
   close(code = 1000): void {
     if (this.readyState === HandshakeSocket.CLOSED) return;
-    const pending = this.readyState === HandshakeSocket.CONNECTING;
     this.readyState = HandshakeSocket.CLOSED;
-    if (pending) this.completeHeaders?.("close");
     const deliver = () => this.dispatchEvent(new CloseEvent("close", { code }));
     if (HandshakeSocket.deferClose) setTimeout(deliver, 10);
     else deliver();
   }
 
-  open(): void { this.completeHeaders?.("open"); }
-}
-
-type HandshakeUpgrade = {
-  status: number;
-  webSocket: HandshakeSocket | null;
-  body: { cancel(): Promise<void> } | null;
-};
-
-function stubGatewayUpgradeFetch(): void {
-  vi.stubGlobal("fetch", (_input: RequestInfo | URL, init?: { signal?: AbortSignal }) =>
-    new Promise<HandshakeUpgrade>((resolve, reject) => {
-      const socket = new HandshakeSocket("https://gateway.discord.gg/?v=10&encoding=json");
-      let settled = false;
-      const settle = (complete: () => void) => {
-        if (settled) return;
-        settled = true;
-        complete();
-      };
-      const abort = () => {
-        settle(() => { reject(Object.assign(new Error("The operation was aborted."), { name: "AbortError" })); });
-        socket.close(4000);
-      };
-      if (init?.signal?.aborted) { abort(); return; }
-      init?.signal?.addEventListener("abort", abort, { once: true });
-      socket.addEventListener("error", () => {
-        settle(() => { reject(new Error("websocket-error")); });
-        socket.close(4000);
-      });
-      socket.completeHeaders = () => {
-        settle(() => { resolve({ status: 101, webSocket: socket, body: null }); });
-      };
-    }),
-  );
+  open(): void {
+    if (this.readyState !== HandshakeSocket.CONNECTING) return;
+    this.readyState = HandshakeSocket.OPEN;
+    this.dispatchEvent(new Event("open"));
+  }
 }
 
 class StorageFixture {
@@ -120,7 +84,7 @@ beforeEach(() => {
   HandshakeSocket.instances = [];
   HandshakeSocket.deferClose = false;
   vi.useFakeTimers();
-  stubGatewayUpgradeFetch();
+  vi.stubGlobal("WebSocket", HandshakeSocket);
 });
 
 afterEach(() => {
@@ -130,35 +94,36 @@ afterEach(() => {
 });
 
 describe("Gateway handshake scheduling", () => {
-  it("rejects non-upgrade responses and cancels their bodies", async () => {
-    const cancel = vi.fn(() => Promise.resolve());
-    const fetchUpgrade = vi.fn(() => Promise.resolve({ status: 403, webSocket: null, body: { cancel } }));
-    vi.stubGlobal("fetch", fetchUpgrade);
+  it("ignores a late transport-open callback after stop", async () => {
     const current = connection(0);
     await current.shard.start();
-    await flush();
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(current.shard.status().state).toBe("backing-off");
-    expect(current.shard.status().lastError).toBe("handshake-failed");
-    expect(fetchUpgrade).toHaveBeenCalledWith("https://gateway.discord.gg/?v=10&encoding=json", expect.objectContaining({ headers: { Upgrade: "websocket" }, redirect: "manual" }));
+    const socket = HandshakeSocket.instances[0];
+    if (socket === undefined) throw new Error("Socket did not begin opening");
+    expect(socket.url).toBe("wss://gateway.discord.gg/?v=10&encoding=json");
     await current.shard.stop();
+    socket.dispatchEvent(new Event("open"));
+    await flush();
+    expect(socket.readyState).toBe(HandshakeSocket.CLOSED);
+    expect(current.shard.status().state).toBe("stopped");
     await Promise.all(current.background);
   });
 
-  it("closes an upgrade delivered after stop even when fetch ignores cancellation", async () => {
-    const socket = new HandshakeSocket("https://gateway.discord.gg");
-    let complete: () => void = () => { throw new Error("Fetch did not begin"); };
-    vi.stubGlobal("fetch", () => new Promise<HandshakeUpgrade>((resolve) => {
-      complete = () => { resolve({ status: 101, webSocket: socket, body: null }); };
-    }));
+  it("parks a connecting socket before a late open or HELLO can identify", async () => {
     const current = connection(0);
     await current.shard.start();
-    await flush();
-    await current.shard.stop();
-    complete();
-    await Promise.all(current.background);
+    const socket = HandshakeSocket.instances[0];
+    if (socket === undefined) throw new Error("Socket did not begin opening");
+    const snapshot = await current.shard.parkForTransfer();
+    expect(snapshot.checkpoint.sessionId).toBeNull();
     expect(socket.readyState).toBe(HandshakeSocket.CLOSED);
-    expect(current.shard.status().state).toBe("stopped");
+    socket.dispatchEvent(new Event("open"));
+    socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ op: 10, d: { heartbeat_interval: 1000 } }) }));
+    await flush();
+    await current.shard.recover();
+    await expect(current.shard.start()).rejects.toThrow("parked");
+    expect(current.shard.status().identifyAttempts).toBe(0);
+    expect(HandshakeSocket.instances).toHaveLength(1);
+    await Promise.all(current.background);
   });
 
   it("accepts a successful handshake after twenty seconds", async () => {
@@ -254,6 +219,7 @@ describe("Gateway handshake scheduling", () => {
     await Promise.all(connections.map(({ shard }) => shard.start()));
     await flush();
     HandshakeSocket.instances[0]?.dispatchEvent(new Event("error"));
+    HandshakeSocket.instances[0]?.close(1006);
     HandshakeSocket.instances[2]?.open();
     await flush();
     expect(HandshakeSocket.instances).toHaveLength(3);

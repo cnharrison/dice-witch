@@ -101,27 +101,6 @@ export async function gatewaySessionMutationScope(
     .join("");
 }
 
-function discordGatewayUpgradeUrl(websocketUrl: string): string {
-  const url = new URL(websocketUrl);
-  if (url.protocol === "ws:") url.protocol = "http:";
-  else if (url.protocol === "wss:") url.protocol = "https:";
-  else throw new Error("Discord Gateway URL is invalid");
-  return url.toString();
-}
-
-async function discardGatewayUpgrade(response: Response, reason: string): Promise<void> {
-  const socket = response.webSocket;
-  if (socket === null) {
-    await response.body?.cancel();
-    return;
-  }
-  try {
-    socket.accept();
-  } finally {
-    if (socket.readyState <= WebSocket.OPEN) socket.close(4000, reason);
-  }
-}
-
 export class GatewayEventQueue {
   private tail: Promise<void> | null = null;
 
@@ -960,103 +939,28 @@ export class GatewayShardConnection {
     const opening = new AbortController();
     this.pendingOpening = opening;
     try {
-      const gatewayUrl =
-        mode === "resume"
-          ? this.machine.checkpoint.resumeGatewayUrl
-          : await this.fetchGatewayUrl();
-      if (gatewayUrl === null) {
-        throw new Error("Resume Gateway URL is unavailable");
-      }
-      this.ctx.waitUntil(
-        this.openHandshakeSocket(gatewayUrl, mode, opening.signal).finally(() => {
-          if (this.pendingOpening === opening) this.pendingOpening = null;
-        }),
-      );
-    } catch (error) {
-      if (this.pendingOpening === opening) this.pendingOpening = null;
-      throw error;
-    }
-  }
-
-  private async openHandshakeSocket(
-    gatewayUrl: string,
-    mode: GatewayConnectionMode,
-    signal: AbortSignal,
-  ): Promise<void> {
-    const cancelled = () => signal.aborted || this.parked;
-    if (cancelled()) return;
-    const requestUrl = discordGatewayUpgradeUrl(
-      normalizeDiscordGatewayUrl(
-        gatewayUrl,
-        allowedGatewayHostname(this.env),
-      ),
-    );
-    if (mode === "identify") {
-      this.initialGuilds.replace([], []);
-      this.lifecycleMutationScope = null;
-    }
-    try {
-      const response = await fetch(requestUrl, {
-        headers: { Upgrade: "websocket" },
-        redirect: "manual",
-        signal,
-      });
-      if (cancelled()) {
-        await discardGatewayUpgrade(response, "handshake-cancelled");
-        return;
-      }
-      const socket = response.webSocket;
-      if (response.status !== 101 || socket === null) {
-        await response.body?.cancel();
-        this.recoverFromFailedHandshake();
-        return;
-      }
-      if (socket.readyState > WebSocket.OPEN) {
-        this.recoverFromFailedHandshake();
-        return;
-      }
+      const gatewayUrl = mode === "resume"
+        ? this.machine.checkpoint.resumeGatewayUrl
+        : await this.fetchGatewayUrl();
+      // Stop and transfer parking both abort this pending URL lookup.
+      if (opening.signal.aborted) return;
+      if (gatewayUrl === null) throw new Error("Resume Gateway URL is unavailable");
+      const socket = new WebSocket(normalizeDiscordGatewayUrl(gatewayUrl, allowedGatewayHostname(this.env)));
       this.socket = socket;
       this.failedSocket = null;
-      this.attachSocketListeners(socket);
-      this.runSocketEvent(socket, "socket-open", async () => {
-        await this.apply({ type: "socket-open" });
-      });
-      if (cancelled()) {
-        this.socket = null;
-        await discardGatewayUpgrade(response, "handshake-cancelled");
-        return;
+      if (mode === "identify") {
+        this.initialGuilds.replace([], []);
+        this.lifecycleMutationScope = null;
       }
-      socket.accept();
-    } catch {
-      if (cancelled()) return;
-      this.recoverFromFailedHandshake();
+      socket.addEventListener("open", () => {
+        this.runSocketEvent(socket, "socket-open", async () => {
+          await this.apply({ type: "socket-open" });
+        });
+      });
+      this.attachSocketListeners(socket);
+    } finally {
+      if (this.pendingOpening === opening) this.pendingOpening = null;
     }
-  }
-
-  private recoverFromFailedHandshake(): void {
-    const reason = "handshake-failed";
-    if (
-      this.machine.status === "suspended" ||
-      this.machine.status === "stopped" ||
-      this.machine.status === "fatal"
-    ) {
-      return;
-    }
-    this.lastError = reason;
-    const socket = this.socket;
-    if (socket !== null && socket.readyState <= WebSocket.OPEN) {
-      socket.close(4000, reason);
-      return;
-    }
-    this.ctx.waitUntil(
-      this.apply({
-        type: "socket-closed",
-        code: 4000,
-        closedAt: Date.now(),
-      }).catch(() => {
-        this.lastError = reason;
-      }),
-    );
   }
 
   private attachSocketListeners(socket: WebSocket): void {
