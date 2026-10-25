@@ -223,6 +223,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   }
 
   async function profile(config, model) {
+    const rate = z.number().positive().parse(model.steadyRate ?? 600);
     const report = { role: config.role, worker: config.name, namespaceId: config.namespaceId, capacity: config.capacity, model, runId: randomUUID(), startedAt: new Date().toISOString(), phases: [] };
     let lifecycle = 0;
     let directory = 0;
@@ -262,9 +263,9 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       });
       await phase("slow-replay", async () => {
         await request(fixture, "/slow", { milliseconds: 50 });
-        await request(fixture, "/replay", { countPerShard: count, rate: 600, channelUpdates: false });
+        await request(fixture, "/replay", { countPerShard: count, rate, channelUpdates: false });
         lifecycle += replayCount;
-        await request(fixture, "/replay", { countPerShard: count, rate: 600, channelUpdates: true });
+        await request(fixture, "/replay", { countPerShard: count, rate, channelUpdates: true });
         directory += replayCount;
         const result = await drained();
         await request(fixture, "/slow", { milliseconds: 0 });
@@ -289,7 +290,6 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
         return drained();
       });
       await phase("loaded-observation", async () => {
-        const rate = model.steadyRate ?? 600;
         // Chunk the experiment's traffic into roughly 30-second requests so the
         // HTTP control request can complete even at a measured lower steady rate.
         const countPerShard = Math.min(model.guilds, Math.floor(rate * 30 / SHARDS));

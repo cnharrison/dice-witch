@@ -194,6 +194,10 @@ reset. Root cause is not established; those runs do not validate a candidate. Th
 calibrated sustained comparison uses 60 full guild payloads/second, more than three
 times that measured busiest-minute rate, while retaining the 24,303-guild cold/warm
 startup and 600/second startup/slow-replay bursts. Pass `--steady-rate 60` to the
-staging runner. Its default 600 remains the separate stress experiment. Re-measure
+staging runner. This rate applies to slow-service replay and sustained observation;
+startup retains the 600-event/second cold burst. Its default 600 remains the separate
+stress experiment. The no-tail baseline also lost six sockets during slow-service
+replay at 600, so removing the instrumentation confounder alone did not establish
+stability. Re-measure
 production traffic before enabling consolidation; the calibrated test does not
 claim that either topology sustains 600 large guild payloads/second.
