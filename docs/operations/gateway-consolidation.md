@@ -94,6 +94,11 @@ parking, inactive import, and rollback with an advanced target sequence.
 The local capacity harness compares six and nine sessions using startup, replay,
 slow downstream service, reconnect and restart. Use 24,303 guilds, 40 channels,
 600 events/second and 41.25-second heartbeat cadence for the representative run.
+The default `--isolate-layout shared` puts all partition objects in one local
+gateway isolate. `--isolate-layout separate` reproduces the older per-partition
+layout for comparison; it understates the combined transient allocation pressure
+when deployed objects share an isolate. Reports record the layout and inspect each
+isolate once. Both layouts retain the same 25 shard identities and recovery checks.
 Local V8 heap samples are diagnostic only: forced GC/retained heap cannot certify
 Cloudflare's 128-MB isolate limit or platform allocation peaks.
 

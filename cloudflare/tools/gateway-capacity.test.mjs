@@ -303,7 +303,7 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
   }
 });
 
-for (const capacity of ["both", "7"]) test(`capacity benchmark ${capacity} checks 25 shards and persisted recovery`, { timeout: 60_000 }, async () => {
+for (const [capacity, layout] of [["both", "shared"], ["7", "separate"]]) test(`capacity benchmark ${capacity}/${layout} checks 25 shards and persisted recovery`, { timeout: 60_000 }, async () => {
   const output = await mkdtemp(path.join(os.tmpdir(), "gateway-capacity-test-"));
   let passed = false;
   try {
@@ -312,6 +312,7 @@ for (const capacity of ["both", "7"]) test(`capacity benchmark ${capacity} check
       "--output", output,
       "--guilds", "240", "--channels", "2", "--rate", "600",
       "--replay", "5", "--slow-ms", "10", "--heartbeat-ms", "1000", "--runs", "1", "--capacity", capacity,
+      "--isolate-layout", layout,
     ], { timeout: 55_000 });
     const manifest = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
     assert.deepEqual(manifest.results.map((result) => result.status), Array(capacity === "both" ? 2 : 1).fill("passed-local-protocol"));
@@ -325,7 +326,9 @@ for (const capacity of ["both", "7"]) test(`capacity benchmark ${capacity} check
       assert.equal(report.lastStatus.length, SHARDS);
       assert.deepEqual(report.errors, []);
       assert(report.samples.length > 1);
-      assert(report.samples.every((sample) => sample.heaps.length === Math.ceil(SHARDS / report.capacity)));
+      assert.equal(report.isolateLayout, layout);
+      const expectedIsolates = layout === "shared" ? 1 : Math.ceil(SHARDS / report.capacity);
+      assert(report.samples.every((sample) => sample.heaps.length === expectedIsolates));
       assert(report.samples.every((sample) => sample.heaps.every((heap) => heap.usedSize > 0 && heap.embedderHeapUsedSize > 0)));
     }
     passed = true;

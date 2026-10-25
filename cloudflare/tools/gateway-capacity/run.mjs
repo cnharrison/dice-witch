@@ -24,6 +24,7 @@ const Options = z.strictObject({
   "heartbeat-ms": z.coerce.number().int().min(1_000).max(41_250),
   runs: z.coerce.number().int().min(1).max(5),
   capacity: z.enum(["6", "7", "9", "12", "25", "both"]),
+  "isolate-layout": z.enum(["shared", "separate"]).default("shared"),
 });
 const SAMPLE_MS = 100;
 const PHASE_TIMEOUT_MS = 180_000;
@@ -99,10 +100,13 @@ class Inspector {
 async function runTopology({ options, script, capacity, run }) {
   const fixture = createFixture({ Response, WebSocketPair, guildCount: options.guilds, channelCount: options.channels, heartbeatMs: options["heartbeat-ms"], token: FIXTURE_TOKEN, gatewayUrl: "wss://gateway.discord.gg", botUrl: "https://discord.com/api/v10/gateway/bot", knownGuilds: false });
   const partitionCount = Math.ceil(SHARDS / capacity);
-  const names = Array.from({ length: partitionCount }, (_, index) => `gateway-${index}`);
+  const names = Array.from({ length: partitionCount }, (_, index) =>
+    options["isolate-layout"] === "shared" ? "gateway-shared" : `gateway-${index}`,
+  );
+  const workerNames = [...new Set(names)];
   const errors = [];
   const abort = new AbortController();
-  const report = { run, capacity, partitions: partitionCount, startedAt: new Date().toISOString(), phases: [], errors };
+  const report = { run, capacity, partitions: partitionCount, isolateLayout: options["isolate-layout"], startedAt: new Date().toISOString(), phases: [], errors };
   const inspectors = [];
   const samples = [];
   let phase = "baseline";
@@ -135,7 +139,7 @@ async function runTopology({ options, script, capacity, run }) {
     inspectorPort: 0,
     unsafeInspectDurableObjects: true,
     workers: [
-      ...names.map((name) => ({ ...common, name })),
+      ...workerNames.map((name) => ({ ...common, name })),
       { ...common, name: "coordinator", durableObjects: {
         GATEWAY_COORDINATOR: { className: "GatewayCoordinator", useSQLite: true },
         GATEWAY_PARTITION: { className: "GatewayPartition", scriptName: names[0], useSQLite: true },
@@ -224,7 +228,7 @@ async function runTopology({ options, script, capacity, run }) {
     const inspectorUrl = await mf.getInspectorURL();
     inspectorUrl.protocol = "http:";
     const targets = await (await fetch(new URL("/json/list", inspectorUrl))).json();
-    for (const name of names) {
+    for (const name of workerNames) {
       const target = targets.find(({ id }) => id === `core:user:${name}`);
       assert(target, `Inspector target missing: ${name}`);
       const client = await Inspector.connect(target.webSocketDebuggerUrl);
@@ -363,7 +367,9 @@ async function main() {
     memoryAssessment: "Observational only. Local V8 heap components and forced GC cannot certify the deployed runtime memory limit; use Cloudflare isolate metrics and resource errors.",
     limitations: [
       "Synthetic guild/channel distribution; no production payloads or credentials.",
-      "Separate baseline isolates; production objects can share an isolate.",
+      options["isolate-layout"] === "shared"
+        ? "All gateway partitions share one local isolate; deployed placement and collection behavior may differ."
+        : "Separate partition isolates; production objects can share an isolate. Repeat with --isolate-layout shared.",
       "Heap components are not Cloudflare total isolate-memory telemetry; native runtime/socket memory is not fully measured.",
       "100 ms sampling can miss short allocation peaks; forced GC measures retained heap, not natural GC behavior.",
       "25 identify buckets deliberately create a startup burst; this is not a production Discord rate-limit model.",
