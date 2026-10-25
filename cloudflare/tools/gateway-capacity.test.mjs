@@ -220,8 +220,43 @@ test("capacity fixtures reject an incorrect persisted RESUME sequence", async ()
   const socket = response.webSocket;
   socket.accept();
   socket.send(JSON.stringify({ op: 6, d: { token: FIXTURE_TOKEN, session_id: "fixture-session-0", seq: 999 } }));
-  assert.deepEqual(fixture.errors, ["RESUME did not restore the fixture token and drained sequence"]);
+  assert.deepEqual(fixture.errors, ["RESUME did not restore the fixture token and valid sequence"]);
   assert.equal(fixture.counters.resumes, 0);
+});
+
+test("capacity fixture replays unprocessed and disconnected dispatches before RESUMED", async () => {
+  const require = createRequire(import.meta.resolve("wrangler"));
+  const { Response, WebSocketPair } = require("miniflare");
+  const fixture = createFixture({ Response, WebSocketPair, guildCount: 1, channelCount: 2, heartbeatMs: 1_000, ...fixtureDestinations });
+  const connect = async () => {
+    const response = await fixture.outbound(new Request("https://gateway.discord.gg/", { headers: { upgrade: "websocket" } }));
+    response.webSocket.accept();
+    return response.webSocket;
+  };
+  const original = await connect();
+  original.send(JSON.stringify({ op: 2, d: { token: FIXTURE_TOKEN, shard: [0, SHARDS] } }));
+  const replay = () => fixture.replay({ countPerShard: 1, rate: 600, signal: new AbortController().signal });
+  await replay();
+  const closed = new Promise((resolve) => original.addEventListener("close", resolve, { once: true }));
+  original.close(4000);
+  await closed;
+  await replay();
+  const resumed = await connect();
+  const frames = [];
+  resumed.addEventListener("message", ({ data }) => frames.push(JSON.parse(data)));
+  resumed.send(JSON.stringify({ op: 6, d: { token: FIXTURE_TOKEN, session_id: "fixture-session-0", seq: 1 } }));
+  assert.deepEqual(frames.filter((frame) => frame.op === 0).map(({ s, t }) => [s, t]), [[2, "GUILD_CREATE"], [3, "GUILD_CREATE"], [4, "RESUMED"]]);
+  assert.equal(frames.find((frame) => frame.t === "GUILD_CREATE").d.channels.length, 2);
+  assert.equal(fixture.diagnostics.resumes[0].replayed, 2);
+  assert.deepEqual(fixture.errors, []);
+  fixture.close();
+});
+
+test("capacity data fixture applies a replayed lifecycle mutation once", async () => {
+  const fixture = createFixture({ Response, guildCount: 1, channelCount: 1, heartbeatMs: 1_000, ...fixtureDestinations });
+  const request = () => new Request("https://data.internal/internal/guilds/lifecycle", { method: "POST", body: JSON.stringify({ mutationId: "gateway:1:0:session:2:GUILD_CREATE" }) });
+  assert.deepEqual(await (await fixture.data(request())).json(), await (await fixture.data(request())).json());
+  assert.equal(fixture.counters.lifecycle, 1);
 });
 
 test("host fixture exposes only authenticated synthetic controls on loopback", async () => {
@@ -320,11 +355,20 @@ for (const external of [false, true]) test(`staging workers preserve synthetic b
     stats = await (await send(fixture, "/stats")).json();
     assert.equal(stats.counters.lifecycle, 0);
     assert.deepEqual(stats.errors, []);
-    // A second pass goes through the data service RPC, unlike initial known-guild synchronization.
-    assert.equal((await send(fixture, "/replay", { countPerShard: 240, rate: 600, channelUpdates: false })).status, 200);
+    // Crash while dispatches and slow data writes are in flight, then replay from
+    // the actual persisted sequence. The fixture must continue producing traffic.
+    assert.equal((await send(fixture, "/slow", { milliseconds: 50 })).status, 200);
+    const replaying = send(fixture, "/replay", { countPerShard: 240, rate: 600, channelUpdates: false });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await assert.rejects(send(gateway, "/restart?partition=0", {}), /Benchmark persisted restart/);
+    assert.equal((await send(gateway, "/recover?partition=0", {})).status, 200);
+    assert.equal((await replaying).status, 200);
     do { stats = await (await send(fixture, "/stats")).json(); if (stats.counters.lifecycle === 240) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
     assert.equal(stats.counters.lifecycle, 240);
+    assert(stats.counters.resumes >= 9);
+    assert(stats.diagnostics.resumes.some(({ replayed }) => replayed > 0));
     assert.deepEqual(stats.errors, []);
+    assert.equal((await send(fixture, "/slow", { milliseconds: 0 })).status, 200);
     assert.equal((await send(fixture, "/prepare-restart", {})).status, 200);
     options[0].bindings.TEST_RESTART = "prepared";
     if (external) options[3].bindings.TEST_RESTART = "prepared";

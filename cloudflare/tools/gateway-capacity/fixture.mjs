@@ -75,7 +75,9 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
   const heartbeatSequences = Array(SHARDS).fill(null);
   const reconnecting = new Set();
   const dispatchOnDisconnect = new Set();
-  const resumeBacklog = new Map();
+  const history = Array.from({ length: SHARDS }, () => []);
+  const historyFloor = Array(SHARDS).fill(0);
+  const lifecycleMutations = new Set();
   const counters = { identifies: 0, resumes: 0, heartbeats: 0, lifecycle: 0, directory: 0, sent: 0, sentBytes: 0 };
   const errors = [];
   // Each connection can authenticate and close once; the 256-attempt guard bounds this history.
@@ -83,13 +85,22 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
   let slowMs = 0;
   let stopping = false;
 
-  function send(shardId, eventType, data) {
-    const socket = connections.get(shardId);
-    if (socket === undefined) throw new Error(`Fixture shard ${shardId} is disconnected`);
-    const payload = JSON.stringify({ op: 0, s: ++sequences[shardId], t: eventType, d: data });
+  function transmit(socket, shardId, sequence, event) {
+    const data = event.type === "GUILD_CREATE" ? guildPayload(event.guildId, channelCount) : event.data;
+    const payload = JSON.stringify({ op: 0, s: sequence, t: event.type, d: data });
     socket.send(payload);
     counters.sent += 1;
     counters.sentBytes += Buffer.byteLength(payload);
+  }
+
+  function send(shardId, eventType, data) {
+    // Retain compact deterministic guild descriptors, not hundreds of MB of frames.
+    // The finite experiment's history also covers a disconnect during traffic.
+    const event = eventType === "GUILD_CREATE" ? { type: eventType, guildId: data.id } : { type: eventType, data };
+    const sequence = ++sequences[shardId];
+    history[shardId].push(event);
+    const socket = connections.get(shardId);
+    if (socket?.readyState === 1) transmit(socket, shardId, sequence, event);
   }
 
   return {
@@ -108,6 +119,9 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
       }
       Object.assign(counters, snapshot.counters);
       sequences.splice(0, SHARDS, ...snapshot.sequences);
+      // Planned fixture restarts are checkpointed only after the fleet drains.
+      // The restored server starts its replay window at that acknowledged boundary.
+      historyFloor.splice(0, SHARDS, ...snapshot.sequences);
       heartbeatSequences.splice(0, SHARDS, ...snapshot.heartbeatSequences);
       diagnostics.closes.push(...snapshot.diagnostics.closes);
       diagnostics.resumes.push(...snapshot.diagnostics.resumes);
@@ -167,21 +181,17 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
             if (shardId !== undefined) throw new Error("Repeated fixture authentication");
             shardId = Number(message.d.session_id.replace("fixture-session-", ""));
             if (!isFixtureShardId(shardId)) throw new Error("Invalid fixture session");
-            const backlog = resumeBacklog.get(shardId);
-            const expectedSequence = backlog ? backlog.sequence - 1 : sequences[shardId];
-            if (message.d.token !== token || message.d.seq !== expectedSequence) {
-              throw new Error("RESUME did not restore the fixture token and drained sequence");
+            const sequence = message.d.seq;
+            if (message.d.token !== token || !Number.isSafeInteger(sequence) || sequence < historyFloor[shardId] || sequence > sequences[shardId] || sequences[shardId] === 0) {
+              throw new Error("RESUME did not restore the fixture token and valid sequence");
             }
             if (connections.get(shardId)?.readyState === 1 && !retiringSockets.has(connections.get(shardId))) throw new Error("Duplicate fixture shard");
             clearTimeout(authenticationTimer);
             connections.set(shardId, server);
             counters.resumes += 1;
-            diagnostics.resumes.push({ shardId, sequence: message.d.seq, at: Date.now() });
-            if (backlog) {
-              server.send(backlog.payload);
-              counters.sent += 1;
-              counters.sentBytes += Buffer.byteLength(backlog.payload);
-              resumeBacklog.delete(shardId);
+            diagnostics.resumes.push({ shardId, sequence, replayed: sequences[shardId] - sequence, at: Date.now() });
+            for (let next = sequence + 1; next <= sequences[shardId]; next += 1) {
+              transmit(server, shardId, next, history[shardId][next - historyFloor[shardId] - 1]);
             }
             send(shardId, "RESUMED", {});
           } else if (message.op === 1) {
@@ -216,12 +226,8 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
           connections.delete(shardId);
           // Opt-in migration experiment: Discord queues a dispatch after the old
           // transport closes and replays it from the exported checkpoint on Resume.
-          // Normal capacity runs retain no dispatch history.
           if (dispatchOnDisconnect.delete(shardId)) {
-            const sequence = ++sequences[shardId];
-            resumeBacklog.set(shardId, { sequence, payload: JSON.stringify({
-              op: 0, s: sequence, t: "GUILD_CREATE", d: guildPayload(ids[shardId][0], channelCount),
-            }) });
+            send(shardId, "GUILD_CREATE", guildPayload(ids[shardId][0], channelCount));
           }
         }
         if (!stopping && shardId === undefined) errors.push("Socket closed before authentication");
@@ -238,9 +244,12 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
       if (path !== "/internal/guilds/lifecycle" && path !== "/internal/discord-channel-context") {
         throw new Error(`Benchmark blocked data request: ${path}`);
       }
-      await request.json();
+      const mutation = await request.json();
       if (slowMs > 0) await delay(slowMs);
       if (path === "/internal/guilds/lifecycle") {
+        if (!z.string().min(1).safeParse(mutation.mutationId).success) throw new Error("Missing lifecycle mutation identity");
+        if (lifecycleMutations.has(mutation.mutationId)) return Response.json({ status: "applied", guildName: "Fixture Guild" });
+        lifecycleMutations.add(mutation.mutationId);
         counters.lifecycle += 1;
         return Response.json({ status: "applied", guildName: "Fixture Guild" });
       }

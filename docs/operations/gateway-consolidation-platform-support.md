@@ -120,3 +120,31 @@ placed partitions in separate local isolates. It is an allocation-pressure lead,
 not proof of deployed OOM or memory headroom. Local and deployed memory evidence
 remain distinct. If the synthetic fixture cannot remain stable, run it outside
 Durable Objects to isolate the gateway under test.
+
+## Maintained-source cross-check and fixture recovery correction
+
+The host-fixture experiment `4mPQW4` bundled maintained `master` gateway source
+`0bfe91e65cacf7920e0dddc9c7c829dd920f03c2` for capacity six, using harness commit
+`fe0f11218` (the manifest records its full SHA). It passed startup, slow replay,
+controlled reconnect, and controlled object restart: 25 Identifies and exactly 50
+expected Resumes. At **17:17:32.584 UTC**, shards 6–11 closed together during
+sustained traffic. The partition's constructor logged another activation at
+**17:17:33.787 UTC**, and inspection showed restored checkpoints in the idle state.
+This establishes an object reconstruction, and disproves the hypothesis that the
+feature branch's fetch-based upgrade is required to trigger this observation.
+It does not identify the platform's reason for the reconstruction.
+
+The fixture then failed immediately because it attempted to send to the disconnected
+shard. Its previous Resume validator also required the exact last-sent sequence.
+That omitted Discord's replay behavior and prevented testing recovery from an
+unplanned restart during traffic. The fixture now retains compact event descriptors,
+continues producing events while disconnected, and replays the unprocessed suffix
+before RESUMED. Its fake lifecycle data service deduplicates mutation identities,
+as the real service does. Reconnect counts and runtime errors remain visible; this
+change does not establish that extra reconnects are acceptable.
+
+New tests cover unsaved in-flight and disconnected dispatch replay, mutation
+idempotency, and an actual object abort during slow service writes through both
+native staging configurations. The maintained-source trial's three Workers were
+stopped and deleted. Subsequent capacity comparisons use the same feature code at
+six and nine sessions to measure the placement difference with this corrected fixture.

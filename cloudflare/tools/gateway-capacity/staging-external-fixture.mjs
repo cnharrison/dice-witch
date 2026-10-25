@@ -1,8 +1,11 @@
+import { z } from "zod";
 import { DurableObject } from "cloudflare:workers";
 import { setTimeout as delay } from "node:timers/promises";
 import { authorized, smallBody } from "./staging-auth.ts";
 import { FixtureDelay } from "./staging-fixture.mjs";
 export { FixtureData, FixtureDiscordRest } from "./staging-fixture.mjs";
+
+const DataMutationId = z.string().min(1);
 
 // The Discord fixture runs on the test host. Only small, durable data-service
 // counters remain here, so a fixture actor reset cannot destroy Discord sessions.
@@ -10,12 +13,14 @@ export class FixtureController extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS fixture_value (name TEXT PRIMARY KEY, value INTEGER NOT NULL)");
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS fixture_mutation (id TEXT PRIMARY KEY)");
   }
 
   configure(knownGuilds) {
     if (knownGuilds !== true && knownGuilds !== false) throw new Error("Invalid fixture guild mode");
     this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec("DELETE FROM fixture_value");
+      this.ctx.storage.sql.exec("DELETE FROM fixture_mutation");
       for (const [name, value] of [["known", Number(knownGuilds)], ["slow", 0], ["lifecycle", 0], ["directory", 0]]) {
         this.ctx.storage.sql.exec("INSERT INTO fixture_value VALUES (?, ?)", name, value);
       }
@@ -40,7 +45,16 @@ export class FixtureController extends DurableObject {
     const milliseconds = this.value("slow");
     if (milliseconds) await delay(milliseconds);
     const counter = path === "/internal/guilds/lifecycle" ? "lifecycle" : "directory";
-    this.ctx.storage.sql.exec("UPDATE fixture_value SET value = value + 1 WHERE name = ?", counter);
+    const duplicate = this.ctx.storage.transactionSync(() => {
+      if (counter === "lifecycle") {
+        if (!DataMutationId.safeParse(input.mutationId).success) throw new Error("Missing lifecycle mutation identity");
+        const result = this.ctx.storage.sql.exec("INSERT OR IGNORE INTO fixture_mutation VALUES (?)", input.mutationId);
+        if (result.rowsWritten === 0) return true;
+      }
+      this.ctx.storage.sql.exec("UPDATE fixture_value SET value = value + 1 WHERE name = ?", counter);
+      return false;
+    });
+    if (duplicate) return JSON.stringify({ status: "applied", guildName: "Fixture Guild" });
     return JSON.stringify(counter === "lifecycle" ? { status: "applied", guildName: "Fixture Guild" } : { status: "applied" });
   }
 }
