@@ -280,11 +280,15 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
         return drained();
       });
       await phase("loaded-observation", async () => {
+        const rate = model.steadyRate ?? 600;
+        // Chunk the experiment's traffic into roughly 30-second requests so the
+        // HTTP control request can complete even at a measured lower steady rate.
+        const countPerShard = Math.min(model.guilds, Math.floor(rate * 30 / SHARDS));
         const deadline = Date.now() + 120_000;
         do {
           await costAndResourceGuard();
-          await request(fixture, "/replay", { countPerShard: model.guilds, rate: 600, channelUpdates: false });
-          lifecycle += model.guilds;
+          await request(fixture, "/replay", { countPerShard, rate, channelUpdates: false });
+          lifecycle += Math.min(model.guilds, countPerShard * SHARDS);
         } while (Date.now() < deadline);
         return drained();
       });
@@ -422,12 +426,12 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { values } = parseArgs({ options: { manifest: { type: "string" }, secrets: { type: "string" }, "account-token-file": { type: "string" }, output: { type: "string" }, profile: { type: "string" }, gateways: { type: "string" } } });
+  const { values } = parseArgs({ options: { manifest: { type: "string" }, secrets: { type: "string" }, "account-token-file": { type: "string" }, output: { type: "string" }, profile: { type: "string" }, gateways: { type: "string" }, "steady-rate": { type: "string" } } });
   const models = {
     smoke: { name: "smoke", guilds: 240, channels: 2, heartbeatMs: 1_000, knownGuilds: false },
     warm: { name: "warm", guilds: 24_303, channels: 40, heartbeatMs: 41_250, knownGuilds: true },
     cold: { name: "cold", guilds: 24_303, channels: 40, heartbeatMs: 41_250, knownGuilds: false },
   };
   assert(Object.hasOwn(models, values.profile), "Explicit smoke, warm, or cold profile is required");
-  await runStaging({ manifestPath: values.manifest, secretsPath: values.secrets, accountTokenPath: values["account-token-file"], output: values.output, profiles: [models[values.profile]], gatewaySelection: values.gateways });
+  await runStaging({ manifestPath: values.manifest, secretsPath: values.secrets, accountTokenPath: values["account-token-file"], output: values.output, profiles: [{ ...models[values.profile], steadyRate: values["steady-rate"] === undefined ? 600 : Number(values["steady-rate"]) }], gatewaySelection: values.gateways });
 }

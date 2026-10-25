@@ -167,3 +167,20 @@ state-machine transitions deliberately, while preserving different starting stat
 The fixture controller grew to support that explicit checkpoint/recovery lifecycle;
 keeping it with the actor that owns the synthetic sessions avoids another storage
 owner. These findings are recorded as accepted review tradeoffs, not suppressed lint rules.
+
+## Workload calibration
+
+A read-only query of all 1,440 UTC minutes on October 24 returned 102,276 inbound
+and 53,911 outbound gateway WebSocket messages, with sampling interval 1. The busiest
+minute had 1,036 inbound messages (17.27/second averaged over that minute). This is
+not a sub-second burst bound, and the mix is not exclusively large guild events.
+
+The initial synthetic sustained workload sent 600 full guild payloads/second and
+failed at the existing six-session capacity, with a shard disconnection and fixture
+reset. Root cause is not established; those runs do not validate a candidate. The
+calibrated sustained comparison uses 60 full guild payloads/second, more than three
+times that measured busiest-minute rate, while retaining the 24,303-guild cold/warm
+startup and 600/second startup/slow-replay bursts. Pass `--steady-rate 60` to the
+staging runner. Its default 600 remains the separate stress experiment. Re-measure
+production traffic before enabling consolidation; the calibrated test does not
+claim that either topology sustains 600 large guild payloads/second.

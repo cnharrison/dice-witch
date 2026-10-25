@@ -1,0 +1,158 @@
+{
+  "recordedAt": "2026-10-25",
+  "productionChangesDeployed": false,
+  "sourceSha": "83e5e45bdc34ef14edbb0cb948006b82e1e80ee3",
+  "desktopImpact": "No packaged desktop/native application; browser and Discord contracts retained.",
+  "validation": {
+    "fullRepositoryTests": "passed after targeted dependency updates",
+    "gatewayTests": 265,
+    "capacityHarnessTests": 19,
+    "typecheck": "passed",
+    "lint": {
+      "errors": 0,
+      "existingFrontendWarnings": 19
+    },
+    "auditPolicy": "passed unchanged",
+    "buildAndFrontendBudget": "passed"
+  },
+  "localMigration": {
+    "status": "passed",
+    "bundleSha256": "39e9382254ab185710c6f2e791485ba4293e979af50bca3e3cd504cc0efa8b4f",
+    "fixtureSha256": "d8ee9ee293b018a0945836bdf007b94123713ac25ba6944e5689850ca51ce94b",
+    "startedAt": "2026-10-25T15:49:26.331Z",
+    "endedAt": "2026-10-25T15:49:38.657Z",
+    "shards": 25,
+    "counters": {
+      "identifies": 25,
+      "resumes": 44,
+      "heartbeats": 276,
+      "lifecycle": 251,
+      "directory": 0,
+      "sent": 320,
+      "sentBytes": 2817819
+    },
+    "errors": [],
+    "disconnectReplay": {
+      "shardId": 24,
+      "checkpoint": 11,
+      "lifecycleEvents": 251
+    }
+  },
+  "incompletePlatformTrials": [
+    {
+      "sourceSha": "8089f335f775dc035098b539ae906d7154e6c4e8",
+      "cleanupComplete": true,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "smoke",
+            "guilds": 240,
+            "channels": 2,
+            "heartbeatMs": 1000,
+            "knownGuilds": false
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup",
+            "slow-replay",
+            "reconnect",
+            "restart"
+          ],
+          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+        }
+      ]
+    },
+    {
+      "sourceSha": "f9fe58d381c8efd4ba504fdfcbe13f99056d9c7f",
+      "cleanupComplete": true,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup",
+            "slow-replay",
+            "reconnect",
+            "restart"
+          ],
+          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+        }
+      ]
+    },
+    {
+      "sourceSha": "7b19a133e83d2d128260de61e3a5fd927f73e843",
+      "cleanupComplete": true,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup"
+          ],
+          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+        }
+      ]
+    },
+    {
+      "sourceSha": "51724a529ac3d0513365538967a719073d5e3c3f",
+      "cleanupComplete": true,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup",
+            "slow-replay"
+          ],
+          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+        }
+      ]
+    },
+    {
+      "sourceSha": "e4b57001bd534c482c9ba5f70dc954be389ee2d9",
+      "cleanupComplete": true,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup",
+            "slow-replay",
+            "reconnect"
+          ],
+          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+        }
+      ]
+    }
+  ],
+  "platformStatus": "Final cold/warm comparison running; no production memory or savings certification yet."
+}
