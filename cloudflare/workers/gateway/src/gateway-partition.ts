@@ -514,6 +514,12 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
       const initialGuildState = parseGatewayInitialGuildState(snapshot.initialGuildState);
       const guildInventoryState = snapshot.guildInventoryState === null ? null
         : parseGatewayGuildInventoryState(snapshot.guildInventoryState);
+      if (guildInventoryState !== null && (
+        guildInventoryState.generation !== checkpoint.generation ||
+        guildInventoryState.shardId !== checkpoint.shardId ||
+        guildInventoryState.shardCount !== checkpoint.shardCount ||
+        guildInventoryState.sessionId !== checkpoint.sessionId
+      )) throw new Error("Gateway transfer inventory does not match checkpoint");
       await this.persistTransfer(key, {
         transfer, mode: "imported", snapshot: { checkpoint, initialGuildState, guildInventoryState },
       });

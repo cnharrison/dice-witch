@@ -42,7 +42,12 @@ beforeEach(async () => {
   await evictDurableObject(source);
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(async () => {
+  for (const stub of [coordinator, source, target]) {
+    await runInDurableObject(stub, (_instance, ctx) => ctx.storage.deleteAlarm());
+  }
+  vi.restoreAllMocks();
+});
 
 describe("Gateway session transfer recovery", () => {
   it("does not rewrite an unchanged recovery alarm deadline", async () => {
@@ -112,6 +117,26 @@ describe("Gateway session transfer recovery", () => {
     }));
     await evictDurableObject(source);
     expect((await source.parkTransfer(transfer)).checkpoint).toMatchObject(checkpoint);
+  });
+
+  it("rejects inventory from a different session without importing or switching ownership", async () => {
+    const transfer = await coordinator.beginTransfer(request);
+    const snapshot = await source.parkTransfer(transfer);
+    await runInDurableObject(coordinator, (_instance, ctx) => {
+      new GatewayPlacement(ctx.storage).advance(transfer.epoch, "parking", "importing");
+    });
+    const inventory = { version: 1 as const, generation: 5, shardId: 24, shardCount: 25,
+      sessionId: "different-session", capturedAt: 100, guildIds: [] };
+    const importing = await coordinator.transferStatus(transfer.epoch);
+    await runInDurableObject(target, async (instance) => {
+      if (!(instance instanceof GatewayPartition)) throw new Error("Wrong partition");
+      await expect(instance.importTransfer(importing, {
+        ...snapshot, guildInventoryState: inventory,
+      })).rejects.toThrow("inventory does not match checkpoint");
+    });
+    expect((await coordinator.transferStatus(transfer.epoch)).phase).toBe("importing");
+    expect((await coordinator.status()).ownerships).toMatchObject([{ ownerId: request.source }]);
+    expect((await target.fleetStatus()).connections).toEqual([]);
   });
 
   it("does not start an imported-only target when its alarm runs after eviction", async () => {

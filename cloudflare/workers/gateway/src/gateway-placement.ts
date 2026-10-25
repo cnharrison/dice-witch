@@ -5,12 +5,14 @@ import {
 } from "../../../packages/gateway-protocol/src";
 
 const integer = z.number().int().nonnegative().refine(Number.isSafeInteger);
+const partitionName = z.string().regex(/^gateway-partition-(0|[1-9][0-9]*)$/)
+  .refine((name) => Number.isSafeInteger(Number(name.slice("gateway-partition-".length))));
 export const GatewayTransferRequestSchema = z.strictObject({
   generation: integer,
   shardId: integer,
   shardCount: integer.positive(),
-  source: z.string().regex(/^gateway-partition-[0-9]+$/),
-  target: z.string().regex(/^gateway-partition-[0-9]+$/),
+  source: partitionName,
+  target: partitionName,
 });
 export type GatewayTransferRequest = z.infer<typeof GatewayTransferRequestSchema>;
 export type GatewayTransfer = GatewayTransferRequest & {

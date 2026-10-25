@@ -1,11 +1,18 @@
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { GatewayPlacement } from "../../workers/gateway/src/gateway-placement";
+import { GatewayPlacement, GatewayTransferRequestSchema } from "../../workers/gateway/src/gateway-placement";
 import { gatewayTestEnv as env } from "./test-environment";
 
 const request = { generation: 5, shardId: 24, shardCount: 25, source: "gateway-partition-4", target: "gateway-partition-3" };
 
 describe("durable Gateway placement", () => {
+  it("requires canonical partition names that round-trip through numeric assignments", () => {
+    for (const target of ["gateway-partition-03", "gateway-partition-9007199254740992", "gateway-partition-1e2"]) {
+      expect(GatewayTransferRequestSchema.safeParse({ ...request, target }).success).toBe(false);
+    }
+    expect(GatewayTransferRequestSchema.parse(request)).toEqual(request);
+  });
+
   it("commits ownership, placement and journal together and survives eviction", async () => {
     const coordinator = env.GATEWAY_COORDINATOR.getByName("placement-atomic");
     await coordinator.acquireOwnership({ ...request, ownerId: request.source });
