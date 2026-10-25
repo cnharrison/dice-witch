@@ -2,6 +2,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Buffer } from "node:buffer";
 import { z } from "zod";
 
+const FixtureFrame = z.string().max(65_536);
+const KnownGuilds = z.boolean();
+
 export const SHARDS = 25;
 export const FIXTURE_TOKEN = "development-token-first-part.second.development-token-third-part";
 
@@ -60,7 +63,7 @@ function isFixtureShardId(value) {
 }
 
 export function createFixture({ Response, WebSocketPair, guildCount, channelCount, heartbeatMs, token, gatewayUrl, botUrl, knownGuilds }) {
-  if (!token || !gatewayUrl || !botUrl || !z.boolean().safeParse(knownGuilds).success) throw new Error("Fixture token and destinations are required");
+  if (!token || !gatewayUrl || !botUrl || !KnownGuilds.safeParse(knownGuilds).success) throw new Error("Fixture token and destinations are required");
   const ids = Array.from({ length: SHARDS }, (_, shardId) =>
     guildIds(shardId, Math.floor(guildCount / SHARDS) + Number(shardId < guildCount % SHARDS)),
   );
@@ -122,7 +125,7 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
         if (server.readyState !== 1 || retiringSockets.has(server)) return;
         try {
           if (++incomingMessages > 1_024) throw new Error("Fixture incoming frame budget exceeded");
-          if (!z.string().max(65_536).safeParse(data).success) throw new Error("Invalid fixture frame");
+          if (!FixtureFrame.safeParse(data).success) throw new Error("Invalid fixture frame");
           const message = JSON.parse(data);
           if (message.op === 2) {
             if (shardId !== undefined) throw new Error("Repeated fixture authentication");

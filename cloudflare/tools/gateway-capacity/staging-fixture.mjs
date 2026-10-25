@@ -12,6 +12,8 @@ const Profile = z.strictObject({
   knownGuilds: z.boolean(),
 });
 const Replay = z.strictObject({ countPerShard: z.number().int().min(1).max(24_303), rate: z.number().int().min(24).max(600), channelUpdates: z.boolean() });
+const DataPath = z.string();
+const DataBody = z.string().max(65_536);
 const CONTROLLER = "memory-benchmark";
 
 export class FixtureController extends DurableObject {
@@ -109,7 +111,7 @@ export class FixtureController extends DurableObject {
 
   async data(path, body) {
     const fixture = this.active();
-    if (!z.string().safeParse(path).success || !z.string().max(65_536).safeParse(body).success) throw new Error("Invalid fixture data request");
+    if (!DataPath.safeParse(path).success || !DataBody.safeParse(body).success) throw new Error("Invalid fixture data request");
     return fixture.data(new Request(`https://data.internal${path}`, { method: "POST", body }));
   }
 

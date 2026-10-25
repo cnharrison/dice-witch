@@ -598,20 +598,20 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
 
   async startFleetPlan(plan: GenerationPlan): Promise<GatewayFleetStatus> {
     const prepared = await this.enqueueFleetOperation(async () => {
-    const state = await this.requireFleetState();
-    this.placement.requireIdle();
-    if (!state.hasActiveFleet) {
-      throw new Error("Gateway fleet has no active generation");
-    }
-    if (
-      plan.targetGeneration < state.nextGeneration ||
-      plan.targetGeneration === Number.MAX_SAFE_INTEGER
-    ) {
-      throw new Error("Gateway fleet target generation is invalid");
-    }
-    const transition = transitionGeneration(state.machine, {
-      type: "plan",
-      plan,
+      const state = await this.requireFleetState();
+      this.placement.requireIdle();
+      if (!state.hasActiveFleet) {
+        throw new Error("Gateway fleet has no active generation");
+      }
+      if (
+        plan.targetGeneration < state.nextGeneration ||
+        plan.targetGeneration === Number.MAX_SAFE_INTEGER
+      ) {
+        throw new Error("Gateway fleet target generation is invalid");
+      }
+      const transition = transitionGeneration(state.machine, {
+        type: "plan",
+        plan,
     });
     const updated = {
       ...state,
@@ -748,7 +748,10 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
       await source.restoreTransfer(transfer);
       const status = await source.fleetStatus();
       const shard = status.connections.find((connection) => connection.shardGeneration === transfer.generation && connection.shardId === transfer.shardId);
-      if (shard?.state === "ready" && shard.ownershipAcquired && shard.lastHeartbeatAckAt !== null && shard.lastHeartbeatAckAt >= transfer.startedAt) {
+      if (shard?.state === "ready" && shard.ownershipAcquired && shard.readyAt !== null &&
+          shard.lastHeartbeatSentAt !== null && shard.lastHeartbeatAckAt !== null &&
+          shard.readyAt >= transfer.startedAt && shard.lastHeartbeatSentAt >= shard.readyAt &&
+          shard.lastHeartbeatAckAt >= shard.lastHeartbeatSentAt) {
         this.placement.advance(epoch, "restoring", "cancelled");
       }
       return this.placement.get(epoch);
@@ -775,8 +778,9 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
         connection.shardGeneration === transfer.generation && connection.shardId === transfer.shardId,
       );
       if (shard?.state === "ready" && shard.ownershipAcquired &&
-          shard.lastHeartbeatAckAt !== null && shard.lastHeartbeatSentAt !== null &&
-          shard.lastHeartbeatAckAt >= shard.lastHeartbeatSentAt && shard.lastHeartbeatAckAt >= transfer.startedAt) {
+          shard.readyAt !== null && shard.lastHeartbeatAckAt !== null && shard.lastHeartbeatSentAt !== null &&
+          shard.readyAt >= transfer.startedAt && shard.lastHeartbeatSentAt >= shard.readyAt &&
+          shard.lastHeartbeatAckAt >= shard.lastHeartbeatSentAt) {
         await source.finishTransfer(transfer);
         this.placement.advance(epoch, "verifying", "complete");
       }

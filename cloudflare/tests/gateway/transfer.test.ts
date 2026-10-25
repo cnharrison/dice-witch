@@ -85,6 +85,26 @@ describe("Gateway session transfer recovery", () => {
     });
   });
 
+  it("requires an ACK for a heartbeat sent after target readiness, not an inherited ACK", async () => {
+    vi.spyOn(GatewayShardConnection.prototype, "start").mockImplementation(function (this: GatewayShardConnection) {
+      return Promise.resolve(this.status());
+    });
+    const transfer = await coordinator.beginTransfer(request);
+    await coordinator.continueTransfer(transfer.epoch);
+    const status = await target.fleetStatus();
+    const shard = status.connections[0];
+    if (shard === undefined) throw new Error("Missing target");
+    const ready = { ...shard, state: "ready" as const, ownershipAcquired: true,
+      readyAt: transfer.startedAt + 5, lastHeartbeatSentAt: transfer.startedAt + 1,
+      lastHeartbeatAckAt: transfer.startedAt + 2 };
+    const snapshot = vi.spyOn(GatewayPartition.prototype, "fleetStatus").mockResolvedValue({ ...status, connections: [ready] });
+    expect((await coordinator.continueTransfer(transfer.epoch)).phase).toBe("verifying");
+    snapshot.mockResolvedValue({ ...status, connections: [{ ...ready,
+      lastHeartbeatSentAt: transfer.startedAt + 10, lastHeartbeatAckAt: transfer.startedAt + 11 }] });
+    expect((await coordinator.continueTransfer(transfer.epoch)).phase).toBe("complete");
+    expect(await runInDurableObject(coordinator, (_instance, ctx) => ctx.storage.getAlarm())).toBeNull();
+  });
+
   it("recovers parking interrupted before the snapshot was stored", async () => {
     const transfer = await coordinator.beginTransfer(request);
     await runInDurableObject(source, (_instance, ctx) => ctx.storage.put(`gateway-transfer-v1:${key}`, {
