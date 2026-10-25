@@ -1,12 +1,12 @@
 {
   "recordedAt": "2026-10-25",
+  "sourceSha": "787ce05e0fd14ec6f32557c3f7212180c2671de9",
   "productionChangesDeployed": false,
-  "sourceSha": "83e5e45bdc34ef14edbb0cb948006b82e1e80ee3",
-  "desktopImpact": "No packaged desktop/native application; browser and Discord contracts retained.",
+  "desktopImpact": "Not applicable: no packaged desktop/native application; browser and Discord contracts retained.",
   "validation": {
     "fullRepositoryTests": "passed after targeted dependency updates",
-    "gatewayTests": 265,
-    "capacityHarnessTests": 19,
+    "gatewayTests": 267,
+    "capacityHarnessTests": 21,
     "typecheck": "passed",
     "lint": {
       "errors": 0,
@@ -17,15 +17,15 @@
   },
   "localMigration": {
     "status": "passed",
-    "bundleSha256": "39e9382254ab185710c6f2e791485ba4293e979af50bca3e3cd504cc0efa8b4f",
+    "bundleSha256": "5912c5b7c65f1a88f2d682e727427a55aff0170353413fd72c5121aa9df64faa",
     "fixtureSha256": "d8ee9ee293b018a0945836bdf007b94123713ac25ba6944e5689850ca51ce94b",
-    "startedAt": "2026-10-25T15:49:26.331Z",
-    "endedAt": "2026-10-25T15:49:38.657Z",
+    "startedAt": "2026-10-25T16:02:40.345Z",
+    "endedAt": "2026-10-25T16:02:53.925Z",
     "shards": 25,
     "counters": {
       "identifies": 25,
       "resumes": 44,
-      "heartbeats": 276,
+      "heartbeats": 310,
       "lifecycle": 251,
       "directory": 0,
       "sent": 320,
@@ -38,10 +38,64 @@
       "lifecycleEvents": 251
     }
   },
+  "localCapacity": {
+    "sourceSha": "83e5e45bdc34ef14edbb0cb948006b82e1e80ee3",
+    "bundleSha256": "66f0a7d9945979265f043fba4f9176fd9a4be6f5cca4a6401fc075f910756d4f",
+    "fixtureSha256": "d8ee9ee293b018a0945836bdf007b94123713ac25ba6944e5689850ca51ce94b",
+    "workload": {
+      "output": "local artifact directory",
+      "guilds": 24303,
+      "channels": 40,
+      "rate": 600,
+      "replay": 100,
+      "slow-ms": 10,
+      "heartbeat-ms": 41250,
+      "runs": 1,
+      "capacity": "both"
+    },
+    "results": [
+      {
+        "capacity": 6,
+        "partitions": 5,
+        "status": "passed-local-protocol",
+        "phaseMilliseconds": {
+          "startup": 81765,
+          "slow-replay": 46954,
+          "reconnect": 81469,
+          "restart": 41285
+        },
+        "maximumSampledHeapEstimateBytes": 157365181,
+        "retainedAfterGCBytesRange": [
+          4063793,
+          4631609
+        ]
+      },
+      {
+        "capacity": 9,
+        "partitions": 3,
+        "status": "passed-local-protocol",
+        "phaseMilliseconds": {
+          "startup": 80532,
+          "slow-replay": 41094,
+          "reconnect": 87396,
+          "restart": 39997
+        },
+        "maximumSampledHeapEstimateBytes": 225233117,
+        "retainedAfterGCBytesRange": [
+          4407205,
+          4768657
+        ]
+      }
+    ],
+    "limitation": "Local V8 samples and forced GC are not deployed isolate-memory certification. This run predates subsequent transfer-input validation and staging-only changes."
+  },
   "incompletePlatformTrials": [
     {
       "sourceSha": "8089f335f775dc035098b539ae906d7154e6c4e8",
+      "startedAt": "2026-10-25T13:22:39.764Z",
+      "endedAt": "2026-10-25T13:23:48.918Z",
       "cleanupComplete": true,
+      "liveTailAttached": true,
       "reports": [
         {
           "role": "six",
@@ -59,13 +113,16 @@
             "reconnect",
             "restart"
           ],
-          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
         }
       ]
     },
     {
       "sourceSha": "f9fe58d381c8efd4ba504fdfcbe13f99056d9c7f",
+      "startedAt": "2026-10-25T13:26:07.739Z",
+      "endedAt": "2026-10-25T13:30:41.965Z",
       "cleanupComplete": true,
+      "liveTailAttached": true,
       "reports": [
         {
           "role": "six",
@@ -83,13 +140,16 @@
             "reconnect",
             "restart"
           ],
-          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
         }
       ]
     },
     {
       "sourceSha": "7b19a133e83d2d128260de61e3a5fd927f73e843",
+      "startedAt": "2026-10-25T15:29:24.805Z",
+      "endedAt": "2026-10-25T15:31:14.916Z",
       "cleanupComplete": true,
+      "liveTailAttached": true,
       "reports": [
         {
           "role": "six",
@@ -104,13 +164,16 @@
           "completedPhases": [
             "startup"
           ],
-          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
         }
       ]
     },
     {
       "sourceSha": "51724a529ac3d0513365538967a719073d5e3c3f",
+      "startedAt": "2026-10-25T15:34:12.904Z",
+      "endedAt": "2026-10-25T15:39:20.104Z",
       "cleanupComplete": true,
+      "liveTailAttached": true,
       "reports": [
         {
           "role": "six",
@@ -126,13 +189,16 @@
             "startup",
             "slow-replay"
           ],
-          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
         }
       ]
     },
     {
       "sourceSha": "e4b57001bd534c482c9ba5f70dc954be389ee2d9",
+      "startedAt": "2026-10-25T15:42:14.339Z",
+      "endedAt": "2026-10-25T15:45:58.192Z",
       "cleanupComplete": true,
+      "liveTailAttached": true,
       "reports": [
         {
           "role": "six",
@@ -149,10 +215,209 @@
             "slow-replay",
             "reconnect"
           ],
-          "failure": "Synthetic fixture reset or disconnection prevented completion; see operations guide."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+        }
+      ]
+    },
+    {
+      "sourceSha": "83e5e45bdc34ef14edbb0cb948006b82e1e80ee3",
+      "startedAt": "2026-10-25T15:49:15.089Z",
+      "endedAt": "2026-10-25T15:54:21.378Z",
+      "cleanupComplete": true,
+      "liveTailAttached": true,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup",
+            "slow-replay",
+            "reconnect",
+            "restart"
+          ],
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+        }
+      ]
+    },
+    {
+      "sourceSha": "d640f9ffb6b11cec0c6f62f5fc0c87a87d3aac92",
+      "startedAt": "2026-10-25T15:57:27.635Z",
+      "endedAt": "2026-10-25T15:59:14.420Z",
+      "cleanupComplete": true,
+      "liveTailAttached": true,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false,
+            "steadyRate": 60
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup"
+          ],
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+        }
+      ]
+    },
+    {
+      "sourceSha": "a81b20610b32460ebf86da27747560da267a14d5",
+      "startedAt": "2026-10-25T16:02:46.885Z",
+      "endedAt": "2026-10-25T16:08:00.677Z",
+      "cleanupComplete": true,
+      "liveTailAttached": true,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false,
+            "steadyRate": 60
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup",
+            "slow-replay",
+            "reconnect",
+            "restart"
+          ],
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+        }
+      ]
+    },
+    {
+      "sourceSha": "37af4be04c1e6f8f06d3d2e31b89724b3adc359e",
+      "startedAt": "2026-10-25T16:15:49.125Z",
+      "endedAt": "2026-10-25T16:17:32.597Z",
+      "cleanupComplete": true,
+      "liveTailAttached": false,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false,
+            "steadyRate": 60
+          },
+          "status": "failed",
+          "completedPhases": [
+            "startup"
+          ],
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+        }
+      ]
+    },
+    {
+      "sourceSha": "787ce05e0fd14ec6f32557c3f7212180c2671de9",
+      "startedAt": "2026-10-25T16:21:06.003Z",
+      "endedAt": "2026-10-25T16:22:02.138Z",
+      "cleanupComplete": true,
+      "liveTailAttached": false,
+      "reports": [
+        {
+          "role": "six",
+          "model": {
+            "name": "cold",
+            "guilds": 24303,
+            "channels": 40,
+            "heartbeatMs": 41250,
+            "knownGuilds": false,
+            "steadyRate": 60
+          },
+          "status": "failed",
+          "completedPhases": [],
+          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
         }
       ]
     }
   ],
-  "platformStatus": "Final cold/warm comparison running; no production memory or savings certification yet."
+  "platformValidation": {
+    "status": "blocked",
+    "candidateNineValidated": false,
+    "reason": "Repeated synthetic baseline resets/socket loss, including without live tails, and absent namespace resource metrics prevent a valid deployed comparison. Cloudflare runtime diagnostics are needed.",
+    "positiveControl": {
+      "query": "query($a:string!,$n:[string!]!,$s:Time!,$e:Time!){viewer{accounts(filter:{accountTag:$a}){durableObjectsPeriodicGroups(limit:1000,filter:{namespaceId_in:$n,datetime_geq:$s,datetime_lt:$e}){dimensions{namespaceId}max{memoryUsageBytes}sum{duration exceededMemoryErrors exceededCpuErrors}}durableObjectsInvocationsAdaptiveGroups(limit:1000,filter:{namespaceId_in:$n,datetime_geq:$s,datetime_lt:$e}){dimensions{namespaceId}sum{requests errors}}}}}",
+      "variables": {
+        "a": "dfe6c3ddb987a22c7f17955d1973490e",
+        "n": [
+          "9b6955a098b04cea87214a6a7ee75b5c",
+          "8e24313362954ed7a894a1bbb8e4c19e",
+          "eb6ee5c2de5b4882886cc81567a3dd68",
+          "a10b31a57b3544d5bb8b74f3aed06970",
+          "e5a0693b19404bf98eb1ad96792dcc17",
+          "1a06dbd8204e45dbbfdacf8d3aa58ba3"
+        ],
+        "s": "2026-10-25T16:15:00Z",
+        "e": "2026-10-25T16:23:43.445Z"
+      },
+      "response": {
+        "data": {
+          "viewer": {
+            "accounts": [
+              {
+                "durableObjectsInvocationsAdaptiveGroups": [
+                  {
+                    "dimensions": {
+                      "namespaceId": "1a06dbd8204e45dbbfdacf8d3aa58ba3"
+                    },
+                    "sum": {
+                      "errors": 0,
+                      "requests": 395
+                    }
+                  }
+                ],
+                "durableObjectsPeriodicGroups": [
+                  {
+                    "dimensions": {
+                      "namespaceId": "1a06dbd8204e45dbbfdacf8d3aa58ba3"
+                    },
+                    "max": {
+                      "memoryUsageBytes": 15454535
+                    },
+                    "sum": {
+                      "duration": 268.800176512,
+                      "exceededCpuErrors": 0,
+                      "exceededMemoryErrors": 0
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "errors": null
+      }
+    },
+    "supportBrief": "gateway-consolidation-platform-support.md"
+  },
+  "productionTrafficCalibration": {
+    "utcDay": "2026-10-24",
+    "minutes": 1440,
+    "sampleInterval": 1,
+    "inboundMessages": 102276,
+    "outboundMessages": 53911,
+    "maximumInboundMinute": 1036,
+    "maximumMinuteUtc": "00:48",
+    "syntheticSteadyAndSlowReplayRate": 60,
+    "syntheticStartupRate": 600,
+    "limitation": "Busiest-minute mean is not a bound on subsecond bursts or payload size.",
+    "rawQueryResponseSha256": "916f8291a1882a94275da4c527da480afa210264a20b5b0572dfb31447c7d7b1"
+  }
 }

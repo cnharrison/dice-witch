@@ -1,5 +1,13 @@
 # Gateway consolidation
 
+**Validation status:** implementation and local protocol/migration tests pass;
+deployed capacity validation is blocked. Baseline synthetic objects reset or lose
+sockets, including with no live tail attached, and the new namespaces have no
+resource samples in successful GraphQL responses. The nine-session candidate has
+not passed a Cloudflare comparison. Keep transfers disabled. See the
+[prepared platform diagnostic request](gateway-consolidation-platform-support.md)
+and [recorded evidence](gateway-consolidation-evidence-2026-10-25.json).
+
 ## Scope and release posture
 
 Placement transfers preserve the active Discord generation, shard IDs/count, bot,
@@ -180,6 +188,9 @@ state-machine transitions deliberately, while preserving different starting stat
 The fixture controller grew to support that explicit checkpoint/recovery lifecycle;
 keeping it with the actor that owns the synthetic sessions avoids another storage
 owner. These findings are recorded as accepted review tradeoffs, not suppressed lint rules.
+The evidence JSON's longer trial array records all ten experiments and cleanup
+results; its structural “verbosity” finding measures data provenance, not executable
+control-flow growth.
 
 ## Workload calibration
 
@@ -193,11 +204,10 @@ failed at the existing six-session capacity, with a shard disconnection and fixt
 reset. Root cause is not established; those runs do not validate a candidate. The
 calibrated sustained comparison uses 60 full guild payloads/second, more than three
 times that measured busiest-minute rate, while retaining the 24,303-guild cold/warm
-startup and 600/second startup/slow-replay bursts. Pass `--steady-rate 60` to the
+startup and 600/second startup burst. Pass `--steady-rate 60` to the
 staging runner. This rate applies to slow-service replay and sustained observation;
 startup retains the 600-event/second cold burst. Its default 600 remains the separate
 stress experiment. The no-tail baseline also lost six sockets during slow-service
 replay at 600, so removing the instrumentation confounder alone did not establish
-stability. Re-measure
-production traffic before enabling consolidation; the calibrated test does not
+stability. Re-measure production traffic before enabling consolidation; the calibrated test does not
 claim that either topology sustains 600 large guild payloads/second.
