@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
 import { createFixture, FIXTURE_TOKEN, guildIds, SHARDS } from "./gateway-capacity/fixture.mjs";
-import { assertHealthy } from "./gateway-capacity/run.mjs";
+import { assertHealthy, benchmarkSourceIdentity } from "./gateway-capacity/run.mjs";
 import { APPROVED_ACCOUNT, prepareStaging } from "./gateway-capacity/staging-prepare.mjs";
 import { stagingDeadline, stagingGatewayRoles } from "./gateway-capacity/staging-run.mjs";
 
@@ -289,4 +289,15 @@ for (const capacity of ["both", "7"]) test(`capacity benchmark ${capacity} check
     if (passed) await rm(output, { recursive: true, force: true });
     else console.error(`Capacity benchmark evidence retained: ${output}`);
   }
+});
+
+test("local benchmark records explicit source identity when Git metadata is absent", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "gateway-source-"));
+  try {
+    assert.throws(() => benchmarkSourceIdentity(directory), /Git metadata/);
+    assert.throws(() => benchmarkSourceIdentity(directory, "not-a-sha"), /Git metadata/);
+    assert.deepEqual(benchmarkSourceIdentity(directory, "a".repeat(40)), {
+      sourceSha: "a".repeat(40), changedPaths: null, sourceIdentity: "provided-sha",
+    });
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

@@ -48,7 +48,7 @@
     "@dice-roller/rpg-dice-roller": "5.5.1",
     "@dice-witch/dice-v4-model": "0.0.0",
     "unicode-segmenter": "0.14.1",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",

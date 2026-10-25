@@ -28,6 +28,23 @@ const Options = z.strictObject({
 const SAMPLE_MS = 100;
 const PHASE_TIMEOUT_MS = 180_000;
 
+export function benchmarkSourceIdentity(directory, providedSha) {
+  try {
+    return {
+      sourceSha: execFileSync("git", ["rev-parse", "HEAD"], { cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(),
+      changedPaths: execFileSync("git", ["status", "--short"], { cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim().split("\n").filter(Boolean),
+      sourceIdentity: "git",
+    };
+  } catch {
+    if (!z.string().regex(/^[a-f0-9]{40}$/).safeParse(providedSha).success) {
+      throw new Error("Local benchmark requires Git metadata or an explicit VITE_BUILD_SHA");
+    }
+    // Dagger passes the verified source SHA but intentionally omits Git metadata.
+    // Bundle hashes still identify the exact tested input; cleanliness is unknown.
+    return { sourceSha: providedSha, changedPaths: null, sourceIdentity: "provided-sha" };
+  }
+}
+
 export function assertHealthy(sampleError, fixtureErrors, runtimeErrors) {
   if (sampleError) throw sampleError;
   assert.deepEqual(fixtureErrors, [], "Fixture errors");
@@ -335,11 +352,10 @@ async function main() {
   const script = bundle.outputFiles[0].text;
   const manifest = {
     options,
-    sourceSha: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+    ...benchmarkSourceIdentity(root, process.env.VITE_BUILD_SHA),
     bundleSha256: createHash("sha256").update(script).digest("hex"),
     fixtureSha256: createHash("sha256").update(await readFile(new URL("./fixture.mjs", import.meta.url))).digest("hex"),
     runnerSha256: createHash("sha256").update(await readFile(fileURLToPath(import.meta.url))).digest("hex"),
-    changedPaths: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }).trim().split("\n"),
     guildPayloadBytes: Buffer.byteLength(JSON.stringify(guildPayload("100000000000000000", options.channels))),
     versions: { node: process.version, wrangler: require("wrangler/package.json").version, miniflare: require("miniflare/package.json").version, esbuild: require("esbuild/package.json").version },
     heartbeatMs: options["heartbeat-ms"],

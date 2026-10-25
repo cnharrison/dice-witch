@@ -128,3 +128,19 @@ References: [Cloudflare pricing](https://developers.cloudflare.com/durable-objec
 [limits](https://developers.cloudflare.com/durable-objects/platform/limits/),
 [Worker memory](https://developers.cloudflare.com/workers/platform/limits/),
 [Discord Gateway](https://docs.discord.com/developers/events/gateway).
+
+## Dependency and CI baseline
+
+The feature's CI run exposed existing audit failures. The lockfile pins patched
+Zod 4.6.6, Vite 8.1.6, Undici 7.30.1/6.29.1, brace-expansion 5.0.12 and
+source-map-js 1.2.2; unrelated package versions are retained. The existing audit
+policy is unchanged. Use `npm ci` for reproducible installs. npm 11 has a known
+[workspace override reporting/update bug](https://github.com/npm/cli/issues/9514):
+`npm ls` can label overridden transitive dependencies invalid, and `npm update`
+can restore the vulnerable originals. Verify the lockfile and run `npm run audit:ci`
+after dependency changes. Clean `npm ci`, type checks and runtime tests validate
+the pinned graph used here.
+
+Local benchmark manifests accept Dagger's explicit `VITE_BUILD_SHA` when Git is
+unavailable and record unknown working-tree cleanliness. Staging deployment still
+requires a clean Git checkout and matching source and bundle hashes.
