@@ -1,9 +1,9 @@
+import { GatewayTransferRequestSchema } from "./gateway-placement";
 import { z } from "zod";
 import {
   parseDiscordAudienceSnapshotV1,
   type DiscordAudienceCaptureV1,
 } from "../../../packages/discord-contracts/src";
-import { gatewayPartitionAssignments } from "../../../packages/gateway-protocol/src";
 import { isWorkerSecretSource } from "../../../packages/worker-secrets/src";
 import {
   GatewayCoordinator,
@@ -101,6 +101,30 @@ function jsonResponse(value: GatewayBoundaryInput, status = 200): Response {
   });
 }
 
+async function handleTransferRequest(request: Request, env: GatewayEnv, url: URL): Promise<Response> {
+  const coordinator = env.GATEWAY_COORDINATOR.getByName(GATEWAY_COORDINATOR_NAME);
+  try {
+    if (request.method === "GET" && url.pathname === "/gateway/fleet/transfers") return jsonResponse(await coordinator.activeTransfer());
+    if (request.method === "POST" && url.pathname === "/gateway/fleet/transfers") {
+      const input = GatewayTransferRequestSchema.parse(await request.json());
+      return jsonResponse(await coordinator.beginTransfer(input));
+    }
+    const rollback = /^\/gateway\/fleet\/transfers\/([0-9]+)\/rollback$/.exec(url.pathname);
+    if (request.method === "POST" && rollback !== null) {
+      return jsonResponse(await coordinator.rollbackTransfer(Number(rollback[1])));
+    }
+    const match = /^\/gateway\/fleet\/transfers\/([0-9]+)$/.exec(url.pathname);
+    if (match !== null) {
+      const epoch = Number(match[1]);
+      if (request.method === "GET") return jsonResponse(await coordinator.transferStatus(epoch));
+      if (request.method === "POST") return jsonResponse(await coordinator.continueTransfer(epoch));
+    }
+    return jsonResponse({ error: "Not found" }, 404);
+  } catch {
+    return jsonResponse({ error: "Gateway transfer request failed" }, 409);
+  }
+}
+
 function gatewayMode(env: GatewayEnv): "single" | "fleet" {
   const mode = GatewayModeSchema.safeParse(env.GATEWAY_MODE);
   if (!mode.success) {
@@ -124,32 +148,18 @@ async function inspectFleetConnections(env: GatewayEnv) {
   const coordinator = env.GATEWAY_COORDINATOR.getByName(
     GATEWAY_COORDINATOR_NAME,
   );
-  const fleet = await coordinator.fleetStatus();
-  const generation = fleet.targetGeneration ?? fleet.activeGeneration;
-  const shardCount = fleet.targetShardCount ?? fleet.activeShardCount;
-  if (generation === null || shardCount === 0) {
-    return { fleet, partitions: [] };
-  }
-  const assignments = gatewayPartitionAssignments(
-    shardCount,
-    fleetConnectionCapacity(env),
-  );
-  const statuses = await Promise.all(
-    assignments.map((assignment) =>
-      env.GATEWAY_PARTITION.getByName(assignment.partitionName).fleetStatus(),
-    ),
-  );
+  const snapshot = await coordinator.fleetSnapshot();
+  const { fleet } = snapshot;
+  const generation = fleet.activeGeneration ?? fleet.targetGeneration;
+  const shardCount = fleet.activeGeneration === null ? fleet.targetShardCount : fleet.activeShardCount;
   return {
     fleet,
-    partitions: assignments.map((assignment, index) => ({
+    partitions: snapshot.partitions.map(({ assignment, shardIds, status }) => ({
       partitionName: assignment.partitionName,
       expectedShardCount: assignment.shardCount,
-      connections: (statuses[index]?.connections ?? []).filter(
-        (connection) =>
-          connection.shardGeneration === generation &&
-          connection.shardCount === shardCount &&
-          connection.shardId >= assignment.firstShardId &&
-          connection.shardId <= assignment.lastShardId,
+      connections: status.connections.filter((connection) =>
+        connection.shardGeneration === generation && connection.shardCount === shardCount &&
+        shardIds.includes(connection.shardId),
       ),
     })),
   };
@@ -562,6 +572,10 @@ const gatewayWorker = {
     }
     if (!(await isAuthorized(request, controlToken))) {
       return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    if (gatewayMode(env) === "fleet" && url.pathname.startsWith("/gateway/fleet/transfers")) {
+      return handleTransferRequest(request, env, url);
     }
 
     let requestedMode: "single" | "fleet" | null = null;

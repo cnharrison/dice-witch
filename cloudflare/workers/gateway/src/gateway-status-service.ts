@@ -51,7 +51,7 @@ export function logicalGuildShard(
 }
 
 export function sanitizeGatewayStatus(
-  inspection: GatewayFleetInspection,
+  inspection: Pick<GatewayFleetInspection, "fleet">,
   partitions: GatewayFleetPartitionStatus[],
 ): PublicGatewayStatusSnapshot {
   const shards = partitions
@@ -91,7 +91,7 @@ export class GatewayStatusService extends WorkerEntrypoint<GatewayEnv> {
         GATEWAY_COORDINATOR_NAME,
       );
       return logicalGuildShard(
-        (await coordinator.inspectFleet()).fleet,
+        await coordinator.fleetStatus(),
         guildId,
       );
     } catch {
@@ -103,12 +103,10 @@ export class GatewayStatusService extends WorkerEntrypoint<GatewayEnv> {
     const coordinator = this.env.GATEWAY_COORDINATOR.getByName(
       GATEWAY_COORDINATOR_NAME,
     );
-    const inspection = await coordinator.inspectFleet();
-    const partitions = await Promise.all(
-      inspection.partitions.map(({ partitionName }) =>
-        this.env.GATEWAY_PARTITION.getByName(partitionName).fleetStatus(),
-      ),
+    const snapshot = await coordinator.fleetSnapshot();
+    return sanitizeGatewayStatus(
+      snapshot,
+      snapshot.partitions.map(({ status }) => status),
     );
-    return sanitizeGatewayStatus(inspection, partitions);
   }
 }

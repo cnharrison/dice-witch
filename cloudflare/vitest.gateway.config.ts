@@ -50,6 +50,7 @@ export default defineConfig({
             }),
         },
         bindings: {
+          GATEWAY_PLACEMENT_TRANSFERS_ENABLED: "true",
           DISCORD_BOT_TOKEN:
             "development-token-first-part.second.development-token-third-part",
           GATEWAY_CONTROL_TOKEN:

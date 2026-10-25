@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createGatewayMachine,
   transitionGateway,
+  validateGatewaySessionCheckpoint,
   type GatewayMachine,
+  type GatewayEvent,
 } from "../../packages/gateway-protocol/src";
 import {
   parseDiscordChannelDirectoryMutationV1,
@@ -11,10 +13,15 @@ import {
 import type { ParsedGatewayMessage } from "../../workers/gateway/src/discord-gateway";
 import {
   GatewayEventQueue,
+  GuildInventory,
   GatewayShardConnection,
   gatewayGuildInventoryStateKey,
   gatewayInitialGuildStateKey,
   initialGatewayCheckpoint,
+  parseGatewayGuildInventoryState,
+  parseGatewayInitialGuildState,
+  type GatewayGuildInventoryState,
+  type GatewayShardConnectionOptions,
   type GatewayShardIdentity,
   type GatewayShardStorageValue,
   type InitialGuildTracker,
@@ -30,19 +37,13 @@ const identity: GatewayShardIdentity = {
 const checkpointKey = "gateway-fleet-checkpoint-v1:3:0:23";
 
 function identifyMachine(): GatewayMachine {
-  let machine = createGatewayMachine(initialGatewayCheckpoint(identity, 1));
-  machine = transitionGateway(machine, { type: "start" }).machine;
-  machine = transitionGateway(machine, { type: "socket-open" }).machine;
-  machine = transitionGateway(machine, {
-    type: "hello",
-    heartbeatIntervalMs: 41_250,
-  }).machine;
+  const machine = helloMachine(initialGatewayCheckpoint(identity, 1));
   return transitionGateway(machine, {
     type: "identify-permit-granted",
   }).machine;
 }
 
-function readyMessage(): ParsedGatewayMessage {
+function readyMessage(): Extract<ParsedGatewayMessage, { type: "ready" }> {
   return {
     type: "ready",
     sequence: 1,
@@ -79,6 +80,8 @@ function guildCreateMessage(): Extract<
 }
 
 class StorageFixture {
+  readonly values = new Map<string, GatewayShardStorageValue>();
+
   put(
     key: string,
     value: GatewayShardStorageValue,
@@ -88,9 +91,34 @@ class StorageFixture {
     entries: Record<string, GatewayShardStorageValue>,
     options?: DurableObjectPutOptions,
   ): Promise<void>;
-  put(): Promise<void> {
+  put(
+    keyOrEntries: string | Record<string, GatewayShardStorageValue>,
+    valueOrOptions?: GatewayShardStorageValue | DurableObjectPutOptions,
+  ): Promise<void> {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The storage SDK overload distinguishes a string key from a typed batch.
+    if (typeof keyOrEntries === "string") {
+      if (valueOrOptions === undefined || !("version" in valueOrOptions)) throw new Error("Storage value is required");
+      this.values.set(keyOrEntries, structuredClone(valueOrOptions));
+    } else {
+      for (const [key, value] of Object.entries(keyOrEntries)) this.values.set(key, structuredClone(value));
+    }
     return Promise.resolve();
   }
+}
+
+function storedSnapshots(storage: StorageFixture) {
+  return {
+    checkpoint: validateGatewaySessionCheckpoint(storage.values.get(checkpointKey)),
+    initialGuildState: parseGatewayInitialGuildState(storage.values.get(gatewayInitialGuildStateKey(checkpointKey))),
+    guildInventoryState: parseGatewayGuildInventoryState(storage.values.get(gatewayGuildInventoryStateKey(checkpointKey))),
+  };
+}
+
+function helloMachine(checkpoint: GatewayMachine["checkpoint"]): GatewayMachine {
+  let machine = createGatewayMachine(checkpoint);
+  machine = transitionGateway(machine, { type: "start" }).machine;
+  machine = transitionGateway(machine, { type: "socket-open" }).machine;
+  return transitionGateway(machine, { type: "hello", heartbeatIntervalMs: 41_250 }).machine;
 }
 
 type TestableConnection = {
@@ -105,7 +133,7 @@ type TestableConnection = {
     operation: () => Promise<void>,
   ): void;
   acquireOwnership(): Promise<void>;
-  apply(event: { type: "start" }): Promise<void>;
+  apply(event: GatewayEvent): Promise<void>;
 };
 
 function testableConnection(
@@ -141,7 +169,7 @@ function testableConnection(
       shard["acquireOwnership"] = acquireOwnership;
     },
     get apply() {
-      return (event: { type: "start" }) => shard["apply"](event);
+      return (event: GatewayEvent) => shard["apply"](event);
     },
     set apply(apply) {
       shard["apply"] = apply;
@@ -149,11 +177,19 @@ function testableConnection(
   };
 }
 
-function connection(activeGuild: boolean, dispatchActive = false) {
+function connection(
+  activeGuild: boolean,
+  dispatchActive = false,
+  restored: Pick<GatewayShardConnectionOptions, "checkpoint" | "initialGuildState" | "guildInventoryState"> = {},
+) {
   const background: Promise<unknown>[] = [];
   const channelMutations: DiscordChannelDirectoryMutationV1[] = [];
   const storage = new StorageFixture();
+  if (restored.checkpoint !== undefined) storage.values.set(checkpointKey, structuredClone(restored.checkpoint));
+  if (restored.initialGuildState !== undefined) storage.values.set(gatewayInitialGuildStateKey(checkpointKey), structuredClone(restored.initialGuildState));
+  if (restored.guildInventoryState !== undefined) storage.values.set(gatewayGuildInventoryStateKey(checkpointKey), structuredClone(restored.guildInventoryState));
   const storagePut = vi.spyOn(storage, "put");
+  const scheduleAlarm = vi.fn(() => Promise.resolve());
   const waitUntil = vi.fn((promise: Promise<unknown>) => {
     background.push(promise);
   });
@@ -209,17 +245,20 @@ function connection(activeGuild: boolean, dispatchActive = false) {
     },
     identity,
     checkpoint: initialGatewayCheckpoint(identity, 1),
+    ...restored,
     checkpointKey,
-    scheduleAlarm: () => Promise.resolve(),
+    scheduleAlarm,
     onReady: () => Promise.resolve(),
     onFatal: () => Promise.resolve(),
     isDispatchActive: () => dispatchActive,
   });
   const testable = testableConnection(shard);
-  const socket = new WebSocketPair()[0];
+  const pair = new WebSocketPair();
+  const socket = pair[0];
   socket.accept();
+  pair[1].accept();
   const socketSend = vi.spyOn(socket, "send");
-  testable.machine = identifyMachine();
+  testable.machine = restored.checkpoint === undefined ? identifyMachine() : helloMachine(restored.checkpoint);
   testable.socket = socket;
   return {
     background,
@@ -227,14 +266,36 @@ function connection(activeGuild: boolean, dispatchActive = false) {
     dataFetch,
     logGuildLifecycle,
     shard,
+    storage,
     storagePut,
+    scheduleAlarm,
     testable,
     socketSend,
+    socketPeer: pair[1],
     waitUntil,
   };
 }
 
 describe("GatewayShardConnection recovery", () => {
+  it("starts once when activation and alarm recovery overlap an ownership RPC", async () => {
+    const { shard, testable } = connection(true);
+    testable.machine = createGatewayMachine(initialGatewayCheckpoint(identity, 1));
+    let releaseOwnership: () => void = () => { throw new Error("Ownership RPC did not start"); };
+    const ownership = new Promise<void>((resolve) => { releaseOwnership = resolve; });
+    testable.acquireOwnership = () => ownership;
+    const apply = vi.fn((event: GatewayEvent) => {
+      testable.machine = transitionGateway(testable.machine, event).machine;
+      return Promise.resolve();
+    });
+    testable.apply = apply;
+    const activation = shard.start();
+    const recovery = shard.recover();
+    releaseOwnership();
+    await Promise.all([activation, recovery]);
+    expect(apply).toHaveBeenCalledExactlyOnceWith({ type: "start" });
+    expect(shard.status().state).toBe("connecting");
+  });
+
   it("restarts an interrupted pre-session target connection", async () => {
     const { shard, testable } = connection(true);
     const acquireOwnership = vi.fn(() => Promise.resolve());
@@ -247,6 +308,249 @@ describe("GatewayShardConnection recovery", () => {
 
     expect(acquireOwnership).toHaveBeenCalledOnce();
     expect(apply).toHaveBeenCalledWith({ type: "start" });
+  });
+});
+
+describe("GatewayShardConnection snapshot persistence", () => {
+  it("retains the exact heartbeat reconnect cause after Resume without persisting diagnostics", async () => {
+    const { shard, storagePut, testable } = connection(true);
+    expect(shard.status().lastReconnect).toBeNull();
+    try {
+      await testable.handleGatewayMessage(readyMessage());
+      await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+      const before = shard.status();
+      const writes = storagePut.mock.calls.length;
+      const scheduledAfter = Date.now();
+      await testable.apply({ type: "heartbeat-due", sentAt: Date.now() });
+      const reconnect = shard.status().lastReconnect;
+      expect(reconnect).toEqual({
+        reason: "heartbeat-ack-timeout",
+        closeCode: null,
+        scheduledAt: reconnect?.scheduledAt,
+        lastHeartbeatSentAt: before.lastHeartbeatSentAt,
+        lastHeartbeatAckAt: before.lastHeartbeatAckAt,
+      });
+      expect(reconnect?.scheduledAt).toBeGreaterThanOrEqual(scheduledAfter);
+      expect(reconnect?.scheduledAt).toBeLessThanOrEqual(Date.now());
+      expect(storagePut).toHaveBeenCalledTimes(writes);
+      testable.machine = helloMachine(testable.machine.checkpoint);
+      testable.socket = new WebSocketPair()[0];
+      testable.socket.accept();
+      await testable.handleGatewayMessage({ type: "resumed", sequence: 2 });
+      expect(shard.status().lastError).toBeNull();
+      expect(shard.status().lastReconnect).toEqual(reconnect);
+      expect(storagePut.mock.calls.at(-1)?.[0]).toEqual({
+        [checkpointKey]: testable.machine.checkpoint,
+      });
+    } finally { await shard.stop(); }
+  });
+
+  it("distinguishes a requested reconnect from a heartbeat timeout", async () => {
+    const { shard, testable } = connection(true);
+    try {
+      await testable.handleGatewayMessage(readyMessage());
+      await shard.forceReconnect();
+      expect(shard.status().lastReconnect?.reason).toBe("gateway-reconnect");
+      expect(shard.status().lastReconnect?.closeCode).toBeNull();
+    } finally { await shard.stop(); }
+  });
+
+  it("retains the reconnect close code", async () => {
+    const { shard, testable } = connection(true);
+    try {
+      await testable.handleGatewayMessage(readyMessage());
+      await testable.apply({ type: "socket-closed", code: 4008, closedAt: Date.now() });
+      expect(shard.status().lastReconnect?.reason).toBe("socket-closed");
+      expect(shard.status().lastReconnect?.closeCode).toBe(4008);
+    } finally { await shard.stop(); }
+  });
+
+  it.each(["stop", "suspend"] as const)("ignores a queued heartbeat ACK after %s", async (command) => {
+    const { shard, testable, background } = connection(true);
+    await testable.handleGatewayMessage(readyMessage());
+    await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    const socket = testable.socket;
+    if (socket === null) throw new Error("Fixture socket is required");
+    let release: () => void = () => { throw new Error("Gate is not initialized"); };
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    void testable.socketEventQueue.enqueue(() => gate);
+    testable.runSocketEvent(socket, "message", () => testable.handleGatewayMessage({ type: "heartbeat-ack" }));
+    try {
+      await shard[command]();
+    } finally { release(); }
+    await Promise.all(background);
+    expect(shard.status().lastError).toBeNull();
+    expect(shard.status().state).toBe(command === "stop" ? "stopped" : "suspended");
+  });
+
+  it("writes only checkpoints on steady heartbeats and keeps recovery alarms", async () => {
+    const { shard, storage, storagePut, scheduleAlarm, testable } = connection(true);
+    await testable.handleGatewayMessage(readyMessage());
+    await testable.handleGatewayMessage(guildCreateMessage());
+    await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    expect(storagePut.mock.calls.at(-1)?.[0]).toEqual({
+      [checkpointKey]: storage.values.get(checkpointKey),
+      [gatewayInitialGuildStateKey(checkpointKey)]: { version: 1, guildIds: [], syncGuildIds: [] },
+    });
+    await testable.handleGatewayMessage({ type: "heartbeat-ack" });
+    storagePut.mockClear();
+    scheduleAlarm.mockClear();
+
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+      await testable.handleGatewayMessage({ type: "heartbeat-ack" });
+    }
+
+    expect(storagePut).toHaveBeenCalledTimes(4);
+    expect(storagePut.mock.calls.map(([entries]) => Object.keys(entries))).toEqual(Array.from({ length: 4 }, () => [checkpointKey]));
+    expect(scheduleAlarm).toHaveBeenCalledTimes(2);
+    expect(scheduleAlarm).toHaveBeenLastCalledWith(Number(shard.status().lastHeartbeatAckAt) + 82_500);
+    expect(validateGatewaySessionCheckpoint(storage.values.get(checkpointKey))).toMatchObject({
+      sequence: 2,
+      lastHeartbeatSentAt: shard.status().lastHeartbeatSentAt,
+      lastHeartbeatAckAt: shard.status().lastHeartbeatAckAt,
+    });
+  });
+
+  it("recovers partial initial synchronization without rewriting loaded snapshots", async () => {
+    const joinedGuildId = "100000000000000003";
+    const original = connection(true);
+    await original.testable.handleGatewayMessage({ ...readyMessage(), initialGuildIds: [guildId, joinedGuildId] });
+    await original.testable.handleGatewayMessage(guildCreateMessage());
+    await original.testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    expect(original.storagePut.mock.calls.at(-1)?.[0]).toEqual({
+      [checkpointKey]: original.storage.values.get(checkpointKey),
+      [gatewayInitialGuildStateKey(checkpointKey)]: { version: 1, guildIds: [joinedGuildId], syncGuildIds: [joinedGuildId] },
+    });
+
+    const restored = connection(false, false, storedSnapshots(original.storage));
+    await restored.testable.handleGatewayMessage({ type: "resumed", sequence: 3 });
+    expect(restored.storagePut.mock.calls[0]?.[0]).toEqual({ [checkpointKey]: restored.storage.values.get(checkpointKey) });
+    expect(restored.shard.status()).toMatchObject({ initialGuildsPending: 1, initialGuildsRequiringSync: 1, guildInventoryCount: 2 });
+    await restored.testable.handleGatewayMessage({ ...guildCreateMessage(), sequence: 4, data: { ...guildCreateData(), id: joinedGuildId } });
+    await restored.testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    expect(restored.storagePut.mock.calls.at(-1)?.[0]).toEqual({
+      [checkpointKey]: restored.storage.values.get(checkpointKey),
+      [gatewayInitialGuildStateKey(checkpointKey)]: { version: 1, guildIds: [], syncGuildIds: [] },
+    });
+    expect(storedSnapshots(restored.storage).checkpoint.sequence).toBe(4);
+    expect(restored.shard.status()).toMatchObject({ initialGuildsPending: 0, initialGuildsRequiringSync: 0 });
+  });
+
+  it("applies replayed guild events before RESUMED after restoring a checkpoint", async () => {
+    const original = connection(true, true);
+    await original.testable.handleGatewayMessage(readyMessage());
+    await original.testable.handleGatewayMessage(guildCreateMessage());
+    await original.testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    const restored = connection(true, true, storedSnapshots(original.storage));
+    // A retry of the same sequence on a new owner must keep its mutation ID.
+    await original.testable.handleGatewayMessage({ ...guildCreateMessage(), sequence: 3 });
+    await restored.shard["execute"]({ type: "send-resume", sessionId: "session-123", sequence: 2 });
+    await restored.testable.handleGatewayMessage({ ...guildCreateMessage(), sequence: 3 });
+    expect(restored.logGuildLifecycle).toHaveBeenCalledTimes(1);
+    expect(restored.logGuildLifecycle.mock.calls[0]).toEqual(original.logGuildLifecycle.mock.calls[0]);
+    expect(restored.shard.status()).toMatchObject({ state: "resuming", sequence: 3 });
+    expect(storedSnapshots(restored.storage).checkpoint.sequence).toBe(3);
+    await restored.testable.handleGatewayMessage({ type: "resumed", sequence: 4 });
+    expect(restored.shard.status()).toMatchObject({ state: "ready", sequence: 4 });
+    expect(restored.logGuildLifecycle).toHaveBeenCalledTimes(1);
+  });
+
+  it("initializes missing legacy snapshots instead of treating defaults as persisted", async () => {
+    const { storage, storagePut, testable } = connection(false, false, {
+      checkpoint: { ...initialGatewayCheckpoint(identity, 1), sessionId: "session-123", resumeGatewayUrl: "wss://gateway.discord.gg", sequence: 1 },
+    });
+    await testable.handleGatewayMessage({ type: "resumed", sequence: 2 });
+    expect(storagePut.mock.calls[0]?.[0]).toEqual({
+      [checkpointKey]: storage.values.get(checkpointKey),
+      [gatewayInitialGuildStateKey(checkpointKey)]: { version: 1, guildIds: [], syncGuildIds: [] },
+    });
+    expect(storage.values.has(gatewayGuildInventoryStateKey(checkpointKey))).toBe(false);
+    await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    expect(storagePut.mock.calls.at(-1)?.[0]).toEqual({ [checkpointKey]: storage.values.get(checkpointKey) });
+  });
+
+  it("retries both snapshots after a failed batch before recording them as persisted", async () => {
+    const { storage, storagePut, testable } = connection(true);
+    storagePut.mockRejectedValueOnce(new Error("fixture storage failure"));
+    await expect(testable.handleGatewayMessage(readyMessage())).rejects.toThrow("fixture storage failure");
+    expect(storage.values.size).toBe(0);
+
+    await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    expect(Object.keys(storagePut.mock.calls.at(-1)?.[0] ?? {})).toEqual([
+      checkpointKey, gatewayInitialGuildStateKey(checkpointKey), gatewayGuildInventoryStateKey(checkpointKey),
+    ]);
+    expect(storedSnapshots(storage)).toMatchObject({
+      checkpoint: { sessionId: "session-123" },
+      initialGuildState: { guildIds: [guildId] },
+      guildInventoryState: { guildIds: [guildId] },
+    });
+  });
+
+  it("keeps changes made during an unfinished write eligible for the next batch", async () => {
+    const { storage, storagePut, testable } = connection(true);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let entered!: () => void;
+    const writing = new Promise<void>((resolve) => { entered = resolve; });
+    storagePut.mockImplementationOnce(async (entries) => {
+      await StorageFixture.prototype.put.call(storage, entries);
+      entered();
+      await gate;
+    });
+    const ready = testable.handleGatewayMessage(readyMessage());
+    await writing;
+    testable.initialGuilds.complete(guildId);
+    release();
+    await ready;
+    expect(storedSnapshots(storage).initialGuildState.guildIds).toEqual([guildId]);
+    await testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    expect(storagePut.mock.calls.at(-1)?.[0]).toEqual({
+      [checkpointKey]: storage.values.get(checkpointKey),
+      [gatewayInitialGuildStateKey(checkpointKey)]: { version: 1, guildIds: [], syncGuildIds: [] },
+    });
+  });
+
+  it("writes inventory when session metadata changes but guild membership does not", async () => {
+    const { storage, storagePut, testable } = connection(true);
+    await testable.handleGatewayMessage(readyMessage());
+    testable.machine = identifyMachine();
+    await testable.handleGatewayMessage({ ...readyMessage(), sessionId: "session-new" });
+    expect(storagePut.mock.calls.at(-1)?.[0]).toEqual({
+      [checkpointKey]: storage.values.get(checkpointKey),
+      [gatewayGuildInventoryStateKey(checkpointKey)]: storedSnapshots(storage).guildInventoryState,
+    });
+    expect(storedSnapshots(storage).guildInventoryState.sessionId).toBe("session-new");
+  });
+});
+
+describe("GuildInventory membership", () => {
+  it("preserves metadata, order and snapshot isolation across duplicate and actual changes", () => {
+    const secondGuildId = "100000000000000002";
+    const missingGuildId = "100000000000000003";
+    const state: GatewayGuildInventoryState = {
+      version: 1, generation: identity.generation, shardId: identity.shardId,
+      shardCount: identity.shardCount, sessionId: "inventory-session", capturedAt: 1_000,
+      guildIds: [guildId, secondGuildId],
+    };
+    const inventory = new GuildInventory(state);
+    const upsert = (id: string) => {
+      inventory.apply({
+        type: "upsert",
+        guild: { id, name: "Guild", icon: null, ownerId: guildId, memberCount: 1,
+          approximateMemberCount: null, preferredLocale: "en-US", joinedTimestamp: 1_000, isActive: true },
+      });
+    };
+    const original = inventory.snapshot();
+    upsert(guildId);
+    inventory.apply({ type: "deactivate", guildId: missingGuildId });
+    inventory.apply({ type: "unavailable", guildId });
+    expect(inventory.snapshot()).toEqual(original);
+    original?.guildIds.push(missingGuildId);
+    expect(inventory.snapshot()?.guildIds).toEqual([guildId, secondGuildId]);
+    inventory.apply({ type: "deactivate", guildId });
+    upsert(guildId);
+    expect(inventory.snapshot()).toEqual({ ...state, guildIds: [secondGuildId, guildId] });
   });
 });
 
@@ -450,10 +754,11 @@ describe("GatewayShardConnection initial guild inventory", () => {
   });
 
   it("tracks active guild creates and available deletes after READY", async () => {
-    const { shard, testable } = connection(true, true);
+    const { shard, storage, storagePut, testable } = connection(true, true);
     await testable.handleGatewayMessage(readyMessage());
     await testable.handleGatewayMessage(guildCreateMessage());
     const joinedGuildId = "100000000000000003";
+    storagePut.mockClear();
 
     await testable.handleGatewayMessage({
       type: "dispatch",
@@ -468,6 +773,12 @@ describe("GatewayShardConnection initial guild inventory", () => {
       guildId,
       joinedGuildId,
     ]);
+    expect(storagePut).toHaveBeenCalledTimes(2);
+    expect(storagePut).toHaveBeenNthCalledWith(1, gatewayGuildInventoryStateKey(checkpointKey), expect.objectContaining({ guildIds: [guildId, joinedGuildId] }));
+    expect(storagePut.mock.calls[1]?.[0]).toEqual({
+      [checkpointKey]: storage.values.get(checkpointKey),
+      [gatewayInitialGuildStateKey(checkpointKey)]: { version: 1, guildIds: [], syncGuildIds: [] },
+    });
 
     await testable.handleGatewayMessage({
       type: "dispatch",
@@ -487,6 +798,9 @@ describe("GatewayShardConnection initial guild inventory", () => {
       data: { id: joinedGuildId, unavailable: false },
     });
     expect(shard.currentGuildInventory()?.guildIds).toEqual([guildId]);
+    expect(storagePut.mock.calls.at(-1)?.[0]).toEqual({
+      [checkpointKey]: storage.values.get(checkpointKey),
+    });
   });
 
   it("persists inventory after D1 commits even when lifecycle logging fails", async () => {
@@ -587,5 +901,45 @@ describe("GatewayShardConnection initial guild inventory", () => {
     );
     expect(close).toHaveBeenCalledWith(4000, "event-failed");
     expect(order).not.toContain("should-not-run");
+  });
+});
+
+describe("Gateway transfer barriers", () => {
+  it("drains accepted events and channel work before exporting a checkpoint", async () => {
+    const { shard, testable } = connection(true);
+    await testable.handleGatewayMessage(readyMessage());
+    // This fixture does not retain the peer socket; closure is covered by the live runner.
+    testable.socket = null;
+    let releaseEvents!: () => void;
+    let releaseChannels!: () => void;
+    const events = new Promise<void>((resolve) => { releaseEvents = resolve; });
+    const channels = new Promise<void>((resolve) => { releaseChannels = resolve; });
+    void testable.socketEventQueue.enqueue(async () => {
+      await events;
+      await testable.handleGatewayMessage({ type: "dispatch", sequence: 42, eventType: "IGNORED_EVENT", data: {} });
+    });
+    void shard["channelDirectoryQueue"].enqueue(() => channels);
+    let exported = false;
+    const pending = shard.parkForTransfer().then((snapshot) => { exported = true; return snapshot; });
+    await Promise.resolve();
+    expect(exported).toBe(false);
+    releaseEvents();
+    await Promise.resolve();
+    expect(exported).toBe(false);
+    releaseChannels();
+    expect((await pending).checkpoint.sequence).toBe(42);
+    await expect(shard.start()).rejects.toThrow("parked");
+  });
+
+  it("retries failed inventory persistence and skips an unchanged successful revision", async () => {
+    const { shard, testable, storagePut } = connection(true);
+    await testable.handleGatewayMessage(readyMessage());
+    shard["guildInventory"].apply({ type: "deactivate", guildId });
+    storagePut.mockRejectedValueOnce(new Error("storage failed"));
+    await expect(shard["persistGuildInventory"]()).rejects.toThrow("storage failed");
+    storagePut.mockClear();
+    await shard["persistGuildInventory"]();
+    await shard["persistGuildInventory"]();
+    expect(storagePut).toHaveBeenCalledTimes(1);
   });
 });

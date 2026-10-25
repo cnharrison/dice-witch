@@ -36,6 +36,7 @@ const shardStatus: GatewayShardStatus = {
   readyAt: 1_720_000_000_000,
   lastEventType: "READY",
   lastError: null,
+  lastReconnect: null,
   interactionResponses: 0,
   identifyAttempts: 1,
   resumeAttempts: 2,
@@ -120,6 +121,11 @@ function environment() {
     partitionCount: 1,
   };
   const coordinator = {
+    activeTransfer: vi.fn(() => Promise.resolve(null)),
+    beginTransfer: vi.fn(() => Promise.resolve({ epoch: 1, phase: "parking" })),
+    transferStatus: vi.fn(() => Promise.resolve({ epoch: 1, phase: "verifying" })),
+    continueTransfer: vi.fn(() => Promise.resolve({ epoch: 1, phase: "verifying" })),
+    rollbackTransfer: vi.fn(() => Promise.resolve({ epoch: 2, phase: "parking" })),
     status: vi.fn(() =>
       Promise.resolve({
         ownerships: [
@@ -159,6 +165,14 @@ function environment() {
     fleetStatus: vi.fn<() => Promise<GatewayFleetStatus>>(() =>
       Promise.resolve(fleetStatus),
     ),
+    fleetSnapshot: vi.fn(async () => ({
+      fleet: fleetStatus,
+      partitions: [{
+        assignment: { partitionName: "gateway-partition-0", partitionIndex: 0, firstShardId: 0, lastShardId: 23, shardCount: 24 },
+        shardIds: Array.from({ length: 24 }, (_, id) => id),
+        status: await stub.fleetStatus(),
+      }],
+    })),
     activeGuildInventory: vi.fn(() =>
       Promise.resolve({
         generation: 1,
@@ -315,6 +329,30 @@ function recommendationController() {
 }
 
 describe("Gateway control Worker", () => {
+  it("routes transfer controls and rejects malformed transfer coordinates", async () => {
+    const { env, coordinator } = environment();
+    env.GATEWAY_MODE = "fleet";
+    for (const [path, method] of [
+      ["/gateway/fleet/transfers", "GET"],
+      ["/gateway/fleet/transfers/1", "GET"],
+      ["/gateway/fleet/transfers/1", "POST"],
+      ["/gateway/fleet/transfers/1/rollback", "POST"],
+    ] as const) {
+      expect((await gatewayWorker.fetch(request(path, method, true), env)).status).toBe(200);
+    }
+    expect(coordinator.transferStatus).toHaveBeenCalledWith(1);
+    expect(coordinator.continueTransfer).toHaveBeenCalledWith(1);
+    expect(coordinator.rollbackTransfer).toHaveBeenCalledWith(1);
+    const post = (body: string) => new Request("https://gateway.test/gateway/fleet/transfers", {
+      method: "POST", headers: { authorization: `Bearer ${controlToken}`, "content-type": "application/json" }, body,
+    });
+    expect((await gatewayWorker.fetch(post('{"shardId":-1}'), env)).status).toBe(409);
+    expect(coordinator.beginTransfer).not.toHaveBeenCalled();
+    const coordinates = { generation: 5, shardId: 24, shardCount: 25, source: "gateway-partition-4", target: "gateway-partition-3" };
+    expect((await gatewayWorker.fetch(post(JSON.stringify(coordinates)), env)).status).toBe(200);
+    expect(coordinator.beginTransfer).toHaveBeenCalledWith(coordinates);
+  });
+
   it("exposes only a minimal public health response", async () => {
     const { env } = environment();
     const response = await gatewayWorker.fetch(request("/health", "GET"), env);
@@ -331,6 +369,10 @@ describe("Gateway control Worker", () => {
 
     for (const [path, method] of [
       ["/gateway/status", "GET"],
+      ["/gateway/fleet/transfers", "GET"],
+      ["/gateway/fleet/transfers", "POST"],
+      ["/gateway/fleet/transfers/1", "POST"],
+      ["/gateway/fleet/transfers/1/rollback", "POST"],
       ["/gateway/fleet/status", "GET"],
       ["/gateway/fleet/connections", "GET"],
       ["/gateway/start", "POST"],
@@ -731,7 +773,8 @@ describe("Gateway control Worker", () => {
       expect(response.status).toBe(200);
     }
 
-    expect(coordinator.fleetStatus).toHaveBeenCalledTimes(2);
+    expect(coordinator.fleetStatus).toHaveBeenCalledOnce();
+    expect(coordinator.fleetSnapshot).toHaveBeenCalledOnce();
     expect(coordinator.inspectFleet).toHaveBeenCalledOnce();
     expect(coordinator.status).toHaveBeenCalledOnce();
     expect(coordinator.startFleetRecommendations).toHaveBeenCalledWith(24);

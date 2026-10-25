@@ -1,6 +1,6 @@
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
-import type { GatewaySessionCheckpoint } from "../../packages/gateway-protocol/src";
+import { describe, expect, it, vi } from "vitest";
+import { gatewayPartitionAssignments, type GatewaySessionCheckpoint } from "../../packages/gateway-protocol/src";
 import {
   GATEWAY_COORDINATOR_NAME,
   GATEWAY_PARTITION_NAME,
@@ -9,7 +9,7 @@ import {
   GatewayPartition,
   gatewayRecoveryAlarmAt,
 } from "../../workers/gateway/src/gateway-partition";
-import { gatewayInitialGuildStateKey } from "../../workers/gateway/src/gateway-shard-connection";
+import { GatewayShardConnection, gatewayInitialGuildStateKey, type GatewayShardStatus } from "../../workers/gateway/src/gateway-shard-connection";
 import gatewayWorker, { type GatewayStatus } from "../../workers/gateway/src/index";
 import { gatewayTestEnv as gatewayEnv } from "./test-environment";
 
@@ -33,6 +33,36 @@ describe("Gateway recovery alarm", () => {
 });
 
 describe("GatewayPartition Durable Object", () => {
+  it.each(["stop", "shutdown", "suspend"] as const)("does not restart a pending fleet batch after %s", async (operation) => {
+    let releaseStart: () => void = () => { throw new Error("Start did not begin"); };
+    const pendingStart = new Promise<void>((resolve) => { releaseStart = resolve; });
+    const startedConnections: Promise<GatewayShardStatus>[] = [];
+    const start = vi.spyOn(GatewayShardConnection.prototype, "start").mockImplementation(function (this: GatewayShardConnection) {
+      const started = pendingStart.then(() => this.status());
+      startedConnections.push(started);
+      return started;
+    });
+    const assignment = gatewayPartitionAssignments(3, 6)[0];
+    if (assignment === undefined) throw new Error("Assignment is missing");
+    const partition = gatewayEnv.GATEWAY_PARTITION.getByName(`fleet-pending-${operation}-test`);
+    try {
+      await runInDurableObject(partition, async (instance) => {
+        if (!(instance instanceof GatewayPartition)) throw new Error("Gateway partition is unavailable");
+        await instance.executeFleetCommand({ type: "start-target-shards", generation: 7, shardCount: 3, shardIds: [0, 1, 2], assignment });
+        expect(start).toHaveBeenCalledTimes(1);
+        if (operation === "shutdown") await instance.shutdownFleet();
+        else await instance.executeFleetCommand({ type: operation === "stop" ? "stop-generation" : "suspend-generation", generation: 7, shardCount: 3, shardIds: [0, 1, 2], assignment });
+        releaseStart();
+        const started = await startedConnections[0];
+        expect(started?.state).toBe(operation === "suspend" ? "idle" : "stopped");
+        await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+        expect(start).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      releaseStart();
+      start.mockRestore();
+    }
+  });
   it("starts with a sanitized idle checkpoint", async () => {
     const partition = gatewayEnv.GATEWAY_PARTITION.getByName(
       "durable-object-idle-test",
@@ -58,6 +88,7 @@ describe("GatewayPartition Durable Object", () => {
       readyAt: null,
       lastEventType: null,
       lastError: null,
+      lastReconnect: null,
       interactionResponses: 0,
       identifyAttempts: 0,
       resumeAttempts: 0,

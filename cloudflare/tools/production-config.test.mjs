@@ -72,6 +72,7 @@ test("materializes exact production configs from source templates and bounded va
   const roll = JSON.parse(
     await readFile(path.join(directory, "wrangler.roll.jsonc"), "utf8"),
   );
+  assert.equal(gateway.vars.GATEWAY_PLACEMENT_TRANSFERS_ENABLED, "false");
   assert.equal(web.vars.BUILD_SHA, sha);
   assert.equal(
     data.services.find(({ binding }) => binding === "DISCORD_REST")?.service,
@@ -121,6 +122,7 @@ test("rejects malformed, incomplete, or wrong-target production values", async (
   const directory = await mkdtemp(path.join(os.tmpdir(), "dw-production-"));
   for (const encodedValues of [
     "not-base64!",
+    encode(values({ gatewayPlacementTransfersEnabled: "true" })),
     encode(values({ frontendOrigin: "https://staging.example.com" })),
     encode(values({ d1DatabaseId: "11111111-1111-4111-8111-111111111111" })),
     encode(values({ gameDetectionChannelId: "809246262888890419" })),
@@ -174,4 +176,11 @@ test("validates every config before publishing any materialized file", async () 
     readFile(path.join(directory, "wrangler.roll.jsonc")),
     /ENOENT/,
   );
+});
+
+ test("enables placement transfers only with an explicit boolean", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "dw-transfer-config-"));
+  await materializeProductionConfigs({ encodedValues: encode(values({ gatewayPlacementTransfersEnabled: true })), buildSha: sha, buildTime, templateDirectory, configDirectory: directory });
+  const gateway = JSON.parse(await readFile(path.join(directory, "wrangler.gateway.jsonc"), "utf8"));
+  assert.equal(gateway.vars.GATEWAY_PLACEMENT_TRANSFERS_ENABLED, "true");
 });

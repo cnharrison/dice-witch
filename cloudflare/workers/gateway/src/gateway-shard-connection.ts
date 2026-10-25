@@ -1,3 +1,4 @@
+import { GatewayHandshakeQueue } from "./gateway-handshake-queue";
 import { z } from "zod";
 import {
   createGatewayMachine,
@@ -36,7 +37,7 @@ import {
   type GatewayEnv,
 } from "./environment";
 
-const ACTIVATION_RECOVERY_ALARM_DELAY_MS = 1_000;
+export const ACTIVATION_RECOVERY_ALARM_DELAY_MS = 1_000;
 const RECOVERY_HEARTBEAT_INTERVALS = 2;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const GUILD_FILTER_BATCH_SIZE = 100;
@@ -85,11 +86,7 @@ type GatewayOutboundPayload =
   | ReturnType<typeof buildGatewayIdentify>
   | ReturnType<typeof buildGatewayPresenceUpdate>
   | ReturnType<typeof buildGatewayResume>;
-type GatewayStorageValue =
-  | GatewaySessionCheckpoint
-  | GatewayInitialGuildState
-  | GatewayGuildInventoryState;
-type GatewayStorageEntries = { [key: string]: GatewayStorageValue };
+type GatewayStorageEntries = { [key: string]: GatewayShardStorageValue };
 
 export async function gatewaySessionMutationScope(
   sessionId: string,
@@ -188,6 +185,10 @@ export function parseGatewayInitialGuildState(
 }
 
 export class GuildInventory {
+  private revisionCount = 0;
+
+  get revision(): number { return this.revisionCount; }
+
   private state: GatewayGuildInventoryState | null;
 
   constructor(state?: GatewayGuildInventoryState) {
@@ -200,6 +201,7 @@ export class GuildInventory {
     guildIds: string[],
     capturedAt: number,
   ): void {
+    this.revisionCount += 1;
     this.state = parseGatewayGuildInventoryState({
       version: 1,
       generation: identity.generation,
@@ -215,9 +217,12 @@ export class GuildInventory {
     if (this.state === null || event === null || event.type === "unavailable") {
       return;
     }
+    if (event.type === "upsert" && this.state.guildIds.includes(event.guild.id)) return;
+    if (event.type === "deactivate" && !this.state.guildIds.includes(event.guildId)) return;
     const guildIds = new Set(this.state.guildIds);
     if (event.type === "upsert") guildIds.add(event.guild.id);
     else guildIds.delete(event.guildId);
+    this.revisionCount += 1;
     this.state = { ...this.state, guildIds: [...guildIds] };
   }
 
@@ -337,23 +342,6 @@ export function gatewayGuildInventoryStateKey(checkpointKey: string): string {
   return `${checkpointKey}:guild-inventory-v1`;
 }
 
-function gatewayStorageEntries(
-  checkpointKey: string,
-  checkpoint: GatewaySessionCheckpoint,
-  initialGuildState: GatewayInitialGuildState,
-  guildInventoryState: GatewayGuildInventoryState | null,
-) {
-  const entries = {
-    [checkpointKey]: checkpoint,
-    [gatewayInitialGuildStateKey(checkpointKey)]: initialGuildState,
-  } satisfies GatewayStorageEntries;
-  if (guildInventoryState !== null) {
-    const inventoryKey = gatewayGuildInventoryStateKey(checkpointKey);
-    return { ...entries, [inventoryKey]: guildInventoryState };
-  }
-  return entries;
-}
-
 export function gatewayRecoveryAlarmAt(
   heartbeatIntervalMs: number,
   now: number,
@@ -396,6 +384,13 @@ export type GatewayShardStatus = {
   readyAt: number | null;
   lastEventType: string | null;
   lastError: string | null;
+  lastReconnect: {
+    reason: Extract<GatewayAction, { type: "schedule-reconnect" }>["reason"];
+    closeCode: number | null;
+    scheduledAt: number;
+    lastHeartbeatSentAt: number | null;
+    lastHeartbeatAckAt: number | null;
+  } | null;
   interactionResponses: number;
   identifyAttempts: number;
   resumeAttempts: number;
@@ -474,6 +469,12 @@ export function classifyGatewayRuntimeError(value: GatewayBoundaryInput): string
   return "unexpected";
 }
 
+export type GatewayTransferSnapshot = {
+  checkpoint: GatewaySessionCheckpoint;
+  initialGuildState: GatewayInitialGuildState;
+  guildInventoryState: GatewayGuildInventoryState | null;
+};
+
 export type GatewayShardStorageValue =
   | GatewaySessionCheckpoint
   | GatewayInitialGuildState
@@ -519,6 +520,7 @@ export type GatewayShardConnectionEnv = Pick<
 };
 
 export type GatewayShardConnectionOptions = {
+  handshakes?: GatewayHandshakeQueue;
   ctx: GatewayShardConnectionContext;
   env: GatewayShardConnectionEnv;
   identity: GatewayShardIdentity;
@@ -560,6 +562,7 @@ export function initialGatewayCheckpoint(
 }
 
 export class GatewayShardConnection {
+  private parked = false;
   private machine: GatewayMachine;
   private socket: WebSocket | null = null;
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
@@ -571,11 +574,14 @@ export class GatewayShardConnection {
   private readonly channelDirectoryQueue = new GatewayEventQueue();
   private readonly initialGuilds: InitialGuildTracker;
   private readonly guildInventory: GuildInventory;
+  private persistedInitialGuildStateJson: string | undefined;
+  private persistedGuildInventoryRevision: number | undefined;
   private lifecycleMutationScope: string | null = null;
   private failedSocket: WebSocket | null = null;
   private readyAt: number | null = null;
   private lastEventType: string | null = null;
   private lastError: string | null = null;
+  private lastReconnect: GatewayShardStatus["lastReconnect"] = null;
   private interactionResponses = 0;
   private identifyAttempts = 0;
   private resumeAttempts = 0;
@@ -588,6 +594,8 @@ export class GatewayShardConnection {
   private identifyPermitsGranted = 0;
   private identifyPermitDenials = 0;
   private lastIdentifyPermit: PublicIdentifyPermit | null = null;
+  private pendingOpening: AbortController | null = null;
+  private readonly handshakes: GatewayHandshakeQueue;
   private readonly ctx: GatewayShardConnectionContext;
   private readonly env: GatewayShardConnectionEnv;
   private readonly identity: GatewayShardIdentity;
@@ -601,12 +609,19 @@ export class GatewayShardConnection {
   private readonly isDispatchActive: (identity: GatewayShardIdentity) => boolean;
 
   constructor(options: GatewayShardConnectionOptions) {
+    this.handshakes = options.handshakes ?? new GatewayHandshakeQueue();
     this.ctx = options.ctx;
     this.env = options.env;
     this.identity = options.identity;
     this.checkpointKey = options.checkpointKey;
     this.initialGuilds = new InitialGuildTracker(options.initialGuildState);
     this.guildInventory = new GuildInventory(options.guildInventoryState);
+    if (options.initialGuildState !== undefined) {
+      this.persistedInitialGuildStateJson = JSON.stringify(this.initialGuilds.snapshot());
+    }
+    if (options.guildInventoryState !== undefined) {
+      this.persistedGuildInventoryRevision = this.guildInventory.revision;
+    }
     this.scheduleAlarm = options.scheduleAlarm;
     this.onReady = options.onReady;
     this.onFatal = options.onFatal;
@@ -636,10 +651,16 @@ export class GatewayShardConnection {
     return now + ACTIVATION_RECOVERY_ALARM_DELAY_MS;
   }
 
+  private canStart(): boolean {
+    return !this.parked && this.machine.status === "idle";
+  }
+
   async recover(): Promise<void> {
+    if (this.parked) return;
     if (this.machine.status === "idle") {
       await this.acquireOwnership();
-      await this.apply({ type: "start" });
+      // Ownership RPCs yield to alarms and control requests; inspect current state again.
+      if (this.canStart()) await this.apply({ type: "start" });
       return;
     }
     if (this.machine.status === "ready") {
@@ -648,6 +669,7 @@ export class GatewayShardConnection {
   }
 
   async start(): Promise<GatewayShardStatus> {
+    if (this.parked) throw new Error("Gateway shard is parked for transfer");
     if (this.machine.status === "fatal") {
       throw new Error("Gateway is in a fatal state");
     }
@@ -659,7 +681,7 @@ export class GatewayShardConnection {
     }
     if (this.machine.status === "idle") {
       await this.acquireOwnership();
-      await this.apply({ type: "start" });
+      if (this.canStart()) await this.apply({ type: "start" });
     }
     return this.status();
   }
@@ -683,6 +705,7 @@ export class GatewayShardConnection {
       readyAt: this.readyAt,
       lastEventType: this.lastEventType,
       lastError: this.lastError,
+      lastReconnect: this.lastReconnect === null ? null : { ...this.lastReconnect },
       interactionResponses: this.interactionResponses,
       identifyAttempts: this.identifyAttempts,
       resumeAttempts: this.resumeAttempts,
@@ -719,6 +742,32 @@ export class GatewayShardConnection {
       inventory.sessionId === checkpoint.sessionId
       ? inventory
       : null;
+  }
+
+  parkForTransfer(): Promise<GatewayTransferSnapshot> {
+    this.parked = true;
+    this.clearTimers();
+    this.pendingOpening?.abort();
+    return this.socketEventQueue.enqueue(async () => {
+      const socket = this.socket;
+      this.socket = null;
+      this.failedSocket = null;
+      this.clearTimers();
+      if (socket !== null && socket.readyState < WebSocket.CLOSED) {
+        const closed = new Promise<void>((resolve) => {
+          socket.addEventListener("close", () => { resolve(); }, { once: true });
+        });
+        if (socket.readyState <= WebSocket.OPEN) socket.close(4000, "placement-transfer");
+        await closed;
+      }
+      await this.channelDirectoryQueue.enqueue(() => Promise.resolve());
+      await this.execute({ type: "persist-checkpoint" });
+      return {
+        checkpoint: { ...this.machine.checkpoint },
+        initialGuildState: this.initialGuilds.snapshot(),
+        guildInventoryState: this.currentGuildInventory(),
+      };
+    });
   }
 
   async forceReconnect(): Promise<GatewayShardFaultResult> {
@@ -817,6 +866,9 @@ export class GatewayShardConnection {
         this.identifyAttempts += 1;
         return;
       case "send-resume":
+        // Discord replays missed dispatches before RESUMED. Restore the mutation
+        // identity before opening that stream, including after an actor transfer.
+        this.lifecycleMutationScope = await gatewaySessionMutationScope(action.sessionId);
         this.send(
           buildGatewayResume(
             await discordBotToken(this.env),
@@ -830,13 +882,25 @@ export class GatewayShardConnection {
         this.send(buildGatewayHeartbeat(action.sequence));
         return;
       case "persist-checkpoint": {
-        const entries = gatewayStorageEntries(
-          this.checkpointKey,
-          this.machine.checkpoint,
-          this.initialGuilds.snapshot(),
-          this.guildInventory.snapshot(),
-        );
+        const initialGuildState = this.initialGuilds.snapshot();
+        const inventoryRevision = this.guildInventory.revision;
+        const guildInventoryState = inventoryRevision === this.persistedGuildInventoryRevision
+          ? null : this.guildInventory.snapshot();
+        const initialGuildStateJson = JSON.stringify(initialGuildState);
+        // oxlint-disable-next-line anti-slop/no-known-value-widening -- Storage.put requires a dynamic-key atomic batch containing three persisted value schemas.
+        const entries: GatewayStorageEntries = {
+          [this.checkpointKey]: this.machine.checkpoint,
+        };
+        if (initialGuildStateJson !== this.persistedInitialGuildStateJson) {
+          entries[gatewayInitialGuildStateKey(this.checkpointKey)] = initialGuildState;
+        }
+        if (guildInventoryState !== null) {
+          entries[gatewayGuildInventoryStateKey(this.checkpointKey)] = guildInventoryState;
+        }
         await this.ctx.storage.put(entries);
+        // Only the submitted snapshots become clean, not mutations made while awaiting the write.
+        this.persistedInitialGuildStateJson = initialGuildStateJson;
+        if (guildInventoryState !== null) this.persistedGuildInventoryRevision = inventoryRevision;
         return;
       }
       case "report-ready":
@@ -856,14 +920,14 @@ export class GatewayShardConnection {
       case "terminate-socket":
         this.clearHeartbeatTimer();
         this.clearIdentifyPermitTimer();
-        this.closeSocket(4000, "reconnect");
+        this.closeSocket(4000, "reconnect", true);
         return;
       case "schedule-reconnect":
         this.scheduleReconnect(action.reason, action.closeCode);
         return;
       case "close-socket":
         this.clearTimers();
-        this.closeSocket(action.code, action.reason);
+        this.closeSocket(action.code, action.reason, true);
         return;
       case "report-suspended":
       case "report-stopped":
@@ -879,20 +943,34 @@ export class GatewayShardConnection {
   }
 
   private async openSocket(mode: GatewayConnectionMode): Promise<void> {
-    const gatewayUrl =
-      mode === "resume"
+    if (this.parked) return;
+    this.pendingOpening?.abort();
+    const opening = new AbortController();
+    this.pendingOpening = opening;
+    try {
+      const gatewayUrl = mode === "resume"
         ? this.machine.checkpoint.resumeGatewayUrl
         : await this.fetchGatewayUrl();
-    if (gatewayUrl === null) {
-      throw new Error("Resume Gateway URL is unavailable");
+      // Stop and transfer parking both abort this pending URL lookup.
+      if (opening.signal.aborted) return;
+      if (gatewayUrl === null) throw new Error("Resume Gateway URL is unavailable");
+      this.ctx.waitUntil(this.handshakes.run(opening.signal, () => this.openHandshakeSocket(gatewayUrl, mode, opening.signal))
+        .catch(async () => {
+          if (opening.signal.aborted) return;
+          this.lastError = "websocket-error";
+          await this.apply({ type: "socket-closed", code: null, closedAt: Date.now() });
+        }).finally(() => {
+          if (this.pendingOpening === opening) this.pendingOpening = null;
+        }));
+    } catch (error) {
+      if (this.pendingOpening === opening) this.pendingOpening = null;
+      throw error;
     }
+  }
 
-    const socket = new WebSocket(
-      normalizeDiscordGatewayUrl(
-        gatewayUrl,
-        allowedGatewayHostname(this.env),
-      ),
-    );
+  private openHandshakeSocket(gatewayUrl: string, mode: GatewayConnectionMode, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return Promise.resolve();
+    const socket = new WebSocket(normalizeDiscordGatewayUrl(gatewayUrl, allowedGatewayHostname(this.env)));
     this.socket = socket;
     this.failedSocket = null;
     if (mode === "identify") {
@@ -904,6 +982,31 @@ export class GatewayShardConnection {
         await this.apply({ type: "socket-open" });
       });
     });
+    this.attachSocketListeners(socket);
+    return new Promise<void>((resolve) => {
+      const finish = () => {
+        socket.removeEventListener("open", finish);
+        socket.removeEventListener("close", finish);
+        socket.removeEventListener("error", failed);
+        signal.removeEventListener("abort", cancel);
+        resolve();
+      };
+      const failed = () => {
+        finish();
+        if (this.socket === socket) this.closeSocket(4000, "handshake-failed");
+      };
+      const cancel = () => {
+        finish();
+        if (this.socket === socket) this.closeSocket(4000, "handshake-cancelled");
+      };
+      socket.addEventListener("open", finish);
+      socket.addEventListener("close", finish);
+      socket.addEventListener("error", failed);
+      signal.addEventListener("abort", cancel, { once: true });
+    });
+  }
+
+  private attachSocketListeners(socket: WebSocket): void {
     socket.addEventListener("message", (event) => {
       this.runSocketEvent(socket, "message", async () => {
         const message = GatewayMessageDataSchema.safeParse(event.data);
@@ -1167,13 +1270,7 @@ export class GatewayShardConnection {
       throw new Error("Guild lifecycle synchronization response is invalid");
     }
     this.guildInventory.apply(event);
-    const guildInventory = this.guildInventory.snapshot();
-    if (guildInventory !== null) {
-      await this.ctx.storage.put(
-        gatewayGuildInventoryStateKey(this.checkpointKey),
-        guildInventory,
-      );
-    }
+    await this.persistGuildInventory();
     if (
       mode === "synchronize" ||
       result.data.status === "missing" ||
@@ -1190,6 +1287,15 @@ export class GatewayShardConnection {
       throw new Error("Guild lifecycle logging response is invalid");
     }
     return event;
+  }
+
+  private async persistGuildInventory(): Promise<void> {
+    const revision = this.guildInventory.revision;
+    if (revision === this.persistedGuildInventoryRevision) return;
+    const snapshot = this.guildInventory.snapshot();
+    if (snapshot === null) return;
+    await this.ctx.storage.put(gatewayGuildInventoryStateKey(this.checkpointKey), snapshot);
+    this.persistedGuildInventoryRevision = revision;
   }
 
   private ownershipRequest(): ShardOwnershipRequest {
@@ -1233,6 +1339,7 @@ export class GatewayShardConnection {
     const result = await coordinator.requestIdentifyPermit(
       this.ownershipRequest(),
     );
+    if (this.parked) return;
     if (result.granted) {
       this.identifyPermitsGranted += 1;
       this.lastIdentifyPermit = {
@@ -1338,7 +1445,17 @@ export class GatewayShardConnection {
     );
   }
 
-  private scheduleReconnect(reason: string, closeCode: number | null): void {
+  private scheduleReconnect(
+    reason: Extract<GatewayAction, { type: "schedule-reconnect" }>["reason"],
+    closeCode: number | null,
+  ): void {
+    this.lastReconnect = {
+      reason,
+      closeCode,
+      scheduledAt: Date.now(),
+      lastHeartbeatSentAt: this.machine.checkpoint.lastHeartbeatSentAt,
+      lastHeartbeatAckAt: this.machine.checkpoint.lastHeartbeatAckAt,
+    };
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     const exponent = Math.min(this.reconnectAttempt, 5);
     let delay = 1_000 * 2 ** exponent;
@@ -1355,8 +1472,14 @@ export class GatewayShardConnection {
     }, delay);
   }
 
-  private closeSocket(code: number, reason: string): void {
+  private closeSocket(code: number, reason: string, retire = false): void {
+    this.pendingOpening?.abort();
     const socket = this.socket;
+    if (retire) {
+      // Recovery is already scheduled; retire before close callbacks can reschedule it.
+      this.socket = null;
+      this.failedSocket = null;
+    }
     if (socket !== null && socket.readyState <= WebSocket.OPEN) {
       socket.close(code, reason);
     }

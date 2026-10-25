@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { createExecutionContext } from "cloudflare:test";
+import { GatewayCoordinator } from "../../workers/gateway/src/gateway-coordinator";
+import { GatewayPartition } from "../../workers/gateway/src/gateway-partition";
+import { gatewayTestEnv } from "./test-environment";
+import { describe, expect, it, vi } from "vitest";
 import type { GatewayFleetInspection } from "../../workers/gateway/src/gateway-coordinator";
 import type { GatewayFleetPartitionStatus } from "../../workers/gateway/src/gateway-partition";
 import type { GatewayShardStatus } from "../../workers/gateway/src/gateway-shard-connection";
 import {
+  GatewayStatusService,
   logicalGuildShard,
   sanitizeGatewayStatus,
 } from "../../workers/gateway/src/gateway-status-service";
@@ -49,6 +54,7 @@ function shardStatus(
     readyAt: null,
     lastEventType: null,
     lastError: null,
+    lastReconnect: null,
     interactionResponses: 0,
     identifyAttempts: 0,
     resumeAttempts: 0,
@@ -81,6 +87,37 @@ function partition(
 }
 
 describe("private Gateway status service", () => {
+  it("resolves topology without partition RPCs, even when physical status is unavailable", async () => {
+    const topology = vi.spyOn(GatewayCoordinator.prototype, "fleetStatus").mockResolvedValue(inspection(2).fleet);
+    const physical = vi.spyOn(GatewayPartition.prototype, "fleetStatus").mockImplementation(() => { throw new Error("unreachable"); });
+    try {
+      const service = new GatewayStatusService(createExecutionContext(), gatewayTestEnv);
+      expect(await service.getLogicalGuildShard("100000000000000003")).toMatchObject({ status: "available", shardCount: 2 });
+      expect(await service.getLogicalGuildShard("invalid")).toEqual({ status: "unavailable" });
+      expect(topology).toHaveBeenCalledTimes(2);
+      expect(physical).not.toHaveBeenCalled();
+    } finally {
+      topology.mockRestore();
+      physical.mockRestore();
+    }
+  });
+
+  it("collects public ping and completeness from one fresh partition pass", async () => {
+    const coordinator = gatewayTestEnv.GATEWAY_COORDINATOR.getByName("development-generation-1");
+    await coordinator.initializeFleet(16, 2, 6);
+    const physical = vi.spyOn(GatewayPartition.prototype, "fleetStatus").mockReturnValue({
+      activeGeneration: 16, activeShardCount: 2,
+      connections: [shardStatus({ shardId: 0, state: "ready", lastHeartbeatSentAt: 10, lastHeartbeatAckAt: 20 }), shardStatus({ shardId: 1, state: "ready" })],
+    });
+    try {
+      const service = new GatewayStatusService(createExecutionContext(), gatewayTestEnv);
+      expect(await service.getStatusSnapshot()).toEqual({ phase: "idle", shardCount: 2, shards: [{ id: 0, state: "ready", ping: 10 }, { id: 1, state: "ready", ping: -1 }] });
+      expect(physical).toHaveBeenCalledOnce();
+    } finally {
+      physical.mockRestore();
+    }
+  });
+
   it("resolves the guild's logical owner from the active generation", () => {
     expect(
       logicalGuildShard(inspection(4).fleet, "100000000000000003"),

@@ -176,16 +176,16 @@ export function parseDiscordChannelDirectoryDispatchV1(
   data: SchemaInput,
   observedAt: number,
 ): DiscordChannelDirectoryMutationV1 | null {
-  const upsertDispatch = UpsertDispatchSchema.safeParse(eventType);
-  const deleteDispatch = DeleteDispatchSchema.safeParse(eventType);
-  if (!upsertDispatch.success && !deleteDispatch.success) return null;
+  const upsertDispatch = UpsertDispatchSchema.options.some((type) => type === eventType);
+  const deleteDispatch = DeleteDispatchSchema.options.some((type) => type === eventType);
+  if (!upsertDispatch && !deleteDispatch) return null;
 
   const identity = DiscordChannelDispatchIdentitySchema.safeParse(data);
   const timestamp = timestampSchema.safeParse(observedAt);
   if (!identity.success || !timestamp.success) {
     throw new Error("Discord channel directory dispatch is invalid");
   }
-  if (deleteDispatch.success) {
+  if (deleteDispatch) {
     return parseDiscordChannelDirectoryMutationV1({
       version: 1,
       operation: "delete",

@@ -1,9 +1,11 @@
+import { ACTIVATION_RECOVERY_ALARM_DELAY_MS } from "./gateway-shard-connection";
+import type { GatewayFleetPartitionStatus } from "./gateway-partition";
+import type { GatewayPartitionAssignment } from "../../../packages/gateway-protocol/src";
+import { GatewayPlacement, type GatewayTransfer, type GatewayTransferRequest } from "./gateway-placement";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 import {
   createGenerationMachine,
-  gatewayPartitionAssignments,
-  gatewayPartitionCount,
   partitionGenerationAction,
   planForcedGenerationReplacement,
   planGenerationIncrease,
@@ -331,12 +333,15 @@ function validateOwnership(request: ShardOwnershipRequest): void {
 }
 
 export class GatewayCoordinator extends DurableObject<GatewayEnv> {
+  private readonly placement: GatewayPlacement;
+  private readonly transferQueue = new Map<number, Promise<GatewayTransfer>>();
   private identifyRefresh: Promise<GatewayBotInfo> | null = null;
   private fleetTransitionQueue: Promise<void> = Promise.resolve();
 
   constructor(ctx: DurableObjectState, env: GatewayEnv) {
     super(ctx, env);
-    void ctx.blockConcurrencyWhile(() => {
+    this.placement = new GatewayPlacement(ctx.storage);
+    void ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS shard_ownership (
           generation INTEGER NOT NULL,
@@ -383,14 +388,35 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
           updated_at INTEGER NOT NULL
         );
       `);
-      return Promise.resolve();
+      if (this.placement.active() !== null && await this.ctx.storage.getAlarm() === null) {
+        await this.ctx.storage.setAlarm(Date.now() + ACTIVATION_RECOVERY_ALARM_DELAY_MS);
+      }
     });
   }
+
+  async alarm(): Promise<void> {
+    const transfer = this.placement.active();
+    if (transfer === null) return;
+    try {
+      await this.continueTransfer(transfer.epoch);
+    } finally {
+      if (this.placement.active() !== null) {
+        await this.ctx.storage.setAlarm(Date.now() + ACTIVATION_RECOVERY_ALARM_DELAY_MS);
+      }
+    }
+  }
+
+  activeTransfer(): GatewayTransfer | null { return this.placement.active(); }
 
   async reconcileFleetRecommendation(
     connectionCapacity: number,
   ): Promise<GatewayFleetRecommendationResult> {
     validateGeneration(0, connectionCapacity);
+    const transfer = this.placement.active();
+    if (transfer !== null) {
+      await this.continueTransfer(transfer.epoch);
+      return { outcome: "in-progress", fleet: await this.fleetStatus() };
+    }
     const beforeFetch = await this.readFleetState();
     if (beforeFetch?.operatorStopped === true) {
       return {
@@ -485,6 +511,7 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
   async stopFleet(): Promise<GatewayFleetStatus> {
     const operation = this.fleetTransitionQueue.then(async () => {
       const state = await this.requireFleetState();
+      this.placement.requireIdle();
       const target = state.machine.target?.plan;
       const actions: GenerationAction[] = [];
       if (target !== undefined) {
@@ -570,19 +597,21 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
   }
 
   async startFleetPlan(plan: GenerationPlan): Promise<GatewayFleetStatus> {
-    const state = await this.requireFleetState();
-    if (!state.hasActiveFleet) {
-      throw new Error("Gateway fleet has no active generation");
-    }
-    if (
-      plan.targetGeneration < state.nextGeneration ||
-      plan.targetGeneration === Number.MAX_SAFE_INTEGER
-    ) {
-      throw new Error("Gateway fleet target generation is invalid");
-    }
-    const transition = transitionGeneration(state.machine, {
-      type: "plan",
-      plan,
+    const prepared = await this.enqueueFleetOperation(async () => {
+      const state = await this.requireFleetState();
+      this.placement.requireIdle();
+      if (!state.hasActiveFleet) {
+        throw new Error("Gateway fleet has no active generation");
+      }
+      if (
+        plan.targetGeneration < state.nextGeneration ||
+        plan.targetGeneration === Number.MAX_SAFE_INTEGER
+      ) {
+        throw new Error("Gateway fleet target generation is invalid");
+      }
+      const transition = transitionGeneration(state.machine, {
+        type: "plan",
+        plan,
     });
     const updated = {
       ...state,
@@ -591,7 +620,9 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
       rollbackReadyShardIds: [],
     };
     await this.ctx.storage.put(FLEET_STATE_KEY, updated);
-    await this.executeFleetActions(transition.actions, updated);
+    return { actions: transition.actions, updated };
+    });
+    await this.executeFleetActions(prepared.actions, prepared.updated);
     return this.fleetStatus();
   }
 
@@ -651,47 +682,164 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     );
   }
 
+  async beginTransfer(request: GatewayTransferRequest): Promise<GatewayTransfer> {
+    return this.enqueueFleetOperation(async () => {
+      const active = this.placement.active();
+      if (active !== null && active.generation === request.generation && active.shardId === request.shardId &&
+          active.shardCount === request.shardCount && active.source === request.source && active.target === request.target) return active;
+      if (this.env.GATEWAY_PLACEMENT_TRANSFERS_ENABLED !== "true") {
+        throw new Error("Gateway placement transfers are disabled");
+      }
+      const state = await this.requireFleetState();
+      if (!state.hasActiveFleet || state.operatorStopped || state.pendingActions ||
+          state.machine.phase !== "idle" || state.machine.activeGeneration !== request.generation ||
+          state.machine.activeShardCount !== request.shardCount ||
+          !this.ownsShard({ ...request, ownerId: request.source })) {
+        throw new Error("Gateway transfer requires a stable owned shard");
+      }
+      const transfer = this.placement.begin(request);
+      await this.ctx.storage.setAlarm(Date.now() + ACTIVATION_RECOVERY_ALARM_DELAY_MS);
+      return transfer;
+    });
+  }
+
+  transferStatus(epoch: number): GatewayTransfer {
+    return this.placement.get(epoch);
+  }
+
+  continueTransfer(epoch: number): Promise<GatewayTransfer> {
+    const running = this.transferQueue.get(epoch);
+    if (running !== undefined) return running;
+    const operation = this.runTransfer(epoch).finally(async () => {
+      this.transferQueue.delete(epoch);
+      if (this.placement.active() === null) await this.ctx.storage.deleteAlarm();
+    });
+    this.transferQueue.set(epoch, operation);
+    return operation;
+  }
+
+  async rollbackTransfer(epoch: number): Promise<GatewayTransfer> {
+    const running = this.transferQueue.get(epoch);
+    if (running !== undefined) await running;
+    let transfer = this.placement.get(epoch);
+    if (transfer.phase === "parking" || transfer.phase === "importing") {
+      this.placement.advance(epoch, transfer.phase, "restoring");
+      return this.continueTransfer(epoch);
+    }
+    if (transfer.phase === "activating") {
+      await this.continueTransfer(epoch);
+      transfer = this.placement.get(epoch);
+    }
+    if (transfer.phase === "verifying") return this.placement.reverse(transfer);
+    if (transfer.phase === "complete") return this.beginTransfer({
+      generation: transfer.generation, shardId: transfer.shardId, shardCount: transfer.shardCount,
+      source: transfer.target, target: transfer.source,
+    });
+    if (transfer.phase === "restoring" || transfer.phase === "cancelled") return this.continueTransfer(epoch);
+    throw new Error("Gateway transfer has already been superseded");
+  }
+
+  private async runTransfer(epoch: number): Promise<GatewayTransfer> {
+    let transfer = this.placement.get(epoch);
+    if (["complete", "cancelled", "superseded"].includes(transfer.phase)) return transfer;
+    const source = this.env.GATEWAY_PARTITION.getByName(transfer.source);
+    const target = this.env.GATEWAY_PARTITION.getByName(transfer.target);
+    if (transfer.phase === "restoring") {
+      await source.restoreTransfer(transfer);
+      const status = await source.fleetStatus();
+      const shard = status.connections.find((connection) => connection.shardGeneration === transfer.generation && connection.shardId === transfer.shardId);
+      if (shard?.state === "ready" && shard.ownershipAcquired && shard.readyAt !== null &&
+          shard.lastHeartbeatSentAt !== null && shard.lastHeartbeatAckAt !== null &&
+          shard.readyAt >= transfer.startedAt && shard.lastHeartbeatSentAt >= shard.readyAt &&
+          shard.lastHeartbeatAckAt >= shard.lastHeartbeatSentAt) {
+        this.placement.advance(epoch, "restoring", "cancelled");
+      }
+      return this.placement.get(epoch);
+    }
+    if (transfer.phase === "parking") {
+      await source.parkTransfer(transfer);
+      this.placement.advance(epoch, "parking", "importing");
+      transfer = this.placement.get(epoch);
+    }
+    if (transfer.phase === "importing") {
+      const snapshot = await source.parkTransfer(transfer);
+      await target.importTransfer(transfer, snapshot);
+      this.placement.commit(transfer);
+      transfer = this.placement.get(epoch);
+    }
+    if (transfer.phase === "activating") {
+      await target.activateTransfer(transfer);
+      this.placement.advance(epoch, "activating", "verifying");
+      transfer = this.placement.get(epoch);
+    }
+    if (transfer.phase === "verifying") {
+      const status = await target.fleetStatus();
+      const shard = status.connections.find((connection) =>
+        connection.shardGeneration === transfer.generation && connection.shardId === transfer.shardId,
+      );
+      if (shard?.state === "ready" && shard.ownershipAcquired &&
+          shard.readyAt !== null && shard.lastHeartbeatAckAt !== null && shard.lastHeartbeatSentAt !== null &&
+          shard.readyAt >= transfer.startedAt && shard.lastHeartbeatSentAt >= shard.readyAt &&
+          shard.lastHeartbeatAckAt >= shard.lastHeartbeatSentAt) {
+        await source.finishTransfer(transfer);
+        this.placement.advance(epoch, "verifying", "complete");
+      }
+    }
+    return this.placement.get(epoch);
+  }
+
   async fleetStatus(): Promise<GatewayFleetStatus> {
     return this.toFleetStatus(await this.requireFleetState());
   }
 
-  async inspectFleet(): Promise<GatewayFleetInspection> {
+  async fleetSnapshot(): Promise<{
+    fleet: GatewayFleetStatus;
+    partitions: Array<{ assignment: GatewayPartitionAssignment; shardIds: number[]; status: GatewayFleetPartitionStatus }>;
+  }> {
     const state = await this.requireFleetState();
     const fleet = this.toFleetStatus(state);
     const target = state.machine.target?.plan;
-    const inspectedShardCount = state.hasActiveFleet
+    const shardCount = state.hasActiveFleet
       ? state.machine.activeShardCount
       : target?.targetShardCount;
-    if (inspectedShardCount === undefined) {
-      return {
-        fleet,
-        partitions: [],
-        totals: this.emptyFleetInspectionTotals(),
-      };
-    }
-    const assignments = gatewayPartitionAssignments(
-      inspectedShardCount,
-      state.connectionCapacity,
-    );
-    const statuses = await Promise.all(
-      assignments.map((assignment) =>
-        this.env.GATEWAY_PARTITION.getByName(
-          assignment.partitionName,
-        ).fleetStatus(),
+    const assignments = shardCount === undefined
+      ? []
+      : this.placement.assignments(
+          state.hasActiveFleet ? state.machine.activeGeneration : (target?.targetGeneration ?? state.machine.activeGeneration),
+          shardCount, state.connectionCapacity,
+        );
+    const partitions = await Promise.all(assignments.map(async (assignment) => ({
+      assignment,
+      shardIds: this.placement.shardIds(
+        fleet.activeGeneration ?? fleet.targetGeneration ?? 0,
+        shardCount ?? 0, state.connectionCapacity, assignment.partitionName,
       ),
-    );
+      status: await this.env.GATEWAY_PARTITION.getByName(
+        assignment.partitionName,
+      ).fleetStatus(),
+    })));
+    return { fleet, partitions };
+  }
+
+  async inspectFleet(): Promise<GatewayFleetInspection> {
+    const snapshot = await this.fleetSnapshot();
+    const { fleet } = snapshot;
+    const inspectedShardCount = fleet.activeGeneration === null
+      ? fleet.targetShardCount
+      : fleet.activeShardCount;
+    const assignments = snapshot.partitions.map(({ assignment }) => assignment);
+    const statuses = snapshot.partitions.map(({ status }) => status);
     const partitions = assignments.map((assignment, index) => {
       const status = statuses[index];
-      const inspectingTarget = !state.hasActiveFleet && target !== undefined;
+      const inspectingTarget = fleet.activeGeneration === null && fleet.targetGeneration !== null;
       const generationMatches = inspectingTarget ||
-        (status?.activeGeneration === state.machine.activeGeneration &&
-          status.activeShardCount === state.machine.activeShardCount);
+        (status?.activeGeneration === fleet.activeGeneration &&
+          status.activeShardCount === fleet.activeShardCount);
       const connections = generationMatches
         ? (status?.connections ?? []).filter(
             (connection) =>
               connection.shardCount === inspectedShardCount &&
-              connection.shardId >= assignment.firstShardId &&
-              connection.shardId <= assignment.lastShardId,
+              snapshot.partitions[index]?.shardIds.includes(connection.shardId) === true,
           )
         : [];
       const heartbeatAcks = connections
@@ -768,14 +916,13 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     ) {
       throw new Error("Gateway active shard reidentify request is invalid");
     }
-    const assignment = gatewayPartitionAssignments(
-      state.machine.activeShardCount,
-      state.connectionCapacity,
-    ).find(
-      (candidate) =>
-        shardId >= candidate.firstShardId &&
-        shardId <= candidate.lastShardId,
-    );
+    this.placement.requireIdle();
+    const assignment = this.placement.assignments(
+      state.machine.activeGeneration, state.machine.activeShardCount, state.connectionCapacity,
+    ).find((candidate) => this.placement.shardIds(
+      state.machine.activeGeneration, state.machine.activeShardCount, state.connectionCapacity,
+      candidate.partitionName,
+    ).includes(shardId));
     if (assignment === undefined) {
       throw new Error("Gateway active shard assignment is missing");
     }
@@ -799,9 +946,8 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     }
     const generation = state.machine.activeGeneration;
     const shardCount = state.machine.activeShardCount;
-    const assignments = gatewayPartitionAssignments(
-      shardCount,
-      state.connectionCapacity,
+    const assignments = this.placement.assignments(
+      generation, shardCount, state.connectionCapacity,
     );
     const partitionInventories = await Promise.all(
       assignments.map((assignment) =>
@@ -823,8 +969,7 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
         ({ status }) =>
           status.shardGeneration === generation &&
           status.shardCount === shardCount &&
-          status.shardId >= assignment.firstShardId &&
-          status.shardId <= assignment.lastShardId,
+          this.placement.shardIds(generation, shardCount, state.connectionCapacity, assignment.partitionName).includes(status.shardId),
       );
     }).sort((left, right) => left.status.shardId - right.status.shardId);
     if (entries.length !== shardCount) {
@@ -1177,6 +1322,10 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
   acquireOwnership(request: ShardOwnershipRequest): OwnershipResult {
     validateOwnership(request);
     return this.ctx.storage.transactionSync(() => {
+      const placedOwner = this.placement.owner(request.generation, request.shardId);
+      if (placedOwner !== null && placedOwner !== request.ownerId) {
+        return { acquired: false, reason: "shard-owned-by-another-partition" };
+      }
       const existing = this.findOwnership(request.generation, request.shardId);
       if (existing === undefined) {
         this.ctx.storage.sql.exec(
@@ -1206,6 +1355,8 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
 
   releaseOwnership(request: ShardOwnershipRequest): boolean {
     validateOwnership(request);
+    const transfer = this.placement.active();
+    if (transfer !== null && transfer.generation === request.generation && transfer.shardId === request.shardId) return false;
     const result = this.ctx.storage.sql.exec(
       `DELETE FROM shard_ownership
        WHERE generation = ? AND shard_id = ? AND shard_count = ? AND owner_id = ?`,
@@ -1365,6 +1516,12 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     };
   }
 
+  private enqueueFleetOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.fleetTransitionQueue.then(operation);
+    this.fleetTransitionQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
   private enqueueFleetReady(
     generation: number,
     shardId: number,
@@ -1479,10 +1636,16 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
     state: StoredFleetState,
   ): Promise<void> {
     for (const action of actions) {
-      const commands = partitionGenerationAction(
-        action,
-        state.connectionCapacity,
-      );
+      const commands = action.type === "start-target-wave"
+        ? partitionGenerationAction(action, state.connectionCapacity)
+        : this.placement.assignments(action.generation, action.shardCount, state.connectionCapacity)
+          .map((assignment): GatewayPartitionCommand => ({
+            type: action.type,
+            generation: action.generation,
+            shardCount: action.shardCount,
+            assignment,
+            shardIds: this.placement.shardIds(action.generation, action.shardCount, state.connectionCapacity, assignment.partitionName),
+          }));
       await Promise.all(
         commands.map((command) => this.executeFleetCommand(command)),
       );
@@ -1596,10 +1759,9 @@ export class GatewayCoordinator extends DurableObject<GatewayEnv> {
       partitionCount:
         partitionShardCount === null
           ? 0
-          : gatewayPartitionCount(
-              partitionShardCount,
-              state.connectionCapacity,
-            ),
+          : this.placement.assignments(
+              state.machine.activeGeneration, partitionShardCount, state.connectionCapacity,
+            ).length,
     };
   }
 
