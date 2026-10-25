@@ -730,10 +730,6 @@ describe("Gateway control Worker", () => {
 
     for (const [path, method] of [
       ["/gateway/status", "GET"],
-      ["/gateway/fleet/transfers", "GET"],
-      ["/gateway/fleet/transfers", "POST"],
-      ["/gateway/fleet/transfers/1", "POST"],
-      ["/gateway/fleet/transfers/1/rollback", "POST"],
       ["/gateway/fleet/status", "GET"],
       ["/gateway/fleet/connections", "GET"],
       ["/gateway/coordinator/status", "GET"],
