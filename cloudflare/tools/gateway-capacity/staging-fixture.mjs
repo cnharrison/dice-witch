@@ -85,7 +85,7 @@ export class FixtureController extends DurableObject {
 
   async replay(value) {
     const fixture = this.active();
-    if (this.replaying || fixture.connectedCount() !== 24) throw new Error("Fixture replay is not ready");
+    if (this.replaying || fixture.connectedCount() !== 25) throw new Error("Fixture replay is not ready");
     const profile = Replay.parse(value);
     this.replaying = true;
     try {

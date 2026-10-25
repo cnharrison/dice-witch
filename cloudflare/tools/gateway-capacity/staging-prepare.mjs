@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 
-export const STAGING_NAMES = Object.freeze({ fixture: "dice-witch-gateway-memory-fixture", six: "dice-witch-gateway-memory-six", twentyFour: "dice-witch-gateway-memory-twenty-four" });
+export const STAGING_NAMES = Object.freeze({ fixture: "dice-witch-gateway-consolidation-fixture", six: "dice-witch-gateway-consolidation-six", candidate: "dice-witch-gateway-consolidation-candidate" });
 export const APPROVED_ACCOUNT = "dfe6c3ddb987a22c7f17955d1973490e";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.resolve("wrangler"));
@@ -16,7 +16,7 @@ const { build } = require("esbuild");
 export async function prepareStaging({ output, accountId, workersSubdomain, sourceSha, expiresAt, purpose, candidateCapacity }) {
   if (accountId !== APPROVED_ACCOUNT || !z.string().regex(/^[a-z0-9-]+$/).safeParse(workersSubdomain).success || !/^[a-f0-9]{40}$/.test(sourceSha)) throw new Error("Explicit approved account, subdomain, and source SHA are required");
   if (!["typecheck", "local-test", "deploy"].includes(purpose)) throw new Error("Explicit preparation purpose is required");
-  if (![12, 24].includes(candidateCapacity)) throw new Error("Explicit candidate capacity must be 12 or 24");
+  if (![7, 9].includes(candidateCapacity)) throw new Error("Explicit candidate capacity must be 7 or 9");
   function verifySource() {
     if (purpose !== "deploy") return;
     try {
@@ -79,7 +79,7 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
     configs.push({ role, name, capacity: fixture ? null : capacity, configPath, configDigest, outfile, digest, url: `https://${name}.${workersSubdomain}.workers.dev` });
   }
   verifySource();
-  const manifest = { purpose, accountId, sourceSha, expiresAt, hostname, candidateCapacity, maxActiveObjects: 7 + 24 / candidateCapacity, maxLoadSeconds: 3_600, maxAdditionalCostUsd: 25, configs };
+  const manifest = { purpose, accountId, sourceSha, expiresAt, hostname, candidateCapacity, maxActiveObjects: 8 + Math.ceil(25 / candidateCapacity), maxLoadSeconds: 3_600, maxAdditionalCostUsd: 25, configs };
   await writeFile(path.join(output, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }

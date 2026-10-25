@@ -25,7 +25,7 @@ async function privateFile(file) {
 
 export function stagingGatewayRoles(selection) {
   assert(selection === "six" || selection === "both", "Explicit six or both Gateway selection is required");
-  return selection === "six" ? ["six"] : ["six", "twentyFour"];
+  return selection === "six" ? ["six"] : ["six", "candidate"];
 }
 
 export function stagingDeadline(expiresAt, now) {
@@ -40,8 +40,8 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   assert.equal(manifest.purpose, "deploy");
   assert.equal(manifest.accountId, APPROVED_ACCOUNT);
-  assert([12, 24].includes(manifest.candidateCapacity), "Invalid candidate capacity");
-  assert.equal(manifest.maxActiveObjects, 7 + SHARDS / manifest.candidateCapacity);
+  assert([7, 9].includes(manifest.candidateCapacity), "Invalid candidate capacity");
+  assert.equal(manifest.maxActiveObjects, 8 + Math.ceil(SHARDS / manifest.candidateCapacity));
   assert.equal(manifest.maxAdditionalCostUsd, 25);
   assert.equal(manifest.sourceSha, execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim());
   assert.equal(execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim(), "", "Staging requires a clean committed source");
@@ -150,7 +150,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   await save("deployment.json", { ...manifest, startedAt, allNamespaceIds });
 
   function fleetRequests(config, route, post = false, expectedStatus = 200) {
-    const count = SHARDS / config.capacity;
+    const count = Math.ceil(SHARDS / config.capacity);
     return Array.from({ length: count }, (_, index) => request(config, `${route}?partition=${index}`, post ? {} : undefined, expectedStatus));
   }
 
@@ -359,7 +359,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       let rows = [];
       let previous = "";
       let stable = false;
-      const expectedObjects = SHARDS / report.capacity;
+      const expectedObjects = Math.ceil(SHARDS / report.capacity);
       const objectCount = (values) => new Set(values.map(({ dimensions }) => dimensions.objectId)).size;
       const covered = (values) => objectCount(values) === expectedObjects && report.phases.filter(({ name }) => name === "loaded-observation" || name === "drained-observation").every((phase) => objectCount(values.filter(({ dimensions }) => Date.parse(dimensions.datetime) >= Date.parse(phase.start) && Date.parse(dimensions.datetime) <= Date.parse(phase.end))) === expectedObjects);
       try {

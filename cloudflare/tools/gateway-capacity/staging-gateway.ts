@@ -84,7 +84,7 @@ export default {
     if (request.method !== (mutation ? "POST" : "GET")) return new Response(null, { status: 405 });
     if (mutation && await smallBody(request) === null) return new Response(null, { status: 413 });
     if (url.pathname === "/restart" || url.pathname === "/diagnostic" || url.pathname === "/probe") {
-      const assignment = gatewayPartitionAssignments(24, Number(env.GATEWAY_FLEET_CONNECTION_CAPACITY))[Number(url.searchParams.get("partition"))];
+      const assignment = gatewayPartitionAssignments(25, Number(env.GATEWAY_FLEET_CONNECTION_CAPACITY))[Number(url.searchParams.get("partition"))];
       if (assignment === undefined) return new Response(null, { status: 400 });
       return benchmarkEnv(env).GATEWAY_PARTITION.getByName(assignment.partitionName).fetch(new Request(`https://benchmark${url.pathname}`));
     }

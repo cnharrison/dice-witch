@@ -25,8 +25,8 @@ test("capacity health guard rejects late sampler and runtime failures", () => {
 
 test("staging requires explicit baseline-only or baseline-first Gateway selection", () => {
   assert.deepEqual(stagingGatewayRoles("six"), ["six"]);
-  assert.deepEqual(stagingGatewayRoles("both"), ["six", "twentyFour"]);
-  for (const selection of [undefined, "", "twentyFour", "production"]) {
+  assert.deepEqual(stagingGatewayRoles("both"), ["six", "candidate"]);
+  for (const selection of [undefined, "", "candidate", "production"]) {
     assert.throws(() => stagingGatewayRoles(selection), /Explicit six or both/);
   }
 });
@@ -78,7 +78,7 @@ test("warm capacity fixtures consume the filter body once", async () => {
 
 test("staging bundle preparation refuses unapproved and dirty deployment inputs", async () => {
   const output = await mkdtemp(path.join(os.tmpdir(), "gateway-staging-policy-"));
-  const parameters = { output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "deploy", candidateCapacity: 12 };
+  const parameters = { output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "deploy", candidateCapacity: 9 };
   try {
     await assert.rejects(prepareStaging({ ...parameters, accountId: "0".repeat(32) }), /approved account/);
     await assert.rejects(prepareStaging({ ...parameters, workersSubdomain: undefined }), /approved account/);
@@ -90,7 +90,7 @@ test("staging bundle preparation refuses unapproved and dirty deployment inputs"
 
 test("staging deployment refuses unavailable Git metadata", async () => {
   const output = await mkdtemp(path.join(os.tmpdir(), "gateway-staging-no-git-"));
-  const parameters = { output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "deploy", candidateCapacity: 12 };
+  const parameters = { output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "deploy", candidateCapacity: 9 };
   try {
     await assert.rejects(execute(process.execPath, ["--input-type=module", "-e", `import { prepareStaging } from ${JSON.stringify(new URL("./gateway-capacity/staging-prepare.mjs", import.meta.url).href)}; await prepareStaging(${JSON.stringify(parameters)});`], { env: { ...process.env, GIT_DIR: path.join(output, "missing-git") } }), /clean matching committed source/);
   } finally { await rm(output, { recursive: true, force: true }); }
@@ -110,7 +110,7 @@ test("capacity fixtures close wrong-token authentication with a nonrecoverable c
   const socket = response.webSocket;
   socket.accept();
   const closed = new Promise((resolve) => socket.addEventListener("close", resolve, { once: true }));
-  socket.send(JSON.stringify({ op: 2, d: { token: "bad.bad.bad-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", shard: [0, 24] } }));
+  socket.send(JSON.stringify({ op: 2, d: { token: "bad.bad.bad-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", shard: [0, SHARDS] } }));
   const event = await closed;
   assert.equal(event.code, 4004);
   assert.deepEqual(fixture.errors, ["Benchmark received an unexpected bot token"]);
@@ -123,7 +123,7 @@ test("capacity fixtures acknowledge a peer close so the client does not stall", 
   const response = await fixture.outbound(new Request("https://gateway.discord.gg/", { headers: { upgrade: "websocket" } }));
   const socket = response.webSocket;
   socket.accept();
-  socket.send(JSON.stringify({ op: 2, d: { token: FIXTURE_TOKEN, shard: [0, 24] } }));
+  socket.send(JSON.stringify({ op: 2, d: { token: FIXTURE_TOKEN, shard: [0, SHARDS] } }));
   const deadline = Date.now() + 5_000;
   while (fixture.connectedCount() !== 1 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(fixture.connectedCount(), 1);
@@ -149,7 +149,7 @@ test("capacity fixtures retain safe peer-close and Resume diagnostics", async ()
     socket.close(code, reason);
     await closed;
   };
-  const first = await open({ op: 2, d: { token: FIXTURE_TOKEN, shard: [0, 24] } });
+  const first = await open({ op: 2, d: { token: FIXTURE_TOKEN, shard: [0, SHARDS] } });
   await close(first, 4000, "heartbeat-ack-timeout");
   const resumed = await open({ op: 6, d: { token: FIXTURE_TOKEN, session_id: "fixture-session-0", seq: fixture.sequences[0] } });
   await close(resumed, 1000, FIXTURE_TOKEN);
@@ -200,10 +200,10 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
   const secret = "a".repeat(64);
   let mf;
   try {
-    const manifest = await prepareStaging({ output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "local-test", candidateCapacity: 12 });
-    assert.equal(manifest.candidateCapacity, 12);
-    assert.equal(manifest.maxActiveObjects, 9);
-    assert.deepEqual(manifest.configs.map(({ capacity }) => capacity), [null, 6, 12]);
+    const manifest = await prepareStaging({ output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "local-test", candidateCapacity: 9 });
+    assert.equal(manifest.candidateCapacity, 9);
+    assert.equal(manifest.maxActiveObjects, 11);
+    assert.deepEqual(manifest.configs.map(({ capacity }) => capacity), [null, 6, 9]);
     const fixtureConfig = manifest.configs[0];
     const options = manifest.configs.map((entry) => {
       const config = JSON.parse(require("node:fs").readFileSync(entry.configPath, "utf8"));
@@ -228,24 +228,24 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
     assert.equal((await gateway.fetch(`https://${manifest.hostname}/start`, { method: "POST" })).status, 401);
     assert.equal((await fixture.fetch(`https://${manifest.hostname}/configure`, { method: "POST" })).status, 401);
     assert.equal((await send(fixture, "/configure", { runId: "12345678-1234-4234-8234-123456789abc", guilds: 240, channels: 2, heartbeatMs: 1_000, knownGuilds: true })).status, 200);
-    for (const partition of [0, 1]) assert.equal((await send(gateway, `/start?partition=${partition}`, {})).status, 200);
+    for (const partition of [0, 1, 2]) assert.equal((await send(gateway, `/start?partition=${partition}`, {})).status, 200);
     const deadline = Date.now() + 30_000;
     let stats;
-    do { stats = await (await send(fixture, "/stats")).json(); if (stats.connected === 24) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
-    assert.equal(stats.connected, 24, JSON.stringify({ stats, status: await (await send(gateway, "/status?partition=0")).json() }));
+    do { stats = await (await send(fixture, "/stats")).json(); if (stats.connected === SHARDS) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
+    assert.equal(stats.connected, SHARDS, JSON.stringify({ stats, status: await (await send(gateway, "/status?partition=0")).json() }));
     assert.equal((await send(fixture, "/replay", { countPerShard: 240, rate: 600, channelUpdates: false })).status, 200);
     let shards;
-    do { shards = (await Promise.all([0, 1].map(async (partition) => (await (await send(gateway, `/status?partition=${partition}`)).json()).connections))).flat(); if (shards.every((s) => s.initialGuildsPending === 0)) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
-    assert.equal(shards.length, 24);
+    do { shards = (await Promise.all([0, 1, 2].map(async (partition) => (await (await send(gateway, `/status?partition=${partition}`)).json()).connections))).flat(); if (shards.every((s) => s.initialGuildsPending === 0)) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
+    assert.equal(shards.length, SHARDS);
     assert(shards.every((s) => s.state === "ready" && s.lastError === null && s.initialGuildsPending === 0));
     stats = await (await send(fixture, "/stats")).json();
     assert.equal(stats.counters.lifecycle, 0);
     assert.deepEqual(stats.errors, []);
-    for (const partition of [0, 1]) assert.equal((await send(gateway, `/stop?partition=${partition}`, {})).status, 200);
+    for (const partition of [0, 1, 2]) assert.equal((await send(gateway, `/stop?partition=${partition}`, {})).status, 200);
     assert.equal((await send(fixture, "/stop", {})).status, 200);
 
     // Reuse the namespace to prove that a different capacity cannot inherit its coordinator state.
-    for (const name of ["GATEWAY_PARTITION_CAPACITY", "GATEWAY_FLEET_CONNECTION_CAPACITY", "GATEWAY_ROLLOUT_MAX_UNAVAILABLE_SHARDS"]) options[2].bindings[name] = "24";
+    for (const name of ["GATEWAY_PARTITION_CAPACITY", "GATEWAY_FLEET_CONNECTION_CAPACITY", "GATEWAY_ROLLOUT_MAX_UNAVAILABLE_SHARDS"]) options[2].bindings[name] = "25";
     await mf.setOptions(convertV4MiniflareOptions({ workers: options }));
     const nextGateway = await mf.getWorker(manifest.configs[2].name);
     const nextFixture = await mf.getWorker(fixtureConfig.name);
@@ -259,7 +259,7 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
   }
 });
 
-for (const capacity of ["both", "12"]) test(`capacity benchmark ${capacity} checks 24 shards and persisted recovery`, { timeout: 60_000 }, async () => {
+for (const capacity of ["both", "7"]) test(`capacity benchmark ${capacity} checks 25 shards and persisted recovery`, { timeout: 60_000 }, async () => {
   const output = await mkdtemp(path.join(os.tmpdir(), "gateway-capacity-test-"));
   let passed = false;
   try {
@@ -270,18 +270,18 @@ for (const capacity of ["both", "12"]) test(`capacity benchmark ${capacity} chec
       "--replay", "5", "--slow-ms", "10", "--heartbeat-ms", "1000", "--runs", "1", "--capacity", capacity,
     ], { timeout: 55_000 });
     const manifest = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
-    assert.deepEqual(manifest.results.map((result) => result.status), Array(capacity === "both" ? 2 : 1).fill("passed-local-gate"));
+    assert.deepEqual(manifest.results.map((result) => result.status), Array(capacity === "both" ? 2 : 1).fill("passed-local-protocol"));
     for (const result of manifest.results) {
       const report = JSON.parse(await readFile(result.file, "utf8"));
       assert.deepEqual(report.phases.map((phase) => phase.name), ["startup", "slow-replay", "reconnect", "restart"]);
       assert.equal(report.counters.identifies, SHARDS);
       assert.equal(report.counters.resumes, SHARDS * 2);
-      assert.equal(report.counters.lifecycle, 480);
-      assert.equal(report.counters.directory, 120);
+      assert.equal(report.counters.lifecycle, 490);
+      assert.equal(report.counters.directory, 125);
       assert.equal(report.lastStatus.length, SHARDS);
       assert.deepEqual(report.errors, []);
       assert(report.samples.length > 1);
-      assert(report.samples.every((sample) => sample.heaps.length === SHARDS / report.capacity));
+      assert(report.samples.every((sample) => sample.heaps.length === Math.ceil(SHARDS / report.capacity)));
       assert(report.samples.every((sample) => sample.heaps.every((heap) => heap.usedSize > 0 && heap.embedderHeapUsedSize > 0)));
     }
     passed = true;

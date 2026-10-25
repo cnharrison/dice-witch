@@ -52,7 +52,7 @@ export default {
     env = benchmarkEnv(env);
     const url = new URL(request.url);
     const capacity = Number(env.GATEWAY_FLEET_CONNECTION_CAPACITY);
-    const assignments = gatewayPartitionAssignments(24, capacity);
+    const assignments = gatewayPartitionAssignments(25, capacity);
     const index = Number(url.searchParams.get("partition"));
     const assignment = assignments[index];
     if (assignment === undefined) throw new Error("Invalid fixture partition");
@@ -60,14 +60,14 @@ export default {
     const coordinator = env.GATEWAY_COORDINATOR.getByName(GATEWAY_COORDINATOR_NAME);
     switch (url.pathname) {
       case "/start":
-        await coordinator.initializeFleet(1, 24, capacity);
+        await coordinator.initializeFleet(1, 25, capacity);
         {
           const shardParameter = url.searchParams.get("shard");
           const shard = Number(shardParameter);
           if (shardParameter !== null && (!Number.isSafeInteger(shard) || String(shard) !== shardParameter || shard < assignment.firstShardId || shard > assignment.lastShardId)) throw new Error("Invalid benchmark shard");
           const target = {
             generation: 1,
-            shardCount: 24,
+            shardCount: 25,
             assignment,
             shardIds: shardParameter === null ? Array.from({ length: assignment.shardCount }, (_, i) => assignment.firstShardId + i) : [shard],
           };

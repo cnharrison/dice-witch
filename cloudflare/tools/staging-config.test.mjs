@@ -102,6 +102,7 @@ function validConfigs() {
         DISCORD_TEST_GUILD_ID: testGuildId,
         DISCORD_GATEWAY_BOT_URL: "https://discord.com/api/v10/gateway/bot",
         GATEWAY_MODE: "fleet",
+        GATEWAY_PLACEMENT_TRANSFERS_ENABLED: "false",
         GATEWAY_ALLOWED_HOSTNAME: "gateway.discord.gg",
         GATEWAY_PARTITION_CAPACITY: "2",
         GATEWAY_FLEET_CONNECTION_CAPACITY: "6",

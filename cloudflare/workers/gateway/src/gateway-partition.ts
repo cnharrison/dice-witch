@@ -1,3 +1,4 @@
+import type { GatewayTransfer } from "./gateway-placement";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 import {
@@ -25,6 +26,7 @@ import {
   type GatewayGuildInventoryState,
   type GatewayInitialGuildState,
   type GatewayShardFaultResult,
+  type GatewayTransferSnapshot,
   type GatewayShardConnectionOptions,
   type GatewayShardIdentity,
   type GatewayShardStatus,
@@ -140,6 +142,14 @@ type StoredFleetPartitionState = {
   suspendedGenerations: number[];
 };
 
+type LocalTransfer = {
+  transfer: GatewayTransfer;
+  mode: "parked" | "imported" | "active";
+  snapshot: GatewayTransferSnapshot | null;
+};
+type StoredLocalTransfer = Omit<LocalTransfer, "snapshot"> & { hasSnapshot: boolean };
+const TRANSFER_PREFIX = "gateway-transfer-v1:";
+
 function parseStoredPartitionState(
   value: PartitionStorageInput,
 ): ParsedStoredPartitionState {
@@ -200,7 +210,7 @@ function parseFleetIdentity(
   return identity.data;
 }
 
-function connectionKey(identity: GatewayShardIdentity): string {
+function connectionKey(identity: Pick<GatewayShardIdentity, "generation" | "shardId" | "shardCount">): string {
   return `${String(identity.generation)}:${String(identity.shardId)}:${String(identity.shardCount)}`;
 }
 
@@ -216,6 +226,9 @@ function targetCoordinates(machine: GenerationMachine): GenerationCoordinates {
 }
 
 export class GatewayPartition extends DurableObject<GatewayEnv> {
+  private readonly transfers = new Map<string, StoredLocalTransfer>();
+  private readonly transferQueue = new GatewayEventQueue();
+  private readonly alarmQueue = new GatewayEventQueue();
   private generation = createGenerationMachine(1, 1);
   private readonly connections = new Map<string, GatewayShardConnection>();
   private readonly fleetConnections = new Map<string, GatewayShardConnection>();
@@ -229,7 +242,6 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
   private rejectedDispatches = 0;
   private lastManagerError: string | null = null;
   private generationTransitionQueue: Promise<void> = Promise.resolve();
-  private readonly openingQueue = new GatewayEventQueue();
   private readonly rollbackReadyShardIds = new Set<number>();
   private pendingCoordinatorRollback = false;
 
@@ -247,7 +259,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
         [...this.fleetConnections.entries()]
           .filter(
             ([key]) =>
-              !this.suspendedFleetGenerations.has(
+              !this.transferBlocked(key) && !this.suspendedFleetGenerations.has(
                 this.generationFromConnectionKey(key),
               ),
           )
@@ -327,6 +339,11 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     }
     switch (command.type) {
       case "start-target-shards": {
+        for (const shardId of command.shardIds) {
+          if (this.transferBlocked(`${command.generation}:${shardId}:${command.shardCount}`)) {
+            throw new Error("Gateway shard is fenced by a transfer");
+          }
+        }
         const connections = command.shardIds.map((shardId) => {
           const identity = this.identity(
             command.generation,
@@ -347,6 +364,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           (async () => {
             for (const { connection, identity } of connections) {
               if (
+                this.transferBlocked(connectionKey(identity)) ||
                 this.fleetConnections.get(connectionKey(identity)) !== connection ||
                 this.suspendedFleetGenerations.has(identity.generation)
               ) return;
@@ -403,6 +421,193 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     }
   }
 
+  private transferBlocked(key: string): boolean {
+    const local = this.transfers.get(key);
+    return local !== undefined && local.mode !== "active";
+  }
+
+  private async readTransfer(key: string): Promise<LocalTransfer | undefined> {
+    const stored = this.transfers.get(key);
+    if (stored === undefined) return undefined;
+    if (!stored.hasSnapshot) return { transfer: stored.transfer, mode: stored.mode, snapshot: null };
+    const prefix = `gateway-transfer-snapshot-v1:${key}`;
+    const [checkpoint, initial, inventory] = await Promise.all([
+      this.ctx.storage.get(`${prefix}:checkpoint`),
+      this.ctx.storage.get(`${prefix}:initial`),
+      this.ctx.storage.get(`${prefix}:inventory`),
+    ]);
+    return { transfer: stored.transfer, mode: stored.mode, snapshot: {
+      checkpoint: validateGatewaySessionCheckpoint(checkpoint),
+      initialGuildState: parseGatewayInitialGuildState(initial),
+      guildInventoryState: inventory === null ? null : parseGatewayGuildInventoryState(inventory),
+    } };
+  }
+
+  private async persistTransfer(key: string, local: LocalTransfer): Promise<void> {
+    const metadata: StoredLocalTransfer = {
+      transfer: local.transfer, mode: local.mode, hasSnapshot: local.snapshot !== null,
+    };
+    const metadataKey = `${TRANSFER_PREFIX}${key}`;
+    if (local.snapshot === null) await this.ctx.storage.put(metadataKey, metadata);
+    else {
+      const prefix = `gateway-transfer-snapshot-v1:${key}`;
+      // Keep each snapshot component within the same storage boundary as its original record.
+      await this.ctx.storage.put({
+        [metadataKey]: metadata,
+        [`${prefix}:checkpoint`]: local.snapshot.checkpoint,
+        [`${prefix}:initial`]: local.snapshot.initialGuildState,
+        [`${prefix}:inventory`]: local.snapshot.guildInventoryState,
+      });
+    }
+    this.transfers.set(key, metadata);
+  }
+
+  parkTransfer(transfer: GatewayTransfer): Promise<GatewayTransferSnapshot> {
+    return this.transferQueue.enqueue(async () => {
+      const authority = await this.env.GATEWAY_COORDINATOR.getByName(GATEWAY_COORDINATOR_NAME)
+        .transferStatus(transfer.epoch);
+      if (authority.source !== transfer.source || authority.target !== transfer.target ||
+          authority.generation !== transfer.generation || authority.shardId !== transfer.shardId ||
+          !["parking", "importing"].includes(authority.phase) || this.fleetOwnerId !== transfer.source) {
+        throw new Error("Gateway source transfer authority changed");
+      }
+      const key = connectionKey(transfer);
+      const existing = await this.readTransfer(key);
+      if (existing !== undefined && existing.transfer.epoch > transfer.epoch) {
+        throw new Error("Gateway transfer epoch is stale");
+      }
+      if (existing?.transfer.epoch === transfer.epoch && existing.snapshot !== null) return existing.snapshot;
+      const connection = this.fleetConnections.get(key);
+      if (connection === undefined) throw new Error("Gateway source connection is unavailable");
+      // Parking survives a crash before the processed-event barrier completes.
+      await this.persistTransfer(key, { transfer, mode: "parked", snapshot: null });
+      const snapshot = await connection.parkForTransfer();
+      await this.persistTransfer(key, { transfer, mode: "parked", snapshot });
+      this.fleetConnections.delete(key);
+      this.recoveryDeadlines.delete(key);
+      await this.persistFleetPartitionState();
+      await this.refreshRecoveryAlarm();
+      return snapshot;
+    });
+  }
+
+  importTransfer(transfer: GatewayTransfer, snapshot: GatewayTransferSnapshot): Promise<void> {
+    return this.transferQueue.enqueue(async () => {
+      const authority = await this.env.GATEWAY_COORDINATOR.getByName(GATEWAY_COORDINATOR_NAME)
+        .transferStatus(transfer.epoch);
+      if (authority.phase !== "importing" || authority.target !== transfer.target ||
+          authority.source !== transfer.source || authority.shardId !== transfer.shardId ||
+          authority.generation !== transfer.generation) throw new Error("Gateway import authority changed");
+      const key = connectionKey(transfer);
+      const existing = await this.readTransfer(key);
+      if (existing !== undefined && existing.transfer.epoch >= transfer.epoch) {
+        if (existing.transfer.epoch === transfer.epoch) return;
+        throw new Error("Gateway transfer epoch is stale");
+      }
+      if ((this.fleetConnections.has(key) && !this.transferBlocked(key)) ||
+          (this.fleetOwnerId !== null && this.fleetOwnerId !== transfer.target)) {
+        throw new Error("Gateway target already has a connection");
+      }
+      const checkpoint = validateGatewaySessionCheckpoint(snapshot.checkpoint);
+      if (checkpoint.generation !== transfer.generation || checkpoint.shardId !== transfer.shardId ||
+          checkpoint.shardCount !== transfer.shardCount) throw new Error("Gateway transfer checkpoint mismatch");
+      const initialGuildState = parseGatewayInitialGuildState(snapshot.initialGuildState);
+      const guildInventoryState = snapshot.guildInventoryState === null ? null
+        : parseGatewayGuildInventoryState(snapshot.guildInventoryState);
+      await this.persistTransfer(key, {
+        transfer, mode: "imported", snapshot: { checkpoint, initialGuildState, guildInventoryState },
+      });
+    });
+  }
+
+  activateTransfer(transfer: GatewayTransfer): Promise<void> {
+    return this.transferQueue.enqueue(async () => {
+      const authority = await this.env.GATEWAY_COORDINATOR.getByName(GATEWAY_COORDINATOR_NAME)
+        .transferStatus(transfer.epoch);
+      if (authority.phase !== "activating" || authority.target !== transfer.target) {
+        throw new Error("Gateway activation authority changed");
+      }
+      await this.resumeTransferSnapshot(authority, authority.target, "imported");
+    });
+  }
+
+  restoreTransfer(transfer: GatewayTransfer): Promise<void> {
+    return this.transferQueue.enqueue(async () => {
+      const authority = await this.env.GATEWAY_COORDINATOR.getByName(GATEWAY_COORDINATOR_NAME)
+        .transferStatus(transfer.epoch);
+      if (authority.phase !== "restoring" || authority.source !== this.fleetOwnerId) {
+        throw new Error("Gateway restoration authority changed");
+      }
+      const key = connectionKey(authority);
+      const local = await this.readTransfer(key);
+      if (local?.transfer.epoch !== authority.epoch || local.snapshot === null) {
+        const connection = this.fleetConnections.get(key);
+        if (connection === undefined) throw new Error("Gateway restore source is missing");
+        const snapshot = await connection.parkForTransfer();
+        await this.persistTransfer(key, { transfer: authority, mode: "parked", snapshot });
+      }
+      await this.resumeTransferSnapshot(authority, authority.source, "parked");
+    });
+  }
+
+  private async resumeTransferSnapshot(
+    transfer: GatewayTransfer, owner: string, expectedMode: "parked" | "imported",
+  ): Promise<void> {
+    const key = connectionKey(transfer);
+    const local = await this.readTransfer(key);
+    if (local?.transfer.epoch !== transfer.epoch || local.snapshot === null ||
+        (local.mode !== expectedMode && local.mode !== "active")) {
+      throw new Error("Gateway imported snapshot is unavailable");
+    }
+    let connection = this.fleetConnections.get(key);
+    if (local.mode !== "active") {
+      const identity = this.identity(transfer.generation, transfer.shardId, transfer.shardCount, owner);
+      const checkpoint = `gateway-fleet-checkpoint-v1:${key}`;
+      await this.ctx.storage.put({
+        [checkpoint]: local.snapshot.checkpoint,
+        [gatewayInitialGuildStateKey(checkpoint)]: local.snapshot.initialGuildState,
+      });
+      if (local.snapshot.guildInventoryState !== null) {
+        await this.ctx.storage.put(gatewayGuildInventoryStateKey(checkpoint), local.snapshot.guildInventoryState);
+      } else await this.ctx.storage.delete(gatewayGuildInventoryStateKey(checkpoint));
+      this.fleetMode = true;
+      this.fleetOwnerId = owner;
+      this.fleetActiveGeneration = transfer.generation;
+      this.fleetActiveShardCount = transfer.shardCount;
+      connection = this.createFleetConnection(identity, local.snapshot.checkpoint,
+        local.snapshot.initialGuildState, local.snapshot.guildInventoryState ?? undefined);
+      this.fleetConnections.set(key, connection);
+      await this.persistFleetPartitionState();
+      await this.persistTransfer(key, { ...local, mode: "active" });
+    }
+    if (connection === undefined) throw new Error("Gateway imported connection is unavailable");
+    if (connection.status().state !== "fatal") await connection.start();
+  }
+
+  finishTransfer(transfer: GatewayTransfer): Promise<void> {
+    return this.transferQueue.enqueue(async () => {
+      const key = connectionKey(transfer);
+      const local = await this.readTransfer(key);
+      if (local?.transfer.epoch !== transfer.epoch || local.mode !== "parked" || local.snapshot === null) {
+        throw new Error("Gateway source was not parked");
+      }
+      this.fleetConnections.delete(key);
+      this.recoveryDeadlines.delete(key);
+      await this.persistFleetPartitionState();
+      await this.refreshRecoveryAlarm();
+    });
+  }
+
+  private refreshRecoveryAlarm(): Promise<void> {
+    return this.alarmQueue.enqueue(async () => {
+      const stored = await this.ctx.storage.getAlarm();
+      const next = this.recoveryDeadlines.size === 0 ? null : Math.min(...this.recoveryDeadlines.values());
+      if (next === stored) return;
+      if (next === null) await this.ctx.storage.deleteAlarm();
+      else await this.ctx.storage.setAlarm(next);
+    });
+  }
+
   async shutdownFleet(): Promise<void> {
     const connections = [...this.fleetConnections.values()];
     this.fleetConnections.clear();
@@ -424,8 +629,9 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     return {
       activeGeneration: this.fleetActiveGeneration,
       activeShardCount: this.fleetActiveShardCount,
-      connections: [...this.fleetConnections.values()]
-        .map((connection) => connection.status())
+      connections: [...this.fleetConnections.entries()]
+        .filter(([key]) => !this.transferBlocked(key))
+        .map(([, connection]) => connection.status())
         .sort((left, right) => left.shardId - right.shardId),
     };
   }
@@ -466,7 +672,6 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
         generation,
         shardId,
         shardCount,
-        ownerId: this.fleetOwnerId ?? "",
       }),
     );
     if (connection === undefined) {
@@ -518,6 +723,14 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
   }
 
   private async initialize(): Promise<void> {
+    const transfers = await this.ctx.storage.list<StoredLocalTransfer>({ prefix: TRANSFER_PREFIX });
+    for (const [key, transfer] of transfers) {
+      this.transfers.set(key.slice(TRANSFER_PREFIX.length), transfer);
+      if (transfer.mode === "imported") {
+        this.fleetMode = true;
+        this.fleetOwnerId = transfer.transfer.target;
+      }
+    }
     const [storedState, legacyCheckpoint, storedFleetState] = await Promise.all([
       this.ctx.storage.get(PARTITION_STATE_KEY),
       this.ctx.storage.get(LEGACY_CHECKPOINT_KEY),
@@ -643,7 +856,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           guildInventoryState,
         );
         this.fleetConnections.set(connectionKey(identity), connection);
-        if (!this.suspendedFleetGenerations.has(identity.generation)) {
+        if (!this.transferBlocked(connectionKey(identity)) && !this.suspendedFleetGenerations.has(identity.generation)) {
           await this.scheduleConnectionAlarm(
             connectionKey(identity),
             connection.activationRecoveryAt(),
@@ -671,7 +884,6 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           allowedGatewayHostname(this.env),
         ),
       checkpointKey: checkpointKey(identity),
-      openingQueue: this.openingQueue,
       scheduleAlarm: (scheduledAt) =>
         this.scheduleConnectionAlarm(connectionKey(identity), scheduledAt),
       onReady: (readyIdentity) => this.handleConnectionReady(readyIdentity),
@@ -721,7 +933,6 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
           allowedGatewayHostname(this.env),
         ),
       checkpointKey: key,
-      openingQueue: this.openingQueue,
       scheduleAlarm: (scheduledAt) =>
         this.scheduleConnectionAlarm(connectionKey(identity), scheduledAt),
       onReady: async (readyIdentity) => {
@@ -1066,7 +1277,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
   private fleetConnectionsFor(generation: number): GatewayShardConnection[] {
     const prefix = `${String(generation)}:`;
     return [...this.fleetConnections.entries()]
-      .filter(([key]) => key.startsWith(prefix))
+      .filter(([key]) => !this.transferBlocked(key) && key.startsWith(prefix))
       .map(([, connection]) => connection);
   }
 
@@ -1142,11 +1353,12 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     key: string,
     scheduledAt: number,
   ): Promise<void> {
+    if (this.transferBlocked(key)) return;
     this.recoveryDeadlines.set(key, scheduledAt);
     const nextAlarm = Math.min(...this.recoveryDeadlines.values());
     if (!Number.isSafeInteger(nextAlarm) || nextAlarm < 0) {
       throw new Error("Gateway partition recovery alarm is invalid");
     }
-    await this.ctx.storage.setAlarm(nextAlarm);
+    await this.refreshRecoveryAlarm();
   }
 }

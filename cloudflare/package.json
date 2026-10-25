@@ -40,7 +40,8 @@
     "build:frontend": "npm run build --workspace=@dice-witch/frontend",
     "benchmark:renderer": "vitest run --config vitest.renderer-benchmark.config.ts --reporter=verbose",
     "benchmark:gateway": "node tools/gateway-capacity/run.mjs",
-    "benchmark:gateway:check-staging": "npm run types && tsc --noEmit --project tools/gateway-capacity/tsconfig.staging.json"
+    "benchmark:gateway:check-staging": "npm run types && tsc --noEmit --project tools/gateway-capacity/tsconfig.staging.json",
+    "test:gateway-transfer": "node tools/gateway-capacity/transfer-run.mjs"
   },
   "dependencies": {
     "@cf-wasm/resvg": "0.3.4",

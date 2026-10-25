@@ -253,7 +253,6 @@ function connection(
     checkpoint: initialGatewayCheckpoint(identity, 1),
     ...restored,
     checkpointKey,
-    openingQueue: new GatewayEventQueue(),
     scheduleAlarm,
     onReady: () => Promise.resolve(),
     onFatal: () => Promise.resolve(),
@@ -744,7 +743,6 @@ describe("GatewayShardConnection initial guild inventory", () => {
     expect(storagePut.mock.calls[1]?.[0]).toEqual({
       [checkpointKey]: storage.values.get(checkpointKey),
       [gatewayInitialGuildStateKey(checkpointKey)]: { version: 1, guildIds: [], syncGuildIds: [] },
-      [gatewayGuildInventoryStateKey(checkpointKey)]: storedSnapshots(storage).guildInventoryState,
     });
 
     await testable.handleGatewayMessage({
@@ -767,7 +765,6 @@ describe("GatewayShardConnection initial guild inventory", () => {
     expect(shard.currentGuildInventory()?.guildIds).toEqual([guildId]);
     expect(storagePut.mock.calls.at(-1)?.[0]).toEqual({
       [checkpointKey]: storage.values.get(checkpointKey),
-      [gatewayGuildInventoryStateKey(checkpointKey)]: storedSnapshots(storage).guildInventoryState,
     });
   });
 

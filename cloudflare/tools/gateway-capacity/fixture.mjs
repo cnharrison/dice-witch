@@ -2,7 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Buffer } from "node:buffer";
 import { z } from "zod";
 
-export const SHARDS = 24;
+export const SHARDS = 25;
 export const FIXTURE_TOKEN = "development-token-first-part.second.development-token-third-part";
 
 export function guildIds(shardId, count) {

@@ -160,6 +160,14 @@ function environment() {
     fleetStatus: vi.fn<() => Promise<GatewayFleetStatus>>(() =>
       Promise.resolve(fleetStatus),
     ),
+    fleetSnapshot: vi.fn(async () => ({
+      fleet: fleetStatus,
+      partitions: [{
+        assignment: { partitionName: "gateway-partition-0", partitionIndex: 0, firstShardId: 0, lastShardId: 23, shardCount: 24 },
+        shardIds: Array.from({ length: 24 }, (_, id) => id),
+        status: await stub.fleetStatus(),
+      }],
+    })),
     activeGuildInventory: vi.fn(() =>
       Promise.resolve({
         generation: 1,
@@ -332,6 +340,10 @@ describe("Gateway control Worker", () => {
 
     for (const [path, method] of [
       ["/gateway/status", "GET"],
+      ["/gateway/fleet/transfers", "GET"],
+      ["/gateway/fleet/transfers", "POST"],
+      ["/gateway/fleet/transfers/1", "POST"],
+      ["/gateway/fleet/transfers/1/rollback", "POST"],
       ["/gateway/fleet/status", "GET"],
       ["/gateway/fleet/connections", "GET"],
       ["/gateway/start", "POST"],
@@ -718,6 +730,10 @@ describe("Gateway control Worker", () => {
 
     for (const [path, method] of [
       ["/gateway/status", "GET"],
+      ["/gateway/fleet/transfers", "GET"],
+      ["/gateway/fleet/transfers", "POST"],
+      ["/gateway/fleet/transfers/1", "POST"],
+      ["/gateway/fleet/transfers/1/rollback", "POST"],
       ["/gateway/fleet/status", "GET"],
       ["/gateway/fleet/connections", "GET"],
       ["/gateway/coordinator/status", "GET"],
@@ -732,7 +748,8 @@ describe("Gateway control Worker", () => {
       expect(response.status).toBe(200);
     }
 
-    expect(coordinator.fleetStatus).toHaveBeenCalledTimes(2);
+    expect(coordinator.fleetStatus).toHaveBeenCalledOnce();
+    expect(coordinator.fleetSnapshot).toHaveBeenCalledOnce();
     expect(coordinator.inspectFleet).toHaveBeenCalledOnce();
     expect(coordinator.status).toHaveBeenCalledOnce();
     expect(coordinator.startFleetRecommendations).toHaveBeenCalledWith(24);

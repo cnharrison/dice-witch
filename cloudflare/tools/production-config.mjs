@@ -73,6 +73,7 @@ const REQUIRED_BINDINGS = {
     GATEWAY_MODE: "plain_text",
     GATEWAY_PARTITION: "durable_object_namespace",
     GATEWAY_PARTITION_CAPACITY: "plain_text",
+    GATEWAY_PLACEMENT_TRANSFERS_ENABLED: "plain_text",
   },
   interactions: {
     DATA_SERVICE: "service",
@@ -162,7 +163,8 @@ function decodeValues(value) {
   }
   if (
     !z.object({}).passthrough().safeParse(values).success ||
-    Object.keys(values).sort().join(",") !== REQUIRED_VALUE_KEYS.join(",") ||
+    Object.keys(values).filter((key) => key !== "gatewayPlacementTransfersEnabled").sort().join(",") !== REQUIRED_VALUE_KEYS.join(",") ||
+    !z.boolean().optional().safeParse(values.gatewayPlacementTransfersEnabled).success ||
     values.version !== 1 ||
     values.d1DatabaseName !== DATABASE_NAME ||
     values.d1DatabaseId !== DATABASE_ID ||
@@ -286,6 +288,7 @@ function materializeFromTemplates(templates, values, buildSha, buildTime) {
     DISCORD_TEST_GUILD_ID: values.discordTestGuildId,
     GATEWAY_PARTITION_CAPACITY: "6",
     GATEWAY_FLEET_CONNECTION_CAPACITY: "6",
+    GATEWAY_PLACEMENT_TRANSFERS_ENABLED: String(values.gatewayPlacementTransfersEnabled ?? false),
   };
   configs.gateway.secrets_store_secrets = productionSecrets(
     "gateway",

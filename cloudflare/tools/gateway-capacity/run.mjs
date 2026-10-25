@@ -23,11 +23,10 @@ const Options = z.strictObject({
   "slow-ms": z.coerce.number().int().min(1).max(200),
   "heartbeat-ms": z.coerce.number().int().min(1_000).max(41_250),
   runs: z.coerce.number().int().min(1).max(5),
-  capacity: z.enum(["6", "12", "24", "both"]),
+  capacity: z.enum(["6", "7", "9", "12", "25", "both"]),
 });
 const SAMPLE_MS = 100;
 const PHASE_TIMEOUT_MS = 180_000;
-const MEMORY_GATE_BYTES = 96 * 1024 * 1024;
 
 export function assertHealthy(sampleError, fixtureErrors, runtimeErrors) {
   if (sampleError) throw sampleError;
@@ -82,7 +81,7 @@ class Inspector {
 
 async function runTopology({ options, script, capacity, run }) {
   const fixture = createFixture({ Response, WebSocketPair, guildCount: options.guilds, channelCount: options.channels, heartbeatMs: options["heartbeat-ms"], token: FIXTURE_TOKEN, gatewayUrl: "wss://gateway.discord.gg", botUrl: "https://discord.com/api/v10/gateway/bot", knownGuilds: false });
-  const partitionCount = SHARDS / capacity;
+  const partitionCount = Math.ceil(SHARDS / capacity);
   const names = Array.from({ length: partitionCount }, (_, index) => `gateway-${index}`);
   const errors = [];
   const abort = new AbortController();
@@ -143,9 +142,6 @@ async function runTopology({ options, script, capacity, run }) {
       return { name, ...heap, estimatedBytes };
     }));
     samples.push({ phase, kind, at: performance.now(), heaps });
-    if (kind === "sample" && heaps.some(({ estimatedBytes }) => estimatedBytes >= MEMORY_GATE_BYTES)) {
-      throw new Error("Measured heap components reached the conservative 96 MiB local gate");
-    }
     return heaps;
   }
 
@@ -291,13 +287,13 @@ async function runTopology({ options, script, capacity, run }) {
     await sampler;
     assertHealthy(sampleError, fixture.errors, errors);
     await memory();
-    report.status = "passed-local-gate";
+    report.status = "passed-local-protocol";
   } catch (error) {
     report.status = "failed";
     report.failure = (sampleError ?? error).stack;
     sampling = false;
     if (sampler) await sampler;
-    if (sampleError?.message.includes("96 MiB")) {
+    if (inspectors.length > 0) {
       try {
         const collected = Promise.all(inspectors.map(({ client }) => client.send("HeapProfiler.collectGarbage")));
         report.stoppedStatus = (await request("status")).flatMap(({ connections }) => connections);
@@ -348,14 +344,13 @@ async function main() {
     versions: { node: process.version, wrangler: require("wrangler/package.json").version, miniflare: require("miniflare/package.json").version, esbuild: require("esbuild/package.json").version },
     heartbeatMs: options["heartbeat-ms"],
     sampleMs: SAMPLE_MS,
-    memoryGateBytes: MEMORY_GATE_BYTES,
-    memoryGateRationale: "Reserve 25% of the nominal 128 MiB limit for unmeasured runtime memory. This is not a Cloudflare limit or certification.",
+    memoryAssessment: "Observational only. Local V8 heap components and forced GC cannot certify the deployed runtime memory limit; use Cloudflare isolate metrics and resource errors.",
     limitations: [
       "Synthetic guild/channel distribution; no production payloads or credentials.",
       "Separate baseline isolates; production objects can share an isolate.",
       "Heap components are not Cloudflare total isolate-memory telemetry; native runtime/socket memory is not fully measured.",
       "100 ms sampling can miss short allocation peaks; forced GC measures retained heap, not natural GC behavior.",
-      "24 identify buckets deliberately create a startup burst; this is not a production Discord rate-limit model.",
+      "25 identify buckets deliberately create a startup burst; this is not a production Discord rate-limit model.",
       "All guilds require initial lifecycle synchronization, a cold-data stress case rather than normal steady state.",
       "GUILD_CREATE channels add payload size but the application only writes channel directory entries for CHANNEL_UPDATE events.",
       "No production capacity migration is exercised. Local success requires a Cloudflare staging gate.",
@@ -366,7 +361,7 @@ async function main() {
   try {
     for (let run = 1; run <= options.runs; run += 1) {
       // Alternate order to reduce systematic warm-host bias.
-      const order = run % 2 === 1 ? [6, 24] : [24, 6];
+      const order = run % 2 === 1 ? [6, 9] : [9, 6];
       const capacities = options.capacity === "both" ? order : [Number(options.capacity)];
       for (const capacity of capacities) {
         try {
