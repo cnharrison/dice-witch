@@ -169,7 +169,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     const failures = [...results, ...fixtureResult].filter(({ status }) => status === "rejected");
     if (failures.length) {
       cleanupFailed = true;
-      throw new Error("Staging shutdown failed");
+      throw new AggregateError(failures.map(({ reason }) => reason), `Staging shutdown failed: ${failures.map(({ reason }) => reason.message).join("; ")}`);
     }
   }
 

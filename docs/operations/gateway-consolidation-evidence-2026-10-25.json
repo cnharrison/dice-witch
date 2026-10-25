@@ -6,7 +6,7 @@
   "validation": {
     "fullRepositoryTests": "passed after targeted dependency updates",
     "gatewayTests": 267,
-    "capacityHarnessTests": 21,
+    "capacityHarnessTests": 23,
     "typecheck": "passed",
     "lint": {
       "errors": 0,
@@ -405,7 +405,34 @@
         "errors": null
       }
     },
-    "diagnosticNotes": "gateway-consolidation-platform-support.md"
+    "diagnosticNotes": "gateway-consolidation-platform-support.md",
+    "latestFixtureExperiment": {
+      "sourceSha": "328c7ae2d7c6c8fa83b652e525782939bb949e2b",
+      "startedAt": "2026-10-25T16:32:56.123Z",
+      "endedAt": "2026-10-25T16:42:24.885Z",
+      "passedPhases": [
+        "startup",
+        "slow-replay",
+        "reconnect",
+        "restart",
+        "loaded-observation"
+      ],
+      "failedPhase": "drained-observation",
+      "failure": "Synthetic fixture object reset at 16:42:21.299 UTC, after sustained traffic stopped. The plain-text RPC response change did not eliminate resets.",
+      "lastCounters": {
+        "identifies": 25,
+        "resumes": 50,
+        "lifecycle": 34003,
+        "directory": 2500
+      },
+      "lastFixtureErrors": [],
+      "allWorkersDeleted": true,
+      "nextExperiment": "Run the synthetic Discord fixture on the test host, with persisted Cloudflare data-service counters."
+    },
+    "workerVersionTelemetry": {
+      "observation": "Workers invocations expose matching deployment version IDs even when scriptName and scriptTag are __unknown__. Namespace and exact object-ID periodic queries still return no test samples.",
+      "limitation": "Worker invocation memory samples cannot establish coverage of the Durable Object isolates."
+    }
   },
   "productionTrafficCalibration": {
     "utcDay": "2026-10-24",
@@ -419,5 +446,62 @@
     "syntheticStartupRate": 600,
     "limitation": "Busiest-minute mean is not a bound on subsecond bursts or payload size.",
     "rawQueryResponseSha256": "916f8291a1882a94275da4c527da480afa210264a20b5b0572dfb31447c7d7b1"
+  },
+  "sharedIsolateCapacity": {
+    "sourceSha": "784b26c5ce1c99bf1e5a364fcbb19776e6a5ea67",
+    "changedPathsAtBundle": [
+      "M tools/gateway-capacity.test.mjs",
+      " M tools/gateway-capacity/run.mjs"
+    ],
+    "bundleSha256": "8c78739c0a38536701ce644c3a5e119fa9f085cc9206e856b51de0b6ee0c9c25",
+    "runnerSha256": "6c3cd179649c2e1af400a17169edd691123f38bf75ad86968fdf070ac898ffa7",
+    "workload": {
+      "guilds": 24303,
+      "channels": 40,
+      "rate": 600,
+      "replay": 100,
+      "slow-ms": 50,
+      "heartbeat-ms": 41250,
+      "runs": 1,
+      "capacity": "both",
+      "isolate-layout": "shared"
+    },
+    "results": [
+      {
+        "capacity": 6,
+        "partitions": 5,
+        "isolateLayout": "shared",
+        "status": "passed-local-protocol",
+        "maximumSampledHeapEstimateBytes": 385131981,
+        "retainedAfterGCBytesRange": [
+          5294557,
+          5583781
+        ],
+        "phaseMilliseconds": {
+          "startup": 81663,
+          "slow-replay": 49349,
+          "reconnect": 80818,
+          "restart": 39677
+        }
+      },
+      {
+        "capacity": 9,
+        "partitions": 3,
+        "isolateLayout": "shared",
+        "status": "passed-local-protocol",
+        "maximumSampledHeapEstimateBytes": 320927429,
+        "retainedAfterGCBytesRange": [
+          5247145,
+          5537437
+        ],
+        "phaseMilliseconds": {
+          "startup": 79660,
+          "slow-replay": 41189,
+          "reconnect": 81673,
+          "restart": 40303
+        }
+      }
+    ],
+    "limitation": "One local isolate holds all 25 gateway sessions. Transient heap and forced collection remain diagnostic, not deployed memory certification."
   }
 }
