@@ -74,7 +74,10 @@ alarms, without disconnecting any required shard.
 Run gateway tests, configuration/capacity tests, type checks, lint, and the synthetic
 live migration runner (`node cloudflare/tools/gateway-capacity/transfer-run.mjs
 /absolute/empty/output`). It checks all 25 sessions, canary, reverse transfer,
-consolidation, restart, inventories and exact Identify/Resume/event totals. DO tests
+consolidation, restart, inventories and exact Identify/Resume/event totals. An opt-in
+fixture dispatch is queued after the source closes and replayed before RESUMED; it
+must apply exactly once through rollback and restart. Mutation scope is restored
+before sending Resume so those early dispatches retain their deduplication IDs. DO tests
 cover journal/ownership atomicity, stale authority, phase eviction, interrupted
 parking, inactive import, and rollback with an advanced target sequence.
 
@@ -144,3 +147,17 @@ the pinned graph used here.
 Local benchmark manifests accept Dagger's explicit `VITE_BUILD_SHA` when Git is
 unavailable and record unknown working-tree cleanliness. Staging deployment still
 requires a clean Git checkout and matching source and bundle hashes.
+
+## Review notes
+
+The full diff's structural review flags the fleet command dispatcher and several
+small code similarities. The dispatcher's extra branches enforce transfer fencing
+before asynchronous startup and generation recovery; those checks intentionally
+remain beside the commands they guard and have crash/interleaving coverage. Timer
+cleanup and environment-object construction matches are structural coincidences
+across different owners. The coordinator's short promise queue follows the existing
+actor pattern without coupling unrelated actors. Synthetic token hashing stays in
+the isolated harness: importing the session repository would bring unrelated D1
+authentication code into the fixture bundle. The Identify/Resume test setup shares
+state-machine transitions deliberately, while preserving different starting states.
+These findings are recorded as accepted review tradeoffs, not suppressed lint rules.

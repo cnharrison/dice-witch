@@ -421,6 +421,25 @@ describe("GatewayShardConnection snapshot persistence", () => {
     expect(restored.shard.status()).toMatchObject({ initialGuildsPending: 0, initialGuildsRequiringSync: 0 });
   });
 
+  it("applies replayed guild events before RESUMED after restoring a checkpoint", async () => {
+    const original = connection(true, true);
+    await original.testable.handleGatewayMessage(readyMessage());
+    await original.testable.handleGatewayMessage(guildCreateMessage());
+    await original.testable.handleGatewayMessage({ type: "heartbeat-requested" });
+    const restored = connection(true, true, storedSnapshots(original.storage));
+    // A retry of the same sequence on a new owner must keep its mutation ID.
+    await original.testable.handleGatewayMessage({ ...guildCreateMessage(), sequence: 3 });
+    await restored.shard["execute"]({ type: "send-resume", sessionId: "session-123", sequence: 2 });
+    await restored.testable.handleGatewayMessage({ ...guildCreateMessage(), sequence: 3 });
+    expect(restored.logGuildLifecycle).toHaveBeenCalledTimes(1);
+    expect(restored.logGuildLifecycle.mock.calls[0]).toEqual(original.logGuildLifecycle.mock.calls[0]);
+    expect(restored.shard.status()).toMatchObject({ state: "resuming", sequence: 3 });
+    expect(storedSnapshots(restored.storage).checkpoint.sequence).toBe(3);
+    await restored.testable.handleGatewayMessage({ type: "resumed", sequence: 4 });
+    expect(restored.shard.status()).toMatchObject({ state: "ready", sequence: 4 });
+    expect(restored.logGuildLifecycle).toHaveBeenCalledTimes(1);
+  });
+
   it("initializes missing legacy snapshots instead of treating defaults as persisted", async () => {
     const { storage, storagePut, testable } = connection(false, false, {
       checkpoint: { ...initialGatewayCheckpoint(identity, 1), sessionId: "session-123", resumeGatewayUrl: "wss://gateway.discord.gg", sequence: 1 },

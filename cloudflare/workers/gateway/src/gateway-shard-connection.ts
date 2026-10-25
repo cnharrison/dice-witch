@@ -878,6 +878,9 @@ export class GatewayShardConnection {
         this.identifyAttempts += 1;
         return;
       case "send-resume":
+        // Discord replays missed dispatches before RESUMED. Restore the mutation
+        // identity before opening that stream, including after an actor transfer.
+        this.lifecycleMutationScope = await gatewaySessionMutationScope(action.sessionId);
         this.send(
           buildGatewayResume(
             await discordBotToken(this.env),

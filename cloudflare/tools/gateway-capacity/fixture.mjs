@@ -74,6 +74,8 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
   const sequences = Array(SHARDS).fill(0);
   const heartbeatSequences = Array(SHARDS).fill(null);
   const reconnecting = new Set();
+  const dispatchOnDisconnect = new Set();
+  const resumeBacklog = new Map();
   const counters = { identifies: 0, resumes: 0, heartbeats: 0, lifecycle: 0, directory: 0, sent: 0, sentBytes: 0 };
   const errors = [];
   // Each connection can authenticate and close once; the 256-attempt guard bounds this history.
@@ -99,6 +101,10 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
     diagnostics,
     setSlowMs(value) { slowMs = value; },
     connectedCount() { return connections.size; },
+    replayGuildAfterDisconnect(shardId) {
+      if (!connections.has(shardId) || !ids[shardId]?.length) throw new Error("Replay requires a connected shard with a guild");
+      dispatchOnDisconnect.add(shardId);
+    },
     async outbound(request) {
       const url = new URL(request.url);
       if (url.href === botUrl) {
@@ -147,7 +153,9 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
             if (shardId !== undefined) throw new Error("Repeated fixture authentication");
             shardId = Number(message.d.session_id.replace("fixture-session-", ""));
             if (!isFixtureShardId(shardId)) throw new Error("Invalid fixture session");
-            if (message.d.token !== token || message.d.seq !== sequences[shardId]) {
+            const backlog = resumeBacklog.get(shardId);
+            const expectedSequence = backlog ? backlog.sequence - 1 : sequences[shardId];
+            if (message.d.token !== token || message.d.seq !== expectedSequence) {
               throw new Error("RESUME did not restore the fixture token and drained sequence");
             }
             if (connections.get(shardId)?.readyState === 1 && !retiringSockets.has(connections.get(shardId))) throw new Error("Duplicate fixture shard");
@@ -155,6 +163,12 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
             connections.set(shardId, server);
             counters.resumes += 1;
             diagnostics.resumes.push({ shardId, sequence: message.d.seq, at: Date.now() });
+            if (backlog) {
+              server.send(backlog.payload);
+              counters.sent += 1;
+              counters.sentBytes += Buffer.byteLength(backlog.payload);
+              resumeBacklog.delete(shardId);
+            }
             send(shardId, "RESUMED", {});
           } else if (message.op === 1) {
             counters.heartbeats += 1;
@@ -184,7 +198,18 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
         if (server.readyState !== 3) server.close();
         sockets.delete(server);
         retiringSockets.delete(server);
-        if (connections.get(shardId) === server) connections.delete(shardId);
+        if (connections.get(shardId) === server) {
+          connections.delete(shardId);
+          // Opt-in migration experiment: Discord queues a dispatch after the old
+          // transport closes and replays it from the exported checkpoint on Resume.
+          // Normal capacity runs retain no dispatch history.
+          if (dispatchOnDisconnect.delete(shardId)) {
+            const sequence = ++sequences[shardId];
+            resumeBacklog.set(shardId, { sequence, payload: JSON.stringify({
+              op: 0, s: sequence, t: "GUILD_CREATE", d: guildPayload(ids[shardId][0], channelCount),
+            }) });
+          }
+        }
         if (!stopping && shardId === undefined) errors.push("Socket closed before authentication");
       });
       server.send(JSON.stringify({ op: 10, d: { heartbeat_interval: heartbeatMs } }));

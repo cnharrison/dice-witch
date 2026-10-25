@@ -88,7 +88,12 @@ try {
   await waitFor(async () => (await request("status")).partitions.flatMap(({ status }) => status.connections)
     .every((s) => s.sequence >= fixture.sequences[s.shardId] && s.initialGuildsPending === 0), "initial events applied");
   const identifies = fixture.counters.identifies;
+  const beforeGapSequence = fixture.sequences[24];
+  fixture.replayGuildAfterDisconnect(24);
   const canary = await move(24, 4, 3);
+  await waitFor(async () => fixture.counters.lifecycle === 251, "dispatch replayed across transfer gap");
+  assert.equal(fixture.sequences[24], beforeGapSequence + 2, "Gap dispatch precedes RESUMED");
+  evidence.disconnectReplay = { shardId: 24, checkpoint: beforeGapSequence, lifecycleEvents: fixture.counters.lifecycle };
   assert.equal((await request("status")).fleet.partitionCount, 4);
   const reverse = await request(`rollback?epoch=${canary.epoch}`, {});
   await finish(reverse);
@@ -110,6 +115,7 @@ try {
   assert.equal(inventory.guildIds.length, 250);
   assert.deepEqual(inventory.shards.map(({ shardId }) => shardId), Array.from({ length: SHARDS }, (_, id) => id));
   assert.equal(fixture.counters.identifies, identifies);
+  assert.equal(fixture.counters.lifecycle, 251, "Gap replay must apply exactly once through rollback and restart");
   evidence.status = "passed";
   evidence.final = await request("status");
 } catch (error) {
