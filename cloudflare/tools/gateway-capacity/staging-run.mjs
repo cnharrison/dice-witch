@@ -97,7 +97,11 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       assert(response.status >= 500, "Persisted restart did not abort its invocation");
       return { status: response.status };
     }
-    assert.equal(response.status, expectedStatus, `${config.name} ${route}`);
+    if (response.status !== expectedStatus) {
+      let detail = await response.text();
+      for (const secret of [accountToken, ...Object.values(secrets)]) detail = detail.replaceAll(secret, "[redacted]");
+      throw new Error(`${config.name} ${route}: HTTP ${response.status}: ${detail}`);
+    }
     return response.json();
   }
 
