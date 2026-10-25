@@ -99,6 +99,16 @@ resource errors, exact event counts, heartbeat and latency evidence. Reject a
 candidate with any resource error or missing/duplicated event. Never infer safety
 from an incomplete run or missing analytics rows.
 
+Every experiment uses unique Worker names and persisted invocation/error logs.
+Do not attach `wrangler tail` during load: [Cloudflare documents](https://developers.cloudflare.com/durable-objects/platform/known-issues/)
+that enabling a tail requires a software update and advises against tailing heavy
+traffic. Earlier synthetic runs received “This script has been upgraded” on live
+fixture sockets after tail attachment; account audit logs showed no intervening
+code deployment. This is a test-instrumentation confounder, not evidence of a
+gateway memory limit. The runner now queries persisted errors without changing
+the running scripts, rejects incomplete log responses, and still requires platform
+memory samples. Only intentional `/restart` failures are expected.
+
 Before widening the production canary, require zero missing/duplicate events,
 unchanged interaction ACK behavior, no new memory/CPU errors, no additional Identify
 outside controlled startup/fallback, no heartbeat timeout, and no reconnect increase
@@ -111,7 +121,10 @@ Success for costs is a measured reduction in namespace GB-seconds and normalized
 internal invocations without a reliability regression. Keep foreground events and
 Discord heartbeats unchanged. Request cleanup removes status fanout from logical
 routing, avoids repeated status RPCs, unchanged inventory writes, and redundant alarm
-updates. A Discord heartbeat does not become a Cloudflare request saving merely
+updates. At the five-partition baseline, a logical lookup removes five partition
+RPCs, and a public status read reduces partition RPCs from ten to five (the coordinator
+call remains). The account-wide request benefit depends on the frequency of those
+operations. A Discord heartbeat does not become a Cloudflare request saving merely
 because sessions share an object.
 
 ## Expected benefit and limits

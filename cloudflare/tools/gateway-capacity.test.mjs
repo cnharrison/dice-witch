@@ -9,10 +9,26 @@ import { promisify } from "node:util";
 import { test } from "node:test";
 import { createFixture, FIXTURE_TOKEN, guildIds, SHARDS } from "./gateway-capacity/fixture.mjs";
 import { assertHealthy, benchmarkSourceIdentity } from "./gateway-capacity/run.mjs";
-import { APPROVED_ACCOUNT, prepareStaging } from "./gateway-capacity/staging-prepare.mjs";
+import { APPROVED_ACCOUNT, prepareStaging, stagingNames } from "./gateway-capacity/staging-prepare.mjs";
 import { stagingDeadline, stagingGatewayRoles } from "./gateway-capacity/staging-run.mjs";
+import { stagingErrorEvidence } from "./gateway-capacity/staging-logs.mjs";
 
 const execute = promisify(execFile);
+
+test("persisted staging logs distinguish deliberate crashes and reject incomplete evidence", () => {
+  const event = (message) => ({ timestamp: 1, source: { message }, $metadata: { level: "error" }, $workers: { scriptName: "fixture", truncated: false } });
+  const result = (events) => ({ events: { events, count: events.length } });
+  assert.deepEqual(stagingErrorEvidence(result([event("Benchmark persisted restart")]), ["fixture"]).unexpected, []);
+  assert.equal(stagingErrorEvidence(result([event("This script has been upgraded")]), ["fixture"]).unexpected.length, 1);
+  const restart = event("POST https://fixture/restart?partition=0");
+  Object.assign(restart.$workers, { outcome: "exception", event: { request: { url: "https://fixture/restart?partition=0" } } });
+  assert.deepEqual(stagingErrorEvidence(result([restart]), ["fixture"]).unexpected, []);
+  assert.throws(() => stagingErrorEvidence(result([event("error")]), ["other"]), /Unexpected Worker/);
+  assert.throws(() => stagingErrorEvidence({ events: { events: [], count: 1 } }, ["fixture"]), /truncated/);
+  const truncated = event("error");
+  truncated.$workers.truncated = true;
+  assert.throws(() => stagingErrorEvidence(result([truncated]), ["fixture"]), /truncated/);
+});
 const fixtureDestinations = { token: FIXTURE_TOKEN, gatewayUrl: "wss://gateway.discord.gg", botUrl: "https://discord.com/api/v10/gateway/bot", knownGuilds: false };
 
 test("capacity health guard rejects late sampler and runtime failures", () => {
@@ -21,6 +37,15 @@ test("capacity health guard rejects late sampler and runtime failures", () => {
   assert.throws(() => assertHealthy(undefined, ["fixture failure"], []), /Fixture errors/);
   assert.throws(() => assertHealthy(undefined, [], ["runtime failure"]), /Runtime errors/);
   assertHealthy(undefined, [], []);
+});
+
+test("staging run identities restrict all Workers to the synthetic prefix", () => {
+  assert.deepEqual(stagingNames("012345abcdef"), {
+    fixture: "dice-witch-gateway-consolidation-fixture-012345abcdef",
+    six: "dice-witch-gateway-consolidation-six-012345abcdef",
+    candidate: "dice-witch-gateway-consolidation-candidate-012345abcdef",
+  });
+  for (const runId of [undefined, "", "production", "../production"]) assert.throws(() => stagingNames(runId), /run identity/);
 });
 
 test("staging requires explicit baseline-only or baseline-first Gateway selection", () => {

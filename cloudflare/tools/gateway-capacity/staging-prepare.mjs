@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -8,6 +8,10 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 
 export const STAGING_NAMES = Object.freeze({ fixture: "dice-witch-gateway-consolidation-fixture", six: "dice-witch-gateway-consolidation-six", candidate: "dice-witch-gateway-consolidation-candidate" });
+export function stagingNames(runId) {
+  if (!z.string().regex(/^[a-f0-9]{12}$/).safeParse(runId).success) throw new Error("Invalid staging run identity");
+  return Object.fromEntries(Object.entries(STAGING_NAMES).map(([role, name]) => [role, `${name}-${runId}`]));
+}
 export const APPROVED_ACCOUNT = "dfe6c3ddb987a22c7f17955d1973490e";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.resolve("wrangler"));
@@ -30,9 +34,11 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
   if (!z.string().safeParse(output).success || !path.isAbsolute(output)) throw new Error("Absolute output directory is required");
   await mkdir(output, { recursive: true });
   if ((await readdir(output)).length !== 0) throw new Error("Staging output directory must be empty");
-  const hostname = `${STAGING_NAMES.fixture}.${workersSubdomain}.workers.dev`;
+  const runId = randomBytes(6).toString("hex");
+  const names = stagingNames(runId);
+  const hostname = `${names.fixture}.${workersSubdomain}.workers.dev`;
   const configs = [];
-  for (const [role, name] of Object.entries(STAGING_NAMES)) {
+  for (const [role, name] of Object.entries(names)) {
     const fixture = role === "fixture";
     const capacity = role === "six" ? 6 : candidateCapacity;
     const outfile = path.join(output, `${name}.mjs`);
@@ -69,7 +75,7 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
         { name: "GATEWAY_PARTITION", class_name: "GatewayPartition" },
       ] },
       migrations: [{ tag: "memory-benchmark-v1", new_sqlite_classes: fixture ? ["FixtureController"] : ["GatewayCoordinator", "GatewayPartition"] }],
-      services: fixture ? [] : [{ binding: "DATA_SERVICE", service: STAGING_NAMES.fixture, entrypoint: "FixtureData" }, { binding: "DISCORD_REST", service: STAGING_NAMES.fixture, entrypoint: "FixtureDiscordRest" }],
+      services: fixture ? [] : [{ binding: "DATA_SERVICE", service: names.fixture, entrypoint: "FixtureData" }, { binding: "DISCORD_REST", service: names.fixture, entrypoint: "FixtureDiscordRest" }],
     };
     const configPath = path.join(output, `${name}.json`);
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
@@ -79,7 +85,7 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
     configs.push({ role, name, capacity: fixture ? null : capacity, configPath, configDigest, outfile, digest, url: `https://${name}.${workersSubdomain}.workers.dev` });
   }
   verifySource();
-  const manifest = { purpose, accountId, sourceSha, expiresAt, hostname, candidateCapacity, maxActiveObjects: 8 + Math.ceil(25 / candidateCapacity), maxLoadSeconds: 3_600, maxAdditionalCostUsd: 25, configs };
+  const manifest = { purpose, runId, accountId, sourceSha, expiresAt, hostname, candidateCapacity, maxActiveObjects: 8 + Math.ceil(25 / candidateCapacity), maxLoadSeconds: 3_600, maxAdditionalCostUsd: 25, configs };
   await writeFile(path.join(output, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }

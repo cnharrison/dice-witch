@@ -1,16 +1,15 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { createInterface } from "node:readline";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { guildIds, SHARDS } from "./fixture.mjs";
-import { APPROVED_ACCOUNT, STAGING_NAMES } from "./staging-prepare.mjs";
+import { APPROVED_ACCOUNT, stagingNames } from "./staging-prepare.mjs";
+import { collectStagingErrors } from "./staging-logs.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const STOP_MARGIN_MS = 120_000;
@@ -39,6 +38,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   const selectedRoles = stagingGatewayRoles(gatewaySelection);
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   assert.equal(manifest.purpose, "deploy");
+  const names = stagingNames(manifest.runId);
   assert.equal(manifest.accountId, APPROVED_ACCOUNT);
   assert([7, 9].includes(manifest.candidateCapacity), "Invalid candidate capacity");
   assert.equal(manifest.maxActiveObjects, 8 + Math.ceil(SHARDS / manifest.candidateCapacity));
@@ -53,7 +53,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   const save = (name, value) => writeFile(path.join(output, name), `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   const startedAt = new Date().toISOString();
   const reports = [];
-  const tails = [];
+  let logEvidence = null;
   let maximumBillableRows = 0;
   let lastMetricCheck = 0;
   let cleanupFailed = false;
@@ -88,7 +88,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   }
 
   async function request(config, route, data, expectedStatus = 200) {
-    assert.equal(config.name, STAGING_NAMES[config.role]);
+    assert.equal(config.name, names[config.role]);
     assert.equal(config.url, `https://${config.name}.cnharrison.workers.dev`);
     const options = { method: data === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${secrets.GATEWAY_CONTROL_TOKEN}`, "content-type": "application/json" }, signal: AbortSignal.timeout(route.startsWith("/stop") ? 30_000 : 120_000), redirect: "error" };
     if (data !== undefined) options.body = JSON.stringify(data);
@@ -110,7 +110,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
   assert(fixture && gateways.length === 2);
   const allNamespaceIds = [];
   for (const config of manifest.configs) {
-    assert.equal(config.name, STAGING_NAMES[config.role]);
+    assert.equal(config.name, names[config.role]);
     assert.equal(createHash("sha256").update(await readFile(config.outfile)).digest("hex"), config.digest, "Local deployment bundle digest changed");
     const content = await fetch(`https://api.cloudflare.com/client/v4/accounts/${manifest.accountId}/workers/scripts/${config.name}`, { headers: { authorization: `Bearer ${accountToken}` }, signal: AbortSignal.timeout(30_000), redirect: "error" });
     assert(content.ok, "Deployed staging source could not be inspected");
@@ -128,6 +128,9 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       assert.equal(expected.vars.GATEWAY_FLEET_CONNECTION_CAPACITY, String(config.capacity));
     }
     const settings = await api(`workers/scripts/${config.name}/settings`);
+    assert.equal(settings.observability?.head_sampling_rate, 1);
+    assert.equal(settings.observability?.logs?.persist, true);
+    assert.equal(settings.observability?.logs?.invocation_logs, true);
     assert.equal(settings.compatibility_date, expected.compatibility_date);
     assert.deepEqual([...settings.compatibility_flags].sort(), [...expected.compatibility_flags].sort());
     for (const [name, text] of Object.entries(expected.vars)) assert.equal(settings.bindings.find((binding) => binding.name === name && binding.type === "plain_text")?.text, text, `Deployed ${name} mismatch`);
@@ -170,6 +173,12 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     }
   }
 
+  async function checkLogs() {
+    logEvidence = await collectStagingErrors(manifest.accountId, accountToken, manifest.configs.map(({ name }) => name), Date.parse(startedAt));
+    await save("persisted-errors.json", logEvidence);
+    assert.equal(logEvidence.unexpected.length, 0, "Unexpected persisted Worker errors");
+  }
+
   async function costAndResourceGuard(force = false) {
     stagingDeadline(manifest.expiresAt, Date.now());
     if (!force && Date.now() - lastMetricCheck < 30_000) return;
@@ -177,7 +186,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     const rows = await graph(allNamespaceIds, startedAt, new Date().toISOString());
     maximumBillableRows = Math.max(maximumBillableRows, rows.reduce((total, row) => total + row.sum.rowsWritten, 0));
     if (maximumBillableRows > 5_000_000) throw new Error("Benchmark SQLite write budget exceeded");
-    if (tails.some(({ failure, child, parser }) => failure || child.exitCode !== null || child.signalCode !== null || parser.exitCode !== null || parser.signalCode !== null)) throw new Error("Staging Tail capture failed");
+    await checkLogs();
     if (rows.some(({ sum }) => sum.exceededCpuErrors || sum.exceededMemoryErrors)) throw new Error("Benchmark platform resource limit exceeded");
     await save("current-resource-and-cost-evidence.json", { checkedAt: new Date().toISOString(), maximumBillableRows, rows });
   }
@@ -332,38 +341,9 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
 
   try {
     await stop();
-    for (const config of manifest.configs) {
-      const stream = createWriteStream(path.join(output, `${config.role}-tail.jsonl`), { mode: 0o600 });
-      const parser = spawn("python3", [path.join(root, "tools/gateway-capacity/staging-tail.py")], { env: { ...process.env, BENCHMARK_REDACTIONS: JSON.stringify([accountToken, ...Object.values(secrets)]) }, stdio: ["pipe", "pipe", "pipe"] });
-      const child = spawn("npm", ["exec", "--no", "--", "wrangler", "tail", config.name, "--format", "json"], { cwd: root, env: { ...process.env, CLOUDFLARE_API_TOKEN: accountToken, CLOUDFLARE_ACCOUNT_ID: manifest.accountId, CI: "true" }, stdio: ["ignore", "pipe", "pipe"], detached: true });
-      const tail = { child, parser, stream, role: config.role, attached: false, failure: false, childDone: new Promise((resolve) => child.once("close", resolve)), parserDone: new Promise((resolve) => parser.once("close", resolve)), streamDone: new Promise((resolve) => stream.once("close", resolve)) };
-      child.stdout.pipe(parser.stdin);
-      parser.stdout.pipe(stream);
-      child.stderr.on("data", (data) => { if (/reconnect|connection lost|error|fatal/i.test(data.toString())) tail.failure = true; });
-      parser.stderr.on("data", () => { tail.failure = true; });
-      child.on("error", () => { tail.failure = true; });
-      parser.on("error", () => { tail.failure = true; });
-      parser.stdin.on("error", () => { tail.failure = true; });
-      stream.on("error", () => { tail.failure = true; });
-      createInterface({ input: parser.stdout }).on("line", (line) => {
-        try {
-          const event = JSON.parse(line);
-          if (event.path === "/health") tail.attached = true;
-          if (event.truncated || event.outcome === "exceededMemory" || event.outcome === "exceededCpu") tail.failure = true;
-          if (event.exceptions.some(({ message }) => !message.includes("Benchmark persisted restart")) || event.logs.some(({ level, message }) => level === "error" && !message.join(" ").includes("Benchmark persisted restart"))) tail.failure = true;
-        } catch { tail.failure = true; }
-      });
-      tails.push(tail);
-    }
-    const attachmentDeadline = Date.now() + 30_000;
-    while (tails.some(({ attached }) => !attached)) {
-      if (Date.now() >= attachmentDeadline || tails.some(({ failure, child, parser }) => failure || child.exitCode !== null || parser.exitCode !== null)) throw new Error("Staging Tail did not attach");
-      await Promise.all(manifest.configs.map((config) => request(config, "/health")));
-      await delay(500);
-    }
+    await checkLogs();
     for (const model of profiles) {
       for (const config of gateways.filter(({ role }) => selectedRoles.includes(role))) {
-        if (tails.some(({ child }) => child.exitCode !== null)) throw new Error("Staging Tail session ended unexpectedly");
         const result = await profile(config, model);
         if (result.status === "failed") throw new Error(`Platform scenario failed: ${result.failure}`);
       }
@@ -379,7 +359,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       const covered = (values) => objectCount(values) === expectedObjects && report.phases.filter(({ name }) => name === "loaded-observation" || name === "drained-observation").every((phase) => objectCount(values.filter(({ dimensions }) => Date.parse(dimensions.datetime) >= Date.parse(phase.start) && Date.parse(dimensions.datetime) <= Date.parse(phase.end))) === expectedObjects);
       try {
         while (Date.now() < deadline) {
-          if (tails.some(({ failure }) => failure)) throw new Error("Staging Tail failed during metric collection");
+          await checkLogs();
           rows = await graph([report.namespaceId], report.startedAt, report.endedAt);
           const current = JSON.stringify(rows);
           stable = covered(rows) && current === previous;
@@ -404,24 +384,11 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     }
   } finally {
     try { await stop(); } catch { cleanupFailed = true; }
-    for (const tail of tails) {
-      const { child, parser, stream } = tail;
-      const bounded = async (promise) => Promise.race([promise.then(() => true), delay(5_000).then(() => false)]);
-      try {
-        if (child.exitCode === null && child.signalCode === null) process.kill(-child.pid, "SIGINT");
-      } catch { tail.failure = true; }
-      if (!await bounded(tail.childDone)) {
-        tail.failure = true;
-        try { process.kill(-child.pid, "SIGKILL"); } catch { tail.failure = true; }
-      }
-      if (!await bounded(tail.parserDone)) { tail.failure = true; parser.kill("SIGKILL"); }
-      if (parser.exitCode !== 0) tail.failure = true;
-      if (!await bounded(tail.streamDone)) { tail.failure = true; stream.destroy(); }
-    }
-    await save("manifest.json", { sourceSha: manifest.sourceSha, gatewaySelection, startedAt, endedAt: new Date().toISOString(), maximumBillableRows, cleanupFailed, tailFailures: tails.filter(({ failure }) => failure).map(({ role }) => role), reports });
+    try { await checkLogs(); } catch (error) { logEvidence = { ...logEvidence, failure: error.message }; }
+    await save("manifest.json", { sourceSha: manifest.sourceSha, gatewaySelection, startedAt, endedAt: new Date().toISOString(), maximumBillableRows, cleanupFailed, logEvidence, reports });
   }
   if (cleanupFailed) throw new Error("Staging shutdown did not complete");
-  if (tails.some(({ failure }) => failure)) throw new Error("Staging Tail evidence is incomplete");
+  if (logEvidence?.failure) throw new Error(`Staging log evidence failed: ${logEvidence.failure}`);
   return reports;
 }
 
