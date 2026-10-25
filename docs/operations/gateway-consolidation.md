@@ -89,7 +89,11 @@ Cloudflare's 128-MB isolate limit or platform allocation peaks.
 
 The isolated staging harness deploys only synthetic fixture/six/candidate Workers,
 with destination enforcement, fake Discord credentials, no production services,
-an expiration deadline and cleanup. Run smoke then full-size cold/warm workloads,
+an expiration deadline and cleanup. The fixture checkpoints its drained synthetic
+session state immediately before the intentional whole-fleet crash, allowing one
+fixture restart in that window. It reports that recovery separately; unexpected
+fixture resets still fail. This prevents loss of the test server from being confused
+with loss of Discord's session state. Run smoke then full-size cold/warm workloads,
 including simultaneous Resume and actor restart. Capture platform memory, CPU,
 resource errors, exact event counts, heartbeat and latency evidence. Reject a
 candidate with any resource error or missing/duplicated event. Never infer safety
@@ -160,4 +164,6 @@ actor pattern without coupling unrelated actors. Synthetic token hashing stays i
 the isolated harness: importing the session repository would bring unrelated D1
 authentication code into the fixture bundle. The Identify/Resume test setup shares
 state-machine transitions deliberately, while preserving different starting states.
-These findings are recorded as accepted review tradeoffs, not suppressed lint rules.
+The fixture controller grew to support that explicit checkpoint/recovery lifecycle;
+keeping it with the actor that owns the synthetic sessions avoids another storage
+owner. These findings are recorded as accepted review tradeoffs, not suppressed lint rules.

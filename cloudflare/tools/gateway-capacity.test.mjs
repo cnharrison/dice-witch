@@ -218,8 +218,8 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
     });
     mf = new Miniflare(convertV4MiniflareOptions({ workers: options }));
     await mf.ready;
-    const fixture = await mf.getWorker(fixtureConfig.name);
-    const gateway = await mf.getWorker(manifest.configs[2].name);
+    let fixture = await mf.getWorker(fixtureConfig.name);
+    let gateway = await mf.getWorker(manifest.configs[2].name);
     const send = (worker, route, value) => {
       const options = { method: value === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" } };
       if (value !== undefined) options.body = JSON.stringify(value);
@@ -241,7 +241,21 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
     stats = await (await send(fixture, "/stats")).json();
     assert.equal(stats.counters.lifecycle, 0);
     assert.deepEqual(stats.errors, []);
+    assert.equal((await send(fixture, "/prepare-restart", {})).status, 200);
+    options[0].bindings.TEST_RESTART = "prepared";
+    await mf.setOptions(convertV4MiniflareOptions({ workers: options }));
+    fixture = await mf.getWorker(fixtureConfig.name);
+    gateway = await mf.getWorker(manifest.configs[2].name);
+    const recovered = await (await send(fixture, "/stats")).json();
+    assert.equal(recovered.plannedRestarts, 1);
+    assert.deepEqual(recovered.sequences, stats.sequences);
+    assert.equal(recovered.counters.lifecycle, stats.counters.lifecycle);
+    assert.equal((await send(fixture, "/finish-restart", {})).status, 200);
     for (const partition of [0, 1, 2]) assert.equal((await send(gateway, `/stop?partition=${partition}`, {})).status, 200);
+    options[0].bindings.TEST_RESTART = "unprepared";
+    await mf.setOptions(convertV4MiniflareOptions({ workers: options }));
+    fixture = await mf.getWorker(fixtureConfig.name);
+    await assert.rejects(send(fixture, "/stats"), /Fixture restarted during a profile/);
     assert.equal((await send(fixture, "/stop", {})).status, 200);
 
     // Reuse the namespace to prove that a different capacity cannot inherit its coordinator state.

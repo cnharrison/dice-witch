@@ -225,7 +225,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       const startDate = new Date().toISOString();
       const result = await operation();
       assert(Array.isArray(result.stats.diagnostics.closes) && Array.isArray(result.stats.diagnostics.resumes), "Fixture socket diagnostics are required");
-      report.phases.push({ name, start: startDate, end: new Date().toISOString(), milliseconds: performance.now() - start, counters: result.stats.counters, diagnostics: result.stats.diagnostics });
+      report.phases.push({ name, start: startDate, end: new Date().toISOString(), milliseconds: performance.now() - start, counters: result.stats.counters, diagnostics: result.stats.diagnostics, fixturePlannedRestarts: result.stats.plannedRestarts });
       console.log(`${report.role} ${model.name} ${name} complete`);
       return result;
     };
@@ -270,11 +270,13 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       await phase("restart", async () => {
         const before = await request(fixture, "/stats");
         const activations = await fleet(config, "/diagnostic");
+        await request(fixture, "/prepare-restart", {});
         await fleet(config, "/restart", true, "restart-error");
         await fleet(config, "/recover", true);
         await until(config, ({ shards, stats }) => stats.counters.resumes === before.counters.resumes + SHARDS && shards.length === SHARDS && shards.every((s) => s.state === "ready"), "persisted recovery", model.heartbeatMs);
         const after = await fleet(config, "/diagnostic");
         assert(after.every((value, index) => value.activationId !== activations[index].activationId), "Actors were not restarted");
+        await request(fixture, "/finish-restart", {});
         return drained();
       });
       await phase("loaded-observation", async () => {

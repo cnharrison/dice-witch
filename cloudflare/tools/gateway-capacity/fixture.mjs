@@ -99,6 +99,20 @@ export function createFixture({ Response, WebSocketPair, guildCount, channelCoun
     sequences,
     heartbeatSequences,
     diagnostics,
+    snapshot() {
+      return structuredClone({ counters, sequences, heartbeatSequences, diagnostics, errors });
+    },
+    restore(snapshot) {
+      if (connections.size || counters.sent || snapshot.sequences.length !== SHARDS || snapshot.heartbeatSequences.length !== SHARDS) {
+        throw new Error("Fixture checkpoint cannot be restored");
+      }
+      Object.assign(counters, snapshot.counters);
+      sequences.splice(0, SHARDS, ...snapshot.sequences);
+      heartbeatSequences.splice(0, SHARDS, ...snapshot.heartbeatSequences);
+      diagnostics.closes.push(...snapshot.diagnostics.closes);
+      diagnostics.resumes.push(...snapshot.diagnostics.resumes);
+      errors.push(...snapshot.errors);
+    },
     setSlowMs(value) { slowMs = value; },
     connectedCount() { return connections.size; },
     replayGuildAfterDisconnect(shardId) {

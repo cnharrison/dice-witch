@@ -21,13 +21,26 @@ export class FixtureController extends DurableObject {
   profile;
   lostRunId;
   replaying = false;
+  plannedRestarts = 0;
   abort;
 
   constructor(ctx, env) {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       const stored = await ctx.storage.get("profile");
-      if (stored !== undefined) this.lostRunId = stored.runId;
+      if (stored === undefined) return;
+      const checkpoint = await ctx.storage.get("planned-restart");
+      if (checkpoint === undefined) {
+        this.lostRunId = stored.runId;
+        return;
+      }
+      this.profile = Profile.parse(stored);
+      this.initializeFixture();
+      this.fixture.restore(checkpoint);
+      this.plannedRestarts = 1;
+      // Recovery is permitted once, only inside the explicitly prepared crash
+      // experiment. A second or unprepared fixture reset still fails the run.
+      await ctx.storage.delete("planned-restart");
     });
   }
 
@@ -47,6 +60,13 @@ export class FixtureController extends DurableObject {
     if (Date.now() >= Number(this.env.EXPIRES_AT)) throw new Error("Benchmark deployment expired");
     if (this.fixture || this.lostRunId) throw new Error("Fixture must be stopped before configuration");
     this.profile = Profile.parse(value);
+    this.initializeFixture();
+    await this.ctx.storage.put("profile", this.profile);
+    await this.ctx.storage.setAlarm(Math.min(Date.now() + 12 * 60_000, Number(this.env.EXPIRES_AT)));
+    return this.stats();
+  }
+
+  initializeFixture() {
     this.abort = new AbortController();
     this.fixture = createFixture({
       Response, WebSocketPair,
@@ -58,8 +78,17 @@ export class FixtureController extends DurableObject {
       gatewayUrl: `wss://${this.env.FIXTURE_HOSTNAME}/socket`,
       botUrl: `https://${this.env.FIXTURE_HOSTNAME}/bot`,
     });
-    await this.ctx.storage.put("profile", this.profile);
-    await this.ctx.storage.setAlarm(Math.min(Date.now() + 12 * 60_000, Number(this.env.EXPIRES_AT)));
+  }
+
+  async prepareRestart() {
+    const fixture = this.active();
+    if (this.replaying || fixture.connectedCount() !== 25) throw new Error("Fixture restart checkpoint requires a drained fleet");
+    await this.ctx.storage.put("planned-restart", fixture.snapshot());
+    return this.stats();
+  }
+
+  async finishRestart() {
+    await this.ctx.storage.delete("planned-restart");
     return this.stats();
   }
 
@@ -82,6 +111,7 @@ export class FixtureController extends DurableObject {
       guildCounts: fixture.ids.map((ids) => ids.length),
       connected: fixture.connectedCount(),
       replaying: this.replaying,
+      plannedRestarts: this.plannedRestarts,
     };
   }
 
@@ -121,7 +151,8 @@ export class FixtureController extends DurableObject {
     this.fixture = undefined;
     this.profile = undefined;
     this.lostRunId = undefined;
-    await this.ctx.storage.delete("profile");
+    this.plannedRestarts = 0;
+    await this.ctx.storage.delete(["profile", "planned-restart"]);
     await this.ctx.storage.deleteAlarm();
     return { status: "stopped" };
   }
@@ -170,6 +201,8 @@ export default {
       case "/replay": result = await controller.replay(JSON.parse(text)); break;
       case "/slow": result = await controller.slow(JSON.parse(text).milliseconds); break;
       case "/reconnect": result = await controller.reconnect(); break;
+      case "/prepare-restart": result = await controller.prepareRestart(); break;
+      case "/finish-restart": result = await controller.finishRestart(); break;
       case "/stop": result = await controller.stop(); break;
       default: return new Response(null, { status: 404 });
     }
