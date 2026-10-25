@@ -55,7 +55,7 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
       compatibility_flags: fixture ? ["nodejs_compat"] : [],
       workers_dev: true, preview_urls: false, routes: [],
       limits: { cpu_ms: 30_000 },
-      observability: { enabled: true, head_sampling_rate: 1, logs: { enabled: true, invocation_logs: false, persist: false } },
+      observability: { enabled: true, head_sampling_rate: 1, logs: { enabled: true, invocation_logs: true, persist: true } },
       vars: { SOURCE_SHA: sourceSha, EXPIRES_AT: String(expiresAt), ...(fixture ? { FIXTURE_HOSTNAME: hostname } : {
         DISCORD_APPLICATION_ID: "100000000000000001",
         GATEWAY_MODE: "fleet", GATEWAY_COORDINATOR_NAME: "development-generation-1",
