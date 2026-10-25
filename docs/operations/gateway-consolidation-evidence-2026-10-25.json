@@ -113,7 +113,7 @@
             "reconnect",
             "restart"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -140,7 +140,7 @@
             "reconnect",
             "restart"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -164,7 +164,7 @@
           "completedPhases": [
             "startup"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -189,7 +189,7 @@
             "startup",
             "slow-replay"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -215,7 +215,7 @@
             "slow-replay",
             "reconnect"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -242,7 +242,7 @@
             "reconnect",
             "restart"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -267,7 +267,7 @@
           "completedPhases": [
             "startup"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -295,7 +295,7 @@
             "reconnect",
             "restart"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -320,7 +320,7 @@
           "completedPhases": [
             "startup"
           ],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     },
@@ -343,15 +343,15 @@
           },
           "status": "failed",
           "completedPhases": [],
-          "failure": "Baseline could not complete: fixture reset or socket loss. See support brief for latest exact evidence."
+          "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
     }
   ],
   "platformValidation": {
-    "status": "blocked",
+    "status": "investigating",
     "candidateNineValidated": false,
-    "reason": "Repeated synthetic baseline resets/socket loss, including without live tails, and absent namespace resource metrics prevent a valid deployed comparison. Cloudflare runtime diagnostics are needed.",
+    "reason": "Repeated synthetic baseline resets/socket loss and absent namespace resource metrics leave the deployed comparison incomplete. Harness lifetime/allocation behavior and telemetry attribution remain under investigation; a support case is not a prerequisite.",
     "positiveControl": {
       "query": "query($a:string!,$n:[string!]!,$s:Time!,$e:Time!){viewer{accounts(filter:{accountTag:$a}){durableObjectsPeriodicGroups(limit:1000,filter:{namespaceId_in:$n,datetime_geq:$s,datetime_lt:$e}){dimensions{namespaceId}max{memoryUsageBytes}sum{duration exceededMemoryErrors exceededCpuErrors}}durableObjectsInvocationsAdaptiveGroups(limit:1000,filter:{namespaceId_in:$n,datetime_geq:$s,datetime_lt:$e}){dimensions{namespaceId}sum{requests errors}}}}}",
       "variables": {
@@ -405,7 +405,7 @@
         "errors": null
       }
     },
-    "supportBrief": "gateway-consolidation-platform-support.md"
+    "diagnosticNotes": "gateway-consolidation-platform-support.md"
   },
   "productionTrafficCalibration": {
     "utcDay": "2026-10-24",

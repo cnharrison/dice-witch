@@ -1,10 +1,10 @@
-# Cloudflare diagnostic request: synthetic Durable Object resets and missing metrics
+# Gateway capacity diagnostics: synthetic resets and missing metrics
 
-Prepared for the account owner to submit to Cloudflare. No support message has
-been sent. The affected resources are isolated synthetic test Workers, with fake
+These are investigation notes, not a support prerequisite. No support message has
+been sent or is required from the account owner. The affected resources are isolated synthetic test Workers, with fake
 Discord credentials and no production service bindings. Production was unchanged.
 
-## Questions requiring platform diagnostics
+## Unresolved observations
 
 1. What caused the fixture object reset at **2026-10-25 16:22:00.280 UTC**?
    Was this a resource limit, infrastructure replacement, or code/runtime update?
@@ -98,7 +98,25 @@ the default 600 is the stress case. The setup must retain the expiration,
 destination, source-digest, resource-budget, and cleanup guards.
 
 All experiment resources are stopped and deleted after evidence collection; their
-IDs above are retained for Cloudflare's historical diagnostics. Do not run the
+IDs above are retained to correlate the recorded diagnostics. Do not run the
 test against production names, production Discord credentials, or production
 service bindings. Production transfers remain disabled pending validation and
 separate release authorization.
+
+## Investigation continues without support
+
+The initial conclusion that these observations required Cloudflare support was
+unsupported. The synthetic fixture itself, RPC response lifetimes, queue allocation
+pressure, and telemetry attribution remain testable with existing account access.
+The native staging-wrapper test now exercises lifecycle writes through its actual
+service/DO RPC path. The fixture consumes response bodies before returning plain
+text across that boundary. A new deployed comparison is testing that change;
+its outcome must not be inferred from the earlier failures.
+
+A full-size local test with all five baseline partition objects sharing one
+isolate observed a transient V8 heap estimate of 556 MiB and roughly 5–7 MiB
+retained after forced collection. This differs from the earlier harness, which
+placed partitions in separate local isolates. It is an allocation-pressure lead,
+not proof of deployed OOM or memory headroom. Local and deployed memory evidence
+remain distinct. If the synthetic fixture cannot remain stable, run it outside
+Durable Objects to isolate the gateway under test.

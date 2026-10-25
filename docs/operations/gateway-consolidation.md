@@ -1,12 +1,14 @@
 # Gateway consolidation
 
 **Validation status:** implementation and local protocol/migration tests pass;
-deployed capacity validation is blocked. Baseline synthetic objects reset or lose
+deployed capacity validation is still in progress. Baseline synthetic objects reset or lose
 sockets, including with no live tail attached, and the new namespaces have no
 resource samples in successful GraphQL responses. The nine-session candidate has
 not passed a Cloudflare comparison. Keep transfers disabled. See the
-[prepared platform diagnostic request](gateway-consolidation-platform-support.md)
+[capacity diagnostic notes](gateway-consolidation-platform-support.md)
 and [recorded evidence](gateway-consolidation-evidence-2026-10-25.json).
+These observations do not establish a Cloudflare fault or require the account
+owner to open a support case; harness and telemetry investigation continues.
 
 ## Scope and release posture
 
