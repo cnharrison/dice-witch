@@ -49,7 +49,7 @@ export class GatewayPartition extends LocalPartition {
   override async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (path === "/probe") return Response.json({ sourceSha: this.sourceSha, expiresAt: this.deadline, tokenDigest: await tokenDigest(await discordBotToken(this.env)) });
-    if (path === "/diagnostic") return Response.json({ activationId: this.status().activationId, deadline: this.deadline });
+    if (path === "/diagnostic") return Response.json({ activationId: this.status().activationId, actorId: this.ctx.id.toString(), deadline: this.deadline });
     if (path === "/restart") {
       if (Date.now() >= this.deadline) return new Response(null, { status: 410 });
       this.ctx.abort("Benchmark persisted restart");

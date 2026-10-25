@@ -45,6 +45,46 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Gateway session transfer recovery", () => {
+  it("does not rewrite an unchanged recovery alarm deadline", async () => {
+    await runInDurableObject(source, async (instance, ctx) => {
+      if (!(instance instanceof GatewayPartition)) throw new Error("Wrong partition");
+      instance["recoveryDeadlines"].clear();
+      const deadline = Date.now() + 60_000;
+      instance["recoveryDeadlines"].set(key, deadline);
+      const setAlarm = vi.spyOn(ctx.storage, "setAlarm");
+      await instance["refreshRecoveryAlarm"]();
+      await instance["refreshRecoveryAlarm"]();
+      expect(setAlarm).toHaveBeenCalledTimes(1);
+      instance["recoveryDeadlines"].delete(key);
+      await instance["refreshRecoveryAlarm"]();
+      expect(await ctx.storage.getAlarm()).toBeNull();
+    });
+  });
+
+  it("rejects new transfers when disabled but keeps active recovery available", async () => {
+    await runInDurableObject(coordinator, async (instance) => {
+      if (!(instance instanceof GatewayCoordinator)) throw new Error("Wrong coordinator");
+      const previous = instance["env"].GATEWAY_PLACEMENT_TRANSFERS_ENABLED;
+      instance["env"].GATEWAY_PLACEMENT_TRANSFERS_ENABLED = "false";
+      try { await expect(instance.beginTransfer(request)).rejects.toThrow("disabled"); }
+      finally {
+        if (previous === undefined) delete instance["env"].GATEWAY_PLACEMENT_TRANSFERS_ENABLED;
+        else instance["env"].GATEWAY_PLACEMENT_TRANSFERS_ENABLED = previous;
+      }
+    });
+    const transfer = await coordinator.beginTransfer(request);
+    await runInDurableObject(coordinator, async (instance) => {
+      if (!(instance instanceof GatewayCoordinator)) throw new Error("Wrong coordinator");
+      const previous = instance["env"].GATEWAY_PLACEMENT_TRANSFERS_ENABLED;
+      instance["env"].GATEWAY_PLACEMENT_TRANSFERS_ENABLED = "false";
+      try { expect((await instance.beginTransfer(request)).epoch).toBe(transfer.epoch); }
+      finally {
+        if (previous === undefined) delete instance["env"].GATEWAY_PLACEMENT_TRANSFERS_ENABLED;
+        else instance["env"].GATEWAY_PLACEMENT_TRANSFERS_ENABLED = previous;
+      }
+    });
+  });
+
   it("recovers parking interrupted before the snapshot was stored", async () => {
     const transfer = await coordinator.beginTransfer(request);
     await runInDurableObject(source, (_instance, ctx) => ctx.storage.put(`gateway-transfer-v1:${key}`, {
