@@ -1,31 +1,39 @@
 {
   "recordedAt": "2026-10-25",
-  "sourceSha": "787ce05e0fd14ec6f32557c3f7212180c2671de9",
+  "sourceSha": "b3052372ce6691c5f4b2fd67525c35432343edfc",
   "productionChangesDeployed": false,
   "desktopImpact": "Not applicable: no packaged desktop/native application; browser and Discord contracts retained.",
   "validation": {
     "fullRepositoryTests": "passed after targeted dependency updates",
-    "gatewayTests": 267,
-    "capacityHarnessTests": 23,
+    "gatewayTests": 271,
+    "capacityHarnessTests": 25,
     "typecheck": "passed",
     "lint": {
       "errors": 0,
       "existingFrontendWarnings": 19
     },
     "auditPolicy": "passed unchanged",
-    "buildAndFrontendBudget": "passed"
+    "buildAndFrontendBudget": "passed",
+    "githubChecks": {
+      "testedSourceSha": "b3052372ce6691c5f4b2fd67525c35432343edfc",
+      "passed": 16,
+      "run": "https://github.com/cnharrison/dice-witch/actions/runs/40220687542"
+    },
+    "collectorRerun": "24/25 passed initially; the seven-session separate-isolate test hit a native workerd NOSENTRY alarm-manager warning. The same test passed on focused retry with assertions unchanged.",
+    "collectorChange": "Read metrics through the current time, then filter to each completed report interval. Verified against both deployed warm reports with identical samples on reads 15 seconds apart, full object/phase coverage, and no CPU/memory-limit errors."
   },
   "localMigration": {
+    "sourceSha": "b3052372ce6691c5f4b2fd67525c35432343edfc",
     "status": "passed",
-    "bundleSha256": "5912c5b7c65f1a88f2d682e727427a55aff0170353413fd72c5121aa9df64faa",
-    "fixtureSha256": "d8ee9ee293b018a0945836bdf007b94123713ac25ba6944e5689850ca51ce94b",
-    "startedAt": "2026-10-25T16:02:40.345Z",
-    "endedAt": "2026-10-25T16:02:53.925Z",
+    "bundleSha256": "777ba69db0878e9accf9fc20a8c82eb9883292b59f46ca4de5729c05c623e2ff",
+    "fixtureSha256": "bade4bed395351a4bdf6159cc54d5d78bb954d562af79698f0701ccd7cffeda1",
+    "startedAt": "2026-10-25T18:27:25.896Z",
+    "endedAt": "2026-10-25T18:27:39.772Z",
     "shards": 25,
     "counters": {
       "identifies": 25,
       "resumes": 44,
-      "heartbeats": 310,
+      "heartbeats": 309,
       "lifecycle": 251,
       "directory": 0,
       "sent": 320,
@@ -36,7 +44,9 @@
       "shardId": 24,
       "checkpoint": 11,
       "lifecycleEvents": 251
-    }
+    },
+    "rawEvidenceSha256": "706c40ed41f2890433b88375a5e93a971c8a04e5754a33f60dea9757509f6086",
+    "rawEvidenceDirectory": "/tmp/dw-transfer-final-b305237"
   },
   "localCapacity": {
     "sourceSha": "83e5e45bdc34ef14edbb0cb948006b82e1e80ee3",
@@ -346,92 +356,692 @@
           "failure": "Baseline could not complete: fixture reset or socket loss. See diagnostic notes for exact evidence."
         }
       ]
-    }
-  ],
-  "platformValidation": {
-    "status": "investigating",
-    "candidateNineValidated": false,
-    "reason": "Repeated synthetic baseline resets/socket loss and absent namespace resource metrics leave the deployed comparison incomplete. Harness lifetime/allocation behavior and telemetry attribution remain under investigation; a support case is not a prerequisite.",
-    "positiveControl": {
-      "query": "query($a:string!,$n:[string!]!,$s:Time!,$e:Time!){viewer{accounts(filter:{accountTag:$a}){durableObjectsPeriodicGroups(limit:1000,filter:{namespaceId_in:$n,datetime_geq:$s,datetime_lt:$e}){dimensions{namespaceId}max{memoryUsageBytes}sum{duration exceededMemoryErrors exceededCpuErrors}}durableObjectsInvocationsAdaptiveGroups(limit:1000,filter:{namespaceId_in:$n,datetime_geq:$s,datetime_lt:$e}){dimensions{namespaceId}sum{requests errors}}}}}",
-      "variables": {
-        "a": "dfe6c3ddb987a22c7f17955d1973490e",
-        "n": [
-          "9b6955a098b04cea87214a6a7ee75b5c",
-          "8e24313362954ed7a894a1bbb8e4c19e",
-          "eb6ee5c2de5b4882886cc81567a3dd68",
-          "a10b31a57b3544d5bb8b74f3aed06970",
-          "e5a0693b19404bf98eb1ad96792dcc17",
-          "1a06dbd8204e45dbbfdacf8d3aa58ba3"
-        ],
-        "s": "2026-10-25T16:15:00Z",
-        "e": "2026-10-25T16:23:43.445Z"
-      },
-      "response": {
-        "data": {
-          "viewer": {
-            "accounts": [
-              {
-                "durableObjectsInvocationsAdaptiveGroups": [
-                  {
-                    "dimensions": {
-                      "namespaceId": "1a06dbd8204e45dbbfdacf8d3aa58ba3"
-                    },
-                    "sum": {
-                      "errors": 0,
-                      "requests": 395
-                    }
-                  }
-                ],
-                "durableObjectsPeriodicGroups": [
-                  {
-                    "dimensions": {
-                      "namespaceId": "1a06dbd8204e45dbbfdacf8d3aa58ba3"
-                    },
-                    "max": {
-                      "memoryUsageBytes": 15454535
-                    },
-                    "sum": {
-                      "duration": 268.800176512,
-                      "exceededCpuErrors": 0,
-                      "exceededMemoryErrors": 0
-                    }
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        "errors": null
-      }
     },
-    "diagnosticNotes": "gateway-consolidation-platform-support.md",
-    "latestFixtureExperiment": {
-      "sourceSha": "328c7ae2d7c6c8fa83b652e525782939bb949e2b",
-      "startedAt": "2026-10-25T16:32:56.123Z",
-      "endedAt": "2026-10-25T16:42:24.885Z",
+    {
+      "sourceSha": "b3052372ce6691c5f4b2fd67525c35432343edfc",
+      "rawEvidenceDirectory": "/tmp/dw-external-platform-r8CPEO",
+      "status": "incomplete",
       "passedPhases": [
         "startup",
         "slow-replay",
         "reconnect",
-        "restart",
-        "loaded-observation"
+        "restart"
       ],
-      "failedPhase": "drained-observation",
-      "failure": "Synthetic fixture object reset at 16:42:21.299 UTC, after sustained traffic stopped. The plain-text RPC response change did not eliminate resets.",
-      "lastCounters": {
-        "identifies": 25,
-        "resumes": 50,
-        "lifecycle": 34003,
-        "directory": 2500
+      "failure": "Temporary external fixture tunnel returned HTTP 502 during replay and HTTP 530 during stop; candidate was not reached. Not a capacity pass.",
+      "cleanup": [
+        {
+          "name": "dice-witch-gateway-consolidation-candidate-5fa482c10be7",
+          "deleted": true
+        },
+        {
+          "name": "dice-witch-gateway-consolidation-six-5fa482c10be7",
+          "deleted": true
+        },
+        {
+          "name": "dice-witch-gateway-consolidation-fixture-5fa482c10be7",
+          "deleted": true
+        }
+      ]
+    }
+  ],
+  "platformValidation": {
+    "status": "completed-tested-cold-and-warm-workloads",
+    "sourceSha": "b3052372ce6691c5f4b2fd67525c35432343edfc",
+    "candidateNineValidated": true,
+    "scope": "Synthetic cold and warm delivery/recovery/capacity checks at 24,303 guilds; not a guarantee of production memory headroom or event-latency percentiles.",
+    "rolloutDecision": "Seven-session canary first. Nine-session placement remains conditional on production peak, latency, reconnect, and resource gates; transfers default disabled.",
+    "diagnosticNotes": "gateway-consolidation-platform-support.md",
+    "supportCaseRequired": false,
+    "reports": [
+      {
+        "role": "six",
+        "worker": "dice-witch-gateway-consolidation-six-e1f05c14e462",
+        "namespaceId": "2122090e40044fd8a530e19c4e953cef",
+        "capacity": 6,
+        "model": {
+          "name": "cold",
+          "guilds": 24303,
+          "channels": 40,
+          "heartbeatMs": 41250,
+          "knownGuilds": false,
+          "steadyRate": 60
+        },
+        "startedAt": "2026-10-25T18:19:49.097Z",
+        "endedAt": "2026-10-25T18:29:47.248Z",
+        "status": "completed-platform-scenario",
+        "counters": {
+          "identifies": 25,
+          "resumes": 56,
+          "heartbeats": 370,
+          "lifecycle": 34003,
+          "directory": 2500,
+          "sent": 36584,
+          "sentBytes": 699387516
+        },
+        "metricsStatus": "reconciled-after-run",
+        "sampleRows": 47,
+        "objects": [
+          "07aa0f10cc2fb4400c63ad570a2da8946bb1ae01f8f38a78682be169a7046a3b",
+          "381d5fec62ba0f6f32f2fed0de369f8217709e2427b54bc1234b649ed879a786",
+          "3a8ca386d7bcea85430852469d87a9a619b8f14792e422580deadf4a412b0ec8",
+          "5eeecf19676362bf639ef27ca511d01a18836d8aa7d82d2d2a48d9151c5da006",
+          "7da94d1f200b0c9a9b2d40617b46a787ff6289e1b80b68ee8d0adfd707ac23c3"
+        ],
+        "observedMaximumIsolateBytes": 57417728,
+        "resourceErrorTotals": {
+          "exceededCpuErrors": 0,
+          "exceededMemoryErrors": 0,
+          "fatalInternalErrors": 5
+        },
+        "phases": [
+          {
+            "name": "startup",
+            "start": "2026-10-25T18:19:50.018Z",
+            "end": "2026-10-25T18:21:26.951Z",
+            "milliseconds": 96933.032748,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 57417728,
+            "sampledDurationGBSeconds": 38.400182272
+          },
+          {
+            "name": "slow-replay",
+            "start": "2026-10-25T18:21:26.951Z",
+            "end": "2026-10-25T18:23:33.547Z",
+            "milliseconds": 126596.370924,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 32555029,
+            "sampledDurationGBSeconds": 76.800094976
+          },
+          {
+            "name": "reconnect",
+            "start": "2026-10-25T18:23:33.547Z",
+            "end": "2026-10-25T18:24:48.105Z",
+            "milliseconds": 74557.71987300002,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 33974786,
+            "sampledDurationGBSeconds": 38.766002944
+          },
+          {
+            "name": "restart",
+            "start": "2026-10-25T18:24:48.105Z",
+            "end": "2026-10-25T18:25:28.918Z",
+            "milliseconds": 40812.426716999966,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 33284096,
+            "sampledDurationGBSeconds": 38.47121536
+          },
+          {
+            "name": "loaded-observation",
+            "start": "2026-10-25T18:25:28.918Z",
+            "end": "2026-10-25T18:28:13.655Z",
+            "milliseconds": 164736.81142699998,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 36397308,
+            "sampledDurationGBSeconds": 115.180548096
+          },
+          {
+            "name": "drained-observation",
+            "start": "2026-10-25T18:28:13.656Z",
+            "end": "2026-10-25T18:29:47.104Z",
+            "milliseconds": 93448.03623900004,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 36561316,
+            "sampledDurationGBSeconds": 37.31950208
+          }
+        ],
+        "unplannedRecoveries": [
+          {
+            "shardIds": [
+              20
+            ],
+            "closedAt": 1792952928211,
+            "resumeDelayMsRange": [
+              4242,
+              4242
+            ],
+            "replayedEventsPerShard": [
+              0
+            ]
+          },
+          {
+            "shardIds": [
+              19
+            ],
+            "closedAt": 1792952928220,
+            "resumeDelayMsRange": [
+              4234,
+              4234
+            ],
+            "replayedEventsPerShard": [
+              0
+            ]
+          },
+          {
+            "shardIds": [
+              18,
+              21
+            ],
+            "closedAt": 1792952928221,
+            "resumeDelayMsRange": [
+              4232,
+              4232
+            ],
+            "replayedEventsPerShard": [
+              0
+            ]
+          },
+          {
+            "shardIds": [
+              23
+            ],
+            "closedAt": 1792952928223,
+            "resumeDelayMsRange": [
+              4230,
+              4230
+            ],
+            "replayedEventsPerShard": [
+              0
+            ]
+          },
+          {
+            "shardIds": [
+              22
+            ],
+            "closedAt": 1792952928224,
+            "resumeDelayMsRange": [
+              4229,
+              4229
+            ],
+            "replayedEventsPerShard": [
+              0
+            ]
+          }
+        ],
+        "rawReportSha256": "edbf54855f1fc5b1762225e26bc9caaee4c8a58130b65478b0a4d70dec760ba7",
+        "rawEvidenceDirectory": "/tmp/dw-external-platform-6zljQt"
       },
-      "lastFixtureErrors": [],
-      "allWorkersDeleted": true,
-      "nextExperiment": "Run the synthetic Discord fixture on the test host, with persisted Cloudflare data-service counters."
+      {
+        "role": "candidate",
+        "worker": "dice-witch-gateway-consolidation-candidate-e1f05c14e462",
+        "namespaceId": "4cd566825dbb48b99ff4597dcfd1a5f7",
+        "capacity": 9,
+        "model": {
+          "name": "cold",
+          "guilds": 24303,
+          "channels": 40,
+          "heartbeatMs": 41250,
+          "knownGuilds": false,
+          "steadyRate": 60
+        },
+        "startedAt": "2026-10-25T18:29:48.563Z",
+        "endedAt": "2026-10-25T18:40:19.865Z",
+        "status": "completed-platform-scenario",
+        "counters": {
+          "identifies": 25,
+          "resumes": 50,
+          "heartbeats": 373,
+          "lifecycle": 34003,
+          "directory": 2500,
+          "sent": 36578,
+          "sentBytes": 699387288
+        },
+        "metricsStatus": "reconciled-after-run",
+        "sampleRows": 33,
+        "objects": [
+          "30392aeed72511aa933b5e200cbc8db33c540e00dc5d239edee2ffff6928f695",
+          "73abdb012e7f22a8f1e4e466cc70fe50c089ea198702d418001c3320763b6ece",
+          "c7e601f654d7047ca5af848d0ca7ee21f3354a6486ff7e3e6c2578106042b2e4"
+        ],
+        "observedMaximumIsolateBytes": 127123556,
+        "resourceErrorTotals": {
+          "exceededCpuErrors": 0,
+          "exceededMemoryErrors": 0,
+          "fatalInternalErrors": 3
+        },
+        "phases": [
+          {
+            "name": "startup",
+            "start": "2026-10-25T18:29:49.029Z",
+            "end": "2026-10-25T18:31:53.873Z",
+            "milliseconds": 124843.60163599998,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 127123556,
+            "sampledDurationGBSeconds": 46.080038784
+          },
+          {
+            "name": "slow-replay",
+            "start": "2026-10-25T18:31:53.874Z",
+            "end": "2026-10-25T18:33:57.399Z",
+            "milliseconds": 123525.05328300002,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 31703271,
+            "sampledDurationGBSeconds": 46.080045568
+          },
+          {
+            "name": "reconnect",
+            "start": "2026-10-25T18:33:57.400Z",
+            "end": "2026-10-25T18:35:17.846Z",
+            "milliseconds": 80446.137094,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 22036627,
+            "sampledDurationGBSeconds": 11.73994944
+          },
+          {
+            "name": "restart",
+            "start": "2026-10-25T18:35:17.847Z",
+            "end": "2026-10-25T18:35:59.364Z",
+            "milliseconds": 41516.88175099995,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 35971072,
+            "sampledDurationGBSeconds": 23.040000512
+          },
+          {
+            "name": "loaded-observation",
+            "start": "2026-10-25T18:35:59.364Z",
+            "end": "2026-10-25T18:38:44.102Z",
+            "milliseconds": 164738.0109440001,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 36937749,
+            "sampledDurationGBSeconds": 69.120045568
+          },
+          {
+            "name": "drained-observation",
+            "start": "2026-10-25T18:38:44.102Z",
+            "end": "2026-10-25T18:40:19.706Z",
+            "milliseconds": 95603.5669470001,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 36315640,
+            "sampledDurationGBSeconds": 23.842553856
+          }
+        ],
+        "unplannedRecoveries": [],
+        "rawReportSha256": "4a56c5882a7b333d60ee350daac405c3680bc5ad579eb1263dcc15f72aab0268",
+        "rawEvidenceDirectory": "/tmp/dw-external-platform-6zljQt"
+      },
+      {
+        "role": "six",
+        "worker": "dice-witch-gateway-consolidation-six-8eb671e3f5c8",
+        "namespaceId": "c872161aadbb4db6968e045d0714cc7b",
+        "capacity": 6,
+        "model": {
+          "name": "warm",
+          "guilds": 24303,
+          "channels": 40,
+          "heartbeatMs": 41250,
+          "knownGuilds": true,
+          "steadyRate": 60
+        },
+        "startedAt": "2026-10-25T22:49:28.587Z",
+        "endedAt": "2026-10-25T22:59:03.333Z",
+        "status": "completed-platform-scenario",
+        "counters": {
+          "identifies": 25,
+          "resumes": 56,
+          "heartbeats": 358,
+          "lifecycle": 9700,
+          "directory": 2500,
+          "sent": 36584,
+          "sentBytes": 699388166
+        },
+        "metricsStatus": "reconciled",
+        "sampleRows": 46,
+        "objects": [
+          "0d1410de4d5239684fdc393376427b71d78c904821e0881a4844c6b310e29683",
+          "290f0dc029bad49c48f4564b09c0675ab3c328deba8a6859a1fdd6257f0325b5",
+          "6b5c7bcab7567ca9c0b7f729a657624b7ef794202d522f8b8aac144e84bbf09e",
+          "9581ec84ef986bc82f9488327506e0baba0d43cfaeaae6e659b78d8b8a5aa9ac",
+          "a871c06c4d0d19e4c8a087e953eb304d63042860e7ca435a3d0f46c27e4d0200"
+        ],
+        "observedMaximumIsolateBytes": 36245504,
+        "resourceErrorTotals": {
+          "exceededCpuErrors": 0,
+          "exceededMemoryErrors": 0,
+          "fatalInternalErrors": 5
+        },
+        "phases": [
+          {
+            "name": "startup",
+            "start": "2026-10-25T22:49:29.224Z",
+            "end": "2026-10-25T22:50:51.659Z",
+            "milliseconds": 82435.475479,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 36245504,
+            "sampledDurationGBSeconds": 34.137658624
+          },
+          {
+            "name": "slow-replay",
+            "start": "2026-10-25T22:50:51.659Z",
+            "end": "2026-10-25T22:52:55.871Z",
+            "milliseconds": 124212.05663099998,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 32608340,
+            "sampledDurationGBSeconds": 76.681411712
+          },
+          {
+            "name": "reconnect",
+            "start": "2026-10-25T22:52:55.872Z",
+            "end": "2026-10-25T22:54:03.815Z",
+            "milliseconds": 67943.17737799996,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 31551918,
+            "sampledDurationGBSeconds": 25.414355072
+          },
+          {
+            "name": "restart",
+            "start": "2026-10-25T22:54:03.815Z",
+            "end": "2026-10-25T22:54:44.957Z",
+            "milliseconds": 41141.89143899997,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 32247808,
+            "sampledDurationGBSeconds": 38.400003328
+          },
+          {
+            "name": "loaded-observation",
+            "start": "2026-10-25T22:54:44.957Z",
+            "end": "2026-10-25T22:57:29.012Z",
+            "milliseconds": 164055.108082,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 33271808,
+            "sampledDurationGBSeconds": 115.200083328
+          },
+          {
+            "name": "drained-observation",
+            "start": "2026-10-25T22:57:29.012Z",
+            "end": "2026-10-25T22:59:03.180Z",
+            "milliseconds": 94167.22896299994,
+            "sampledObjects": 5,
+            "observedMaximumIsolateBytes": 33411492,
+            "sampledDurationGBSeconds": 38.065201664
+          }
+        ],
+        "unplannedRecoveries": [
+          {
+            "shardIds": [
+              18,
+              19,
+              20,
+              21,
+              22,
+              23
+            ],
+            "closedAt": 1792968654434,
+            "resumeDelayMsRange": [
+              20117,
+              20118
+            ],
+            "replayedEventsPerShard": [
+              48
+            ]
+          }
+        ],
+        "rawReportSha256": "b3d12c27dd68b3dccfd7b74aa7d4dd66af5ffd35a62722fb5788d450d8cfb8dd",
+        "rawEvidenceDirectory": "/tmp/dw-direct-warm-rgtKPG"
+      },
+      {
+        "role": "candidate",
+        "worker": "dice-witch-gateway-consolidation-candidate-8eb671e3f5c8",
+        "namespaceId": "5a76d059668747d2acba4c739d163c45",
+        "capacity": 9,
+        "model": {
+          "name": "warm",
+          "guilds": 24303,
+          "channels": 40,
+          "heartbeatMs": 41250,
+          "knownGuilds": true,
+          "steadyRate": 60
+        },
+        "startedAt": "2026-10-25T22:59:03.938Z",
+        "endedAt": "2026-10-25T23:09:17.020Z",
+        "status": "completed-platform-scenario",
+        "counters": {
+          "identifies": 25,
+          "resumes": 59,
+          "heartbeats": 386,
+          "lifecycle": 9700,
+          "directory": 2500,
+          "sent": 36587,
+          "sentBytes": 699388280
+        },
+        "metricsStatus": "reconciled",
+        "sampleRows": 37,
+        "objects": [
+          "778d505bb1128af922d310ab336e40071d63f987114884c4d85d90c1fdf25573",
+          "9566f88775279cfcea0f3d5ef0001b6a4f49f559ac4c6df2aca4e4f812e71296",
+          "aab32d4fb2f274569b3e14e6bc1e3e46a4e565305447c906c4b51a3e0d4abf3c"
+        ],
+        "observedMaximumIsolateBytes": 42725476,
+        "resourceErrorTotals": {
+          "exceededCpuErrors": 0,
+          "exceededMemoryErrors": 0,
+          "fatalInternalErrors": 3
+        },
+        "phases": [
+          {
+            "name": "startup",
+            "start": "2026-10-25T22:59:04.228Z",
+            "end": "2026-10-25T23:01:02.639Z",
+            "milliseconds": 118411.15757200005,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 39317684,
+            "sampledDurationGBSeconds": 24.999084288
+          },
+          {
+            "name": "slow-replay",
+            "start": "2026-10-25T23:01:02.639Z",
+            "end": "2026-10-25T23:03:06.504Z",
+            "milliseconds": 123864.44683200005,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 33853587,
+            "sampledDurationGBSeconds": 61.440127104
+          },
+          {
+            "name": "reconnect",
+            "start": "2026-10-25T23:03:06.504Z",
+            "end": "2026-10-25T23:04:13.317Z",
+            "milliseconds": 66813.33356499998,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 33386643,
+            "sampledDurationGBSeconds": 9.335561984
+          },
+          {
+            "name": "restart",
+            "start": "2026-10-25T23:04:13.317Z",
+            "end": "2026-10-25T23:04:55.472Z",
+            "milliseconds": 42154.94669500005,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 30797845,
+            "sampledDurationGBSeconds": 23.0403648
+          },
+          {
+            "name": "loaded-observation",
+            "start": "2026-10-25T23:04:55.472Z",
+            "end": "2026-10-25T23:07:40.298Z",
+            "milliseconds": 164825.36006500002,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 38269264,
+            "sampledDurationGBSeconds": 69.120043264
+          },
+          {
+            "name": "drained-observation",
+            "start": "2026-10-25T23:07:40.298Z",
+            "end": "2026-10-25T23:09:16.885Z",
+            "milliseconds": 96587.59820900019,
+            "sampledObjects": 3,
+            "observedMaximumIsolateBytes": 38531702,
+            "sampledDurationGBSeconds": 24.600977536
+          }
+        ],
+        "unplannedRecoveries": [
+          {
+            "shardIds": [
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "closedAt": 1792969219969,
+            "resumeDelayMsRange": [
+              2125,
+              2249
+            ],
+            "replayedEventsPerShard": [
+              0
+            ]
+          }
+        ],
+        "rawReportSha256": "610593885ad378cd96c00c964a7122040c32b1400e69b78abc355339f064a148",
+        "rawEvidenceDirectory": "/tmp/dw-direct-warm-rgtKPG"
+      }
+    ],
+    "coldMaximumAcrossPollingQueriesBytes": 127197184,
+    "warmMaximumAcrossObservedPollingQueriesBytes": {
+      "six": 40341604,
+      "candidate": 42725476
     },
-    "workerVersionTelemetry": {
-      "observation": "Workers invocations expose matching deployment version IDs even when scriptName and scriptTag are __unknown__. Namespace and exact object-ID periodic queries still return no test samples.",
-      "limitation": "Worker invocation memory samples cannot establish coverage of the Durable Object isolates."
+    "sampleBoundaryLimitation": "Profile queries filter interval timestamps; boundary buckets may include activity outside the requested phase. Whole-experiment poll maxima are retained separately to avoid hiding startup peaks.",
+    "coldMemoryInterpretation": "Near the documented isolate limit under simultaneous Identify concurrency 25. Last recorded production concurrency was 1. Do not substitute retained local heap or later steady-state samples for this burst.",
+    "fatalInternalErrorsInterpretation": "Controlled object aborts are exercised once per object. Persisted error outcomes identify intentional /restart invocations separately; inspect unexpected errors independently of periodic counts.",
+    "latencyLimitation": "Phase completion times and heartbeat/drain checks are measured. No production p95/p99 event-latency distribution was inferred.",
+    "resetCause": "Internal cause of some unplanned object reconstructions remains unknown. Cold baseline recovered six extra sessions; cold candidate had only 50 controlled Resumes. Warm baseline and candidate each recovered one unplanned object reconstruction: six sessions at about 20.1 seconds versus nine at about 2.1-2.3 seconds. These short tests do not estimate long-term reset rates.",
+    "telemetry": "New namespace queries were initially empty, then populated. Reconciliation requires every object during loaded and drained observation and identical sorted samples on consecutive reads.",
+    "cleanup": {
+      "cold": [
+        {
+          "name": "dice-witch-gateway-consolidation-candidate-e1f05c14e462",
+          "deleted": true
+        },
+        {
+          "name": "dice-witch-gateway-consolidation-six-e1f05c14e462",
+          "deleted": true
+        },
+        {
+          "name": "dice-witch-gateway-consolidation-fixture-e1f05c14e462",
+          "deleted": true
+        }
+      ],
+      "warm": [
+        {
+          "name": "dice-witch-gateway-consolidation-candidate-8eb671e3f5c8",
+          "deleted": true
+        },
+        {
+          "name": "dice-witch-gateway-consolidation-six-8eb671e3f5c8",
+          "deleted": true
+        },
+        {
+          "name": "dice-witch-gateway-consolidation-fixture-8eb671e3f5c8",
+          "deleted": true
+        }
+      ]
+    },
+    "historicalTelemetry": {
+      "positiveControl": {
+        "query": "query($a:string!,$n:[string!]!,$s:Time!,$e:Time!){viewer{accounts(filter:{accountTag:$a}){durableObjectsPeriodicGroups(limit:1000,filter:{namespaceId_in:$n,datetime_geq:$s,datetime_lt:$e}){dimensions{namespaceId}max{memoryUsageBytes}sum{duration exceededMemoryErrors exceededCpuErrors}}durableObjectsInvocationsAdaptiveGroups(limit:1000,filter:{namespaceId_in:$n,datetime_geq:$s,datetime_lt:$e}){dimensions{namespaceId}sum{requests errors}}}}}",
+        "variables": {
+          "a": "dfe6c3ddb987a22c7f17955d1973490e",
+          "n": [
+            "9b6955a098b04cea87214a6a7ee75b5c",
+            "8e24313362954ed7a894a1bbb8e4c19e",
+            "eb6ee5c2de5b4882886cc81567a3dd68",
+            "a10b31a57b3544d5bb8b74f3aed06970",
+            "e5a0693b19404bf98eb1ad96792dcc17",
+            "1a06dbd8204e45dbbfdacf8d3aa58ba3"
+          ],
+          "s": "2026-10-25T16:15:00Z",
+          "e": "2026-10-25T16:23:43.445Z"
+        },
+        "response": {
+          "data": {
+            "viewer": {
+              "accounts": [
+                {
+                  "durableObjectsInvocationsAdaptiveGroups": [
+                    {
+                      "dimensions": {
+                        "namespaceId": "1a06dbd8204e45dbbfdacf8d3aa58ba3"
+                      },
+                      "sum": {
+                        "errors": 0,
+                        "requests": 395
+                      }
+                    }
+                  ],
+                  "durableObjectsPeriodicGroups": [
+                    {
+                      "dimensions": {
+                        "namespaceId": "1a06dbd8204e45dbbfdacf8d3aa58ba3"
+                      },
+                      "max": {
+                        "memoryUsageBytes": 15454535
+                      },
+                      "sum": {
+                        "duration": 268.800176512,
+                        "exceededCpuErrors": 0,
+                        "exceededMemoryErrors": 0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "errors": null
+        }
+      },
+      "latestFixtureExperiment": {
+        "sourceSha": "328c7ae2d7c6c8fa83b652e525782939bb949e2b",
+        "startedAt": "2026-10-25T16:32:56.123Z",
+        "endedAt": "2026-10-25T16:42:24.885Z",
+        "passedPhases": [
+          "startup",
+          "slow-replay",
+          "reconnect",
+          "restart",
+          "loaded-observation"
+        ],
+        "failedPhase": "drained-observation",
+        "failure": "Synthetic fixture object reset at 16:42:21.299 UTC, after sustained traffic stopped. The plain-text RPC response change did not eliminate resets.",
+        "lastCounters": {
+          "identifies": 25,
+          "resumes": 50,
+          "lifecycle": 34003,
+          "directory": 2500
+        },
+        "lastFixtureErrors": [],
+        "allWorkersDeleted": true,
+        "nextExperiment": "Run the synthetic Discord fixture on the test host, with persisted Cloudflare data-service counters."
+      },
+      "workerVersionTelemetry": {
+        "observation": "Workers invocations expose matching deployment version IDs even when scriptName and scriptTag are __unknown__. Namespace and exact object-ID periodic queries still return no test samples.",
+        "limitation": "Worker invocation memory samples cannot establish coverage of the Durable Object isolates."
+      }
+    },
+    "coldRunInterruption": {
+      "phase": "subsequent six-session warm loaded observation",
+      "failure": "External fixture tunnel HTTP 502/530. Completed cold scenarios retained; warm profiles rerun with direct fixture.",
+      "cleanup": [
+        {
+          "name": "dice-witch-gateway-consolidation-candidate-e1f05c14e462",
+          "deleted": true
+        },
+        {
+          "name": "dice-witch-gateway-consolidation-six-e1f05c14e462",
+          "deleted": true
+        },
+        {
+          "name": "dice-witch-gateway-consolidation-fixture-e1f05c14e462",
+          "deleted": true
+        }
+      ]
+    },
+    "collectorAudit": {
+      "rawArtifact": "/tmp/dw-direct-warm-rgtKPG/warm-reconciliation.json",
+      "sha256": "4c66cae67967fab50537aebfff51173a37843d0a0930d876b36b7058b9676337"
     }
   },
   "productionTrafficCalibration": {

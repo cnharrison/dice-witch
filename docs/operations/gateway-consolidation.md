@@ -1,14 +1,17 @@
 # Gateway consolidation
 
-**Validation status:** implementation and local protocol/migration tests pass;
-deployed capacity validation is still in progress. Baseline synthetic objects reset or lose
-sockets, including with no live tail attached, and the new namespaces have no
-resource samples in successful GraphQL responses. The nine-session candidate has
-not passed a Cloudflare comparison. Keep transfers disabled. See the
-[capacity diagnostic notes](gateway-consolidation-platform-support.md)
-and [recorded evidence](gateway-consolidation-evidence-2026-10-25.json).
-These observations do not establish a Cloudflare fault or require the account
-owner to open a support case; harness and telemetry investigation continues.
+**Validation status:** the implementation, local migration tests, and CI pass.
+The deployed cold and warm comparisons completed at six and nine sessions per
+object with exact event counts and reconciled memory samples for every gateway
+object. The nine-session candidate reached about 121 MiB during simultaneous cold
+startup; that leaves little observed margin for that burst. The warm candidate
+peaked at about 41 MiB in observed samples. Details are recorded in the [evidence](gateway-consolidation-evidence-2026-10-25.json).
+
+Prepare a seven-session canary first; widen to `9+9+7` only after the resource,
+delivery, and latency gates below pass. Transfers remain disabled by default.
+The [diagnostic findings](gateway-consolidation-platform-support.md) explain the
+opening stall, fixture corrections, and delayed analytics. No support case is
+needed. No production change has been deployed.
 
 ## Scope and release posture
 
@@ -177,7 +180,11 @@ Five-to-four and five-to-three residency suggest roughly 20% and 40% duration
 reductions respectively **if billing shares/isolate placement remain comparable**.
 The latter is approximately 21,816 GB-seconds/day, or about $8/month at the marginal
 $12.50/million-GB-second rate before included allowances and invoice rounding.
-These are hypotheses, not measured production savings. Shared 128-MB isolate billing
+In the completed cold synthetic comparison, periodic samples inside the matched
+loaded-observation windows summed to 115.18 GB-seconds at capacity six and 69.12 at
+capacity nine, about 40% lower. Those short, sampled windows are supporting evidence,
+not an invoice forecast; phase boundaries and isolate placement affect attribution.
+Production projections remain hypotheses, not measured savings. Shared 128-MB isolate billing
 makes object-count scaling non-linear. Request analytics are not invoice request
 units. Cloud Witch/Pi's unrelated reduction is excluded.
 
@@ -210,26 +217,23 @@ requires a clean Git checkout and matching source and bundle hashes.
 
 ## Review notes
 
-The full diff's structural review flags the fleet command dispatcher and several
-small code similarities. The dispatcher's extra branches enforce transfer fencing
-before asynchronous startup and generation recovery; those checks intentionally
-remain beside the commands they guard and have crash/interleaving coverage. Timer
-cleanup and environment-object construction matches are structural coincidences
-across different owners. The coordinator's short promise queue follows the existing
-actor pattern without coupling unrelated actors. Synthetic token hashing stays in
-the isolated harness: importing the session repository would bring unrelated D1
-authentication code into the fixture bundle. The Identify/Resume test setup shares
-state-machine transitions deliberately, while preserving different starting states.
-The fixture controller grew to support that explicit checkpoint/recovery lifecycle;
-keeping it with the actor that owns the synthetic sessions avoids another storage
-owner. These findings are recorded as accepted review tradeoffs, not suppressed lint rules.
-The evidence JSON's longer trial array records all ten experiments and cleanup
-results; its structural “verbosity” finding measures data provenance, not executable
-control-flow growth.
-The shared delay validator leaves a 25-token structural match between the fixture's
-`slow` and `reconnect` controls: both invoke their distinct operation and return
-statistics. Keeping those explicit controls is clearer than introducing a generic
-operation dispatcher solely to remove that small match.
+The full diff's structural review retains seven gating rows for small similarities:
+environment-object construction versus an unrelated appearance parser, timer cleanup
+owned by separate actors, the coordinator's private promise queue versus another
+actor's queue, and synthetic token hashing versus the data service's hash helper.
+These are intentionally separate ownership/bundle boundaries. Importing the session
+repository solely for token hashing would bring unrelated D1 authentication code into
+the fixture. No lint rule was weakened or structural finding blanket-suppressed.
+
+The fleet dispatcher now delegates shard startup to a private helper. New fixture,
+runner, and placement code also carries structural size/complexity findings. The
+fixture owns the synthetic session lifecycle; the runner keeps its explicit test
+phases and cleanup together. Those tradeoffs are visible in review and covered by
+protocol, storage, crash, and native-wrapper tests; passing structural metrics alone
+would not establish correctness. The evidence JSON also triggers a verbosity finding
+for its four measured profiles and historical trials. That is retained provenance
+data, not executable control-flow growth. Its per-phase measurements and recovery
+groups are kept so reviewers can check the conclusions against the raw artifacts.
 
 ## Workload calibration
 
@@ -259,3 +263,25 @@ lines cross the structural class-length threshold; retaining them beside actor
 initialization is intentional. The plugin factory and its nested esbuild `setup`
 callback are one implementation, not two duplicated implementations. The remaining
 churn finding reflects successive harness corrections; no lint rules are suppressed.
+
+## Deployed opening behavior
+
+Nine sessions in one object exposed an invocation-dependent opening stall: the
+ninth native WebSocket could remain connecting before Identify. A concurrent-opening
+queue alone, serial openings inside one RPC, and holding that RPC open did not fix it.
+Admitting batches through separate Durable Object alarm invocations did. The same
+behavior occurred with both fixture placements, so the tunnel was not its cause.
+
+A per-partition queue now admits up to six simultaneous openings, following the
+[documented waiting-header limit](https://developers.cloudflare.com/workers/platform/limits/#simultaneous-open-connections).
+Each batch uses a fresh alarm invocation. Open/error/close/cancellation releases its
+slot; established sockets do not occupy slots. Pending work is cancelled when its
+session stops or parks. There is no added session-count cap or handshake timeout.
+Heartbeats and event processing retain their existing path. Start/recovery recheck
+current state after awaited ownership calls so an alarm and explicit start cannot
+both start the same connection.
+
+The observed stall is not a documented eight-socket platform limit. The deployed
+smoke and full cold comparisons establish that this scheduling change opens and
+recovers `9+9+7` under the tested workload. They do not identify an internal
+Cloudflare root cause or guarantee headroom for all workloads.

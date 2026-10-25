@@ -1,150 +1,128 @@
-# Gateway capacity diagnostics: synthetic resets and missing metrics
+# Gateway capacity diagnostic findings
 
-These are investigation notes, not a support prerequisite. No support message has
-been sent or is required from the account owner. The affected resources are isolated synthetic test Workers, with fake
-Discord credentials and no production service bindings. Production was unchanged.
+No support case was opened or is required. The earlier support prerequisite was an
+incorrect conclusion from incomplete tests and delayed telemetry. These findings
+come from source inspection, synthetic deployed experiments, persisted logs, and
+account GraphQL queries. All experiments use fake Discord credentials and isolated
+Workers; none changes production.
 
-## Unresolved observations
+## Connection opening stall: fixed and tested
 
-1. What caused the fixture object reset at **2026-10-25 16:22:00.280 UTC**?
-   Was this a resource limit, infrastructure replacement, or code/runtime update?
-2. What caused six outbound sockets on the gateway object below to close together
-   at **2026-10-25 16:17:27.429 UTC**, before any intentional crash injection?
-3. Why do both Durable Object GraphQL datasets return no rows for these new test
-   namespaces while a production namespace returns current data in the same query?
-   Is additional configuration or a different query required for isolate memory?
+At nine sessions per object, the ninth native WebSocket could remain connecting
+before sending Identify. Both a direct Cloudflare fixture and an external fixture
+reproduced it. Limiting simultaneous openings, serializing openings within one RPC,
+and holding that RPC open did not resolve it. Opening through separate invocations
+did. This is an observed invocation-dependent behavior, not an established platform
+limit of eight sockets.
 
-Account: `dfe6c3ddb987a22c7f17955d1973490e`.
+The partition now schedules opening batches through fresh Durable Object alarm
+invocations. Its queue allows six simultaneous openings, matching Cloudflare's
+[documented waiting-header limit](https://developers.cloudflare.com/workers/platform/limits/#simultaneous-open-connections).
+Open, error, close, and cancellation release slots; established sessions do not
+occupy slots. There is no new session cap or handshake timeout. Stop and transfer
+parking cancel pending openings. A second fix rechecks connection state after an
+awaited ownership call, preventing explicit start and alarm recovery from both
+starting the same connection.
 
-## Fixture reset without live tailing
+A deployed `9+9+7` smoke test passed with 25 Identifies, 50 Resumes, 240 lifecycle
+events, and no fixture errors. The final-source full cold comparison also completed
+startup, slow downstream writes, reconnect, object restart, sustained traffic, and
+quiet observation. See the [evidence record](gateway-consolidation-evidence-2026-10-25.json)
+for tested revisions, workloads, counters, and resource observations.
 
-Source: `787ce05e0fd14ec6f32557c3f7212180c2671de9` in
-[the feature PR](https://github.com/cnharrison/dice-witch/pull/52).
+## Recovery tests initially modeled Discord incorrectly
 
-| Field | Value |
-| --- | --- |
-| Worker | `dice-witch-gateway-consolidation-fixture-30dbdcb4d616` |
-| Version | `82e27def-af59-42ce-9bcc-b45f5cd5a7a4` |
-| Namespace | `9b6955a098b04cea87214a6a7ee75b5c` |
-| Object | `18ab9fd213bf36750b1245d1cf93d62a1b47ceda45ec1946423725082de64b00` |
-| Request ID | `329fe630e565435653898942025851b8` |
-| Trace ID | `f41e50b832f7517d429e1f8047933a2a` |
-| Profile start | `2026-10-25T16:21:09.006Z` |
-| First recorded reset | `2026-10-25T16:22:00.280Z` |
+The synthetic server originally rejected Resume when the checkpoint lagged its
+last sent sequence. It also failed as soon as traffic reached a disconnected shard.
+That omitted Discord's replay behavior and prevented testing ordinary recovery.
+It now retains compact event descriptors, continues producing during a disconnect,
+and replays the unprocessed suffix before RESUMED. Its lifecycle service deduplicates
+mutation IDs, as the real service does. Tests cover in-flight and disconnected
+replay, exact mutation counts, and an actual object abort during slow service writes.
 
-Persisted log message: `Durable Object connection closed because the object was reset.`
-The fixture then reports `Fixture restarted during a profile`, which is its explicit
-guard against treating lost synthetic server state as a successful test.
+The production connection restores its mutation scope before sending Resume, so
+replayed dispatches arriving before RESUMED keep their original deduplication IDs.
+The live migration test exercises that order through transfer, rollback, and restart.
 
-The last successful observation had 25 connected shards, all gateway sessions
-ready, 25 Identifies, zero Resumes, and all 24,303 lifecycle events applied. The
-startup burst sends synthetic guilds with 40 channels at 600 events/second, using
-41.25-second heartbeats. No controlled crash/reconnect phase had started.
+Some object reconstructions still have no exposed internal cause. A maintained-source
+trial at `0bfe91e65cacf7920e0dddc9c7c829dd920f03c2` lost shards 6–11 together at
+17:17:32.584 UTC; the actor logged a new activation at 17:17:33.787 UTC. Thus the
+feature's transport changes were not required to produce a reconstruction. The
+final cold baseline also resumed six sessions after an unplanned reconstruction;
+the candidate needed only its 50 controlled Resumes. Both finished with exact
+application event counts and 25 Identifies. In the completed warm comparison, the
+baseline recovered six sessions after about 20.1 seconds (48 buffered events each),
+and the candidate recovered nine sessions after about 2.1–2.3 seconds during startup.
+Both again retained exact counts and 25 Identifies. This demonstrates the larger
+failure domain; a short experiment does not estimate long-term reset rates.
+Unknown internal reset causes do not
+prevent testing recovery, and they are not proof of memory exhaustion.
 
-Each experiment used fresh unique Worker names. No `wrangler tail` was attached.
-Persisted logs and invocation logs were enabled at deployment with sampling 1.
-The account audit query through 16:22:05 UTC contains no mutation to these test
-resources after the profile started. Thus live tail attachment or an operator
-redeployment during the profile does not explain this occurrence.
+## Missing metrics: delayed, not zero
 
-## Six gateway sockets lost during slow-service replay
+Early successful GraphQL queries returned no test namespace rows even while a
+production namespace returned data in the same query. Later queries returned
+namespace/object memory and duration samples. No configuration change or support
+intervention was needed for those samples to appear. Empty responses remain
+incomplete evidence, never zero usage or zero errors.
 
-Source: `37af4be04c1e6f8f06d3d2e31b89724b3adc359e`.
+The final cold comparison has stable repeated samples covering all five baseline
+and all three candidate objects, including each loaded and quiet observation phase.
+The runner compares rows in canonical dimension order because equal timestamps
+have no stable ordering. A broader query exposed quiet-window rows while the original
+fixed-window query still omitted them; the original query later caught up. Collection
+now queries through the current time and filters results back to the completed
+report interval. An independent real-API check verified complete coverage and stable
+repeated samples with that query. Missing coverage and CPU/memory-limit errors
+remain failures.
+[Periodic memory samples](https://developers.cloudflare.com/durable-objects/observability/metrics-and-analytics/)
+measure the whole isolate and are not an absolute peak guarantee.
 
-| Field | Value |
-| --- | --- |
-| Worker | `dice-witch-gateway-consolidation-six-27acac5d3631` |
-| Version | `0b527df9-6fdb-4ef8-96d3-4063339d75cb` |
-| Namespace | `3a0fe49e1f1a41dbb378480183bd83cf` |
-| Object | `f58fda52ea9f4ffa4112d59852f904367d75bc5e31b9f795eb33a8785934688e` |
-| Affected shards | 12–17, all six sessions in this partition |
-| Peer close time/code | `2026-10-25T16:17:27.429Z`, 1006 |
+The largest observed candidate sample across polling queries was 127,197,184 bytes
+(about 121.3 MiB), during simultaneous cold startup. The reconciled query's maximum
+was 127,123,556 bytes. Later loaded/quiet samples were much lower. Reporting only
+local retained heap or steady-state memory would hide the burst. The cold candidate
+also took about 125 seconds to finish startup versus 97 seconds for the baseline;
+these are phase completion times, not event-latency percentiles.
 
-Startup completed at 16:17:18.212 UTC. During replay at 600 events/second with a
-50-ms downstream-service delay, the fixture observed those six sockets closing
-together. Subsequent Resume requests were behind the fixture's sent sequence;
-the fixture rejects such requests rather than inventing missing replay history.
-The captured generic gateway error is `Gateway socket event failed`.
+The fixture advertises Identify concurrency 25. The last recorded production budget
+had concurrency 1; the real centralized Identify permit gate remains unchanged.
+That difference helps interpret the simultaneous startup stress but does not waive
+resource gates. Start with the seven-session canary and measure actual peak behavior
+before widening. Synthetic results do not certify unrestricted nine-session headroom.
 
-This proves an incomplete test, not a production delivery defect or an OOM.
-The slow replay rate is deliberately much higher than the measured busiest
-production minute (1,036 inbound messages/minute). A later calibrated run failed
-in startup before reaching its 60-event/second slow phase, as described above.
+## Test infrastructure confounders
 
-## Missing metrics and evidence limits
+Attaching a live tail can update a running script, as described in
+[Cloudflare's known issues](https://developers.cloudflare.com/durable-objects/platform/known-issues/).
+Earlier experiments observed script-upgraded socket errors after tail attachment.
+Subsequent comparisons use persisted logs and constructor activation records without
+attaching a live tail. Intentional `/restart` aborts are identified separately;
+other error outcomes remain failures.
 
-The committed [evidence JSON](gateway-consolidation-evidence-2026-10-25.json)
-contains the exact GraphQL query, variables, and response under
-`platformValidation.positiveControl`. It asks for the five test namespaces plus
-production namespace `1a06dbd8204e45dbbfdacf8d3aa58ba3`, in the same time window.
-Only production returns rows, including memory samples and invocation counts.
-Queries succeeded without GraphQL errors; empty test results are not interpreted
-as zero memory use or zero resource errors.
+A no-tail direct fixture also reset at 16:22:00.280 UTC, with no intervening test
+resource mutation in account audit logs. That occurrence's internal cause remains
+unknown. Moving the synthetic server to the host isolated the gateway from fixture
+object resets and allowed the full cold comparison to finish. Two warm attempts
+then failed when their temporary tunnel returned HTTP 502/530. Those are incomplete
+runs, not successful capacity results. All their Workers were deleted. The subsequent
+warm comparison completed both capacities using the direct Cloudflare fixture,
+removing the tunnel dependency.
 
-The available persisted error records do not identify an exceeded-memory or
-exceeded-CPU outcome. This absence does not establish that no limit was hit.
-Local protocol/load tests pass, but local retained heap and allocation profiles
-cannot certify deployed isolate-memory headroom. Nine-session capacity remains
-unvalidated because baseline-first testing stopped before the candidate ran.
+Historical failed trials and their source revisions remain in the evidence JSON.
+They are not counted as successful validation, and correcting the replay model does
+not excuse increased reconnects or missed/duplicated events.
 
-## Reproduction and cleanup
+## Release decision
 
-The PR includes the fixture, destination-enforced staging bundle generator, and
-runner in `cloudflare/tools/gateway-capacity/`. Prepare from a clean matching
-commit using `staging-prepare.mjs`, deploy only its unique synthetic Worker names
-with private fake credentials, then run `staging-run.mjs` with `--gateways both`
-and `--profile cold`. Use `--steady-rate 60` for calibrated slow/sustained traffic;
-the default 600 is the stress case. The setup must retain the expiration,
-destination, source-digest, resource-budget, and cleanup guards.
+The implementation supports resumable, fenced placement transfers with an explicit
+rollback path. Deploying it does not consolidate sessions: transfers default off
+and future generations retain capacity six. Follow the
+[operator procedure and production gates](gateway-consolidation.md), including a
+seven-session canary, peak observation, and matched latency/reliability measurements
+before further transfers. Reverse placements before rolling back the binary.
 
-All experiment resources are stopped and deleted after evidence collection; their
-IDs above are retained to correlate the recorded diagnostics. Do not run the
-test against production names, production Discord credentials, or production
-service bindings. Production transfers remain disabled pending validation and
-separate release authorization.
-
-## Investigation continues without support
-
-The initial conclusion that these observations required Cloudflare support was
-unsupported. The synthetic fixture itself, RPC response lifetimes, queue allocation
-pressure, and telemetry attribution remain testable with existing account access.
-The native staging-wrapper test now exercises lifecycle writes through its actual
-service/DO RPC path. The fixture consumes response bodies before returning plain
-text across that boundary. A new deployed comparison is testing that change;
-its outcome must not be inferred from the earlier failures.
-
-A full-size local test with all five baseline partition objects sharing one
-isolate observed a transient V8 heap estimate of 556 MiB and roughly 5–7 MiB
-retained after forced collection. This differs from the earlier harness, which
-placed partitions in separate local isolates. It is an allocation-pressure lead,
-not proof of deployed OOM or memory headroom. Local and deployed memory evidence
-remain distinct. If the synthetic fixture cannot remain stable, run it outside
-Durable Objects to isolate the gateway under test.
-
-## Maintained-source cross-check and fixture recovery correction
-
-The host-fixture experiment `4mPQW4` bundled maintained `master` gateway source
-`0bfe91e65cacf7920e0dddc9c7c829dd920f03c2` for capacity six, using harness commit
-`fe0f11218` (the manifest records its full SHA). It passed startup, slow replay,
-controlled reconnect, and controlled object restart: 25 Identifies and exactly 50
-expected Resumes. At **17:17:32.584 UTC**, shards 6–11 closed together during
-sustained traffic. The partition's constructor logged another activation at
-**17:17:33.787 UTC**, and inspection showed restored checkpoints in the idle state.
-This establishes an object reconstruction, and disproves the hypothesis that the
-feature branch's fetch-based upgrade is required to trigger this observation.
-It does not identify the platform's reason for the reconstruction.
-
-The fixture then failed immediately because it attempted to send to the disconnected
-shard. Its previous Resume validator also required the exact last-sent sequence.
-That omitted Discord's replay behavior and prevented testing recovery from an
-unplanned restart during traffic. The fixture now retains compact event descriptors,
-continues producing events while disconnected, and replays the unprocessed suffix
-before RESUMED. Its fake lifecycle data service deduplicates mutation identities,
-as the real service does. Reconnect counts and runtime errors remain visible; this
-change does not establish that extra reconnects are acceptable.
-
-New tests cover unsaved in-flight and disconnected dispatch replay, mutation
-idempotency, and an actual object abort during slow service writes through both
-native staging configurations. The maintained-source trial's three Workers were
-stopped and deleted. Subsequent capacity comparisons use the same feature code at
-six and nine sessions to measure the placement difference with this corrected fixture.
+The cost hypothesis is approximately 20% duration reduction for five-to-four objects
+or 40% for five-to-three when billing shares are comparable. Production billing and
+reliability measurements remain the decision criteria; local heap samples and a
+support response would not replace them.

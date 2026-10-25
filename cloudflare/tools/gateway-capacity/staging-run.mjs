@@ -363,7 +363,11 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       try {
         while (Date.now() < deadline) {
           await checkLogs();
-          rows = await graph([report.namespaceId], report.startedAt, report.endedAt);
+          // A fixed recent end boundary can keep returning incomplete periodic
+          // samples even after a broader query exposes them. Read through now,
+          // then retain only this report's interval for coverage and accounting.
+          rows = (await graph([report.namespaceId], report.startedAt, new Date().toISOString()))
+            .filter(({ dimensions }) => Date.parse(dimensions.datetime) <= Date.parse(report.endedAt));
           const current = JSON.stringify(rows);
           stable = covered(rows) && current === previous;
           if (stable) break;
