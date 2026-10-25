@@ -84,7 +84,9 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     if (!response.ok || body.errors?.length) throw new Error("Staging metrics query failed");
     const rows = z.array(ObjectMetric).parse(body.data?.viewer?.accounts?.[0]?.durableObjectsPeriodicGroups);
     if (rows.length >= 1_000) throw new Error("Staging metrics reached the query limit");
-    return rows;
+    // Equal timestamps have no API tie-breaker. Compare stable object identities
+    // when deciding whether repeated samples have finished arriving.
+    return rows.sort((a, b) => JSON.stringify(a.dimensions).localeCompare(JSON.stringify(b.dimensions)));
   }
 
   async function request(config, route, data, expectedStatus = 200) {

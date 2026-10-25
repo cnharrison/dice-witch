@@ -37,13 +37,7 @@ const identity: GatewayShardIdentity = {
 const checkpointKey = "gateway-fleet-checkpoint-v1:3:0:23";
 
 function identifyMachine(): GatewayMachine {
-  let machine = createGatewayMachine(initialGatewayCheckpoint(identity, 1));
-  machine = transitionGateway(machine, { type: "start" }).machine;
-  machine = transitionGateway(machine, { type: "socket-open" }).machine;
-  machine = transitionGateway(machine, {
-    type: "hello",
-    heartbeatIntervalMs: 41_250,
-  }).machine;
+  const machine = helloMachine(initialGatewayCheckpoint(identity, 1));
   return transitionGateway(machine, {
     type: "identify-permit-granted",
   }).machine;
@@ -120,7 +114,7 @@ function storedSnapshots(storage: StorageFixture) {
   };
 }
 
-function resumingMachine(checkpoint: GatewayMachine["checkpoint"]): GatewayMachine {
+function helloMachine(checkpoint: GatewayMachine["checkpoint"]): GatewayMachine {
   let machine = createGatewayMachine(checkpoint);
   machine = transitionGateway(machine, { type: "start" }).machine;
   machine = transitionGateway(machine, { type: "socket-open" }).machine;
@@ -264,7 +258,7 @@ function connection(
   socket.accept();
   pair[1].accept();
   const socketSend = vi.spyOn(socket, "send");
-  testable.machine = restored.checkpoint === undefined ? identifyMachine() : resumingMachine(restored.checkpoint);
+  testable.machine = restored.checkpoint === undefined ? identifyMachine() : helloMachine(restored.checkpoint);
   testable.socket = socket;
   return {
     background,
@@ -283,6 +277,25 @@ function connection(
 }
 
 describe("GatewayShardConnection recovery", () => {
+  it("starts once when activation and alarm recovery overlap an ownership RPC", async () => {
+    const { shard, testable } = connection(true);
+    testable.machine = createGatewayMachine(initialGatewayCheckpoint(identity, 1));
+    let releaseOwnership: () => void = () => { throw new Error("Ownership RPC did not start"); };
+    const ownership = new Promise<void>((resolve) => { releaseOwnership = resolve; });
+    testable.acquireOwnership = () => ownership;
+    const apply = vi.fn((event: GatewayEvent) => {
+      testable.machine = transitionGateway(testable.machine, event).machine;
+      return Promise.resolve();
+    });
+    testable.apply = apply;
+    const activation = shard.start();
+    const recovery = shard.recover();
+    releaseOwnership();
+    await Promise.all([activation, recovery]);
+    expect(apply).toHaveBeenCalledExactlyOnceWith({ type: "start" });
+    expect(shard.status().state).toBe("connecting");
+  });
+
   it("restarts an interrupted pre-session target connection", async () => {
     const { shard, testable } = connection(true);
     const acquireOwnership = vi.fn(() => Promise.resolve());
@@ -320,7 +333,7 @@ describe("GatewayShardConnection snapshot persistence", () => {
       expect(reconnect?.scheduledAt).toBeGreaterThanOrEqual(scheduledAfter);
       expect(reconnect?.scheduledAt).toBeLessThanOrEqual(Date.now());
       expect(storagePut).toHaveBeenCalledTimes(writes);
-      testable.machine = resumingMachine(testable.machine.checkpoint);
+      testable.machine = helloMachine(testable.machine.checkpoint);
       testable.socket = new WebSocketPair()[0];
       testable.socket.accept();
       await testable.handleGatewayMessage({ type: "resumed", sequence: 2 });

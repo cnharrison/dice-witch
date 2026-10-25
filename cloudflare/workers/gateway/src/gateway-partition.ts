@@ -345,55 +345,9 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
       throw new Error("Gateway fleet partition owner does not match");
     }
     switch (command.type) {
-      case "start-target-shards": {
-        for (const shardId of command.shardIds) {
-          if (this.transferBlocked(`${command.generation}:${shardId}:${command.shardCount}`)) {
-            throw new Error("Gateway shard is fenced by a transfer");
-          }
-        }
-        const connections = command.shardIds.map((shardId) => {
-          const identity = this.identity(
-            command.generation,
-            shardId,
-            command.shardCount,
-            command.assignment.partitionName,
-          );
-          const key = connectionKey(identity);
-          let connection = this.fleetConnections.get(key);
-          if (connection === undefined) {
-            connection = this.createFleetConnection(identity);
-            this.fleetConnections.set(key, connection);
-          }
-          return { connection, identity };
-        });
-        await this.persistFleetPartitionState();
-        this.ctx.waitUntil(
-          (async () => {
-            for (const { connection, identity } of connections) {
-              if (
-                this.transferBlocked(connectionKey(identity)) ||
-                this.fleetConnections.get(connectionKey(identity)) !== connection ||
-                this.suspendedFleetGenerations.has(identity.generation)
-              ) return;
-              try {
-                await connection.start();
-              } catch {
-                const coordinator = this.env.GATEWAY_COORDINATOR.getByName(
-                  GATEWAY_COORDINATOR_NAME,
-                );
-                await coordinator.reportFleetShardFailed(
-                  identity.generation,
-                  identity.shardId,
-                  identity.shardCount,
-                  "connection-start-failed",
-                );
-                return;
-              }
-            }
-          })(),
-        );
+      case "start-target-shards":
+        await this.startTargetShards(command);
         return;
-      }
       case "activate-generation":
         this.fleetActiveGeneration = command.generation;
         this.fleetActiveShardCount = command.shardCount;
@@ -426,6 +380,55 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
         await this.stopFleetGeneration(command.generation);
         return;
     }
+  }
+
+  private async startTargetShards(command: GatewayPartitionCommand): Promise<void> {
+    for (const shardId of command.shardIds) {
+      if (this.transferBlocked(`${command.generation}:${shardId}:${command.shardCount}`)) {
+        throw new Error("Gateway shard is fenced by a transfer");
+      }
+    }
+    const connections = command.shardIds.map((shardId) => {
+      const identity = this.identity(
+        command.generation,
+        shardId,
+        command.shardCount,
+        command.assignment.partitionName,
+      );
+      const key = connectionKey(identity);
+      let connection = this.fleetConnections.get(key);
+      if (connection === undefined) {
+        connection = this.createFleetConnection(identity);
+        this.fleetConnections.set(key, connection);
+      }
+      return { connection, identity };
+    });
+    await this.persistFleetPartitionState();
+    this.ctx.waitUntil(
+      (async () => {
+        for (const { connection, identity } of connections) {
+          if (
+            this.transferBlocked(connectionKey(identity)) ||
+            this.fleetConnections.get(connectionKey(identity)) !== connection ||
+            this.suspendedFleetGenerations.has(identity.generation)
+          ) return;
+          try {
+            await connection.start();
+          } catch {
+            const coordinator = this.env.GATEWAY_COORDINATOR.getByName(
+              GATEWAY_COORDINATOR_NAME,
+            );
+            await coordinator.reportFleetShardFailed(
+              identity.generation,
+              identity.shardId,
+              identity.shardCount,
+              "connection-start-failed",
+            );
+            return;
+          }
+        }
+      })(),
+    );
   }
 
   private transferBlocked(key: string): boolean {

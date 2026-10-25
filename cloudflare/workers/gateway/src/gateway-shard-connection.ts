@@ -651,11 +651,16 @@ export class GatewayShardConnection {
     return now + ACTIVATION_RECOVERY_ALARM_DELAY_MS;
   }
 
+  private canStart(): boolean {
+    return !this.parked && this.machine.status === "idle";
+  }
+
   async recover(): Promise<void> {
     if (this.parked) return;
     if (this.machine.status === "idle") {
       await this.acquireOwnership();
-      await this.apply({ type: "start" });
+      // Ownership RPCs yield to alarms and control requests; inspect current state again.
+      if (this.canStart()) await this.apply({ type: "start" });
       return;
     }
     if (this.machine.status === "ready") {
@@ -676,7 +681,7 @@ export class GatewayShardConnection {
     }
     if (this.machine.status === "idle") {
       await this.acquireOwnership();
-      await this.apply({ type: "start" });
+      if (this.canStart()) await this.apply({ type: "start" });
     }
     return this.status();
   }
