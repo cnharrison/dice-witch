@@ -1,3 +1,4 @@
+import { GatewayHandshakeQueue } from "./gateway-handshake-queue";
 import type { GatewayTransfer } from "./gateway-placement";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
@@ -227,6 +228,7 @@ function targetCoordinates(machine: GenerationMachine): GenerationCoordinates {
 
 export class GatewayPartition extends DurableObject<GatewayEnv> {
   private readonly transfers = new Map<string, StoredLocalTransfer>();
+  private readonly handshakes = new GatewayHandshakeQueue();
   private readonly transferQueue = new GatewayEventQueue();
   private readonly alarmQueue = new GatewayEventQueue();
   private generation = createGenerationMachine(1, 1);
@@ -879,6 +881,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
     guildInventoryState?: GatewayGuildInventoryState,
   ): GatewayShardConnection {
     const options: GatewayShardConnectionOptions = {
+      handshakes: this.handshakes,
       ctx: this.ctx,
       env: this.env,
       identity,
@@ -928,6 +931,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
   ): GatewayShardConnection {
     const key = `gateway-fleet-checkpoint-v1:${connectionKey(identity)}`;
     const options: GatewayShardConnectionOptions = {
+      handshakes: this.handshakes,
       ctx: this.ctx,
       env: this.env,
       identity,

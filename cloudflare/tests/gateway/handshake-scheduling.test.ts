@@ -1,3 +1,4 @@
+import { GatewayHandshakeQueue } from "../../workers/gateway/src/gateway-handshake-queue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   GatewayShardConnection,
@@ -45,6 +46,7 @@ function connection(
   shardId: number,
   resumable = false,
   gatewayUrl = () => Promise.resolve("wss://gateway.discord.gg"),
+  handshakes = new GatewayHandshakeQueue(),
 ) {
   const identity = { generation: 7, shardId, shardCount: 24, ownerId: "gateway-partition-0" };
   const background: Promise<unknown>[] = [];
@@ -58,6 +60,7 @@ function connection(
     gatewayUrl,
   };
   const shard = new GatewayShardConnection({
+    handshakes,
     ctx: { storage: new StorageFixture(), waitUntil: (promise) => { background.push(promise); } },
     env: {
       DISCORD_BOT_TOKEN: "development-token-first-part.second.development-token-third-part",
@@ -94,6 +97,25 @@ afterEach(() => {
 });
 
 describe("Gateway handshake scheduling", () => {
+  it("admits openings as slots complete while a stalled peer and queued cancellation remain isolated", async () => {
+    const queue = new GatewayHandshakeQueue();
+    const connections = Array.from({ length: 12 }, (_, index) => connection(index, false, undefined, queue));
+    await Promise.all(connections.map(({ shard }) => shard.start()));
+    await flush();
+    expect(HandshakeSocket.instances).toHaveLength(6);
+    await connections[11]?.shard.parkForTransfer();
+    for (let index = 1; index < 11; index += 1) {
+      HandshakeSocket.instances[index]?.open();
+      await flush();
+    }
+    expect(HandshakeSocket.instances).toHaveLength(11);
+    expect(connections[0]?.shard.status().state).toBe("connecting");
+    expect(connections[10]?.shard.status().state).toBe("awaiting-hello");
+    expect(connections[11]?.shard.status().identifyAttempts).toBe(0);
+    await Promise.all(connections.map(({ shard }) => shard.stop()));
+    await Promise.all(connections.flatMap(({ background }) => background));
+  });
+
   it("ignores a late transport-open callback after stop", async () => {
     const current = connection(0);
     await current.shard.start();

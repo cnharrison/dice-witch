@@ -310,6 +310,7 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
       assert.equal(inventory.length, SHARDS);
       for (const entry of inventory) assert.deepEqual(entry.inventory.guildIds, guildIds(entry.status.shardId, Math.floor(model.guilds / SHARDS) + Number(entry.status.shardId < model.guilds % SHARDS)));
       final = await drained();
+      assert.equal(final.stats.counters.identifies, SHARDS, "Recovery unexpectedly reidentified a session");
       report.status = "completed-platform-scenario";
     } catch (error) {
       report.status = "failed";

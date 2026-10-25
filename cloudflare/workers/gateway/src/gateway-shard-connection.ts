@@ -1,3 +1,4 @@
+import { GatewayHandshakeQueue } from "./gateway-handshake-queue";
 import { z } from "zod";
 import {
   createGatewayMachine,
@@ -519,6 +520,7 @@ export type GatewayShardConnectionEnv = Pick<
 };
 
 export type GatewayShardConnectionOptions = {
+  handshakes?: GatewayHandshakeQueue;
   ctx: GatewayShardConnectionContext;
   env: GatewayShardConnectionEnv;
   identity: GatewayShardIdentity;
@@ -593,6 +595,7 @@ export class GatewayShardConnection {
   private identifyPermitDenials = 0;
   private lastIdentifyPermit: PublicIdentifyPermit | null = null;
   private pendingOpening: AbortController | null = null;
+  private readonly handshakes: GatewayHandshakeQueue;
   private readonly ctx: GatewayShardConnectionContext;
   private readonly env: GatewayShardConnectionEnv;
   private readonly identity: GatewayShardIdentity;
@@ -606,6 +609,7 @@ export class GatewayShardConnection {
   private readonly isDispatchActive: (identity: GatewayShardIdentity) => boolean;
 
   constructor(options: GatewayShardConnectionOptions) {
+    this.handshakes = options.handshakes ?? new GatewayHandshakeQueue();
     this.ctx = options.ctx;
     this.env = options.env;
     this.identity = options.identity;
@@ -945,22 +949,56 @@ export class GatewayShardConnection {
       // Stop and transfer parking both abort this pending URL lookup.
       if (opening.signal.aborted) return;
       if (gatewayUrl === null) throw new Error("Resume Gateway URL is unavailable");
-      const socket = new WebSocket(normalizeDiscordGatewayUrl(gatewayUrl, allowedGatewayHostname(this.env)));
-      this.socket = socket;
-      this.failedSocket = null;
-      if (mode === "identify") {
-        this.initialGuilds.replace([], []);
-        this.lifecycleMutationScope = null;
-      }
-      socket.addEventListener("open", () => {
-        this.runSocketEvent(socket, "socket-open", async () => {
-          await this.apply({ type: "socket-open" });
-        });
-      });
-      this.attachSocketListeners(socket);
-    } finally {
+      this.ctx.waitUntil(this.handshakes.run(opening.signal, () => this.openHandshakeSocket(gatewayUrl, mode, opening.signal))
+        .catch(async () => {
+          if (opening.signal.aborted) return;
+          this.lastError = "websocket-error";
+          await this.apply({ type: "socket-closed", code: null, closedAt: Date.now() });
+        }).finally(() => {
+          if (this.pendingOpening === opening) this.pendingOpening = null;
+        }));
+    } catch (error) {
       if (this.pendingOpening === opening) this.pendingOpening = null;
+      throw error;
     }
+  }
+
+  private openHandshakeSocket(gatewayUrl: string, mode: GatewayConnectionMode, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return Promise.resolve();
+    const socket = new WebSocket(normalizeDiscordGatewayUrl(gatewayUrl, allowedGatewayHostname(this.env)));
+    this.socket = socket;
+    this.failedSocket = null;
+    if (mode === "identify") {
+      this.initialGuilds.replace([], []);
+      this.lifecycleMutationScope = null;
+    }
+    socket.addEventListener("open", () => {
+      this.runSocketEvent(socket, "socket-open", async () => {
+        await this.apply({ type: "socket-open" });
+      });
+    });
+    this.attachSocketListeners(socket);
+    return new Promise<void>((resolve) => {
+      const finish = () => {
+        socket.removeEventListener("open", finish);
+        socket.removeEventListener("close", finish);
+        socket.removeEventListener("error", failed);
+        signal.removeEventListener("abort", cancel);
+        resolve();
+      };
+      const failed = () => {
+        finish();
+        if (this.socket === socket) this.closeSocket(4000, "handshake-failed");
+      };
+      const cancel = () => {
+        finish();
+        if (this.socket === socket) this.closeSocket(4000, "handshake-cancelled");
+      };
+      socket.addEventListener("open", finish);
+      socket.addEventListener("close", finish);
+      socket.addEventListener("error", failed);
+      signal.addEventListener("abort", cancel, { once: true });
+    });
   }
 
   private attachSocketListeners(socket: WebSocket): void {

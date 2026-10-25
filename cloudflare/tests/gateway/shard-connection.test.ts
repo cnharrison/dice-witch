@@ -259,8 +259,10 @@ function connection(
     isDispatchActive: () => dispatchActive,
   });
   const testable = testableConnection(shard);
-  const socket = new WebSocketPair()[0];
+  const pair = new WebSocketPair();
+  const socket = pair[0];
   socket.accept();
+  pair[1].accept();
   const socketSend = vi.spyOn(socket, "send");
   testable.machine = restored.checkpoint === undefined ? identifyMachine() : resumingMachine(restored.checkpoint);
   testable.socket = socket;
@@ -275,6 +277,7 @@ function connection(
     scheduleAlarm,
     testable,
     socketSend,
+    socketPeer: pair[1],
     waitUntil,
   };
 }
