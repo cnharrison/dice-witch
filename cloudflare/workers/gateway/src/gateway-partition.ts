@@ -228,7 +228,11 @@ function targetCoordinates(machine: GenerationMachine): GenerationCoordinates {
 
 export class GatewayPartition extends DurableObject<GatewayEnv> {
   private readonly transfers = new Map<string, StoredLocalTransfer>();
-  private readonly handshakes = new GatewayHandshakeQueue();
+  private readonly handshakes = new GatewayHandshakeQueue(() => {
+    // Open each batch in a fresh alarm invocation. Deployed multi-session starts
+    // can otherwise leave later native handshakes pending in the original RPC.
+    this.ctx.waitUntil(this.scheduleConnectionAlarm("gateway-handshakes", Date.now()));
+  });
   private readonly transferQueue = new GatewayEventQueue();
   private readonly alarmQueue = new GatewayEventQueue();
   private generation = createGenerationMachine(1, 1);
@@ -256,6 +260,7 @@ export class GatewayPartition extends DurableObject<GatewayEnv> {
 
   async alarm(): Promise<void> {
     this.recoveryDeadlines.clear();
+    this.handshakes.drain();
     if (this.fleetMode) {
       await Promise.all(
         [...this.fleetConnections.entries()]

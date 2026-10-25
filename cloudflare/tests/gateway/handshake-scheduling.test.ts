@@ -97,6 +97,49 @@ afterEach(() => {
 });
 
 describe("Gateway handshake scheduling", () => {
+  it("schedules new work after the previous pending batch was cancelled", async () => {
+    const schedule = vi.fn();
+    const queue = new GatewayHandshakeQueue(schedule);
+    const first = connection(0, true, undefined, queue);
+    await first.shard.start();
+    await first.shard.stop();
+    await Promise.all(first.background);
+    const second = connection(1, true, undefined, queue);
+    await second.shard.start();
+    expect(schedule).toHaveBeenCalledTimes(2);
+    queue.drain();
+    await flush();
+    expect(HandshakeSocket.instances).toHaveLength(1);
+    HandshakeSocket.instances[0]?.open();
+    await flush();
+    expect(first.shard.status().state).toBe("stopped");
+    expect(second.shard.status().state).toBe("awaiting-hello");
+    await second.shard.stop();
+    await Promise.all(second.background);
+  });
+
+  it("defers each admitted batch to its scheduled invocation", async () => {
+    const schedule = vi.fn();
+    const queue = new GatewayHandshakeQueue(schedule);
+    const connections = Array.from({ length: 9 }, (_, index) => connection(index, true, undefined, queue));
+    await Promise.all(connections.map(({ shard }) => shard.start()));
+    await flush();
+    expect(schedule).toHaveBeenCalledTimes(1);
+    expect(HandshakeSocket.instances).toHaveLength(0);
+    queue.drain();
+    await flush();
+    expect(HandshakeSocket.instances).toHaveLength(6);
+    for (const socket of HandshakeSocket.instances) socket.open();
+    await flush();
+    expect(schedule).toHaveBeenCalledTimes(2);
+    expect(HandshakeSocket.instances).toHaveLength(6);
+    queue.drain();
+    await flush();
+    expect(HandshakeSocket.instances).toHaveLength(9);
+    await Promise.all(connections.map(({ shard }) => shard.stop()));
+    await Promise.all(connections.flatMap(({ background }) => background));
+  });
+
   it("admits openings as slots complete while a stalled peer and queued cancellation remain isolated", async () => {
     const queue = new GatewayHandshakeQueue();
     const connections = Array.from({ length: 12 }, (_, index) => connection(index, false, undefined, queue));
