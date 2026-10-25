@@ -266,6 +266,11 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
     stats = await (await send(fixture, "/stats")).json();
     assert.equal(stats.counters.lifecycle, 0);
     assert.deepEqual(stats.errors, []);
+    // A second pass goes through the data service RPC, unlike initial known-guild synchronization.
+    assert.equal((await send(fixture, "/replay", { countPerShard: 240, rate: 600, channelUpdates: false })).status, 200);
+    do { stats = await (await send(fixture, "/stats")).json(); if (stats.counters.lifecycle === 240) break; await new Promise((resolve) => setTimeout(resolve, 100)); } while (Date.now() < deadline);
+    assert.equal(stats.counters.lifecycle, 240);
+    assert.deepEqual(stats.errors, []);
     assert.equal((await send(fixture, "/prepare-restart", {})).status, 200);
     options[0].bindings.TEST_RESTART = "prepared";
     await mf.setOptions(convertV4MiniflareOptions({ workers: options }));

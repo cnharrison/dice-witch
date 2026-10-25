@@ -142,7 +142,9 @@ export class FixtureController extends DurableObject {
   async data(path, body) {
     const fixture = this.active();
     if (!DataPath.safeParse(path).success || !DataBody.safeParse(body).success) throw new Error("Invalid fixture data request");
-    return fixture.data(new Request(`https://data.internal${path}`, { method: "POST", body }));
+    const response = await fixture.data(new Request(`https://data.internal${path}`, { method: "POST", body }));
+    // Return bytes, not a Response capability whose lifetime spans both RPC and fetch.
+    return response.text();
   }
 
   async stop() {
@@ -166,7 +168,8 @@ export class FixtureController extends DurableObject {
 
 export class FixtureData extends WorkerEntrypoint {
   async fetch(request) {
-    return this.env.FIXTURE.getByName(CONTROLLER).data(new URL(request.url).pathname, await request.text());
+    const body = await this.env.FIXTURE.getByName(CONTROLLER).data(new URL(request.url).pathname, await request.text());
+    return new Response(body, { headers: { "content-type": "application/json" } });
   }
 }
 
