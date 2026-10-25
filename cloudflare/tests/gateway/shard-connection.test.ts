@@ -868,3 +868,43 @@ describe("GatewayShardConnection initial guild inventory", () => {
     expect(order).not.toContain("should-not-run");
   });
 });
+
+describe("Gateway transfer barriers", () => {
+  it("drains accepted events and channel work before exporting a checkpoint", async () => {
+    const { shard, testable } = connection(true);
+    await testable.handleGatewayMessage(readyMessage());
+    // This fixture does not retain the peer socket; closure is covered by the live runner.
+    testable.socket = null;
+    let releaseEvents!: () => void;
+    let releaseChannels!: () => void;
+    const events = new Promise<void>((resolve) => { releaseEvents = resolve; });
+    const channels = new Promise<void>((resolve) => { releaseChannels = resolve; });
+    void testable.socketEventQueue.enqueue(async () => {
+      await events;
+      await testable.handleGatewayMessage({ type: "dispatch", sequence: 42, eventType: "IGNORED_EVENT", data: {} });
+    });
+    void shard["channelDirectoryQueue"].enqueue(() => channels);
+    let exported = false;
+    const pending = shard.parkForTransfer().then((snapshot) => { exported = true; return snapshot; });
+    await Promise.resolve();
+    expect(exported).toBe(false);
+    releaseEvents();
+    await Promise.resolve();
+    expect(exported).toBe(false);
+    releaseChannels();
+    expect((await pending).checkpoint.sequence).toBe(42);
+    await expect(shard.start()).rejects.toThrow("parked");
+  });
+
+  it("retries failed inventory persistence and skips an unchanged successful revision", async () => {
+    const { shard, testable, storagePut } = connection(true);
+    await testable.handleGatewayMessage(readyMessage());
+    shard["guildInventory"].apply({ type: "deactivate", guildId });
+    storagePut.mockRejectedValueOnce(new Error("storage failed"));
+    await expect(shard["persistGuildInventory"]()).rejects.toThrow("storage failed");
+    storagePut.mockClear();
+    await shard["persistGuildInventory"]();
+    await shard["persistGuildInventory"]();
+    expect(storagePut).toHaveBeenCalledTimes(1);
+  });
+});

@@ -295,6 +295,11 @@ export async function runStaging({ manifestPath, secretsPath, accountTokenPath, 
     } catch (error) {
       report.status = "failed";
       report.failure = error.message;
+      // Preserve the state at failure, not only the last successful phase poll.
+      try {
+        const [parts, stats] = await Promise.all([fleet(config, "/status"), request(fixture, "/stats")]);
+        lastPoll = { shards: parts.flatMap(({ connections }) => connections), stats, observedAt: new Date().toISOString() };
+      } catch { /* The last successful observation remains useful if an actor has failed. */ }
       const observed = lastPoll;
       if (observed) {
         report.lastObservedAt = observed.observedAt;
