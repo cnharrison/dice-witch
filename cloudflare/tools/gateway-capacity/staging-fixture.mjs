@@ -180,10 +180,13 @@ export class FixtureDiscordRest extends WorkerEntrypoint {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    // A tunnel reaches the host fixture over HTTP/loopback. Reconstruct this
+    // fixture's public origin before the protocol simulator checks destinations.
+    const publicUrl = new URL(url.pathname + url.search, `https://${env.FIXTURE_HOSTNAME}`);
     if (url.pathname === "/socket") {
       if (request.headers.get("upgrade") !== "websocket") return new Response(null, { status: 400 });
       if (Date.now() >= Number(env.EXPIRES_AT)) return new Response(null, { status: 410 });
-      return env.FIXTURE.getByName(CONTROLLER).fetch(request);
+      return env.FIXTURE.getByName(CONTROLLER).fetch(new Request(publicUrl, request));
     }
     const scheme = url.pathname === "/bot" ? "Bot" : "Bearer";
     const token = scheme === "Bot" ? env.DISCORD_BOT_TOKEN : await gatewayControlToken(env);
@@ -191,7 +194,7 @@ export default {
     if (url.pathname === "/health") return Response.json({ sourceSha: env.SOURCE_SHA, expiresAt: Number(env.EXPIRES_AT) });
     if (Date.now() >= Number(env.EXPIRES_AT) && url.pathname !== "/stop" && url.pathname !== "/probe") return new Response(null, { status: 410 });
     const controller = env.FIXTURE.getByName(CONTROLLER);
-    if (url.pathname === "/bot") return controller.fetch(request);
+    if (url.pathname === "/bot") return controller.fetch(new Request(publicUrl, request));
     if (url.pathname === "/probe" && request.method === "GET") return Response.json(await controller.probe());
     if (url.pathname === "/stats" && request.method === "GET") return Response.json(await controller.stats());
     if (request.method !== "POST") return new Response(null, { status: 405 });

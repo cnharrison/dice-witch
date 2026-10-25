@@ -238,6 +238,24 @@ test("host fixture exposes only authenticated synthetic controls on loopback", a
     const response = await fetch(new URL("/configure", local.url), { method: "POST", headers, body: JSON.stringify({ runId: "12345678-1234-4234-8234-123456789abc", guilds: 240, channels: 2, heartbeatMs: 1_000, knownGuilds: false }) });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).connected, 0);
+    const bot = await fetch(new URL("/bot", local.url), { headers: { authorization: `Bot ${FIXTURE_TOKEN}` } });
+    assert.equal(bot.status, 200);
+    assert.equal((await bot.json()).url, "wss://synthetic-fixture.trycloudflare.com/socket");
+    const socketUrl = new URL("/socket", local.url);
+    socketUrl.protocol = "ws:";
+    const socket = new WebSocket(socketUrl);
+    const ready = await new Promise((resolve, reject) => {
+      socket.addEventListener("error", reject, { once: true });
+      socket.addEventListener("message", ({ data }) => {
+        const frame = JSON.parse(data);
+        if (frame.op === 10) socket.send(JSON.stringify({ op: 2, d: { token: FIXTURE_TOKEN, shard: [0, SHARDS] } }));
+        if (frame.t === "READY") resolve(frame.d);
+      });
+    });
+    assert.equal(ready.session_id, "fixture-session-0");
+    const closed = new Promise((resolve) => socket.addEventListener("close", resolve, { once: true }));
+    socket.close(1000);
+    await closed;
     assert.equal((await fetch(new URL("/stop", local.url), { method: "POST", headers, body: "{}" })).status, 200);
   } finally {
     if (local) await local.runtime.dispose();
