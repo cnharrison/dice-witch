@@ -124,6 +124,24 @@ gateway memory limit. The runner now queries persisted errors without changing
 the running scripts, rejects incomplete log responses, and still requires platform
 memory samples. Only intentional `/restart` failures are expected.
 
+To isolate synthetic Discord-server resets, `prepareStaging` also accepts
+`externalFixtureHostname` (CLI `--external-fixture-hostname`), restricted to an
+explicit temporary `trycloudflare.com` host. Start `startLocalFixture` from
+`local-fixture.mjs` with that hostname, the same source SHA/deadline/private
+synthetic credentials, and a loopback port; point a temporary tunnel at that port.
+The original protocol fixture then runs locally while the gateway stays deployed.
+The deployed fixture facade authenticates controls and forwards them to that host.
+Its data service keeps small SQLite counters on Cloudflare, preserving low-latency
+downstream calls and exact totals across resets. Native tests exercise both fixture
+placements and recover the counters through a prepared runtime restart.
+
+Record the local fixture bundle hash and tunnel version with the deployed bundle
+manifest. Stop gateway load and delete the isolated Workers, dispose the local
+fixture runtime, terminate the tunnel, and remove private synthetic credentials in
+the experiment's cleanup handler. The local fixture uses no production credentials
+or bindings. Tunnel transport adds a separate failure mode and must be recorded;
+successful local protocol tests alone still do not establish deployed headroom.
+
 Before widening the production canary, require zero missing/duplicate events,
 unchanged interaction ACK behavior, no new memory/CPU errors, no additional Identify
 outside controlled startup/fallback, no heartbeat timeout, and no reconnect increase
@@ -198,6 +216,10 @@ owner. These findings are recorded as accepted review tradeoffs, not suppressed 
 The evidence JSON's longer trial array records all ten experiments and cleanup
 results; its structural “verbosity” finding measures data provenance, not executable
 control-flow growth.
+The shared delay validator leaves a 25-token structural match between the fixture's
+`slow` and `reconnect` controls: both invoke their distinct operation and return
+statistics. Keeping those explicit controls is clearer than introducing a generic
+operation dispatcher solely to remove that small match.
 
 ## Workload calibration
 

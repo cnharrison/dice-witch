@@ -17,10 +17,11 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.resolve("wrangler"));
 const { build } = require("esbuild");
 
-export async function prepareStaging({ output, accountId, workersSubdomain, sourceSha, expiresAt, purpose, candidateCapacity }) {
+export async function prepareStaging({ output, accountId, workersSubdomain, sourceSha, expiresAt, purpose, candidateCapacity, externalFixtureHostname }) {
   if (accountId !== APPROVED_ACCOUNT || !z.string().regex(/^[a-z0-9-]+$/).safeParse(workersSubdomain).success || !/^[a-f0-9]{40}$/.test(sourceSha)) throw new Error("Explicit approved account, subdomain, and source SHA are required");
   if (!["typecheck", "local-test", "deploy"].includes(purpose)) throw new Error("Explicit preparation purpose is required");
   if (![7, 9].includes(candidateCapacity)) throw new Error("Explicit candidate capacity must be 7 or 9");
+  if (externalFixtureHostname !== undefined && !/^[a-z0-9-]+\.trycloudflare\.com$/.test(externalFixtureHostname)) throw new Error("External fixture must use an explicit temporary tunnel hostname");
   function verifySource() {
     if (purpose !== "deploy") return;
     try {
@@ -36,14 +37,14 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
   if ((await readdir(output)).length !== 0) throw new Error("Staging output directory must be empty");
   const runId = randomBytes(6).toString("hex");
   const names = stagingNames(runId);
-  const hostname = `${names.fixture}.${workersSubdomain}.workers.dev`;
+  const hostname = externalFixtureHostname ?? `${names.fixture}.${workersSubdomain}.workers.dev`;
   const configs = [];
   for (const [role, name] of Object.entries(names)) {
     const fixture = role === "fixture";
     const capacity = role === "six" ? 6 : candidateCapacity;
     const outfile = path.join(output, `${name}.mjs`);
     const result = await build({
-      entryPoints: [path.join(root, "tools/gateway-capacity", fixture ? "staging-fixture.mjs" : "staging-gateway.ts")],
+      entryPoints: [path.join(root, "tools/gateway-capacity", fixture ? (externalFixtureHostname ? "staging-external-fixture.mjs" : "staging-fixture.mjs") : "staging-gateway.ts")],
       outfile, bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: false,
       external: ["cloudflare:workers", "node:*"], metafile: true,
       define: { BENCHMARK_FIXTURE_HOSTNAME: JSON.stringify(hostname) },
@@ -91,7 +92,7 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { values } = parseArgs({ options: { output: { type: "string" }, "account-id": { type: "string" }, "workers-subdomain": { type: "string" }, "source-sha": { type: "string" }, "expires-at": { type: "string" }, purpose: { type: "string" }, "candidate-capacity": { type: "string" } } });
-  const manifest = await prepareStaging({ output: values.output, accountId: values["account-id"], workersSubdomain: values["workers-subdomain"], sourceSha: values["source-sha"], expiresAt: Number(values["expires-at"]), purpose: values.purpose, candidateCapacity: Number(values["candidate-capacity"]) });
+  const { values } = parseArgs({ options: { output: { type: "string" }, "account-id": { type: "string" }, "workers-subdomain": { type: "string" }, "source-sha": { type: "string" }, "expires-at": { type: "string" }, purpose: { type: "string" }, "candidate-capacity": { type: "string" }, "external-fixture-hostname": { type: "string" } } });
+  const manifest = await prepareStaging({ output: values.output, accountId: values["account-id"], workersSubdomain: values["workers-subdomain"], sourceSha: values["source-sha"], expiresAt: Number(values["expires-at"]), purpose: values.purpose, candidateCapacity: Number(values["candidate-capacity"]), externalFixtureHostname: values["external-fixture-hostname"] });
   console.log(JSON.stringify({ sourceSha: manifest.sourceSha, expiresAt: manifest.expiresAt, scripts: manifest.configs.map(({ name }) => name) }));
 }

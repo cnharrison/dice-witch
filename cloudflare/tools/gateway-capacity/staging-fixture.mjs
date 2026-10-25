@@ -14,6 +14,7 @@ const Profile = z.strictObject({
 const Replay = z.strictObject({ countPerShard: z.number().int().min(1).max(24_303), rate: z.number().int().min(24).max(600), channelUpdates: z.boolean() });
 const DataPath = z.string();
 const DataBody = z.string().max(65_536);
+export const FixtureDelay = z.number().int().min(0).max(50);
 const CONTROLLER = "memory-benchmark";
 
 export class FixtureController extends DurableObject {
@@ -129,8 +130,7 @@ export class FixtureController extends DurableObject {
   }
 
   slow(milliseconds) {
-    if (!Number.isInteger(milliseconds) || milliseconds < 0 || milliseconds > 50) throw new Error("Invalid fixture service delay");
-    this.active().setSlowMs(milliseconds);
+    this.active().setSlowMs(FixtureDelay.parse(milliseconds));
     return this.stats();
   }
 

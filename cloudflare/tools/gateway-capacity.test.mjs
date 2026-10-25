@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +12,7 @@ import { assertHealthy, benchmarkSourceIdentity } from "./gateway-capacity/run.m
 import { APPROVED_ACCOUNT, prepareStaging, stagingNames } from "./gateway-capacity/staging-prepare.mjs";
 import { stagingDeadline, stagingGatewayRoles } from "./gateway-capacity/staging-run.mjs";
 import { stagingErrorEvidence } from "./gateway-capacity/staging-logs.mjs";
+import { startLocalFixture } from "./gateway-capacity/local-fixture.mjs";
 
 const execute = promisify(execFile);
 
@@ -109,6 +110,7 @@ test("staging bundle preparation refuses unapproved and dirty deployment inputs"
     await assert.rejects(prepareStaging({ ...parameters, workersSubdomain: undefined }), /approved account/);
     await assert.rejects(prepareStaging({ ...parameters, candidateCapacity: undefined }), /Explicit candidate capacity/);
     await assert.rejects(prepareStaging({ ...parameters, candidateCapacity: 8 }), /Explicit candidate capacity/);
+    await assert.rejects(prepareStaging({ ...parameters, externalFixtureHostname: "gateway.discord.gg" }), /temporary tunnel hostname/);
     await assert.rejects(prepareStaging(parameters), /clean matching committed source/);
   } finally { await rm(output, { recursive: true, force: true }); }
 });
@@ -218,14 +220,39 @@ test("capacity fixtures reject an incorrect persisted RESUME sequence", async ()
   assert.equal(fixture.counters.resumes, 0);
 });
 
-test("staging workers preserve synthetic boundaries and enforce control authentication", { timeout: 90_000 }, async () => {
+test("host fixture exposes only authenticated synthetic controls on loopback", async () => {
+  const output = await mkdtemp(path.join(os.tmpdir(), "gateway-host-fixture-"));
+  const secretsPath = path.join(output, "secrets.json");
+  const secret = "b".repeat(64);
+  let local;
+  try {
+    await writeFile(secretsPath, JSON.stringify({ GATEWAY_CONTROL_TOKEN: secret, DISCORD_BOT_TOKEN: FIXTURE_TOKEN }), { mode: 0o600 });
+    const sourceSha = "0".repeat(40);
+    const expiresAt = Date.now() + 60_000;
+    local = await startLocalFixture({ hostname: "synthetic-fixture.trycloudflare.com", sourceSha, expiresAt, secretsPath, port: 0 });
+    assert.equal(local.url.hostname, "127.0.0.1");
+    assert.match(local.bundleSha256, /^[a-f0-9]{64}$/);
+    assert.equal((await fetch(new URL("/configure", local.url), { method: "POST" })).status, 401);
+    const headers = { authorization: `Bearer ${secret}` };
+    assert.deepEqual(await (await fetch(new URL("/health", local.url), { headers })).json(), { sourceSha, expiresAt });
+    const response = await fetch(new URL("/configure", local.url), { method: "POST", headers, body: JSON.stringify({ runId: "12345678-1234-4234-8234-123456789abc", guilds: 240, channels: 2, heartbeatMs: 1_000, knownGuilds: false }) });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).connected, 0);
+    assert.equal((await fetch(new URL("/stop", local.url), { method: "POST", headers, body: "{}" })).status, 200);
+  } finally {
+    if (local) await local.runtime.dispose();
+    await rm(output, { recursive: true, force: true });
+  }
+});
+
+for (const external of [false, true]) test(`staging workers preserve synthetic boundaries and authentication (external=${external})`, { timeout: 90_000 }, async () => {
   const output = await mkdtemp(path.join(os.tmpdir(), "gateway-staging-native-"));
   const require = createRequire(import.meta.resolve("wrangler"));
   const { Miniflare, convertV4MiniflareOptions } = require("miniflare");
   const secret = "a".repeat(64);
   let mf;
   try {
-    const manifest = await prepareStaging({ output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "local-test", candidateCapacity: 9 });
+    const manifest = await prepareStaging({ output, accountId: APPROVED_ACCOUNT, workersSubdomain: "cnharrison", sourceSha: "0".repeat(40), expiresAt: Date.now() + 60_000, purpose: "local-test", candidateCapacity: 9, externalFixtureHostname: external ? "synthetic-fixture.trycloudflare.com" : undefined });
     assert.equal(manifest.candidateCapacity, 9);
     assert.equal(manifest.maxActiveObjects, 11);
     assert.deepEqual(manifest.configs.map(({ capacity }) => capacity), [null, 6, 9]);
@@ -238,9 +265,14 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
         bindings: { ...config.vars, GATEWAY_CONTROL_TOKEN: secret, DISCORD_BOT_TOKEN: FIXTURE_TOKEN },
         durableObjects: Object.fromEntries(config.durable_objects.bindings.map(({ name, class_name }) => [name, { className: class_name, useSQLite: true }])),
         serviceBindings: Object.fromEntries(config.services.map(({ binding, service, entrypoint }) => [binding, { name: service, entrypoint }])),
-        outboundService: fixtureConfig.name,
+        outboundService: external ? "external-discord" : fixtureConfig.name,
       };
     });
+    if (external) {
+      const { build } = require("esbuild");
+      const bundle = await build({ entryPoints: [fileURLToPath(new URL("./gateway-capacity/staging-fixture.mjs", import.meta.url))], bundle: true, format: "esm", platform: "browser", external: ["cloudflare:workers", "node:*"], write: false });
+      options.push({ ...options[0], name: "external-discord", scriptPath: undefined, script: bundle.outputFiles[0].text, bindings: { ...options[0].bindings } });
+    }
     mf = new Miniflare(convertV4MiniflareOptions({ workers: options }));
     await mf.ready;
     let fixture = await mf.getWorker(fixtureConfig.name);
@@ -273,6 +305,7 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
     assert.deepEqual(stats.errors, []);
     assert.equal((await send(fixture, "/prepare-restart", {})).status, 200);
     options[0].bindings.TEST_RESTART = "prepared";
+    if (external) options[3].bindings.TEST_RESTART = "prepared";
     await mf.setOptions(convertV4MiniflareOptions({ workers: options }));
     fixture = await mf.getWorker(fixtureConfig.name);
     gateway = await mf.getWorker(manifest.configs[2].name);
@@ -283,6 +316,7 @@ test("staging workers preserve synthetic boundaries and enforce control authenti
     assert.equal((await send(fixture, "/finish-restart", {})).status, 200);
     for (const partition of [0, 1, 2]) assert.equal((await send(gateway, `/stop?partition=${partition}`, {})).status, 200);
     options[0].bindings.TEST_RESTART = "unprepared";
+    if (external) options[3].bindings.TEST_RESTART = "unprepared";
     await mf.setOptions(convertV4MiniflareOptions({ workers: options }));
     fixture = await mf.getWorker(fixtureConfig.name);
     await assert.rejects(send(fixture, "/stats"), /Fixture restarted during a profile/);
