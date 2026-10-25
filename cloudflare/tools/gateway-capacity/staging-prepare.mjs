@@ -17,12 +17,36 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.resolve("wrangler"));
 const { build } = require("esbuild");
 
-export async function prepareStaging({ output, accountId, workersSubdomain, sourceSha, expiresAt, purpose, candidateCapacity, externalFixtureHostname }) {
+function cleanSourceRevision(directory) {
+  if (!path.isAbsolute(directory)) throw new Error("Baseline source root must be absolute");
+  const revision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: directory, encoding: "utf8" }).trim();
+  if (execFileSync("git", ["status", "--porcelain"], { cwd: directory, encoding: "utf8" }).trim()) throw new Error("Baseline source must be a clean checkout");
+  return revision;
+}
+
+function fixtureDestinationPlugin(gatewaySourceRoot) {
+  return { name: "fixture-only-gateway-destinations", setup(builder) {
+    builder.onResolve({ filter: /discord-gateway$/ }, (args) => {
+      if (!args.importer.startsWith(path.join(gatewaySourceRoot, "workers/gateway/src/"))) return;
+      return { path: path.join(root, "tools/gateway-capacity/staging-policy.ts") };
+    });
+    if (gatewaySourceRoot !== root) builder.onResolve({ filter: /^\./ }, (args) => {
+      const resolved = path.resolve(args.resolveDir, args.path);
+      const prefix = path.join(root, "workers/gateway/src/");
+      if (!resolved.startsWith(prefix)) return;
+      return { path: path.join(gatewaySourceRoot, "workers/gateway/src", resolved.slice(prefix.length)) + ".ts" };
+    });
+  } };
+}
+
+export async function prepareStaging({ output, accountId, workersSubdomain, sourceSha, expiresAt, purpose, candidateCapacity, externalFixtureHostname, baselineSourceRoot }) {
   if (accountId !== APPROVED_ACCOUNT || !z.string().regex(/^[a-z0-9-]+$/).safeParse(workersSubdomain).success || !/^[a-f0-9]{40}$/.test(sourceSha)) throw new Error("Explicit approved account, subdomain, and source SHA are required");
   if (!["typecheck", "local-test", "deploy"].includes(purpose)) throw new Error("Explicit preparation purpose is required");
   if (![7, 9].includes(candidateCapacity)) throw new Error("Explicit candidate capacity must be 7 or 9");
   if (externalFixtureHostname !== undefined && !/^[a-z0-9-]+\.trycloudflare\.com$/.test(externalFixtureHostname)) throw new Error("External fixture must use an explicit temporary tunnel hostname");
+  const baselineSourceSha = baselineSourceRoot === undefined ? sourceSha : cleanSourceRevision(baselineSourceRoot);
   function verifySource() {
+    if (baselineSourceRoot !== undefined && cleanSourceRevision(baselineSourceRoot) !== baselineSourceSha) throw new Error("Baseline source revision changed during preparation");
     if (purpose !== "deploy") return;
     try {
       if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() !== sourceSha || execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() !== "") throw new Error("Source revision or working tree differs");
@@ -41,19 +65,16 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
   const configs = [];
   for (const [role, name] of Object.entries(names)) {
     const fixture = role === "fixture";
+    const gatewaySourceRoot = role === "six" && baselineSourceRoot ? baselineSourceRoot : root;
     const capacity = role === "six" ? 6 : candidateCapacity;
     const outfile = path.join(output, `${name}.mjs`);
     const result = await build({
       entryPoints: [path.join(root, "tools/gateway-capacity", fixture ? (externalFixtureHostname ? "staging-external-fixture.mjs" : "staging-fixture.mjs") : "staging-gateway.ts")],
       outfile, bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: false,
       external: ["cloudflare:workers", "node:*"], metafile: true,
+      nodePaths: [path.join(root, "../node_modules")],
       define: { BENCHMARK_FIXTURE_HOSTNAME: JSON.stringify(hostname) },
-      plugins: [{ name: "fixture-only-gateway-destinations", setup(builder) {
-        builder.onResolve({ filter: /discord-gateway$/ }, (args) => {
-          if (!args.importer.startsWith(path.join(root, "workers/gateway/src/"))) return;
-          return { path: path.join(root, "tools/gateway-capacity/staging-policy.ts") };
-        });
-      } }],
+      plugins: [fixtureDestinationPlugin(gatewaySourceRoot)],
     });
     if (!fixture && !Object.keys(result.metafile.inputs).some((input) => input.endsWith("staging-policy.ts"))) throw new Error("Benchmark destination enforcement is missing from the bundle");
     const config = {
@@ -63,7 +84,7 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
       workers_dev: true, preview_urls: false, routes: [],
       limits: { cpu_ms: 30_000 },
       observability: { enabled: true, head_sampling_rate: 1, logs: { enabled: true, invocation_logs: true, persist: true } },
-      vars: { SOURCE_SHA: sourceSha, EXPIRES_AT: String(expiresAt), ...(fixture ? { FIXTURE_HOSTNAME: hostname } : {
+      vars: { SOURCE_SHA: sourceSha, GATEWAY_SOURCE_SHA: role === "six" ? baselineSourceSha : sourceSha, EXPIRES_AT: String(expiresAt), ...(fixture ? { FIXTURE_HOSTNAME: hostname } : {
         DISCORD_APPLICATION_ID: "100000000000000001",
         GATEWAY_MODE: "fleet", GATEWAY_COORDINATOR_NAME: "development-generation-1",
         GATEWAY_PARTITION_CAPACITY: String(capacity), GATEWAY_FLEET_CONNECTION_CAPACITY: String(capacity),
@@ -86,13 +107,13 @@ export async function prepareStaging({ output, accountId, workersSubdomain, sour
     configs.push({ role, name, capacity: fixture ? null : capacity, configPath, configDigest, outfile, digest, url: `https://${name}.${workersSubdomain}.workers.dev` });
   }
   verifySource();
-  const manifest = { purpose, runId, accountId, sourceSha, expiresAt, hostname, candidateCapacity, maxActiveObjects: 8 + Math.ceil(25 / candidateCapacity), maxLoadSeconds: 3_600, maxAdditionalCostUsd: 25, configs };
+  const manifest = { purpose, runId, accountId, sourceSha, baselineSourceSha, expiresAt, hostname, candidateCapacity, maxActiveObjects: 8 + Math.ceil(25 / candidateCapacity), maxLoadSeconds: 3_600, maxAdditionalCostUsd: 25, configs };
   await writeFile(path.join(output, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { values } = parseArgs({ options: { output: { type: "string" }, "account-id": { type: "string" }, "workers-subdomain": { type: "string" }, "source-sha": { type: "string" }, "expires-at": { type: "string" }, purpose: { type: "string" }, "candidate-capacity": { type: "string" }, "external-fixture-hostname": { type: "string" } } });
-  const manifest = await prepareStaging({ output: values.output, accountId: values["account-id"], workersSubdomain: values["workers-subdomain"], sourceSha: values["source-sha"], expiresAt: Number(values["expires-at"]), purpose: values.purpose, candidateCapacity: Number(values["candidate-capacity"]), externalFixtureHostname: values["external-fixture-hostname"] });
+  const { values } = parseArgs({ options: { output: { type: "string" }, "account-id": { type: "string" }, "workers-subdomain": { type: "string" }, "source-sha": { type: "string" }, "expires-at": { type: "string" }, purpose: { type: "string" }, "candidate-capacity": { type: "string" }, "external-fixture-hostname": { type: "string" }, "baseline-source-root": { type: "string" } } });
+  const manifest = await prepareStaging({ output: values.output, accountId: values["account-id"], workersSubdomain: values["workers-subdomain"], sourceSha: values["source-sha"], expiresAt: Number(values["expires-at"]), purpose: values.purpose, candidateCapacity: Number(values["candidate-capacity"]), externalFixtureHostname: values["external-fixture-hostname"], baselineSourceRoot: values["baseline-source-root"] });
   console.log(JSON.stringify({ sourceSha: manifest.sourceSha, expiresAt: manifest.expiresAt, scripts: manifest.configs.map(({ name }) => name) }));
 }

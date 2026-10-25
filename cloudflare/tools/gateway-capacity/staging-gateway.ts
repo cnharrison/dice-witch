@@ -28,6 +28,12 @@ export class GatewayPartition extends LocalPartition {
         if (checkpoint.resumeGatewayUrl !== null) fixtureDestination(checkpoint.resumeGatewayUrl);
       }
       if (Date.now() >= this.deadline) await this.shutdownFleet();
+      console.log(JSON.stringify({
+        message: "Benchmark actor activation",
+        actorId: ctx.id.toString(),
+        activationId: this.status().activationId,
+        sourceSha: this.sourceSha,
+      }));
     });
   }
 

@@ -142,6 +142,16 @@ the experiment's cleanup handler. The local fixture uses no production credentia
 or bindings. Tunnel transport adds a separate failure mode and must be recorded;
 successful local protocol tests alone still do not establish deployed headroom.
 
+Use `baselineSourceRoot` (`--baseline-source-root`) to compare against a clean
+maintained gateway checkout, instead of merely running the feature at capacity six.
+Point it at that checkout's `cloudflare` directory. Preparation checks its Git
+revision and cleanliness before and after bundling, redirects only the baseline's
+gateway source, and retains the same fixture, destination policy and pinned tool
+dependencies. `baselineSourceSha`, per-Worker `GATEWAY_SOURCE_SHA`, bundle hashes
+and metafiles identify the actual compared implementations. Resource-outcome log
+queries run independently of error-level console queries, so missing console
+messages do not conceal an exceeded CPU/memory or internal runtime outcome.
+
 Before widening the production canary, require zero missing/duplicate events,
 unchanged interaction ACK behavior, no new memory/CPU errors, no additional Identify
 outside controlled startup/fallback, no heartbeat timeout, and no reconnect increase
@@ -240,3 +250,12 @@ stress experiment. The no-tail baseline also lost six sockets during slow-servic
 replay at 600, so removing the instrumentation confounder alone did not establish
 stability. Re-measure production traffic before enabling consolidation; the calibrated test does not
 claim that either topology sustains 600 large guild payloads/second.
+
+The source-comparison harness logs each gateway actor activation with its object
+and activation IDs. This staging-only diagnostic distinguishes object reconstruction
+from transport closure without attaching a live tail. Source provenance is recorded
+separately for the maintained baseline and candidate bundles. The six added diagnostic
+lines cross the structural class-length threshold; retaining them beside actor
+initialization is intentional. The plugin factory and its nested esbuild `setup`
+callback are one implementation, not two duplicated implementations. The remaining
+churn finding reflects successive harness corrections; no lint rules are suppressed.

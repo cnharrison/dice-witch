@@ -24,6 +24,10 @@ test("persisted staging logs distinguish deliberate crashes and reject incomplet
   const restart = event("POST https://fixture/restart?partition=0");
   Object.assign(restart.$workers, { outcome: "exception", event: { request: { url: "https://fixture/restart?partition=0" } } });
   assert.deepEqual(stagingErrorEvidence(result([restart]), ["fixture"]).unexpected, []);
+  const resourceFailure = event("Benchmark persisted restart");
+  resourceFailure.$metadata.level = "info";
+  resourceFailure.$workers.outcome = "exceededMemory";
+  assert.equal(stagingErrorEvidence(result([resourceFailure]), ["fixture"]).unexpected[0].outcome, "exceededMemory");
   assert.throws(() => stagingErrorEvidence(result([event("error")]), ["other"]), /Unexpected Worker/);
   assert.throws(() => stagingErrorEvidence({ events: { events: [], count: 1 } }, ["fixture"]), /truncated/);
   const truncated = event("error");

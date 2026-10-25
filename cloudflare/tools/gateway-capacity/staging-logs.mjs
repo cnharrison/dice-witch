@@ -20,27 +20,35 @@ export function stagingErrorEvidence(result, names) {
     assert(!event.$workers.truncated, "Persisted error event was truncated");
     const url = event.$workers.event?.request?.url;
     const intentionalAbort = event.$workers.outcome === "exception" && url !== undefined && new URL(url).pathname === "/restart";
-    return { timestamp: event.timestamp, worker: event.$workers.scriptName, objectId: event.$workers.durableObjectId, intentionalAbort, message: event.source?.message ?? event.$metadata.message ?? "Unspecified error" };
+    return { timestamp: event.timestamp, worker: event.$workers.scriptName, objectId: event.$workers.durableObjectId, outcome: event.$workers.outcome, intentionalAbort, message: event.source?.message ?? event.$metadata.message ?? "Unspecified error" };
   });
-  return { events, unexpected: events.filter(({ message, intentionalAbort }) => !intentionalAbort && message !== "Benchmark persisted restart") };
+  return { events, unexpected: events.filter(({ message, intentionalAbort, outcome }) => !intentionalAbort && !(message === "Benchmark persisted restart" && (outcome === undefined || outcome === "exception"))) };
 }
 
 export async function collectStagingErrors(accountId, token, names, startedAt) {
   const checkedAt = Date.now();
-  const query = {
-    queryId: "dice-witch-consolidation-errors", dry: true, view: "events", limit: 1_000,
-    timeframe: { from: startedAt, to: checkedAt },
-    parameters: { datasets: ["cloudflare-workers"], filters: [
-      { key: "$workers.scriptName", operation: "in", type: "string", value: names.join(",") },
-      { key: "$metadata.level", operation: "eq", type: "string", value: "error" },
-    ] },
-  };
-  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/observability/telemetry/query`, {
-    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify(query), signal: AbortSignal.timeout(30_000), redirect: "error",
-  });
-  assert(response.ok, "Persisted Worker logs unavailable");
-  const body = await response.json();
-  assert.equal(body.success, true, "Persisted Worker log query failed");
-  return { checkedAt, ...stagingErrorEvidence(body.result, names) };
+  // Resource outcomes need not have an error-level console message.
+  const selectors = [
+    { key: "$metadata.level", operation: "eq", type: "string", value: "error" },
+    { key: "$workers.outcome", operation: "in", type: "string", value: "exceededCpu,exceededMemory,internalError,unknown,killSwitch,daemonDown,loadShed,scriptNotFound,exceededWallTime" },
+  ];
+  const results = await Promise.all(selectors.map(async (selector, index) => {
+    const query = {
+      queryId: `dice-witch-consolidation-errors-${index}`, dry: true, view: "events", limit: 1_000,
+      timeframe: { from: startedAt, to: checkedAt },
+      parameters: { datasets: ["cloudflare-workers"], filters: [
+        { key: "$workers.scriptName", operation: "in", type: "string", value: names.join(",") },
+        selector,
+      ] },
+    };
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/observability/telemetry/query`, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(query), signal: AbortSignal.timeout(30_000), redirect: "error",
+    });
+    assert(response.ok, "Persisted Worker logs unavailable");
+    const body = await response.json();
+    assert.equal(body.success, true, "Persisted Worker log query failed");
+    return stagingErrorEvidence(body.result, names);
+  }));
+  return { checkedAt, events: results.flatMap(({ events }) => events), unexpected: results.flatMap(({ unexpected }) => unexpected) };
 }
