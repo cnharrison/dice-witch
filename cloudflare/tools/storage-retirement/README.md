@@ -188,3 +188,40 @@ those four cases remain a manual check until that runner is improved; they were
 explicitly run here. Their original no-schema assertion failures remain in
 `/tmp/retirement-parameterized-tests.log`, followed by the passing `-2.log` run.
 No tests or graders were removed to obtain these results.
+
+## Staging promotion dependency gate
+
+The first GitHub CI run for this change failed its live dependency audit. Staging
+promotion requires successful exact-SHA CI, so the follow-up dependency change
+updates direct Zod to 4.6.6 and Vite to 8.1.6, and pins patched transitive
+brace-expansion 5.0.12, source-map-js 1.2.2 and Undici 6.29.1/7.30.1. Zod's override
+uses the root dependency version so the Cloudflare test package's exact pin cannot
+retain the vulnerable copy. No audit exceptions or severity thresholds changed.
+The existing Sharp 0.35.5 override remains in force.
+
+The affected advisories include
+[Zod collection exhaustion](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) and
+[source-map-js indexed-offset denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+The complete original npm report is `/tmp/dice-retirement-audit.json`; original
+CI failure is `/tmp/dice-retirement-ci-static-clean.log`. Incremental resolutions
+failed to apply exact transitive overrides and one regressed Sharp; those results
+were discarded and their failed audits retained as `audit-fixed` through
+`audit-fixed-4` logs. A fresh npm 11.6.2 resolution passes the unchanged gate
+(`/tmp/dice-retirement-audit-fixed-5.log`) and retains Sharp 0.35.5. This refreshes
+transitive packages within the existing manifest ranges, so full suite, build,
+type and lint verification is required rather than only retirement tests.
+
+The repository dependency owner can remove the new overrides when each upstream
+parent resolves patched versions on a clean install and the same audit and full
+verification pass. Do not remove overrides merely because one locally installed
+tree is clean. No desktop rebuild applies; Discord action formats and the public
+server contracts are unchanged. Staging and production releases remain separate.
+
+The final dependency candidate passed the unchanged live audit gate, the full
+`npm test` suite, the four separately selected RollWork parameterized cases,
+workspace type checks, CI lint, frontend build/performance budget, Roll Worker
+dry run and npm lockfile consistency dry run. The transitive refresh changes
+120 existing lockfile paths; its resolved version diff is preserved at
+`/tmp/dice-retirement-resolved-dependency-changes.json`. Independent review found
+no remaining dependency blockers in this candidate. Deployed acceptance is still
+required; local passing results do not bypass exact-SHA CI promotion.
