@@ -4,6 +4,7 @@
     ".generated/data.d.ts",
     ".generated/roll.d.ts",
     "workers/roll/**/*.ts",
+    "tools/storage-retirement/worker.ts",
     "packages/roll-domain/**/*.ts",
     "packages/roll-render-model/**/*.ts",
     "packages/dice-canvaskit/src/assets.d.ts",

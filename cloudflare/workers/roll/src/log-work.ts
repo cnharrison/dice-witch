@@ -158,8 +158,18 @@ const DeliverRollLogResultSchema = z.discriminatedUnion("status", [
 ]);
 
 export class LogWork extends DurableObject<LogWorkEnv> {
+  private schemaReady = false;
+  private activeOperations = 0;
+
   constructor(ctx: DurableObjectState, env: LogWorkEnv) {
     super(ctx, env);
+    if (this.ctx.storage.sql.exec(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'log_artifact'",
+    ).toArray().length !== 0) this.ensureSchema();
+  }
+
+  private ensureSchema(): void {
+    if (this.schemaReady) return;
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS log_artifact (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -176,9 +186,20 @@ export class LogWork extends DurableObject<LogWorkEnv> {
         last_http_status INTEGER
       );
     `);
+    this.schemaReady = true;
   }
 
   async accept(value: SchemaInput): Promise<AcceptLogArtifactResult> {
+    this.activeOperations += 1;
+    try {
+      return await this.acceptWhileActive(value);
+    } finally {
+      this.activeOperations -= 1;
+      if (!this.hasArtifact()) await this.retireEmptyStorage();
+    }
+  }
+
+  private async acceptWhileActive(value: SchemaInput): Promise<AcceptLogArtifactResult> {
     const input = validateRollLogArtifact(value);
     if (this.ctx.id.name !== input.rollId) return { status: "conflict" };
     const stored = await storedLogArtifact(input);
@@ -192,6 +213,11 @@ export class LogWork extends DurableObject<LogWorkEnv> {
     }
 
     const acceptedAt = Date.now();
+    // The source only hands off within this window. An expired artifact cannot
+    // become new work after its receipt has been retired (including after eviction).
+    if (acceptedAt >= input.destinationDeliveredAt + LOG_WORK_RETRY_WINDOW_MS ||
+        input.destinationDeliveredAt > acceptedAt) return { status: "conflict" };
+    this.ensureSchema();
     const retryUntil = acceptedAt + LOG_WORK_RETRY_WINDOW_MS;
     const expiresAt = retryUntil + LOG_WORK_RETENTION_MS;
     const insertion = this.ctx.storage.sql.exec(
@@ -247,6 +273,16 @@ export class LogWork extends DurableObject<LogWorkEnv> {
   }
 
   async alarm(): Promise<void> {
+    this.activeOperations += 1;
+    try {
+      await this.processAlarm();
+    } finally {
+      this.activeOperations -= 1;
+    }
+    if (!this.hasArtifact()) await this.retireEmptyStorage();
+  }
+
+  private async processAlarm(): Promise<void> {
     const row = this.readRow();
     if (row === null) return;
     const now = Date.now();
@@ -539,7 +575,41 @@ export class LogWork extends DurableObject<LogWorkEnv> {
     );
   }
 
+  /** Retire only empty storage; safe to repeat by opaque ID during maintenance.
+   * No live work, receipts or retained Discord actions are discarded here.
+   */
+  async retireEmptyStorage(): Promise<"retired" | "retained"> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (this.activeOperations !== 0) return "retained";
+      const tables = this.ctx.storage.sql.exec<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB '_cf_*'",
+      ).toArray();
+      const ownedTables = new Set(['log_artifact']);
+      for (const table of tables) {
+        if (!ownedTables.has(table.name)) return "retained";
+        const identifier = table.name.replaceAll('"', '""');
+        if (this.ctx.storage.sql.exec(`SELECT 1 FROM "${identifier}" LIMIT 1`).toArray().length !== 0) {
+          return "retained";
+        }
+      }
+      if ((await this.ctx.storage.list({ limit: 1 })).size !== 0) return "retained";
+      // Explicit cancellation preserves behavior on the pinned compatibility date.
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      this.schemaReady = false;
+      return "retired";
+    });
+  }
+
+  private hasArtifact(): boolean {
+    // Eligibility must not reread the potentially large image and artifact body.
+    return this.schemaReady && this.ctx.storage.sql.exec(
+      "SELECT 1 FROM log_artifact WHERE singleton = 1",
+    ).toArray().length !== 0;
+  }
+
   private readRow(): StoredLogRow | null {
+    if (!this.schemaReady) return null;
     const value: SchemaInput = this.ctx.storage.sql
       .exec(
         `SELECT

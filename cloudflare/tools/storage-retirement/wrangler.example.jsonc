@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "dice-witch-storage-retirement-staging",
+  "main": "worker.ts",
+  "compatibility_date": "2026-07-10",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "ACCOUNT_ID": "REPLACE_WITH_RELEASE_TARGET_ACCOUNT",
+    "NAMESPACE_ID": "REPLACE_WITH_RELEASE_TARGET_NAMESPACE"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "TARGET", "class_name": "RollWork", "script_name": "dice-witch-roll-staging" }]
+  }
+}

@@ -903,13 +903,24 @@ function rollLogArtifact(value: SchemaInput): RollLogArtifact {
 
 export class RollWork extends DurableObject<RollEnv> {
   private activeAcceptances = 0;
+  private activeOperations = 0;
   private activeDelivery: Promise<DeliverRollWorkResult> | null = null;
   private activeAccounting: Promise<void> | null = null;
   private activeLogging: Promise<void> | null = null;
   private activeHelper: Promise<void> | null = null;
 
+  private schemaReady = false;
+
   constructor(ctx: DurableObjectState, env: RollEnv) {
     super(ctx, env);
+    if (this.ctx.storage.sql.exec(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'roll_work'",
+    ).toArray().length !== 0) this.ensureSchema();
+  }
+
+  private ensureSchema(): void {
+    if (this.schemaReady) return;
+
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS roll_work (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -1094,9 +1105,11 @@ export class RollWork extends DurableObject<RollEnv> {
         );
       }
     }
+    this.schemaReady = true;
   }
 
   private readSavedRollPicker(): SavedRollPickerRow | undefined {
+    if (!this.schemaReady) return undefined;
     const row: SchemaInput = this.ctx.storage.sql
       .exec("SELECT * FROM saved_roll_picker WHERE singleton = 1")
       .toArray()[0];
@@ -1111,6 +1124,7 @@ export class RollWork extends DurableObject<RollEnv> {
     if (this.ctx.id.name !== context.interactionId) return { status: "conflict" } as const;
     const expiresAt = interactionExpiresAt(context.interactionId);
     if (expiresAt <= Date.now()) return { status: "expired" } as const;
+    this.ensureSchema();
     return this.ctx.storage.transactionSync(() => {
       const existing = this.readSavedRollPicker();
       if (existing !== undefined) {
@@ -1263,6 +1277,7 @@ export class RollWork extends DurableObject<RollEnv> {
     }
     const expiresAt = interactionExpiresAt(context.interactionId);
     if (expiresAt <= Date.now()) return { status: "expired" } as const;
+    this.ensureSchema();
     return this.ctx.storage.transactionSync(() => {
       const existing = this.readSavedRollPicker();
       if (existing !== undefined) {
@@ -1294,6 +1309,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private readSavedRollInvocation(): SavedRollInvocationV1 | undefined {
+    if (!this.schemaReady) return undefined;
     const row = this.ctx.storage.sql
       .exec<{ invocation_json: string }>(
         "SELECT invocation_json FROM saved_roll_invocation WHERE singleton = 1",
@@ -1446,6 +1462,10 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   async acceptSavedRollDelivery(value: SchemaInput) {
+    return this.withActiveWork(() => this.acceptSavedRollDeliveryInternal(value));
+  }
+
+  private async acceptSavedRollDeliveryInternal(value: SchemaInput) {
     const result = SavedRollDeliveryRequestSchema.safeParse(value);
     if (!result.success || result.data.sessionId !== this.ctx.id.name) {
       throw new Error("Saved roll delivery request is invalid");
@@ -1523,6 +1543,10 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   async copySavedRollToMine(value: SchemaInput) {
+    return this.withActiveWork(() => this.copySavedRollToMineInternal(value));
+  }
+
+  private async copySavedRollToMineInternal(value: SchemaInput) {
     const result = SavedRollCopyRequestSchema.safeParse(value);
     if (!result.success) {
       throw new Error("Saved roll copy request is invalid");
@@ -1711,6 +1735,10 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   async deliver(value: SchemaInput): Promise<DeliverRollWorkResult> {
+    return this.withActiveWork(() => this.deliverWhileActive(value));
+  }
+
+  private async deliverWhileActive(value: SchemaInput): Promise<DeliverRollWorkResult> {
     const accepted = await this.acceptDeliveryInternal(value, true);
     if (
       accepted.status === "conflict" ||
@@ -1737,6 +1765,13 @@ export class RollWork extends DurableObject<RollEnv> {
     value: SchemaInput,
     deliverInline: boolean,
   ): Promise<AcceptRollDeliveryResult> {
+    return this.withActiveWork(() => this.acceptDeliveryWhileActive(value, deliverInline));
+  }
+
+  private async acceptDeliveryWhileActive(
+    value: SchemaInput,
+    deliverInline: boolean,
+  ): Promise<AcceptRollDeliveryResult> {
     const handlerStartedAt = Date.now();
     const delivery = validateDeliveryRequest(value);
     if (this.ctx.id.name !== delivery.interaction.id) {
@@ -1756,6 +1791,7 @@ export class RollWork extends DurableObject<RollEnv> {
     const resolution = await this.recordForDelivery(delivery);
     const recordPreparationMs = elapsedMs(recordPreparationStartedAt);
     if (resolution.status !== "ready") return resolution;
+    this.ensureSchema();
 
     this.activeAcceptances += 1;
     const acceptance = await this.finishDeliveryAcceptance(
@@ -2088,6 +2124,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private readLifecycleOutbox(): StoredLifecycleOutboxRow | undefined {
+    if (!this.schemaReady) return undefined;
     return this.ctx.storage.sql
       .exec<StoredLifecycleOutboxRow>(
         `SELECT snapshot_json, synced_revision, sync_attempts, next_sync_at
@@ -2394,12 +2431,31 @@ export class RollWork extends DurableObject<RollEnv> {
 
   private async rescheduleAlarmForActiveWork(): Promise<boolean> {
     // Alarm work must not overtake durable acceptance or provider side effects.
-    if (this.activeAcceptances === 0 && this.activeDelivery === null) return false;
+    if (!this.hasActiveWork()) return false;
     await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
     return true;
   }
 
+  private async withActiveWork<Result>(operation: () => Promise<Result>): Promise<Result> {
+    this.activeOperations += 1;
+    try {
+      return await operation();
+    } finally {
+      this.activeOperations -= 1;
+    }
+  }
+
+  private hasActiveWork(): boolean {
+    return this.activeOperations !== 0 || this.activeAcceptances !== 0 || this.activeDelivery !== null ||
+      this.activeAccounting !== null || this.activeLogging !== null ||
+      this.activeHelper !== null;
+  }
+
   private async processAlarm(): Promise<void> {
+    if (!this.schemaReady) {
+      await this.retireEmptyStorage();
+      return;
+    }
     this.deleteExpiredRetainedIntents();
     if (await this.rescheduleAlarmForActiveWork()) return;
     let delivery = this.readDelivery();
@@ -2441,6 +2497,9 @@ export class RollWork extends DurableObject<RollEnv> {
   private async finalizeExpiredDelivery(
     delivery: StoredDeliveryRow,
   ): Promise<void> {
+    if (delivery.accounting_state === "pending") {
+      await this.runAccounting();
+    }
     if (
       delivery.state === "delivered" &&
       delivery.logging_state === "pending" &&
@@ -2465,6 +2524,11 @@ export class RollWork extends DurableObject<RollEnv> {
       }
     }
     if (delivery.state === "pending") {
+      // Destination expiry is terminal even while independent accounting recovers.
+      // Keep its receipt, but never retain a token or repeat terminal telemetry.
+      this.ctx.storage.sql.exec(
+        "UPDATE interaction_delivery SET state = 'failed', token = NULL, failure_phase = 'deadline' WHERE singleton = 1",
+      );
       const completedAt = Date.now();
       const failurePhase = delivery.failure_phase ?? "expired";
       this.advanceLifecycle({
@@ -2485,6 +2549,14 @@ export class RollWork extends DurableObject<RollEnv> {
       });
     }
     await this.syncLifecycle();
+    if (this.hasActiveWork()) {
+      await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(1));
+      return;
+    }
+    if (this.readDelivery()?.accounting_state === "pending") {
+      await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(delivery.accounting_attempts + 1));
+      return;
+    }
     const lifecycle = this.readLifecycleOutbox();
     if (
       lifecycle !== undefined &&
@@ -2495,6 +2567,7 @@ export class RollWork extends DurableObject<RollEnv> {
       await this.ctx.storage.setAlarm(lifecycle.next_sync_at);
       return;
     }
+    if (await this.rescheduleAlarmForActiveWork()) return;
     this.deleteStoredWork();
     await this.scheduleRetainedIntentExpiry();
   }
@@ -3016,6 +3089,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private readSourceLogRow(): StoredSourceLogRow | undefined {
+    if (!this.schemaReady) return undefined;
     return this.ctx.storage.sql
       .exec<StoredSourceLogRow>(
         `SELECT artifact_json, image_bytes, image_sha256,
@@ -4294,6 +4368,7 @@ export class RollWork extends DurableObject<RollEnv> {
   private storedPreparation(
     request: RollWorkRequest,
   ): PrepareRollWorkResult | undefined {
+    if (!this.schemaReady) return undefined;
     const row = this.ctx.storage.sql
       .exec<StoredWorkRow>(
         `SELECT request_json, record_json
@@ -4553,8 +4628,10 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   prepare(value: SchemaInput): PrepareRollWorkResult {
+    const request = validateRequest(value);
+    this.ensureSchema();
     return this.ctx.storage.transactionSync(() =>
-      this.prepareRequest(validateRequest(value)),
+      this.prepareRequest(request),
     );
   }
 
@@ -4591,6 +4668,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private readWork(): RollWorkRecord | undefined {
+    if (!this.schemaReady) return undefined;
     const row = this.ctx.storage.sql
       .exec<StoredWorkRow>(
         `SELECT request_json, record_json
@@ -4665,6 +4743,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private readSaveRollIntent(): SaveRollIntent | undefined {
+    if (!this.schemaReady) return undefined;
     const row = this.ctx.storage.sql
       .exec<{ intent_json: string }>(
         "SELECT intent_json FROM save_roll_intent WHERE singleton = 1",
@@ -4719,6 +4798,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private readTextResultIntent(): TextResultIntentV1 | undefined {
+    if (!this.schemaReady) return undefined;
     const row = this.ctx.storage.sql
       .exec<{ intent_json: string }>(
         "SELECT intent_json FROM text_result_intent WHERE singleton = 1",
@@ -4786,10 +4866,36 @@ export class RollWork extends DurableObject<RollEnv> {
       this.readTextResultIntent()?.expiresAt,
     ].filter((value): value is number => value !== undefined);
     if (expiries.length === 0) {
-      await this.ctx.storage.deleteAlarm();
+      await this.retireEmptyStorage();
       return;
     }
     await this.ctx.storage.setAlarm(Math.min(...expiries));
+  }
+
+  /** Retire only empty storage; safe to repeat by opaque ID during maintenance.
+   * No live work, receipts or retained Discord actions are discarded here.
+   */
+  async retireEmptyStorage(): Promise<"retired" | "retained"> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (this.hasActiveWork()) return "retained";
+      const tables = this.ctx.storage.sql.exec<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB '_cf_*'",
+      ).toArray();
+      const ownedTables = new Set(['roll_work', 'interaction_delivery', 'roll_log_outbox', 'roll_lifecycle_outbox', 'saved_roll_picker', 'saved_roll_invocation', 'saved_roll_copy_receipt', 'save_roll_intent', 'text_result_intent']);
+      for (const table of tables) {
+        if (!ownedTables.has(table.name)) return "retained";
+        const identifier = table.name.replaceAll('"', '""');
+        if (this.ctx.storage.sql.exec(`SELECT 1 FROM "${identifier}" LIMIT 1`).toArray().length !== 0) {
+          return "retained";
+        }
+      }
+      if ((await this.ctx.storage.list({ limit: 1 })).size !== 0) return "retained";
+      // Explicit cancellation preserves behavior on the pinned compatibility date.
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      this.schemaReady = false;
+      return "retired";
+    });
   }
 
   private deleteSensitiveWorkPreservingLifecycle(): void {
@@ -4809,6 +4915,7 @@ export class RollWork extends DurableObject<RollEnv> {
   }
 
   private readDelivery(): StoredDeliveryRow | undefined {
+    if (!this.schemaReady) return undefined;
     return this.ctx.storage.sql
       .exec<StoredDeliveryRow>(
         `SELECT metadata_json, token, token_fingerprint, expires_at, state,
