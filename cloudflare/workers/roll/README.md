@@ -26,4 +26,4 @@ A separate SQLite-backed Durable Object owns one exact roll and delivery record 
 
 The Worker exposes only public `GET /health`; work and delivery are available through the cross-Worker Durable Object binding, not a public HTTP mutation. Tokens are never returned by status/RPC results or written to application logs.
 
-This implementation is local and undeployed. Deployed CPU, memory, latency, and Discord behavior still require authorized development-bot verification.
+Storage retirement, legacy cleanup custody, local evidence and release-time verification are documented in [Durable storage retirement](../../../tools/storage-retirement/README.md). Provider billing and installed Discord action acceptance require authorized environment verification.

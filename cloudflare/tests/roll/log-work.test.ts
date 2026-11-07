@@ -1,3 +1,4 @@
+import type { LogWork } from "../../workers/roll/src/log-work";
 import { env } from "cloudflare:workers";
 import {
   evictDurableObject,
@@ -77,6 +78,8 @@ function parseTelemetryEvent(value: string) {
   return TelemetryEventSchema.parse(JSON.parse(value));
 }
 
+const DELIVERED_AT = Date.now();
+
 const PNG = Uint8Array.from(
   atob(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -138,7 +141,7 @@ function artifact(
       channelName: "dice-rolls",
       channelType: 0,
     },
-    destinationDeliveredAt: 1_750_000_000_000,
+    destinationDeliveredAt: DELIVERED_AT,
     payload: {
       embeds: [
         {
@@ -170,7 +173,7 @@ function artifactV2(
     guildId: null,
     channelId: "100000000000000010",
     context: { kind: "dm", channelId: "100000000000000010" },
-    destinationDeliveredAt: 1_750_000_000_000,
+    destinationDeliveredAt: DELIVERED_AT,
     presentation: { title: "Initiative", result: "[20] = 20", savedRoll: null },
     payload: {
       flags: 1 << 15,
@@ -205,6 +208,67 @@ async function callAlarm(instance: {
 }
 
 describe("LogWork Durable Object", () => {
+  it("finishes retirement after an expired acceptance resumes from hashing", async () => {
+    const input = artifact({ rollId: "1400000000000000092" });
+    const stub = logWork(input.rollId);
+    await stub.accept(input);
+    await runInDurableObject<DurableObject & Pick<LogWork, "accept" | "alarm">, undefined>(stub, async (instance, state) => {
+      state.storage.sql.exec("UPDATE log_artifact SET state = 'delivered', accepted_at = 0, retry_until = 0, expires_at = 1, completed_at = 1");
+      let release = (): void => undefined;
+      let started = (): void => undefined;
+      const blocked = new Promise<void>((resolve) => { release = resolve; });
+      const entered = new Promise<void>((resolve) => { started = resolve; });
+      const digest = crypto.subtle.digest.bind(crypto.subtle);
+      const hashing = vi.spyOn(crypto.subtle, "digest").mockImplementationOnce(async (algorithm, bytes) => {
+        started();
+        await blocked;
+        return digest(algorithm, bytes);
+      });
+      const clock = vi.spyOn(Date, "now").mockReturnValue(DELIVERED_AT + LOG_WORK_RETRY_WINDOW_MS + 1);
+      try {
+        const accepting = instance.accept(input);
+        await entered;
+        await instance.alarm();
+        expect(state.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'log_artifact'").toArray()).toHaveLength(1);
+        release();
+        await expect(accepting).resolves.toEqual({ status: "conflict" });
+        expect(state.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'log_artifact'").toArray()).toEqual([]);
+        expect(await state.storage.getAlarm()).toBeNull();
+      } finally {
+        release();
+        hashing.mockRestore();
+        clock.mockRestore();
+      }
+      return undefined;
+    });
+  });
+
+  it("refuses expired log replay after retirement and eviction", async () => {
+    const input = artifact({ rollId: "1400000000000000091" });
+    const stub = logWork(input.rollId);
+    await stub.accept(input);
+    await expect(stub.retireEmptyStorage()).resolves.toBe("retained");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(
+      DELIVERED_AT + LOG_WORK_RETRY_WINDOW_MS + LOG_WORK_RETENTION_MS + 1,
+    );
+    try {
+      await runDurableObjectAlarm(stub); // Terminal expiry, never provider replay.
+      clock.mockReturnValue(Date.now() + LOG_WORK_RETENTION_MS + 1);
+      const allocated = await runInDurableObject(stub, (_instance, state) => state.storage.sql.databaseSize);
+      await runDurableObjectAlarm(stub);
+      await expect(stub.artifactStatus()).resolves.toEqual({ state: "missing" });
+      const retired = await runInDurableObject(stub, (_instance, state) => state.storage.sql.databaseSize);
+      console.info(JSON.stringify({ fixture: "expired-log-work", allocated, retired }));
+      expect(retired).toBeLessThan(allocated);
+      await expect(stub.accept(input)).resolves.toEqual({ status: "conflict" });
+      await evictDurableObject(stub);
+      await expect(stub.accept(input)).resolves.toEqual({ status: "conflict" });
+      await expect(stub.retireEmptyStorage()).resolves.toBe("retired");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("persists one byte-identical PNG artifact across replay and eviction", async () => {
     const stub = logWork("1400000000000000001");
     const input = artifact();
@@ -557,7 +621,7 @@ describe("LogWork Durable Object", () => {
         channelName: "dice-rolls",
         channelType: 0,
         title: null,
-        destinationDeliveredAt: 1_750_000_000_000,
+        destinationDeliveredAt: DELIVERED_AT,
         logicalShard: {
           status: "available",
           shardId: 2,

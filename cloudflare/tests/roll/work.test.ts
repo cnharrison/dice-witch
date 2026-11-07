@@ -249,7 +249,7 @@ type RollDeliveryTargetFixture = Readonly<{
 }>;
 type RollWorkInstancePort = Pick<
   RollWork,
-  "acceptDelivery" | "alarm" | "deliver" | "deliveryDiagnostics" | "render"
+  "acceptDelivery" | "alarm" | "deliver" | "deliveryDiagnostics" | "render" | "retireEmptyStorage"
 >;
 type RollWorkDeadlineFixture = {
   deliver(value: SchemaInput): Promise<DeliverRollWorkResult>;
@@ -325,6 +325,13 @@ function work(name: string) {
   return rollEnv.ROLL_WORK.getByName(name);
 }
 
+async function seedEmptyWorkSchema(stub: ReturnType<typeof work>): Promise<void> {
+  await stub.prepare({ notation: ["1d6"], repetitions: 1 });
+  await runInDurableObject(stub, (_instance, state) => {
+    state.storage.sql.exec("DELETE FROM roll_work");
+  });
+}
+
 function logWork(name: string) {
   return rollEnv.LOG_WORK.getByName(name);
 }
@@ -337,6 +344,17 @@ function runInRollWork<Result>(
   ) => Result | Promise<Result>,
 ): Promise<Result> {
   return runInDurableObject<RollWorkTestInstance, Result>(stub, callback);
+}
+
+// Persisted fault injection must not race the platform's real scheduled alarm.
+// Handlers still run explicitly against the real owner and SQLite storage.
+function runWithPausedAlarms<Result>(
+  stub: ReturnType<typeof work>,
+  callback: (instance: RollWorkInstancePort, state: DurableObjectState) => Promise<Result>,
+): Promise<Result> {
+  return runInRollWork(stub, (instance, state) =>
+    state.blockConcurrencyWhile(() => callback(instance, state)),
+  );
 }
 
 function runInRollWorkDeadlineFixture<Result>(
@@ -642,6 +660,79 @@ async function seedPendingV5Delivery(
 }
 
 describe("RollWork Durable Object", () => {
+  it("leaves no schema when initial delivery preparation is unavailable", async () => {
+    const id = snowflakeAt(Date.now(), 97);
+    const stub = work(id);
+    const input = deliveryRequest(id);
+    const restore = interceptEffectiveAppearance(input.accounting.userId, () => new Response(null, { status: 503 }));
+    try {
+      await runInRollWork(stub, async (instance, state) => {
+        await expect(instance.acceptDelivery(input)).resolves.toEqual({ status: "unavailable" });
+        expect(state.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'roll_work'").toArray()).toEqual([]);
+        expect(await state.storage.getAlarm()).toBeNull();
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it("terminalizes expired delivery once while accounting remains unavailable", async () => {
+    const id = snowflakeAt(Date.now(), 96);
+    const stub = work(id);
+    await runWithPausedAlarms(stub, async (instance, state) => {
+      await instance.acceptDelivery(deliveryRequest(id, "delivery-success"));
+      state.storage.sql.exec("UPDATE interaction_delivery SET expires_at = 1, accounting_state = 'pending', accounting_occurred_at = 1");
+      const original = rollEnv.DATA_SERVICE.fetch.bind(rollEnv.DATA_SERVICE);
+      const unavailable = vi.spyOn(rollEnv.DATA_SERVICE, "fetch").mockImplementation((input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return new URL(request.url).pathname === "/internal/roll-accounting"
+          ? Promise.resolve(new Response(null, { status: 503 }))
+          : original(input, init);
+      });
+      try {
+        await callAlarm(instance);
+        expect(state.storage.sql.exec("SELECT state, token, accounting_state FROM interaction_delivery").one()).toEqual({
+          state: "failed", token: null, accounting_state: "pending",
+        });
+        const revision = state.storage.sql.exec<{ snapshot_json: string }>("SELECT snapshot_json FROM roll_lifecycle_outbox").one().snapshot_json;
+        await callAlarm(instance);
+        expect(state.storage.sql.exec<{ snapshot_json: string }>("SELECT snapshot_json FROM roll_lifecycle_outbox").one().snapshot_json).toBe(revision);
+      } finally {
+        unavailable.mockRestore();
+      }
+      await callAlarm(instance);
+      expect(instance.deliveryDiagnostics()).toEqual({ state: "missing" });
+    });
+  });
+
+  it("retains pending accounting at expiry and retires after recovery", async () => {
+    const id = snowflakeAt(Date.now(), 95);
+    const stub = work(id);
+    await runWithPausedAlarms(stub, async (instance, state) => {
+      await instance.deliver(deliveryRequest(id, "delivery-success"));
+      state.storage.sql.exec("UPDATE interaction_delivery SET expires_at = 1, accounting_state = 'pending', logging_state = 'delivered'");
+      state.storage.sql.exec("UPDATE save_roll_intent SET expires_at = 0");
+      state.storage.sql.exec("UPDATE text_result_intent SET expires_at = 0");
+      const original = rollEnv.DATA_SERVICE.fetch.bind(rollEnv.DATA_SERVICE);
+      const unavailable = vi.spyOn(rollEnv.DATA_SERVICE, "fetch").mockImplementation((input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return new URL(request.url).pathname === "/internal/roll-accounting"
+          ? Promise.resolve(new Response(null, { status: 503 }))
+          : original(input, init);
+      });
+      try {
+        await callAlarm(instance);
+        expect(instance.deliveryDiagnostics()).toMatchObject({ accountingState: "pending" });
+        await expect(instance.retireEmptyStorage()).resolves.toBe("retained");
+      } finally {
+        unavailable.mockRestore();
+      }
+      await callAlarm(instance);
+      expect(instance.deliveryDiagnostics()).toEqual({ state: "missing" });
+      expect(state.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'roll_work'").toArray()).toEqual([]);
+    });
+  });
+
   it("upgrades pending pre-clatter deliveries without defaulting privacy settings", async () => {
     const id = snowflakeAt(Date.now(), 21);
     const stub = work(id);
@@ -658,7 +749,7 @@ describe("RollWork Durable Object", () => {
     const validated = validateDeliveryRequest(input);
     const metadataJson = deliveryMetadata(validated);
     const fingerprint = await tokenFingerprint(input.interaction.token);
-    await stub.deliveryStatus();
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(`
         DROP TABLE interaction_delivery;
@@ -999,6 +1090,11 @@ describe("RollWork Durable Object", () => {
       status: "existing",
       savedRoll: { name: "Attack", notation: "2d20+5", revision: 3 },
     });
+    await runInDurableObject(stub, async (_instance, state) => {
+      const scheduled = await state.storage.getAlarm();
+      expect(scheduled).not.toBeNull();
+      expect(scheduled).toBeLessThanOrEqual(Date.now());
+    });
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await settleDelivery(stub);
     const completed = parsedConsoleJsonEvents(
@@ -1309,6 +1405,7 @@ describe("RollWork Durable Object", () => {
   it("continues to render a serialized V2 snapshot after V3 activation", async () => {
     const stub = work("1400000000000000045");
     const serialized = JSON.stringify(rollWorkV2Fixture);
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(
         `INSERT INTO roll_work (singleton, request_json, record_json)
@@ -1339,6 +1436,7 @@ describe("RollWork Durable Object", () => {
     const stub = work("1400000000000000043");
     const requestJson = JSON.stringify(rollWorkV3Fixture.request);
     const serialized = JSON.stringify(rollWorkV3Fixture);
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(
         `INSERT INTO roll_work (singleton, request_json, record_json)
@@ -1380,6 +1478,7 @@ describe("RollWork Durable Object", () => {
     const stub = work("1400000000000000044");
     const requestJson = JSON.stringify(rollWorkV4Fixture.request);
     const serialized = JSON.stringify(rollWorkV4Fixture);
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(
         `INSERT INTO roll_work (singleton, request_json, record_json)
@@ -1555,6 +1654,7 @@ describe("RollWork Durable Object", () => {
       renderVersion: 4 as const,
       renderRequest: null,
     };
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(
         `INSERT INTO roll_work (singleton, request_json, record_json)
@@ -1578,6 +1678,7 @@ describe("RollWork Durable Object", () => {
       version: 5 as const,
       renderVersion: 3 as const,
     };
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(
         `INSERT INTO roll_work (singleton, request_json, record_json)
@@ -1634,6 +1735,7 @@ describe("RollWork Durable Object", () => {
     );
 
     const stub = work("1400000000000000046");
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(
         `INSERT INTO roll_work (singleton, request_json, record_json)
@@ -1923,13 +2025,13 @@ describe("RollWork Durable Object", () => {
       await runInDurableObject(stub, async (_instance, state) => {
         expect(
           state.storage.sql
-            .exec<{ count: number }>("SELECT COUNT(*) AS count FROM roll_work")
+            .exec<{ count: number }>("SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'roll_work'")
             .one().count,
         ).toBe(0);
         expect(
           state.storage.sql
             .exec<{ count: number }>(
-              "SELECT COUNT(*) AS count FROM interaction_delivery",
+              "SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'interaction_delivery'",
             )
             .one().count,
         ).toBe(0);
@@ -2004,6 +2106,7 @@ describe("RollWork Durable Object", () => {
       renderRequest: buildRollRenderRequestV4(outcome, 1, v4Recipes()),
     };
     const stub = work("1400000000000000047");
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(
         `INSERT INTO roll_work (singleton, request_json, record_json)
@@ -3462,6 +3565,7 @@ describe("RollWork Durable Object", () => {
   it("records a terminal lifecycle when durable acceptance fails", async () => {
     const id = snowflakeAt(Date.now(), 67);
     const stub = work(id);
+    await seedEmptyWorkSchema(stub);
     await runInDurableObject(stub, (_instance, state) => {
       state.storage.sql.exec(`
         CREATE TRIGGER fail_roll_prepare
@@ -4883,11 +4987,13 @@ describe("RollWork Durable Object", () => {
           delivery: "pending",
         });
         state.storage.sql.exec(
-          "UPDATE interaction_delivery SET expires_at = 0",
+          "UPDATE interaction_delivery SET expires_at = 1",
         );
         await expect(instance.deliver(request)).resolves.toEqual({
           status: "expired",
         });
+        // Retirement waits until the delivery promise has settled.
+        await callAlarm(instance);
       });
     } finally {
       dataFetch.mockRestore();
@@ -4923,7 +5029,7 @@ describe("RollWork Durable Object", () => {
       await callAlarm(instance);
       expect(
         state.storage.sql.exec<{ count: number }>(
-          "SELECT COUNT(*) AS count FROM roll_lifecycle_outbox",
+          "SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'roll_lifecycle_outbox'",
         ).one().count,
       ).toBe(0);
       expect(await state.storage.getAlarm()).toBeNull();
