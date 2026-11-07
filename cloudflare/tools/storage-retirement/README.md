@@ -225,3 +225,27 @@ dry run and npm lockfile consistency dry run. The transitive refresh changes
 `/tmp/dice-retirement-resolved-dependency-changes.json`. Independent review found
 no remaining dependency blockers in this candidate. Deployed acceptance is still
 required; local passing results do not bypass exact-SHA CI promotion.
+
+CI on `248fc84` subsequently exposed a fault-fixture race: the platform could
+run the immediately scheduled delivery alarm between `stub.acceptDelivery()` and
+the test's next invocation that forced expiry. It correctly delivered the roll,
+while the expiry test expected a still-pending destination. The quality aggregate
+failed because of that Roll failure, not an independent static/build failure.
+Original logs remain `/tmp/dice-pr53-roll-ci.clean.log` and
+`/tmp/dice-pr53-quality-ci.clean.log`.
+
+The two new accounting fault fixtures now use `runWithPausedAlarms`, which holds
+the real Durable Object input gate over fixture setup, explicit alarm execution,
+and assertions. This makes a scheduled platform alarm unable to invalidate the
+injected initial state. The handlers, SQL storage, recovery assertions and service
+faults remain real-owner cases; no assertions, retries or production behavior were
+weakened. The original CI failure demonstrates that the configured check rejects
+the unprotected interleaving. This helper is deliberately not used by the separate
+concurrency tests, where interleaving is the behavior under test. Other legacy
+fault fixtures still require review; this is not a repository-wide static rule.
+Desktop impact remains not applicable; this follow-up changes tests only.
+The corrected fixtures passed both focused cases and the configured
+`npm run test:roll --workspace=@dice-witch/cloudflare` entrypoint (523 general
+Roll tests plus 90 batched RollWork cases), with Roll type checking and both lint
+checks passing. The four unchanged parameterized cases remain separately covered
+by the preceding full dependency verification.

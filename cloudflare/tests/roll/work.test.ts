@@ -249,7 +249,7 @@ type RollDeliveryTargetFixture = Readonly<{
 }>;
 type RollWorkInstancePort = Pick<
   RollWork,
-  "acceptDelivery" | "alarm" | "deliver" | "deliveryDiagnostics" | "render"
+  "acceptDelivery" | "alarm" | "deliver" | "deliveryDiagnostics" | "render" | "retireEmptyStorage"
 >;
 type RollWorkDeadlineFixture = {
   deliver(value: SchemaInput): Promise<DeliverRollWorkResult>;
@@ -344,6 +344,17 @@ function runInRollWork<Result>(
   ) => Result | Promise<Result>,
 ): Promise<Result> {
   return runInDurableObject<RollWorkTestInstance, Result>(stub, callback);
+}
+
+// Persisted fault injection must not race the platform's real scheduled alarm.
+// Handlers still run explicitly against the real owner and SQLite storage.
+function runWithPausedAlarms<Result>(
+  stub: ReturnType<typeof work>,
+  callback: (instance: RollWorkInstancePort, state: DurableObjectState) => Promise<Result>,
+): Promise<Result> {
+  return runInRollWork(stub, (instance, state) =>
+    state.blockConcurrencyWhile(() => callback(instance, state)),
+  );
 }
 
 function runInRollWorkDeadlineFixture<Result>(
@@ -668,62 +679,56 @@ describe("RollWork Durable Object", () => {
   it("terminalizes expired delivery once while accounting remains unavailable", async () => {
     const id = snowflakeAt(Date.now(), 96);
     const stub = work(id);
-    await stub.acceptDelivery(deliveryRequest(id, "delivery-success"));
-    await runInDurableObject(stub, (_instance, state) => {
-      state.storage.sql.exec("UPDATE interaction_delivery SET expires_at = 0, accounting_state = 'pending', accounting_occurred_at = 1");
-    });
-    const original = rollEnv.DATA_SERVICE.fetch.bind(rollEnv.DATA_SERVICE);
-    const unavailable = vi.spyOn(rollEnv.DATA_SERVICE, "fetch").mockImplementation((input, init) => {
-      const request = input instanceof Request ? input : new Request(input, init);
-      return new URL(request.url).pathname === "/internal/roll-accounting"
-        ? Promise.resolve(new Response(null, { status: 503 }))
-        : original(input, init);
-    });
-    try {
-      await runInRollWork(stub, (instance) => callAlarm(instance));
-      const revision = await runInDurableObject(stub, (_instance, state) => {
+    await runWithPausedAlarms(stub, async (instance, state) => {
+      await instance.acceptDelivery(deliveryRequest(id, "delivery-success"));
+      state.storage.sql.exec("UPDATE interaction_delivery SET expires_at = 1, accounting_state = 'pending', accounting_occurred_at = 1");
+      const original = rollEnv.DATA_SERVICE.fetch.bind(rollEnv.DATA_SERVICE);
+      const unavailable = vi.spyOn(rollEnv.DATA_SERVICE, "fetch").mockImplementation((input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return new URL(request.url).pathname === "/internal/roll-accounting"
+          ? Promise.resolve(new Response(null, { status: 503 }))
+          : original(input, init);
+      });
+      try {
+        await callAlarm(instance);
         expect(state.storage.sql.exec("SELECT state, token, accounting_state FROM interaction_delivery").one()).toEqual({
           state: "failed", token: null, accounting_state: "pending",
         });
-        return state.storage.sql.exec<{ snapshot_json: string }>("SELECT snapshot_json FROM roll_lifecycle_outbox").one().snapshot_json;
-      });
-      await runInRollWork(stub, (instance) => callAlarm(instance));
-      await runInDurableObject(stub, (_instance, state) => {
+        const revision = state.storage.sql.exec<{ snapshot_json: string }>("SELECT snapshot_json FROM roll_lifecycle_outbox").one().snapshot_json;
+        await callAlarm(instance);
         expect(state.storage.sql.exec<{ snapshot_json: string }>("SELECT snapshot_json FROM roll_lifecycle_outbox").one().snapshot_json).toBe(revision);
-      });
-    } finally {
-      unavailable.mockRestore();
-    }
-    await runInRollWork(stub, (instance) => callAlarm(instance));
-    await expect(stub.deliveryStatus()).resolves.toEqual({ state: "missing" });
+      } finally {
+        unavailable.mockRestore();
+      }
+      await callAlarm(instance);
+      expect(instance.deliveryDiagnostics()).toEqual({ state: "missing" });
+    });
   });
 
   it("retains pending accounting at expiry and retires after recovery", async () => {
     const id = snowflakeAt(Date.now(), 95);
     const stub = work(id);
-    await stub.deliver(deliveryRequest(id, "delivery-success"));
-    await runInDurableObject(stub, (_instance, state) => {
-      state.storage.sql.exec("UPDATE interaction_delivery SET expires_at = 0, accounting_state = 'pending', logging_state = 'delivered'");
+    await runWithPausedAlarms(stub, async (instance, state) => {
+      await instance.deliver(deliveryRequest(id, "delivery-success"));
+      state.storage.sql.exec("UPDATE interaction_delivery SET expires_at = 1, accounting_state = 'pending', logging_state = 'delivered'");
       state.storage.sql.exec("UPDATE save_roll_intent SET expires_at = 0");
       state.storage.sql.exec("UPDATE text_result_intent SET expires_at = 0");
-    });
-    const original = rollEnv.DATA_SERVICE.fetch.bind(rollEnv.DATA_SERVICE);
-    const unavailable = vi.spyOn(rollEnv.DATA_SERVICE, "fetch").mockImplementation((input, init) => {
-      const request = input instanceof Request ? input : new Request(input, init);
-      return new URL(request.url).pathname === "/internal/roll-accounting"
-        ? Promise.resolve(new Response(null, { status: 503 }))
-        : original(input, init);
-    });
-    try {
-      await runDurableObjectAlarm(stub);
-      await expect(stub.deliveryDiagnostics()).resolves.toMatchObject({ accountingState: "pending" });
-      await expect(stub.retireEmptyStorage()).resolves.toBe("retained");
-    } finally {
-      unavailable.mockRestore();
-    }
-    await runDurableObjectAlarm(stub);
-    await expect(stub.deliveryStatus()).resolves.toEqual({ state: "missing" });
-    await runInDurableObject(stub, (_instance, state) => {
+      const original = rollEnv.DATA_SERVICE.fetch.bind(rollEnv.DATA_SERVICE);
+      const unavailable = vi.spyOn(rollEnv.DATA_SERVICE, "fetch").mockImplementation((input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return new URL(request.url).pathname === "/internal/roll-accounting"
+          ? Promise.resolve(new Response(null, { status: 503 }))
+          : original(input, init);
+      });
+      try {
+        await callAlarm(instance);
+        expect(instance.deliveryDiagnostics()).toMatchObject({ accountingState: "pending" });
+        await expect(instance.retireEmptyStorage()).resolves.toBe("retained");
+      } finally {
+        unavailable.mockRestore();
+      }
+      await callAlarm(instance);
+      expect(instance.deliveryDiagnostics()).toEqual({ state: "missing" });
       expect(state.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'roll_work'").toArray()).toEqual([]);
     });
   });
